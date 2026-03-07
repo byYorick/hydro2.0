@@ -73,6 +73,7 @@ health_status VARCHAR(16)
 hardware_profile JSONB
 capabilities JSONB
 settings JSONB
+automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae2' CHECK (automation_runtime IN ('ae2','ae3'))
 created_at
 updated_at
 ```
@@ -81,6 +82,7 @@ updated_at
 ```
 zones_status_idx
 zones_uid_unique
+zones_automation_runtime_idx
 ```
 
 ---
@@ -671,6 +673,7 @@ workflow_phase VARCHAR(50) NOT NULL DEFAULT 'idle'
 scheduler_task_id VARCHAR(100) NULL
 started_at TIMESTAMPTZ NULL
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+version BIGINT NOT NULL DEFAULT 0
 payload JSONB NOT NULL DEFAULT '{}'::jsonb
 PK (zone_id)
 ```
@@ -686,6 +689,7 @@ zone_workflow_state_scheduler_task_id_idx (scheduler_task_id)
 - персистентное хранение доменной `workflow_phase` для зоны;
 - восстановление in-flight workflow после рестарта `automation-engine`;
 - связь continuation payload с текущим intent (`payload.intent_id`).
+- `AE3-Lite v1` использует `version` для последующего CAS-update workflow state.
 
 Допустимые значения `workflow_phase`:
 - `idle`
@@ -889,38 +893,19 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Ниже таблицы вводятся migration-пакетом AE3-Lite и используются runtime-слоем
 `backend/services/automation-engine/ae3lite/` (см. `04_BACKEND_CORE/ae3lite.md`).
 
-### 6.10.1. ae_task_types
-
-```
-code VARCHAR(64) PK
-description TEXT NULL
-is_active BOOLEAN NOT NULL DEFAULT TRUE
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-### 6.10.2. ae_tasks
+### 6.10.1. ae_tasks
 
 ```
 id BIGSERIAL PK
-task_uid TEXT UNIQUE NOT NULL          -- ae3:<id>
-zone_id BIGINT NOT NULL FK -> zones
-task_type VARCHAR(64) NOT NULL FK -> ae_task_types(code)
-source VARCHAR(32) NOT NULL
-status VARCHAR(32) NOT NULL            -- pending|leased|running|waiting_command|completed|skipped|failed|conflict|expired|cancelled
-priority SMALLINT NOT NULL DEFAULT 1
+zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
+task_type VARCHAR(64) NOT NULL         -- в v1 допустимо только cycle_start
+status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
 payload JSONB NOT NULL DEFAULT '{}'
-idempotency_key TEXT UNIQUE NOT NULL
+idempotency_key VARCHAR(191) UNIQUE NOT NULL
 scheduled_for TIMESTAMPTZ NOT NULL
 due_at TIMESTAMPTZ NOT NULL
-expires_at TIMESTAMPTZ NOT NULL
-max_attempts INT NOT NULL DEFAULT 3
-attempt_no INT NOT NULL DEFAULT 0
-leased_until TIMESTAMPTZ NULL
-claimed_by TEXT NULL
-root_intent_id BIGINT NULL FK -> zone_automation_intents
-task_schema_version SMALLINT NOT NULL DEFAULT 1
-last_error_class VARCHAR(64) NULL
+claimed_by VARCHAR(191) NULL
+claimed_at TIMESTAMPTZ NULL
 error_code VARCHAR(128) NULL
 error_message TEXT NULL
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -930,42 +915,30 @@ completed_at TIMESTAMPTZ NULL
 
 Ключевые индексы:
 ```
-ae_tasks_pending_idx (status, priority, due_at, created_at) WHERE status='pending'
 ae_tasks_zone_status_idx (zone_id, status)
-ae_tasks_leaseable_idx (status, leased_until) WHERE status IN ('leased','running','waiting_command')
+ae_tasks_pending_idx (due_at, created_at) WHERE status='pending'
+ae_tasks_active_zone_unique (zone_id) UNIQUE WHERE status IN ('pending','claimed','running','waiting_command')
 ```
 
-### 6.10.3. ae_zone_locks
+Инварианты v1:
+- не более одной active task на зону;
+- `idempotency_key` уникален;
+- `task_type='cycle_start'` фиксируется DB check constraint.
 
-```
-zone_id BIGINT PK FK -> zones ON DELETE CASCADE
-lock_owner TEXT NOT NULL
-lock_version BIGINT NOT NULL
-lock_until TIMESTAMPTZ NOT NULL
-updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-### 6.10.4. ae_commands
+### 6.10.2. ae_commands
 
 ```
 id BIGSERIAL PK
-task_id BIGINT NOT NULL FK -> ae_tasks
+task_id BIGINT NOT NULL FK -> ae_tasks ON DELETE CASCADE
 step_no INT NOT NULL
 node_uid VARCHAR(128) NOT NULL
 channel VARCHAR(64) NOT NULL
-payload JSONB NOT NULL
+payload JSONB NOT NULL DEFAULT '{}'
+external_id VARCHAR(191) NULL          -- связь с commands.cmd_id
 publish_status VARCHAR(16) NOT NULL    -- pending|accepted|failed
-retry_count INT NOT NULL DEFAULT 0
-next_attempt_at TIMESTAMPTZ NULL
-published_at TIMESTAMPTZ NULL
-external_id VARCHAR(128) NULL          -- == commands.cmd_id
-correlation_id VARCHAR(255) NULL
-command_status VARCHAR(16) NOT NULL DEFAULT 'queued'   -- queued|sent|ack
 ack_received_at TIMESTAMPTZ NULL
-terminal_status VARCHAR(32) NULL       -- done|no_effect|error|invalid|busy|timeout|send_failed
+terminal_status VARCHAR(32) NULL       -- DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED
 terminal_at TIMESTAMPTZ NULL
-node_response JSONB NULL
-history_logger_response JSONB NULL
 last_error TEXT NULL
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -974,122 +947,26 @@ UNIQUE (task_id, step_no)
 
 Ключевые индексы/ограничения:
 ```
-ae_commands_publish_idx (publish_status, next_attempt_at) WHERE terminal_status IS NULL
 ae_commands_external_id_idx (external_id) WHERE external_id IS NOT NULL
-ae_commands_correlation_id_idx (correlation_id) WHERE correlation_id IS NOT NULL
-ae_commands_inflight_node_channel_uq (node_uid, channel) WHERE terminal_status IS NULL
 ```
 
 Примечание по статусам:
-- `ae_commands.*status` хранится в lowercase;
-- `commands.status` (Laravel/history-logger) хранится в uppercase;
+- `publish_status` хранится в lowercase;
+- `terminal_status` синхронизирован по значениям с `commands.status`;
 - трекинг делается через mapping `external_id -> commands.cmd_id`.
 
-### 6.10.5. ae_task_attempts
+### 6.10.3. ae_zone_leases
 
 ```
-id BIGSERIAL PK
-task_id BIGINT NOT NULL FK -> ae_tasks
-attempt_no INT NOT NULL
-error_class VARCHAR(64) NOT NULL
-error_code VARCHAR(128) NULL
-retryable BOOLEAN NOT NULL
-is_dead_letter BOOLEAN NOT NULL DEFAULT FALSE
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-finished_at TIMESTAMPTZ NULL
-UNIQUE (task_id, attempt_no)
-```
-
-### 6.10.6. ae_domain_events
-
-```
-id BIGSERIAL PK
-aggregate_type VARCHAR(64) NOT NULL
-aggregate_id VARCHAR(128) NOT NULL
-event_type VARCHAR(128) NOT NULL
-event_version INT NOT NULL DEFAULT 1
-payload JSONB NOT NULL
-occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-publish_attempts INT NOT NULL DEFAULT 0
-next_attempt_at TIMESTAMPTZ NULL
-published_at TIMESTAMPTZ NULL
-dead_letter_at TIMESTAMPTZ NULL
-last_error TEXT NULL
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-Ключевой runtime-контракт:
-- publisher читает только `published_at IS NULL AND dead_letter_at IS NULL`
-  в детерминированном порядке `ORDER BY id ASC`.
-
-### 6.10.7. ae_task_id_aliases
-
-```
-alias_id VARCHAR(128) PK
-task_id BIGINT NOT NULL FK -> ae_tasks ON DELETE CASCADE
-alias_type VARCHAR(32) NOT NULL         -- native|bridge_intent
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-UNIQUE (task_id, alias_type)
-```
-
-### 6.10.8. ae_bridge_sync_journal
-
-```
-id BIGSERIAL PK
-task_id BIGINT NOT NULL FK -> ae_tasks
-zone_id BIGINT NOT NULL FK -> zones
-root_intent_id BIGINT NULL
-attempt_no INT NOT NULL
-result VARCHAR(16) NOT NULL             -- ok|conflict|failed
-error_code VARCHAR(128) NULL
-details JSONB NOT NULL DEFAULT '{}'
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-Индексы:
-```
-ae_bridge_sync_journal_zone_created_idx (zone_id, created_at DESC)
-ae_bridge_sync_journal_task_attempt_idx (task_id, attempt_no)
-```
-
-### 6.10.9. ae_worker_runtime_state
-
-```
-worker_id VARCHAR(128) PK
-consecutive_high_prio INT NOT NULL DEFAULT 0
-updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-### 6.10.10. ae_scheduler_heartbeat
-
-```
-greenhouse_id BIGINT PK FK -> greenhouses ON DELETE CASCADE
-last_scheduler_call_at TIMESTAMPTZ NOT NULL
-updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-### 6.10.11. ae2_writer_heartbeat
-
-```
-greenhouse_id BIGINT PK FK -> greenhouses ON DELETE CASCADE
-last_seen_at TIMESTAMPTZ NOT NULL
-writer_mode VARCHAR(16) NOT NULL        -- active|readonly
-updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-```
-
-### 6.10.12. ae3l_canary_state
-
-```
-greenhouse_id BIGINT PK FK -> greenhouses ON DELETE CASCADE
-gate SMALLINT NOT NULL DEFAULT 0 CHECK (gate BETWEEN 0 AND 3)
-last_advance_at TIMESTAMPTZ NULL
-rollback_count INT NOT NULL DEFAULT 0 CHECK (rollback_count >= 0)
+zone_id BIGINT PK FK -> zones ON DELETE CASCADE
+owner VARCHAR(191) NOT NULL
+leased_until TIMESTAMPTZ NOT NULL
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
 Retention (операционный минимум для AE3-Lite):
-- `ae_tasks`, `ae_commands`, `ae_task_attempts`: hot retention 30 дней для terminal-данных;
-- `ae_domain_events`: hot retention 90 дней + архив;
+- `ae_tasks`, `ae_commands`: hot retention 30 дней для terminal-данных;
+- `ae_zone_leases`: только operational текущего runtime состояния;
 - purge выполняется batched job в off-peak окнах.
 
 ---
@@ -1452,16 +1329,8 @@ channel_binding 1—1 node_channel
 **AE3-Lite runtime (staged):**
 ```
 zone 1—N ae_tasks
-ae_task_types 1—N ae_tasks
 ae_tasks 1—N ae_commands
-ae_tasks 1—N ae_task_attempts
-ae_tasks 1—N ae_task_id_aliases
-ae_tasks 1—N ae_bridge_sync_journal
-zone 1—N ae_bridge_sync_journal
-zone 1—1 ae_zone_locks
-greenhouse 1—1 ae_scheduler_heartbeat
-greenhouse 1—1 ae2_writer_heartbeat
-greenhouse 1—1 ae3l_canary_state
+zone 1—1 ae_zone_leases
 ```
 
 ---

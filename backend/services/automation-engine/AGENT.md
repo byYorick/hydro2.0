@@ -1,97 +1,111 @@
-# AGENT.md (automation-engine / AE2-Lite)
+# AGENT.md (automation-engine / AE3-Lite v1)
 
-Краткие инструкции для ИИ-ассистента `gpt5.3-codex` при работе в `backend/services/automation-engine`.
-Обновлено: 2026-02-23
+Краткие инструкции для ИИ-ассистента при работе в `backend/services/automation-engine`.
+Обновлено: 2026-03-07
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ## 1. Главная цель
 
-Построить и поддерживать **чистый AE2-Lite** без legacy-зависимостей.
+Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для `cycle_start`.
+Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
-## 2. Жесткие ограничения
+AE2-Lite **полностью удалён**. Директория `ae2lite/` не существует.
+
+## 2. Жёсткие ограничения (инварианты из spec §2)
 
 1. Никакого прямого MQTT из AE или Laravel.
-2. Все команды к нодам идут только через `history-logger` (`POST /commands`).
-3. Архитектура: один event loop, один долгоживущий runner на зону.
-4. Последовательное исполнение: `send -> await terminal -> next` (успешный путь = `DONE`).
-5. Поддерживаются только режимы: `auto`, `semi`, `manual`.
-6. Каждый новый/изменяемый файл AE2-Lite должен быть < 400 строк.
-7. Изменения схемы БД только через Laravel миграции.
-8. Единственный внешний endpoint запуска цикла: `POST /zones/{id}/start-cycle`.
-9. Runtime источник данных AE2-Lite: direct SQL read-model (PostgreSQL).
-10. Переход к следующему шагу workflow разрешён только при статусе команды `DONE`.
-11. Для топологии `two_tank_drip_substrate_trays` workflow `cycle_start` считается алиасом `startup`.
-12. Legacy runtime endpoints запрещены: `POST /scheduler/task`, `GET /scheduler/task/{task_id}`.
+2. Все команды к узлам идут только через `history-logger` (`POST /commands`).
+3. Одна активная execution task на зону — гарантируется partial unique index и ZoneLease.
+4. Успешный terminal outcome mutating-команды только `DONE`; все остальные — fail.
+5. Изменения схемы БД только через Laravel миграции (не ручной DDL).
+6. `ae3lite/*` не импортирует `ae2lite/*` (директория удалена).
+7. Переключение `zones.automation_runtime` на `ae3` запрещено при активной task или lease.
+8. Runtime читает zone state напрямую из PostgreSQL read-model, без HTTP к Laravel.
+9. Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.
+10. Единственный внешний ingress: `POST /zones/{id}/start-cycle`.
+11. Hardcoded default targets запрещены (spec §5.3.4); отсутствие target → `PlannerConfigurationError`.
+12. CAS-промах в `zone_workflow_state.upsert_phase` → `Ae3LiteError` (не silent None).
 
-## 3. Telemetry и feedback
+## 3. Структура кода
 
-1. Использовать PostgreSQL `LISTEN/NOTIFY` как основной механизм.
-2. Всегда держать fallback polling для устойчивости.
-3. Freshness проверять централизованно (fail-closed для critical checks).
-4. `send_and_wait` завершать только по terminal statuses:
-   `DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`.
-5. `QUEUED|SENT|ACK` являются non-terminal и не завершают ожидание.
+```
+ae3lite/
+  api/              # HTTP endpoints (compat + internal), security, rate_limit
+  domain/
+    entities/       # AutomationTask, ZoneWorkflow, ZoneLease, PlannedCommand
+    errors.py       # Все domain-ошибки
+    services/       # CycleStartPlanner, two_tank_runtime_spec
+  application/
+    use_cases/      # create_task, claim_next, execute_task, finalize_task,
+                    # reconcile_command, startup_recovery, two_tank_executor
+    adapters/       # legacy_intent_mapper
+  infrastructure/
+    repositories/   # PgAutomationTaskRepository, PgZoneWorkflowRepository,
+                    # PgZoneLease, PgAeCommandRepository
+    gateways/       # SequentialCommandGateway
+    clients/        # HistoryLoggerClient
+    read_models/    # ZoneSnapshotReadModel, TaskStatusReadModel, ZoneRuntimeMonitor
+  runtime/
+    worker.py       # Ae3RuntimeWorker (drain loop)
+    bootstrap.py    # build_ae3_runtime_bundle()
+    config.py       # Ae3RuntimeConfig.from_env()
+    app.py          # create_app() / serve()
+main.py             # точка входа → ae3lite.main
+```
 
-## 4. Политика legacy cleanup
+Все `common/` и `utils/` — только вспомогательные; основная логика в `ae3lite/`.
 
-1. Если новая реализация готова, соответствующий legacy-код удаляется в той же итерации.
-2. Нельзя оставлять “временно отключенный” legacy.
-3. Любой неиспользуемый код, endpoint, флаг или тест должен быть удален.
-4. После крупного этапа обязателен cleanup-аудит:
-   - что удалено;
-   - что осталось и почему.
+## 4. Task FSM
 
-## 5. Приоритеты реализации
+```
+pending → claimed → running → waiting_command → completed
+                                               → failed
+                  → failed (любой exception)
+```
 
-1. P0: core runtime AE2-Lite + two-tank + command gateway + notify/polling.
-2. P1: correction controllers + rich zone state API.
-3. P2: оптимизации и расширенная observability.
+Реквью (two-tank): `running → pending` через `requeue_pending`.
+`mark_running`: WHERE `status IN ('claimed', 'running')` (не `waiting_command`).
+`resume_after_waiting_command`: отдельный метод для `waiting_command → running`.
 
-## 6. Минимальный Definition of Done (для каждой задачи)
+## 5. Политика cleanup
 
-1. Код реализован в новом AE2-Lite модуле, без новых legacy зависимостей.
-2. Ненужный старый код удален.
-3. Обновлены тесты (unit/integration), при необходимости e2e smoke.
-4. Обновлена документация `doc_ai` при изменении контракта/схемы/поведения.
-5. Изменения воспроизводимы в Docker.
-6. Security-поведение не ослаблено: auth/roles/idempotency проверки сохранены тестами.
+1. Если новая функция готова — соответствующий legacy удаляется в той же итерации.
+2. Нельзя оставлять "временно отключенный" код.
+3. Любой неиспользуемый код, endpoint, флаг, тест — удалить.
+4. После крупного этапа обязателен cleanup-аудит.
 
-## 7. Live-smoke checklist (Scheduler -> AE)
+## 6. Definition of Done (Summary)
 
-Минимум для проверки цепочки `laravel scheduler -> /zones/{id}/start-cycle -> intent -> executor`:
+Полный список — spec §13. Критичные критерии:
+- Все 320 Python тестов зелёные (`pytest -x -q` в контейнере).
+- Laravel AE3 тесты зелёные (`php artisan test --filter="Ae3Lite"`).
+- E2E сценарии пройдены: `start-cycle→DONE→completed`, `TIMEOUT→failed`,
+  `restart during waiting_command → recovered`, `runtime switch denied while busy`.
+- На staging: минимум один rollout и один rollback.
+- Хотя бы одна production зона отработала на `automation_runtime='ae3'`.
 
-1. В БД есть `zone` со статусом `online|warning`.
-2. Для зоны есть активный `grow_cycle` (`PLANNED|RUNNING|PAUSED`) и `current_phase_id`.
-3. Есть online-ноды требуемых типов для startup (по умолчанию минимум `irrig`).
-4. Для two-tank есть `WATER_LEVEL` сенсоры clean-бака (`level_clean_max`, `level_clean_min`) и свежие значения в `telemetry_last`.
-5. Доступен источник `irr_state` (иначе startup завершится `irr_state_unavailable`).
-6. Проверка результата должна включать:
-   - `zone_automation_intents` (status lifecycle),
-   - `laravel_scheduler_active_tasks` (accepted/terminal + terminal_source),
-   - `scheduler_logs` и `ae_scheduler_task_*` логи.
+## 7. Типовые error codes
 
-## 8. Типовые reason_code при fail-closed
+- `ae3_task_create_conflict` — idempotency race (другой worker создал task)
+- `ae3_lease_claim_failed` — ZoneLease занята другим owner
+- `ae3_complete_transition_failed` — task не смог перейти в completed
+- `ae3_requeue_failed` — two-tank stage не смог создать следующий pending
+- `cycle_start_blocked_nodes_unavailable` — нет online-узлов обязательных типов
+- `irr_state_unavailable` — снимок IRR state недоступен
+- `two_tank_prepare_targets_unavailable` — нет PH/EC телеметрии для prepare check
 
-1. `cycle_start_blocked_nodes_unavailable` — отсутствуют online-ноды обязательных типов.
-2. `irr_state_unavailable` — недоступен снимок/подтверждение состояния ирригационного контура.
-3. `sensor_level_unavailable|sensor_stale_detected` — нет данных уровней или телеметрия устарела.
+## 8. Обязательные проверки перед merge
 
-## 9. Обязательные проверки перед merge
+1. Запускать тесты только в Docker:
+   `docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest -x -q`
+2. Laravel AE3 тесты:
+   `docker compose exec -e APP_ENV=testing -e DB_DATABASE=hydro_test laravel php artisan test --filter="Ae3Lite"`
+3. При изменении миграций: `php artisan migrate` + rollback.
+4. При изменении API/контрактов: обновить `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`.
 
-1. Все тесты запускать в Docker-контейнерах проекта.
-2. Минимальный набор для AE2-Lite:
-   - `pytest` по измененным unit/integration тестам;
-   - smoke сценарий `start-cycle -> workflow terminal`.
-3. Если затронуты миграции Laravel:
-   - проверить `php artisan migrate` и откат `php artisan migrate:rollback`.
-4. Если затронуты contracts/API:
-   - прогнать тесты auth/roles/idempotency/rate-limit для затронутых endpoints.
+## 9. Обновление документации при изменениях
 
-## 10. Обновление документации при изменениях
-
-1. Изменения БД отражать в `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`.
-2. Изменения API/контрактов отражать в:
-   - `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`;
-   - `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md` (если меняется план/статус).
-3. Изменения runtime-потоков отражать в `doc_ai/ARCHITECTURE_FLOWS.md`.
-4. `doc_ai/` является source of truth; `docs/` вручную не редактируется.
+1. DB schema → `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
+2. API/контракты → `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`
+3. Runtime flows → `doc_ai/ARCHITECTURE_FLOWS.md`
+4. Canonical spec → `doc_ai/04_BACKEND_CORE/ae3lite.md`

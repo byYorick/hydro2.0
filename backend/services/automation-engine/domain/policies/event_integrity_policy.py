@@ -1,1 +1,0 @@
-"""Event integrity policy helpers."""

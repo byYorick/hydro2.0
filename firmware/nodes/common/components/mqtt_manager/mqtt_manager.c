@@ -20,6 +20,7 @@
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -64,9 +65,11 @@ static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static mqtt_manager_config_t s_config = {0};
 static mqtt_node_info_t s_node_info = {0};
 static bool s_is_connected = false;
+static bool s_client_started = false;
 static bool s_was_connected = false;  // Флаг, что было хотя бы одно подключение
 static char s_mqtt_uri[256] = {0};
 static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
+static TaskHandle_t s_mqtt_event_task_handle = NULL;
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -374,6 +377,11 @@ esp_err_t mqtt_manager_start(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (s_client_started) {
+        ESP_LOGW(TAG, "MQTT manager already started");
+        return ESP_OK;
+    }
+
     ESP_LOGI(TAG, "Starting MQTT manager...");
     esp_err_t err = esp_mqtt_client_start(s_mqtt_client);
     if (err != ESP_OK) {
@@ -381,6 +389,7 @@ esp_err_t mqtt_manager_start(void) {
         return err;
     }
 
+    s_client_started = true;
     return ESP_OK;
 }
 
@@ -389,13 +398,35 @@ esp_err_t mqtt_manager_stop(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (!s_client_started) {
+        ESP_LOGW(TAG, "MQTT manager stop requested, but client was not started");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "Stopping MQTT manager...");
-    return esp_mqtt_client_stop(s_mqtt_client);
+    esp_err_t err = esp_mqtt_client_stop(s_mqtt_client);
+    if (err == ESP_OK) {
+        s_client_started = false;
+    }
+    return err;
 }
 
 esp_err_t mqtt_manager_deinit(void) {
+    TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
+
+    if (s_mqtt_event_task_handle != NULL && current_task == s_mqtt_event_task_handle) {
+        ESP_LOGE(TAG, "MQTT manager deinit from MQTT task is forbidden");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (s_mqtt_client) {
-        esp_mqtt_client_stop(s_mqtt_client);
+        if (s_client_started) {
+            esp_err_t stop_err = mqtt_manager_stop();
+            if (stop_err != ESP_OK) {
+                ESP_LOGE(TAG, "MQTT manager deinit aborted: stop failed: %s", esp_err_to_name(stop_err));
+                return stop_err;
+            }
+        }
         esp_mqtt_client_destroy(s_mqtt_client);
         s_mqtt_client = NULL;
     }
@@ -408,8 +439,10 @@ esp_err_t mqtt_manager_deinit(void) {
     memset(&s_node_info, 0, sizeof(s_node_info));
     memset(s_mqtt_uri, 0, sizeof(s_mqtt_uri));
     s_is_connected = false;
+    s_client_started = false;
     s_was_connected = false;
     s_reconnect_count = 0;
+    s_mqtt_event_task_handle = NULL;
     s_config_cb = NULL;
     s_command_cb = NULL;
     s_connection_cb = NULL;
@@ -747,6 +780,9 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data) {
     esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+    if (s_mqtt_event_task_handle == NULL) {
+        s_mqtt_event_task_handle = xTaskGetCurrentTaskHandle();
+    }
 
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:

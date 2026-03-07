@@ -85,6 +85,48 @@ class SchedulerCycleServiceTest extends TestCase
         $this->assertContains('laravel_scheduler_active_tasks_count', $metrics);
     }
 
+    public function test_run_cycle_fails_closed_for_ae3_when_start_cycle_response_has_no_canonical_task_id(): void
+    {
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'zone_id' => $zone->id,
+                        'accepted' => true,
+                        'runner_state' => 'active',
+                        'deduplicated' => false,
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $stats = $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertSame(1, (int) ($stats['zones_total'] ?? 0));
+        $this->assertGreaterThanOrEqual(1, (int) ($stats['attempted_dispatches'] ?? 0));
+        $this->assertSame(0, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertDatabaseMissing('laravel_scheduler_active_tasks', [
+            'zone_id' => $zone->id,
+        ]);
+
+        $taskLog = SchedulerLog::query()
+            ->where('task_name', 'laravel_scheduler_task_irrigation_zone_'.$zone->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($taskLog);
+        $this->assertSame('failed', $taskLog->status);
+        $this->assertSame('ae3_task_id_missing', ($taskLog->details ?? [])['error'] ?? null);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -114,10 +156,11 @@ class SchedulerCycleServiceTest extends TestCase
     /**
      * @return array{0: Zone, 1: GrowCycle}
      */
-    private function createZoneAndCycle(): array
+    private function createZoneAndCycle(string $automationRuntime = 'ae2'): array
     {
         $zone = Zone::factory()->create([
             'status' => 'online',
+            'automation_runtime' => $automationRuntime,
         ]);
 
         $cycle = GrowCycle::factory()->create([

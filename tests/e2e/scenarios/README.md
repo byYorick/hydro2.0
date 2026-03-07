@@ -22,10 +22,11 @@
 - `snapshot/` — snapshot и replay
 - `infrastructure/` — readiness и bindings
 - `grow_cycle/` — циклы выращивания
-- `automation_engine/` — автоматизация
+- `automation_engine/` — архив legacy AE2-сценариев, не входит в поддерживаемые AE3-suite'ы
+- `ae3lite/` — standalone AE3-Lite start-cycle и real-hardware smoke
 - `simulation/` — симуляции (live, digital twin)
 - `chaos/` — хаос‑тесты
-- `workflow/` — сценарии пошаговых workflow (clean/solution/recirculation/ready)
+- `workflow/` — архив legacy AE2 two-tank workflow сценариев, не входит в поддерживаемые AE3-suite'ы
 
 Полный список и DoD: `../../../docs/testing/E2E_SCENARIOS.md`.
 
@@ -35,26 +36,27 @@
 - `commands/E10_command_happy.yaml` — команда → DONE + WS + zone_events
 - `alerts/E20_error_to_alert_realtime.yaml` — error → alert + dedup
 - `snapshot/E31_reconnect_replay_gap.yaml` — snapshot + replay
-- `automation_engine/E61_fail_closed_corrections.yaml` — fail-closed логика коррекций
-- `automation_engine/E64_effective_targets_only.yaml` — runtime только на effective targets
-- `automation_engine/E65_phase_transition_api.yaml` — переходы фаз через API
-- `automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml` — полный продовый путь (zone/plant/recipe/bind/start)
-- `automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml` — полный путь + строгие EC/pH коррекции на real node
-- `automation_engine/E74_node_zone_mismatch_guard.yaml` — guard node/zone mismatch
-- `workflow/E94_startup_to_ready_smoke.yaml` — startup -> READY smoke + проверки BUSY/TIMEOUT/alert lifecycle
+- `scheduler/E93_start_cycle_intent_executor_path.yaml` — scheduler → AE3 task ingestion path
+- `ae3lite/E95_ae3_start_cycle_done_completed.yaml` — canonical start-cycle happy path
+- `ae3lite/E96_ae3_start_cycle_timeout_failed.yaml` — timeout → failed
+- `ae3lite/E97_ae3_restart_waiting_command_recovered.yaml` — recovery после рестарта runtime
+- `ae3lite/E98_ae3_runtime_switch_denied_busy_zone.yaml` — runtime switch guard
+- `ae3lite/E99_ae3_double_execution_guard.yaml` — защита от двойного исполнения
+- `ae3lite/E100_ae3_two_tank_realhw_smoke.yaml` — AE3-Lite two-tank smoke на реальной test-node
 
-## AE2-Lite совместимость
+## Legacy AE2 архив
 
-По состоянию на 2026-02-22 каноничный runtime AE2-Lite поддерживает только
-`ae_test_hook action=publish_command` (через `history-logger /commands`).
+Каталоги `automation_engine/` и `workflow/` сохранены как архив исторических
+AE2-Lite сценариев. После перехода на standalone `AE3-Lite` они не входят в
+поддерживаемые suite'ы `automation_engine`, `automation_engine_realhw`,
+`workflow`, `prod_readiness_realhw` и `full`: эти suite names теперь являются
+compatibility alias'ами на актуальные AE3-сценарии.
 
-AE2-Lite compatible automation-сценарии:
-- `automation_engine/E61_fail_closed_corrections.yaml`
-- `automation_engine/E64_effective_targets_only.yaml`
-- `automation_engine/E65_phase_transition_api.yaml`
-- `automation_engine/E66_full_prod_path_zone_recipe_bind_and_run.yaml`
-- `automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml`
-- `automation_engine/E74_node_zone_mismatch_guard.yaml`
+Текущее соответствие:
+- `automation_engine` -> `scheduler/E93` + `ae3lite/E95..E99`
+- `automation_engine_realhw` -> `ae3lite/E100`
+- `workflow` -> `ae3lite/E95`, `E97`, `E99`, `E100`
+- `prod_readiness_realhw` -> `scheduler/E93` + `ae3lite/E100`
 
 ## Формат действий
 

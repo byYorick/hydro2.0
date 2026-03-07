@@ -419,6 +419,49 @@ Transient-overlap правило для `pump_main`:
 6. При reboot нет потери финального `command_response`.
 7. Нет скрытых alias, ломающих модель backend.
 
+## 8.3. AE3-Lite smoke на реальном test_node
+
+Для native `ae3lite` two-tank smoke используется сценарий:
+
+- `tests/e2e/scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml`
+
+Сценарий проверяет:
+
+1. `reset_state` проходит через `history-logger -> MQTT -> test_node`.
+2. Зона временно переводится в `zones.automation_runtime='ae3'`.
+3. `POST /zones/{id}/start-cycle` создаёт canonical `ae_task`.
+4. Runtime публикует `storage_state/state` и `clean_fill_start` через `ae_commands/commands`.
+5. Task доходит до `pending` со stage `clean_fill_check`, не падая в fail-closed.
+6. `GET /internal/tasks/{task_id}` отражает тот же canonical pending status.
+
+Запуск:
+
+```bash
+SCENARIO_SET=ae3lite tests/e2e/run_automation_engine_real_hardware.sh
+```
+
+Runtime wrapper поведения:
+
+1. `tests/e2e/run_automation_engine_real_hardware.sh` auto-discover'ит live UID по heartbeat-топикам,
+   используя `E2E_NODE_UID_REGEX` (default: `^nd-`).
+2. Явные `TEST_NODE_UID`, `TEST_WORKFLOW_NODE_UID`, `TEST_PH_NODE_UID`, `TEST_EC_NODE_UID`
+   остаются override-механизмом; default режим для них — `auto`.
+3. После `config -> gh-temp/zn-temp` wrapper сначала ждёт temp heartbeat namespace.
+4. Если temp heartbeat не появился вовремя, wrapper делает fallback и шлёт device-restart
+   в исходный live namespace.
+5. Reboot-path считается валидным только если узел возвращает terminal `command_response`
+   со статусом `DONE`; при `INVALID|ERROR|BUSY|NO_EFFECT` wrapper останавливается fail-fast.
+
+Предусловия:
+
+1. В зоне `${TEST_NODE_ZONE_UID}` есть online real-hardware ноды, чьи heartbeat UID попадают под `E2E_NODE_UID_REGEX`,
+   либо нужные UID явно заданы через `TEST_*`.
+2. Primary/workflow нода поддерживает `system/${REAL_HW_REBOOT_CMD}` и возвращает terminal `DONE`
+   через `command_response`; иначе hardware reset/bind stage считается несовместимым со smoke-harness.
+3. `history-logger`, `automation-engine` и MQTT bridge доступны.
+4. `telemetry_last` по `level_clean_*` и `level_solution_*` приходит от test-node и свежее runtime window.
+5. Scheduler security baseline разрешает `POST /zones/{id}/start-cycle` и `GET /internal/tasks/{task_id}`.
+
 ---
 
 ## 9. Быстрый профиль test_node для e2e/hil

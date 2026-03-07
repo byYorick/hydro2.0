@@ -132,15 +132,17 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 # Показать, какие сценарии будут запущены
 tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
 
-# Полный прогон всех YAML сценариев из tests/e2e/scenarios
+# Каноничный AE3-Lite two-tank smoke на реальной test-node
+tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
+
+# Полный real-hardware набор
 tests/e2e/run_automation_engine_real_hardware.sh --set=full
-
-# Только workflow сценарии E83-E89
-tests/e2e/run_automation_engine_real_hardware.sh --set=workflow
-
-# Только automation_engine сценарии
-tests/e2e/run_automation_engine_real_hardware.sh --set=automation
 ```
+
+По умолчанию `SCENARIO_SET=full`. Wrapper прогоняет все real-hardware entrypoints
+из `automation_engine/`, `workflow/` и `ae3lite/`. Legacy AE2 names при этом
+остаются отдельными YAML-файлами, но могут быть явно портированы на каноничные
+AE3 сценарии через `scenario_ref` внутри самих файлов.
 
 Опциональные фильтры:
 

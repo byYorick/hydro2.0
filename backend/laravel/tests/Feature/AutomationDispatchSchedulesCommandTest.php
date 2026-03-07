@@ -182,7 +182,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
     public function test_command_marks_task_terminal_when_intent_completed(): void
     {
         $this->enableSchedulerConfig();
-        [$zone, $cycle] = $this->createZoneAndCycle();
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae2');
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 2);
 
         $postCalls = 0;
@@ -242,7 +242,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
     public function test_command_uses_task_status_from_start_cycle_payload_even_if_accepted_false(): void
     {
         $this->enableSchedulerConfig();
-        [$zone, $cycle] = $this->createZoneAndCycle();
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae2');
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
 
         Http::fake(function (Request $request) use ($zone) {
@@ -276,6 +276,50 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertNotNull($task->terminal_at);
     }
 
+    public function test_command_fails_closed_for_ae3_when_start_cycle_response_returns_non_numeric_task_id(): void
+    {
+        $this->enableSchedulerConfig();
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                return Http::response([
+                    'status' => 'ok',
+                    'data' => [
+                        'zone_id' => $zone->id,
+                        'accepted' => true,
+                        'runner_state' => 'active',
+                        'deduplicated' => false,
+                        'task_id' => 'intent-999',
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+        });
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseMissing('laravel_scheduler_active_tasks', [
+            'zone_id' => $zone->id,
+        ]);
+        $this->assertDatabaseCount('zone_automation_intents', 1);
+
+        $taskLog = DB::table('scheduler_logs')
+            ->where('task_name', 'laravel_scheduler_task_irrigation_zone_'.$zone->id)
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertNotNull($taskLog);
+        $details = is_string($taskLog->details ?? null)
+            ? json_decode($taskLog->details, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($taskLog->details ?? null) ? $taskLog->details : []);
+        $this->assertSame('failed', $taskLog->status);
+        $this->assertSame('ae3_task_id_invalid', $details['error'] ?? null);
+    }
+
     private function enableSchedulerConfig(): void
     {
         Config::set('services.automation_engine.laravel_scheduler_enabled', true);
@@ -293,10 +337,11 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
     /**
      * @return array{0: Zone, 1: GrowCycle}
      */
-    private function createZoneAndCycle(): array
+    private function createZoneAndCycle(string $automationRuntime = 'ae2'): array
     {
         $zone = Zone::factory()->create([
             'status' => 'online',
+            'automation_runtime' => $automationRuntime,
         ]);
 
         $cycle = GrowCycle::factory()->create([

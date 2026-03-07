@@ -90,6 +90,22 @@ class E2ERunner:
         
         # Конфигурация из переменных окружения или значений по умолчанию
         self.api_url = config.get("api_url") or os.getenv("LARAVEL_URL", "http://localhost:8081")
+        self.automation_engine_url = (
+            config.get("automation_engine_url")
+            or os.getenv("AUTOMATION_ENGINE_URL", "http://localhost:9505")
+        )
+        parsed_automation_engine = urlparse(self.automation_engine_url)
+        self.automation_engine_host = (
+            config.get("automation_engine_host")
+            or os.getenv("AUTOMATION_ENGINE_HOST")
+            or parsed_automation_engine.hostname
+            or "localhost"
+        )
+        self.automation_engine_port = (
+            config.get("automation_engine_api_port")
+            or os.getenv("AUTOMATION_ENGINE_API_PORT")
+            or str(parsed_automation_engine.port or 9505)
+        )
         
         # Инициализируем AuthClient (singleton)
         auth_email = config.get("auth_email", "e2e@test.local")
@@ -137,7 +153,7 @@ class E2ERunner:
 
         # Контекст для хранения переменных между шагами.
         # TEST_NODE_* задаются сразу, чтобы сценарии могли подхватывать real-hardware UID.
-        default_test_node_uid = os.getenv("TEST_NODE_UID", "nd-ph-esp32una")
+        default_test_node_uid = os.getenv("TEST_NODE_UID", "auto")
         real_hw_flag = "1" if os.getenv("E2E_REAL_HARDWARE", "0") == "1" else "0"
         self.context: Dict[str, Any] = {
             "TEST_NODE_GH_UID": os.getenv("TEST_NODE_GH_UID", "gh-test-1"),
@@ -145,11 +161,14 @@ class E2ERunner:
             "TEST_NODE_UID": default_test_node_uid,
             "TEST_PH_NODE_UID": os.getenv("TEST_PH_NODE_UID", default_test_node_uid),
             "TEST_EC_NODE_UID": os.getenv("TEST_EC_NODE_UID", default_test_node_uid),
-            "TEST_WORKFLOW_NODE_UID": os.getenv("TEST_WORKFLOW_NODE_UID", "nd-irrig-e2e"),
-            "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "esp32-test-001"),
+            "TEST_WORKFLOW_NODE_UID": os.getenv("TEST_WORKFLOW_NODE_UID", "auto"),
+            "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "auto"),
             "E2E_REAL_HARDWARE": real_hw_flag,
             "LARAVEL_URL": self.api_url,
             "WS_URL": self.ws_url,
+            "AUTOMATION_ENGINE_URL": self.automation_engine_url,
+            "AUTOMATION_ENGINE_HOST": self.automation_engine_host,
+            "AUTOMATION_ENGINE_API_PORT": str(self.automation_engine_port),
         }
         
         # Путь к docker-compose файлу для fault injection
@@ -164,6 +183,105 @@ class E2ERunner:
         self._infra_started_by_runner = False
         # Режим реального железа: не управлять node-sim контейнером из сценариев.
         self.real_hardware_mode = real_hw_flag == "1"
+
+    def _resolve_scenario_definition(
+        self,
+        scenario_path: Path,
+        *,
+        visited: Optional[set[Path]] = None,
+    ) -> Dict[str, Any]:
+        """Load a scenario file and resolve optional scenario_ref indirection."""
+        normalized_path = scenario_path.resolve()
+        visited = set(visited or set())
+        if normalized_path in visited:
+            raise ValueError(f"Cyclic scenario_ref detected at {scenario_path}")
+        visited.add(normalized_path)
+
+        with normalized_path.open("r", encoding="utf-8") as handle:
+            scenario = yaml.safe_load(handle) or {}
+        if not isinstance(scenario, dict):
+            raise ValueError(f"Scenario root must be a mapping: {scenario_path}")
+
+        scenario_ref = scenario.get("scenario_ref")
+        if not scenario_ref:
+            return scenario
+
+        ref_path = Path(str(scenario_ref))
+        if not ref_path.is_absolute():
+            ref_path = (normalized_path.parent / ref_path).resolve()
+        referenced = self._resolve_scenario_definition(ref_path, visited=visited)
+
+        merged = dict(referenced)
+        for key, value in scenario.items():
+            if key == "scenario_ref":
+                continue
+            merged[key] = value
+        return merged
+
+    def _refresh_test_node_context(self) -> None:
+        """Resolve TEST_NODE_* from DB when env still contains legacy placeholders."""
+        if not self.db:
+            return
+
+        zone_uid = str(self.context.get("TEST_NODE_ZONE_UID") or "").strip()
+        if not zone_uid:
+            return
+
+        def _needs_resolution(key: str) -> bool:
+            value = str(self.context.get(key) or "").strip().lower()
+            if not value or value == "auto":
+                return True
+            return value in {"nd-ph-esp32una", "nd-irrig-e2e", "nd-dosing-e2e"}
+
+        if not any(
+            _needs_resolution(key)
+            for key in ("TEST_NODE_UID", "TEST_WORKFLOW_NODE_UID", "TEST_PH_NODE_UID", "TEST_EC_NODE_UID")
+        ):
+            return
+
+        rows = self.db.query(
+            """
+            SELECT
+              n.uid,
+              COALESCE(LOWER(n.type), '') AS node_type,
+              COALESCE(n.hardware_id, '') AS hardware_id
+            FROM nodes n
+            JOIN zones z ON z.id = n.zone_id
+            WHERE z.uid = :zone_uid
+            ORDER BY
+              CASE
+                WHEN LOWER(COALESCE(n.type, '')) = 'irrig' THEN 0
+                WHEN LOWER(COALESCE(n.type, '')) = 'ph' THEN 1
+                WHEN LOWER(COALESCE(n.type, '')) = 'ec' THEN 2
+                ELSE 9
+              END,
+              n.uid
+            """,
+            {"zone_uid": zone_uid},
+        )
+        if not rows:
+            return
+
+        def _pick(node_type: str) -> Optional[Dict[str, Any]]:
+            for row in rows:
+                if str(row.get("node_type") or "").strip().lower() == node_type:
+                    return row
+            return None
+
+        irrig = _pick("irrig") or rows[0]
+        ph = _pick("ph") or irrig
+        ec = _pick("ec") or (ph if ph is not irrig else irrig)
+
+        if _needs_resolution("TEST_NODE_UID"):
+            self.context["TEST_NODE_UID"] = irrig["uid"]
+        if _needs_resolution("TEST_WORKFLOW_NODE_UID"):
+            self.context["TEST_WORKFLOW_NODE_UID"] = irrig["uid"]
+        if _needs_resolution("TEST_PH_NODE_UID"):
+            self.context["TEST_PH_NODE_UID"] = ph["uid"]
+        if _needs_resolution("TEST_EC_NODE_UID"):
+            self.context["TEST_EC_NODE_UID"] = ec["uid"]
+        if str(self.context.get("TEST_NODE_HW_ID") or "").strip().lower() in {"", "auto", "esp32-test-001"}:
+            self.context["TEST_NODE_HW_ID"] = str(irrig.get("hardware_id") or "")
 
     def _apply_real_hardware_setup_overrides(self, setup: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -279,6 +397,10 @@ class E2ERunner:
         else:
             token = self.api_token
             logger.info(f"Using provided api_token from config (length: {len(token)})")
+
+        # Expose the current Sanctum token to scenarios that need raw HTTP calls
+        # against Laravel endpoints without going through APIClient shortcuts.
+        self.context["E2E_AUTH_TOKEN"] = token or ""
         
         # Создаем APIClient с AuthClient для автоматического управления токенами
         self.api = APIClient(
@@ -320,6 +442,7 @@ class E2ERunner:
         try:
             self.db.connect()
             logger.info("✓ Database connected")
+            self._refresh_test_node_context()
         except Exception as e:
             logger.warning(f"⚠ Database connection failed: {e}")
 
@@ -1473,8 +1596,7 @@ class E2ERunner:
         
         logger.info(f"Loading scenario: {scenario_path}")
         
-        with open(scenario_path, "r", encoding="utf-8") as f:
-            scenario = yaml.safe_load(f)
+        scenario = self._resolve_scenario_definition(scenario_path)
         
         scenario_name = scenario.get("name", scenario_path.stem)
         self.reporter.test_suite_name = scenario_name
@@ -2416,9 +2538,7 @@ class E2ERunner:
             if not action:
                 raise ValueError("ae_test_hook requires action")
             if action != "publish_command":
-                raise ValueError(
-                    "ae_test_hook supports only action=publish_command in AE2-Lite scenarios"
-                )
+                raise ValueError("ae_test_hook supports only action=publish_command")
 
             resolved_command = self._resolve_variables(command or {})
             if not isinstance(resolved_command, dict):

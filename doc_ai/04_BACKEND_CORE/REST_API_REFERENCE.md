@@ -46,7 +46,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/zones | auth:sanctum | Список зон (фильтры по теплице, статусу) |
 | POST | /api/zones | auth:sanctum (operator/admin/agronomist/engineer) | Создать зону |
 | GET | /api/zones/{id} | auth:sanctum | Детали зоны + активный рецепт |
-| PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны |
+| PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны, включая `automation_runtime=ae2|ae3` |
 | DELETE| /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить зону (если нет активных зависимостей) |
 
 Доп. действия:
@@ -69,6 +69,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
+
+Контракт `PATCH /api/zones/{id}`:
+- допускает `automation_runtime: "ae2" | "ae3"`
+- при busy zone возвращает `409` с `code=runtime_switch_denied_zone_busy`
+- busy zone определяется через active `ae_tasks`, active `ae_zone_leases` или indeterminate `ae_commands` state
 
 ---
 
@@ -299,6 +304,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (по умолчанию 600 сек);
 - при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
   `task_status` и `reason=start_cycle_intent_terminal`.
+- для зон с `zones.automation_runtime='ae3'` поле `task_id` содержит canonical numeric AE3 task id
+  (в JSON остаётся строкой для совместимости внешнего контракта);
+- если AE3-ответ не содержит canonical numeric `task_id`, Laravel scheduler трактует submit как failed/retryable
+  и не создаёт fallback snapshot с `intent-*`;
+- для зон с `zones.automation_runtime='ae2'` сохраняется legacy compatibility `task_id=intent-<id>`.
 
 Контракт `POST /zones/{id}/start-relay-autotune`:
 - тело запроса: `{ "pid_type": "ph" | "ec" }`;
@@ -322,7 +332,7 @@ Response:
     "accepted": true,
     "runner_state": "active",
     "deduplicated": false,
-    "task_id": "intent-505",
+    "task_id": "321",
     "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
   }
 }
@@ -337,7 +347,7 @@ Response (terminal intent):
     "accepted": false,
     "runner_state": "terminal",
     "deduplicated": true,
-    "task_id": "intent-88",
+    "task_id": "321",
     "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z",
     "task_status": "failed",
     "reason": "start_cycle_intent_terminal"

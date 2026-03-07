@@ -56,6 +56,9 @@ Breaking-change: несовместимые изменения в защищен
 #### [ae3lite.md](ae3lite.md)
 Канонический план реализации AE3-Lite (DDD/OOP/Clean, polling-first, DB-first runtime, canary/rollback).
 
+#### [AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md](AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md)
+Ручной rollout/rollback runbook для `zones.automation_runtime` и AE3 handoff guards.
+
 #### [archive/ae3full.md](archive/ae3full.md)
 Архивный план AE3FULL (исторический reference, не канон).
 

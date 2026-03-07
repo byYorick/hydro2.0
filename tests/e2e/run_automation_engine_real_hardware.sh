@@ -37,11 +37,12 @@ fi
 
 : "${TEST_NODE_GH_UID:=gh-test-1}"
 : "${TEST_NODE_ZONE_UID:=zn-test-1}"
-: "${TEST_NODE_UID:=nd-test-irrig-1}"
-: "${TEST_WORKFLOW_NODE_UID:=${TEST_NODE_UID}}"
-: "${TEST_PH_NODE_UID:=nd-test-ph-1}"
-: "${TEST_EC_NODE_UID:=nd-test-ec-1}"
+: "${TEST_NODE_UID:=auto}"
+: "${TEST_WORKFLOW_NODE_UID:=auto}"
+: "${TEST_PH_NODE_UID:=auto}"
+: "${TEST_EC_NODE_UID:=auto}"
 : "${TEST_NODE_HW_ID:=auto}"
+: "${REAL_HW_REBOOT_CMD:=restart}"
 : "${MQTT_LIVE_SCAN_SEC:=25}"
 : "${MQTT_TEMP_WAIT_SEC:=180}"
 : "${NODE_RECREATE_WAIT_SEC:=240}"
@@ -60,6 +61,48 @@ HISTORY_LOGGER_TOKEN="${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-1
 SCENARIO_SET="${SCENARIO_SET:-full}"
 LIST_ONLY=0
 SCENARIOS=()
+
+is_auto_uid() {
+  local uid="${1:-}"
+  [ -z "$uid" ] || [ "$uid" = "auto" ]
+}
+
+uid_matches_discovery_filter() {
+  local uid="${1:-}"
+  local regex="${E2E_NODE_UID_REGEX:-}"
+  if [ -z "$uid" ]; then
+    return 1
+  fi
+  if [ -z "$regex" ]; then
+    return 0
+  fi
+  printf '%s\n' "$uid" | rg -qx "$regex"
+}
+
+uid_in_list() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    if [ "$item" = "$needle" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+first_uid_matching_pattern() {
+  local regex="$1"
+  shift
+  local uid
+  for uid in "$@"; do
+    if printf '%s\n' "$uid" | rg -q "$regex"; then
+      printf '%s\n' "$uid"
+      return 0
+    fi
+  done
+  return 1
+}
 
 sync_automation_engine_env() {
   local url host_port parsed_host parsed_port
@@ -95,6 +138,8 @@ AUTOMATION_SCENARIOS=(
   "scenarios/automation_engine/E67_nutrition_strict_contract.yaml"
   "scenarios/automation_engine/E68_full_prod_path_strict_ec_ph_corrections.yaml"
   "scenarios/automation_engine/E74_node_zone_mismatch_guard.yaml"
+  "scenarios/automation_engine/E80_ph_pid_ki_convergence.yaml"
+  "scenarios/automation_engine/E81_ec_correction_partial_calibration.yaml"
 )
 WORKFLOW_SCENARIOS=(
   "scenarios/workflow/E83_clean_water_fill.yaml"
@@ -104,24 +149,33 @@ WORKFLOW_SCENARIOS=(
   "scenarios/workflow/E87_ec_ph_correction_during_fill.yaml"
   "scenarios/workflow/E88_config_report_soft_deactivate_channels.yaml"
   "scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml"
+  "scenarios/workflow/E94_startup_to_ready_smoke.yaml"
+)
+AE3LITE_SCENARIOS=(
+  "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml"
 )
 
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|full] [--list]
 
 Env:
-  SCENARIO_SET=automation|workflow|full   # default: full
+  SCENARIO_SET=automation|workflow|ae3lite|full   # default: full
+  TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID=auto|<uid>
+  REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
+  E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
   E2E_SCENARIO_INCLUDE_REGEX=<regex>      # optional include filter
   E2E_SCENARIO_EXCLUDE_REGEX=<regex>      # optional exclude filter
 EOF
 }
 
 collect_full_scenarios() {
-  find "$SCRIPT_DIR/scenarios" -type f -name '*.yaml' -print \
-    | sed "s#^$SCRIPT_DIR/##" \
-    | LC_ALL=C sort
+  printf '%s\n' \
+    "${AUTOMATION_SCENARIOS[@]}" \
+    "${WORKFLOW_SCENARIOS[@]}" \
+    "${AE3LITE_SCENARIOS[@]}" \
+    | LC_ALL=C sort -u
 }
 
 apply_scenario_filters() {
@@ -149,6 +203,9 @@ resolve_scenarios() {
       ;;
     workflow)
       SCENARIOS=("${WORKFLOW_SCENARIOS[@]}")
+      ;;
+    ae3lite)
+      SCENARIOS=("${AE3LITE_SCENARIOS[@]}")
       ;;
     full)
       mapfile -t SCENARIOS < <(collect_full_scenarios)
@@ -186,7 +243,7 @@ for arg in "$@"; do
       SCENARIO_SET="${arg#--set=}"
       ;;
     --set)
-      echo "❌ Используйте формат --set=<automation|workflow|full>"
+      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|full>"
       exit 1
       ;;
     --list)
@@ -473,15 +530,17 @@ PY
 
 build_mqtt_command_payload() {
   local cmd="$1"
-  "$PYTHON_BIN" - <<'PY' "$cmd"
+  local cmd_id="${2:-}"
+  "$PYTHON_BIN" - <<'PY' "$cmd" "$cmd_id"
 import json
 import sys
 import time
 import uuid
 
 cmd = sys.argv[1]
+cmd_id = sys.argv[2] or str(uuid.uuid4())
 payload = {
-    "cmd_id": str(uuid.uuid4()),
+    "cmd_id": cmd_id,
     "cmd": cmd,
     "params": {},
     "ts": int(time.time()),
@@ -489,6 +548,98 @@ payload = {
 }
 print(json.dumps(payload, separators=(",", ":")))
 PY
+}
+
+extract_cmd_id_from_payload_json() {
+  local payload_json="$1"
+  "$PYTHON_BIN" - <<'PY' "$payload_json"
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+print(str(payload.get("cmd_id") or "").strip())
+PY
+}
+
+publish_direct_command_and_wait_terminal() {
+  local topic="$1"
+  local payload_json="$2"
+  local timeout_sec="${3:-30}"
+  local raw_file cmd_id sub_pid publish_ok=0
+
+  cmd_id="$(extract_cmd_id_from_payload_json "$payload_json" || true)"
+  if [ -z "$cmd_id" ]; then
+    echo "❌ Не удалось извлечь cmd_id из direct MQTT payload"
+    return 1
+  fi
+
+  raw_file="$(mktemp /tmp/e2e_direct_command_response.XXXXXX)"
+  set +e
+  "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T mosquitto sh -lc \
+    "timeout ${timeout_sec}s mosquitto_sub -h localhost -p 1883 -t 'hydro/+/+/+/+/command_response' -v" >"$raw_file" 2>/dev/null &
+  sub_pid=$!
+  set -e
+
+  sleep 1
+  if mqtt_publish_json "$topic" "$payload_json"; then
+    publish_ok=1
+  fi
+
+  set +e
+  wait "$sub_pid"
+  set -e
+
+  if [ "$publish_ok" -ne 1 ]; then
+    rm -f "$raw_file"
+    echo "❌ Не удалось опубликовать direct MQTT command: topic=$topic cmd_id=$cmd_id"
+    return 1
+  fi
+
+  local response_summary
+  response_summary="$("$PYTHON_BIN" - <<'PY' "$raw_file" "$cmd_id"
+import json
+import sys
+
+raw_file, expected_cmd_id = sys.argv[1:3]
+terminal = {"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"}
+
+with open(raw_file, "r", encoding="utf-8") as handle:
+    for line in handle:
+        line = line.strip()
+        if not line or " " not in line:
+            continue
+        topic, payload_raw = line.split(" ", 1)
+        try:
+            payload = json.loads(payload_raw)
+        except Exception:
+            continue
+        if str(payload.get("cmd_id") or "").strip() != expected_cmd_id:
+            continue
+        status = str(payload.get("status") or "").strip().upper()
+        if status not in terminal:
+            continue
+        print(f"{status}|{topic}|{json.dumps(payload, separators=(',', ':'))}")
+        raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+  )" || true
+  rm -f "$raw_file"
+
+  if [ -z "$response_summary" ]; then
+    echo "❌ Не получен terminal command_response для direct MQTT command: topic=$topic cmd_id=$cmd_id"
+    return 1
+  fi
+
+  local terminal_status response_topic response_payload
+  IFS='|' read -r terminal_status response_topic response_payload <<<"$response_summary"
+  if [ "$terminal_status" != "DONE" ]; then
+    echo "❌ Direct MQTT command завершился неуспешно: topic=$topic cmd_id=$cmd_id status=$terminal_status response=$response_payload"
+    return 1
+  fi
+
+  echo "✅ Direct MQTT command завершился DONE: topic=$response_topic cmd_id=$cmd_id"
+  return 0
 }
 
 build_config_switch_payload() {
@@ -628,32 +779,86 @@ wait_nodes_in_temp_heartbeat_topics() {
   done
 }
 
+resolve_reboot_uid_from_topics_file() {
+  local expected_topics_file="$1"
+  local reboot_uid=""
+  local expected_uids=()
+  mapfile -t expected_uids < <(cut -d'|' -f3 "$expected_topics_file" | sed '/^$/d' | sort -u)
+
+  if ! is_auto_uid "${TEST_WORKFLOW_NODE_UID:-}" && uid_in_list "$TEST_WORKFLOW_NODE_UID" "${expected_uids[@]}"; then
+    reboot_uid="$TEST_WORKFLOW_NODE_UID"
+  elif ! is_auto_uid "${TEST_NODE_UID:-}" && uid_in_list "$TEST_NODE_UID" "${expected_uids[@]}"; then
+    reboot_uid="$TEST_NODE_UID"
+  else
+    reboot_uid="$(first_uid_matching_pattern '(^|[-_])irrig([-_]|$)' "${expected_uids[@]}" || true)"
+    if [ -z "$reboot_uid" ]; then
+      reboot_uid="${expected_uids[0]:-}"
+    fi
+  fi
+
+  if [ -z "$reboot_uid" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$reboot_uid"
+  return 0
+}
+
 publish_reboot_to_temp_topics() {
   local expected_topics_file="$1"
   local payload
   local reboot_uid=""
-  payload="$(build_mqtt_command_payload "reboot")"
+  payload="$(build_mqtt_command_payload "$REAL_HW_REBOOT_CMD")"
 
-  if cut -d'|' -f3 "$expected_topics_file" | sed '/^$/d' | sort -u | rg -qx "nd-test-irrig-1"; then
-    reboot_uid="nd-test-irrig-1"
-  else
-    reboot_uid="$(cut -d'|' -f3 "$expected_topics_file" | sed '/^$/d' | sort -u | head -n 1)"
-  fi
-
-  if [ -z "$reboot_uid" ]; then
+  if ! reboot_uid="$(resolve_reboot_uid_from_topics_file "$expected_topics_file")"; then
     echo "❌ Нет нод для reboot в temp namespace"
     return 1
   fi
 
   local reboot_topic
   reboot_topic="hydro/gh-temp/zn-temp/${reboot_uid}/system/command"
-  echo "↪ reboot (hardware): topic=$reboot_topic"
-  if ! mqtt_publish_json "$reboot_topic" "$payload"; then
-    echo "❌ Не удалось отправить reboot в temp topic: node=$reboot_uid"
+  echo "↪ reboot (hardware): topic=$reboot_topic cmd=$REAL_HW_REBOOT_CMD"
+  if ! publish_direct_command_and_wait_terminal "$reboot_topic" "$payload" 30; then
+    echo "❌ Не удалось завершить reboot в temp topic: node=$reboot_uid"
     return 1
   fi
 
   echo "✅ Reboot отправлен в 1 temp topic (node=$reboot_uid)"
+  return 0
+}
+
+publish_reboot_to_live_topics() {
+  local topics_file="$1"
+  local payload reboot_uid namespace_row reboot_gh_uid reboot_zone_uid reboot_topic
+  payload="$(build_mqtt_command_payload "$REAL_HW_REBOOT_CMD")"
+
+  if ! reboot_uid="$(resolve_reboot_uid_from_topics_file "$topics_file")"; then
+    echo "❌ Нет нод для reboot в исходном live namespace"
+    return 1
+  fi
+
+  namespace_row="$(awk -F'|' -v uid="$reboot_uid" '$3==uid {print $1 "|" $2; exit}' "$topics_file")"
+  if [ -z "$namespace_row" ]; then
+    namespace_row="$(awk -F'|' 'NF >= 3 {print $1 "|" $2; exit}' "$topics_file")"
+  fi
+  if [ -z "$namespace_row" ]; then
+    echo "❌ Не удалось определить namespace для reboot: node=$reboot_uid"
+    return 1
+  fi
+  IFS='|' read -r reboot_gh_uid reboot_zone_uid <<<"$namespace_row"
+  if [ -z "$reboot_gh_uid" ] || [ -z "$reboot_zone_uid" ]; then
+    echo "❌ Невалидный namespace для reboot: row=$namespace_row node=$reboot_uid"
+    return 1
+  fi
+
+  reboot_topic="hydro/${reboot_gh_uid}/${reboot_zone_uid}/${reboot_uid}/system/command"
+  echo "↪ reboot (live): topic=$reboot_topic cmd=$REAL_HW_REBOOT_CMD"
+  if ! publish_direct_command_and_wait_terminal "$reboot_topic" "$payload" 30; then
+    echo "❌ Не удалось завершить reboot в live topic: node=$reboot_uid"
+    return 1
+  fi
+
+  echo "✅ Reboot отправлен в 1 live topic (node=$reboot_uid)"
   return 0
 }
 
@@ -664,6 +869,8 @@ wait_nodes_recreated_in_db() {
   local missing_nodes
   local started_at
   local uid
+  local zone_uid="${TEST_NODE_ZONE_UID:-}"
+  local test_zone_id=""
 
   mapfile -t expected_nodes < <(cut -d'|' -f3 "$expected_topics_file" | sed '/^$/d' | sort -u)
   if [ "${#expected_nodes[@]}" -eq 0 ]; then
@@ -671,12 +878,31 @@ wait_nodes_recreated_in_db() {
     return 1
   fi
 
+  if [ -n "$zone_uid" ]; then
+    test_zone_id="$(db_query_line "SELECT id FROM zones WHERE uid = '${zone_uid}' ORDER BY id DESC LIMIT 1;")" || true
+  fi
+
   started_at="$(date +%s)"
   while true; do
     missing_nodes=""
     for uid in "${expected_nodes[@]}"; do
       local db_row
-      db_row="$(db_query_line "SELECT id FROM nodes WHERE uid = '${uid}' AND zone_id IS NULL AND lifecycle_state = 'REGISTERED_BACKEND' AND last_seen_at > NOW() - INTERVAL '15 minutes' ORDER BY last_seen_at DESC NULLS LAST LIMIT 1;")"
+      db_row="$(db_query_line "
+        SELECT id
+        FROM nodes
+        WHERE uid = '${uid}'
+          AND last_seen_at > NOW() - INTERVAL '15 minutes'
+          AND (
+            (zone_id IS NULL AND lifecycle_state = 'REGISTERED_BACKEND')
+            OR (
+              '${test_zone_id}' <> ''
+              AND zone_id = CAST('${test_zone_id}' AS bigint)
+              AND lifecycle_state IN ('ASSIGNED_TO_ZONE', 'ACTIVE')
+            )
+          )
+        ORDER BY last_seen_at DESC NULLS LAST
+        LIMIT 1;
+      ")"
       if [ -z "$db_row" ]; then
         if [ -z "$missing_nodes" ]; then
           missing_nodes="$uid"
@@ -687,12 +913,12 @@ wait_nodes_recreated_in_db() {
     done
 
     if [ -z "$missing_nodes" ]; then
-      echo "✅ Все ноды после reboot зарегистрировались в БД как новые (REGISTERED_BACKEND)"
+      echo "✅ Все ноды после reboot снова видны в БД в допустимом lifecycle state"
       return 0
     fi
 
     if [ $(( "$(date +%s)" - started_at )) -ge "$timeout_sec" ]; then
-      echo "❌ Не дождались регистрации новых нод в БД за ${timeout_sec}s. missing=${missing_nodes}"
+      echo "❌ Не дождались появления нод в БД после reboot за ${timeout_sec}s. missing=${missing_nodes}"
       db_query_line "SELECT id, uid, hardware_id, zone_id, pending_zone_id, lifecycle_state, status, last_seen_at FROM nodes ORDER BY last_seen_at DESC NULLS LAST LIMIT 20;" || true
       return 1
     fi
@@ -703,20 +929,39 @@ wait_nodes_recreated_in_db() {
 build_bind_uids_from_runtime() {
   local out_file="$1"
   local scan_seconds="${2:-20}"
-  local scan_file db_file
+  local scan_file db_file filtered_file explicit_file
   scan_file="$(mktemp /tmp/e2e_bind_scan.XXXXXX)"
   db_file="$(mktemp /tmp/e2e_bind_db.XXXXXX)"
+  filtered_file="$(mktemp /tmp/e2e_bind_filtered.XXXXXX)"
+  explicit_file="$(mktemp /tmp/e2e_bind_explicit.XXXXXX)"
 
   collect_live_heartbeat_topics "$scan_file" "$scan_seconds" || true
-  (cut -d'|' -f3 "$scan_file" | sed '/^$/d' | rg '^nd-test-' || true) > "${scan_file}.uids"
-  db_query_line "SELECT uid FROM nodes WHERE uid LIKE 'nd-test-%' AND last_seen_at > NOW() - INTERVAL '15 minutes' ORDER BY uid;" > "$db_file" || true
+  cut -d'|' -f3 "$scan_file" | sed '/^$/d' > "${scan_file}.uids"
+  db_query_line "SELECT uid FROM nodes WHERE zone_id IS NULL AND last_seen_at > NOW() - INTERVAL '15 minutes' ORDER BY uid;" > "$db_file" || true
 
   {
     cat "${scan_file}.uids" 2>/dev/null || true
     cat "$db_file" 2>/dev/null || true
+  } | sed '/^$/d' | sort -u | while IFS= read -r uid; do
+    if uid_matches_discovery_filter "$uid"; then
+      printf '%s\n' "$uid"
+    fi
+  done > "$filtered_file"
+
+  : > "$explicit_file"
+  local explicit_uid
+  for explicit_uid in "${TEST_NODE_UID:-}" "${TEST_WORKFLOW_NODE_UID:-}" "${TEST_PH_NODE_UID:-}" "${TEST_EC_NODE_UID:-}"; do
+    if ! is_auto_uid "$explicit_uid"; then
+      printf '%s\n' "$explicit_uid" >> "$explicit_file"
+    fi
+  done
+
+  {
+    cat "$filtered_file" 2>/dev/null || true
+    cat "$explicit_file" 2>/dev/null || true
   } | sed '/^$/d' | sort -u > "$out_file"
 
-  rm -f "$scan_file" "${scan_file}.uids" "$db_file"
+  rm -f "$scan_file" "${scan_file}.uids" "$db_file" "$filtered_file" "$explicit_file"
   return 0
 }
 
@@ -900,7 +1145,7 @@ broadcast_reset_state_for_available_topics() {
   local rows
   local sent_count=0
 
-  rows="$(db_query_line "SELECT DISTINCT uid, COALESCE(zone_id, 0) FROM nodes WHERE last_seen_at > NOW() - INTERVAL '20 minutes' AND (uid LIKE 'nd-test-%' OR uid = '${primary_uid}' OR hardware_id = '${node_hw_id}') ORDER BY uid;")"
+  rows="$(db_query_line "SELECT DISTINCT uid, COALESCE(zone_id, 0) FROM nodes WHERE last_seen_at > NOW() - INTERVAL '20 minutes' ORDER BY uid;")"
   if [ -z "$rows" ]; then
     echo "⚠️ Не найден список нод для broadcast reset_state, отправляю только primary uid=$primary_uid"
     if ! ae_publish_command "$preferred_zone_id" "$primary_uid" "system" "reset_state" "{}"; then
@@ -913,6 +1158,9 @@ broadcast_reset_state_for_available_topics() {
 
   while IFS='|' read -r reset_uid reset_zone_id; do
     if [ -z "$reset_uid" ]; then
+      continue
+    fi
+    if ! uid_matches_discovery_filter "$reset_uid" && [ "$reset_uid" != "$primary_uid" ]; then
       continue
     fi
     if [ -z "$reset_zone_id" ] || [ "$reset_zone_id" = "0" ]; then
@@ -1003,16 +1251,26 @@ prepare_real_hardware_node() {
     exit 1
   fi
 
+  local temp_namespace_ready=0
   echo "⏳ Жду появления всех нод в temp heartbeat topics..."
-  if ! wait_nodes_in_temp_heartbeat_topics "$live_topics_file" "$MQTT_TEMP_WAIT_SEC"; then
-    echo "❌ Ноды не перешли в temp namespace"
-    exit 1
+  if wait_nodes_in_temp_heartbeat_topics "$live_topics_file" "$MQTT_TEMP_WAIT_SEC"; then
+    temp_namespace_ready=1
+  else
+    echo "⚠️ Temp heartbeat namespace не появился за ${MQTT_TEMP_WAIT_SEC}s; пробую reboot по исходным live topics."
   fi
 
-  echo "🔁 Пушу reboot в temp topics..."
-  if ! publish_reboot_to_temp_topics "$live_topics_file"; then
-    echo "❌ Не удалось отправить reboot в temp topics"
-    exit 1
+  if [ "$temp_namespace_ready" -eq 1 ]; then
+    echo "🔁 Пушу reboot в temp topics..."
+    if ! publish_reboot_to_temp_topics "$live_topics_file"; then
+      echo "❌ Не удалось отправить reboot в temp topics"
+      exit 1
+    fi
+  else
+    echo "🔁 Temp namespace не подтверждён, пушу reboot в исходный live namespace..."
+    if ! publish_reboot_to_live_topics "$live_topics_file"; then
+      echo "❌ Не удалось отправить reboot в исходный live namespace"
+      exit 1
+    fi
   fi
 
   echo "⏳ Жду регистрации нод в БД как новых после reboot..."
@@ -1029,7 +1287,13 @@ prepare_real_hardware_node() {
   rm -f "$bind_uids_file"
 
   if [ "${#bind_uids[@]}" -eq 0 ]; then
-    mapfile -t bind_uids < <(cut -d'|' -f3 "$live_topics_file" | sed '/^$/d' | sort -u | rg '^nd-test-' || true)
+    mapfile -t bind_uids < <(
+      cut -d'|' -f3 "$live_topics_file" | sed '/^$/d' | sort -u | while IFS= read -r uid; do
+        if uid_matches_discovery_filter "$uid"; then
+          printf '%s\n' "$uid"
+        fi
+      done
+    )
   fi
   if [ "${#bind_uids[@]}" -eq 0 ]; then
     mapfile -t bind_uids < <(cut -d'|' -f3 "$live_topics_file" | sed '/^$/d' | sort -u)
@@ -1109,13 +1373,36 @@ prepare_real_hardware_node() {
     sleep 3
   done
 
+  local node_meta_rows
+  node_meta_rows="$(db_query_line "SELECT uid, COALESCE(type, ''), COALESCE(hardware_id, '') FROM nodes WHERE zone_id = ${zone_id} AND last_seen_at > NOW() - INTERVAL '15 minutes' ORDER BY uid;")"
+  declare -A bound_node_types=()
+  declare -A bound_node_hw_ids=()
+  while IFS='|' read -r bound_uid bound_type bound_hw_id; do
+    if [ -z "$bound_uid" ] || ! uid_in_list "$bound_uid" "${bind_uids[@]}"; then
+      continue
+    fi
+    bound_node_types["$bound_uid"]="$bound_type"
+    bound_node_hw_ids["$bound_uid"]="$bound_hw_id"
+  done <<< "$node_meta_rows"
+
   local primary_uid=""
-  if [ -n "${TEST_NODE_UID:-}" ] && [ "${TEST_NODE_UID}" != "auto" ]; then
+  if ! is_auto_uid "${TEST_NODE_UID:-}" && uid_in_list "$TEST_NODE_UID" "${bind_uids[@]}"; then
     primary_uid="$TEST_NODE_UID"
-  elif printf '%s\n' "${bind_uids[@]}" | rg -qx "nd-test-irrig-1"; then
-    primary_uid="nd-test-irrig-1"
+  elif ! is_auto_uid "${TEST_WORKFLOW_NODE_UID:-}" && uid_in_list "$TEST_WORKFLOW_NODE_UID" "${bind_uids[@]}"; then
+    primary_uid="$TEST_WORKFLOW_NODE_UID"
   else
-    primary_uid="${bind_uids[0]}"
+    for uid in "${bind_uids[@]}"; do
+      if [ "${bound_node_types[$uid]:-}" = "irrig" ]; then
+        primary_uid="$uid"
+        break
+      fi
+    done
+    if [ -z "$primary_uid" ]; then
+      primary_uid="$(first_uid_matching_pattern '(^|[-_])irrig([-_]|$)' "${bind_uids[@]}" || true)"
+    fi
+    if [ -z "$primary_uid" ]; then
+      primary_uid="${bind_uids[0]}"
+    fi
   fi
 
   local primary_row
@@ -1126,26 +1413,70 @@ prepare_real_hardware_node() {
   fi
 
   local primary_hw_id
-  local ph_uid="$TEST_PH_NODE_UID"
-  local ec_uid="$TEST_EC_NODE_UID"
-  if ! printf '%s\n' "${bind_uids[@]}" | rg -qx "${ph_uid}"; then
-    if printf '%s\n' "${bind_uids[@]}" | rg -qx "nd-test-ph-1"; then
-      ph_uid="nd-test-ph-1"
-    else
-      ph_uid="$TEST_NODE_UID"
+  local workflow_uid="$primary_uid"
+  if ! is_auto_uid "${TEST_WORKFLOW_NODE_UID:-}" && uid_in_list "$TEST_WORKFLOW_NODE_UID" "${bind_uids[@]}"; then
+    workflow_uid="$TEST_WORKFLOW_NODE_UID"
+  fi
+
+  local ph_uid=""
+  if ! is_auto_uid "${TEST_PH_NODE_UID:-}" && uid_in_list "$TEST_PH_NODE_UID" "${bind_uids[@]}"; then
+    ph_uid="$TEST_PH_NODE_UID"
+  else
+    for uid in "${bind_uids[@]}"; do
+      if [ "${bound_node_types[$uid]:-}" = "ph" ] && [ "$uid" != "$primary_uid" ]; then
+        ph_uid="$uid"
+        break
+      fi
+    done
+    if [ -z "$ph_uid" ]; then
+      ph_uid="$(first_uid_matching_pattern '(^|[-_])ph([-_]|$)|(^|[-_])dosing([-_]|$)' "${bind_uids[@]}" || true)"
+    fi
+    if [ -z "$ph_uid" ]; then
+      for uid in "${bind_uids[@]}"; do
+        if [ "$uid" != "$primary_uid" ]; then
+          ph_uid="$uid"
+          break
+        fi
+      done
+    fi
+    if [ -z "$ph_uid" ]; then
+      ph_uid="$primary_uid"
     fi
   fi
-  if ! printf '%s\n' "${bind_uids[@]}" | rg -qx "${ec_uid}"; then
-    if printf '%s\n' "${bind_uids[@]}" | rg -qx "nd-test-ec-1"; then
-      ec_uid="nd-test-ec-1"
-    else
-      ec_uid="$TEST_NODE_UID"
+
+  local ec_uid=""
+  if ! is_auto_uid "${TEST_EC_NODE_UID:-}" && uid_in_list "$TEST_EC_NODE_UID" "${bind_uids[@]}"; then
+    ec_uid="$TEST_EC_NODE_UID"
+  else
+    for uid in "${bind_uids[@]}"; do
+      if [ "${bound_node_types[$uid]:-}" = "ec" ] && [ "$uid" != "$primary_uid" ]; then
+        ec_uid="$uid"
+        break
+      fi
+    done
+    if [ -z "$ec_uid" ]; then
+      ec_uid="$(first_uid_matching_pattern '(^|[-_])ec([-_]|$)' "${bind_uids[@]}" || true)"
+    fi
+    if [ -z "$ec_uid" ]; then
+      for uid in "${bind_uids[@]}"; do
+        if [ "$uid" != "$primary_uid" ] && [ "$uid" != "$ph_uid" ]; then
+          ec_uid="$uid"
+          break
+        fi
+      done
+    fi
+    if [ -z "$ec_uid" ]; then
+      if [ "$ph_uid" != "$primary_uid" ]; then
+        ec_uid="$ph_uid"
+      else
+        ec_uid="$primary_uid"
+      fi
     fi
   fi
 
   IFS='|' read -r TEST_NODE_UID primary_hw_id TEST_NODE_ZONE_UID TEST_NODE_GH_UID <<<"$primary_row"
   TEST_NODE_HW_ID="$primary_hw_id"
-  TEST_WORKFLOW_NODE_UID="$TEST_NODE_UID"
+  TEST_WORKFLOW_NODE_UID="$workflow_uid"
   TEST_PH_NODE_UID="$ph_uid"
   TEST_EC_NODE_UID="$ec_uid"
   export TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID

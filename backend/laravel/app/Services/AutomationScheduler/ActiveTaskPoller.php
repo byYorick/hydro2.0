@@ -7,10 +7,14 @@ use App\Models\SchedulerLog;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ActiveTaskPoller
 {
+    use ResolvesAutomationRuntime;
+
     public function __construct(
         private readonly ActiveTaskStore $activeTaskStore,
     ) {}
@@ -45,6 +49,7 @@ class ActiveTaskPoller
             $scheduleKey = trim((string) $task->schedule_key);
             $isBusy = $this->reconcilePersistedActiveTask(
                 task: $task,
+                cfg: $cfg,
                 now: $now,
                 writeLog: $writeLog,
             );
@@ -108,6 +113,7 @@ class ActiveTaskPoller
 
         $isBusy = $this->reconcilePersistedActiveTask(
             task: $task,
+            cfg: $cfg,
             now: $now,
             writeLog: $writeLog,
         );
@@ -127,6 +133,7 @@ class ActiveTaskPoller
      */
     private function reconcilePersistedActiveTask(
         LaravelSchedulerActiveTask $task,
+        array $cfg,
         CarbonImmutable $now,
         callable $writeLog,
     ): bool {
@@ -169,7 +176,7 @@ class ActiveTaskPoller
             }
         }
 
-        $status = $this->fetchTaskStatus($taskId);
+        $status = $this->fetchTaskStatus($task, $taskId, $cfg);
         if ($status === null) {
             $this->activeTaskStore->touchPolledAt($taskId, $now, null);
 
@@ -218,11 +225,18 @@ class ActiveTaskPoller
         return '';
     }
 
-    private function fetchTaskStatus(string $taskId): ?string
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
+    private function fetchTaskStatus(LaravelSchedulerActiveTask $task, string $taskId, array $cfg): ?string
     {
         $taskId = trim($taskId);
         if ($taskId === '') {
             return null;
+        }
+
+        if ($this->resolveAutomationRuntime((int) $task->zone_id, 'laravel scheduler task') === 'ae3') {
+            return $this->fetchAe3CanonicalTaskStatus($task, $taskId, $cfg);
         }
 
         if (preg_match('/^intent-(\d+)$/', $taskId, $matches) === 1) {
@@ -285,6 +299,90 @@ class ActiveTaskPoller
         }
 
         return SchedulerConstants::normalizeTerminalStatus($status);
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
+    private function fetchAe3CanonicalTaskStatus(
+        LaravelSchedulerActiveTask $task,
+        string $taskId,
+        array $cfg,
+    ): ?string {
+        if (preg_match('/^\d+$/', $taskId) !== 1) {
+            Log::warning('AE3 scheduler task_id is not canonical numeric id', [
+                'task_id' => $taskId,
+                'zone_id' => (int) $task->zone_id,
+            ]);
+
+            return 'not_found';
+        }
+
+        $apiUrl = rtrim((string) ($cfg['api_url'] ?? ''), '/');
+        if ($apiUrl === '') {
+            return null;
+        }
+
+        try {
+            $response = Http::acceptJson()
+                ->timeout(max(1.0, (float) ($cfg['timeout_sec'] ?? 2.0)))
+                ->withHeaders($this->automationEngineHeaders($cfg))
+                ->get($apiUrl.'/internal/tasks/'.$taskId);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to poll AE3 canonical task status from automation-engine', [
+                'task_id' => $taskId,
+                'zone_id' => (int) $task->zone_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if ($response->status() === 404) {
+            return 'not_found';
+        }
+        if (! $response->successful()) {
+            Log::warning('Unexpected AE3 canonical task status response', [
+                'task_id' => $taskId,
+                'zone_id' => (int) $task->zone_id,
+                'status_code' => $response->status(),
+                'response' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $body = $response->json();
+        $data = is_array($body) ? ($body['data'] ?? null) : null;
+        $status = is_array($data) ? strtolower(trim((string) ($data['status'] ?? ''))) : '';
+
+        return match ($status) {
+            'pending', 'claimed', 'running', 'waiting_command' => 'accepted',
+            'completed' => 'completed',
+            'failed' => 'failed',
+            'cancelled' => 'cancelled',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     * @return array<string, string>
+     */
+    private function automationEngineHeaders(array $cfg): array
+    {
+        $headers = [
+            'Accept' => 'application/json',
+            'X-Trace-Id' => Str::lower((string) Str::uuid()),
+            'X-Scheduler-Id' => (string) ($cfg['scheduler_id'] ?? 'laravel-scheduler'),
+        ];
+
+        $token = trim((string) ($cfg['token'] ?? ''));
+        if ($token !== '') {
+            $headers['Authorization'] = 'Bearer '.$token;
+        }
+
+        return $headers;
     }
 
     private function isTerminalStatus(string $status): bool

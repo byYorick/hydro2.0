@@ -1,9 +1,9 @@
-"""Compatibility entrypoint delegating to AE2-Lite runtime."""
+"""Service entrypoint delegating to standalone AE3-Lite runtime."""
 
 import asyncio
 
-from ae2lite.main import main as run_main
+from ae3lite.main import main
 
 
 if __name__ == "__main__":
-    asyncio.run(run_main())
+    asyncio.run(main())

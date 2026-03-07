@@ -595,6 +595,29 @@ static void ui_refresh_status_labels(void) {
     ui_refresh_diag_label();
 }
 
+static bool ui_safe_label_set_text(lv_obj_t **label_slot, const char *text) {
+    lv_obj_t *label = NULL;
+
+    if (!label_slot) {
+        return false;
+    }
+
+    label = *label_slot;
+    if (!label) {
+        return false;
+    }
+
+    if (!lv_obj_is_valid(label)) {
+        ESP_LOGW(TAG, "Skipping update for invalid LVGL label slot=%p", (void *)label_slot);
+        *label_slot = NULL;
+        return false;
+    }
+
+    lv_label_set_text(label, text ? text : "");
+    lv_obj_invalidate(label);
+    return true;
+}
+
 static void ui_refresh_nodes_label(void) {
     size_t i;
     size_t row = 0;
@@ -647,31 +670,22 @@ static void ui_refresh_nodes_label(void) {
             lwt_icon,
             state_icon
         );
-        lv_label_set_text(s_nodes_label_rows[row], s_nodes_row_text_buf[row]);
-        if (s_nodes_state_rows[row]) {
-            lv_label_set_text(s_nodes_state_rows[row], s_nodes_state_text_buf[row]);
-            lv_obj_invalidate(s_nodes_state_rows[row]);
-        }
-        lv_obj_invalidate(s_nodes_label_rows[row]);
+        (void)ui_safe_label_set_text(&s_nodes_label_rows[row], s_nodes_row_text_buf[row]);
+        (void)ui_safe_label_set_text(&s_nodes_state_rows[row], s_nodes_state_text_buf[row]);
         row++;
     }
 
     if (row == 0) {
         snprintf(s_nodes_row_text_buf[0], sizeof(s_nodes_row_text_buf[0]), "%s", "(nodes empty)");
-        lv_label_set_text(s_nodes_label_rows[0], s_nodes_row_text_buf[0]);
-        lv_obj_invalidate(s_nodes_label_rows[0]);
+        (void)ui_safe_label_set_text(&s_nodes_label_rows[0], s_nodes_row_text_buf[0]);
         row = 1;
     }
 
     for (i = row; i < s_nodes_rows_count; i++) {
         s_nodes_row_text_buf[i][0] = '\0';
         s_nodes_state_text_buf[i][0] = '\0';
-        lv_label_set_text(s_nodes_label_rows[i], s_nodes_row_text_buf[i]);
-        if (s_nodes_state_rows[i]) {
-            lv_label_set_text(s_nodes_state_rows[i], s_nodes_state_text_buf[i]);
-            lv_obj_invalidate(s_nodes_state_rows[i]);
-        }
-        lv_obj_invalidate(s_nodes_label_rows[i]);
+        (void)ui_safe_label_set_text(&s_nodes_label_rows[i], s_nodes_row_text_buf[i]);
+        (void)ui_safe_label_set_text(&s_nodes_state_rows[i], s_nodes_state_text_buf[i]);
     }
 
     if (s_nodes_box) {

@@ -11,7 +11,7 @@
     <div class="p-4 space-y-4 border-t border-[color:var(--border-muted)]">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <p class="text-xs text-[color:var(--text-dim)]">
-          Мониторинг статусов `accepted/running/completed/failed/rejected/expired` для `st-*` и `intent-*`.
+          Мониторинг статусов `accepted/running/completed/failed/rejected/expired` для numeric AE3 task_id, `st-*` и `intent-*`.
         </p>
         <div class="text-xs text-[color:var(--text-muted)]">
           <span v-if="schedulerTasksUpdatedAt">Обновлено: {{ formatDateTime(schedulerTasksUpdatedAt) }}</span>
@@ -24,7 +24,7 @@
           v-model="taskIdModel"
           type="text"
           class="w-full md:flex-1 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-sm"
-          placeholder="st-... или intent-..."
+          placeholder="numeric AE3, st-... или intent-..."
         />
         <div class="flex gap-2">
           <Button

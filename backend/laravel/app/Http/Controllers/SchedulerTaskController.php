@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
 class SchedulerTaskController extends Controller
 {
     use BuildsSchedulerTaskProcessView;
-    private const TASK_ID_PATTERN = '/^(?:st-[A-Za-z0-9\-_.:]{6,128}|intent-\d{1,20})$/';
+    private const TASK_ID_PATTERN = '/^(?:\d{1,20}|st-[A-Za-z0-9\-_.:]{6,128}|intent-\d{1,20})$/';
 
     private const PROCESS_PHASE_SEQUENCE = [
         'clean_fill',

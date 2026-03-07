@@ -15,6 +15,8 @@ use Illuminate\Support\Str;
 
 class SchedulerCycleService
 {
+    use ResolvesAutomationRuntime;
+
     /**
      * @var array<int, array{task_name: string, status: string, details: string, created_at: string}>
      */
@@ -508,10 +510,12 @@ class SchedulerCycleService
 
         $body = $response->json();
         $data = is_array($body) ? ($body['data'] ?? null) : null;
-        $taskId = is_array($data) ? trim((string) ($data['task_id'] ?? '')) : '';
-        if ($taskId === '' && ($intentSnapshot['intent_id'] ?? null) !== null) {
-            $taskId = 'intent-'.(string) $intentSnapshot['intent_id'];
-        }
+        $taskIdentity = $this->resolveSubmittedTaskIdentity(
+            zoneId: $zoneId,
+            responseTaskId: is_array($data) ? trim((string) ($data['task_id'] ?? '')) : '',
+            intentId: isset($intentSnapshot['intent_id']) ? (int) $intentSnapshot['intent_id'] : null,
+        );
+        $taskId = $taskIdentity['task_id'];
         $apiTaskStatus = is_array($data)
             ? strtolower(trim((string) (($data['task_status'] ?? null) ?? ($data['status'] ?? ''))))
             : '';
@@ -520,12 +524,15 @@ class SchedulerCycleService
             accepted: (bool) (is_array($data) ? ($data['accepted'] ?? true) : true),
         );
         $isDuplicate = (bool) (is_array($data) ? ($data['deduplicated'] ?? false) : false);
+        $taskIdError = $taskIdentity['error'];
 
-        if ($taskId === '') {
+        if ($taskIdError !== null) {
             $this->writeSchedulerLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
-                'error' => 'task_id_missing',
+                'error' => $taskIdError,
+                'automation_runtime' => $taskIdentity['automation_runtime'],
+                'returned_task_id' => is_array($data) ? ($data['task_id'] ?? null) : null,
                 'response' => $body,
                 'schedule_key' => $scheduleKey,
                 'correlation_id' => $correlationId,
@@ -534,7 +541,7 @@ class SchedulerCycleService
             return [
                 'dispatched' => false,
                 'retryable' => true,
-                'reason' => 'task_id_missing',
+                'reason' => $taskIdError,
             ];
         }
 
@@ -1169,6 +1176,61 @@ class SchedulerCycleService
         }
 
         return $this->normalizeTerminalStatus($status);
+    }
+
+    /**
+     * @return array{task_id: string, automation_runtime: string, error: string|null}
+     */
+    private function resolveSubmittedTaskIdentity(int $zoneId, string $responseTaskId, ?int $intentId): array
+    {
+        $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
+        $taskId = trim($responseTaskId);
+
+        if ($automationRuntime === 'ae3') {
+            if ($taskId === '') {
+                return [
+                    'task_id' => '',
+                    'automation_runtime' => $automationRuntime,
+                    'error' => 'ae3_task_id_missing',
+                ];
+            }
+
+            if (preg_match('/^\d+$/', $taskId) !== 1) {
+                return [
+                    'task_id' => '',
+                    'automation_runtime' => $automationRuntime,
+                    'error' => 'ae3_task_id_invalid',
+                ];
+            }
+
+            return [
+                'task_id' => $taskId,
+                'automation_runtime' => $automationRuntime,
+                'error' => null,
+            ];
+        }
+
+        if ($taskId !== '') {
+            return [
+                'task_id' => $taskId,
+                'automation_runtime' => $automationRuntime,
+                'error' => null,
+            ];
+        }
+
+        if ($intentId !== null && $intentId > 0) {
+            return [
+                'task_id' => 'intent-'.$intentId,
+                'automation_runtime' => $automationRuntime,
+                'error' => null,
+            ];
+        }
+
+        return [
+            'task_id' => '',
+            'automation_runtime' => $automationRuntime,
+            'error' => 'task_id_missing',
+        ];
     }
 
     private function isTerminalStatus(string $status): bool

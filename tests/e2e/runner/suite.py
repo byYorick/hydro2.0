@@ -94,6 +94,16 @@ class TestSuite:
     def _get_suite_scenarios(self, suite_name: str) -> List[str]:
         """Get scenarios for a suite."""
         base_path = Path(__file__).parent.parent / "scenarios"
+        ae3lite_v1 = [
+            str(base_path / "ae3lite" / "E95_ae3_start_cycle_done_completed.yaml"),
+            str(base_path / "ae3lite" / "E96_ae3_start_cycle_timeout_failed.yaml"),
+            str(base_path / "ae3lite" / "E97_ae3_restart_waiting_command_recovered.yaml"),
+            str(base_path / "ae3lite" / "E98_ae3_runtime_switch_denied_busy_zone.yaml"),
+            str(base_path / "ae3lite" / "E99_ae3_double_execution_guard.yaml"),
+        ]
+        ae3lite_realhw = [
+            str(base_path / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"),
+        ]
 
         suites = {
             "smoke": [
@@ -148,14 +158,15 @@ class TestSuite:
                 str(base_path / "automation_engine" / "E61_fail_closed_corrections.yaml"),
                 str(base_path / "automation_engine" / "E64_effective_targets_only.yaml"),
                 str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
-                str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
-            ],
-            "automation_engine_realhw": [
-                str(base_path / "automation_engine" / "E61_fail_closed_corrections.yaml"),
-                str(base_path / "automation_engine" / "E64_effective_targets_only.yaml"),
-                str(base_path / "automation_engine" / "E65_phase_transition_api.yaml"),
                 str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
                 str(base_path / "automation_engine" / "E67_nutrition_strict_contract.yaml"),
+                str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
+                str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
+                str(base_path / "automation_engine" / "E80_ph_pid_ki_convergence.yaml"),
+                str(base_path / "automation_engine" / "E81_ec_correction_partial_calibration.yaml"),
+            ],
+            "automation_engine_realhw": [
+                str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
                 str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
                 str(base_path / "automation_engine" / "E74_node_zone_mismatch_guard.yaml"),
             ],
@@ -175,6 +186,9 @@ class TestSuite:
                 str(base_path / "scheduler" / "E82_dry_run_protection.yaml"),
                 str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
             ],
+            "ae3lite": ae3lite_v1 + ae3lite_realhw,
+            "ae3lite_v1": ae3lite_v1,
+            "ae3lite_realhw": ae3lite_realhw,
             "snapshot": [
                 str(base_path / "snapshot" / "E30_snapshot_contains_last_event_id.yaml"),
                 str(base_path / "snapshot" / "E31_reconnect_replay_gap.yaml"),
@@ -198,10 +212,10 @@ class TestSuite:
                 str(base_path / "workflow" / "E89_correction_state_machine_and_duration_aware.yaml"),
                 str(base_path / "workflow" / "E94_startup_to_ready_smoke.yaml"),
             ],
-            "full": self._get_all_scenarios()
+            "full": self._get_all_scenarios(),
         }
 
-        return suites.get(suite_name, [])
+        return list(dict.fromkeys(suites.get(suite_name, [])))
 
     def _get_all_scenarios(self) -> List[str]:
         """Get all available scenarios."""
@@ -236,7 +250,7 @@ class TestSuite:
             # Check if it's a predefined suite
             if path in ["smoke", "core", "commands", "alerts", "infrastructure",
                        "grow_cycle", "automation_engine", "automation_engine_realhw",
-                       "workflow", "scheduler", "snapshot", "chaos",
+                       "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "snapshot", "chaos",
                        "prod_readiness_realhw", "full"]:
                 scenarios.extend(self._get_suite_scenarios(path))
                 continue
@@ -337,6 +351,8 @@ class TestSuite:
             tags.append('grow_cycle')
         if 'automation_engine' in path_parts:
             tags.append('automation_engine')
+        if 'ae3lite' in path_parts:
+            tags.append('ae3lite')
         if 'workflow' in path_parts:
             tags.append('workflow')
         if 'scheduler' in path_parts:
@@ -349,6 +365,12 @@ class TestSuite:
         filename = Path(scenario_path).name
         if 'smoke' in filename.lower():
             tags.append('smoke')
+        if 'realhw' in filename.lower() or 'real_hardware' in filename.lower():
+            tags.append('realhw')
+        if 'two_tank' in filename.lower():
+            tags.append('two_tank')
+        if 'start_cycle' in filename.lower():
+            tags.append('start_cycle')
         if 'bootstrap' in filename.lower():
             tags.append('bootstrap')
         if 'auth' in filename.lower():
@@ -429,7 +451,7 @@ Examples:
             "--suite", "-s",
             choices=["smoke", "core", "commands", "alerts", "infrastructure",
                     "grow_cycle", "automation_engine", "automation_engine_realhw",
-                    "workflow", "scheduler", "snapshot", "chaos",
+                    "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "snapshot", "chaos",
                     "prod_readiness_realhw", "full"],
             help="Run predefined test suite"
         )
@@ -651,7 +673,7 @@ Examples:
         print("Available test suites:")
         suites = ["smoke", "core", "commands", "alerts", "infrastructure",
                  "grow_cycle", "automation_engine", "automation_engine_realhw",
-                 "workflow", "scheduler", "snapshot", "chaos",
+                 "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "snapshot", "chaos",
                  "prod_readiness_realhw", "full"]
         for suite in suites:
             scenarios = self._get_suite_scenarios(suite)

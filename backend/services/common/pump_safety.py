@@ -472,6 +472,29 @@ async def too_many_recent_failures(
     return failure_count >= max_failures
 
 
+async def _resolve_pump_node_ids(zone_id: int, pump_channel: str) -> List[int]:
+    rows = await fetch(
+        """
+        SELECT DISTINCT n.id
+        FROM nodes n
+        JOIN node_channels nc ON nc.node_id = n.id
+        WHERE n.zone_id = $1
+          AND LOWER(TRIM(COALESCE(nc.channel, ''))) = LOWER(TRIM($2))
+        ORDER BY n.id
+        """,
+        zone_id,
+        pump_channel,
+    )
+    resolved: List[int] = []
+    for row in rows or []:
+        raw_id = row.get("id")
+        try:
+            resolved.append(int(raw_id))
+        except (TypeError, ValueError):
+            continue
+    return resolved
+
+
 async def can_run_pump(
     zone_id: int,
     pump_channel: str,
@@ -500,16 +523,32 @@ async def can_run_pump(
     Returns:
         (can_run, error_message): True если можно запустить, False если нельзя
     """
-    # Проверяем MCU offline
-    mcu_online, mcu_error = await check_mcu_offline(
-        zone_id,
-        node_id,
-        telemetry_grace_sec=telemetry_grace_sec,
-        grace_node_types=grace_node_types,
-    )
-    if not mcu_online:
-        return False, f"MCU offline: {mcu_error}"
-    
+    target_node_ids: List[int] = []
+    if node_id is not None:
+        target_node_ids = [int(node_id)]
+    else:
+        target_node_ids = await _resolve_pump_node_ids(zone_id, pump_channel)
+
+    if target_node_ids:
+        for target_node_id in target_node_ids:
+            mcu_online, mcu_error = await check_mcu_offline(
+                zone_id,
+                target_node_id,
+                telemetry_grace_sec=telemetry_grace_sec,
+                grace_node_types=grace_node_types,
+            )
+            if not mcu_online:
+                return False, f"MCU offline: {mcu_error}"
+    else:
+        mcu_online, mcu_error = await check_mcu_offline(
+            zone_id,
+            None,
+            telemetry_grace_sec=telemetry_grace_sec,
+            grace_node_types=grace_node_types,
+        )
+        if not mcu_online:
+            return False, f"MCU offline: {mcu_error}"
+
     # Проверяем уровень воды (dry_run) в реальном времени
     dry_run_ok, dry_run_msg = await check_dry_run(zone_id, min_water_level)
     if not dry_run_ok:

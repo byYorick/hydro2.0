@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\NodeChannel;
 use App\Models\Zone;
@@ -182,9 +183,24 @@ class ZoneController extends Controller
             'preset_id' => ['nullable', 'integer', 'exists:presets,id'],
             'settings' => ['nullable', 'array'],
             'status' => ['sometimes', 'string', 'in:online,offline,warning'],
+            'automation_runtime' => ['sometimes', 'string', 'in:ae2,ae3'],
         ]);
 
-        $zone = $this->zoneService->update($zone, $data);
+        try {
+            $zone = $this->zoneService->update($zone, $data);
+        } catch (ZoneRuntimeSwitchDeniedException $e) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'runtime_switch_denied_zone_busy',
+                'message' => $e->getMessage(),
+                'details' => $e->details(),
+            ], Response::HTTP_CONFLICT);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         return response()->json([
             'status' => 'ok',

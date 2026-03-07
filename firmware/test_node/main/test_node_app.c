@@ -27,6 +27,7 @@
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <math.h>
 #include <time.h>
 
 static const char *TAG = "test_node_multi";
@@ -1138,6 +1139,70 @@ static esp_err_t publish_json_payload_preallocated(
     return mqtt_manager_publish_raw(topic, payload_buf, qos, retain);
 }
 
+static bool format_json_number_from_float(char *buffer, size_t buffer_size, float value) {
+    const uint32_t scale = 1000U;
+    int len;
+    int64_t scaled_abs;
+    int64_t whole_part;
+    int64_t fractional_part;
+    bool negative;
+
+    if (!buffer || buffer_size == 0) {
+        return false;
+    }
+
+    if (!isfinite(value) || fabsf(value) > 1000000000.0f) {
+        len = snprintf(buffer, buffer_size, "0");
+        return len > 0 && (size_t)len < buffer_size;
+    }
+
+    negative = value < 0.0f;
+    scaled_abs = (int64_t)llround((double)fabsf(value) * (double)scale);
+    whole_part = scaled_abs / (int64_t)scale;
+    fractional_part = scaled_abs % (int64_t)scale;
+
+    if (fractional_part == 0) {
+        len = snprintf(
+            buffer,
+            buffer_size,
+            "%s%lld",
+            negative ? "-" : "",
+            (long long)whole_part
+        );
+    } else {
+        char *dot = NULL;
+        char *tail = NULL;
+
+        len = snprintf(
+            buffer,
+            buffer_size,
+            "%s%lld.%03lld",
+            negative ? "-" : "",
+            (long long)whole_part,
+            (long long)fractional_part
+        );
+        if (len <= 0 || (size_t)len >= buffer_size) {
+            return false;
+        }
+
+        dot = strchr(buffer, '.');
+        if (!dot) {
+            return true;
+        }
+
+        tail = buffer + strlen(buffer) - 1;
+        while (tail > dot && *tail == '0') {
+            *tail-- = '\0';
+        }
+        if (tail == dot) {
+            *tail = '\0';
+        }
+        return true;
+    }
+
+    return len > 0 && (size_t)len < buffer_size;
+}
+
 static esp_err_t build_topic(char *buffer, size_t buffer_size, const char *node_uid, const char *channel, const char *message_type) {
     int len;
     char gh_uid[64];
@@ -1241,11 +1306,13 @@ static void publish_heartbeat_for_node(const char *node_uid) {
 
 static void publish_telemetry_for_node(const char *node_uid, const char *channel, const char *metric_type, float value) {
     char topic[192];
-    cJSON *json;
+    char payload[256];
+    char value_buf[32];
     bool has_sensor_mode_flags = false;
     bool sensor_mode_active = false;
+    int len;
 
-    if (!mqtt_manager_is_connected()) {
+    if (!mqtt_manager_is_connected() || !metric_type || metric_type[0] == '\0') {
         return;
     }
 
@@ -1254,15 +1321,11 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
         return;
     }
 
-    json = cJSON_CreateObject();
-    if (!json) {
+    if (!format_json_number_from_float(value_buf, sizeof(value_buf), value)) {
+        ESP_LOGE(TAG, "Failed to format telemetry value for %s/%s", node_uid, channel ? channel : "-");
         return;
     }
 
-    cJSON_AddStringToObject(json, "metric_type", metric_type);
-    cJSON_AddNumberToObject(json, "value", value);
-    cJSON_AddNumberToObject(json, "ts", (double)get_timestamp_seconds());
-    cJSON_AddBoolToObject(json, "stub", true);
     if (channel && strcmp(channel, "ph_sensor") == 0) {
         has_sensor_mode_flags = true;
         sensor_mode_active = s_virtual_state.ph_sensor_mode_active;
@@ -1270,13 +1333,37 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
         has_sensor_mode_flags = true;
         sensor_mode_active = s_virtual_state.ec_sensor_mode_active;
     }
+
     if (has_sensor_mode_flags) {
-        cJSON_AddBoolToObject(json, "flow_active", sensor_mode_active);
-        cJSON_AddBoolToObject(json, "stable", sensor_mode_active);
-        cJSON_AddBoolToObject(json, "corrections_allowed", sensor_mode_active);
+        len = snprintf(
+            payload,
+            sizeof(payload),
+            "{\"metric_type\":\"%s\",\"value\":%s,\"ts\":%lld,\"stub\":true,"
+            "\"flow_active\":%s,\"stable\":%s,\"corrections_allowed\":%s}",
+            metric_type,
+            value_buf,
+            (long long)get_timestamp_seconds(),
+            sensor_mode_active ? "true" : "false",
+            sensor_mode_active ? "true" : "false",
+            sensor_mode_active ? "true" : "false"
+        );
+    } else {
+        len = snprintf(
+            payload,
+            sizeof(payload),
+            "{\"metric_type\":\"%s\",\"value\":%s,\"ts\":%lld,\"stub\":true}",
+            metric_type,
+            value_buf,
+            (long long)get_timestamp_seconds()
+        );
     }
 
-    publish_json_payload(topic, json, 1, 0);
+    if (len <= 0 || (size_t)len >= sizeof(payload)) {
+        ESP_LOGE(TAG, "Telemetry payload overflow for %s/%s", node_uid, channel ? channel : "-");
+        return;
+    }
+
+    (void)mqtt_manager_publish_raw(topic, payload, 1, 0);
     ui_logf(
         node_uid,
         "tel %s/%s=%.2f",
@@ -1284,7 +1371,6 @@ static void publish_telemetry_for_node(const char *node_uid, const char *channel
         metric_type ? metric_type : "-",
         (double)value
     );
-    cJSON_Delete(json);
 }
 
 static esp_err_t publish_config_report_for_node(const virtual_node_t *node) {

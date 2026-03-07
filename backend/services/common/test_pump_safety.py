@@ -312,6 +312,34 @@ async def test_can_run_pump_ok():
 
 
 @pytest.mark.asyncio
+async def test_can_run_pump_scopes_mcu_check_to_pump_channel_nodes():
+    with patch("common.pump_safety.fetch") as mock_fetch, \
+         patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.check_dry_run") as mock_dry_run, \
+         patch("common.pump_safety.resolve_active_critical_alerts_by_code") as mock_resolve_dry_run, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+         patch("common.pump_safety.too_many_recent_failures") as mock_failures:
+        mock_fetch.return_value = [{"id": 7}]
+        mock_mcu.return_value = (True, None)
+        mock_dry_run.return_value = (True, None)
+        mock_resolve_dry_run.return_value = None
+        mock_get_alerts.return_value = []
+        mock_failures.return_value = False
+
+        can_run, error_msg = await can_run_pump(12, "pump_main")
+
+        assert can_run is True
+        assert error_msg is None
+        mock_mcu.assert_awaited_once_with(
+            12,
+            7,
+            telemetry_grace_sec=0,
+            grace_node_types=None,
+        )
+        mock_fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_can_run_pump_resolves_dry_run_alert_when_water_is_safe():
     with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run, \
