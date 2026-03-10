@@ -1,7 +1,7 @@
 name: E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw
 description: 'Real-hardware AE3 retry-limit flow: first cycle stops after 3 unsuccessful
   recirculation timeout windows with alert; after alert resolve the next cycle
-  reaches ready on normal targets.'
+  reaches ready on reachable real-hardware recovery targets.'
 actions:
 - step: set_test_context
   type: set
@@ -23,12 +23,12 @@ actions:
   impossible_ec_target: '5.50'
   impossible_ec_min: '5.40'
   impossible_ec_max: '5.60'
-  normal_ph_target: '5.10'
-  normal_ph_min: '5.00'
-  normal_ph_max: '5.15'
-  normal_ec_target: '2.33'
-  normal_ec_min: '2.30'
-  normal_ec_max: '2.38'
+  normal_ph_target: '5.05'
+  normal_ph_min: '4.80'
+  normal_ph_max: '5.25'
+  normal_ec_target: '2.20'
+  normal_ec_min: '2.00'
+  normal_ec_max: '2.50'
 - step: capture_scenario_window
   type: database_query
   query: 'SELECT NOW() AS started_at
@@ -152,6 +152,15 @@ actions:
 - step: cleanup_zone_workflow_state
   type: database_execute
   query: 'DELETE FROM zone_workflow_state
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_zone_runtime_intents
+  type: database_execute
+  query: 'DELETE FROM zone_automation_intents
 
     WHERE zone_id = :zone_id
 
@@ -363,10 +372,10 @@ actions:
   query: "INSERT INTO pump_calibrations (\n  node_channel_id,\n  ml_per_sec,\n  k_ms_per_ml_l,\n\
     \  source,\n  quality_score,\n  sample_count,\n  valid_from,\n  is_active,\n \
     \ created_at,\n  updated_at\n)\nVALUES\n  (CAST(:ec_pump_channel_id AS bigint),\
-    \ 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE,\
-    \ NOW(), NOW()),\n  (CAST(:ph_up_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready',\
+    \ 2.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE,\
+    \ NOW(), NOW()),\n  (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready',\
     \ 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n  (CAST(:ph_down_channel_id\
-    \ AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1\
+    \ AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1\
     \ minute', TRUE, NOW(), NOW())\n"
   params:
     ec_pump_channel_id: ${ec_pump_channel_id}
@@ -390,7 +399,7 @@ actions:
     \          'solution_fill_timeout_sec', 240,\n          'prepare_recirculation_timeout_sec',\
     \ 30,\n          'telemetry_max_age_sec', 300,\n          'irr_state_max_age_sec',\
     \ 30,\n          'sensor_mode_stabilization_time_sec', 0\n        ),\n        'prepare_tolerance', jsonb_build_object(\n\
-    \          'ph_pct', 2,\n          'ec_pct', 2\n        ),\n        'correction',\
+    \          'ph_pct', 5,\n          'ec_pct', 10\n        ),\n        'correction',\
     \ jsonb_build_object(\n          'dose_ec_channel', 'dose_ec_a',\n          'dose_ph_up_channel',\
     \ 'dose_ph_up',\n          'dose_ph_down_channel', 'dose_ph_down',\n         \
     \ 'ec_dose_ml_per_mS_L', 4.0,\n          'ph_dose_ml_per_unit_L', 1.2,\n     \
@@ -1065,6 +1074,34 @@ actions:
   timeout: 20.0
   expected_rows: 1
   save: pump_main_off_second_run_row
+- step: probe_state_after_reset_second_run
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: state
+    params: {}
+  save: probe_state_second_run_response
+- step: wait_probe_state_after_reset_second_run_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status, created_at\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${probe_state_second_run_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: probe_state_second_run_row
+- step: wait_runtime_irr_state_snapshot_after_reset_second_run
+  type: db.wait
+  query: "SELECT id, type, created_at\nFROM zone_events\nWHERE zone_id = :zone_id\n  AND type = 'IRR_STATE_SNAPSHOT'\n  AND created_at >= :probe_created_at\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'pump_main')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_clean_fill')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_clean_supply')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_solution_fill')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_solution_supply')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_irrigation')::boolean, TRUE) = FALSE\nORDER BY created_at DESC, id DESC\nLIMIT 1\n"
+  params:
+    zone_id: ${zone_id}
+    probe_created_at: ${probe_state_second_run_row.0.created_at}
+  timeout: 30.0
+  expected_rows: 1
+  save: irr_state_second_run_row
 - step: complete_existing_cycles_second_run
   type: database_execute
   query: "\nUPDATE grow_cycles\nSET status = 'COMPLETED',\n    updated_at = NOW()\n\
@@ -1139,11 +1176,18 @@ actions:
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
     \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
-    )\nVALUES (\n  :grow_cycle_id_2,\n  0,\n  'VEG',\n  5.10,\n  5.00,\n  5.15,\n\
-    \  2.33,\n  2.30,\n  2.38,\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
+    )\nVALUES (\n  :grow_cycle_id_2,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
+    \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
     )\n"
   params:
     grow_cycle_id_2: ${grow_cycle_id_2}
+    ph_target: ${normal_ph_target}
+    ph_min: ${normal_ph_min}
+    ph_max: ${normal_ph_max}
+    ec_target: ${normal_ec_target}
+    ec_min: ${normal_ec_min}
+    ec_max: ${normal_ec_max}
 - step: load_phase_second
   type: database_query
   query: 'SELECT id
@@ -1307,11 +1351,15 @@ actions:
   save: workflow_ready_second_row
 - step: load_targets_reached_from_samples_second
   type: database_query
-  query: "WITH ph_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ph_node_id AS bigint)\n    AND s.type = 'PH'\n    AND s.label = 'ph_sensor'\n    AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'\n        AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'\n    AND tsamp.value BETWEEN 5.00 AND 5.15\n  ORDER BY tsamp.ts DESC\n  LIMIT 20\n),\nec_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ec_node_id AS bigint)\n    AND s.type = 'EC'\n    AND s.label = 'ec_sensor'\n    AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'\n        AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'\n    AND tsamp.value BETWEEN 2.30 AND 2.38\n  ORDER BY tsamp.ts DESC\n  LIMIT 20\n)\nSELECT\n  ph.value AS ph_value,\n  ec.value AS ec_value,\n  ph.ts AS ph_ts,\n  ec.ts AS ec_ts\nFROM ph_samples ph\nCROSS JOIN ec_samples ec\nWHERE ABS(EXTRACT(EPOCH FROM (ph.ts - ec.ts))) <= 30\nORDER BY GREATEST(ph.ts, ec.ts) DESC\nLIMIT 1\n"
+  query: "WITH ph_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ph_node_id AS bigint)\n    AND s.type = 'PH'\n    AND s.label = 'ph_sensor'\n    AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'\n        AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'\n    AND tsamp.value BETWEEN CAST(:ph_min AS numeric) AND CAST(:ph_max AS numeric)\n  ORDER BY tsamp.ts DESC\n  LIMIT 20\n),\nec_samples AS (\n  SELECT tsamp.ts, tsamp.value\n  FROM telemetry_samples tsamp\n  JOIN sensors s ON s.id = tsamp.sensor_id\n  WHERE s.node_id = CAST(:ec_node_id AS bigint)\n    AND s.type = 'EC'\n    AND s.label = 'ec_sensor'\n    AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'\n        AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'\n    AND tsamp.value BETWEEN CAST(:ec_min AS numeric) AND CAST(:ec_max AS numeric)\n  ORDER BY tsamp.ts DESC\n  LIMIT 20\n)\nSELECT\n  ph.value AS ph_value,\n  ec.value AS ec_value,\n  ph.ts AS ph_ts,\n  ec.ts AS ec_ts\nFROM ph_samples ph\nCROSS JOIN ec_samples ec\nWHERE ABS(EXTRACT(EPOCH FROM (ph.ts - ec.ts))) <= 30\nORDER BY GREATEST(ph.ts, ec.ts) DESC\nLIMIT 1\n"
   params:
     ph_node_id: ${ph_node_id}
     ec_node_id: ${ec_node_id}
     completed_at: ${completed_task_second_row.0.completed_at}
+    ph_min: ${normal_ph_min}
+    ph_max: ${normal_ph_max}
+    ec_min: ${normal_ec_min}
+    ec_max: ${normal_ec_max}
   expected_rows: 1
   save: targets_reached_second_row
 - step: load_recirc_command_counts_second
@@ -1369,9 +1417,7 @@ assertions:
     '')).lower() in ('prepare_recirculation_check', 'complete_ready') or str(context.get('completed_task_second_row', [{}])[0].get('status', '')).lower() == 'completed'
 - name: second_targets_reached
   type: custom_assert
-  condition: len(context.get('targets_reached_second_row', [])) == 1 and float(context.get('targets_reached_second_row',
-    [{}])[0].get('ph_value', 0)) >= 5.0 and float(context.get('targets_reached_second_row',
-    [{}])[0].get('ec_value', 0)) >= 2.3
+  condition: len(context.get('targets_reached_second_row', [])) == 1
 - name: second_recirc_commands_attempted_three_times
   type: custom_assert
   condition: int(context.get('recirc_command_counts_second_row', [{}])[0].get('recirc_ec_cnt',

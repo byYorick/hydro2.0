@@ -336,9 +336,11 @@ def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> 
     )
 
     assert dose_plan.needs_ec is True
-    assert dose_plan.ec_amount_ml == 9.4
-    assert dose_plan.pid_state_updates["ec"]["integral"] == 0.9
+    # integral = 0.9 + gap*dt = 0.9 + 0.95*10 = 10.4, clamped to max_integral=1.0
+    assert dose_plan.pid_state_updates["ec"]["integral"] == 1.0
     assert dose_plan.pid_state_updates["ec"]["prev_error"] == 0.95
+    # output = kp*gap + ki*integral = 2.0*0.95 + 0.5*1.0 = 2.4; dose = 2.4/gain(0.25) = 9.6
+    assert dose_plan.ec_amount_ml == 9.6
 
 
 def test_build_dose_plan_returns_retry_delay_when_min_interval_is_active() -> None:
@@ -601,3 +603,62 @@ def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:
     assert slow.needs_ec is True
     assert fast.needs_ec is True
     assert slow.pid_state_updates["ec"]["prev_derivative"] > fast.pid_state_updates["ec"]["prev_derivative"]
+
+
+def test_pid_integral_accumulates_over_time() -> None:
+    """Regression: PID integral must grow each call via gap*dt accumulation.
+
+    The old code copied the integral from previous state without incrementing it,
+    making ki (integral gain) effectively dead (ki * 0 = 0 always).
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 8, 12, 0, 0)
+    last_measurement_at = now - timedelta(seconds=30)
+    gap = 1.0  # EC gap: current_ec=1.0, target_ec=2.0 → ec_lo=2.0 with window=none, gap=1.0
+
+    # pid_state with zero integral (starting fresh)
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 0.0,
+                "ki": 1.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "max_dose_ml": 1000.0,
+                "min_interval_sec": 0,
+                "max_integral": 1000.0,
+            },
+            dosing_overrides={"solution_volume_l": 10.0},
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={
+            "ec": {
+                "integral": 0.0,
+                "prev_error": 0.0,
+                "prev_derivative": 0.0,
+                "last_measurement_at": last_measurement_at,
+            }
+        },
+        now=now,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "ec_npk_pump",
+                "calibration": {"ml_per_sec": 1.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    # integral must have grown: gap * dt = 1.0 * 30 = 30.0
+    assert plan.pid_state_updates["ec"]["integral"] == 30.0, (
+        "PID integral must accumulate gap*dt each step; ki term is dead if integral stays 0"
+    )

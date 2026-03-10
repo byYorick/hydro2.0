@@ -333,14 +333,74 @@ class PgZoneSnapshotReadModel:
         command_plans = profile_row.get("command_plans")
         plans = command_plans.get("plans") if isinstance(command_plans, Mapping) else None
         diagnostics_plan = plans.get("diagnostics") if isinstance(plans, Mapping) else None
-        execution = diagnostics_plan.get("execution") if isinstance(diagnostics_plan, Mapping) else None
-        if isinstance(execution, Mapping):
-            return dict(execution)
-
         subsystems = profile_row.get("subsystems")
         diagnostics = subsystems.get("diagnostics") if isinstance(subsystems, Mapping) else None
-        execution = diagnostics.get("execution") if isinstance(diagnostics, Mapping) else None
-        return dict(execution) if isinstance(execution, Mapping) else {}
+        subsystem_execution = diagnostics.get("execution") if isinstance(diagnostics, Mapping) else None
+        plan_execution = diagnostics_plan.get("execution") if isinstance(diagnostics_plan, Mapping) else None
+        return self._merge_execution_sources(
+            subsystem_execution if isinstance(subsystem_execution, Mapping) else {},
+            plan_execution if isinstance(plan_execution, Mapping) else {},
+            path="diagnostics.execution",
+        )
+
+    def _resolve_ec_component_policy(self, execution: Mapping[str, Any]) -> Dict[str, Any]:
+        correction = execution.get("correction")
+        if not isinstance(correction, Mapping):
+            return {}
+        policy = correction.get("ec_component_policy")
+        if not isinstance(policy, Mapping):
+            return {}
+        result: Dict[str, Any] = {}
+        for phase, phase_policy in policy.items():
+            if isinstance(phase_policy, Mapping):
+                result[str(phase).strip()] = dict(phase_policy)
+        return result
+
+    def _build_process_calibrations(self, rows: List[Mapping[str, Any]]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for row in rows:
+            if not row.get("is_active", True):
+                continue
+            mode = str(row.get("mode") or "").strip().lower()
+            if not mode or mode in result:
+                continue
+            result[mode] = {
+                "ec_gain_per_ml": self._to_float(row.get("ec_gain_per_ml")),
+                "ph_up_gain_per_ml": self._to_float(row.get("ph_up_gain_per_ml")),
+                "ph_down_gain_per_ml": self._to_float(row.get("ph_down_gain_per_ml")),
+                "ph_per_ec_ml": self._to_float(row.get("ph_per_ec_ml")),
+                "ec_per_ph_ml": self._to_float(row.get("ec_per_ph_ml")),
+                "transport_delay_sec": int(row.get("transport_delay_sec") or 0),
+                "settle_sec": int(row.get("settle_sec") or 0),
+                "confidence": self._to_float(row.get("confidence")),
+                "source": row.get("source"),
+                "valid_from": row.get("valid_from"),
+                "valid_to": row.get("valid_to"),
+                "meta": dict(row.get("meta")) if isinstance(row.get("meta"), Mapping) else {},
+                "updated_at": row.get("updated_at"),
+            }
+        return result
+
+    def _merge_execution_sources(
+        self,
+        left: Mapping[str, Any],
+        right: Mapping[str, Any],
+        *,
+        path: str,
+    ) -> Dict[str, Any]:
+        merged: Dict[str, Any] = dict(left)
+        for key, right_value in right.items():
+            current_path = f"{path}.{key}"
+            if key not in merged:
+                merged[key] = right_value
+                continue
+            left_value = merged[key]
+            if isinstance(left_value, Mapping) and isinstance(right_value, Mapping):
+                merged[key] = self._merge_execution_sources(left_value, right_value, path=current_path)
+                continue
+            if left_value != right_value:
+                raise SnapshotBuildError(f"Conflicting value for {current_path}")
+        return merged
 
     def _normalize_override_rows(self, rows: List[Mapping[str, Any]]) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []

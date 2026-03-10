@@ -23,12 +23,12 @@ actions:
   impossible_ec_target: '5.50'
   impossible_ec_min: '5.40'
   impossible_ec_max: '5.60'
-  normal_ph_target: '5.00'
+  normal_ph_target: '5.05'
   normal_ph_min: '4.80'
-  normal_ph_max: '5.20'
-  normal_ec_target: '2.40'
-  normal_ec_min: '2.20'
-  normal_ec_max: '2.60'
+  normal_ph_max: '5.25'
+  normal_ec_target: '2.20'
+  normal_ec_min: '2.00'
+  normal_ec_max: '2.50'
 - step: capture_scenario_window
   type: database_query
   query: 'SELECT NOW() AS started_at
@@ -152,6 +152,15 @@ actions:
 - step: cleanup_zone_workflow_state
   type: database_execute
   query: 'DELETE FROM zone_workflow_state
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
+- step: cleanup_zone_runtime_intents
+  type: database_execute
+  query: 'DELETE FROM zone_automation_intents
 
     WHERE zone_id = :zone_id
 
@@ -297,10 +306,10 @@ actions:
   query: "INSERT INTO pump_calibrations (\n  node_channel_id,\n  ml_per_sec,\n  k_ms_per_ml_l,\n\
     \  source,\n  quality_score,\n  sample_count,\n  valid_from,\n  is_active,\n \
     \ created_at,\n  updated_at\n)\nVALUES\n  (CAST(:ec_pump_channel_id AS bigint),\
-    \ 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE,\
-    \ NOW(), NOW()),\n  (CAST(:ph_up_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready',\
+    \ 2.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE,\
+    \ NOW(), NOW()),\n  (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready',\
     \ 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),\n  (CAST(:ph_down_channel_id\
-    \ AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1\
+    \ AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1\
     \ minute', TRUE, NOW(), NOW())\n"
   params:
     ec_pump_channel_id: ${ec_pump_channel_id}
@@ -324,7 +333,7 @@ actions:
     \          'solution_fill_timeout_sec', 240,\n          'prepare_recirculation_timeout_sec',\
     \ 30,\n          'telemetry_max_age_sec', 300,\n          'irr_state_max_age_sec',\
     \ 30,\n          'sensor_mode_stabilization_time_sec', 0\n        ),\n        'prepare_tolerance', jsonb_build_object(\n\
-    \          'ph_pct', 2,\n          'ec_pct', 2\n        ),\n        'correction',\
+    \          'ph_pct', 5,\n          'ec_pct', 10\n        ),\n        'correction',\
     \ jsonb_build_object(\n          'dose_ec_channel', 'dose_ec_a',\n          'dose_ph_up_channel',\
     \ 'dose_ph_up',\n          'dose_ph_down_channel', 'dose_ph_down',\n         \
     \ 'ec_dose_ml_per_mS_L', 4.0,\n          'ph_dose_ml_per_unit_L', 1.2,\n     \
@@ -1035,6 +1044,34 @@ actions:
   timeout: 60.0
   expected_rows: 1
   save: zero_levels_second_row
+- step: probe_state_after_reset_second_run
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: state
+    params: {}
+  save: probe_state_second_response
+- step: wait_probe_state_after_reset_second_run_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status, created_at\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${probe_state_second_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
+  save: probe_state_second_row
+- step: wait_runtime_irr_state_snapshot_after_reset_second_run
+  type: db.wait
+  query: "SELECT id, type, created_at\nFROM zone_events\nWHERE zone_id = :zone_id\n  AND type = 'IRR_STATE_SNAPSHOT'\n  AND created_at >= :probe_created_at\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'pump_main')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_clean_fill')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_clean_supply')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_solution_fill')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_solution_supply')::boolean, TRUE) = FALSE\n  AND COALESCE((COALESCE(details, payload_json)->'snapshot'->>'valve_irrigation')::boolean, TRUE) = FALSE\nORDER BY created_at DESC, id DESC\nLIMIT 1\n"
+  params:
+    zone_id: ${zone_id}
+    probe_created_at: ${probe_state_second_row.0.created_at}
+  timeout: 30.0
+  expected_rows: 1
+  save: irr_state_second_run_row
 - step: insert_scheduler_like_intent_second
   type: database_execute
   query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\

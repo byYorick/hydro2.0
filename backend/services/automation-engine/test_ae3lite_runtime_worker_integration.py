@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -81,8 +82,15 @@ class _HistoryLoggerClientStub:
         return f"hl-{cmd_id}"
 
 
-async def _insert_pending_task(zone_id: int, *, prefix: str, now: datetime) -> int:
+async def _insert_pending_task(
+    zone_id: int,
+    *,
+    prefix: str,
+    now: datetime,
+    due_at: datetime | None = None,
+) -> int:
     normalized_now = now.replace(microsecond=0)
+    normalized_due_at = (due_at or now).replace(microsecond=0)
     rows = await fetch(
         """
         INSERT INTO ae_tasks (
@@ -98,12 +106,13 @@ async def _insert_pending_task(zone_id: int, *, prefix: str, now: datetime) -> i
             current_stage,
             workflow_phase
         )
-        VALUES ($1, 'cycle_start', 'pending', $2, $3, $3, $3, $3, 'generic_cycle_start', 'startup', 'idle')
+        VALUES ($1, 'cycle_start', 'pending', $2, $3, $4, $3, $3, 'generic_cycle_start', 'startup', 'idle')
         RETURNING id
         """,
         zone_id,
         f"{prefix}-task",
         normalized_now,
+        normalized_due_at,
     )
     return int(rows[0]["id"])
 
@@ -276,6 +285,7 @@ def _build_worker(*, terminal_status: str, error_message: str | None = None) -> 
             zone_lease_repository=lease_repository,
             lease_ttl_sec=120,
         ),
+        idle_poll_interval_sec=0.05,
         execute_task_use_case=execute_use_case,
         startup_recovery_use_case=StartupRecoveryUseCase(
             task_repository=task_repository,
@@ -301,6 +311,7 @@ def _build_noop_worker(*, spawn_background_task_fn) -> Ae3RuntimeWorker:
     return Ae3RuntimeWorker(
         owner="worker-ae3-noop",
         claim_next_task_use_case=type("ClaimNextTaskUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
+        idle_poll_interval_sec=0.05,
         execute_task_use_case=type("ExecuteTaskUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
         startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
         zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_noop_run)})(),
@@ -443,6 +454,7 @@ async def test_runtime_worker_marks_terminal_intents_discovered_during_startup_r
     worker = Ae3RuntimeWorker(
         owner="worker-ae3-recovery",
         claim_next_task_use_case=type("ClaimNextTaskUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
+        idle_poll_interval_sec=0.1,
         execute_task_use_case=type("ExecuteTaskUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
         startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_recovery_run)})(),
         zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_noop_run)})(),
@@ -492,6 +504,50 @@ async def test_runtime_worker_fails_pending_task_on_timeout_terminal() -> None:
         assert rows[0]["error_code"] == "command_timeout"
         assert "closed_loop_timeout" in str(rows[0]["error_message"])
     finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_wakes_itself_for_delayed_pending_task() -> None:
+    prefix = f"ae3-worker-delayed-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    worker: Ae3RuntimeWorker | None = None
+
+    try:
+        await _reset_runtime_tables()
+        _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
+        task_id = await _insert_pending_task(
+            zone_id,
+            prefix=prefix,
+            now=now,
+            due_at=now + timedelta(seconds=1),
+        )
+        worker = _build_worker(terminal_status="DONE")
+
+        worker.kick()
+
+        for _ in range(80):
+            rows = await fetch(
+                "SELECT status, completed_at FROM ae_tasks WHERE id = $1",
+                task_id,
+            )
+            if rows and str(rows[0]["status"]).lower() == "completed":
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail("Delayed pending task did not complete without an extra kick")
+
+        lease_rows = await fetch(
+            "SELECT zone_id FROM ae_zone_leases WHERE zone_id = $1",
+            zone_id,
+        )
+        assert lease_rows == []
+    finally:
+        wake_task = getattr(worker, "_wake_task", None)
+        if wake_task is not None and not wake_task.done():
+            wake_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await wake_task
         await _cleanup(prefix)
 
 

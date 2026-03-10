@@ -900,8 +900,14 @@ id BIGSERIAL PK
 zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
 task_type VARCHAR(64) NOT NULL         -- в v1 допустимо только cycle_start
 status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
-payload JSONB NOT NULL DEFAULT '{}'
 idempotency_key VARCHAR(191) UNIQUE NOT NULL
+intent_source VARCHAR(64) NULL
+intent_trigger VARCHAR(64) NULL
+intent_id BIGINT NULL
+intent_meta JSONB NOT NULL DEFAULT '{}'
+topology VARCHAR(64) NOT NULL DEFAULT 'two_tank'
+current_stage VARCHAR(64) NOT NULL DEFAULT 'startup'
+workflow_phase VARCHAR(32) NOT NULL DEFAULT 'idle'
 scheduled_for TIMESTAMPTZ NOT NULL
 due_at TIMESTAMPTZ NOT NULL
 claimed_by VARCHAR(191) NULL
@@ -911,6 +917,34 @@ error_message TEXT NULL
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 completed_at TIMESTAMPTZ NULL
+stage_deadline_at TIMESTAMPTZ NULL
+stage_retry_count SMALLINT NOT NULL DEFAULT 0
+stage_entered_at TIMESTAMPTZ NULL
+clean_fill_cycle SMALLINT NOT NULL DEFAULT 0
+corr_step VARCHAR(32) NULL
+corr_attempt SMALLINT NULL
+corr_max_attempts SMALLINT NULL
+corr_activated_here BOOLEAN NULL
+corr_stabilization_sec SMALLINT NULL
+corr_return_stage_success VARCHAR(64) NULL
+corr_return_stage_fail VARCHAR(64) NULL
+corr_outcome_success BOOLEAN NULL
+corr_needs_ec BOOLEAN NULL
+corr_ec_node_uid VARCHAR(128) NULL
+corr_ec_channel VARCHAR(64) NULL
+corr_ec_duration_ms INTEGER NULL
+corr_needs_ph_up BOOLEAN NULL
+corr_needs_ph_down BOOLEAN NULL
+corr_ph_node_uid VARCHAR(128) NULL
+corr_ph_channel VARCHAR(64) NULL
+corr_ph_duration_ms INTEGER NULL
+corr_wait_until TIMESTAMPTZ NULL
+corr_ec_attempt SMALLINT NULL
+corr_ec_max_attempts SMALLINT NULL
+corr_ph_attempt SMALLINT NULL
+corr_ph_max_attempts SMALLINT NULL
+pending_manual_step VARCHAR(64) NULL
+control_mode_snapshot VARCHAR(16) NULL
 ```
 
 Ключевые индексы:
@@ -918,12 +952,15 @@ completed_at TIMESTAMPTZ NULL
 ae_tasks_zone_status_idx (zone_id, status)
 ae_tasks_pending_idx (due_at, created_at) WHERE status='pending'
 ae_tasks_active_zone_unique (zone_id) UNIQUE WHERE status IN ('pending','claimed','running','waiting_command')
+ae_tasks_deadline_idx (stage_deadline_at) WHERE stage_deadline_at IS NOT NULL AND status IN ('running','waiting_command')
+ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running','waiting_command')
 ```
 
 Инварианты v1:
 - не более одной active task на зону;
 - `idempotency_key` уникален;
 - `task_type='cycle_start'` фиксируется DB check constraint.
+- canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из legacy `payload`.
 
 ### 6.10.2. ae_commands
 

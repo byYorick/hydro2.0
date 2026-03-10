@@ -37,12 +37,14 @@ class CorrectionHandler(BaseStageHandler):
         runtime_monitor: Any,
         command_gateway: Any,
         planner: Optional[CorrectionPlanner] = None,
+        pid_state_repository: Any = None,
     ) -> None:
         super().__init__(
             runtime_monitor=runtime_monitor,
             command_gateway=command_gateway,
         )
         self._planner = planner or CorrectionPlanner()
+        self._pid_state_repository = pid_state_repository
 
     async def run(
         self,
@@ -58,6 +60,10 @@ class CorrectionHandler(BaseStageHandler):
                 "corr_state_missing",
                 f"Task {task.id} in correction stage but correction state is None",
             )
+
+        deadline_outcome = self._interrupt_for_stage_deadline(task=task, corr=corr, now=now)
+        if deadline_outcome is not None:
+            return deadline_outcome
 
         step = corr.corr_step
         if step == "corr_activate":
@@ -146,11 +152,15 @@ class CorrectionHandler(BaseStageHandler):
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
             ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
+            ph_min=self._float_or_none(runtime.get("target_ph_min")),
+            ph_max=self._float_or_none(runtime.get("target_ph_max")),
+            ec_min=self._float_or_none(runtime.get("target_ec_min")),
+            ec_max=self._float_or_none(runtime.get("target_ec_max")),
         ):
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if corr.attempt > corr.max_attempts:
-            return self._transition_to_deactivate_or_return(corr=corr, success=False)
+            return self._correction_exhausted(task=task, corr=corr)
 
         # Build dose plan
         correction_cfg = runtime.get("correction") if isinstance(runtime.get("correction"), Mapping) else {}
@@ -160,13 +170,42 @@ class CorrectionHandler(BaseStageHandler):
             target_ph=target_ph, target_ec=target_ec,
             ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
             correction_config=correction_cfg,
+            workflow_phase=task.workflow.workflow_phase,
+            process_calibrations=runtime.get("process_calibrations"),
+            ec_component_policy=correction_cfg.get("ec_component_policy"),
+            pid_state=runtime.get("pid_state"),
+            now=now,
+            ph_min=self._float_or_none(runtime.get("target_ph_min")),
+            ph_max=self._float_or_none(runtime.get("target_ph_max")),
+            ec_min=self._float_or_none(runtime.get("target_ec_min")),
+            ec_max=self._float_or_none(runtime.get("target_ec_max")),
             ec_actuator=actuators.get("ec"),
+            ec_actuators=actuators.get("ec_actuators"),
             ph_up_actuator=actuators.get("ph_up"),
             ph_down_actuator=actuators.get("ph_down"),
         )
 
+        # Persist updated PID state (integral, prev_error, prev_derivative, etc.)
+        # so the controller has memory across correction attempts.
+        await self._persist_pid_state_updates(
+            zone_id=task.zone_id, updates=dose_plan.pid_state_updates, now=now,
+        )
+
+        if not dose_plan.needs_any and dose_plan.retry_after_sec:
+            next_corr = replace(corr, corr_step="corr_check")
+            return StageOutcome(
+                kind="enter_correction",
+                correction=next_corr,
+                due_delay_sec=dose_plan.retry_after_sec,
+            )
+
         if not dose_plan.needs_any:
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
+
+        if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
+            return self._correction_exhausted(task=task, corr=corr)
+        if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
+            return self._correction_exhausted(task=task, corr=corr)
 
         # Save dose plan into correction state
         next_corr = replace(
@@ -211,7 +250,7 @@ class CorrectionHandler(BaseStageHandler):
 
         correction_cfg = self._correction_config(plan)
         ec_mix_wait = int(correction_cfg.get("ec_mix_wait_sec", 120))
-        next_corr = replace(corr, corr_step="corr_wait_ec")
+        next_corr = replace(corr, corr_step="corr_wait_ec", ec_attempt=corr.ec_attempt + 1)
         return StageOutcome(
             kind="enter_correction",
             correction=next_corr,
@@ -245,7 +284,7 @@ class CorrectionHandler(BaseStageHandler):
 
         correction_cfg = self._correction_config(plan)
         ph_mix_wait = int(correction_cfg.get("ph_mix_wait_sec", 60))
-        next_corr = replace(corr, corr_step="corr_wait_ph")
+        next_corr = replace(corr, corr_step="corr_wait_ph", ph_attempt=corr.ph_attempt + 1)
         return StageOutcome(
             kind="enter_correction",
             correction=next_corr,
@@ -292,7 +331,7 @@ class CorrectionHandler(BaseStageHandler):
     def _run_done(self, *, corr: CorrectionState) -> StageOutcome:
         success = corr.outcome_success if corr.outcome_success is not None else False
         next_stage = corr.return_stage_success if success else corr.return_stage_fail
-        return StageOutcome(kind="exit_correction", next_stage=next_stage)
+        return StageOutcome(kind="exit_correction", next_stage=next_stage, correction=corr)
 
     # ── Helpers ─────────────────────────────────────────────────────
 
@@ -305,7 +344,47 @@ class CorrectionHandler(BaseStageHandler):
             return StageOutcome(kind="enter_correction", correction=next_corr)
         # Sensors not activated by us — skip deactivation
         next_stage = corr.return_stage_success if success else corr.return_stage_fail
-        return StageOutcome(kind="exit_correction", next_stage=next_stage)
+        return StageOutcome(kind="exit_correction", next_stage=next_stage, correction=next_corr)
+
+    def _correction_exhausted(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState,
+    ) -> StageOutcome:
+        if str(task.current_stage).strip().lower() == "prepare_recirculation_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+        return self._transition_to_deactivate_or_return(corr=corr, success=False)
+
+    def _interrupt_for_stage_deadline(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState,
+        now: datetime,
+    ) -> StageOutcome | None:
+        if corr.corr_step in {"corr_deactivate", "corr_done"}:
+            return None
+        if not self._deadline_reached(now=now, deadline=task.workflow.stage_deadline_at):
+            return None
+
+        current_stage = str(task.current_stage).strip().lower()
+        if current_stage == "prepare_recirculation_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+        if current_stage == "solution_fill_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="solution_fill_timeout_stop",
+            )
+        return None
 
     def _build_sensor_mode_commands(
         self, *, plan: Any, cmd: str, params: Mapping[str, Any],
@@ -333,6 +412,37 @@ class CorrectionHandler(BaseStageHandler):
         actuators = corr.get("actuators") if isinstance(corr.get("actuators"), Mapping) else {}
         return {
             "ec": actuators.get("ec"),
+            "ec_actuators": actuators.get("ec_actuators"),
             "ph_up": actuators.get("ph_up"),
             "ph_down": actuators.get("ph_down"),
         }
+
+    async def _persist_pid_state_updates(
+        self,
+        *,
+        zone_id: Any,
+        updates: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        """Persist PID state updates (integral, prev_error, etc.) to the DB.
+
+        Called after every ``_run_check`` so the I- and D-terms accumulate
+        across correction attempts.  No-op if no repository is wired or the
+        update dict is empty.
+        """
+        if not updates or self._pid_state_repository is None:
+            return
+        await self._pid_state_repository.upsert_states(
+            zone_id=int(zone_id),
+            now=now,
+            updates=[
+                {"pid_type": pid_type, **state_dict}
+                for pid_type, state_dict in updates.items()
+            ],
+        )
+
+    def _float_or_none(self, value: Any) -> float | None:
+        try:
+            return None if value is None else float(value)
+        except (TypeError, ValueError):
+            return None

@@ -35,6 +35,8 @@ use App\Http\Controllers\ZoneAutomationLogicProfileController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationStateController;
+use App\Http\Controllers\ZoneCorrectionConfigController;
+use App\Http\Controllers\ZoneCorrectionPresetController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidConfigController;
@@ -135,6 +137,9 @@ Route::middleware([
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
     Route::get('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'show']);
+    Route::get('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'show']);
+    Route::get('zones/{zone}/correction-config/history', [ZoneCorrectionConfigController::class, 'history']);
+    Route::get('correction-config-presets', [ZoneCorrectionPresetController::class, 'index']);
     Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
     Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
     Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive'])
@@ -199,6 +204,12 @@ Route::middleware([
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
         Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
         Route::post('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'upsert']);
+        Route::put('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'update']);
+        Route::patch('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'update']);
+        Route::post('correction-config-presets', [ZoneCorrectionPresetController::class, 'store']);
+        Route::put('correction-config-presets/{preset}', [ZoneCorrectionPresetController::class, 'update']);
+        Route::patch('correction-config-presets/{preset}', [ZoneCorrectionPresetController::class, 'update']);
+        Route::delete('correction-config-presets/{preset}', [ZoneCorrectionPresetController::class, 'destroy']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);

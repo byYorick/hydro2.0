@@ -17,6 +17,7 @@ from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.application.handlers.command import CommandHandler
 from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
+from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
 from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
@@ -49,6 +50,7 @@ class WorkflowRouter:
         "clean_fill": CleanFillCheckHandler,
         "solution_fill": SolutionFillCheckHandler,
         "prepare_recirc": PrepareRecircCheckHandler,
+        "prepare_recirc_window": PrepareRecircWindowHandler,
         "correction": CorrectionHandler,
     }
 
@@ -61,6 +63,8 @@ class WorkflowRouter:
         runtime_monitor: Any,
         command_gateway: Any,
         correction_planner: Any = None,
+        alert_repository: Any = None,
+        pid_state_repository: Any = None,
     ) -> None:
         self._task_repo = task_repository
         self._workflow_repo = workflow_repository
@@ -75,8 +79,12 @@ class WorkflowRouter:
                 "runtime_monitor": runtime_monitor,
                 "command_gateway": command_gateway,
             }
-            if key == "correction" and correction_planner is not None:
-                kwargs["planner"] = correction_planner
+            if key == "correction":
+                if correction_planner is not None:
+                    kwargs["planner"] = correction_planner
+                kwargs["pid_state_repository"] = pid_state_repository
+            if key == "prepare_recirc_window":
+                kwargs["alert_repository"] = alert_repository
             self._handlers[key] = cls(**kwargs)
 
     async def run(self, *, task: Any, plan: Any, now: datetime) -> Any:
@@ -88,7 +96,7 @@ class WorkflowRouter:
         current_stage = task.current_stage
 
         # Correction sub-machine takes priority
-        if task.correction is not None and task.correction.corr_step != "corr_done":
+        if task.correction is not None:
             handler = self._handlers["correction"]
             stage_def = self._registry.get(topology, current_stage)
             outcome = await handler.run(
@@ -237,9 +245,9 @@ class WorkflowRouter:
             now=now,
         )
 
-        # Update zone workflow phase
+        # Update zone workflow phase (pass next_stage explicitly so payload reflects new stage)
         await self._upsert_workflow_phase(
-            task=task, workflow_phase=next_def.workflow_phase, now=now,
+            task=task, workflow_phase=next_def.workflow_phase, stage=next_stage, now=now,
         )
 
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
@@ -295,9 +303,10 @@ class WorkflowRouter:
         now: datetime,
     ) -> Any:
         """Correction finished — transition to return stage."""
+        final_corr = outcome.correction if outcome.correction is not None else task.correction
         success = (
-            task.correction.outcome_success
-            if task.correction and task.correction.outcome_success is not None
+            final_corr.outcome_success
+            if final_corr and final_corr.outcome_success is not None
             else False
         )
         CORRECTION_COMPLETED.labels(
@@ -360,14 +369,18 @@ class WorkflowRouter:
             ).observe(max(0, duration))
 
     async def _upsert_workflow_phase(
-        self, *, task: Any, workflow_phase: str, now: datetime,
+        self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
     ) -> None:
-        """Update zone workflow state (external visibility)."""
+        """Update zone workflow state (external visibility).
+
+        ``stage`` overrides the stage written to payload when calling during a
+        transition (where task.current_stage is still the OLD stage).
+        """
         if self._workflow_repo is not None:
             await self._workflow_repo.upsert_phase(
                 zone_id=task.zone_id,
                 workflow_phase=workflow_phase,
-                payload={"ae3_cycle_start_stage": task.current_stage},
+                payload={"ae3_cycle_start_stage": stage if stage is not None else task.current_stage},
                 scheduler_task_id=str(task.id),
                 now=now,
             )

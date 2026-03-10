@@ -45,6 +45,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     correction_cfg = (
         execution.get("correction") if isinstance(execution.get("correction"), Mapping) else {}
     )
+    target_ph = _resolve_target(snapshot.targets, execution, "ph")
+    target_ec = _resolve_target(snapshot.targets, execution, "ec")
     runtime: dict[str, Any] = {
         "required_node_types": _normalize_node_types(startup.get("required_node_types") or execution.get("required_node_types")),
         "clean_fill_timeout_sec": _resolve_int(startup.get("clean_fill_timeout_sec"), 1200, 30),
@@ -55,17 +57,24 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "level_switch_on_threshold": _resolve_float(startup.get("level_switch_on_threshold"), 0.5, 0.0, 1.0),
         "telemetry_max_age_sec": _resolve_int(startup.get("telemetry_max_age_sec"), 300, 5),
         "irr_state_max_age_sec": _resolve_int(startup.get("irr_state_max_age_sec"), 30, 5),
+        "irr_state_wait_timeout_sec": _resolve_float(startup.get("irr_state_wait_timeout_sec"), 5.0, 0.0, 30.0),
         "sensor_mode_stabilization_time_sec": _resolve_int(startup.get("sensor_mode_stabilization_time_sec"), 60, 0),
         "clean_max_sensor_labels": _normalize_labels(startup.get("clean_max_sensor_labels"), ("level_clean_max",)),
         "clean_min_sensor_labels": _normalize_labels(startup.get("clean_min_sensor_labels"), ("level_clean_min",)),
         "solution_max_sensor_labels": _normalize_labels(startup.get("solution_max_sensor_labels"), ("level_solution_max",)),
         "solution_min_sensor_labels": _normalize_labels(startup.get("solution_min_sensor_labels"), ("level_solution_min",)),
-        "target_ph": _resolve_target(snapshot.targets, execution, "ph"),
-        "target_ec": _resolve_target(snapshot.targets, execution, "ec"),
+        "target_ph": target_ph,
+        "target_ec": target_ec,
+        "target_ph_min": _resolve_target_bound(snapshot.targets, execution, "ph", "min", fallback=target_ph),
+        "target_ph_max": _resolve_target_bound(snapshot.targets, execution, "ph", "max", fallback=target_ph),
+        "target_ec_min": _resolve_target_bound(snapshot.targets, execution, "ec", "min", fallback=target_ec),
+        "target_ec_max": _resolve_target_bound(snapshot.targets, execution, "ec", "max", fallback=target_ec),
         "prepare_tolerance": {
             "ph_pct": _resolve_float(prepare_tolerance.get("ph_pct"), 15.0, 0.1, 100.0),
             "ec_pct": _resolve_float(prepare_tolerance.get("ec_pct"), 25.0, 0.1, 100.0),
         },
+        "pid_state": dict(snapshot.pid_state) if isinstance(getattr(snapshot, "pid_state", None), Mapping) else {},
+        "pid_configs": dict(snapshot.pid_configs) if isinstance(getattr(snapshot, "pid_configs", None), Mapping) else {},
         # Correction config: dose channels, timing, dosing sensitivity.
         # "actuators" key is populated later by CycleStartPlanner after actuator resolution.
         "correction": {
@@ -81,9 +90,18 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             "ec_mix_wait_sec": _resolve_int(correction_cfg.get("ec_mix_wait_sec"), 120, 10),
             "ph_mix_wait_sec": _resolve_int(correction_cfg.get("ph_mix_wait_sec"), 60, 10),
             "stabilization_sec": _resolve_int(correction_cfg.get("stabilization_sec"), 60, 0),
-            "max_correction_attempts": _resolve_int(correction_cfg.get("max_correction_attempts"), 5, 1),
+            "max_ec_correction_attempts": _resolve_int(correction_cfg.get("max_ec_correction_attempts"), 5, 1),
+            "max_ph_correction_attempts": _resolve_int(correction_cfg.get("max_ph_correction_attempts"), 5, 1),
+            "prepare_recirculation_max_attempts": _resolve_int(
+                correction_cfg.get("prepare_recirculation_max_attempts"), 3, 1
+            ),
+            "prepare_recirculation_max_correction_attempts": _resolve_int(
+                correction_cfg.get("prepare_recirculation_max_correction_attempts"), 32767, 1
+            ),
             # Total volume of solution in tank (litres) — used for dose scaling
             "solution_volume_l": _resolve_float(correction_cfg.get("solution_volume_l"), 100.0, 1.0, 10000.0),
+            "controllers": _normalize_controllers(correction_cfg.get("controllers")),
+            "ec_component_policy": _normalize_component_policy(correction_cfg.get("ec_component_policy")),
             # actuators: dict populated by CycleStartPlanner — do not hardcode here
             "actuators": {},
         },
@@ -168,6 +186,28 @@ def _resolve_target(targets: Mapping[str, Any], execution: Mapping[str, Any], ke
         raise PlannerConfigurationError(f"target_{key} value is not numeric: {candidate!r}")
 
 
+def _resolve_target_bound(
+    targets: Mapping[str, Any],
+    execution: Mapping[str, Any],
+    key: str,
+    bound: str,
+    *,
+    fallback: float,
+) -> float:
+    upper = 20.0 if key == "ec" else 14.0
+    direct = execution.get(f"{key}_{bound}")
+    if direct is None:
+        direct = execution.get(f"target_{key}_{bound}")
+    section = targets.get(key) if isinstance(targets.get(key), Mapping) else {}
+    candidate = direct if direct is not None else section.get(bound)
+    if candidate is None:
+        return float(fallback)
+    try:
+        return max(0.0, min(upper, float(candidate)))
+    except (TypeError, ValueError):
+        raise PlannerConfigurationError(f"{key}_{bound} value is not numeric: {candidate!r}")
+
+
 def _normalize_command_plan(
     raw_value: Any,
     *,
@@ -194,3 +234,24 @@ def _normalize_command_plan(
             }
         )
     return normalized
+
+
+def _normalize_controllers(raw_value: Any) -> dict[str, Any]:
+    if not isinstance(raw_value, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    for kind in ("ec", "ph"):
+        controller = raw_value.get(kind)
+        if isinstance(controller, Mapping):
+            result[kind] = dict(controller)
+    return result
+
+
+def _normalize_component_policy(raw_value: Any) -> dict[str, Any]:
+    if not isinstance(raw_value, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    for phase, policy in raw_value.items():
+        if isinstance(policy, Mapping):
+            result[str(phase).strip().lower()] = dict(policy)
+    return result

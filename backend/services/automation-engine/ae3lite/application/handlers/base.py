@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+from time import monotonic
 from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
@@ -39,6 +41,11 @@ class BaseStageHandler:
     ) -> StageOutcome:
         raise NotImplementedError
 
+    def _deadline_reached(self, *, now: datetime, deadline: datetime | None) -> bool:
+        if deadline is None:
+            return False
+        return _naive_dt(now) >= _naive_dt(deadline)
+
     # ── Probe IRR state (hardware safety check) ─────────────────────
 
     async def _probe_irr_state(
@@ -61,9 +68,10 @@ class BaseStageHandler:
                 str(result["error_code"]), str(result["error_message"]),
             )
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        state = await self._runtime_monitor.read_latest_irr_state(
-            zone_id=task.zone_id,
-            max_age_sec=int(runtime.get("irr_state_max_age_sec") or 60),
+        state = await self._read_probe_state_with_retry(
+            task=task,
+            runtime=runtime,
+            expected=expected,
         )
         if not state["has_snapshot"]:
             raise TaskExecutionError(
@@ -80,6 +88,53 @@ class BaseStageHandler:
                     "irr_state_mismatch",
                     f"IRR state mismatch for {key}: expected={value}, got={snapshot.get(key)}",
                 )
+
+    async def _read_probe_state_with_retry(
+        self,
+        *,
+        task: Any,
+        runtime: Mapping[str, Any],
+        expected: Mapping[str, bool],
+    ) -> Mapping[str, Any]:
+        max_age_sec = int(runtime.get("irr_state_max_age_sec") or 60)
+        wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
+        poll_interval = self._coerce_float(runtime.get("irr_state_wait_poll_interval_sec"))
+        timeout_sec = max(0.0, wait_timeout if wait_timeout is not None else 5.0)
+        interval_sec = max(0.05, poll_interval if poll_interval is not None else 0.5)
+
+        state = await self._runtime_monitor.read_latest_irr_state(
+            zone_id=task.zone_id,
+            max_age_sec=max_age_sec,
+        )
+        if not self._probe_state_needs_retry(state=state, expected=expected) or timeout_sec <= 0.0:
+            return state
+
+        deadline = monotonic() + timeout_sec
+        while monotonic() < deadline:
+            await asyncio.sleep(min(interval_sec, max(0.0, deadline - monotonic())))
+            state = await self._runtime_monitor.read_latest_irr_state(
+                zone_id=task.zone_id,
+                max_age_sec=max_age_sec,
+            )
+            if not self._probe_state_needs_retry(state=state, expected=expected):
+                return state
+        return state
+
+    def _probe_state_needs_retry(
+        self,
+        *,
+        state: Mapping[str, Any],
+        expected: Mapping[str, bool],
+    ) -> bool:
+        if not state.get("has_snapshot") or state.get("is_stale"):
+            return True
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, Mapping):
+            return True
+        for key, value in expected.items():
+            if bool(snapshot.get(key)) != bool(value):
+                return True
+        return False
 
     # ── Level switch reading ────────────────────────────────────────
 
@@ -134,10 +189,21 @@ class BaseStageHandler:
         tolerance = runtime.get("prepare_tolerance") if isinstance(runtime.get("prepare_tolerance"), Mapping) else {}
         ph_target = float(runtime["target_ph"])
         ec_target = float(runtime["target_ec"])
-        return (
-            abs(float(ph["value"]) - ph_target) <= abs(ph_target) * (float(tolerance.get("ph_pct", 15)) / 100.0)
-            and abs(float(ec["value"]) - ec_target) <= abs(ec_target) * (float(tolerance.get("ec_pct", 25)) / 100.0)
-        )
+        ph_min = self._coerce_float(runtime.get("target_ph_min"))
+        ph_max = self._coerce_float(runtime.get("target_ph_max"))
+        ec_min = self._coerce_float(runtime.get("target_ec_min"))
+        ec_max = self._coerce_float(runtime.get("target_ec_max"))
+        current_ph = float(ph["value"])
+        current_ec = float(ec["value"])
+        if ph_min is None or ph_max is None:
+            ph_tol = abs(ph_target) * (float(tolerance.get("ph_pct", 15)) / 100.0)
+            ph_min = ph_target - ph_tol
+            ph_max = ph_target + ph_tol
+        if ec_min is None or ec_max is None:
+            ec_tol = abs(ec_target) * (float(tolerance.get("ec_pct", 25)) / 100.0)
+            ec_min = ec_target - ec_tol
+            ec_max = ec_target + ec_tol
+        return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
 
     # ── Sensor consistency check (max=1, min=0 → error) ────────────
 
@@ -165,3 +231,11 @@ class BaseStageHandler:
                 "sensor_state_inconsistent",
                 f"Tank sensors inconsistent: max=1 min=0 ({min_labels_key})",
             )
+
+    def _coerce_float(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None

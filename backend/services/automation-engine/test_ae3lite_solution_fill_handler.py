@@ -32,7 +32,11 @@ RUNTIME = {
     "target_ph": 6.0,
     "target_ec": 2.0,
     "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
-    "correction": {"max_correction_attempts": 5, "stabilization_sec": 60},
+    "correction": {
+        "max_ec_correction_attempts": 5,
+        "max_ph_correction_attempts": 5,
+        "stabilization_sec": 60,
+    },
 }
 
 STAGE_DEF = StageDef(
@@ -146,6 +150,8 @@ async def test_solution_fill_full_targets_not_reached_enter_correction():
     assert outcome.correction.corr_step == "corr_check"
     assert outcome.correction.return_stage_success == "solution_fill_stop_to_ready"
     assert outcome.correction.return_stage_fail == "solution_fill_stop_to_prepare"
+    assert outcome.correction.ec_max_attempts == 5
+    assert outcome.correction.ph_max_attempts == 5
 
 
 async def test_solution_fill_deadline_timeout_stop():

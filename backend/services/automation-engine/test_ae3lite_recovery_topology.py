@@ -46,6 +46,10 @@ def _make_task(
             "corr_step": correction.corr_step,
             "corr_attempt": correction.attempt,
             "corr_max_attempts": correction.max_attempts,
+            "corr_ec_attempt": correction.ec_attempt,
+            "corr_ec_max_attempts": correction.ec_max_attempts,
+            "corr_ph_attempt": correction.ph_attempt,
+            "corr_ph_max_attempts": correction.ph_max_attempts,
             "corr_activated_here": correction.activated_here,
             "corr_stabilization_sec": correction.stabilization_sec,
             "corr_return_stage_success": correction.return_stage_success,
@@ -144,6 +148,12 @@ def _task_to_row(task: AutomationTask) -> dict:
         "stage_deadline_at": wf.stage_deadline_at, "stage_retry_count": wf.stage_retry_count,
         "stage_entered_at": wf.stage_entered_at, "clean_fill_cycle": wf.clean_fill_cycle,
         "corr_step": task.correction.corr_step if task.correction else None,
+        "corr_attempt": task.correction.attempt if task.correction else None,
+        "corr_max_attempts": task.correction.max_attempts if task.correction else None,
+        "corr_ec_attempt": task.correction.ec_attempt if task.correction else None,
+        "corr_ec_max_attempts": task.correction.ec_max_attempts if task.correction else None,
+        "corr_ph_attempt": task.correction.ph_attempt if task.correction else None,
+        "corr_ph_max_attempts": task.correction.ph_max_attempts if task.correction else None,
     }
 
 
@@ -235,6 +245,7 @@ async def test_recovery_correction_in_flight_fails():
     """Task in waiting_command WITH correction active → fail (cannot resume safely)."""
     corr = CorrectionState(
         corr_step="corr_dose_ec", attempt=2, max_attempts=5,
+        ec_attempt=1, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
         activated_here=True, stabilization_sec=60,
         return_stage_success="solution_fill_stop_to_ready",
         return_stage_fail="solution_fill_stop_to_prepare",

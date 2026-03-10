@@ -42,6 +42,7 @@ fi
 : "${TEST_PH_NODE_UID:=auto}"
 : "${TEST_EC_NODE_UID:=auto}"
 : "${TEST_NODE_HW_ID:=auto}"
+: "${REAL_HW_USE_NODE_SIM_SESSION:=0}"
 : "${REAL_HW_REBOOT_CMD:=restart}"
 : "${MQTT_LIVE_SCAN_SEC:=25}"
 : "${MQTT_TEMP_WAIT_SEC:=180}"
@@ -53,6 +54,7 @@ fi
 : "${SERVICE_LOG_EXCLUDE_REGEX:=connect_tcp.started| 0 failed|GET /api/health |SQLSTATE\\[40001\\].*nodes_register_hwid_zone_unique|Scheduler task execution finished|testing\\.ERROR: SQLSTATE\\[40001\\]: Serialization failure|url\":\"http://laravel/api/nodes/register\".*SQLSTATE\\[40001\\]}"
 
 export E2E_REAL_HARDWARE=1
+export REAL_HW_USE_NODE_SIM_SESSION=0
 export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_NODE_HW_ID
 LARAVEL_URL="${LARAVEL_URL:-http://localhost:8081}"
 AUTOMATION_ENGINE_URL="${AUTOMATION_ENGINE_URL:-http://localhost:9505}"
@@ -1203,9 +1205,15 @@ broadcast_reset_state_for_available_topics() {
 
 prepare_real_hardware_node() {
   echo "🔧 Подготовка real hardware ноды для e2e..."
+  echo "ℹ️ real-hardware harness работает только с реальной test_node без node-sim"
 
   "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" up -d \
     postgres redis mosquitto history-logger mqtt-bridge automation-engine laravel digital-twin >/dev/null
+
+  for service in node-sim-workflow node-sim-manager; do
+    "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" stop "$service" >/dev/null 2>&1 || true
+  done
+  echo "ℹ️ Убедился, что real-hardware harness видел только реальную test_node"
 
   if ! wait_laravel_health 180; then
     echo "❌ Laravel не стал healthy вовремя: $LARAVEL_URL/api/system/health"

@@ -146,7 +146,11 @@ TWO_TANK: Mapping[str, StageDef] = {
         timeout_key="prepare_recirculation_timeout_sec",
         has_correction=True,
         on_corr_success="prepare_recirculation_stop_to_ready",
-        on_corr_fail="prepare_recirculation_timeout_stop",
+        on_corr_fail="prepare_recirculation_window_exhausted",
+    ),
+    "prepare_recirculation_window_exhausted": StageDef(
+        "prepare_recirculation_window_exhausted", "prepare_recirc_window",
+        workflow_phase="tank_recirc",
     ),
     "prepare_recirculation_stop_to_ready": StageDef(
         "prepare_recirculation_stop_to_ready", "command",
@@ -154,16 +158,6 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
         next_stage="complete_ready",
     ),
-    "prepare_recirculation_timeout_stop": StageDef(
-        "prepare_recirculation_timeout_stop", "command",
-        workflow_phase="tank_recirc",
-        command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
-        terminal_error=(
-            "prepare_npk_ph_target_not_reached",
-            "Prepare recirculation timeout exceeded",
-        ),
-    ),
-
     # === Terminal ===
     "complete_ready": StageDef("complete_ready", "ready", workflow_phase="ready"),
 }

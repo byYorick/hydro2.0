@@ -171,6 +171,22 @@ class PgAutomationTaskRepository:
                 )
         return AutomationTask.from_row(row) if row is not None else None
 
+    async def next_pending_due_at(self) -> Optional[datetime]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT due_at
+                FROM ae_tasks
+                WHERE status = 'pending'
+                ORDER BY due_at ASC, created_at ASC, id ASC
+                LIMIT 1
+                """
+            )
+        if row is None:
+            return None
+        return row["due_at"]
+
     async def release_claim(self, *, task_id: int, owner: str, now: datetime) -> bool:
         pool = await get_pool()
         normalized_now = self._normalize_timestamp(now)
@@ -309,23 +325,27 @@ class PgAutomationTaskRepository:
                     corr_step                 = $9,
                     corr_attempt              = $10,
                     corr_max_attempts         = $11,
-                    corr_activated_here       = $12,
-                    corr_stabilization_sec    = $13,
-                    corr_return_stage_success = $14,
-                    corr_return_stage_fail    = $15,
-                    corr_outcome_success      = $16,
-                    corr_needs_ec             = $17,
-                    corr_ec_node_uid          = $18,
-                    corr_ec_channel           = $19,
-                    corr_ec_duration_ms       = $20,
-                    corr_needs_ph_up          = $21,
-                    corr_needs_ph_down        = $22,
-                    corr_ph_node_uid          = $23,
-                    corr_ph_channel           = $24,
-                    corr_ph_duration_ms       = $25,
-                    corr_wait_until           = $26,
-                    due_at     = $27,
-                    updated_at = $28
+                    corr_ec_attempt           = $12,
+                    corr_ec_max_attempts      = $13,
+                    corr_ph_attempt           = $14,
+                    corr_ph_max_attempts      = $15,
+                    corr_activated_here       = $16,
+                    corr_stabilization_sec    = $17,
+                    corr_return_stage_success = $18,
+                    corr_return_stage_fail    = $19,
+                    corr_outcome_success      = $20,
+                    corr_needs_ec             = $21,
+                    corr_ec_node_uid          = $22,
+                    corr_ec_channel           = $23,
+                    corr_ec_duration_ms       = $24,
+                    corr_needs_ph_up          = $25,
+                    corr_needs_ph_down        = $26,
+                    corr_ph_node_uid          = $27,
+                    corr_ph_channel           = $28,
+                    corr_ph_duration_ms       = $29,
+                    corr_wait_until           = $30,
+                    due_at     = $31,
+                    updated_at = $32
                 WHERE id = $1
                   AND claimed_by = $2
                   AND status IN ('claimed', 'running')
@@ -343,6 +363,10 @@ class PgAutomationTaskRepository:
                 correction.corr_step if correction else None,
                 correction.attempt if correction else None,
                 correction.max_attempts if correction else None,
+                correction.ec_attempt if correction else None,
+                correction.ec_max_attempts if correction else None,
+                correction.ph_attempt if correction else None,
+                correction.ph_max_attempts if correction else None,
                 correction.activated_here if correction else None,
                 correction.stabilization_sec if correction else None,
                 correction.return_stage_success if correction else None,

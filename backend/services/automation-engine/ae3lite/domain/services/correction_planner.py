@@ -1,17 +1,10 @@
-"""Pure domain service for AE3-Lite correction dose planning.
-
-Spec: doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md
-
-Rules:
-- EC corrected before PH (always).
-- Dose duration computed from pump calibration (ml_per_sec).
-- No hardcoded dose targets — all from correction_config.
-- No IO — pure calculation only.
-"""
+"""Pure domain service for AE3-Lite correction dose planning."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+import math
 from typing import Any, Mapping, Optional
 
 from ae3lite.domain.errors import PlannerConfigurationError
@@ -19,18 +12,26 @@ from ae3lite.domain.errors import PlannerConfigurationError
 
 @dataclass(frozen=True)
 class DosePlan:
-    """What corrections are needed and the resolved pulse durations."""
+    """Resolved correction actions for the current measurement snapshot."""
 
-    needs_ec: bool
-    ec_node_uid: str
-    ec_channel: str
-    ec_duration_ms: int
+    needs_ec: bool = False
+    ec_component: str = ""
+    ec_node_uid: str = ""
+    ec_channel: str = ""
+    ec_amount_ml: float = 0.0
+    ec_duration_ms: int = 0
+    ec_retry_after_sec: Optional[int] = None
 
-    needs_ph_up: bool
-    needs_ph_down: bool
-    ph_node_uid: str
-    ph_channel: str
-    ph_duration_ms: int
+    needs_ph_up: bool = False
+    needs_ph_down: bool = False
+    ph_node_uid: str = ""
+    ph_channel: str = ""
+    ph_amount_ml: float = 0.0
+    ph_duration_ms: int = 0
+    ph_retry_after_sec: Optional[int] = None
+
+    retry_after_sec: Optional[int] = None
+    pid_state_updates: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def needs_any(self) -> bool:
@@ -38,7 +39,6 @@ class DosePlan:
 
     @property
     def ph_direction(self) -> str:
-        """Returns 'up', 'down', or 'none'."""
         if self.needs_ph_up:
             return "up"
         if self.needs_ph_down:
@@ -47,11 +47,7 @@ class DosePlan:
 
 
 class CorrectionPlanner:
-    """Pure domain service: decides what to dose and for how long.
-
-    Used at: solution_fill, prepare_recirculation, irrigation.
-    Caller must supply resolved actuator refs (with pump_calibration).
-    """
+    """Domain planner for EC/pH dose pulses."""
 
     def is_within_tolerance(
         self,
@@ -62,11 +58,26 @@ class CorrectionPlanner:
         target_ec: float,
         ph_tolerance_pct: float,
         ec_tolerance_pct: float,
+        ph_min: float | None = None,
+        ph_max: float | None = None,
+        ec_min: float | None = None,
+        ec_max: float | None = None,
     ) -> bool:
-        """True if both PH and EC are within configured tolerance bands."""
-        ec_tol = abs(target_ec) * (ec_tolerance_pct / 100.0)
-        ph_tol = abs(target_ph) * (ph_tolerance_pct / 100.0)
-        return abs(current_ec - target_ec) <= ec_tol and abs(current_ph - target_ph) <= ph_tol
+        ph_has_explicit_window = ph_min is not None and ph_max is not None
+        ec_has_explicit_window = ec_min is not None and ec_max is not None
+        ph_lo, ph_hi = _resolve_bounds(
+            target=target_ph,
+            lower=ph_min,
+            upper=ph_max,
+            tolerance_pct=ph_tolerance_pct,
+        )
+        ec_lo, ec_hi = _resolve_bounds(
+            target=target_ec,
+            lower=ec_min,
+            upper=ec_max,
+            tolerance_pct=ec_tolerance_pct,
+        )
+        return ph_lo <= current_ph <= ph_hi and ec_lo <= current_ec <= ec_hi
 
     def build_dose_plan(
         self,
@@ -78,105 +89,434 @@ class CorrectionPlanner:
         ph_tolerance_pct: float,
         ec_tolerance_pct: float,
         correction_config: Mapping[str, Any],
-        # Resolved actuator refs from plan.runtime["correction"]["actuators"]
-        ec_actuator: Optional[Mapping[str, Any]],
-        ph_up_actuator: Optional[Mapping[str, Any]],
-        ph_down_actuator: Optional[Mapping[str, Any]],
+        workflow_phase: str | None = None,
+        process_calibrations: Optional[Mapping[str, Any]] = None,
+        ec_component_policy: Optional[Mapping[str, Any]] = None,
+        pid_state: Optional[Mapping[str, Any]] = None,
+        now: Optional[datetime] = None,
+        ph_min: float | None = None,
+        ph_max: float | None = None,
+        ec_min: float | None = None,
+        ec_max: float | None = None,
+        ec_actuator: Optional[Mapping[str, Any]] = None,
+        ec_actuators: Optional[Mapping[str, Any]] = None,
+        ph_up_actuator: Optional[Mapping[str, Any]] = None,
+        ph_down_actuator: Optional[Mapping[str, Any]] = None,
     ) -> DosePlan:
-        """Build a concrete dose plan with pulse durations in milliseconds.
+        phase_key = _normalize_phase_key(workflow_phase)
+        process_cfg = _phase_mapping(process_calibrations).get(phase_key, {})
+        process_cfg = process_cfg if isinstance(process_cfg, Mapping) else {}
+        pid_state = pid_state if isinstance(pid_state, Mapping) else {}
+        now = now or datetime.now(UTC).replace(tzinfo=None)
 
-        EC is always corrected before PH (spec §3.1, §3.2).
-        Dose volume is clamped to max_ec_dose_ml / max_ph_dose_ml.
-        """
-        ec_tol = abs(target_ec) * (ec_tolerance_pct / 100.0)
-        ph_tol = abs(target_ph) * (ph_tolerance_pct / 100.0)
-
-        ec_error = target_ec - current_ec  # positive → need more EC
-        ph_error = target_ph - current_ph  # positive → pH too low (need UP)
-
-        needs_ec = ec_error > ec_tol
-        needs_ph_up = ph_error > ph_tol
-        needs_ph_down = (-ph_error) > ph_tol
-
-        solution_volume_l = _positive_float(
-            correction_config.get("solution_volume_l"), default=100.0
+        ph_lo, ph_hi = _resolve_bounds(
+            target=target_ph,
+            lower=ph_min,
+            upper=ph_max,
+            tolerance_pct=ph_tolerance_pct,
+        )
+        ec_lo, ec_hi = _resolve_bounds(
+            target=target_ec,
+            lower=ec_min,
+            upper=ec_max,
+            tolerance_pct=ec_tolerance_pct,
         )
 
-        # --- EC dose ---
-        ec_node_uid = ""
-        ec_channel = str(correction_config.get("dose_ec_channel") or "dose_ec_a").strip().lower()
-        ec_duration_ms = 0
-        if needs_ec:
-            if ec_actuator is None:
-                raise PlannerConfigurationError(
-                    f"EC correction needed but no actuator resolved for channel={ec_channel}"
-                )
-            ec_node_uid = str(ec_actuator["node_uid"])
-            ec_channel = str(ec_actuator["channel"])
-            calibration = ec_actuator.get("calibration")
-            if not isinstance(calibration, Mapping):
-                raise PlannerConfigurationError(
-                    f"EC dosing pump calibration is required (channel={ec_channel}, node={ec_node_uid})"
-                )
-            sensitivity = _positive_float(
-                correction_config.get("ec_dose_ml_per_mS_L"), default=1.0
-            )
-            max_ml = _positive_float(correction_config.get("max_ec_dose_ml"), default=50.0)
-            dose_ml = min(ec_error * solution_volume_l * sensitivity, max_ml)
-            ec_duration_ms = _dose_ml_to_ms(dose_ml, calibration)
+        ph_has_explicit_window = ph_min is not None and ph_max is not None
+        ec_has_explicit_window = ec_min is not None and ec_max is not None
 
-        # --- PH dose ---
+        pid_updates = _reset_pid_state_if_inside_bounds(
+            current_ph=current_ph,
+            current_ec=current_ec,
+            ph_lo=ph_lo,
+            ph_hi=ph_hi,
+            ec_lo=ec_lo,
+            ec_hi=ec_hi,
+            pid_state=pid_state,
+        )
+
+        predicted_ph = _apply_feedforward_bias(
+            current_value=current_ph,
+            pid_entry=_pid_entry(pid_state, "ph"),
+            now=now,
+        )
+
+        controller_ec = _controller_cfg(correction_config, "ec")
+        controller_ph = _controller_cfg(correction_config, "ph")
+        solution_volume_l = _positive_float(correction_config.get("solution_volume_l"), 100.0)
+
+        ec_gap = max(0.0, (ec_lo - current_ec) if ec_has_explicit_window else (target_ec - current_ec))
+        ph_up_gap = max(0.0, (ph_lo - predicted_ph) if ph_has_explicit_window else (target_ph - predicted_ph))
+        ph_down_gap = max(0.0, (predicted_ph - ph_hi) if ph_has_explicit_window else (predicted_ph - target_ph))
+
+        ec_deadband = _non_negative_float(controller_ec.get("deadband"), 0.0)
+        ph_deadband = _non_negative_float(controller_ph.get("deadband"), 0.0)
+
+        ec_needs = ec_gap > ec_deadband
+        ph_needs_up = ph_up_gap > ph_deadband
+        ph_needs_down = ph_down_gap > ph_deadband
+
+        ec_retry_after = None
+        ph_retry_after = None
+
+        ec_component_name = ""
+        ec_node_uid = ""
+        ec_channel = ""
+        ec_amount_ml = 0.0
+        ec_duration_ms = 0
+
         ph_node_uid = ""
         ph_channel = ""
+        ph_amount_ml = 0.0
         ph_duration_ms = 0
-        if needs_ph_up or needs_ph_down:
-            ph_actuator = ph_up_actuator if needs_ph_up else ph_down_actuator
-            default_channel = (
-                correction_config.get("dose_ph_up_channel") if needs_ph_up
-                else correction_config.get("dose_ph_down_channel")
-            ) or ("dose_ph_up" if needs_ph_up else "dose_ph_down")
-            ph_channel = str(default_channel).strip().lower()
-            if ph_actuator is None:
-                raise PlannerConfigurationError(
-                    f"PH correction needed but no actuator resolved for channel={ph_channel}"
-                )
-            ph_node_uid = str(ph_actuator["node_uid"])
-            ph_channel = str(ph_actuator["channel"])
-            calibration = ph_actuator.get("calibration")
-            if not isinstance(calibration, Mapping):
-                raise PlannerConfigurationError(
-                    f"PH dosing pump calibration is required (channel={ph_channel}, node={ph_node_uid})"
-                )
-            sensitivity = _positive_float(
-                correction_config.get("ph_dose_ml_per_unit_L"), default=0.5
-            )
-            max_ml = _positive_float(correction_config.get("max_ph_dose_ml"), default=20.0)
-            dose_ml = min(abs(ph_error) * solution_volume_l * sensitivity, max_ml)
-            ph_duration_ms = _dose_ml_to_ms(dose_ml, calibration)
 
+        if ec_needs:
+            ec_retry_after = _retry_after(
+                pid_entry=_pid_entry(pid_state, "ec"),
+                min_interval_sec=_positive_int(controller_ec.get("min_interval_sec"), 0),
+                now=now,
+            )
+            if ec_retry_after is None:
+                resolved_component, resolved_ec = _resolve_ec_actuator(
+                    ec_actuator=ec_actuator,
+                    ec_actuators=ec_actuators,
+                    ec_component_policy=ec_component_policy,
+                    phase_key=phase_key,
+                    default_channel=str(correction_config.get("dose_ec_channel") or "dose_ec_a"),
+                )
+                ec_component_name = resolved_component
+                ec_node_uid = str(resolved_ec["node_uid"])
+                ec_channel = str(resolved_ec["channel"])
+                calibration = resolved_ec.get("calibration")
+                if not isinstance(calibration, Mapping):
+                    raise PlannerConfigurationError(
+                        f"EC dosing pump calibration is required (channel={ec_channel}, node={ec_node_uid})"
+                    )
+                ec_amount_ml, ec_pid_update = _compute_amount_ml(
+                    kind="ec",
+                    gap=ec_gap,
+                    lower_bound=ec_lo,
+                    current_value=current_ec,
+                    controller_cfg=controller_ec,
+                    correction_config=correction_config,
+                    process_cfg=process_cfg,
+                    calibration=calibration,
+                    solution_volume_l=solution_volume_l,
+                    pid_entry=_pid_entry(pid_state, "ec"),
+                    now=now,
+                )
+                if ec_pid_update:
+                    pid_updates["ec"] = ec_pid_update
+                ec_duration_ms = _dose_ml_to_ms(ec_amount_ml, calibration)
+                ec_needs = ec_duration_ms > 0
+            else:
+                ec_needs = False
+
+        if ph_needs_up or ph_needs_down:
+            ph_retry_after = _retry_after(
+                pid_entry=_pid_entry(pid_state, "ph"),
+                min_interval_sec=_positive_int(controller_ph.get("min_interval_sec"), 0),
+                now=now,
+            )
+            if ph_retry_after is None:
+                default_channel = (
+                    correction_config.get("dose_ph_up_channel") if ph_needs_up
+                    else correction_config.get("dose_ph_down_channel")
+                ) or ("dose_ph_up" if ph_needs_up else "dose_ph_down")
+                resolved_ph = ph_up_actuator if ph_needs_up else ph_down_actuator
+                if resolved_ph is None:
+                    raise PlannerConfigurationError(
+                        f"PH correction needed but no actuator resolved for channel={default_channel}"
+                    )
+                ph_node_uid = str(resolved_ph["node_uid"])
+                ph_channel = str(resolved_ph["channel"])
+                calibration = resolved_ph.get("calibration")
+                if not isinstance(calibration, Mapping):
+                    raise PlannerConfigurationError(
+                        f"PH dosing pump calibration is required (channel={ph_channel}, node={ph_node_uid})"
+                    )
+                ph_gap = ph_up_gap if ph_needs_up else ph_down_gap
+                ph_amount_ml, ph_pid_update = _compute_amount_ml(
+                    kind="ph_up" if ph_needs_up else "ph_down",
+                    gap=ph_gap,
+                    lower_bound=ph_lo if ph_needs_up else ph_hi,
+                    current_value=predicted_ph,
+                    controller_cfg=controller_ph,
+                    correction_config=correction_config,
+                    process_cfg=process_cfg,
+                    calibration=calibration,
+                    solution_volume_l=solution_volume_l,
+                    pid_entry=_pid_entry(pid_state, "ph"),
+                    now=now,
+                )
+                if ph_pid_update:
+                    pid_updates["ph"] = ph_pid_update
+                ph_duration_ms = _dose_ml_to_ms(ph_amount_ml, calibration)
+                ph_needs_up = ph_needs_up and ph_duration_ms > 0
+                ph_needs_down = ph_needs_down and ph_duration_ms > 0
+            else:
+                ph_needs_up = False
+                ph_needs_down = False
+
+        retry_after = _min_positive(ec_retry_after, ph_retry_after)
         return DosePlan(
-            needs_ec=needs_ec and ec_duration_ms > 0,
+            needs_ec=ec_needs,
+            ec_component=ec_component_name,
             ec_node_uid=ec_node_uid,
             ec_channel=ec_channel,
+            ec_amount_ml=ec_amount_ml,
             ec_duration_ms=ec_duration_ms,
-            needs_ph_up=needs_ph_up and ph_duration_ms > 0,
-            needs_ph_down=needs_ph_down and ph_duration_ms > 0,
+            ec_retry_after_sec=ec_retry_after,
+            needs_ph_up=ph_needs_up,
+            needs_ph_down=ph_needs_down,
             ph_node_uid=ph_node_uid,
             ph_channel=ph_channel,
+            ph_amount_ml=ph_amount_ml,
             ph_duration_ms=ph_duration_ms,
+            ph_retry_after_sec=ph_retry_after,
+            retry_after_sec=retry_after,
+            pid_state_updates=pid_updates,
         )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _resolve_bounds(
+    *,
+    target: float,
+    lower: float | None,
+    upper: float | None,
+    tolerance_pct: float,
+) -> tuple[float, float]:
+    if lower is not None and upper is not None:
+        return float(lower), float(upper)
+    tol = abs(float(target)) * (float(tolerance_pct) / 100.0)
+    return float(target) - tol, float(target) + tol
+
+
+def _normalize_phase_key(raw: str | None) -> str:
+    phase = str(raw or "").strip().lower()
+    if phase in {"tank_filling", "solution_fill"}:
+        return "solution_fill"
+    if phase in {"tank_recirc", "prepare_recirculation"}:
+        return "tank_recirc"
+    if phase in {"irrigating", "irrigation", "irrig_recirc"}:
+        return "irrigation"
+    return phase or "generic"
+
+
+def _phase_mapping(raw: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:
+    return raw if isinstance(raw, Mapping) else {}
+
+
+def _pid_entry(pid_state: Mapping[str, Any], kind: str) -> Mapping[str, Any]:
+    entry = pid_state.get(kind)
+    return entry if isinstance(entry, Mapping) else {}
+
+
+def _controller_cfg(correction_config: Mapping[str, Any], kind: str) -> Mapping[str, Any]:
+    controllers = correction_config.get("controllers")
+    controller = controllers.get(kind) if isinstance(controllers, Mapping) else None
+    if isinstance(controller, Mapping):
+        return controller
+    return {}
+
+
+def _resolve_ec_actuator(
+    *,
+    ec_actuator: Optional[Mapping[str, Any]],
+    ec_actuators: Optional[Mapping[str, Any]],
+    ec_component_policy: Optional[Mapping[str, Any]],
+    phase_key: str,
+    default_channel: str,
+) -> tuple[str, Mapping[str, Any]]:
+    if isinstance(ec_actuator, Mapping):
+        return "", ec_actuator
+
+    if not isinstance(ec_actuators, Mapping) or not ec_actuators:
+        raise PlannerConfigurationError(
+            f"EC correction needed but no actuator resolved for channel={default_channel}"
+        )
+
+    phase_policy = ec_component_policy.get(phase_key) if isinstance(ec_component_policy, Mapping) else None
+    phase_policy = phase_policy if isinstance(phase_policy, Mapping) else {}
+    ranked: list[tuple[float, str, Mapping[str, Any]]] = []
+    for name, actuator in ec_actuators.items():
+        if not isinstance(actuator, Mapping):
+            continue
+        component = str(name).strip().lower()
+        component = component[3:] if component.startswith("ec_") else component
+        weight = float(phase_policy.get(component) or phase_policy.get(name) or 0.0)
+        ranked.append((weight, component, actuator))
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    chosen = ranked[0] if ranked else None
+    if chosen is None:
+        raise PlannerConfigurationError(
+            f"EC correction needed but no actuator resolved for channel={default_channel}"
+        )
+    return chosen[1], chosen[2]
+
+
+def _retry_after(
+    *,
+    pid_entry: Mapping[str, Any],
+    min_interval_sec: int,
+    now: datetime,
+) -> int | None:
+    if min_interval_sec <= 0:
+        return None
+    last_dose_at = pid_entry.get("last_dose_at")
+    if not isinstance(last_dose_at, datetime):
+        return None
+    elapsed = (now - last_dose_at).total_seconds()
+    remaining = float(min_interval_sec) - elapsed
+    if remaining <= 0:
+        return None
+    return max(1, int(math.ceil(remaining)))
+
+
+def _apply_feedforward_bias(
+    *,
+    current_value: float,
+    pid_entry: Mapping[str, Any],
+    now: datetime,
+) -> float:
+    hold_until = pid_entry.get("hold_until")
+    if not isinstance(hold_until, datetime) or hold_until <= now:
+        return current_value
+    if str(pid_entry.get("last_correction_kind") or "").strip().lower() != "ec":
+        return current_value
+    return current_value + float(pid_entry.get("feedforward_bias") or 0.0)
+
+
+def _compute_amount_ml(
+    *,
+    kind: str,
+    gap: float,
+    lower_bound: float,
+    current_value: float,
+    controller_cfg: Mapping[str, Any],
+    correction_config: Mapping[str, Any],
+    process_cfg: Mapping[str, Any],
+    calibration: Mapping[str, Any],
+    solution_volume_l: float,
+    pid_entry: Mapping[str, Any],
+    now: datetime,
+) -> tuple[float, Mapping[str, Any]]:
+    gain = _process_gain(kind=kind, process_cfg=process_cfg)
+    pid_update = _next_pid_state(
+        kind=kind,
+        gap=gap,
+        current_value=current_value,
+        controller_cfg=controller_cfg,
+        pid_entry=pid_entry,
+        now=now,
+    )
+    if gain is not None:
+        output_units = (
+            float(controller_cfg.get("kp") or 0.0) * gap
+            + float(controller_cfg.get("ki") or 0.0) * float(pid_update["integral"])
+            + float(controller_cfg.get("kd") or 0.0) * float(pid_update["prev_derivative"])
+        )
+        dose_ml = output_units / gain if gain > 0 else 0.0
+    else:
+        sensitivity_key = "ec_dose_ml_per_mS_L" if kind == "ec" else "ph_dose_ml_per_unit_L"
+        sensitivity_default = 1.0 if kind == "ec" else 0.5
+        sensitivity = _positive_float(correction_config.get(sensitivity_key), sensitivity_default)
+        dose_ml = gap * solution_volume_l * sensitivity
+
+    min_effective_ml = max(0.0, float(calibration.get("min_effective_ml") or 0.0))
+    if dose_ml > 0 and min_effective_ml > 0:
+        dose_ml = max(dose_ml, min_effective_ml)
+
+    controller_max = _positive_float(controller_cfg.get("max_dose_ml"), 0.0)
+    if kind == "ec":
+        contract_max = _positive_float(correction_config.get("max_ec_dose_ml"), 50.0)
+    else:
+        contract_max = _positive_float(correction_config.get("max_ph_dose_ml"), 20.0)
+    max_ml = min(value for value in (controller_max, contract_max) if value > 0) if controller_max > 0 else contract_max
+    dose_ml = min(dose_ml, max_ml)
+    return round(max(0.0, dose_ml), 4), pid_update
+
+
+def _process_gain(*, kind: str, process_cfg: Mapping[str, Any]) -> float | None:
+    key = {
+        "ec": "ec_gain_per_ml",
+        "ph_up": "ph_up_gain_per_ml",
+        "ph_down": "ph_down_gain_per_ml",
+    }.get(kind)
+    if key is None:
+        return None
+    raw = process_cfg.get(key)
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _next_pid_state(
+    *,
+    kind: str,
+    gap: float,
+    current_value: float,
+    controller_cfg: Mapping[str, Any],
+    pid_entry: Mapping[str, Any],
+    now: datetime,
+) -> Mapping[str, Any]:
+    integral = float(pid_entry.get("integral") or 0.0)
+    prev_error = float(pid_entry.get("prev_error") or 0.0)
+    prev_derivative = float(pid_entry.get("prev_derivative") or 0.0)
+    last_measurement_at = pid_entry.get("last_measurement_at")
+    alpha = float(controller_cfg.get("derivative_filter_alpha") or 1.0)
+    alpha = min(1.0, max(0.0, alpha))
+    derivative = 0.0
+    if isinstance(last_measurement_at, datetime):
+        dt = (now - last_measurement_at).total_seconds()
+        if dt > 0:
+            integral += gap * dt
+            raw_derivative = (gap - prev_error) / dt
+            derivative = alpha * raw_derivative + (1.0 - alpha) * prev_derivative
+    max_integral = float(controller_cfg.get("max_integral") or 0.0)
+    if max_integral > 0:
+        integral = max(-max_integral, min(max_integral, integral))
+    return {
+        "integral": round(integral, 6),
+        "prev_error": round(gap, 6),
+        "prev_derivative": round(derivative, 6),
+        "last_measurement_at": now,
+        "last_measured_value": round(current_value, 6),
+        "last_correction_kind": "ec" if kind == "ec" else "ph",
+    }
+
+
+def _reset_pid_state_if_inside_bounds(
+    *,
+    current_ph: float,
+    current_ec: float,
+    ph_lo: float,
+    ph_hi: float,
+    ec_lo: float,
+    ec_hi: float,
+    pid_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if ph_lo <= current_ph <= ph_hi and "ph" in pid_state:
+        updates["ph"] = {
+            "integral": 0.0,
+            "prev_error": 0.0,
+            "prev_derivative": 0.0,
+        }
+    if ec_lo <= current_ec <= ec_hi and "ec" in pid_state:
+        updates["ec"] = {
+            "integral": 0.0,
+            "prev_error": 0.0,
+            "prev_derivative": 0.0,
+        }
+    return updates
+
 
 def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
-    """Convert dose volume (ml) to pump pulse duration (ms) via calibration.
-
-    Uses ml_per_sec: flow rate of the dosing pump.
-    duration_ms = (dose_ml / ml_per_sec) * 1000
-    """
     raw = calibration.get("ml_per_sec")
     if raw is None:
         raise PlannerConfigurationError(
@@ -197,9 +537,28 @@ def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
 
 def _positive_float(raw: Any, default: float) -> float:
     try:
-        v = float(raw)
-        if v > 0:
-            return v
+        value = float(raw)
     except (TypeError, ValueError):
-        pass
-    return default
+        return default
+    return value if value > 0 else default
+
+
+def _positive_int(raw: Any, default: int) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _non_negative_float(raw: Any, default: float) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
+def _min_positive(*values: Optional[int]) -> Optional[int]:
+    candidates = [int(value) for value in values if value is not None and int(value) > 0]
+    return min(candidates) if candidates else None

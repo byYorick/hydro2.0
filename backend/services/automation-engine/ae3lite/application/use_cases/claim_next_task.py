@@ -13,6 +13,9 @@ class AutomationTaskRepository(Protocol):
     async def claim_next_pending(self, *, owner: str, now: datetime) -> Optional[AutomationTask]:
         ...
 
+    async def next_pending_due_at(self) -> Optional[datetime]:
+        ...
+
     async def release_claim(self, *, task_id: int, owner: str, now: datetime) -> bool:
         ...
 
@@ -63,3 +66,6 @@ class ClaimNextTaskUseCase:
                 f"Failed to rollback claimed task {task.id} after zone lease conflict"
             )
         return None
+
+    async def next_pending_due_at(self) -> Optional[datetime]:
+        return await self._task_repository.next_pending_due_at()

@@ -6,6 +6,7 @@ from .command import CommandHandler
 from .clean_fill import CleanFillCheckHandler
 from .solution_fill import SolutionFillCheckHandler
 from .prepare_recirc import PrepareRecircCheckHandler
+from .prepare_recirc_window import PrepareRecircWindowHandler
 from .correction import CorrectionHandler
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "CleanFillCheckHandler",
     "SolutionFillCheckHandler",
     "PrepareRecircCheckHandler",
+    "PrepareRecircWindowHandler",
     "CorrectionHandler",
 ]

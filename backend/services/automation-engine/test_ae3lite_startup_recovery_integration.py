@@ -523,7 +523,7 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         assert updated_task is not None
         assert updated_task.status == "pending"
         assert updated_task.current_stage == "clean_fill_check"
-        expected_due_at = (now + timedelta(seconds=5)).replace(microsecond=0, tzinfo=timezone.utc)
+        expected_due_at = (now + timedelta(seconds=5)).replace(microsecond=0, tzinfo=None)
         assert updated_task.due_at == expected_due_at
         assert workflow_row is not None
         assert workflow_row.workflow_phase == "tank_filling"

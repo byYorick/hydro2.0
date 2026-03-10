@@ -25,6 +25,7 @@ class ExecuteTaskUseCase:
         planner: Any,
         command_gateway: Any,
         workflow_router: Any,
+        zone_correction_config_repository: Any | None = None,
         finalize_task_use_case: Any | None = None,
     ) -> None:
         self._task_repository = task_repository
@@ -32,6 +33,7 @@ class ExecuteTaskUseCase:
         self._planner = planner
         self._command_gateway = command_gateway
         self._workflow_router = workflow_router
+        self._zone_correction_config_repository = zone_correction_config_repository
         self._finalize_task_use_case = finalize_task_use_case or FinalizeTaskUseCase(task_repository=task_repository)
 
     async def run(self, *, task: Any, now: datetime) -> Any:
@@ -50,7 +52,14 @@ class ExecuteTaskUseCase:
             # v2: all two_tank tasks go through WorkflowRouter
             topology = running_task.topology
             if topology in ("two_tank", "two_tank_drip_substrate_trays"):
-                return await self._workflow_router.run(task=running_task, plan=plan, now=now)
+                final_task = await self._workflow_router.run(task=running_task, plan=plan, now=now)
+                await self._mark_correction_config_applied_if_needed(
+                    task=final_task,
+                    snapshot=snapshot,
+                    plan=plan,
+                    now=now,
+                )
+                return final_task
 
             # Fallback for non-two-tank topologies (generic single-batch)
             if len(plan.steps) < 1:
@@ -73,7 +82,7 @@ class ExecuteTaskUseCase:
                 owner=owner,
                 error_code=getattr(exc, "code", "ae3_task_execution_failed"),
                 error_message=str(exc),
-                now=datetime.utcnow().replace(microsecond=0),
+                now=now,
             )
         except Exception as exc:
             message = str(exc).strip() or exc.__class__.__name__
@@ -82,7 +91,7 @@ class ExecuteTaskUseCase:
                 owner=owner,
                 error_code="ae3_task_execution_unhandled_exception",
                 error_message=message,
-                now=datetime.utcnow().replace(microsecond=0),
+                now=now,
             )
 
     async def _fail_closed(
@@ -101,3 +110,38 @@ class ExecuteTaskUseCase:
             error_message=error_message,
             now=now,
         )
+
+    async def _mark_correction_config_applied_if_needed(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        plan: Any,
+        now: datetime,
+    ) -> None:
+        repository = self._zone_correction_config_repository
+        if repository is None:
+            return
+        if getattr(task, "is_active", False):
+            return
+        if str(getattr(task, "status", "")).strip().lower() != "completed":
+            return
+
+        topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
+        if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
+            return
+
+        correction_config = getattr(snapshot, "correction_config", None)
+        if not isinstance(correction_config, dict):
+            return
+        meta = correction_config.get("meta")
+        if not isinstance(meta, dict):
+            return
+        version = meta.get("version")
+        try:
+            version_int = int(version)
+        except (TypeError, ValueError):
+            return
+        if version_int <= 0:
+            return
+        await repository.mark_applied(zone_id=int(snapshot.zone_id), version=version_int, now=now)

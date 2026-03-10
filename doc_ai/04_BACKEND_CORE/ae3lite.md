@@ -156,13 +156,27 @@ AE3-Lite `v1` реализует один ИИ-агент.
 2. `zone_id`
 3. `task_type`
 4. `status`
-5. `payload`
-6. `idempotency_key`
-7. `claimed_by`
-8. `claimed_at`
-9. `error_code`
-10. `error_message`
-11. `completed_at`
+5. `idempotency_key`
+6. `topology`
+7. `intent_source`
+8. `intent_trigger`
+9. `intent_id`
+10. `intent_meta`
+11. `workflow.current_stage`
+12. `workflow.workflow_phase`
+13. `claimed_by`
+14. `claimed_at`
+15. `error_code`
+16. `error_message`
+17. `completed_at`
+
+Correction state для `cycle_start` хранится в explicit columns `ae_tasks`, а не в JSON payload.
+Канонический retry-contract:
+1. `corr_ec_attempt` / `corr_ec_max_attempts`
+2. `corr_ph_attempt` / `corr_ph_max_attempts`
+3. `workflow.stage_retry_count` для recirculation timeout windows
+4. terminal error `prepare_recirculation_attempt_limit_reached` после исчерпания `prepare_recirculation_max_attempts`
+5. stage timeout (`solution_fill_timeout_sec` / `prepare_recirculation_timeout_sec`) ограничивает весь stage целиком, включая активный correction sub-machine; при истечении deadline correction обязан быть прерван fail-closed переходом stage
 
 #### `PlannedCommand`
 
@@ -307,17 +321,28 @@ Planner:
 2. `zone_id`
 3. `task_type`
 4. `status`
-5. `payload`
-6. `idempotency_key`
-7. `scheduled_for`
-8. `due_at`
-9. `claimed_by`
-10. `claimed_at`
-11. `error_code`
-12. `error_message`
-13. `created_at`
-14. `updated_at`
-15. `completed_at`
+5. `idempotency_key`
+6. `topology`
+7. `intent_source`
+8. `intent_trigger`
+9. `intent_id`
+10. `intent_meta`
+11. `scheduled_for`
+12. `due_at`
+13. `current_stage`
+14. `workflow_phase`
+15. `claimed_by`
+16. `claimed_at`
+17. `error_code`
+18. `error_message`
+19. `created_at`
+20. `updated_at`
+21. `completed_at`
+
+Примечание:
+`ae_tasks` в canonical runtime `v1` использует явные typed columns для topology,
+intent metadata и workflow state. Legacy `payload` не является источником истины
+для stage progression.
 
 Обязательные ограничения:
 1. `task_type='cycle_start'` для всех записей `v1`

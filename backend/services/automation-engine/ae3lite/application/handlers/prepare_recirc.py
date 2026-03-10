@@ -16,7 +16,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
     Outcomes:
     1. Targets reached → ``prepare_recirculation_stop_to_ready``
     2. Targets not reached → enter correction cycle
-    3. Deadline exceeded → ``prepare_recirculation_timeout_stop``
+    3. Deadline exceeded → ``prepare_recirculation_window_exhausted``
     """
 
     async def run(
@@ -40,10 +40,11 @@ class PrepareRecircCheckHandler(BaseStageHandler):
 
         # Check deadline first (fail-fast)
         deadline = task.workflow.stage_deadline_at
-        if deadline is not None and now >= deadline:
+        if self._deadline_reached(now=now, deadline=deadline):
             return StageOutcome(
                 kind="transition",
-                next_stage="prepare_recirculation_timeout_stop",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
             )
 
         if await self._targets_reached(task=task, plan=plan):
@@ -58,7 +59,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             runtime=runtime,
             sensors_already_active=True,
             return_stage_success=stage_def.on_corr_success or "prepare_recirculation_stop_to_ready",
-            return_stage_fail=stage_def.on_corr_fail or "prepare_recirculation_timeout_stop",
+            return_stage_fail=stage_def.on_corr_fail or "prepare_recirculation_window_exhausted",
         )
         return StageOutcome(kind="enter_correction", correction=corr)
 
@@ -71,10 +72,16 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         return_stage_fail: str,
     ) -> CorrectionState:
         correction_cfg = runtime.get("correction") if isinstance(runtime.get("correction"), dict) else {}
+        ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
+        ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
         return CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             attempt=1,
-            max_attempts=int(correction_cfg.get("max_correction_attempts", 5)),
+            max_attempts=int(correction_cfg.get("prepare_recirculation_max_correction_attempts", 32767)),
+            ec_attempt=0,
+            ec_max_attempts=ec_max_attempts,
+            ph_attempt=0,
+            ph_max_attempts=ph_max_attempts,
             activated_here=not sensors_already_active,
             stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
             return_stage_success=return_stage_success,

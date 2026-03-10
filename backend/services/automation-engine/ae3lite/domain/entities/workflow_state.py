@@ -33,6 +33,10 @@ class CorrectionState:
     corr_step: str
     attempt: int
     max_attempts: int
+    ec_attempt: int
+    ec_max_attempts: int
+    ph_attempt: int
+    ph_max_attempts: int
     activated_here: bool
     stabilization_sec: int
     return_stage_success: str

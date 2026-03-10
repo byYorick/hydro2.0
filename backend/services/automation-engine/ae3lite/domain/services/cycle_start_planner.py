@@ -48,7 +48,7 @@ class CycleStartPlanner:
             raise PlannerConfigurationError(f"Unsupported diagnostics workflow for cycle_start planner: {workflow or 'empty'}")
         if not topology:
             raise PlannerConfigurationError("diagnostics execution topology is required")
-        if topology == "two_tank_drip_substrate_trays":
+        if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
             return self._build_two_tank_plan(task=task, snapshot=snapshot, workflow=workflow, topology=topology)
 
         default_node_types = self._normalize_node_types(execution.get("required_node_types"))
@@ -247,7 +247,7 @@ class CycleStartPlanner:
     ) -> dict[str, Any]:
         """Resolve optional dosing actuator refs for the correction module.
 
-        Returns a dict with keys "ec", "ph_up", "ph_down".
+        Returns a dict with keys "ec", "ec_actuators", "ph_up", "ph_down".
         Each value is either a dict {node_uid, channel, calibration} or None.
         Missing actuators are allowed — CorrectionPlanner will raise at dose time.
         """
@@ -270,8 +270,25 @@ class CycleStartPlanner:
         ph_up_channel = str(correction.get("dose_ph_up_channel") or "dose_ph_up").strip().lower()
         ph_down_channel = str(correction.get("dose_ph_down_channel") or "dose_ph_down").strip().lower()
 
+        ec_actuators: dict[str, Any] = {}
+        for actuator in actuators:
+            role = str(actuator.role or "").strip().lower()
+            channel = str(actuator.channel or "").strip().lower()
+            node_type = str(actuator.node_type or "").strip().lower()
+            if node_type != "ec":
+                continue
+            key = role or channel
+            if not key.startswith("dose_ec"):
+                continue
+            ec_actuators[key] = {
+                "node_uid": actuator.node_uid,
+                "channel": actuator.channel,
+                "calibration": dict(actuator.pump_calibration) if isinstance(actuator.pump_calibration, Mapping) else None,
+            }
+
         return {
             "ec": _try_resolve(ec_channel, ["ec"]),
+            "ec_actuators": ec_actuators,
             "ph_up": _try_resolve(ph_up_channel, ["ph"]),
             "ph_down": _try_resolve(ph_down_channel, ["ph"]),
         }

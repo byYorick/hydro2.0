@@ -161,6 +161,10 @@ stateDiagram-v2
 - `prepare_recirculation_check` -> ожидается `valve_solution_supply=true`, `valve_solution_fill=true`, `pump_main=true`
 - `irrigation_recovery_check` -> ожидается `valve_solution_supply=true`, `valve_solution_fill=true`, `valve_irrigation=false`, `pump_main=true`
 
+После `storage_state/state` runtime ждёт до `irr_state_wait_timeout_sec` появления или обновления
+`IRR_STATE_SNAPSHOT` и в этом окне переопрашивает snapshot, если он отсутствует, устарел
+или ещё не отражает ожидаемое состояние.
+
 Fail-closed режим:
 - snapshot отсутствует -> `two_tank_irr_state_unavailable` (`irr_state_unavailable`)
 - snapshot устарел (`age > irr_state_max_age_sec`) -> `two_tank_irr_state_stale` (`irr_state_stale`)
@@ -218,7 +222,7 @@ Fail-closed режим:
 - `level_poll_interval_sec = 60` (через runtime default)
 - `level_switch_on_threshold = 0.5`
 - `irr_state_max_age_sec = 30`
-- `irr_state_wait_timeout_sec = 2` (ожидание появления snapshot после `storage_state/state` перед fail `irr_state_unavailable`)
+- `irr_state_wait_timeout_sec = 5` (ожидание появления или обновления snapshot после `storage_state/state`)
 - prepare tolerance: `EC=25%`, `PH=15%`
 - recovery tolerance: `EC=10%`, `PH=5%`
 - degraded tolerance: `EC=20%`, `PH=10%`

@@ -38,6 +38,10 @@ def _make_task(
             "corr_step": correction.corr_step,
             "corr_attempt": correction.attempt,
             "corr_max_attempts": correction.max_attempts,
+            "corr_ec_attempt": correction.ec_attempt,
+            "corr_ec_max_attempts": correction.ec_max_attempts,
+            "corr_ph_attempt": correction.ph_attempt,
+            "corr_ph_max_attempts": correction.ph_max_attempts,
             "corr_activated_here": correction.activated_here,
             "corr_stabilization_sec": correction.stabilization_sec,
             "corr_return_stage_success": correction.return_stage_success,
@@ -117,7 +121,7 @@ class _MockWorkflowRepo:
         self.upsert_calls: list[dict] = []
 
     async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
-        self.upsert_calls.append({"zone_id": zone_id, "phase": workflow_phase})
+        self.upsert_calls.append({"zone_id": zone_id, "phase": workflow_phase, "payload": payload})
 
 
 class _MockRuntimeMonitor:
@@ -126,6 +130,20 @@ class _MockRuntimeMonitor:
 
 class _MockCommandGateway:
     pass
+
+
+class _MetricRecorder:
+    def __init__(self):
+        self.calls: list[dict[str, str]] = []
+
+    def labels(self, **labels):
+        recorder = self
+
+        class _Inc:
+            def inc(self_inner):
+                recorder.calls.append({key: str(value) for key, value in labels.items()})
+
+        return _Inc()
 
 
 def _make_router(
@@ -213,6 +231,7 @@ async def test_router_applies_enter_correction():
     """enter_correction outcome → update_stage with CorrectionState set."""
     corr = CorrectionState(
         corr_step="corr_check", attempt=1, max_attempts=5,
+        ec_attempt=0, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
         activated_here=False, stabilization_sec=60,
         return_stage_success="solution_fill_stop_to_ready",
         return_stage_fail="solution_fill_stop_to_prepare",
@@ -238,7 +257,8 @@ async def test_router_applies_exit_correction():
     """exit_correction → transition to return stage, correction cleared."""
     exit_outcome = StageOutcome(kind="exit_correction", next_stage="solution_fill_stop_to_ready")
     corr = CorrectionState(
-        corr_step="deactivate", attempt=2, max_attempts=5,
+        corr_step="corr_deactivate", attempt=2, max_attempts=5,
+        ec_attempt=1, ec_max_attempts=5, ph_attempt=1, ph_max_attempts=5,
         activated_here=False, stabilization_sec=60,
         return_stage_success="solution_fill_stop_to_ready",
         return_stage_fail="solution_fill_stop_to_prepare",
@@ -254,6 +274,68 @@ async def test_router_applies_exit_correction():
     call = tr.update_stage_calls[0]
     assert call["workflow"].current_stage == "solution_fill_stop_to_ready"
     assert call["correction"] is None  # cleared
+
+
+async def test_router_dispatches_corr_done_to_correction_handler():
+    exit_outcome = StageOutcome(kind="exit_correction", next_stage="solution_fill_stop_to_ready")
+    corr = CorrectionState(
+        corr_step="corr_done", attempt=2, max_attempts=5,
+        ec_attempt=1, ec_max_attempts=5, ph_attempt=1, ph_max_attempts=5,
+        activated_here=True, stabilization_sec=60,
+        return_stage_success="solution_fill_stop_to_ready",
+        return_stage_fail="solution_fill_stop_to_prepare",
+        outcome_success=True, needs_ec=False, ec_node_uid=None, ec_channel=None,
+        ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+        ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+    )
+    task = _make_task(stage="solution_fill_check", correction=corr)
+    router, tr, _ = _make_router(correction_outcome=exit_outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(), now=NOW)
+
+    assert len(tr.update_stage_calls) == 1
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "solution_fill_stop_to_ready"
+    assert tr.update_stage_calls[0]["correction"] is None
+
+
+async def test_router_exit_correction_metrics_use_outcome_correction(monkeypatch):
+    metric = _MetricRecorder()
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.workflow_router.CORRECTION_COMPLETED",
+        metric,
+    )
+    exit_outcome = StageOutcome(
+        kind="exit_correction",
+        next_stage="solution_fill_stop_to_ready",
+        correction=CorrectionState(
+            corr_step="corr_done", attempt=2, max_attempts=5,
+            ec_attempt=1, ec_max_attempts=5, ph_attempt=1, ph_max_attempts=5,
+            activated_here=False, stabilization_sec=60,
+            return_stage_success="solution_fill_stop_to_ready",
+            return_stage_fail="solution_fill_stop_to_prepare",
+            outcome_success=True, needs_ec=False, ec_node_uid=None, ec_channel=None,
+            ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+            ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+        ),
+    )
+    task = _make_task(
+        stage="solution_fill_check",
+        correction=CorrectionState(
+            corr_step="corr_check", attempt=2, max_attempts=5,
+            ec_attempt=1, ec_max_attempts=5, ph_attempt=1, ph_max_attempts=5,
+            activated_here=False, stabilization_sec=60,
+            return_stage_success="solution_fill_stop_to_ready",
+            return_stage_fail="solution_fill_stop_to_prepare",
+            outcome_success=None, needs_ec=False, ec_node_uid=None, ec_channel=None,
+            ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+            ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+        ),
+    )
+    router, _, _ = _make_router(correction_outcome=exit_outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(), now=NOW)
+
+    assert metric.calls == [{"topology": "two_tank", "outcome": "success"}]
 
 
 async def test_router_complete_ready_completes_task():
@@ -285,6 +367,7 @@ async def test_router_correction_takes_priority_over_stage():
     """When correction is active, CorrectionHandler is dispatched regardless of current stage."""
     corr = CorrectionState(
         corr_step="corr_check", attempt=1, max_attempts=5,
+        ec_attempt=0, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
         activated_here=False, stabilization_sec=60,
         return_stage_success="solution_fill_stop_to_ready",
         return_stage_fail="solution_fill_stop_to_prepare",
@@ -341,3 +424,25 @@ async def test_router_transition_no_deadline_for_command_stage():
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.stage_deadline_at is None  # clean_fill_start has no timeout_key
+
+
+async def test_router_transition_upsert_payload_uses_next_stage_not_old():
+    """Regression: upsert_phase payload must contain the NEW stage, not the old one.
+
+    Bug: _upsert_workflow_phase used task.current_stage (old stage before transition)
+    in the ae3_cycle_start_stage payload key. zone_workflow_state was always one
+    transition behind, confusing external observers.
+    """
+    outcome = StageOutcome(kind="transition", next_stage="clean_fill_start")
+    task = _make_task(stage="startup")
+    router, _, wr = _make_router(startup_outcome=outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert len(wr.upsert_calls) == 1
+    payload = wr.upsert_calls[0]["payload"]
+    # Must reflect the NEW stage (clean_fill_start), not the old one (startup)
+    assert payload["ae3_cycle_start_stage"] == "clean_fill_start", (
+        f"Expected 'clean_fill_start' but got {payload['ae3_cycle_start_stage']!r}. "
+        "The payload must use next_stage, not task.current_stage (old stage)."
+    )

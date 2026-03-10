@@ -79,7 +79,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
 
         # Check deadline
         deadline = task.workflow.stage_deadline_at
-        if deadline is not None and now >= deadline:
+        if self._deadline_reached(now=now, deadline=deadline):
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
         # Still filling — poll
@@ -97,10 +97,16 @@ class SolutionFillCheckHandler(BaseStageHandler):
         return_stage_fail: str,
     ) -> CorrectionState:
         correction_cfg = runtime.get("correction") if isinstance(runtime.get("correction"), dict) else {}
+        ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
+        ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
         return CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             attempt=1,
-            max_attempts=int(correction_cfg.get("max_correction_attempts", 5)),
+            max_attempts=max(ec_max_attempts, ph_max_attempts),
+            ec_attempt=0,
+            ec_max_attempts=ec_max_attempts,
+            ph_attempt=0,
+            ph_max_attempts=ph_max_attempts,
             activated_here=not sensors_already_active,
             stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
             return_stage_success=return_stage_success,

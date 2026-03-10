@@ -1,7 +1,7 @@
 """Unit tests for PrepareRecircCheckHandler.
 
 Outcomes:
- 1. Deadline exceeded (check first) → prepare_recirculation_timeout_stop
+ 1. Deadline exceeded (check first) → prepare_recirculation_window_exhausted
  2. Targets reached → prepare_recirculation_stop_to_ready
  3. Targets not reached → enter_correction
  4. IRR state probe mismatch → TaskExecutionError
@@ -9,6 +9,7 @@ Outcomes:
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -25,10 +26,18 @@ RUNTIME = {
     "telemetry_max_age_sec": 300,
     "level_poll_interval_sec": 10,
     "irr_state_max_age_sec": 60,
+    "irr_state_wait_timeout_sec": 0.02,
+    "irr_state_wait_poll_interval_sec": 0.005,
     "target_ph": 6.0,
     "target_ec": 2.0,
     "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
-    "correction": {"max_correction_attempts": 5, "stabilization_sec": 60},
+    "correction": {
+        "max_ec_correction_attempts": 5,
+        "max_ph_correction_attempts": 5,
+        "prepare_recirculation_max_attempts": 3,
+        "prepare_recirculation_max_correction_attempts": 32767,
+        "stabilization_sec": 60,
+    },
 }
 
 STAGE_DEF = StageDef(
@@ -37,7 +46,7 @@ STAGE_DEF = StageDef(
     timeout_key="prepare_recirculation_timeout_sec",
     has_correction=True,
     on_corr_success="prepare_recirculation_stop_to_ready",
-    on_corr_fail="prepare_recirculation_timeout_stop",
+    on_corr_fail="prepare_recirculation_window_exhausted",
 )
 
 
@@ -57,11 +66,12 @@ def _make_task(*, deadline: datetime | None = None) -> AutomationTask:
 
 
 class _MockPlan:
-    def __init__(self, *, ph: float = 6.0, ec: float = 2.0, probe_ok: bool = True):
-        self.runtime = RUNTIME
+    def __init__(self, *, runtime_override: dict | None = None):
+        self.runtime = deepcopy(RUNTIME)
+        if runtime_override:
+            self.runtime.update(runtime_override)
         self.named_plans = {"irr_state_probe": [object()]}
         self.targets = {}
-        self._probe_ok = probe_ok
 
 
 class _MockRuntimeMonitor:
@@ -70,12 +80,19 @@ class _MockRuntimeMonitor:
         ph: float = 6.0,
         ec: float = 2.0,
         irr_match: bool = True,
+        irr_states: list[dict] | None = None,
     ):
         self._ph = ph
         self._ec = ec
         self._irr_match = irr_match
+        self._irr_states = list(irr_states or [])
+        self.irr_reads = 0
 
     async def read_latest_irr_state(self, *, zone_id, max_age_sec):
+        self.irr_reads += 1
+        if self._irr_states:
+            state = self._irr_states.pop(0)
+            return dict(state)
         snapshot = {
             "valve_solution_supply": True,
             "valve_solution_fill": True,
@@ -105,14 +122,15 @@ def _make_handler(*, monitor=None, gateway=None) -> PrepareRecircCheckHandler:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 async def test_prepare_recirc_deadline_timeout_stop():
-    """Deadline exceeded → prepare_recirculation_timeout_stop (checked before targets)."""
+    """Deadline exceeded → prepare_recirculation_window_exhausted (checked before targets)."""
     deadline = NOW - timedelta(seconds=1)
     task = _make_task(deadline=deadline)
     handler = _make_handler()
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=STAGE_DEF, now=NOW)
 
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "prepare_recirculation_timeout_stop"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 1
 
 
 async def test_prepare_recirc_targets_reached():
@@ -138,7 +156,9 @@ async def test_prepare_recirc_targets_not_reached_enter_correction():
     assert outcome.correction.corr_step == "corr_check"
     assert outcome.correction.activated_here is False  # sensors already active
     assert outcome.correction.return_stage_success == "prepare_recirculation_stop_to_ready"
-    assert outcome.correction.return_stage_fail == "prepare_recirculation_timeout_stop"
+    assert outcome.correction.return_stage_fail == "prepare_recirculation_window_exhausted"
+    assert outcome.correction.ec_max_attempts == 5
+    assert outcome.correction.ph_max_attempts == 5
 
 
 async def test_prepare_recirc_probe_irr_mismatch_raises():
@@ -150,3 +170,70 @@ async def test_prepare_recirc_probe_irr_mismatch_raises():
     with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=task, plan=_MockPlan(), stage_def=STAGE_DEF, now=NOW)
     assert exc_info.value.code == "irr_state_mismatch"
+
+
+async def test_prepare_recirc_probe_waits_for_fresh_snapshot_after_stale_read():
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=2.0,
+        irr_states=[
+            {
+                "has_snapshot": True,
+                "is_stale": True,
+                "snapshot": {
+                    "valve_solution_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            },
+            {
+                "has_snapshot": True,
+                "is_stale": False,
+                "snapshot": {
+                    "valve_solution_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            },
+        ],
+    )
+    handler = _make_handler(monitor=monitor)
+    task = _make_task()
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=STAGE_DEF, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert monitor.irr_reads >= 2
+
+
+async def test_prepare_recirc_probe_stale_after_wait_still_fails_closed():
+    monitor = _MockRuntimeMonitor(
+        irr_states=[
+            {
+                "has_snapshot": True,
+                "is_stale": True,
+                "snapshot": {
+                    "valve_solution_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            },
+            {
+                "has_snapshot": True,
+                "is_stale": True,
+                "snapshot": {
+                    "valve_solution_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            },
+        ],
+    )
+    handler = _make_handler(monitor=monitor)
+    task = _make_task()
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task, plan=_MockPlan(), stage_def=STAGE_DEF, now=NOW)
+    assert exc_info.value.code == "irr_state_stale"
+    assert monitor.irr_reads >= 2

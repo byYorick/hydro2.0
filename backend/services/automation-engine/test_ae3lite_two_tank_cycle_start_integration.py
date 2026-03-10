@@ -286,6 +286,7 @@ def _build_worker(*, zone_id: int, clean_full: bool, solution_full: bool) -> Ae3
             zone_lease_repository=lease_repository,
             lease_ttl_sec=120,
         ),
+        idle_poll_interval_sec=0.05,
         execute_task_use_case=execute_use_case,
         startup_recovery_use_case=StartupRecoveryUseCase(
             task_repository=task_repository,

@@ -23,6 +23,8 @@ from ae3lite.infrastructure.read_models import PgTaskStatusReadModel, PgZoneRunt
 from ae3lite.infrastructure.repositories import (
     PgAeCommandRepository,
     PgAutomationTaskRepository,
+    PgPidStateRepository,
+    PgZoneAlertWriteRepository,
     PgZoneLeaseRepository,
     PgZoneWorkflowRepository,
 )
@@ -76,6 +78,8 @@ def build_ae3_runtime_bundle(
         poll_interval_sec=config.reconcile_poll_interval_sec,
     )
     workflow_repository = PgZoneWorkflowRepository()
+    alert_repository = PgZoneAlertWriteRepository()
+    pid_state_repository = PgPidStateRepository()
     runtime_monitor = PgZoneRuntimeMonitor()
     topology_registry = TopologyRegistry()
 
@@ -85,6 +89,8 @@ def build_ae3_runtime_bundle(
         topology_registry=topology_registry,
         runtime_monitor=runtime_monitor,
         command_gateway=command_gateway,
+        alert_repository=alert_repository,
+        pid_state_repository=pid_state_repository,
     )
 
     worker = Ae3RuntimeWorker(
@@ -94,6 +100,7 @@ def build_ae3_runtime_bundle(
             zone_lease_repository=zone_lease_repository,
             lease_ttl_sec=config.lease_ttl_sec,
         ),
+        idle_poll_interval_sec=config.reconcile_poll_interval_sec,
         execute_task_use_case=ExecuteTaskUseCase(
             task_repository=task_repository,
             zone_snapshot_read_model=PgZoneSnapshotReadModel(),

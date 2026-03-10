@@ -174,16 +174,24 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 2. Automation-engine → MQTT: start circulation_pump (рециркуляция)
 3. Ожидание стабилизации (30 сек, короче чем при filling)
 4. Повторение шагов 6-7 из TANK_FILLING
-5. Если targets достигнуты после N попыток (max 5):
+5. Если targets достигнуты после N timeout-window:
    - → Состояние READY
    - Automation-engine → MQTT: stop circulation_pump
    - Automation-engine → MQTT: deactivate ph_node, ec_node
-6. Если targets НЕ достигнуты после 5 попыток:
+6. Внутри каждого window используются независимые лимиты `max_ec_correction_attempts` и `max_ph_correction_attempts`
+   плюс верхний guard `prepare_recirculation_max_correction_attempts`
+7. Если текущий window исчерпан без достижения targets:
+   - остановить recirculation
+   - перезапустить следующий window, пока не исчерпан `prepare_recirculation_max_attempts`
+   - timeout window ограничивает не только `corr_check`, но и весь активный correction sub-machine;
+     при истечении deadline текущий correction window должен быть немедленно прерван
+8. Если targets НЕ достигнуты после исчерпания `prepare_recirculation_max_attempts`:
    - → Состояние IDLE (с ошибкой)
-   - Alert: "Failed to achieve NPK/pH targets"
+   - terminal error: `prepare_recirculation_attempt_limit_reached`
+   - alert code: `biz_prepare_recirculation_retry_exhausted`
 ```
 
-**Макс попытки:** 5
+**Макс timeout-window:** 5
 **Интервал между попытками:** 2 мин
 
 ### 3.3. Режим 3: IRRIGATING (Полив)

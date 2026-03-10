@@ -123,6 +123,8 @@ class TestTopologyRegistryLookup:
         assert len(stages) == 16
         assert "startup" in stages
         assert "complete_ready" in stages
+        assert "prepare_recirculation_window_exhausted" in stages
+        assert "prepare_recirculation_timeout_stop" not in stages
 
     def test_stages_unknown_topology_raises(self, registry: TopologyRegistry):
         with pytest.raises(KeyError, match="Unknown topology"):

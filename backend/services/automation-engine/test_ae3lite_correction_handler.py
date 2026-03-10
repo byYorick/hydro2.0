@@ -14,7 +14,7 @@ Steps:
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -35,7 +35,9 @@ RUNTIME = {
     "correction": {
         "ec_mix_wait_sec": 120,
         "ph_mix_wait_sec": 60,
-        "max_correction_attempts": 5,
+        "max_ec_correction_attempts": 5,
+        "max_ph_correction_attempts": 5,
+        "prepare_recirculation_max_correction_attempts": 32767,
         "stabilization_sec": 60,
         "actuators": {
             "ec": {"node_uid": "ec-node", "channel": "ec_pump"},
@@ -49,7 +51,14 @@ _SENSOR_CMD = PlannedCommand(step_no=1, node_uid="sensor-1", channel="sensor_mod
                               payload={"cmd": "activate_sensor_mode", "params": {}})
 
 
-def _make_task(*, corr: CorrectionState) -> AutomationTask:
+def _make_task(
+    *,
+    corr: CorrectionState,
+    current_stage: str = "solution_fill_check",
+    workflow_phase: str = "tank_filling",
+    stage_deadline_at: datetime | None = None,
+    stage_retry_count: int = 0,
+) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 6, "zone_id": 60, "task_type": "cycle_start", "status": "running",
         "idempotency_key": "k6", "scheduled_for": NOW, "due_at": NOW,
@@ -57,13 +66,17 @@ def _make_task(*, corr: CorrectionState) -> AutomationTask:
         "created_at": NOW, "updated_at": NOW, "completed_at": None,
         "topology": "two_tank", "intent_source": None, "intent_trigger": None,
         "intent_id": None, "intent_meta": {},
-        "current_stage": "solution_fill_check", "workflow_phase": "tank_filling",
-        "stage_deadline_at": None, "stage_retry_count": 0,
+        "current_stage": current_stage, "workflow_phase": workflow_phase,
+        "stage_deadline_at": stage_deadline_at, "stage_retry_count": stage_retry_count,
         "stage_entered_at": None, "clean_fill_cycle": 1,
         # Correction state fields
         "corr_step": corr.corr_step,
         "corr_attempt": corr.attempt,
         "corr_max_attempts": corr.max_attempts,
+        "corr_ec_attempt": corr.ec_attempt,
+        "corr_ec_max_attempts": corr.ec_max_attempts,
+        "corr_ph_attempt": corr.ph_attempt,
+        "corr_ph_max_attempts": corr.ph_max_attempts,
         "corr_activated_here": corr.activated_here,
         "corr_stabilization_sec": corr.stabilization_sec,
         "corr_return_stage_success": corr.return_stage_success,
@@ -87,6 +100,10 @@ def _base_corr(**kwargs) -> CorrectionState:
         corr_step="corr_check",
         attempt=1,
         max_attempts=5,
+        ec_attempt=0,
+        ec_max_attempts=5,
+        ph_attempt=0,
+        ph_max_attempts=5,
         activated_here=False,
         stabilization_sec=60,
         return_stage_success="solution_fill_stop_to_ready",
@@ -141,10 +158,19 @@ class _MockGateway:
         }
 
 
-def _make_handler(*, monitor=None, gateway=None) -> CorrectionHandler:
+class _MockPidStateRepository:
+    def __init__(self) -> None:
+        self.upsert_calls: list[dict] = []
+
+    async def upsert_states(self, *, zone_id, now, updates):
+        self.upsert_calls.append({"zone_id": zone_id, "updates": updates})
+
+
+def _make_handler(*, monitor=None, gateway=None, pid_repo=None) -> CorrectionHandler:
     return CorrectionHandler(
         runtime_monitor=monitor or _MockRuntimeMonitor(),
         command_gateway=gateway or _MockGateway(),
+        pid_state_repository=pid_repo,
     )
 
 
@@ -183,6 +209,8 @@ async def test_corr_check_within_tolerance_exits_success():
 
     assert outcome.kind == "exit_correction"
     assert outcome.next_stage == "solution_fill_stop_to_ready"
+    assert outcome.correction is not None
+    assert outcome.correction.outcome_success is True
 
 
 async def test_corr_check_max_attempts_exceeded_exits_fail():
@@ -195,6 +223,10 @@ async def test_corr_check_max_attempts_exceeded_exits_fail():
 
     assert outcome.kind == "exit_correction"
     assert outcome.next_stage == "solution_fill_stop_to_prepare"
+    assert outcome.correction is not None
+    assert outcome.correction.outcome_success is False
+
+
 
 
 async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
@@ -212,6 +244,7 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_ec"
+    assert outcome.correction.ec_attempt == 1
     assert outcome.due_delay_sec == 120  # ec_mix_wait_sec
 
 
@@ -254,6 +287,58 @@ async def test_corr_wait_ph_bumps_attempt_and_clears_dose_plan():
     assert c.ph_node_uid is None
 
 
+async def test_corr_check_prepare_recirc_retry_limit_transitions_window_exhausted():
+    corr = _base_corr(corr_step="corr_check", attempt=2, max_attempts=1)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_retry_count=2,
+    )
+    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
+    handler = _make_handler(monitor=monitor)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 3
+
+
+async def test_corr_prepare_recirc_deadline_preempts_active_correction_window():
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=4, ec_attempt=4, ph_attempt=3)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_deadline_at=NOW - timedelta(seconds=1),
+        stage_retry_count=1,
+    )
+    handler = _make_handler()
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 2
+
+
+async def test_corr_solution_fill_deadline_preempts_active_correction_window():
+    corr = _base_corr(corr_step="corr_wait_ph", attempt=4, ec_attempt=3, ph_attempt=3)
+    task = _make_task(
+        corr=corr,
+        current_stage="solution_fill_check",
+        workflow_phase="tank_filling",
+        stage_deadline_at=NOW - timedelta(seconds=1),
+    )
+    handler = _make_handler()
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_timeout_stop"
+
+
 async def test_corr_deactivate_sets_done_and_exits():
     """corr_deactivate (activated_here=True): deactivates sensors, sets corr_done, then exit_correction."""
     corr = _base_corr(
@@ -273,3 +358,54 @@ async def test_corr_deactivate_sets_done_and_exits():
     outcome2 = await handler.run(task=task2, plan=_MockPlan(), stage_def=None, now=NOW)
     assert outcome2.kind == "exit_correction"
     assert outcome2.next_stage == "solution_fill_stop_to_ready"
+    assert outcome2.correction is not None
+    assert outcome2.correction.outcome_success is True
+
+
+async def test_corr_check_persists_pid_state_updates_when_dose_needed():
+    """Regression BUG-19: corr_check must persist dose_plan.pid_state_updates to DB."""
+    pid_repo = _MockPidStateRepository()
+    # ec=0.5 is below target_ec=2.0 → dose needed
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    runtime = dict(RUNTIME)
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
+        "ph_down": None,
+    }
+
+    class _PlanWithCalib:
+        named_plans = {}
+
+    _PlanWithCalib.runtime = runtime
+
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_PlanWithCalib(), stage_def=None, now=NOW)
+
+    # pid_state_repository.upsert_states must have been called
+    assert len(pid_repo.upsert_calls) == 1, "pid_state_updates must be persisted after corr_check"
+    call = pid_repo.upsert_calls[0]
+    assert call["zone_id"] == 60
+    pid_types_saved = {u["pid_type"] for u in call["updates"]}
+    # EC dose was needed → "ec" pid state should be in the update
+    assert "ec" in pid_types_saved
+
+
+async def test_corr_check_no_pid_repo_does_not_crash():
+    """corr_check must not fail when pid_state_repository is None (backward compat)."""
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)  # within tolerance → no dose
+    handler = _make_handler(monitor=monitor, pid_repo=None)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    # Should succeed regardless (no crash when repo is None)
+    assert outcome.kind in {"enter_correction", "exit_correction"}

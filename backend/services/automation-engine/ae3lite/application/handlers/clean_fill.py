@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
-from ae3lite.application.handlers.base import BaseStageHandler, _naive_dt
+from ae3lite.application.handlers.base import BaseStageHandler
 
 
 class CleanFillCheckHandler(BaseStageHandler):
@@ -52,7 +52,7 @@ class CleanFillCheckHandler(BaseStageHandler):
 
         # Check deadline
         deadline = task.workflow.stage_deadline_at
-        if deadline is not None and now >= deadline:
+        if self._deadline_reached(now=now, deadline=deadline):
             cycle = max(1, task.workflow.clean_fill_cycle)
             retry_limit = 1 + int(runtime.get("clean_fill_retry_cycles", 0))
             if cycle < retry_limit:

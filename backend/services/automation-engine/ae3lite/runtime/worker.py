@@ -15,6 +15,7 @@ class Ae3RuntimeWorker:
         *,
         owner: str,
         claim_next_task_use_case: Any,
+        idle_poll_interval_sec: float,
         execute_task_use_case: Any,
         startup_recovery_use_case: Any,
         zone_lease_repository: Any,
@@ -26,6 +27,7 @@ class Ae3RuntimeWorker:
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
         self._claim_next_task_use_case = claim_next_task_use_case
+        self._idle_poll_interval_sec = max(0.1, float(idle_poll_interval_sec))
         self._execute_task_use_case = execute_task_use_case
         self._startup_recovery_use_case = startup_recovery_use_case
         self._zone_lease_repository = zone_lease_repository
@@ -37,9 +39,11 @@ class Ae3RuntimeWorker:
         self._drain_task: Optional[Any] = None
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
+        self._wake_task: Optional[Any] = None
 
     def kick(self) -> Any:
         self._pending_kicks += 1
+        self._cancel_wake_task()
         self._log_debug(
             "AE3 runtime kick received: pending_kicks=%s has_drain_task=%s",
             self._pending_kicks,
@@ -83,6 +87,9 @@ class Ae3RuntimeWorker:
                     self._log_debug("AE3 runtime drain retrying after deferred kick")
                     self._pending_kicks = 0
                     continue
+                if await self._schedule_wake_for_next_pending():
+                    self._log_debug("AE3 runtime drain sleeping until next due task")
+                    return
                 self._log_debug("AE3 runtime drain idle: no pending tasks")
                 return
 
@@ -168,6 +175,74 @@ class Ae3RuntimeWorker:
         self._drain_task = task
         self._respawn_guard_task = None
         return task
+
+    async def _schedule_wake_for_next_pending(self) -> bool:
+        getter = getattr(self._claim_next_task_use_case, "next_pending_due_at", None)
+        if not callable(getter):
+            return False
+        next_due_at = await getter()
+        if next_due_at is None:
+            return False
+
+        now = self._now_fn()
+        if next_due_at.tzinfo is not None and now.tzinfo is None:
+            next_due_cmp = next_due_at.replace(tzinfo=None)
+        elif next_due_at.tzinfo is None and now.tzinfo is not None:
+            next_due_cmp = next_due_at.replace(tzinfo=now.tzinfo)
+        else:
+            next_due_cmp = next_due_at
+
+        delay = (next_due_cmp - now).total_seconds()
+        if delay <= 0:
+            delay = self._idle_poll_interval_sec
+        self._log_debug(
+            "AE3 runtime scheduled wake: owner=%s due_in_sec=%.3f next_due_at=%s",
+            self._owner,
+            delay,
+            next_due_at,
+        )
+        self._arm_wake_task(delay=delay)
+        return True
+
+    def _arm_wake_task(self, *, delay: float) -> None:
+        if self._wake_task is not None and not self._wake_task.done():
+            return
+
+        async def _wake_after_delay() -> None:
+            try:
+                await asyncio.sleep(max(0.0, delay))
+                if self._drain_task is not None and not self._drain_task.done():
+                    self._log_debug(
+                        "AE3 runtime wake skipped: owner=%s active_drain_task=%s",
+                        self._owner,
+                        self._drain_task,
+                    )
+                    return
+                self._log_debug(
+                    "AE3 runtime wake firing: owner=%s delay_sec=%.3f",
+                    self._owner,
+                    delay,
+                )
+                self._spawn_drain_task()
+            finally:
+                if self._wake_task is wake_task:
+                    self._wake_task = None
+
+        wake_task = self._spawn_background_task_fn(
+            _wake_after_delay(),
+            task_name="ae3lite_runtime_wake",
+        )
+        self._wake_task = wake_task
+
+    def _cancel_wake_task(self) -> None:
+        wake_task = self._wake_task
+        if wake_task is None or wake_task.done():
+            self._wake_task = None
+            return
+        cancel = getattr(wake_task, "cancel", None)
+        if callable(cancel):
+            cancel()
+        self._wake_task = None
 
     def _arm_respawn_on_done(self, task: Any) -> None:
         if self._respawn_guard_task is task:
