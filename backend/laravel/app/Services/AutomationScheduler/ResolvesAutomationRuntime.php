@@ -21,11 +21,11 @@ trait ResolvesAutomationRuntime
                 'error' => $e->getMessage(),
             ]);
 
-            return 'ae2';
+            return 'ae3';
         }
 
         $normalized = strtolower(trim((string) $runtime));
 
-        return $normalized !== '' ? $normalized : 'ae2';
+        return $normalized !== '' ? $normalized : 'ae3';
     }
 }

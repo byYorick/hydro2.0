@@ -11,6 +11,7 @@ from ae3lite.application.use_cases import (
     ClaimNextTaskUseCase,
     CreateTaskFromIntentUseCase,
     ExecuteTaskUseCase,
+    GetZoneControlStateUseCase,
     ReconcileCommandUseCase,
     StartupRecoveryUseCase,
 )
@@ -27,6 +28,7 @@ from ae3lite.infrastructure.repositories import (
 )
 from ae3lite.runtime.config import Ae3RuntimeConfig
 from ae3lite.runtime.worker import Ae3RuntimeWorker
+from common.db import fetch
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class Ae3RuntimeBundle:
     """Ready-to-use AE3 runtime services for compat ingress and worker drain."""
 
     create_task_from_intent_use_case: CreateTaskFromIntentUseCase
+    get_zone_control_state_use_case: GetZoneControlStateUseCase
     task_status_read_model: PgTaskStatusReadModel
     worker: Ae3RuntimeWorker
 
@@ -113,8 +116,13 @@ def build_ae3_runtime_bundle(
         now_fn=now_fn,
         logger=logger,
     )
+    get_zone_control_state_use_case = GetZoneControlStateUseCase(
+        task_repository=task_repository,
+        fetch_fn=fetch,
+    )
     return Ae3RuntimeBundle(
         create_task_from_intent_use_case=create_task_from_intent_use_case,
+        get_zone_control_state_use_case=get_zone_control_state_use_case,
         task_status_read_model=task_status_read_model,
         worker=worker,
     )

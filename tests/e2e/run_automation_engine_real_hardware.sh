@@ -153,6 +153,14 @@ WORKFLOW_SCENARIOS=(
 )
 AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml"
+  "scenarios/ae3lite/E101_ae3_two_tank_realhw_ready_during_fill.yaml"
+  "scenarios/ae3lite/E101_ae3_two_tank_realhw_setup_ready.yaml"
+  "scenarios/ae3lite/E102_ae3_recirculation_retry_limit_alert_reset_realhw.yaml"
+  "scenarios/ae3lite/E102_ae3_two_tank_realhw_ready_during_recirculation.yaml"
+  "scenarios/ae3lite/E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"
+  "scenarios/ae3lite/E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"
+  "scenarios/ae3lite/E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
+  "scenarios/ae3lite/E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
 )
 
 usage() {

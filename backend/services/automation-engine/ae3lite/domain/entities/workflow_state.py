@@ -17,6 +17,9 @@ class WorkflowState:
     stage_retry_count: int
     stage_entered_at: Optional[datetime]
     clean_fill_cycle: int
+    # Control mode fields (read from zones.control_mode + ae_tasks.pending_manual_step)
+    control_mode: str = "auto"
+    pending_manual_step: Optional[str] = None
 
 
 @dataclass(frozen=True)

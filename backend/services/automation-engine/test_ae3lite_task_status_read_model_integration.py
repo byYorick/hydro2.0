@@ -97,18 +97,19 @@ async def test_task_status_read_model_returns_canonical_view_for_ae3_zone() -> N
 
 
 @pytest.mark.asyncio
-async def test_task_status_read_model_hides_tasks_for_non_ae3_zone() -> None:
-    prefix = f"ae3-task-status-hidden-{uuid4().hex}"
+async def test_task_status_read_model_shows_task_for_ae3_zone() -> None:
+    prefix = f"ae3-task-status-show-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     read_model = PgTaskStatusReadModel()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
-        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id, automation_runtime="ae2")
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id, automation_runtime="ae3")
         task_id = await _insert_task(zone_id, prefix=prefix, status="completed", now=now)
 
         view = await read_model.get_by_task_id(task_id=task_id)
 
-        assert view is None
+        assert view is not None
+        assert view.task_id == task_id
     finally:
         await _cleanup(prefix)

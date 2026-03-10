@@ -67,6 +67,9 @@ class AutomationTask:
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> AutomationTask:
         """Construct from an asyncpg Record or dict-like row."""
+        # control_mode_snapshot takes priority (task-level snapshot);
+        # pending_manual_step is always from ae_tasks (set via POST /manual-step).
+        raw_control_mode = row.get("control_mode_snapshot") or row.get("control_mode") or "auto"
         workflow = WorkflowState(
             current_stage=str(row.get("current_stage") or "startup"),
             workflow_phase=str(row.get("workflow_phase") or "idle"),
@@ -74,6 +77,8 @@ class AutomationTask:
             stage_retry_count=int(row.get("stage_retry_count") or 0),
             stage_entered_at=_naive(row.get("stage_entered_at")),
             clean_fill_cycle=int(row.get("clean_fill_cycle") or 0),
+            control_mode=str(raw_control_mode).strip() or "auto",
+            pending_manual_step=str(row["pending_manual_step"]) if row.get("pending_manual_step") is not None else None,
         )
 
         correction: Optional[CorrectionState] = None

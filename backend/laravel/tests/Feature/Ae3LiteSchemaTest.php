@@ -25,7 +25,8 @@ class Ae3LiteSchemaTest extends TestCase
 
         $zone = Zone::factory()->create();
         $zone->refresh();
-        $this->assertSame('ae2', $zone->automation_runtime);
+        $this->assertSame('ae3', $zone->automation_runtime);
+        $this->assertContains('control_mode', DB::getSchemaBuilder()->getColumnListing('zones'));
 
         DB::table('zone_workflow_state')->insert([
             'zone_id' => $zone->id,
@@ -126,7 +127,6 @@ class Ae3LiteSchemaTest extends TestCase
             'zone_id' => $zoneId,
             'task_type' => 'cycle_start',
             'status' => $status,
-            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'idempotency_key' => $idempotencyKey,
             'scheduled_for' => now(),
             'due_at' => now()->addMinute(),

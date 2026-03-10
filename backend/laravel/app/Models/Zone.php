@@ -21,6 +21,7 @@ class Zone extends Model
         'description',
         'status',
         'automation_runtime',
+        'control_mode',
         'health_score',
         'health_status',
         'hardware_profile',

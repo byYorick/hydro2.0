@@ -28,7 +28,7 @@ class SchedulerCycleServiceTest extends TestCase
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
-                        'task_id' => 'svc-cycle-task-1',
+                        'task_id' => '9001',
                         'zone_id' => $zone->id,
                         'accepted' => true,
                         'runner_state' => 'active',
@@ -49,7 +49,7 @@ class SchedulerCycleServiceTest extends TestCase
         $this->assertGreaterThanOrEqual(1, (int) ($stats['successful_dispatches'] ?? 0));
 
         $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
-            'task_id' => 'svc-cycle-task-1',
+            'task_id' => '9001',
             'zone_id' => $zone->id,
             'task_type' => 'irrigation',
             'status' => 'accepted',
@@ -156,7 +156,7 @@ class SchedulerCycleServiceTest extends TestCase
     /**
      * @return array{0: Zone, 1: GrowCycle}
      */
-    private function createZoneAndCycle(string $automationRuntime = 'ae2'): array
+    private function createZoneAndCycle(string $automationRuntime = 'ae3'): array
     {
         $zone = Zone::factory()->create([
             'status' => 'online',

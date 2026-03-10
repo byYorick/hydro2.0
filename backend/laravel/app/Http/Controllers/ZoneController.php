@@ -183,7 +183,7 @@ class ZoneController extends Controller
             'preset_id' => ['nullable', 'integer', 'exists:presets,id'],
             'settings' => ['nullable', 'array'],
             'status' => ['sometimes', 'string', 'in:online,offline,warning'],
-            'automation_runtime' => ['sometimes', 'string', 'in:ae2,ae3'],
+            'automation_runtime' => ['sometimes', 'string', 'in:ae3'],
         ]);
 
         try {

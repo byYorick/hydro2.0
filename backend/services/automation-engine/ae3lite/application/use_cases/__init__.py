@@ -4,6 +4,7 @@ from .claim_next_task import ClaimNextTaskUseCase
 from .create_task_from_intent import CreateTaskFromIntentUseCase
 from .execute_task import ExecuteTaskUseCase
 from .finalize_task import FinalizeTaskUseCase
+from .get_zone_control_state import GetZoneControlStateUseCase
 from .publish_planned_command import PublishPlannedCommandUseCase
 from .reconcile_command import ReconcileCommandUseCase
 from .startup_recovery import StartupRecoveryUseCase
@@ -14,6 +15,7 @@ __all__ = [
     "CreateTaskFromIntentUseCase",
     "ExecuteTaskUseCase",
     "FinalizeTaskUseCase",
+    "GetZoneControlStateUseCase",
     "PublishPlannedCommandUseCase",
     "ReconcileCommandUseCase",
     "StartupRecoveryUseCase",
