@@ -763,7 +763,63 @@ void handle_system_command(const char* cmd, cJSON* params) {
 
 ---
 
-## 9. Связанные документы
+## 9. Логирование событий коррекции в zone_events
+
+### 9.1. Создаваемые события
+
+`CorrectionHandler` создаёт записи в `zone_events` при каждом дозировании:
+
+| Тип события    | Шаг            | Когда создаётся                               |
+|----------------|----------------|-----------------------------------------------|
+| `EC_DOSING`    | `corr_dose_ec` | После успешной отправки команды насосу EC     |
+| `PH_CORRECTED` | `corr_dose_ph` | После успешной отправки команды насосу pH     |
+
+### 9.2. Структура payload
+
+**EC_DOSING:**
+```json
+{
+  "node_uid": "ec-node-uid",
+  "channel": "ec_npk_pump",
+  "duration_ms": 2500,
+  "current_ec": 1.2,
+  "target_ec": 1.5,
+  "target_ec_min": 1.4,
+  "target_ec_max": 1.6,
+  "attempt": 1,
+  "source": "correction_handler"
+}
+```
+
+**PH_CORRECTED:**
+```json
+{
+  "node_uid": "ph-node-uid",
+  "channel": "ph_base_pump",
+  "duration_ms": 1200,
+  "direction": "up",
+  "current_ph": 5.8,
+  "target_ph": 6.2,
+  "target_ph_min": 6.0,
+  "target_ph_max": 6.5,
+  "attempt": 1,
+  "source": "correction_handler"
+}
+```
+
+### 9.3. Источник current_ph / current_ec
+
+Значения `current_ph` и `current_ec` берутся **из таблицы `pid_state`** (метод `PgPidStateRepository.read_measured_value`), а не из `plan.runtime`.
+
+**Причина:** `plan` не обновляется между шагами коррекции — `_run_check` и `_run_dose_ec`/`_run_dose_ph` выполняются в разных итерациях основного цикла executor'а. В `_run_check` выполняется `_persist_pid_state_updates`, который записывает `last_measured_value` в `pid_state`. Таким образом, чтение из `pid_state` гарантирует, что событие содержит актуальное измерение.
+
+### 9.4. Обработка ошибок логирования
+
+Ошибки создания событий логируются как WARNING (`_logger.warning`), но **не прерывают** выполнение шага коррекции. Это намеренно — ошибки логирования не должны влиять на бизнес-логику дозирования.
+
+---
+
+## 10. Связанные документы
 
 - `ARCHITECTURE_FLOWS.md` — архитектурные схемы и пайплайны
 - `EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets
@@ -773,3 +829,4 @@ void handle_system_command(const char* cmd, cJSON* params) {
 ---
 
 **Документ создан после обсуждения логики коррекции 2026-02-14**
+**Обновлён 2026-03-11: добавлен раздел 9 (логирование событий коррекции)**

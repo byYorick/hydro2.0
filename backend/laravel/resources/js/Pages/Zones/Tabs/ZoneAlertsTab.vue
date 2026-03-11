@@ -143,7 +143,7 @@ const getAlertMessage = (alert: Alert): string => {
   if (typeof alert.message === 'string' && alert.message.trim() !== '') return alert.message
   if (alert.details && typeof alert.details === 'object') {
     const details = alert.details as Record<string, unknown>
-    const detailMessage = details.message ?? details.reason ?? details.error ?? details.description
+    const detailMessage = details.message ?? details.reason ?? details.error ?? details.error_message ?? details.description
     if (typeof detailMessage === 'string' && detailMessage.trim() !== '') return detailMessage
   }
   return ''

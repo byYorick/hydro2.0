@@ -56,6 +56,22 @@ class PgAutomationTaskRepository:
             )
         return AutomationTask.from_row(row) if row is not None else None
 
+    async def get_last_for_zone(self, *, zone_id: int) -> Optional[AutomationTask]:
+        """Return the most recent task for a zone regardless of status (including failed/completed)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT *
+                FROM ae_tasks
+                WHERE zone_id = $1
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                zone_id,
+            )
+        return AutomationTask.from_row(row) if row is not None else None
+
     async def get_by_id(self, *, task_id: int) -> Optional[AutomationTask]:
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -344,8 +360,11 @@ class PgAutomationTaskRepository:
                     corr_ph_channel           = $28,
                     corr_ph_duration_ms       = $29,
                     corr_wait_until           = $30,
-                    due_at     = $31,
-                    updated_at = $32
+                    corr_ec_component         = $31,
+                    corr_ec_amount_ml         = $32,
+                    corr_ph_amount_ml         = $33,
+                    due_at     = $34,
+                    updated_at = $35
                 WHERE id = $1
                   AND claimed_by = $2
                   AND status IN ('claimed', 'running')
@@ -382,6 +401,9 @@ class PgAutomationTaskRepository:
                 correction.ph_channel if correction else None,
                 correction.ph_duration_ms if correction else None,
                 correction.wait_until if correction else None,
+                correction.ec_component if correction else None,
+                correction.ec_amount_ml if correction else None,
+                correction.ph_amount_ml if correction else None,
                 normalized_due_at,
                 normalized_now,
             )
@@ -476,6 +498,23 @@ class PgAutomationTaskRepository:
         return AutomationTask.from_row(row) if row is not None else None
 
     # ── Audit trail ─────────────────────────────────────────────────
+
+    async def get_transitions_for_task(self, *, task_id: int, limit: int = 50) -> list[dict]:
+        """Return stage transitions for a task ordered chronologically."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT from_stage, to_stage, workflow_phase, triggered_at, metadata
+                FROM ae_stage_transitions
+                WHERE task_id = $1
+                ORDER BY triggered_at ASC, id ASC
+                LIMIT $2
+                """,
+                task_id,
+                limit,
+            )
+        return [dict(row) for row in rows]
 
     async def record_transition(
         self,

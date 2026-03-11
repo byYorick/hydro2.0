@@ -440,8 +440,9 @@ describe('ZoneAutomationTab.vue', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('Scheduler / Intent Lifecycle')
+    expect(wrapper.text()).toContain('Задачи автоматики')
     expect(wrapper.text()).toContain('st-recent')
+    expect(wrapper.text()).toContain('Освещение')
     expect(wrapper.text()).toContain('Выполняется')
     const openButton = wrapper.findAll('button').find((btn) => btn.text() === 'Открыть')
     expect(openButton).toBeTruthy()
@@ -450,6 +451,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.text()).toContain('st-test')
     expect(wrapper.text()).toContain('Решение автоматики')
     expect(wrapper.text()).toContain('Выполнить')
+    expect(wrapper.text()).toContain('Автополив')
     expect(wrapper.text()).toContain('SLA-контроль')
     expect(wrapper.text()).toContain('SLA выполнен')
     expect(wrapper.text()).toContain('Запуск цикла инициирован')
@@ -464,10 +466,22 @@ describe('ZoneAutomationTab.vue', () => {
     expect(wrapper.text()).toContain('DONE подтвержден')
     const vm = wrapper.vm as any
     expect(vm.schedulerTaskStatusLabel('expired')).toBe('Просрочена')
+    expect(vm.schedulerTaskTypeLabel('irrigation')).toBe('Автополив')
+    expect(vm.schedulerTaskTypeLabel('diagnostics')).toBe('Диагностика / setup')
+    expect(vm.schedulerTaskTypeLabel('manual_recovery')).toBe('Ручной recovery')
+    expect(vm.schedulerTaskEventLabel('AE_CURRENT_STAGE')).toContain('обновление текущего этапа')
+    expect(vm.schedulerTaskReasonLabel('solution_fill_check')).toContain('Наполнение раствором')
+    expect(vm.schedulerTaskReasonLabel('prepare_recirculation_check')).toContain('Подготовка рециркуляции')
     expect(
       vm.schedulerTaskTimelineStageLabel({
         event_type: 'TASK_STARTED',
         reason_code: 'solution_fill_started',
+      })
+    ).toContain('набор бака с раствором')
+    expect(
+      vm.schedulerTaskTimelineStageLabel({
+        event_type: 'AE_CURRENT_STAGE',
+        reason_code: 'solution_fill_check',
       })
     ).toContain('набор бака с раствором')
     expect(
@@ -645,7 +659,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(openButton).toBeTruthy()
     await openButton!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Timeline событий недоступен')
+    expect(wrapper.text()).toContain('История событий пока недоступна')
   })
   it('игнорирует устаревший ответ scheduler-задач после смены зоны', async () => {
     const deferred = <T>() => {

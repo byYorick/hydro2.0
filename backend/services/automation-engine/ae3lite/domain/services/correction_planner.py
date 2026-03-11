@@ -182,7 +182,7 @@ class CorrectionPlanner:
                     ec_actuators=ec_actuators,
                     ec_component_policy=ec_component_policy,
                     phase_key=phase_key,
-                    default_channel=str(correction_config.get("dose_ec_channel") or "dose_ec_a"),
+                    default_channel=str(correction_config.get("dose_ec_channel") or "ec_npk_pump"),
                 )
                 ec_component_name = resolved_component
                 ec_node_uid = str(resolved_ec["node_uid"])
@@ -222,7 +222,7 @@ class CorrectionPlanner:
                 default_channel = (
                     correction_config.get("dose_ph_up_channel") if ph_needs_up
                     else correction_config.get("dose_ph_down_channel")
-                ) or ("dose_ph_up" if ph_needs_up else "dose_ph_down")
+                ) or ("ph_base_pump" if ph_needs_up else "ph_acid_pump")
                 resolved_ph = ph_up_actuator if ph_needs_up else ph_down_actuator
                 if resolved_ph is None:
                     raise PlannerConfigurationError(

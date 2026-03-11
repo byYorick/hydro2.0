@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
+use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -17,6 +18,11 @@ use Illuminate\Validation\Rule;
 
 class ZoneRelayAutotuneController extends Controller
 {
+    public function __construct(
+        private readonly AutomationRuntimeConfigService $runtimeConfig,
+    ) {
+    }
+
     public function start(Request $request, Zone $zone): JsonResponse
     {
         $this->authorizeZoneAccess($request, $zone);
@@ -145,8 +151,9 @@ class ZoneRelayAutotuneController extends Controller
      */
     private function startInAutomationEngine(int $zoneId, string $pidType): array
     {
-        $apiUrl = rtrim((string) config('services.automation_engine.api_url', 'http://automation-engine:9405'), '/');
-        $timeout = (float) config('services.automation_engine.timeout', 2.0);
+        $cfg = $this->runtimeConfig->schedulerConfig();
+        $apiUrl = (string) ($cfg['api_url'] ?? 'http://automation-engine:9405');
+        $timeout = (float) ($cfg['timeout_sec'] ?? 2.0);
 
         /** @var Response $response */
         $response = Http::acceptJson()
@@ -171,8 +178,9 @@ class ZoneRelayAutotuneController extends Controller
      */
     private function statusFromAutomationEngine(int $zoneId, string $pidType): array
     {
-        $apiUrl = rtrim((string) config('services.automation_engine.api_url', 'http://automation-engine:9405'), '/');
-        $timeout = (float) config('services.automation_engine.timeout', 2.0);
+        $cfg = $this->runtimeConfig->schedulerConfig();
+        $apiUrl = (string) ($cfg['api_url'] ?? 'http://automation-engine:9405');
+        $timeout = (float) ($cfg['timeout_sec'] ?? 2.0);
 
         /** @var Response $response */
         $response = Http::acceptJson()
@@ -253,12 +261,14 @@ class ZoneRelayAutotuneController extends Controller
      */
     private function automationEngineHeaders(): array
     {
+        $cfg = $this->runtimeConfig->schedulerConfig();
+
         $headers = [
             'X-Trace-Id' => Str::lower((string) Str::uuid()),
-            'X-Scheduler-Id' => (string) config('services.automation_engine.scheduler_id', 'laravel-api'),
+            'X-Scheduler-Id' => (string) ($cfg['scheduler_id'] ?? 'laravel-api'),
         ];
 
-        $token = trim((string) config('services.automation_engine.scheduler_api_token', ''));
+        $token = trim((string) ($cfg['token'] ?? ''));
         if ($token !== '') {
             $headers['Authorization'] = 'Bearer '.$token;
         }

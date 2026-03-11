@@ -463,6 +463,27 @@
       "description": "Узел сообщил об ошибке на уровне железа, канала или firmware.",
       "recommendation": "Проверьте питание, wiring, firmware и диагностические payload ноды.",
       "node_related": true
+    },
+
+    {
+      "code": "biz_ae3_task_failed",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка задачи автоматики",
+      "description": "Задача automation-engine завершилась с ошибкой.",
+      "recommendation": "Проверьте логи automation-engine, состояние зоны и наличие активного цикла.",
+      "node_related": false
+    },
+    {
+      "code": "biz_prepare_recirculation_retry_exhausted",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Исчерпаны попытки подготовки рециркуляции",
+      "description": "Этап подготовки рециркуляции превысил максимальное число попыток.",
+      "recommendation": "Проверьте насосы, клапаны и сенсоры рециркуляционного контура.",
+      "node_related": false
     }
   ]
 }

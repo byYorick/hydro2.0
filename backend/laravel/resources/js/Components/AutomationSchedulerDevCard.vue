@@ -2,16 +2,16 @@
   <details class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl group">
     <summary class="cursor-pointer px-4 py-3 list-none flex items-center justify-between gap-3">
       <div class="flex items-center gap-2">
-        <span class="text-sm font-medium text-[color:var(--text-primary)]">Scheduler / Intent Lifecycle</span>
-        <Badge variant="secondary">dev</Badge>
+        <span class="text-sm font-medium text-[color:var(--text-primary)]">Задачи автоматики</span>
+        <Badge variant="secondary">диагностика</Badge>
       </div>
-      <span class="text-xs text-[color:var(--text-dim)]">раскрыть</span>
+      <span class="text-xs text-[color:var(--text-dim)]">открыть панель</span>
     </summary>
 
     <div class="p-4 space-y-4 border-t border-[color:var(--border-muted)]">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <p class="text-xs text-[color:var(--text-dim)]">
-          Мониторинг статусов `accepted/running/completed/failed/rejected/expired` для numeric AE3 task_id, `st-*` и `intent-*`.
+          Здесь можно понять, что делает автоматика сейчас, почему задача зависла или завершилась ошибкой, и на каком этапе это произошло.
         </p>
         <div class="text-xs text-[color:var(--text-muted)]">
           <span v-if="schedulerTasksUpdatedAt">Обновлено: {{ formatDateTime(schedulerTasksUpdatedAt) }}</span>
@@ -24,7 +24,7 @@
           v-model="taskIdModel"
           type="text"
           class="w-full md:flex-1 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-sm"
-          placeholder="numeric AE3, st-... или intent-..."
+          placeholder="Введите ID задачи: 78, st-..., intent-..."
         />
         <div class="flex gap-2">
           <Button
@@ -32,7 +32,7 @@
             :disabled="schedulerTaskLookupLoading"
             @click="$emit('lookup-task')"
           >
-            {{ schedulerTaskLookupLoading ? 'Проверка...' : 'Проверить task_id' }}
+            {{ schedulerTaskLookupLoading ? 'Открываем...' : 'Открыть задачу' }}
           </Button>
           <Button
             size="sm"
@@ -40,7 +40,7 @@
             :disabled="schedulerTaskListLoading"
             @click="$emit('refresh-list')"
           >
-            {{ schedulerTaskListLoading ? 'Обновление...' : 'Обновить список' }}
+            {{ schedulerTaskListLoading ? 'Обновляем...' : 'Обновить список задач' }}
           </Button>
         </div>
       </div>
@@ -52,6 +52,13 @@
         {{ schedulerTaskError }}
       </p>
 
+      <p
+        v-if="!schedulerTaskStatus"
+        class="text-xs text-[color:var(--text-dim)]"
+      >
+        Выберите задачу из списка ниже или введите её ID вручную.
+      </p>
+
       <ZoneAutomationSchedulerTaskDetailsCard
         v-if="schedulerTaskStatus"
         :scheduler-task-status="schedulerTaskStatus"
@@ -61,6 +68,7 @@
         :format-date-time="formatDateTime"
         :scheduler-task-status-variant="schedulerTaskStatusVariant"
         :scheduler-task-status-label="schedulerTaskStatusLabel"
+        :scheduler-task-type-label="schedulerTaskTypeLabel"
         :scheduler-task-decision-label="schedulerTaskDecisionLabel"
         :scheduler-task-reason-label="schedulerTaskReasonLabel"
         :scheduler-task-error-label="schedulerTaskErrorLabel"
@@ -78,7 +86,7 @@
             v-model="taskSearchModel"
             type="text"
             class="w-full rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-xs"
-            placeholder="Поиск: task_id/status/error_code/reason_code"
+            placeholder="Поиск: ID, статус, причина, ошибка"
           />
           <select
             v-model="taskPresetModel"
@@ -113,7 +121,13 @@
             <div class="min-w-0">
               <p class="font-mono text-xs text-[color:var(--text-primary)] truncate">{{ task.task_id }}</p>
               <p class="text-xs text-[color:var(--text-dim)]">
-                {{ task.task_type || '-' }} · {{ formatDateTime(task.updated_at) }}
+                {{ schedulerTaskTypeLabel(task.task_type) }} · {{ formatDateTime(task.updated_at) }}
+              </p>
+              <p
+                v-if="task.reason_code"
+                class="text-[11px] text-[color:var(--text-muted)] truncate"
+              >
+                Причина: {{ schedulerTaskReasonLabel(task.reason_code, task.reason || null) }}
               </p>
             </div>
             <div class="flex items-center gap-2">
@@ -166,11 +180,12 @@ interface Props {
   formatDateTime: (value: string | null | undefined) => string
   schedulerTaskStatusVariant: (value: string | null | undefined) => 'success' | 'warning' | 'danger' | 'info' | 'secondary'
   schedulerTaskStatusLabel: (value: string | null | undefined) => string
+  schedulerTaskTypeLabel: (value: string | null | undefined) => string
   schedulerTaskDecisionLabel: (value: string | null | undefined) => string
-  schedulerTaskReasonLabel: (value: string | null | undefined) => string
+  schedulerTaskReasonLabel: (reasonCode: string | null | undefined, reasonText?: string | null | undefined) => string
   schedulerTaskErrorLabel: (value: string | null | undefined, rawError?: string | null | undefined) => string
   schedulerTaskProcessStatusVariant: (value: string | null | undefined) => 'success' | 'warning' | 'danger' | 'info' | 'secondary'
-  schedulerTaskProcessStatusLabel: (value: string | null | undefined) => string
+  schedulerTaskProcessStatusLabel: (value: string | null | undefined, statusLabel?: string | null | undefined) => string
   schedulerTaskEventLabel: (value: string | null | undefined) => string
   schedulerTaskTimelineStepLabel: (value: SchedulerTaskTimelineItem) => string
   schedulerTaskTimelineStageLabel: (value: SchedulerTaskTimelineItem) => string | null

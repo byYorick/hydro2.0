@@ -29,6 +29,7 @@ RUNTIME = {
     "level_switch_on_threshold": 0.5,
     "telemetry_max_age_sec": 300,
     "irr_state_max_age_sec": 60,
+    "irr_state_wait_timeout_sec": 0,
 }
 
 
@@ -58,7 +59,10 @@ def _make_task(zone_id: int = 10) -> AutomationTask:
 class _MockPlan:
     def __init__(self, *, irr_snapshot: dict[str, bool] | None = None):
         self.runtime = RUNTIME
-        self.named_plans = {"irr_state_probe": [object()]}
+        self.named_plans = {
+            "irr_state_probe": ["probe"],
+            "solution_fill_stop": ["stop"],
+        }
         self._irr_snapshot = irr_snapshot or {"pump_main": False}
 
     @property
@@ -69,8 +73,10 @@ class _MockPlan:
 class _MockCommandGateway:
     def __init__(self, *, success: bool = True):
         self._success = success
+        self.calls: list[list[object]] = []
 
     async def run_batch(self, *, task, commands, now):
+        self.calls.append(list(commands))
         return {"success": self._success, "error_code": "fail", "error_message": "err"}
 
 
@@ -79,16 +85,21 @@ class _MockRuntimeMonitor:
         self,
         *,
         irr_state: dict | None = None,
+        irr_states: list[dict] | None = None,
         clean_max_triggered: bool = False,
         clean_min_triggered: bool = True,
     ):
         self._irr_state = irr_state or {"pump_main": False}
+        self._irr_states = list(irr_states) if isinstance(irr_states, list) else None
         self._levels: dict[str, bool] = {
             "clean_max": clean_max_triggered,
             "clean_min": clean_min_triggered,
         }
 
     async def read_latest_irr_state(self, *, zone_id, max_age_sec):
+        if self._irr_states is not None:
+            if self._irr_states:
+                self._irr_state = self._irr_states.pop(0)
         return {
             "has_snapshot": True,
             "is_stale": False,
@@ -152,3 +163,22 @@ async def test_startup_probe_failure_raises():
     with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
     assert exc_info.value.code == "fail"
+
+
+async def test_startup_probe_mismatch_runs_safety_stop_and_retries():
+    monitor = _MockRuntimeMonitor(
+        irr_states=[
+            {"pump_main": True},
+            {"pump_main": False},
+        ],
+        clean_max_triggered=False,
+    )
+    gateway = _MockCommandGateway(success=True)
+    handler = _make_handler(gateway=gateway, monitor=monitor)
+    task = _make_task()
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "clean_fill_start"
+    assert gateway.calls == [["probe"], ["stop"], ["probe"]]

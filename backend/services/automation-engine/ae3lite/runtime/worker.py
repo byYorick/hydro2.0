@@ -24,6 +24,7 @@ class Ae3RuntimeWorker:
         mark_intent_terminal_fn: Callable[..., Any],
         now_fn: Callable[[], datetime],
         logger: Any,
+        lease_ttl_sec: int = 300,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
         self._claim_next_task_use_case = claim_next_task_use_case
@@ -36,6 +37,7 @@ class Ae3RuntimeWorker:
         self._mark_intent_terminal_fn = mark_intent_terminal_fn
         self._now_fn = now_fn
         self._logger = logger
+        self._lease_ttl_sec = max(30, int(lease_ttl_sec))
         self._drain_task: Optional[Any] = None
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
@@ -100,10 +102,17 @@ class Ae3RuntimeWorker:
             if intent_id > 0:
                 await self._safe_mark_intent_running(intent_id=intent_id)
 
+            heartbeat_task = self._spawn_background_task_fn(
+                self._lease_heartbeat(zone_id=task.zone_id),
+                task_name="ae3lite_lease_heartbeat",
+            )
             final_task = task
             try:
                 final_task = await self._execute_task_use_case.run(task=task, now=self._now_fn())
             finally:
+                cancel = getattr(heartbeat_task, "cancel", None)
+                if callable(cancel):
+                    cancel()
                 released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
                 if not released:
                     self._logger.warning(
@@ -115,6 +124,33 @@ class Ae3RuntimeWorker:
 
             if intent_id > 0 and final_task is not None and not final_task.is_active:
                 await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
+
+    async def _lease_heartbeat(self, *, zone_id: int) -> None:
+        """Periodically extend zone lease while task is executing (heartbeat at 1/3 of TTL)."""
+        interval = max(10.0, self._lease_ttl_sec / 3.0)
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                extended = await self._zone_lease_repository.extend(
+                    zone_id=zone_id,
+                    owner=self._owner,
+                    now=self._now_fn(),
+                    lease_ttl_sec=self._lease_ttl_sec,
+                )
+                if extended:
+                    self._log_debug("AE3 lease heartbeat extended: zone_id=%s owner=%s", zone_id, self._owner)
+                else:
+                    self._logger.warning(
+                        "AE3 lease heartbeat: lease lost for zone_id=%s owner=%s",
+                        zone_id,
+                        self._owner,
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                self._logger.warning(
+                    "AE3 lease heartbeat error: zone_id=%s owner=%s", zone_id, self._owner, exc_info=True
+                )
 
     async def _safe_mark_intent_running(self, *, intent_id: int) -> None:
         try:

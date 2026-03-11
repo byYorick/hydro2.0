@@ -7,9 +7,10 @@ trait BuildsSchedulerTaskProcessView
     /**
      * @param  array<string,mixed>  $payload
      * @param  array<int, array<string,mixed>>  $timeline
+     * @param  array<string,mixed>  $runtimeContext
      * @return array{process_state: array<string,mixed>, process_steps: array<int, array<string,mixed>>}
      */
-    private function buildTaskProcessView(array $payload, array $timeline): array
+    private function buildTaskProcessView(array $payload, array $timeline, array $runtimeContext = []): array
     {
         $stepsByPhase = [];
         foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
@@ -72,10 +73,14 @@ trait BuildsSchedulerTaskProcessView
             $stepsByPhase[$phaseCode] = $step;
         }
 
+        $latestAction = $this->applyRuntimeContextToProcessSteps($stepsByPhase, $runtimeContext, $latestAction);
+
         $taskStatus = strtolower(trim((string) ($payload['status'] ?? '')));
         $runMode = strtolower(trim((string) ($payload['run_mode'] ?? (($payload['result']['run_mode'] ?? '')))));
         if (in_array($taskStatus, ['failed', 'rejected', 'expired'], true)) {
-            $failedPhase = $this->resolveCurrentPhaseCode($stepsByPhase) ?? 'setup_transition';
+            $failedPhase = $this->resolveRuntimeFailedPhaseCode($runtimeContext)
+                ?? $this->resolveCurrentPhaseCode($stepsByPhase)
+                ?? 'setup_transition';
             $stepsByPhase[$failedPhase]['status'] = 'failed';
             $stepsByPhase[$failedPhase]['status_label'] = $this->processStatusLabel('failed');
             if ($stepsByPhase[$failedPhase]['updated_at'] === null) {
@@ -84,7 +89,8 @@ trait BuildsSchedulerTaskProcessView
         }
 
         if ($taskStatus === 'completed') {
-            if ($runMode === 'working') {
+            $setupCompletedByRuntime = $this->runtimeIndicatesSetupCompleted($runtimeContext);
+            if ($runMode === 'working' || $setupCompletedByRuntime) {
                 $setupStep = $stepsByPhase['setup_transition'];
                 if ($setupStep['status'] !== 'completed') {
                     $setupStep['status'] = 'completed';
@@ -94,6 +100,19 @@ trait BuildsSchedulerTaskProcessView
                     }
                 }
                 $stepsByPhase['setup_transition'] = $setupStep;
+            }
+
+            $terminalReasonCode = strtolower(trim((string) ($payload['reason_code'] ?? '')));
+            if (
+                in_array($terminalReasonCode, self::PROCESS_SETUP_TRANSITION_REASON_CODES, true)
+                && ($runtimeContext['stage_transitions'] ?? []) === []
+            ) {
+                foreach (['clean_fill', 'solution_fill'] as $phaseCode) {
+                    if (($stepsByPhase[$phaseCode]['status'] ?? null) === 'pending') {
+                        $stepsByPhase[$phaseCode]['status'] = 'completed';
+                        $stepsByPhase[$phaseCode]['status_label'] = $this->processStatusLabel('completed');
+                    }
+                }
             }
 
             foreach (self::PROCESS_PHASE_SEQUENCE as $phaseCode) {
@@ -234,6 +253,222 @@ trait BuildsSchedulerTaskProcessView
             'completed' => 'Выполнено',
             'failed' => 'Ошибка',
             default => 'Ожидание',
+        };
+    }
+
+    /**
+     * @param  array<string, array<string,mixed>>  $stepsByPhase
+     * @param  array<string,mixed>  $runtimeContext
+     * @param  array<string,mixed>|null  $latestAction
+     * @return array<string,mixed>|null
+     */
+    private function applyRuntimeContextToProcessSteps(
+        array &$stepsByPhase,
+        array $runtimeContext,
+        ?array $latestAction
+    ): ?array {
+        $transitions = is_array($runtimeContext['stage_transitions'] ?? null)
+            ? $runtimeContext['stage_transitions']
+            : [];
+
+        foreach ($transitions as $transition) {
+            if (! is_array($transition)) {
+                continue;
+            }
+
+            $fromStage = strtolower(trim((string) ($transition['from_stage'] ?? '')));
+            $toStage = strtolower(trim((string) ($transition['to_stage'] ?? '')));
+            $workflowPhase = strtolower(trim((string) ($transition['workflow_phase'] ?? '')));
+            $at = $this->toIso8601($transition['at'] ?? null);
+
+            $fromPhase = $this->resolveProcessPhaseFromAeStage($fromStage, $workflowPhase);
+            $toPhase = $this->resolveProcessPhaseFromAeStage($toStage, $workflowPhase);
+
+            if ($fromPhase !== null && $fromPhase !== $toPhase) {
+                $this->markProcessStepStatus(
+                    $stepsByPhase,
+                    $fromPhase,
+                    'completed',
+                    $at,
+                    'ae_stage_transition',
+                    $fromStage !== '' ? $fromStage : null
+                );
+            } elseif ($fromPhase !== null) {
+                $this->markProcessStepStatus(
+                    $stepsByPhase,
+                    $fromPhase,
+                    'running',
+                    $at,
+                    'ae_stage_transition',
+                    $fromStage !== '' ? $fromStage : null
+                );
+            }
+
+            if ($toPhase !== null) {
+                $toStatus = $toStage === 'complete_ready' ? 'completed' : 'running';
+                $this->markProcessStepStatus(
+                    $stepsByPhase,
+                    $toPhase,
+                    $toStatus,
+                    $at,
+                    'ae_stage_transition',
+                    $toStage !== '' ? $toStage : null
+                );
+                $latestAction = $this->resolveLatestProcessAction(
+                    $latestAction,
+                    [
+                        'event_type' => 'AE_STAGE_TRANSITION',
+                        'reason_code' => $toStage !== '' ? $toStage : null,
+                        'at' => $at,
+                    ]
+                );
+            }
+        }
+
+        $currentStage = strtolower(trim((string) ($runtimeContext['current_stage'] ?? '')));
+        $workflowPhase = strtolower(trim((string) ($runtimeContext['workflow_phase'] ?? '')));
+        $currentPhase = $this->resolveProcessPhaseFromAeStage($currentStage, $workflowPhase);
+        $currentAt = $this->toIso8601($runtimeContext['updated_at'] ?? null);
+        if ($currentPhase !== null) {
+            $currentStageStatus = $currentStage === 'complete_ready' ? 'completed' : 'running';
+            $this->markProcessStepStatus(
+                $stepsByPhase,
+                $currentPhase,
+                $currentStageStatus,
+                $currentAt,
+                'ae_current_stage',
+                $currentStage !== '' ? $currentStage : null
+            );
+            $latestAction = $this->resolveLatestProcessAction(
+                $latestAction,
+                [
+                    'event_type' => 'AE_CURRENT_STAGE',
+                    'reason_code' => $currentStage !== '' ? $currentStage : null,
+                    'at' => $currentAt,
+                ]
+            );
+        }
+
+        if ($this->runtimeIndicatesSetupCompleted($runtimeContext)) {
+            $this->markProcessStepStatus(
+                $stepsByPhase,
+                'setup_transition',
+                'completed',
+                $currentAt,
+                'ae_current_stage',
+                'complete_ready'
+            );
+        }
+
+        return $latestAction;
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $latestAction
+     * @param  array<string,mixed>  $candidate
+     * @return array<string,mixed>|null
+     */
+    private function resolveLatestProcessAction(?array $latestAction, array $candidate): ?array
+    {
+        $candidateAt = is_string($candidate['at'] ?? null) ? $candidate['at'] : null;
+        if ($candidateAt === null) {
+            return $latestAction;
+        }
+
+        if (! is_array($latestAction)) {
+            return $candidate;
+        }
+
+        $latestAt = is_string($latestAction['at'] ?? null) ? $latestAction['at'] : '';
+        if (strcmp($latestAt, $candidateAt) <= 0) {
+            return $candidate;
+        }
+
+        return $latestAction;
+    }
+
+    /**
+     * @param  array<string, array<string,mixed>>  $stepsByPhase
+     */
+    private function markProcessStepStatus(
+        array &$stepsByPhase,
+        string $phaseCode,
+        string $targetStatus,
+        ?string $at,
+        string $eventType,
+        ?string $reasonCode
+    ): void {
+        if (! isset($stepsByPhase[$phaseCode])) {
+            return;
+        }
+
+        $statusPriority = [
+            'pending' => 0,
+            'running' => 1,
+            'completed' => 2,
+            'failed' => 3,
+        ];
+
+        $step = $stepsByPhase[$phaseCode];
+        $currentStatus = (string) ($step['status'] ?? 'pending');
+        if (($statusPriority[$targetStatus] ?? 0) < ($statusPriority[$currentStatus] ?? 0)) {
+            return;
+        }
+
+        if ($step['started_at'] === null) {
+            $step['started_at'] = $at;
+        }
+        if ($at !== null) {
+            $step['updated_at'] = $at;
+        }
+        $step['status'] = $targetStatus;
+        $step['status_label'] = $this->processStatusLabel($targetStatus);
+        $step['last_event_type'] = strtoupper($eventType);
+        $step['last_reason_code'] = $reasonCode;
+        $stepsByPhase[$phaseCode] = $step;
+    }
+
+    private function resolveRuntimeFailedPhaseCode(array $runtimeContext): ?string
+    {
+        $currentStage = strtolower(trim((string) ($runtimeContext['current_stage'] ?? '')));
+        $workflowPhase = strtolower(trim((string) ($runtimeContext['workflow_phase'] ?? '')));
+
+        return $this->resolveProcessPhaseFromAeStage($currentStage, $workflowPhase);
+    }
+
+    private function runtimeIndicatesSetupCompleted(array $runtimeContext): bool
+    {
+        $currentStage = strtolower(trim((string) ($runtimeContext['current_stage'] ?? '')));
+        $workflowPhase = strtolower(trim((string) ($runtimeContext['workflow_phase'] ?? '')));
+
+        return $currentStage === 'complete_ready' || $workflowPhase === 'ready';
+    }
+
+    private function resolveProcessPhaseFromAeStage(string $stage, string $workflowPhase): ?string
+    {
+        if ($stage === 'complete_ready') {
+            return 'setup_transition';
+        }
+
+        if ($stage !== '') {
+            if ($stage === 'startup' || str_starts_with($stage, 'clean_fill')) {
+                return 'clean_fill';
+            }
+
+            if (str_starts_with($stage, 'solution_fill')) {
+                return 'solution_fill';
+            }
+
+            if (str_starts_with($stage, 'prepare_recirculation')) {
+                return 'parallel_correction';
+            }
+        }
+
+        return match ($workflowPhase) {
+            'ready' => 'setup_transition',
+            'tank_recirc', 'prepare_recirculation' => 'parallel_correction',
+            'tank_filling' => 'solution_fill',
+            default => null,
         };
     }
 

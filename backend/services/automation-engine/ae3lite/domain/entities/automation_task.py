@@ -106,6 +106,9 @@ class AutomationTask:
                 ph_channel=row.get("corr_ph_channel"),
                 ph_duration_ms=int(row["corr_ph_duration_ms"]) if row.get("corr_ph_duration_ms") is not None else None,
                 wait_until=_naive(row.get("corr_wait_until")),
+                ec_component=str(row["corr_ec_component"]) if row.get("corr_ec_component") is not None else None,
+                ec_amount_ml=float(row["corr_ec_amount_ml"]) if row.get("corr_ec_amount_ml") is not None else None,
+                ph_amount_ml=float(row["corr_ph_amount_ml"]) if row.get("corr_ph_amount_ml") is not None else None,
             )
 
         intent_meta = row.get("intent_meta")

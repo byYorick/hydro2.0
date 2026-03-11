@@ -22,6 +22,7 @@ use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneAutomationLogicProfile;
 use App\Models\ZoneEvent;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
@@ -52,6 +53,8 @@ class LiteAutomationSeeder extends Seeder
 
         $this->seedTelemetry($zones, $zoneNodes, $cycles);
         $this->seedAutomationSignals($zones, $zoneNodes, $cycles);
+        $this->seedAutomationProfiles($zones);
+        $this->seedIrrStateEvents($zones, $zoneNodes);
 
         $this->command->info('=== Lite Automation Engine seeding complete ===');
     }
@@ -944,6 +947,117 @@ class LiteAutomationSeeder extends Seeder
                 'created_at' => $ackAt->copy()->subSeconds(6),
             ]
         );
+    }
+
+    /**
+     * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
+     */
+    private function seedAutomationProfiles(array $zones): void
+    {
+        $adminId = User::query()->where('role', 'admin')->value('id') ?? User::query()->value('id');
+
+        $commandPlans = $this->defaultCommandPlans();
+
+        $subsystems = [
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                ],
+            ],
+        ];
+
+        foreach ($zones as $zoneKey => $zone) {
+            ZoneAutomationLogicProfile::updateOrCreate(
+                ['zone_id' => $zone->id, 'mode' => ZoneAutomationLogicProfile::MODE_WORKING],
+                [
+                    'is_active' => true,
+                    'subsystems' => $subsystems,
+                    'command_plans' => $commandPlans,
+                    'created_by' => $adminId,
+                    'updated_by' => $adminId,
+                ]
+            );
+        }
+
+        $this->command->info('Automation logic profiles seeded for '.count($zones).' zones');
+    }
+
+    /**
+     * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
+     */
+    private function seedIrrStateEvents(array $zones, array $zoneNodes): void
+    {
+        $now = now();
+
+        foreach ($zones as $zoneKey => $zone) {
+            ZoneEvent::updateOrCreate(
+                [
+                    'zone_id' => $zone->id,
+                    'type' => 'IRR_STATE_SNAPSHOT',
+                ],
+                [
+                    'payload_json' => [
+                        'pump_main' => false,
+                        'valve_clean_fill' => false,
+                        'valve_clean_supply' => false,
+                        'valve_solution_fill' => false,
+                        'valve_solution_supply' => false,
+                        'valve_irrigation' => false,
+                        'clean_level_max' => false,
+                        'clean_level_min' => false,
+                        'solution_level_max' => false,
+                        'solution_level_min' => false,
+                        'source' => 'seed',
+                    ],
+                    'server_ts' => $now->timestamp * 1000,
+                    'entity_type' => 'zone',
+                    'entity_id' => (string) $zone->id,
+                ]
+            );
+        }
+
+        $this->command->info('IRR_STATE_SNAPSHOT events seeded for '.count($zones).' zones');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultCommandPlans(): array
+    {
+        return [
+            'schema_version' => 1,
+            'plan_version' => 1,
+            'source' => 'seed',
+            'plans' => [
+                'diagnostics' => [
+                    'execution' => [
+                        'workflow' => 'cycle_start',
+                        'topology' => 'two_tank_drip_substrate_trays',
+                        'required_node_types' => ['irrig'],
+                        'startup' => [
+                            'telemetry_max_age_sec' => 60,
+                            'irr_state_max_age_sec' => 30,
+                            'irr_state_wait_timeout_sec' => 5.0,
+                            'sensor_mode_stabilization_time_sec' => 10,
+                            'level_poll_interval_sec' => 10,
+                            'clean_fill_timeout_sec' => 300,
+                            'solution_fill_timeout_sec' => 600,
+                            'prepare_recirculation_timeout_sec' => 300,
+                            'clean_max_sensor_labels' => ['level_clean_max'],
+                            'clean_min_sensor_labels' => ['level_clean_min'],
+                            'solution_max_sensor_labels' => ['level_solution_max'],
+                            'solution_min_sensor_labels' => ['level_solution_min'],
+                        ],
+                    ],
+                    'steps' => [
+                        ['channel' => 'storage_state', 'cmd' => 'state', 'params' => []],
+                    ],
+                ],
+            ],
+        ];
     }
 
     private function sensorTypeFromMetric(string $metric): ?string

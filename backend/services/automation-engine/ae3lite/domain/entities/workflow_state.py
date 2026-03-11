@@ -52,3 +52,6 @@ class CorrectionState:
     ph_channel: Optional[str]
     ph_duration_ms: Optional[int]
     wait_until: Optional[datetime]
+    ec_component: Optional[str] = None
+    ec_amount_ml: Optional[float] = None
+    ph_amount_ml: Optional[float] = None

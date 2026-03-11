@@ -11,6 +11,7 @@ from ae3lite.application.use_cases import (
     ClaimNextTaskUseCase,
     CreateTaskFromIntentUseCase,
     ExecuteTaskUseCase,
+    GetZoneAutomationStateUseCase,
     GetZoneControlStateUseCase,
     ReconcileCommandUseCase,
     StartupRecoveryUseCase,
@@ -39,6 +40,7 @@ class Ae3RuntimeBundle:
 
     create_task_from_intent_use_case: CreateTaskFromIntentUseCase
     get_zone_control_state_use_case: GetZoneControlStateUseCase
+    get_zone_automation_state_use_case: GetZoneAutomationStateUseCase
     task_status_read_model: PgTaskStatusReadModel
     worker: Ae3RuntimeWorker
 
@@ -107,6 +109,7 @@ def build_ae3_runtime_bundle(
             planner=CycleStartPlanner(),
             command_gateway=command_gateway,
             workflow_router=workflow_router,
+            alert_repository=alert_repository,
         ),
         startup_recovery_use_case=StartupRecoveryUseCase(
             task_repository=task_repository,
@@ -122,14 +125,20 @@ def build_ae3_runtime_bundle(
         mark_intent_terminal_fn=mark_intent_terminal_fn,
         now_fn=now_fn,
         logger=logger,
+        lease_ttl_sec=config.lease_ttl_sec,
     )
     get_zone_control_state_use_case = GetZoneControlStateUseCase(
+        task_repository=task_repository,
+        fetch_fn=fetch,
+    )
+    get_zone_automation_state_use_case = GetZoneAutomationStateUseCase(
         task_repository=task_repository,
         fetch_fn=fetch,
     )
     return Ae3RuntimeBundle(
         create_task_from_intent_use_case=create_task_from_intent_use_case,
         get_zone_control_state_use_case=get_zone_control_state_use_case,
+        get_zone_automation_state_use_case=get_zone_automation_state_use_case,
         task_status_read_model=task_status_read_model,
         worker=worker,
     )

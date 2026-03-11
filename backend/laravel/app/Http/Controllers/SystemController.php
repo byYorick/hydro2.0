@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
+use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -179,27 +180,32 @@ class SystemController extends Controller
             $historyLoggerOk = 'fail';
         }
 
-        // Проверка статуса automation-engine сервиса (через Prometheus metrics) с измерением времени отклика
+        // Проверка статуса automation-engine сервиса через canonical AE3 runtime endpoint.
         $automationEngineOk = 'unknown';
         $automationEngineLatencyMs = null;
         try {
-            $automationEngineUrl = env('AUTOMATION_ENGINE_URL', 'http://automation-engine:9401');
+            $runtimeConfig = app(AutomationRuntimeConfigService::class);
+            $automationEngineUrl = rtrim((string) (
+                env('AUTOMATION_ENGINE_URL')
+                ?: $runtimeConfig->automationEngineValue('api_url', 'http://automation-engine:9405')
+            ), '/');
 
             // Измеряем время отклика automation-engine
             $startTime = microtime(true);
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(2)
-                ->get($automationEngineUrl.'/metrics');
+                ->get($automationEngineUrl.'/health/live');
             $automationEngineLatencyMs = round((microtime(true) - $startTime) * 1000, 2);
 
-            if ($response->successful() && $response->body()) {
-                $automationEngineOk = 'ok';
+            if ($response->successful()) {
+                $healthData = $response->json();
+                $healthStatus = is_array($healthData) ? ($healthData['status'] ?? 'ok') : 'ok';
+                $automationEngineOk = $healthStatus === 'ok' ? 'ok' : 'fail';
             } else {
                 $automationEngineOk = 'fail';
                 Log::warning('Automation engine health check failed', [
-                    'url' => $automationEngineUrl.'/metrics',
+                    'url' => $automationEngineUrl.'/health/live',
                     'status' => $response->status(),
-                    'has_body' => ! empty($response->body()),
                     'latency_ms' => $automationEngineLatencyMs,
                 ]);
             }

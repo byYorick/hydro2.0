@@ -196,7 +196,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
                 base_value=base_timing_cfg.get("telemetry_max_age_sec"),
                 prefer_phase=_has_nested_override(solution_fill_overrides, "timing", "telemetry_max_age_sec"),
             ),
-            300,
+            60,
             5,
         ),
         "irr_state_max_age_sec": _resolve_int(
@@ -539,7 +539,7 @@ def _build_correction_cfg(
                     execution_value=execution_correction_cfg.get("dose_ec_channel"),
                     prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "dose_ec_channel"),
                 ),
-                "dose_ec_a",
+                "ec_npk_pump",
             )
         ).strip().lower(),
         "dose_ph_up_channel": str(
@@ -549,7 +549,7 @@ def _build_correction_cfg(
                     execution_value=execution_correction_cfg.get("dose_ph_up_channel"),
                     prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "dose_ph_up_channel"),
                 ),
-                "dose_ph_up",
+                "ph_base_pump",
             )
         ).strip().lower(),
         "dose_ph_down_channel": str(
@@ -559,7 +559,7 @@ def _build_correction_cfg(
                     execution_value=execution_correction_cfg.get("dose_ph_down_channel"),
                     prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "dose_ph_down_channel"),
                 ),
-                "dose_ph_down",
+                "ph_acid_pump",
             )
         ).strip().lower(),
         "ec_dose_ml_per_mS_L": _resolve_float(

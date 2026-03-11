@@ -40,6 +40,7 @@ class DatabaseSeeder extends Seeder
                 ExtendedGrowStagesSeeder::class,
                 ExtendedZonePidConfigsSeeder::class,
                 ExtendedPlantsSeeder::class,
+                ExtendedAutomationProfilesSeeder::class,
             ],
         ],
         'operational_data' => [

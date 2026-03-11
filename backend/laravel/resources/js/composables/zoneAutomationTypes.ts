@@ -41,9 +41,33 @@ export interface WaterFormState {
   diagnosticsEnabled: boolean
   diagnosticsIntervalMinutes: number
   cycleStartWorkflowEnabled: boolean
+  diagnosticsWorkflow?: 'startup' | 'cycle_start' | 'diagnostics'
   cleanTankFullThreshold: number
   refillDurationSeconds: number
   refillTimeoutSeconds: number
+  startupCleanFillTimeoutSeconds?: number
+  startupSolutionFillTimeoutSeconds?: number
+  startupPrepareRecirculationTimeoutSeconds?: number
+  startupCleanFillRetryCycles?: number
+  irrigationRecoveryMaxContinueAttempts?: number
+  irrigationRecoveryTimeoutSeconds?: number
+  prepareToleranceEcPct?: number
+  prepareTolerancePhPct?: number
+  correctionMaxEcCorrectionAttempts?: number
+  correctionMaxPhCorrectionAttempts?: number
+  correctionPrepareRecirculationMaxAttempts?: number
+  correctionPrepareRecirculationMaxCorrectionAttempts?: number
+  correctionEcMixWaitSec?: number
+  correctionPhMixWaitSec?: number
+  correctionStabilizationSec?: number
+  twoTankCleanFillStartSteps?: number
+  twoTankCleanFillStopSteps?: number
+  twoTankSolutionFillStartSteps?: number
+  twoTankSolutionFillStopSteps?: number
+  twoTankPrepareRecirculationStartSteps?: number
+  twoTankPrepareRecirculationStopSteps?: number
+  twoTankIrrigationRecoveryStartSteps?: number
+  twoTankIrrigationRecoveryStopSteps?: number
   refillRequiredNodeTypes: string
   refillPreferredChannel: string
   solutionChangeEnabled: boolean

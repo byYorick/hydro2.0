@@ -79,6 +79,44 @@ export function classifyEventKind(kind) {
     kind.endsWith('_DOSE_NO_EFFECT')
   ) return 'WARNING'
 
+  // AE / irrigation workflow events
+  if (
+    kind === 'PUMP_CALIBRATION_FINISHED' ||
+    kind === 'CLEAN_FILL_COMPLETED' ||
+    kind === 'SOLUTION_FILL_COMPLETED' ||
+    kind === 'AE_TASK_STARTED' ||
+    kind === 'AE_TASK_COMPLETED' ||
+    kind === 'CORRECTION_COMPLETE'
+  ) return 'ACTION'
+
+  if (kind === 'COMMAND_TIMEOUT' || kind === 'AE_TASK_FAILED' || kind === 'CORRECTION_EXHAUSTED') return 'WARNING'
+  if (kind === 'IRR_STATE_SNAPSHOT' || kind === 'PUMP_CALIBRATION_RUN_SKIPPED') return 'INFO'
+
+  // Lifecycle / zone events (WATER_LEVEL_LOW уже обрабатывается выше как ALERT)
+  if (kind === 'ALERT_TRIGGERED') return 'ALERT'
+  if (
+    kind === 'NODE_DISCONNECTED' ||
+    kind === 'MANUAL_INTERVENTION'
+  ) return 'WARNING'
+  if (
+    kind === 'IRRIGATION_START' ||
+    kind === 'IRRIGATION_STOP' ||
+    kind === 'CALIBRATION_STARTED' ||
+    kind === 'CALIBRATION_COMPLETED' ||
+    kind === 'RECIPE_STARTED' ||
+    kind === 'RECIPE_COMPLETED' ||
+    kind === 'HARVEST_STARTED' ||
+    kind === 'HARVEST_COMPLETED' ||
+    kind === 'AUTO_MODE_ENABLED' ||
+    kind === 'AUTO_MODE_DISABLED'
+  ) return 'ACTION'
+  if (
+    kind === 'NODE_CONNECTED' ||
+    kind === 'SETTINGS_CHANGED' ||
+    kind === 'AUTOMATION_LOGIC_PROFILE_UPDATED' ||
+    kind === 'PHASE_CHANGE'
+  ) return 'INFO'
+
   return 'INFO'
 }
 
@@ -123,9 +161,13 @@ export function translateEventKind(kind) {
     'PID_CONFIG_UPDATED': 'Конфиг PID обновлён',
     'CORRECTION_STATE_TRANSITION': 'Коррекция: переход состояния',
 
+    // Итоги коррекции
+    'CORRECTION_COMPLETE': 'Коррекция завершена успешно',
+    'CORRECTION_EXHAUSTED': 'Коррекция: попытки исчерпаны',
+
     // Пропуски коррекции
-    'CORRECTION_SKIPPED_DEAD_ZONE': 'Коррекция: в мёртвой зоне',
-    'CORRECTION_SKIPPED_COOLDOWN': 'Коррекция: в паузе (кулдаун)',
+    'CORRECTION_SKIPPED_DEAD_ZONE': 'Коррекция: мёртвая зона PID',
+    'CORRECTION_SKIPPED_COOLDOWN': 'Коррекция: кулдаун PID',
     'CORRECTION_SKIPPED_MISSING_ACTUATOR': 'Коррекция: нет насоса',
     'CORRECTION_SKIPPED_NO_CALIBRATION': 'Коррекция: нет калибровки',
     'CORRECTION_SKIPPED_WATER_LEVEL': 'Коррекция: мало воды',
@@ -153,6 +195,47 @@ export function translateEventKind(kind) {
     // Equipment anomaly
     'EQUIPMENT_ANOMALY_BLOCKED': 'Оборудование: блокировка (нет эффекта)',
     'EQUIPMENT_ANOMALY_RELEASED': 'Оборудование: блокировка снята',
+
+    // Irrigation / AE workflow events
+    'IRR_STATE_SNAPSHOT': 'Снимок состояния ирригации',
+    'COMMAND_TIMEOUT': 'Таймаут команды',
+    'PUMP_CALIBRATION_FINISHED': 'Калибровка насоса завершена',
+    'PUMP_CALIBRATION_RUN_SKIPPED': 'Калибровка насоса пропущена',
+    'CLEAN_FILL_COMPLETED': 'Наполнение чистой водой завершено',
+    'SOLUTION_FILL_COMPLETED': 'Наполнение раствором завершено',
+    'AE_TASK_STARTED': 'Задача автоматизации запущена',
+    'AE_TASK_COMPLETED': 'Задача автоматизации завершена',
+    'AE_TASK_FAILED': 'Ошибка задачи автоматизации',
+
+    // Alerts
+    'ALERT_TRIGGERED': 'Тревога сработала',
+
+    // Zone / device lifecycle
+    'NODE_CONNECTED': 'Узел подключён',
+    'NODE_DISCONNECTED': 'Узел отключён',
+    'AUTO_MODE_ENABLED': 'Авторежим включён',
+    'AUTO_MODE_DISABLED': 'Авторежим выключен',
+    'MANUAL_INTERVENTION': 'Ручное вмешательство',
+    'SETTINGS_CHANGED': 'Настройки изменены',
+    'AUTOMATION_LOGIC_PROFILE_UPDATED': 'Профиль автоматики обновлён',
+    'ZONE_COMMAND': 'Команда зоны',
+
+    // Irrigation
+    'IRRIGATION_START': 'Полив запущен',
+    'IRRIGATION_STOP': 'Полив остановлен',
+
+    // Calibration
+    'CALIBRATION_STARTED': 'Калибровка запущена',
+    'CALIBRATION_COMPLETED': 'Калибровка завершена',
+
+    // Recipe / harvest
+    'RECIPE_STARTED': 'Рецепт запущен',
+    'RECIPE_COMPLETED': 'Рецепт завершён',
+    'HARVEST_STARTED': 'Сбор урожая начат',
+    'HARVEST_COMPLETED': 'Сбор урожая завершён',
+
+    // Phase
+    'PHASE_CHANGE': 'Смена фазы',
   }
   return translations[kind] || kind
 }

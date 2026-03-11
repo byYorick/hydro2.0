@@ -77,6 +77,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
                 "stage": task.current_stage,
                 "workflow_phase": task.workflow_phase,
                 "topology": task.topology,
+                "message": f"Превышен лимит попыток подготовки рециркуляции ({retry_count}/{attempt_limit})",
             },
             now=now,
         )

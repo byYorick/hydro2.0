@@ -1248,6 +1248,33 @@ lszc_cursor_at_idx (cursor_at)
 
 ---
 
+## 8.7. automation_runtime_overrides (ACTIVE: runtime overrides for Laravel scheduler/AE bridge)
+
+Хранилище runtime-переопределений для глобальных параметров автоматики
+(`services.automation_engine.*`, `services.python_bridge.*`) с приоритетом над env/config.
+Используется UI `/settings` и сервисом `AutomationRuntimeConfigService`.
+
+```
+id BIGSERIAL PK
+key VARCHAR(128) UNIQUE NOT NULL
+value TEXT NULL
+updated_by BIGINT FK -> users NULL ON DELETE SET NULL
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+automation_runtime_overrides_key_unique (key) UNIQUE
+```
+
+Назначение:
+- безопасное runtime-редактирование timeout/retry/dispatch-параметров без `config:clear`;
+- мгновенный подхват параметров scheduler/контроллерами через чтение из БД;
+- аудит автора последнего изменения (`updated_by`).
+
+---
+
 # 9. Пользователи и роли
 
 ## 9.1. users
@@ -1323,6 +1350,7 @@ created_at
 greenhouse 1—N zones
 users N—N greenhouses (user_greenhouses)
 users N—N zones (user_zones)
+users 1—N automation_runtime_overrides (updated_by)
 zone 1—1 grow_cycle (активный: PLANNED/RUNNING/PAUSED)
 grow_cycle 1—1 recipe_revision (зафиксированная версия)
 recipe 1—N recipe_revisions

@@ -8,7 +8,7 @@ from typing import Any, Optional
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import WorkflowState
-from ae3lite.domain.errors import CommandReconcileError, StartupRecoveryError
+from ae3lite.domain.errors import CommandReconcileError, StartupRecoveryError, TaskExecutionError
 from ae3lite.domain.services.topology_registry import TopologyRegistry
 
 
@@ -152,7 +152,17 @@ class StartupRecoveryUseCase:
             )
             return "failed", self._build_terminal_outcome(task=failed_task)
 
-        result = await self._command_gateway.recover_waiting_command(task=task, now=now)
+        try:
+            result = await self._command_gateway.recover_waiting_command(task=task, now=now)
+        except TaskExecutionError as exc:
+            failed_task = await self._fail_task(
+                task=task,
+                error_code=exc.code,
+                error_message=str(exc),
+                now=now,
+            )
+            return "failed", self._build_terminal_outcome(task=failed_task)
+
         if result["state"] == "waiting_command":
             return "waiting_command", None
         if result["state"] == "failed":

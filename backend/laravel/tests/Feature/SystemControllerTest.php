@@ -8,6 +8,8 @@ use App\Models\Zone;
 use App\Models\DeviceNode;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Tests\TestCase;
 
 class SystemControllerTest extends TestCase
@@ -30,6 +32,27 @@ class SystemControllerTest extends TestCase
         
         $response->assertOk()
             ->assertJsonStructure(['status', 'data' => ['app']]);
+    }
+
+    public function test_system_health_checks_automation_engine_via_live_endpoint(): void
+    {
+        $this->token('admin');
+        Config::set('services.automation_engine.api_url', 'http://automation-engine:9405');
+
+        Http::fake([
+            'http://mqtt-bridge:9000/metrics' => Http::response('ok', 200),
+            'http://history-logger:9300/health' => Http::response(['status' => 'ok'], 200),
+            'http://automation-engine:9405/health/live' => Http::response(['status' => 'ok'], 200),
+        ]);
+
+        $response = $this->getJson('/api/system/health');
+
+        $response->assertOk()
+            ->assertJsonPath('data.automation_engine', 'ok');
+
+        Http::assertSent(function (HttpRequest $request): bool {
+            return $request->url() === 'http://automation-engine:9405/health/live';
+        });
     }
 
     public function test_system_config_full_requires_auth(): void

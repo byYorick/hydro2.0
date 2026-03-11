@@ -24,6 +24,39 @@
       </Badge>
     </div>
 
+    <!-- Error banner -->
+    <div
+      v-if="hasFailed"
+      class="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm space-y-0.5"
+    >
+      <p class="font-semibold text-red-400">Ошибка выполнения</p>
+      <p
+        v-if="errorCode"
+        class="text-xs text-red-300/80 font-mono"
+      >{{ errorCode }}</p>
+      <p
+        v-if="errorMessage"
+        class="text-xs text-red-300/70 break-words"
+      >{{ errorMessage }}</p>
+    </div>
+
+    <!-- Current stage -->
+    <div
+      v-if="currentStageLabel"
+      class="text-xs text-[color:var(--text-muted)] flex items-center gap-1.5"
+    >
+      <span class="text-[color:var(--text-dim)]">Стадия:</span>
+      <span>{{ currentStageLabel }}</span>
+    </div>
+
+    <!-- Data timestamp -->
+    <div
+      v-if="dataTimestamp"
+      class="text-[11px] text-[color:var(--text-dim)]"
+    >
+      Данные: {{ dataTimestamp }}
+    </div>
+
     <div
       v-if="hasProgress"
       class="space-y-1"
@@ -114,7 +147,7 @@ const emit = defineEmits<{
   (e: 'state-snapshot', snapshot: AutomationState): void
 }>()
 
-const processExpanded = ref(true)
+const processExpanded = ref(false)
 const processState = ref<AutomationStateType>('IDLE')
 const lastSnapshot = ref<AutomationState | null>(null)
 const nowMs = ref(Date.now())
@@ -144,6 +177,22 @@ const stateBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'success'>((
     IRRIG_RECIRC: 'warning',
   }
   return map[stateCode.value]
+})
+
+const hasFailed = computed(() => Boolean(lastSnapshot.value?.state_details?.failed))
+const errorCode = computed(() => lastSnapshot.value?.state_details?.error_code ?? null)
+const errorMessage = computed(() => lastSnapshot.value?.state_details?.error_message ?? null)
+const currentStageLabel = computed(
+  () => lastSnapshot.value?.current_stage_label ?? lastSnapshot.value?.current_stage ?? null
+)
+const dataTimestamp = computed(() => {
+  const servedAt = lastSnapshot.value?.state_meta?.served_at
+  if (!servedAt) return null
+  try {
+    return new Date(servedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  } catch {
+    return servedAt
+  }
 })
 
 const staleDuration = computed(() => {

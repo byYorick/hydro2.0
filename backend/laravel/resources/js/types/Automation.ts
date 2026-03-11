@@ -48,7 +48,12 @@ export interface AutomationState {
     elapsed_sec: number
     progress_percent: number
     failed?: boolean
+    error_code?: string | null
+    error_message?: string | null
   }
+  workflow_phase?: string | null
+  current_stage?: string | null
+  current_stage_label?: string | null
   system_config: {
     tanks_count: 2 | 3
     system_type: 'drip' | 'substrate_trays' | 'nft'

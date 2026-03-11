@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from ae3lite.application.dto import ZoneActuatorRef
 from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import SnapshotBuildError
@@ -74,6 +75,25 @@ class _SnapshotWithCorrectionConfig:
     correction_config = {"meta": {"version": 7}}
 
 
+class _SnapshotWithIrrActuators:
+    zone_id = 99
+    correction_config = {"meta": {"version": 7}}
+    actuators = (
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=11, role="valve_clean_fill"),
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=12, role="valve_clean_supply"),
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=13, role="valve_solution_fill"),
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=14, role="valve_solution_supply"),
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=15, role="valve_irrigation"),
+        ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=16, role="pump_main"),
+        ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=17, role="ph_base_pump"),
+    )
+
+
+class _SnapshotReadModelWithIrrActuators:
+    async def load(self, *, zone_id):
+        return _SnapshotWithIrrActuators()
+
+
 class _PlanWithSteps:
     def __init__(self, *, steps=()):
         self.steps = steps
@@ -115,6 +135,15 @@ class _GatewayFails:
         return {"success": False, "error_code": "hw_error", "error_message": "device offline"}
 
 
+class _GatewayRecorder:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    async def run_batch(self, *, task, commands, now):
+        self.calls.append(tuple(commands))
+        return {"success": True, "task": task}
+
+
 class _CorrectionConfigRepository:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -131,6 +160,23 @@ class _WorkflowRouterOk:
 class _WorkflowRouterFails:
     async def run(self, *, task, plan, now):
         return replace(task, status="failed")
+
+
+class _WorkflowRouterRaises:
+    async def run(self, *, task, plan, now):
+        raise RuntimeError("boom")
+
+
+class _AlertRepositoryRecorder:
+    def __init__(self, *, should_fail: bool = False) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._should_fail = should_fail
+
+    async def create_or_update_active(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._should_fail:
+            raise RuntimeError("alert write failed")
+        return 101
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -193,6 +239,57 @@ async def test_execute_task_fallback_non_two_tank_empty_steps_fails() -> None:
 
     await use_case.run(task=task, now=NOW)
 
+    assert finalize.calls[0]["error_code"] == "unsupported_command_plan_steps"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_fail_closed_creates_task_failed_alert() -> None:
+    task = _make_task(stage="startup", topology="generic_cycle_start")
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerNoSteps(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "unsupported_command_plan_steps"
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["zone_id"] == 99
+    assert alerts.calls[0]["code"] == "biz_ae3_task_failed"
+    assert alerts.calls[0]["category"] == "operations"
+    assert alerts.calls[0]["severity"] == "error"
+    details = alerts.calls[0]["details"]
+    assert details["task_id"] == 99
+    assert details["error_code"] == "unsupported_command_plan_steps"
+    assert details["stage"] == "startup"
+    assert details["topology"] == "generic_cycle_start"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_fail_closed_alert_write_error_does_not_block_fail_closed() -> None:
+    task = _make_task(stage="startup", topology="generic_cycle_start")
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder(should_fail=True)
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerNoSteps(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert len(alerts.calls) == 1
     assert finalize.calls[0]["error_code"] == "unsupported_command_plan_steps"
 
 
@@ -276,3 +373,33 @@ async def test_execute_task_fallback_non_two_tank_gateway_failure_fails() -> Non
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["error_code"] == "hw_error"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_two_tank_failure_triggers_fail_safe_shutdown() -> None:
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=gateway,
+        workflow_router=_WorkflowRouterRaises(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "ae3_task_execution_unhandled_exception"
+    assert len(gateway.calls) == 1
+    sent_channels = [command.channel for command in gateway.calls[0]]
+    assert sent_channels == [
+        "valve_clean_fill",
+        "valve_clean_supply",
+        "valve_solution_fill",
+        "valve_solution_supply",
+        "valve_irrigation",
+        "pump_main",
+    ]
+    assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])

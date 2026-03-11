@@ -302,6 +302,11 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         load_task_status_fn=lambda task_id: bundle.task_status_read_model.get_by_task_id(task_id=task_id),
     )
 
+    @app.get("/zones/{zone_id}/state")
+    async def get_zone_state(zone_id: int) -> dict[str, Any]:
+        """Return full automation state for a zone (tasks, phases, errors)."""
+        return await bundle.get_zone_automation_state_use_case.run(zone_id=zone_id)
+
     @app.get("/zones/{zone_id}/control-mode")
     async def get_zone_control_mode(zone_id: int) -> dict[str, Any]:
         """Return current control_mode and allowed manual steps for a zone."""

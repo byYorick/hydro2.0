@@ -47,6 +47,35 @@ class PgZoneLeaseRepository:
             )
         return ZoneLease.from_row(row) if row is not None else None
 
+    async def extend(
+        self,
+        *,
+        zone_id: int,
+        owner: str,
+        now: datetime,
+        lease_ttl_sec: int,
+    ) -> bool:
+        """Extend lease for existing owner. Returns True if extended, False if lease belongs to another owner."""
+        normalized_now = self._normalize_timestamp(now)
+        leased_until = normalized_now + timedelta(seconds=max(1, int(lease_ttl_sec)))
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ae_zone_leases
+                SET leased_until = $3,
+                    updated_at = $2
+                WHERE zone_id = $1
+                  AND owner = $4
+                RETURNING zone_id
+                """,
+                zone_id,
+                normalized_now,
+                leased_until,
+                owner,
+            )
+        return row is not None
+
     async def release(self, *, zone_id: int, owner: str) -> bool:
         pool = await get_pool()
         async with pool.acquire() as conn:

@@ -16,6 +16,7 @@ Protocol (per CORRECTION_CYCLE_SPEC.md):
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
@@ -26,6 +27,9 @@ from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
+from common.db import create_zone_event
+
+_logger = logging.getLogger(__name__)
 
 
 class CorrectionHandler(BaseStageHandler):
@@ -157,10 +161,22 @@ class CorrectionHandler(BaseStageHandler):
             ec_min=self._float_or_none(runtime.get("target_ec_min")),
             ec_max=self._float_or_none(runtime.get("target_ec_max")),
         ):
+            try:
+                await create_zone_event(task.zone_id, "CORRECTION_COMPLETE", {
+                    "current_ph": current_ph, "current_ec": current_ec,
+                    "target_ph": target_ph, "target_ec": target_ec,
+                    "target_ph_min": runtime.get("target_ph_min"),
+                    "target_ph_max": runtime.get("target_ph_max"),
+                    "target_ec_min": runtime.get("target_ec_min"),
+                    "target_ec_max": runtime.get("target_ec_max"),
+                    "attempt": corr.attempt,
+                })
+            except Exception:
+                _logger.warning("Failed to log CORRECTION_COMPLETE zone event", exc_info=True)
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if corr.attempt > corr.max_attempts:
-            return self._correction_exhausted(task=task, corr=corr)
+            return await self._correction_exhausted(task=task, corr=corr)
 
         # Build dose plan
         correction_cfg = self._correction_config(plan=plan, task=task)
@@ -192,6 +208,15 @@ class CorrectionHandler(BaseStageHandler):
         )
 
         if not dose_plan.needs_any and dose_plan.retry_after_sec:
+            try:
+                await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_COOLDOWN", {
+                    "current_ph": current_ph, "current_ec": current_ec,
+                    "target_ph": target_ph, "target_ec": target_ec,
+                    "retry_after_sec": dose_plan.retry_after_sec,
+                    "attempt": corr.attempt,
+                })
+            except Exception:
+                _logger.warning("Failed to log CORRECTION_SKIPPED_COOLDOWN zone event", exc_info=True)
             next_corr = replace(corr, corr_step="corr_check")
             return StageOutcome(
                 kind="enter_correction",
@@ -200,12 +225,20 @@ class CorrectionHandler(BaseStageHandler):
             )
 
         if not dose_plan.needs_any:
+            try:
+                await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_DEAD_ZONE", {
+                    "current_ph": current_ph, "current_ec": current_ec,
+                    "target_ph": target_ph, "target_ec": target_ec,
+                    "attempt": corr.attempt,
+                })
+            except Exception:
+                _logger.warning("Failed to log CORRECTION_SKIPPED_DEAD_ZONE zone event", exc_info=True)
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
-            return self._correction_exhausted(task=task, corr=corr)
+            return await self._correction_exhausted(task=task, corr=corr)
         if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
-            return self._correction_exhausted(task=task, corr=corr)
+            return await self._correction_exhausted(task=task, corr=corr)
 
         # Save dose plan into correction state
         next_corr = replace(
@@ -214,11 +247,14 @@ class CorrectionHandler(BaseStageHandler):
             ec_node_uid=dose_plan.ec_node_uid,
             ec_channel=dose_plan.ec_channel,
             ec_duration_ms=dose_plan.ec_duration_ms,
+            ec_component=dose_plan.ec_component or None,
+            ec_amount_ml=dose_plan.ec_amount_ml if dose_plan.ec_amount_ml else None,
             needs_ph_up=dose_plan.needs_ph_up,
             needs_ph_down=dose_plan.needs_ph_down,
             ph_node_uid=dose_plan.ph_node_uid,
             ph_channel=dose_plan.ph_channel,
             ph_duration_ms=dose_plan.ph_duration_ms,
+            ph_amount_ml=dose_plan.ph_amount_ml if dose_plan.ph_amount_ml else None,
         )
 
         if dose_plan.needs_ec:
@@ -247,6 +283,38 @@ class CorrectionHandler(BaseStageHandler):
         result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
+        # to avoid using the stale plan.runtime pid_state snapshot.
+        current_ec: Optional[float] = None
+        if self._pid_state_repository is not None:
+            try:
+                current_ec = await self._pid_state_repository.read_measured_value(
+                    zone_id=task.zone_id, pid_type="ec"
+                )
+            except Exception:
+                _logger.debug("Could not read EC pid_state for event logging", exc_info=True)
+        try:
+            await create_zone_event(
+                task.zone_id,
+                "EC_DOSING",
+                {
+                    "node_uid": corr.ec_node_uid,
+                    "channel": corr.ec_channel,
+                    "duration_ms": corr.ec_duration_ms,
+                    "amount_ml": corr.ec_amount_ml,
+                    "ec_component": corr.ec_component,
+                    "current_ec": current_ec,
+                    "target_ec": runtime.get("target_ec"),
+                    "target_ec_min": runtime.get("target_ec_min"),
+                    "target_ec_max": runtime.get("target_ec_max"),
+                    "attempt": corr.ec_attempt + 1,
+                    "source": "correction_handler",
+                },
+            )
+        except Exception:
+            _logger.warning("Failed to log EC_DOSING zone event", exc_info=True)
 
         correction_cfg = self._correction_config(plan=plan, task=task)
         ec_mix_wait = int(correction_cfg.get("ec_mix_wait_sec", 120))
@@ -282,6 +350,39 @@ class CorrectionHandler(BaseStageHandler):
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
 
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
+        # to avoid using the stale plan.runtime pid_state snapshot.
+        current_ph: Optional[float] = None
+        if self._pid_state_repository is not None:
+            try:
+                current_ph = await self._pid_state_repository.read_measured_value(
+                    zone_id=task.zone_id, pid_type="ph"
+                )
+            except Exception:
+                _logger.debug("Could not read PH pid_state for event logging", exc_info=True)
+        ph_direction = "up" if corr.needs_ph_up else "down"
+        try:
+            await create_zone_event(
+                task.zone_id,
+                "PH_CORRECTED",
+                {
+                    "node_uid": corr.ph_node_uid,
+                    "channel": corr.ph_channel,
+                    "duration_ms": corr.ph_duration_ms,
+                    "amount_ml": corr.ph_amount_ml,
+                    "direction": ph_direction,
+                    "current_ph": current_ph,
+                    "target_ph": runtime.get("target_ph"),
+                    "target_ph_min": runtime.get("target_ph_min"),
+                    "target_ph_max": runtime.get("target_ph_max"),
+                    "attempt": corr.ph_attempt + 1,
+                    "source": "correction_handler",
+                },
+            )
+        except Exception:
+            _logger.warning("Failed to log PH_CORRECTED zone event", exc_info=True)
+
         correction_cfg = self._correction_config(plan=plan, task=task)
         ph_mix_wait = int(correction_cfg.get("ph_mix_wait_sec", 60))
         next_corr = replace(corr, corr_step="corr_wait_ph", ph_attempt=corr.ph_attempt + 1)
@@ -301,11 +402,14 @@ class CorrectionHandler(BaseStageHandler):
             ec_node_uid=None,
             ec_channel=None,
             ec_duration_ms=None,
+            ec_component=None,
+            ec_amount_ml=None,
             needs_ph_up=False,
             needs_ph_down=False,
             ph_node_uid=None,
             ph_channel=None,
             ph_duration_ms=None,
+            ph_amount_ml=None,
         )
         return StageOutcome(kind="enter_correction", correction=next_corr)
 
@@ -346,12 +450,24 @@ class CorrectionHandler(BaseStageHandler):
         next_stage = corr.return_stage_success if success else corr.return_stage_fail
         return StageOutcome(kind="exit_correction", next_stage=next_stage, correction=next_corr)
 
-    def _correction_exhausted(
+    async def _correction_exhausted(
         self,
         *,
         task: Any,
         corr: CorrectionState,
     ) -> StageOutcome:
+        try:
+            await create_zone_event(task.zone_id, "CORRECTION_EXHAUSTED", {
+                "attempt": corr.attempt,
+                "max_attempts": corr.max_attempts,
+                "ec_attempt": corr.ec_attempt,
+                "ec_max_attempts": corr.ec_max_attempts,
+                "ph_attempt": corr.ph_attempt,
+                "ph_max_attempts": corr.ph_max_attempts,
+                "stage": str(task.current_stage),
+            })
+        except Exception:
+            _logger.warning("Failed to log CORRECTION_EXHAUSTED zone event", exc_info=True)
         if str(task.current_stage).strip().lower() == "prepare_recirculation_check":
             return StageOutcome(
                 kind="transition",

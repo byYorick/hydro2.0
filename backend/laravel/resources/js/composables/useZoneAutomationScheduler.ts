@@ -16,6 +16,7 @@ import type {
 import {
   schedulerTaskStatusVariant,
   schedulerTaskStatusLabel,
+  schedulerTaskTypeLabel,
   schedulerTaskProcessStatusVariant,
   schedulerTaskProcessStatusLabel,
   schedulerTaskEventLabel,
@@ -558,6 +559,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     // Formatters (delegated to zoneSchedulerFormatters)
     schedulerTaskStatusVariant,
     schedulerTaskStatusLabel,
+    schedulerTaskTypeLabel,
     schedulerTaskProcessStatusVariant,
     schedulerTaskProcessStatusLabel,
     schedulerTaskEventLabel,

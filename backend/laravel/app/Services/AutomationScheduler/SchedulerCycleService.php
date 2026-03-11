@@ -163,6 +163,7 @@ class SchedulerCycleService
                     $zoneLast[$zoneId] = $this->resolveZoneLastCheck(
                         zoneId: $zoneId,
                         now: $realNow,
+                        dispatchIntervalSec: max(10, (int) ($cfg['dispatch_interval_sec'] ?? 60)),
                         cursorPersistEnabled: $cfg['cursor_persist_enabled'],
                         zoneCursorCache: $zoneCursorCache,
                     );
@@ -1062,6 +1063,7 @@ class SchedulerCycleService
     private function resolveZoneLastCheck(
         int $zoneId,
         CarbonImmutable $now,
+        int $dispatchIntervalSec,
         bool $cursorPersistEnabled,
         array &$zoneCursorCache,
     ): CarbonImmutable {
@@ -1069,7 +1071,7 @@ class SchedulerCycleService
             return $zoneCursorCache[$zoneId];
         }
 
-        $default = $now->subSeconds(max(30, (int) config('services.automation_engine.scheduler_dispatch_interval_sec', 60)));
+        $default = $now->subSeconds(max(30, $dispatchIntervalSec));
         if (! $cursorPersistEnabled) {
             $zoneCursorCache[$zoneId] = $default;
 

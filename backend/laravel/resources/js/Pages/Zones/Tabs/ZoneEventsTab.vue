@@ -53,118 +53,24 @@
           key-field="id"
         >
           <template #default="{ item }">
-            <div class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-2 border-b border-[color:var(--border-muted)]">
-              <Badge
-                :variant="getEventVariant(item.kind)"
-                class="text-xs shrink-0"
-              >
-                {{ translateEventKind(item.kind) }}
-              </Badge>
-              <div class="flex-1 min-w-0">
-                <div class="text-xs text-[color:var(--text-dim)]">
-                  {{ item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—' }}
-                </div>
-                <div class="text-sm">
-                  {{ item.message }}
-                  <button
-                    v-if="hasCorrectionPayload(item)"
-                    type="button"
-                    class="ml-2 text-xs text-[color:var(--text-dim)] underline underline-offset-2"
-                    @click="toggleExpanded(item.id)"
-                  >
-                    {{ isExpanded(item.id) ? 'Скрыть' : 'Подробности' }}
-                  </button>
-                </div>
-                <div
-                  v-if="isExpanded(item.id) && hasCorrectionPayload(item)"
-                  class="mt-1 rounded-md bg-[color:var(--bg-elevated)] p-2 text-xs font-mono space-y-0.5"
-                >
-                  <div v-if="payloadDose(item) !== null">
-                    Доза: <strong>{{ formatPayloadNumber(payloadDose(item), 3) }} мл</strong>
-                  </div>
-                  <div v-if="payloadError(item) !== null">
-                    Ошибка: <strong>{{ formatPayloadNumber(payloadError(item), 4) }}</strong>
-                  </div>
-                  <div v-if="payloadCurrent(item) !== null || payloadTarget(item) !== null">
-                    Текущее: <strong>{{ formatPayloadNumber(payloadCurrent(item), 3) ?? '—' }}</strong>
-                    → Цель: <strong>{{ formatPayloadNumber(payloadTarget(item), 3) ?? '—' }}</strong>
-                  </div>
-                  <div v-if="payloadZoneState(item)">
-                    Зона PID: <strong>{{ payloadZoneState(item) }}</strong>
-                  </div>
-                  <div v-if="payloadIntegral(item) !== null">
-                    Интеграл: <strong>{{ formatPayloadNumber(payloadIntegral(item), 4) }}</strong>
-                  </div>
-                  <div v-if="payloadComponent(item)">
-                    Компонент: <strong>{{ payloadComponent(item) }}</strong>
-                  </div>
-                  <div v-if="payloadReason(item)">
-                    Причина: <strong>{{ payloadReason(item) }}</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <EventRow
+              :item="item"
+              :expanded="isExpanded(item.id)"
+              @toggle="toggleExpanded(item.id)"
+            />
           </template>
         </VirtualList>
         <div
           v-else
           class="space-y-1 max-h-[520px] overflow-y-auto"
         >
-          <div
+          <EventRow
             v-for="item in filteredEvents"
             :key="item.id"
-            class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-2 border-b border-[color:var(--border-muted)]"
-          >
-            <Badge
-              :variant="getEventVariant(item.kind)"
-              class="text-xs shrink-0"
-            >
-              {{ translateEventKind(item.kind) }}
-            </Badge>
-            <div class="flex-1 min-w-0">
-              <div class="text-xs text-[color:var(--text-dim)]">
-                {{ item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—' }}
-              </div>
-              <div class="text-sm">
-                {{ item.message }}
-                <button
-                  v-if="hasCorrectionPayload(item)"
-                  type="button"
-                  class="ml-2 text-xs text-[color:var(--text-dim)] underline underline-offset-2"
-                  @click="toggleExpanded(item.id)"
-                >
-                  {{ isExpanded(item.id) ? 'Скрыть' : 'Подробности' }}
-                </button>
-              </div>
-              <div
-                v-if="isExpanded(item.id) && hasCorrectionPayload(item)"
-                class="mt-1 rounded-md bg-[color:var(--bg-elevated)] p-2 text-xs font-mono space-y-0.5"
-              >
-                <div v-if="payloadDose(item) !== null">
-                  Доза: <strong>{{ formatPayloadNumber(payloadDose(item), 3) }} мл</strong>
-                </div>
-                <div v-if="payloadError(item) !== null">
-                  Ошибка: <strong>{{ formatPayloadNumber(payloadError(item), 4) }}</strong>
-                </div>
-                <div v-if="payloadCurrent(item) !== null || payloadTarget(item) !== null">
-                  Текущее: <strong>{{ formatPayloadNumber(payloadCurrent(item), 3) ?? '—' }}</strong>
-                  → Цель: <strong>{{ formatPayloadNumber(payloadTarget(item), 3) ?? '—' }}</strong>
-                </div>
-                <div v-if="payloadZoneState(item)">
-                  Зона PID: <strong>{{ payloadZoneState(item) }}</strong>
-                </div>
-                <div v-if="payloadIntegral(item) !== null">
-                  Интеграл: <strong>{{ formatPayloadNumber(payloadIntegral(item), 4) }}</strong>
-                </div>
-                <div v-if="payloadComponent(item)">
-                  Компонент: <strong>{{ payloadComponent(item) }}</strong>
-                </div>
-                <div v-if="payloadReason(item)">
-                  Причина: <strong>{{ payloadReason(item) }}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
+            :item="item"
+            :expanded="isExpanded(item.id)"
+            @toggle="toggleExpanded(item.id)"
+          />
         </div>
       </div>
     </section>
@@ -172,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, defineComponent, h, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import VirtualList from '@/Components/VirtualList.vue'
@@ -191,10 +97,10 @@ const query = ref('')
 
 const kindOptions: Array<{ value: 'ALL' | 'ALERT' | 'WARNING' | 'INFO' | 'ACTION', label: string }> = [
   { value: 'ALL', label: 'Все' },
-  { value: 'ALERT', label: 'Alert' },
-  { value: 'WARNING', label: 'Warning' },
-  { value: 'INFO', label: 'Info' },
-  { value: 'ACTION', label: 'Action' },
+  { value: 'ALERT', label: 'Тревога' },
+  { value: 'WARNING', label: 'Предупреждение' },
+  { value: 'INFO', label: 'Инфо' },
+  { value: 'ACTION', label: 'Действие' },
 ]
 
 const queryLower = computed(() => query.value.toLowerCase())
@@ -202,8 +108,6 @@ const queryLower = computed(() => query.value.toLowerCase())
 const filteredEvents = computed(() => {
   const list = Array.isArray(props.events) ? props.events : []
   return list.filter((event) => {
-    // kind в БД — это raw тип (ALERT_CREATED, CYCLE_STARTED и т.д.)
-    // Классифицируем его в категорию фильтра через classifyEventKind
     const matchesKind = selectedKind.value === 'ALL' ? true : classifyEventKind(event.kind) === selectedKind.value
     const matchesQuery = queryLower.value
       ? (event.message?.toLowerCase().includes(queryLower.value) || event.kind?.toLowerCase().includes(queryLower.value))
@@ -213,25 +117,6 @@ const filteredEvents = computed(() => {
 })
 
 const useVirtual = computed(() => filteredEvents.value.length > 200)
-
-const CORRECTION_EVENT_KINDS = new Set([
-  'PH_CORRECTED',
-  'EC_DOSING',
-  'PID_OUTPUT',
-  'CORRECTION_STATE_TRANSITION',
-  'RELAY_AUTOTUNE_COMPLETE',
-  'RELAY_AUTOTUNE_COMPLETED',
-  'PUMP_CALIBRATION_SAVED',
-  'CORRECTION_SKIPPED_DEAD_ZONE',
-  'CORRECTION_SKIPPED_COOLDOWN',
-  'CORRECTION_SKIPPED_MISSING_ACTUATOR',
-  'CORRECTION_SKIPPED_NO_CALIBRATION',
-  'CORRECTION_SKIPPED_WATER_LEVEL',
-  'CORRECTION_SKIPPED_FRESHNESS',
-  'CORRECTION_SKIPPED_ANOMALY_BLOCK',
-  'PH_CORRECTION_SKIPPED',
-  'EC_CORRECTION_SKIPPED',
-])
 
 const expandedIds = ref<Set<number>>(new Set())
 
@@ -259,26 +144,13 @@ function toggleExpanded(id: number): void {
 }
 
 function toPayloadRecord(payload: unknown): Record<string, unknown> | null {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return null
-  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
   return payload as Record<string, unknown>
 }
 
-function hasCorrectionPayload(event: ZoneEvent): boolean {
+function hasExpandablePayload(event: ZoneEvent): boolean {
   const payload = toPayloadRecord(event.payload)
-  if (!payload || Object.keys(payload).length === 0) {
-    return false
-  }
-
-  return (
-    CORRECTION_EVENT_KINDS.has(event.kind) ||
-    event.kind.startsWith('CORRECTION_SKIPPED_') ||
-    event.kind.endsWith('_CORRECTION_SKIPPED') ||
-    event.kind.endsWith('_CORRECTION_SKIPPED_STALE_DATA') ||
-    event.kind.endsWith('_CORRECTION_SKIPPED_BOUNDS') ||
-    event.kind.endsWith('_CORRECTION_SKIPPED_ANOMALY')
-  )
+  return payload !== null && Object.keys(payload).length > 0
 }
 
 function readNumber(payload: Record<string, unknown> | null, key: string): number | null {
@@ -316,52 +188,240 @@ function firstString(payload: Record<string, unknown> | null, keys: string[]): s
   return null
 }
 
-function payloadDose(event: ZoneEvent): number | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstNumber(payload, ['output', 'ml'])
-}
-
-function payloadError(event: ZoneEvent): number | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstNumber(payload, ['error', 'diff'])
-}
-
-function payloadCurrent(event: ZoneEvent): number | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstNumber(payload, ['current', 'current_ph', 'current_ec'])
-}
-
-function payloadTarget(event: ZoneEvent): number | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstNumber(payload, ['target', 'target_ph', 'target_ec'])
-}
-
-function payloadZoneState(event: ZoneEvent): string | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstString(payload, ['zone_state', 'pid_zone'])
-}
-
-function payloadIntegral(event: ZoneEvent): number | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstNumber(payload, ['integral_term'])
-}
-
-function payloadComponent(event: ZoneEvent): string | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstString(payload, ['component', 'correction_type'])
-}
-
-function payloadReason(event: ZoneEvent): string | null {
-  const payload = toPayloadRecord(event.payload)
-  return firstString(payload, ['reason', 'reason_code', 'safety_skip_reason'])
-}
-
 function formatPayloadNumber(value: number | null, digits = 3): string | null {
-  if (value === null || !Number.isFinite(value)) {
-    return null
-  }
+  if (value === null || !Number.isFinite(value)) return null
   return value.toFixed(digits)
 }
+
+function boolLabel(value: unknown): string {
+  if (value === true) return 'вкл'
+  if (value === false) return 'выкл'
+  return '—'
+}
+
+// IRR_STATE_SNAPSHOT: render pump/valve/level table from snapshot object
+function renderIrrSnapshot(payload: Record<string, unknown>): Array<{ label: string, value: string }> {
+  const snapshot = toPayloadRecord(payload['snapshot'])
+  if (!snapshot) return []
+  const labelMap: Record<string, string> = {
+    pump_main: 'Насос (основной)',
+    valve_clean_fill: 'Клапан заполнения чистой',
+    valve_clean_supply: 'Клапан подачи чистой воды',
+    valve_solution_fill: 'Клапан заполнения раствора',
+    valve_solution_supply: 'Клапан подачи раствора',
+    valve_irrigation: 'Клапан полива',
+    valve_drain: 'Клапан слива',
+    valve_recirc: 'Клапан рециркуляции',
+    clean_level_max: 'Уровень чистой (макс)',
+    clean_level_min: 'Уровень чистой (мин)',
+    solution_level_max: 'Уровень раствора (макс)',
+    solution_level_min: 'Уровень раствора (мин)',
+  }
+  return Object.entries(snapshot).map(([key, val]) => ({
+    label: labelMap[key] ?? key.replace(/_/g, ' '),
+    value: typeof val === 'boolean' ? boolLabel(val) : String(val ?? '—'),
+  }))
+}
+
+// EventRow sub-component for reuse in both virtual and regular lists
+const EventRow = defineComponent({
+  name: 'EventRow',
+  props: {
+    item: { type: Object as () => ZoneEvent, required: true },
+    expanded: { type: Boolean, default: false },
+  },
+  emits: ['toggle'],
+  setup(props, { emit }) {
+    return () => {
+      const { item, expanded } = props
+      const payload = toPayloadRecord(item.payload)
+      const canExpand = hasExpandablePayload(item)
+
+      // Build detail panel content based on event kind
+      const detailRows: ReturnType<typeof h>[] = []
+
+      if (expanded && payload) {
+        if (item.kind === 'IRR_STATE_SNAPSHOT') {
+          const nodeUid = readString(payload, 'node_uid')
+          const cmdId = readString(payload, 'cmd_id')
+          if (nodeUid) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Нода: '), h('strong', {}, nodeUid)]))
+          if (cmdId) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Команда: '), h('strong', {}, cmdId)]))
+          const snapshotRows = renderIrrSnapshot(payload)
+          if (snapshotRows.length > 0) {
+            detailRows.push(
+              h('div', { class: 'mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5' },
+                snapshotRows.map(({ label, value }) =>
+                  h('div', { class: 'contents' }, [
+                    h('span', { class: 'text-[color:var(--text-dim)]' }, label + ':'),
+                    h('strong', {}, value),
+                  ])
+                )
+              )
+            )
+          }
+        } else if (item.kind === 'COMMAND_TIMEOUT') {
+          const cmdId = readString(payload, 'cmd_id')
+          const timeout = readNumber(payload, 'timeout_minutes')
+          const commandId = readNumber(payload, 'command_id')
+          if (cmdId) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Команда: '), h('strong', {}, cmdId)]))
+          if (timeout !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Таймаут: '), h('strong', {}, `${timeout} мин`)]))
+          if (commandId !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'ID команды: '), h('strong', {}, String(commandId))]))
+        } else if (item.kind === 'PUMP_CALIBRATION_FINISHED' || item.kind === 'PUMP_CALIBRATION_SAVED') {
+          const component = firstString(payload, ['component', 'role'])
+          const actualMl = readNumber(payload, 'actual_ml')
+          const mlPerSec = readNumber(payload, 'ml_per_sec')
+          const nodeUid = readString(payload, 'node_uid')
+          const channel = readString(payload, 'channel')
+          if (component) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Компонент: '), h('strong', {}, component)]))
+          if (actualMl !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Объём: '), h('strong', {}, `${actualMl.toFixed(2)} мл`)]))
+          if (mlPerSec !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Скорость: '), h('strong', {}, `${mlPerSec.toFixed(2)} мл/с`)]))
+          if (nodeUid) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Нода: '), h('strong', {}, nodeUid)]))
+          if (channel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Канал: '), h('strong', {}, channel)]))
+        } else if (item.kind === 'PUMP_CALIBRATION_RUN_SKIPPED') {
+          const component = readString(payload, 'component')
+          const nodeUid = readString(payload, 'node_uid')
+          const channel = readString(payload, 'channel')
+          const durationSec = readNumber(payload, 'duration_sec')
+          const reason = firstString(payload, ['reason', 'reason_code'])
+          if (component) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Компонент: '), h('strong', {}, component)]))
+          if (nodeUid) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Нода: '), h('strong', {}, nodeUid)]))
+          if (channel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Канал: '), h('strong', {}, channel)]))
+          if (durationSec !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Длительность теста: '), h('strong', {}, `${durationSec} с`)]))
+          if (reason) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Причина: '), h('strong', {}, reason)]))
+        } else if (item.kind === 'EC_DOSING') {
+          const currentEc = readNumber(payload, 'current_ec')
+          const targetEc = readNumber(payload, 'target_ec')
+          const targetEcMin = readNumber(payload, 'target_ec_min')
+          const targetEcMax = readNumber(payload, 'target_ec_max')
+          const durationMs = readNumber(payload, 'duration_ms')
+          const amountMl = readNumber(payload, 'amount_ml')
+          const ecComponent = readString(payload, 'ec_component')
+          const nodeUid = readString(payload, 'node_uid')
+          const channel = readString(payload, 'channel')
+          const attempt = readNumber(payload, 'attempt')
+          if (ecComponent) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Компонент: '), h('strong', {}, ecComponent)]))
+          if (currentEc !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Текущий EC: '), h('strong', {}, `${currentEc.toFixed(2)} мС/см`)]))
+          if (targetEcMin !== null && targetEcMax !== null) {
+            detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Цель EC: '), h('strong', {}, `${targetEcMin.toFixed(2)}–${targetEcMax.toFixed(2)} мС/см`)]))
+          } else if (targetEc !== null) {
+            detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Цель EC: '), h('strong', {}, `${targetEc.toFixed(2)} мС/см`)]))
+          }
+          if (amountMl !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Доза: '), h('strong', {}, `${amountMl.toFixed(1)} мл`)]))
+          if (durationMs !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Импульс насоса: '), h('strong', {}, `${durationMs} мс`)]))
+          if (nodeUid) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Нода: '), h('strong', {}, nodeUid)]))
+          if (channel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Канал: '), h('strong', {}, channel)]))
+          if (attempt !== null && attempt > 1) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытка: '), h('strong', {}, String(attempt))]))
+        } else if (item.kind === 'PH_CORRECTED') {
+          const currentPh = readNumber(payload, 'current_ph')
+          const targetPh = readNumber(payload, 'target_ph')
+          const targetPhMin = readNumber(payload, 'target_ph_min')
+          const targetPhMax = readNumber(payload, 'target_ph_max')
+          const durationMs = readNumber(payload, 'duration_ms')
+          const amountMl = readNumber(payload, 'amount_ml')
+          const direction = readString(payload, 'direction')
+          const nodeUid = readString(payload, 'node_uid')
+          const channel = readString(payload, 'channel')
+          const attempt = readNumber(payload, 'attempt')
+          const dirLabel = direction === 'up' ? 'вверх ↑' : direction === 'down' ? 'вниз ↓' : direction
+          if (dirLabel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Направление: '), h('strong', {}, dirLabel)]))
+          if (currentPh !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Текущий pH: '), h('strong', {}, currentPh.toFixed(2))]))
+          if (targetPhMin !== null && targetPhMax !== null) {
+            detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Цель pH: '), h('strong', {}, `${targetPhMin.toFixed(2)}–${targetPhMax.toFixed(2)}`)]))
+          } else if (targetPh !== null) {
+            detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Цель pH: '), h('strong', {}, targetPh.toFixed(2))]))
+          }
+          if (amountMl !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Доза: '), h('strong', {}, `${amountMl.toFixed(1)} мл`)]))
+          if (durationMs !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Импульс насоса: '), h('strong', {}, `${durationMs} мс`)]))
+          if (nodeUid) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Нода: '), h('strong', {}, nodeUid)]))
+          if (channel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Канал: '), h('strong', {}, channel)]))
+          if (attempt !== null && attempt > 1) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытка: '), h('strong', {}, String(attempt))]))
+        } else if (item.kind === 'CORRECTION_COMPLETE') {
+          const currentPh = readNumber(payload, 'current_ph')
+          const currentEc = readNumber(payload, 'current_ec')
+          const attempt = readNumber(payload, 'attempt')
+          if (currentPh !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'pH: '), h('strong', {}, currentPh.toFixed(2))]))
+          if (currentEc !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'EC: '), h('strong', {}, `${currentEc.toFixed(2)} мС/см`)]))
+          if (attempt !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытка: '), h('strong', {}, String(attempt))]))
+        } else if (item.kind === 'CORRECTION_EXHAUSTED') {
+          const attempt = readNumber(payload, 'attempt')
+          const maxAttempts = readNumber(payload, 'max_attempts')
+          const stage = readString(payload, 'stage')
+          if (attempt !== null && maxAttempts !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытки: '), h('strong', {}, `${attempt}/${maxAttempts}`)]))
+          if (stage) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Стадия: '), h('strong', {}, stage)]))
+        } else if (item.kind === 'CORRECTION_SKIPPED_COOLDOWN') {
+          const currentPh = readNumber(payload, 'current_ph')
+          const currentEc = readNumber(payload, 'current_ec')
+          const retrySec = readNumber(payload, 'retry_after_sec')
+          if (currentPh !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'pH: '), h('strong', {}, currentPh.toFixed(2))]))
+          if (currentEc !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'EC: '), h('strong', {}, `${currentEc.toFixed(2)} мС/см`)]))
+          if (retrySec !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Повтор через: '), h('strong', {}, `${retrySec} с`)]))
+        } else if (item.kind === 'AE_TASK_STARTED' || item.kind === 'AE_TASK_COMPLETED') {
+          const taskId = readNumber(payload, 'task_id')
+          const topology = readString(payload, 'topology')
+          const stage = readString(payload, 'stage')
+          const trigger = readString(payload, 'intent_trigger')
+          if (taskId !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Задача ID: '), h('strong', {}, String(taskId))]))
+          if (topology) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Топология: '), h('strong', {}, topology)]))
+          if (stage) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Стадия: '), h('strong', {}, stage)]))
+          if (trigger) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Триггер: '), h('strong', {}, trigger)]))
+        } else if (item.kind === 'AE_TASK_FAILED') {
+          const taskId = readNumber(payload, 'task_id')
+          const errorCode = readString(payload, 'error_code')
+          const stage = readString(payload, 'stage')
+          if (taskId !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Задача ID: '), h('strong', {}, String(taskId))]))
+          if (errorCode) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Код ошибки: '), h('strong', { class: 'text-red-500' }, errorCode)]))
+          if (stage) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Стадия: '), h('strong', {}, stage)]))
+        } else {
+          // Generic / correction events
+          const dose = firstNumber(payload, ['output', 'ml'])
+          const error = firstNumber(payload, ['error', 'diff'])
+          const current = firstNumber(payload, ['current', 'current_ph', 'current_ec'])
+          const target = firstNumber(payload, ['target', 'target_ph', 'target_ec'])
+          const zoneState = firstString(payload, ['zone_state', 'pid_zone'])
+          const integral = readNumber(payload, 'integral_term')
+          const component = firstString(payload, ['component', 'correction_type'])
+          const reason = firstString(payload, ['reason', 'reason_code', 'safety_skip_reason'])
+          if (dose !== null) detailRows.push(h('div', {}, ['Доза: ', h('strong', {}, `${formatPayloadNumber(dose, 3)} мл`)]))
+          if (error !== null) detailRows.push(h('div', {}, ['Ошибка: ', h('strong', {}, formatPayloadNumber(error, 4))]))
+          if (current !== null || target !== null) {
+            detailRows.push(h('div', {}, [
+              'Текущее: ', h('strong', {}, formatPayloadNumber(current, 3) ?? '—'),
+              ' → Цель: ', h('strong', {}, formatPayloadNumber(target, 3) ?? '—'),
+            ]))
+          }
+          if (zoneState) detailRows.push(h('div', {}, ['ПИД-зона: ', h('strong', {}, zoneState)]))
+          if (integral !== null) detailRows.push(h('div', {}, ['Интеграл: ', h('strong', {}, formatPayloadNumber(integral, 4))]))
+          if (component) detailRows.push(h('div', {}, ['Компонент: ', h('strong', {}, component)]))
+          if (reason) detailRows.push(h('div', {}, ['Причина: ', h('strong', {}, reason)]))
+        }
+      }
+
+      return h('div', {
+        class: [
+          'flex items-start gap-2 py-2 border-b border-[color:var(--border-muted)] rounded-lg px-1 transition-colors',
+          canExpand ? 'cursor-pointer hover:bg-[color:var(--surface-muted)]/30 select-none' : '',
+        ],
+        onClick: canExpand ? () => emit('toggle') : undefined,
+      }, [
+        h(Badge, { variant: getEventVariant(item.kind), class: 'text-xs shrink-0 mt-0.5' }, () => translateEventKind(item.kind)),
+        h('div', { class: 'flex-1 min-w-0' }, [
+          h('div', { class: 'flex items-center justify-between gap-2' }, [
+            h('div', { class: 'text-xs text-[color:var(--text-dim)]' },
+              item.occurred_at ? new Date(item.occurred_at).toLocaleString('ru-RU') : '—'
+            ),
+            canExpand
+              ? h('span', { class: 'text-[10px] text-[color:var(--text-dim)] shrink-0' }, expanded ? '▲' : '▼')
+              : null,
+          ]),
+          h('div', { class: 'text-sm text-[color:var(--text-muted)] mt-0.5' }, item.message),
+          expanded && detailRows.length > 0
+            ? h('div', { class: 'mt-2 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)] p-2.5 text-xs font-mono space-y-1' }, detailRows)
+            : null,
+        ]),
+      ])
+    }
+  },
+})
 
 const exportEvents = (): void => {
   if (typeof window === 'undefined') return

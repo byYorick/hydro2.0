@@ -31,7 +31,8 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             ->assertJsonPath('data.active_mode', 'setup')
             ->assertJsonPath('data.profiles.setup.mode', 'setup')
             ->assertJsonPath('data.profiles.setup.is_active', true)
-            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.system_type', 'nft');
+            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.system_type', 'nft')
+            ->assertJsonPath('data.profiles.setup.subsystems.diagnostics.execution.workflow', 'cycle_start');
 
         $this->assertDatabaseHas('zone_automation_logic_profiles', [
             'zone_id' => $zone->id,
@@ -39,6 +40,14 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             'is_active' => true,
             'updated_by' => $user->id,
         ]);
+
+        $profile = ZoneAutomationLogicProfile::query()
+            ->where('zone_id', $zone->id)
+            ->where('mode', 'setup')
+            ->first();
+        $this->assertNotNull($profile);
+        $this->assertSame(1, data_get($profile?->command_plans, 'schema_version'));
+        $this->assertNotEmpty(data_get($profile?->command_plans, 'plans.diagnostics.steps'));
 
         $showResponse = $this->actingAs($user)
             ->getJson("/api/zones/{$zone->id}/automation-logic-profile");
@@ -173,6 +182,22 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
                     'interval_minutes' => 20,
                     'duration_seconds' => 30,
                     'system_type' => 'nft',
+                ],
+            ],
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'startup',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'two_tank_commands' => [
+                        'clean_fill_start' => [
+                            [
+                                'channel' => 'valve_clean_fill',
+                                'cmd' => 'set_relay',
+                                'params' => ['state' => true],
+                            ],
+                        ],
+                    ],
                 ],
             ],
         ];

@@ -284,3 +284,29 @@ async def test_recovery_claimed_task_fails():
 
     assert result.failed_tasks == 1
     assert repo.failed[0]["error_code"] == "startup_recovery_unconfirmed_command"
+
+
+async def test_recovery_missing_ae_command_fails_gracefully():
+    """waiting_command task with no ae_command row → TaskExecutionError caught, task fails gracefully."""
+    from ae3lite.domain.errors import TaskExecutionError
+
+    class _GatewayRaisesOnRecover:
+        async def recover_waiting_command(self, *, task, now) -> dict:
+            raise TaskExecutionError("ae3_missing_ae_command", f"Task {task.id} has no ae_command for recovery")
+
+    task = _make_task(status="waiting_command", stage="clean_fill_start")
+    repo = _MockTaskRepo(tasks=[task])
+    uc = StartupRecoveryUseCase(
+        task_repository=repo,
+        lease_repository=_MockLeaseRepo(),
+        reconcile_command_use_case=_MockReconcileUseCase(),
+        command_gateway=_GatewayRaisesOnRecover(),
+        workflow_repository=None,
+        topology_registry=TopologyRegistry(),
+    )
+
+    result = await uc.run(now=NOW)
+
+    assert result.failed_tasks == 1
+    assert result.scanned_tasks == 1
+    assert repo.failed[0]["error_code"] == "ae3_missing_ae_command"

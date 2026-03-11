@@ -170,6 +170,26 @@ class PgPidStateRepository:
                 zone_id,
             )
 
+    async def read_measured_value(self, *, zone_id: int, pid_type: str) -> Optional[float]:
+        """Return the most recently persisted last_measured_value for a PID type.
+
+        Used by dose steps to retrieve the measurement that triggered the dose,
+        avoiding reliance on the potentially stale plan.runtime pid_state snapshot.
+        Returns None if no row exists yet.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT last_measured_value
+                FROM pid_state
+                WHERE zone_id = $1 AND pid_type = $2
+                """,
+                zone_id,
+                str(pid_type or "").strip().lower(),
+            )
+        return float(row["last_measured_value"]) if row and row["last_measured_value"] is not None else None
+
     async def reset_no_effect_counts(self, *, zone_id: int) -> None:
         pool = await get_pool()
         async with pool.acquire() as conn:

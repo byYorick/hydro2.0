@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
-import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
+import type { ZoneTargets as ZoneTargetsType } from '@/types'
 import {
   applyAutomationFromRecipe,
   clamp,
@@ -90,6 +90,31 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
   const systemType = toIrrigationSystem(raw?.systemType, fallback.systemType)
   const tanksRaw = toRoundedNumber(raw?.tanksCount, fallback.tanksCount)
   const tanksCount = tanksRaw === 3 ? 3 : 2
+  const fallbackWorkflow = fallback.diagnosticsWorkflow
+  const rawWorkflow = typeof raw?.diagnosticsWorkflow === 'string'
+    ? raw.diagnosticsWorkflow
+    : typeof fallbackWorkflow === 'string'
+      ? fallbackWorkflow
+      : null
+  const diagnosticsWorkflow =
+    rawWorkflow === 'startup' || rawWorkflow === 'cycle_start' || rawWorkflow === 'diagnostics'
+      ? rawWorkflow
+      : toBoolean(raw?.cycleStartWorkflowEnabled, fallback.cycleStartWorkflowEnabled)
+        ? (tanksCount === 2 ? 'startup' : 'cycle_start')
+        : 'diagnostics'
+  const fallbackStepCount = (value: unknown, defaultValue: number): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+    return defaultValue
+  }
+  const sanitizeStepCount = (value: unknown, fallbackValue: unknown, defaultValue: number): number => {
+    return clamp(
+      toRoundedNumber(value, fallbackStepCount(fallbackValue, defaultValue)),
+      1,
+      12
+    )
+  }
 
   const sanitized: WaterFormState = {
     systemType,
@@ -117,9 +142,156 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
       1440
     ),
     cycleStartWorkflowEnabled: toBoolean(raw?.cycleStartWorkflowEnabled, fallback.cycleStartWorkflowEnabled),
+    diagnosticsWorkflow,
     cleanTankFullThreshold: clamp(toNumber(raw?.cleanTankFullThreshold, fallback.cleanTankFullThreshold), 0.05, 1),
     refillDurationSeconds: clamp(toRoundedNumber(raw?.refillDurationSeconds, fallback.refillDurationSeconds), 1, 3600),
     refillTimeoutSeconds: clamp(toRoundedNumber(raw?.refillTimeoutSeconds, fallback.refillTimeoutSeconds), 30, 86400),
+    startupCleanFillTimeoutSeconds: clamp(
+      toRoundedNumber(
+        raw?.startupCleanFillTimeoutSeconds,
+        typeof fallback.startupCleanFillTimeoutSeconds === 'number' ? fallback.startupCleanFillTimeoutSeconds : 900
+      ),
+      30,
+      86400
+    ),
+    startupSolutionFillTimeoutSeconds: clamp(
+      toRoundedNumber(
+        raw?.startupSolutionFillTimeoutSeconds,
+        typeof fallback.startupSolutionFillTimeoutSeconds === 'number' ? fallback.startupSolutionFillTimeoutSeconds : 1350
+      ),
+      30,
+      86400
+    ),
+    startupPrepareRecirculationTimeoutSeconds: clamp(
+      toRoundedNumber(
+        raw?.startupPrepareRecirculationTimeoutSeconds,
+        typeof fallback.startupPrepareRecirculationTimeoutSeconds === 'number'
+          ? fallback.startupPrepareRecirculationTimeoutSeconds
+          : 900
+      ),
+      30,
+      86400
+    ),
+    startupCleanFillRetryCycles: clamp(
+      toRoundedNumber(
+        raw?.startupCleanFillRetryCycles,
+        typeof fallback.startupCleanFillRetryCycles === 'number' ? fallback.startupCleanFillRetryCycles : 1
+      ),
+      0,
+      20
+    ),
+    irrigationRecoveryMaxContinueAttempts: clamp(
+      toRoundedNumber(
+        raw?.irrigationRecoveryMaxContinueAttempts,
+        typeof fallback.irrigationRecoveryMaxContinueAttempts === 'number'
+          ? fallback.irrigationRecoveryMaxContinueAttempts
+          : 5
+      ),
+      1,
+      30
+    ),
+    irrigationRecoveryTimeoutSeconds: clamp(
+      toRoundedNumber(
+        raw?.irrigationRecoveryTimeoutSeconds,
+        typeof fallback.irrigationRecoveryTimeoutSeconds === 'number' ? fallback.irrigationRecoveryTimeoutSeconds : 600
+      ),
+      30,
+      86400
+    ),
+    prepareToleranceEcPct: clamp(
+      toNumber(raw?.prepareToleranceEcPct, typeof fallback.prepareToleranceEcPct === 'number' ? fallback.prepareToleranceEcPct : 25),
+      0.1,
+      100
+    ),
+    prepareTolerancePhPct: clamp(
+      toNumber(raw?.prepareTolerancePhPct, typeof fallback.prepareTolerancePhPct === 'number' ? fallback.prepareTolerancePhPct : 15),
+      0.1,
+      100
+    ),
+    correctionMaxEcCorrectionAttempts: clamp(
+      toRoundedNumber(
+        raw?.correctionMaxEcCorrectionAttempts,
+        typeof fallback.correctionMaxEcCorrectionAttempts === 'number' ? fallback.correctionMaxEcCorrectionAttempts : 5
+      ),
+      1,
+      50
+    ),
+    correctionMaxPhCorrectionAttempts: clamp(
+      toRoundedNumber(
+        raw?.correctionMaxPhCorrectionAttempts,
+        typeof fallback.correctionMaxPhCorrectionAttempts === 'number' ? fallback.correctionMaxPhCorrectionAttempts : 5
+      ),
+      1,
+      50
+    ),
+    correctionPrepareRecirculationMaxAttempts: clamp(
+      toRoundedNumber(
+        raw?.correctionPrepareRecirculationMaxAttempts,
+        typeof fallback.correctionPrepareRecirculationMaxAttempts === 'number'
+          ? fallback.correctionPrepareRecirculationMaxAttempts
+          : 3
+      ),
+      1,
+      50
+    ),
+    correctionPrepareRecirculationMaxCorrectionAttempts: clamp(
+      toRoundedNumber(
+        raw?.correctionPrepareRecirculationMaxCorrectionAttempts,
+        typeof fallback.correctionPrepareRecirculationMaxCorrectionAttempts === 'number'
+          ? fallback.correctionPrepareRecirculationMaxCorrectionAttempts
+          : 32767
+      ),
+      1,
+      100000
+    ),
+    correctionEcMixWaitSec: clamp(
+      toRoundedNumber(
+        raw?.correctionEcMixWaitSec,
+        typeof fallback.correctionEcMixWaitSec === 'number' ? fallback.correctionEcMixWaitSec : 120
+      ),
+      10,
+      3600
+    ),
+    correctionPhMixWaitSec: clamp(
+      toRoundedNumber(
+        raw?.correctionPhMixWaitSec,
+        typeof fallback.correctionPhMixWaitSec === 'number' ? fallback.correctionPhMixWaitSec : 60
+      ),
+      10,
+      3600
+    ),
+    correctionStabilizationSec: clamp(
+      toRoundedNumber(
+        raw?.correctionStabilizationSec,
+        typeof fallback.correctionStabilizationSec === 'number' ? fallback.correctionStabilizationSec : 60
+      ),
+      0,
+      3600
+    ),
+    twoTankCleanFillStartSteps: sanitizeStepCount(raw?.twoTankCleanFillStartSteps, fallback.twoTankCleanFillStartSteps, 1),
+    twoTankCleanFillStopSteps: sanitizeStepCount(raw?.twoTankCleanFillStopSteps, fallback.twoTankCleanFillStopSteps, 1),
+    twoTankSolutionFillStartSteps: sanitizeStepCount(raw?.twoTankSolutionFillStartSteps, fallback.twoTankSolutionFillStartSteps, 3),
+    twoTankSolutionFillStopSteps: sanitizeStepCount(raw?.twoTankSolutionFillStopSteps, fallback.twoTankSolutionFillStopSteps, 3),
+    twoTankPrepareRecirculationStartSteps: sanitizeStepCount(
+      raw?.twoTankPrepareRecirculationStartSteps,
+      fallback.twoTankPrepareRecirculationStartSteps,
+      3
+    ),
+    twoTankPrepareRecirculationStopSteps: sanitizeStepCount(
+      raw?.twoTankPrepareRecirculationStopSteps,
+      fallback.twoTankPrepareRecirculationStopSteps,
+      3
+    ),
+    twoTankIrrigationRecoveryStartSteps: sanitizeStepCount(
+      raw?.twoTankIrrigationRecoveryStartSteps,
+      fallback.twoTankIrrigationRecoveryStartSteps,
+      4
+    ),
+    twoTankIrrigationRecoveryStopSteps: sanitizeStepCount(
+      raw?.twoTankIrrigationRecoveryStopSteps,
+      fallback.twoTankIrrigationRecoveryStopSteps,
+      3
+    ),
     refillRequiredNodeTypes:
       typeof raw?.refillRequiredNodeTypes === 'string' && raw.refillRequiredNodeTypes.trim() !== ''
         ? raw.refillRequiredNodeTypes.trim()
@@ -183,7 +355,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
   const { sendZoneCommand, showToast } = deps
 
   // ─── Role / permissions ────────────────────────────────────────────────────
-  const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
+  const role = computed(() => String(page.props.auth?.user?.role ?? 'viewer').trim().toLowerCase())
   const canConfigureAutomation = computed(() => role.value === 'agronomist' || role.value === 'admin')
   const canOperateAutomation = computed(
     () =>
@@ -239,9 +411,33 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
     diagnosticsEnabled: true,
     diagnosticsIntervalMinutes: 15,
     cycleStartWorkflowEnabled: true,
+    diagnosticsWorkflow: 'startup',
     cleanTankFullThreshold: 0.95,
     refillDurationSeconds: 30,
     refillTimeoutSeconds: 600,
+    startupCleanFillTimeoutSeconds: 900,
+    startupSolutionFillTimeoutSeconds: 1350,
+    startupPrepareRecirculationTimeoutSeconds: 900,
+    startupCleanFillRetryCycles: 1,
+    irrigationRecoveryMaxContinueAttempts: 5,
+    irrigationRecoveryTimeoutSeconds: 600,
+    prepareToleranceEcPct: 25,
+    prepareTolerancePhPct: 15,
+    correctionMaxEcCorrectionAttempts: 5,
+    correctionMaxPhCorrectionAttempts: 5,
+    correctionPrepareRecirculationMaxAttempts: 3,
+    correctionPrepareRecirculationMaxCorrectionAttempts: 32767,
+    correctionEcMixWaitSec: 120,
+    correctionPhMixWaitSec: 60,
+    correctionStabilizationSec: 60,
+    twoTankCleanFillStartSteps: 1,
+    twoTankCleanFillStopSteps: 1,
+    twoTankSolutionFillStartSteps: 3,
+    twoTankSolutionFillStopSteps: 3,
+    twoTankPrepareRecirculationStartSteps: 3,
+    twoTankPrepareRecirculationStopSteps: 3,
+    twoTankIrrigationRecoveryStartSteps: 4,
+    twoTankIrrigationRecoveryStopSteps: 3,
     refillRequiredNodeTypes: 'irrig,climate,light',
     refillPreferredChannel: 'fill_valve',
     solutionChangeEnabled: false,

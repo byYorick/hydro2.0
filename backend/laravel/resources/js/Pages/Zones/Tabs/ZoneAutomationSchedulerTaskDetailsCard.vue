@@ -1,18 +1,26 @@
 <template>
   <article class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--surface-muted)]/40 p-3 space-y-3">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-      <div class="text-sm">
-        <span class="text-[color:var(--text-dim)]">task_id:</span>
-        <span class="font-mono text-[color:var(--text-primary)] ml-1">{{ schedulerTaskStatus.task_id }}</span>
+      <div class="space-y-1">
+        <div class="text-sm text-[color:var(--text-primary)]">
+          <span class="text-[color:var(--text-dim)]">Задача:</span>
+          <span class="font-mono ml-1">#{{ schedulerTaskStatus.task_id }}</span>
+        </div>
+        <p class="text-xs text-[color:var(--text-dim)]">
+          {{ schedulerTaskTypeLabel(schedulerTaskStatus.task_type) }} · {{ schedulerTaskStatusLabel(schedulerTaskStatus.status) }}
+        </p>
       </div>
       <Badge :variant="schedulerTaskStatusVariant(schedulerTaskStatus.status)">
         {{ schedulerTaskStatusLabel(schedulerTaskStatus.status) }}
       </Badge>
     </div>
+    <p class="text-xs text-[color:var(--text-dim)]">
+      {{ schedulerStatusHint }}
+    </p>
     <dl class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
       <div>
         <dt class="text-[color:var(--text-dim)]">Тип</dt>
-        <dd class="text-[color:var(--text-primary)]">{{ schedulerTaskStatus.task_type || '-' }}</dd>
+        <dd class="text-[color:var(--text-primary)]">{{ schedulerTaskTypeLabel(schedulerTaskStatus.task_type) }}</dd>
       </div>
       <div>
         <dt class="text-[color:var(--text-dim)]">Создана</dt>
@@ -25,15 +33,15 @@
     </dl>
     <dl class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-xs">
       <div>
-        <dt class="text-[color:var(--text-dim)]">Scheduled</dt>
+        <dt class="text-[color:var(--text-dim)]">Запланирована</dt>
         <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.scheduled_for) }}</dd>
       </div>
       <div>
-        <dt class="text-[color:var(--text-dim)]">Due</dt>
+        <dt class="text-[color:var(--text-dim)]">Дедлайн (due_at)</dt>
         <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.due_at || null) }}</dd>
       </div>
       <div>
-        <dt class="text-[color:var(--text-dim)]">Expires</dt>
+        <dt class="text-[color:var(--text-dim)]">Истекает (expires_at)</dt>
         <dd class="text-[color:var(--text-primary)]">{{ formatDateTime(schedulerTaskStatus.expires_at || null) }}</dd>
       </div>
       <div>
@@ -48,7 +56,7 @@
       <div>
         <dt class="text-[color:var(--text-dim)]">Решение автоматики</dt>
         <dd class="text-[color:var(--text-primary)]">
-          {{ schedulerTaskDecisionLabel(schedulerTaskStatus.decision) }}
+          {{ schedulerDecisionLabel }}
           <span
             v-if="schedulerTaskStatus.action_required === false"
             class="text-[color:var(--text-dim)]"
@@ -60,7 +68,7 @@
       <div>
         <dt class="text-[color:var(--text-dim)]">Причина</dt>
         <dd class="text-[color:var(--text-primary)]">
-          {{ schedulerTaskReasonLabel(schedulerTaskStatus.reason_code, schedulerTaskStatus.reason) }}
+          {{ schedulerReasonLabel }}
         </dd>
       </div>
     </dl>
@@ -75,10 +83,7 @@
       <div>
         <dt class="text-[color:var(--text-dim)]">Командный итог</dt>
         <dd class="text-[color:var(--text-primary)]">
-          {{ schedulerTaskStatus.commands_effect_confirmed ?? schedulerTaskStatus.result?.commands_effect_confirmed ?? '-' }}
-          /
-          {{ schedulerTaskStatus.commands_total ?? schedulerTaskStatus.result?.commands_total ?? '-' }}
-          подтверждено DONE
+          {{ schedulerCommandSummary }}
         </dd>
       </div>
     </dl>
@@ -111,6 +116,7 @@
         v-if="schedulerTaskStatus.process_state?.current_action"
         class="text-xs text-[color:var(--text-dim)]"
       >
+        Последнее действие:
         {{
           schedulerTaskEventLabel(schedulerTaskStatus.process_state.current_action.event_type) +
           (schedulerTaskStatus.process_state.current_action.reason_code
@@ -139,10 +145,15 @@
       </ul>
     </section>
 
-    <ul
-      v-if="schedulerTaskTimeline.length > 0"
-      class="space-y-1 text-xs"
-    >
+    <section class="space-y-2">
+      <h4 class="text-sm font-medium text-[color:var(--text-primary)]">История выполнения</h4>
+      <p class="text-xs text-[color:var(--text-dim)]">
+        Сверху самые новые события. При необходимости откройте «Технические детали события».
+      </p>
+      <ul
+        v-if="schedulerTaskTimeline.length > 0"
+        class="space-y-1 text-xs"
+      >
       <li
         v-for="(step, index) in schedulerTaskTimeline"
         :key="`${schedulerTaskStatus.task_id}-timeline-${step.event_id || index}`"
@@ -180,21 +191,21 @@
           class="text-[11px] text-[color:var(--text-dim)]"
         >
           <span v-if="step.decision">
-            decision: {{ schedulerTaskDecisionLabel(step.decision) }}
+            Решение: {{ schedulerTaskDecisionLabel(step.decision) }}
             <span class="font-mono">({{ step.decision }})</span>
           </span>
           <span
             v-if="step.reason_code"
             class="ml-2"
           >
-            reason: {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
+            Причина: {{ schedulerTaskReasonLabel(step.reason_code, step.reason) }}
             <span class="font-mono">({{ step.reason_code }})</span>
           </span>
           <span
             v-if="step.error_code"
             class="ml-2"
           >
-            error: {{ schedulerTaskErrorLabel(step.error_code) }}
+            Ошибка: {{ schedulerTaskErrorLabel(step.error_code) }}
             <span class="font-mono">({{ step.error_code }})</span>
           </span>
         </div>
@@ -217,24 +228,26 @@
           class="rounded-lg border border-[color:var(--border-muted)]/50 bg-[color:var(--surface-card)]/40"
         >
           <summary class="cursor-pointer list-none px-2 py-1 text-[11px] text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]">
-            raw payload
+            Технические детали события
           </summary>
           <pre
             class="max-h-52 overflow-auto border-t border-[color:var(--border-muted)]/40 px-2 py-2 text-[10px] leading-4 text-[color:var(--text-muted)]"
           >{{ formatSchedulerTimelineRawDetails(step) }}</pre>
         </details>
       </li>
-    </ul>
-    <p
-      v-else
-      class="text-xs text-[color:var(--text-dim)]"
-    >
-      Timeline событий недоступен: ожидается event-contract (`event_id`, `event_type`, `at`).
-    </p>
+      </ul>
+      <p
+        v-else
+        class="text-xs text-[color:var(--text-dim)]"
+      >
+        История событий пока недоступна: backend не передал обязательные поля (`event_id`, `event_type`, `at`).
+      </p>
+    </section>
   </article>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type {
@@ -252,6 +265,7 @@ interface SchedulerTaskDetailsCardProps {
   formatDateTime: (value: string | null | undefined) => string
   schedulerTaskStatusVariant: (status: string | null | undefined) => BadgeVariant
   schedulerTaskStatusLabel: (status: string | null | undefined) => string
+  schedulerTaskTypeLabel: (taskType: string | null | undefined) => string
   schedulerTaskDecisionLabel: (decision: string | null | undefined) => string
   schedulerTaskReasonLabel: (reasonCode?: string | null, reason?: string | null) => string
   schedulerTaskErrorLabel: (errorCode?: string | null, error?: string | null) => string
@@ -275,10 +289,41 @@ const {
   schedulerTaskStatus,
   schedulerTaskStatusLabel,
   schedulerTaskStatusVariant,
+  schedulerTaskTypeLabel,
   schedulerTaskTimeline,
   schedulerTaskTimelineStageLabel,
   schedulerTaskTimelineStepLabel,
 } = defineProps<SchedulerTaskDetailsCardProps>()
+
+const schedulerStatusHint = computed(() => {
+  const status = String(schedulerTaskStatus.status ?? '').toLowerCase()
+  if (status === 'accepted') return 'Задача поставлена в очередь и ждёт выполнения.'
+  if (status === 'running') return 'Задача выполняется прямо сейчас.'
+  if (status === 'completed') return 'Задача успешно завершена.'
+  if (status === 'failed') return 'Задача остановилась с ошибкой. Проверьте причину и историю.'
+  if (status === 'expired') return 'Задача не успела завершиться до срока expires_at.'
+  if (status === 'rejected') return 'Задача отклонена до выполнения.'
+  return 'Состояние задачи обновится после получения событий от automation-engine.'
+})
+
+const schedulerDecisionLabel = computed(() => {
+  const label = schedulerTaskDecisionLabel(schedulerTaskStatus.decision)
+  return label === '-' ? 'Решение ещё не сформировано' : label
+})
+
+const schedulerReasonLabel = computed(() => {
+  const label = schedulerTaskReasonLabel(schedulerTaskStatus.reason_code, schedulerTaskStatus.reason)
+  return label === '-' ? 'Причина пока не указана' : label
+})
+
+const schedulerCommandSummary = computed(() => {
+  const confirmed = schedulerTaskStatus.commands_effect_confirmed ?? schedulerTaskStatus.result?.commands_effect_confirmed ?? null
+  const total = schedulerTaskStatus.commands_total ?? schedulerTaskStatus.result?.commands_total ?? null
+  if (confirmed === null && total === null) {
+    return 'Данные по отправленным командам пока недоступны'
+  }
+  return `${confirmed ?? '-'} / ${total ?? '-'} подтверждено DONE`
+})
 
 function normalizeSchedulerText(value: unknown): string | null {
   if (typeof value !== 'string') return null

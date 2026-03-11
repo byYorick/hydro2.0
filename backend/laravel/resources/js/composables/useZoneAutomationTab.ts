@@ -100,6 +100,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     runManualStep: scheduler.runManualStep,
     schedulerTaskStatusVariant: scheduler.schedulerTaskStatusVariant,
     schedulerTaskStatusLabel: scheduler.schedulerTaskStatusLabel,
+    schedulerTaskTypeLabel: scheduler.schedulerTaskTypeLabel,
     schedulerTaskProcessStatusVariant: scheduler.schedulerTaskProcessStatusVariant,
     schedulerTaskProcessStatusLabel: scheduler.schedulerTaskProcessStatusLabel,
     schedulerTaskEventLabel: scheduler.schedulerTaskEventLabel,

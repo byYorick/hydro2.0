@@ -13,6 +13,7 @@ use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
+use App\Services\AutomationRuntimeConfigService;
 use App\Services\ZoneEventMessageFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -1632,6 +1633,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
     Route::get('/settings', function () {
         $user = auth()->user();
         $users = [];
+        $runtimeConfig = app(AutomationRuntimeConfigService::class);
 
         if ($user->role === 'admin') {
             $users = \App\Models\User::query()
@@ -1639,6 +1641,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ->orderBy('id')
                 ->get();
         }
+
+        $automationEngineSettings = $runtimeConfig->settingsSnapshot();
+        $canViewAutomationEngineSettings = in_array((string) ($user->role ?? 'viewer'), ['admin', 'operator', 'engineer', 'agronomist'], true);
+        $canEditAutomationEngineSettings = in_array((string) ($user->role ?? 'viewer'), ['admin', 'engineer', 'operator', 'agronomist'], true);
 
         return Inertia::render('Settings/Index', [
             'auth' => [
@@ -1651,8 +1657,46 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ],
             ],
             'users' => $users,
+            'automationEngineSettings' => $canViewAutomationEngineSettings ? $automationEngineSettings : null,
+            'canEditAutomationEngineSettings' => $canEditAutomationEngineSettings,
         ]);
     })->name('settings.index');
+
+    Route::middleware('role:admin,engineer,operator,agronomist')->get('/settings/automation-engine', function () {
+        $runtimeConfig = app(AutomationRuntimeConfigService::class);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $runtimeConfig->settingsSnapshot(),
+        ]);
+    })->name('settings.automation-engine.show');
+
+    Route::middleware('role:admin,engineer,operator,agronomist')->patch('/settings/automation-engine', function (Request $request) {
+        $data = $request->validate([
+            'settings' => ['required', 'array', 'min:1'],
+        ]);
+
+        $runtimeConfig = app(AutomationRuntimeConfigService::class);
+        $runtimeConfig->applyOverrides(
+            settings: is_array($data['settings'] ?? null) ? $data['settings'] : [],
+            userId: $request->user()?->id
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $runtimeConfig->settingsSnapshot(),
+        ]);
+    })->name('settings.automation-engine.update');
+
+    Route::middleware('role:admin,engineer,operator,agronomist')->delete('/settings/automation-engine', function () {
+        $runtimeConfig = app(AutomationRuntimeConfigService::class);
+        $runtimeConfig->resetOverrides();
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $runtimeConfig->settingsSnapshot(),
+        ]);
+    })->name('settings.automation-engine.reset');
 
     Route::get('/settings/preferences', function (Request $request) {
         $user = $request->user();

@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use App\Services\AutomationRuntimeConfigService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -82,5 +83,5 @@ Schedule::command('automation:dispatch-schedules')
     ->everyMinute()
     ->withoutOverlapping(1)
     ->onOneServer()
-    ->when(fn (): bool => (bool) config('services.automation_engine.laravel_scheduler_enabled', false))
+    ->when(fn (): bool => app(AutomationRuntimeConfigService::class)->schedulerEnabled())
     ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');

@@ -147,6 +147,68 @@ export function resolveTaskCommandsEffectConfirmed(task: SchedulerTaskStatus | n
   return null
 }
 
+function humanizeIdentifier(value: string): string {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return ''
+
+  const humanized = normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+
+  if (!humanized) return ''
+  return humanized.charAt(0).toUpperCase() + humanized.slice(1)
+}
+
+function resolveAeStageLabel(stageCode: string | null | undefined): string | null {
+  const normalized = String(stageCode ?? '').trim().toLowerCase()
+  if (!normalized) return null
+
+  const stageMap: Record<string, string> = {
+    startup: 'Инициализация запуска',
+    clean_fill_start: 'Запуск наполнения чистой водой',
+    clean_fill_check: 'Наполнение чистой водой',
+    clean_fill_stop_to_solution: 'Остановка наполнения чистой водой',
+    clean_fill_retry_stop: 'Остановка наполнения чистой водой перед повтором',
+    clean_fill_timeout_stop: 'Остановка наполнения чистой водой по таймауту',
+    solution_fill_start: 'Запуск наполнения раствором',
+    solution_fill_check: 'Наполнение раствором',
+    solution_fill_stop_to_prepare: 'Остановка наполнения раствором',
+    solution_fill_stop_to_ready: 'Остановка наполнения раствором перед переходом',
+    solution_fill_timeout_stop: 'Остановка наполнения раствором по таймауту',
+    prepare_recirculation_start: 'Запуск рециркуляции',
+    prepare_recirculation_check: 'Подготовка рециркуляции',
+    prepare_recirculation_stop_to_ready: 'Остановка рециркуляции и переход к готовности',
+    prepare_recirculation_window_exhausted: 'Окно рециркуляции исчерпано',
+    complete_ready: 'Готов к поливу',
+  }
+
+  if (stageMap[normalized]) {
+    return stageMap[normalized]
+  }
+
+  if (normalized.startsWith('clean_fill')) return 'Этап наполнения бака чистой водой'
+  if (normalized.startsWith('solution_fill')) return 'Этап наполнения бака раствором'
+  if (normalized.startsWith('prepare_recirculation')) return 'Этап рециркуляции и подготовки'
+  if (normalized.startsWith('corr_')) return `Коррекция: ${humanizeIdentifier(normalized.slice(5))}`
+
+  return null
+}
+
+function resolveAeStageProcessPhase(
+  stageCode: string | null | undefined
+): 'clean_fill' | 'solution_fill' | 'parallel_correction' | 'setup_transition' | null {
+  const normalized = String(stageCode ?? '').trim().toLowerCase()
+  if (!normalized) return null
+
+  if (normalized === 'startup' || normalized.startsWith('clean_fill')) return 'clean_fill'
+  if (normalized.startsWith('solution_fill')) return 'solution_fill'
+  if (normalized.startsWith('prepare_recirculation') || normalized.startsWith('corr_')) return 'parallel_correction'
+  if (normalized === 'complete_ready') return 'setup_transition'
+  return null
+}
+
 // ─── Exported formatters ──────────────────────────────────────────────────────
 
 export function schedulerTaskStatusVariant(
@@ -169,6 +231,23 @@ export function schedulerTaskStatusLabel(status: string | null | undefined): str
   if (normalized === 'rejected') return 'Отклонена'
   if (normalized === 'expired') return 'Просрочена'
   return 'Неизвестно'
+}
+
+export function schedulerTaskTypeLabel(taskType: string | null | undefined): string {
+  const raw = String(taskType ?? '').trim()
+  if (!raw) return '-'
+
+  const normalized = raw.toLowerCase()
+  if (normalized === 'irrigation' || normalized === 'irrigate_once') return 'Автополив'
+  if (normalized === 'mist' || normalized === 'mist_tick') return 'Туманообразование'
+  if (normalized === 'lighting') return 'Освещение'
+  if (normalized === 'ventilation') return 'Вентиляция'
+  if (normalized === 'solution_change') return 'Смена раствора'
+  if (normalized === 'diagnostics' || normalized === 'cycle_start') return 'Диагностика / setup'
+  if (normalized === 'manual_recovery') return 'Ручной recovery'
+
+  const humanized = humanizeIdentifier(raw)
+  return humanized || raw
 }
 
 export function schedulerTaskProcessStatusVariant(status: string | null | undefined): SchedulerTaskSlaVariant {
@@ -204,6 +283,8 @@ export function schedulerTaskEventLabel(eventType: string | null | undefined): s
   if (normalized === 'TASK_FINISHED') return 'Задача завершена'
   if (normalized === 'SCHEDULE_TASK_EXECUTION_STARTED') return 'Automation-engine: запуск выполнения'
   if (normalized === 'SCHEDULE_TASK_EXECUTION_FINISHED') return 'Automation-engine: выполнение завершено'
+  if (normalized === 'AE_STAGE_TRANSITION') return 'Automation-engine: переход этапа'
+  if (normalized === 'AE_CURRENT_STAGE') return 'Automation-engine: обновление текущего этапа'
   if (normalized === 'DIAGNOSTICS_SERVICE_UNAVAILABLE') return 'Diagnostics service недоступен'
   if (normalized === 'CYCLE_START_INITIATED') return 'Запуск цикла инициирован'
   if (normalized === 'NODES_AVAILABILITY_CHECKED') return 'Проверена доступность нод'
@@ -260,6 +341,12 @@ export function schedulerTaskTimelineStageLabel(step: SchedulerTaskTimelineItem 
   if (PARALLEL_CORRECTION_REASON_CODES.has(reasonCode)) {
     return 'Этап: параллельная коррекция pH/EC'
   }
+
+  const aeStagePhase = resolveAeStageProcessPhase(reasonCode)
+  if (aeStagePhase === 'clean_fill') return 'Этап: набор бака с чистой водой'
+  if (aeStagePhase === 'solution_fill') return 'Этап: набор бака с раствором'
+  if (aeStagePhase === 'parallel_correction') return 'Этап: параллельная коррекция pH/EC'
+  if (aeStagePhase === 'setup_transition') return 'Этап: завершение setup и переход в рабочий режим'
 
   return null
 }
@@ -429,10 +516,13 @@ export function schedulerTaskReasonLabel(reasonCode: string | null | undefined, 
     lighting_already_in_target_state: 'Свет уже в целевом состоянии',
   }
   if (reasonMap[normalized]) return reasonMap[normalized]
+  const aeStageLabel = resolveAeStageLabel(normalized)
+  if (aeStageLabel) return aeStageLabel
   if (normalized.endsWith('_not_required')) return 'Действие не требуется'
   if (normalized.endsWith('_required')) return 'Действие требуется'
   if (reasonText && String(reasonText).trim() !== '') return String(reasonText)
-  return 'Неизвестная причина'
+  const genericLabel = humanizeIdentifier(normalized)
+  return genericLabel || 'Неизвестная причина'
 }
 
 export function schedulerTaskErrorLabel(errorCode: string | null | undefined, errorText?: string | null): string {

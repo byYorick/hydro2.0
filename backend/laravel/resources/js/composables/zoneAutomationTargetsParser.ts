@@ -22,6 +22,15 @@ function asArray(value: unknown): unknown[] | null {
   return value
 }
 
+function readArrayLength(value: unknown): number | null {
+  const items = asArray(value)
+  if (!items) {
+    return null
+  }
+
+  return items.length
+}
+
 function readNumber(...values: unknown[]): number | null {
   for (const value of values) {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -448,7 +457,12 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     diagnosticsExecutionResolved?.workflow,
     asRecord(diagnostics?.execution)?.workflow
   )
-  if (diagnosticsWorkflow) {
+  if (
+    diagnosticsWorkflow === 'startup' ||
+    diagnosticsWorkflow === 'cycle_start' ||
+    diagnosticsWorkflow === 'diagnostics'
+  ) {
+    waterForm.diagnosticsWorkflow = diagnosticsWorkflow
     waterForm.cycleStartWorkflowEnabled = diagnosticsWorkflow === 'cycle_start' || diagnosticsWorkflow === 'startup'
   }
 
@@ -496,6 +510,122 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const refillChannel = readString(refillConfig?.channel)
   if (refillChannel !== null) {
     waterForm.refillPreferredChannel = refillChannel
+  }
+
+  const startup = asRecord(diagnosticsExecutionResolved?.startup)
+  const startupCleanFillTimeoutSec = readNumber(startup?.clean_fill_timeout_sec)
+  if (startupCleanFillTimeoutSec !== null) {
+    waterForm.startupCleanFillTimeoutSeconds = clamp(Math.round(startupCleanFillTimeoutSec), 30, 86400)
+  }
+  const startupSolutionFillTimeoutSec = readNumber(startup?.solution_fill_timeout_sec)
+  if (startupSolutionFillTimeoutSec !== null) {
+    waterForm.startupSolutionFillTimeoutSeconds = clamp(Math.round(startupSolutionFillTimeoutSec), 30, 86400)
+  }
+  const startupPrepareRecirculationTimeoutSec = readNumber(startup?.prepare_recirculation_timeout_sec)
+  if (startupPrepareRecirculationTimeoutSec !== null) {
+    waterForm.startupPrepareRecirculationTimeoutSeconds = clamp(Math.round(startupPrepareRecirculationTimeoutSec), 30, 86400)
+  }
+  const startupCleanFillRetryCycles = readNumber(startup?.clean_fill_retry_cycles)
+  if (startupCleanFillRetryCycles !== null) {
+    waterForm.startupCleanFillRetryCycles = clamp(Math.round(startupCleanFillRetryCycles), 0, 20)
+  }
+
+  const prepareTolerance = asRecord(diagnosticsExecutionResolved?.prepare_tolerance)
+  const prepareToleranceEcPct = readNumber(prepareTolerance?.ec_pct)
+  if (prepareToleranceEcPct !== null) {
+    waterForm.prepareToleranceEcPct = clamp(prepareToleranceEcPct, 0.1, 100)
+  }
+  const prepareTolerancePhPct = readNumber(prepareTolerance?.ph_pct)
+  if (prepareTolerancePhPct !== null) {
+    waterForm.prepareTolerancePhPct = clamp(prepareTolerancePhPct, 0.1, 100)
+  }
+
+  const correction = asRecord(diagnosticsExecutionResolved?.correction)
+  const correctionMaxEcCorrectionAttempts = readNumber(correction?.max_ec_correction_attempts)
+  if (correctionMaxEcCorrectionAttempts !== null) {
+    waterForm.correctionMaxEcCorrectionAttempts = clamp(Math.round(correctionMaxEcCorrectionAttempts), 1, 50)
+  }
+  const correctionMaxPhCorrectionAttempts = readNumber(correction?.max_ph_correction_attempts)
+  if (correctionMaxPhCorrectionAttempts !== null) {
+    waterForm.correctionMaxPhCorrectionAttempts = clamp(Math.round(correctionMaxPhCorrectionAttempts), 1, 50)
+  }
+  const correctionPrepareRecirculationMaxAttempts = readNumber(correction?.prepare_recirculation_max_attempts)
+  if (correctionPrepareRecirculationMaxAttempts !== null) {
+    waterForm.correctionPrepareRecirculationMaxAttempts = clamp(
+      Math.round(correctionPrepareRecirculationMaxAttempts),
+      1,
+      50
+    )
+  }
+  const correctionPrepareRecirculationMaxCorrectionAttempts = readNumber(
+    correction?.prepare_recirculation_max_correction_attempts
+  )
+  if (correctionPrepareRecirculationMaxCorrectionAttempts !== null) {
+    waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = clamp(
+      Math.round(correctionPrepareRecirculationMaxCorrectionAttempts),
+      1,
+      100000
+    )
+  }
+  const correctionEcMixWaitSec = readNumber(correction?.ec_mix_wait_sec)
+  if (correctionEcMixWaitSec !== null) {
+    waterForm.correctionEcMixWaitSec = clamp(Math.round(correctionEcMixWaitSec), 10, 3600)
+  }
+  const correctionPhMixWaitSec = readNumber(correction?.ph_mix_wait_sec)
+  if (correctionPhMixWaitSec !== null) {
+    waterForm.correctionPhMixWaitSec = clamp(Math.round(correctionPhMixWaitSec), 10, 3600)
+  }
+  const correctionStabilizationSec = readNumber(correction?.stabilization_sec)
+  if (correctionStabilizationSec !== null) {
+    waterForm.correctionStabilizationSec = clamp(Math.round(correctionStabilizationSec), 0, 3600)
+  }
+
+  const irrigationRecovery = asRecord(diagnosticsExecutionResolved?.irrigation_recovery)
+  const irrigationRecoveryMaxContinueAttempts = readNumber(irrigationRecovery?.max_continue_attempts)
+  if (irrigationRecoveryMaxContinueAttempts !== null) {
+    waterForm.irrigationRecoveryMaxContinueAttempts = clamp(
+      Math.round(irrigationRecoveryMaxContinueAttempts),
+      1,
+      30
+    )
+  }
+  const irrigationRecoveryTimeoutSec = readNumber(irrigationRecovery?.timeout_sec)
+  if (irrigationRecoveryTimeoutSec !== null) {
+    waterForm.irrigationRecoveryTimeoutSeconds = clamp(Math.round(irrigationRecoveryTimeoutSec), 30, 86400)
+  }
+
+  const twoTankCommands = asRecord(diagnosticsExecutionResolved?.two_tank_commands)
+  const twoTankCleanFillStartSteps = readArrayLength(twoTankCommands?.clean_fill_start)
+  if (twoTankCleanFillStartSteps !== null) {
+    waterForm.twoTankCleanFillStartSteps = clamp(twoTankCleanFillStartSteps, 1, 12)
+  }
+  const twoTankCleanFillStopSteps = readArrayLength(twoTankCommands?.clean_fill_stop)
+  if (twoTankCleanFillStopSteps !== null) {
+    waterForm.twoTankCleanFillStopSteps = clamp(twoTankCleanFillStopSteps, 1, 12)
+  }
+  const twoTankSolutionFillStartSteps = readArrayLength(twoTankCommands?.solution_fill_start)
+  if (twoTankSolutionFillStartSteps !== null) {
+    waterForm.twoTankSolutionFillStartSteps = clamp(twoTankSolutionFillStartSteps, 1, 12)
+  }
+  const twoTankSolutionFillStopSteps = readArrayLength(twoTankCommands?.solution_fill_stop)
+  if (twoTankSolutionFillStopSteps !== null) {
+    waterForm.twoTankSolutionFillStopSteps = clamp(twoTankSolutionFillStopSteps, 1, 12)
+  }
+  const twoTankPrepareRecirculationStartSteps = readArrayLength(twoTankCommands?.prepare_recirculation_start)
+  if (twoTankPrepareRecirculationStartSteps !== null) {
+    waterForm.twoTankPrepareRecirculationStartSteps = clamp(twoTankPrepareRecirculationStartSteps, 1, 12)
+  }
+  const twoTankPrepareRecirculationStopSteps = readArrayLength(twoTankCommands?.prepare_recirculation_stop)
+  if (twoTankPrepareRecirculationStopSteps !== null) {
+    waterForm.twoTankPrepareRecirculationStopSteps = clamp(twoTankPrepareRecirculationStopSteps, 1, 12)
+  }
+  const twoTankIrrigationRecoveryStartSteps = readArrayLength(twoTankCommands?.irrigation_recovery_start)
+  if (twoTankIrrigationRecoveryStartSteps !== null) {
+    waterForm.twoTankIrrigationRecoveryStartSteps = clamp(twoTankIrrigationRecoveryStartSteps, 1, 12)
+  }
+  const twoTankIrrigationRecoveryStopSteps = readArrayLength(twoTankCommands?.irrigation_recovery_stop)
+  if (twoTankIrrigationRecoveryStopSteps !== null) {
+    waterForm.twoTankIrrigationRecoveryStopSteps = clamp(twoTankIrrigationRecoveryStopSteps, 1, 12)
   }
 
   const solutionChange = asRecord(targets.solution_change)

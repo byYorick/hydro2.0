@@ -10,7 +10,12 @@
       "Bash(curl -s http://localhost:9405/zones/447/state)",
       "Bash(python3 -c \":*)",
       "Bash(curl -s -X POST http://localhost:8080/api/login -H \"Content-Type: application/json\" -d '{\"\"email\"\":\"\"admin@example.com\"\",\"\"password\"\":\"\"password\"\"}')",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(docker exec:*)",
+      "Bash(make migrate:*)",
+      "Bash(make seed:*)",
+      "Bash(/usr/bin/env npm:*)",
+      "Bash(npx vue-tsc:*)"
     ],
     "additionalDirectories": [
       "/home/georgiy/.claude/projects/-home-georgiy-esp-hydro-hydro2-0/memory"

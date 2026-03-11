@@ -24,6 +24,11 @@ use Illuminate\Support\Str;
 
 class GrowCycleService
 {
+    public function __construct(
+        private readonly AutomationRuntimeConfigService $runtimeConfig,
+    ) {
+    }
+
     /**
      * Создать новый цикл выращивания (новая модель с recipe_revision_id)
      */
@@ -230,7 +235,7 @@ class GrowCycleService
             return false;
         }
 
-        return (bool) config('services.automation_engine.grow_cycle_start_dispatch_enabled', false);
+        return (bool) $this->runtimeConfig->automationEngineValue('grow_cycle_start_dispatch_enabled', false);
     }
 
     /**
@@ -238,11 +243,13 @@ class GrowCycleService
      */
     private function automationStartCycleConfig(): array
     {
+        $schedulerCfg = $this->runtimeConfig->schedulerConfig();
+
         return [
-            'api_url' => rtrim((string) config('services.automation_engine.api_url', 'http://automation-engine:9405'), '/'),
-            'timeout_sec' => max(1.0, (float) config('services.automation_engine.timeout', 2.0)),
-            'scheduler_id' => (string) config('services.automation_engine.scheduler_id', 'laravel-scheduler'),
-            'token' => trim((string) config('services.automation_engine.scheduler_api_token', '')),
+            'api_url' => (string) ($schedulerCfg['api_url'] ?? 'http://automation-engine:9405'),
+            'timeout_sec' => (float) ($schedulerCfg['timeout_sec'] ?? 2.0),
+            'scheduler_id' => (string) ($schedulerCfg['scheduler_id'] ?? 'laravel-scheduler'),
+            'token' => trim((string) ($schedulerCfg['token'] ?? '')),
         ];
     }
 
