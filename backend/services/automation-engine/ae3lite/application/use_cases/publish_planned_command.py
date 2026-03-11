@@ -30,6 +30,7 @@ class PublishPlannedCommandUseCase:
             channel=command.channel,
             payload=command_payload,
             now=now,
+            stage_name=str(getattr(task, "current_stage", "") or "") or None,
         )
 
         try:

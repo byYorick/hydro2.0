@@ -56,6 +56,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         # Targets not reached — enter correction.
         # Sensors already active (activated by prepare_recirculation_start → sensor_mode_activate).
         corr = self._build_correction_state(
+            task=task,
             runtime=runtime,
             sensors_already_active=True,
             return_stage_success=stage_def.on_corr_success or "prepare_recirculation_stop_to_ready",
@@ -66,12 +67,13 @@ class PrepareRecircCheckHandler(BaseStageHandler):
     def _build_correction_state(
         self,
         *,
+        task: Any,
         runtime: Any,
         sensors_already_active: bool,
         return_stage_success: str,
         return_stage_fail: str,
     ) -> CorrectionState:
-        correction_cfg = runtime.get("correction") if isinstance(runtime.get("correction"), dict) else {}
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
         ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
         return CorrectionState(

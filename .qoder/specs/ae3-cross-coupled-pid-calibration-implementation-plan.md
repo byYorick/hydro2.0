@@ -501,3 +501,45 @@ Relay-autotune не входит в initial runtime contract.
 4. Новых MQTT contracts и direct publish path не появляется.
 5. `ec_component_policy` выбирается единственным источником из `diagnostics.execution.correction`.
 6. Relay-autotune, test node, HIL и staged rollout считаются post-core deliverables.
+
+## 11. Аудит Runtime (2026-03-10) — Зафиксированные Баги И Фиксы
+
+Результаты аудита БД e2e и кода AE3. Все фиксы применены в ветке `ae3`.
+
+### 11.1 BUG-1: `last_applied_at` никогда не проставлялся [FIXED]
+
+**Причина:**
+
+- `ZoneSnapshot` не имел поля `correction_config` → `getattr(snapshot, "correction_config", None)` всегда возвращал `None`.
+- `zone_snapshot_read_model.py` не загружал таблицу `zone_correction_configs`.
+- Метод `_mark_correction_config_applied_if_needed` завершался сразу на проверке `isinstance(correction_config, dict)`.
+- Дополнительно: условие `status == "completed"` исключало failed-таски, хотя конфиг использовался и при них.
+- Дополнительно: `meta.get("version")` не находил ключ, т.к. `resolved_config.meta` содержит только `preset_id/name/slug`.
+
+**Фикс:**
+
+1. `zone_snapshot.py`: добавлено поле `correction_config: Optional[Mapping[str, Any]] = None`.
+2. `zone_snapshot_read_model.py`: добавлен SQL-запрос `zone_correction_configs`, метод `_build_correction_config` инжектирует `meta.version` из колонки `version`.
+3. `execute_task.py`: условие изменено с `!= "completed"` на `not in {"completed", "failed"}`.
+4. `test_ae3lite_execute_task.py`: добавлен тест `test_execute_task_marks_correction_config_applied_for_failed_two_tank_task`.
+
+### 11.2 BUG-2: Нет валидации `prepare_recirculation_timeout_sec >= mix_wait + stabilization` [FIXED]
+
+**Причина:**
+
+`resolve_two_tank_runtime` не проверял что окно рециркуляции физически позволяет хотя бы один цикл коррекции. Конфиг с `timeout < ec_mix_wait + stabilization` принимался молча.
+
+**Фикс:**
+
+1. `two_tank_runtime_spec.py`: добавлена функция `_validate_prepare_recirculation_timing`, вызываемая после резолва обоих значений. Бросает `PlannerConfigurationError` если `timeout_sec < ec_mix_wait_sec + stabilization_sec`.
+2. `test_ae3lite_two_tank_runtime_spec.py`: добавлены два теста — happy path (timeout == minimum) и error case (timeout < minimum).
+
+### 11.3 BUG-4: history-logger `refresh_caches` затирал кеш нулевым результатом [FIXED]
+
+**Причина:**
+
+Race condition при старте e2e: history-logger запускается раньше, чем БД засеяна. `refresh_caches()` в 15:06:18 вернул 0 нод (seeder ещё не завершился), вызвал `_node_cache.clear()` и опустошил кеш. Следующий refresh — через 60 секунд. В этом окне все ноды (включая `nd-test-light-1`) считались "not found", 70+ сэмплов потеряны.
+
+**Фикс:**
+
+`telemetry_processing.py`: `refresh_caches()` теперь не очищает кеш зон/нод если DB вернула 0 записей — логирует warning и сохраняет текущий кеш до следующего успешного refresh.

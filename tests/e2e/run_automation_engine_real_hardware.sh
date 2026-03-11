@@ -681,19 +681,26 @@ publish_bind_namespace_nudge() {
 
     local current_zone_id current_pending_zone_id current_gh_uid current_zone_uid
     IFS='|' read -r current_zone_id current_pending_zone_id current_gh_uid current_zone_uid <<<"$row"
+    local should_nudge=0
 
-    # Nudge only nodes that are still pending bind and remain in old namespace.
-    if [ -n "$current_zone_id" ]; then
-      continue
+    # During bind we may observe both states:
+    # 1) pending assignment (zone_id empty, pending_zone_id=target)
+    # 2) assigned in DB but still reporting temp namespace (zone_id=target, pending_zone_id empty)
+    if [ -z "$current_zone_id" ] && [ "$current_pending_zone_id" = "$zone_id" ]; then
+      should_nudge=1
+    elif [ "$current_zone_id" = "$zone_id" ] && [ -z "$current_pending_zone_id" ]; then
+      should_nudge=1
     fi
-    if [ "$current_pending_zone_id" != "$zone_id" ]; then
-      continue
-    fi
-    if [ -z "$current_gh_uid" ] || [ -z "$current_zone_uid" ]; then
+
+    if [ "$should_nudge" -ne 1 ]; then
       continue
     fi
     if [ "$current_gh_uid" = "$target_gh_uid" ] && [ "$current_zone_uid" = "$target_zone_uid" ]; then
       continue
+    fi
+    if [ -z "$current_gh_uid" ] || [ -z "$current_zone_uid" ]; then
+      current_gh_uid="$target_gh_uid"
+      current_zone_uid="$target_zone_uid"
     fi
 
     local topic
@@ -1360,7 +1367,7 @@ prepare_real_hardware_node() {
     local now_epoch
     for uid in "${bind_uids[@]}"; do
       local confirm_row
-      confirm_row="$(db_query_line "SELECT uid FROM nodes WHERE uid = '${uid}' AND zone_id = ${zone_id} AND pending_zone_id IS NULL AND lifecycle_state = 'ASSIGNED_TO_ZONE' AND last_seen_at > NOW() - INTERVAL '15 minutes' LIMIT 1;")"
+      confirm_row="$(db_query_line "SELECT uid FROM nodes WHERE uid = '${uid}' AND zone_id = ${zone_id} AND pending_zone_id IS NULL AND lifecycle_state = 'ASSIGNED_TO_ZONE' AND COALESCE(config->>'gh_uid','') = '${target_gh_uid}' AND COALESCE(config->>'zone_uid','') = '${target_zone_uid}' AND last_seen_at > NOW() - INTERVAL '15 minutes' LIMIT 1;")"
       if [ -z "$confirm_row" ]; then
         missing_bind_uids+=("$uid")
         if [ -z "$missing_bind" ]; then

@@ -63,6 +63,30 @@ actions:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
 
+  - step: ensure_required_actuator_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      SELECT tn.id, ch.channel, 'ACTUATOR', NOW(), NOW()
+      FROM (
+        VALUES
+          ('main_pump'),
+          ('drain_pump')
+      ) AS ch(channel)
+      JOIN (
+        SELECT id
+        FROM nodes
+        WHERE zone_id = :zone_id
+          AND uid = :node_uid
+        LIMIT 1
+      ) tn ON TRUE
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = 'ACTUATOR',
+          updated_at = NOW();
+    params:
+      zone_id: ${zone_id}
+      node_uid: ${test_node_uid}
+
   - step: ensure_zone_readiness_bindings
     type: database_execute
     query: |

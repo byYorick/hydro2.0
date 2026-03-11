@@ -128,6 +128,11 @@ class _WorkflowRouterOk:
         return replace(task, status="completed")
 
 
+class _WorkflowRouterFails:
+    async def run(self, *, task, plan, now):
+        return replace(task, status="failed")
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -229,6 +234,28 @@ async def test_execute_task_marks_correction_config_applied_for_native_two_tank_
     result = await use_case.run(task=task, now=NOW)
 
     assert result.status == "completed"
+    assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_marks_correction_config_applied_for_failed_two_tank_task() -> None:
+    """Failed two-tank task still marks correction config as applied (config was loaded and used)."""
+    task = _make_task(stage="startup", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    correction_config_repository = _CorrectionConfigRepository()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterFails(),
+        zone_correction_config_repository=correction_config_repository,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "failed"
     assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
 
 

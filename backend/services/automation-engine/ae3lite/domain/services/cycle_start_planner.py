@@ -152,6 +152,20 @@ class CycleStartPlanner:
         )
         runtime = dict(runtime)
         runtime["correction"] = correction
+        correction_by_phase = runtime.get("correction_by_phase")
+        if isinstance(correction_by_phase, Mapping):
+            phase_configs: dict[str, dict[str, Any]] = {}
+            for phase_key, cfg in correction_by_phase.items():
+                if not isinstance(cfg, Mapping):
+                    continue
+                phase_cfg = dict(cfg)
+                phase_cfg["actuators"] = self._resolve_correction_actuators(
+                    actuators=snapshot.actuators,
+                    correction=phase_cfg,
+                )
+                phase_configs[str(phase_key)] = phase_cfg
+            if phase_configs:
+                runtime["correction_by_phase"] = phase_configs
 
         return CommandPlan(
             task_type=task.task_type,

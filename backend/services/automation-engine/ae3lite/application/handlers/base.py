@@ -186,7 +186,7 @@ class BaseStageHandler:
                 "two_tank_prepare_targets_stale",
                 "PH/EC telemetry stale for target evaluation",
             )
-        tolerance = runtime.get("prepare_tolerance") if isinstance(runtime.get("prepare_tolerance"), Mapping) else {}
+        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_target = float(runtime["target_ph"])
         ec_target = float(runtime["target_ec"])
         ph_min = self._coerce_float(runtime.get("target_ph_min"))
@@ -204,6 +204,49 @@ class BaseStageHandler:
             ec_min = ec_target - ec_tol
             ec_max = ec_target + ec_tol
         return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
+
+    def _prepare_tolerance_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
+        tolerance_by_phase = runtime.get("prepare_tolerance_by_phase")
+        if isinstance(tolerance_by_phase, Mapping):
+            phase_key = self._runtime_phase_key(task=task)
+            phase_cfg = tolerance_by_phase.get(phase_key)
+            if isinstance(phase_cfg, Mapping):
+                return phase_cfg
+            generic_cfg = tolerance_by_phase.get("generic")
+            if isinstance(generic_cfg, Mapping):
+                return generic_cfg
+        tolerance = runtime.get("prepare_tolerance")
+        return tolerance if isinstance(tolerance, Mapping) else {}
+
+    def _correction_config_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
+        correction_by_phase = runtime.get("correction_by_phase")
+        if isinstance(correction_by_phase, Mapping):
+            phase_key = self._runtime_phase_key(task=task)
+            phase_cfg = correction_by_phase.get(phase_key)
+            if isinstance(phase_cfg, Mapping):
+                return phase_cfg
+            generic_cfg = correction_by_phase.get("generic")
+            if isinstance(generic_cfg, Mapping):
+                return generic_cfg
+        correction = runtime.get("correction")
+        return correction if isinstance(correction, Mapping) else {}
+
+    def _runtime_phase_key(self, *, task: Any) -> str:
+        workflow = getattr(task, "workflow", None)
+        workflow_phase = getattr(workflow, "workflow_phase", None)
+        phase = str(workflow_phase or getattr(task, "workflow_phase", "") or "").strip().lower()
+        if phase in {"tank_filling", "solution_fill"}:
+            return "solution_fill"
+        if phase in {"tank_recirc", "prepare_recirculation"}:
+            return "tank_recirc"
+        if phase in {"irrigating", "irrigation", "irrig_recirc"}:
+            return "irrigation"
+        stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+        if stage.startswith("solution_fill"):
+            return "solution_fill"
+        if stage.startswith("prepare_recirculation"):
+            return "tank_recirc"
+        return "generic"
 
     # ── Sensor consistency check (max=1, min=0 → error) ────────────
 

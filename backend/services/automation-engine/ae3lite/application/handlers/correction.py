@@ -124,7 +124,7 @@ class CorrectionHandler(BaseStageHandler):
         max_age = int(runtime.get("telemetry_max_age_sec", 300))
         target_ph = float(runtime["target_ph"])
         target_ec = float(runtime["target_ec"])
-        tolerance = runtime.get("prepare_tolerance") if isinstance(runtime.get("prepare_tolerance"), Mapping) else {}
+        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_tol_pct = float(tolerance.get("ph_pct", 15.0))
         ec_tol_pct = float(tolerance.get("ec_pct", 25.0))
 
@@ -163,8 +163,8 @@ class CorrectionHandler(BaseStageHandler):
             return self._correction_exhausted(task=task, corr=corr)
 
         # Build dose plan
-        correction_cfg = runtime.get("correction") if isinstance(runtime.get("correction"), Mapping) else {}
-        actuators = self._resolve_actuators(runtime)
+        correction_cfg = self._correction_config(plan=plan, task=task)
+        actuators = self._resolve_actuators(runtime=runtime, task=task, plan=plan)
         dose_plan = self._planner.build_dose_plan(
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
@@ -248,7 +248,7 @@ class CorrectionHandler(BaseStageHandler):
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
 
-        correction_cfg = self._correction_config(plan)
+        correction_cfg = self._correction_config(plan=plan, task=task)
         ec_mix_wait = int(correction_cfg.get("ec_mix_wait_sec", 120))
         next_corr = replace(corr, corr_step="corr_wait_ec", ec_attempt=corr.ec_attempt + 1)
         return StageOutcome(
@@ -282,7 +282,7 @@ class CorrectionHandler(BaseStageHandler):
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
 
-        correction_cfg = self._correction_config(plan)
+        correction_cfg = self._correction_config(plan=plan, task=task)
         ph_mix_wait = int(correction_cfg.get("ph_mix_wait_sec", 60))
         next_corr = replace(corr, corr_step="corr_wait_ph", ph_attempt=corr.ph_attempt + 1)
         return StageOutcome(
@@ -402,13 +402,12 @@ class CorrectionHandler(BaseStageHandler):
             for t in templates
         )
 
-    def _correction_config(self, plan: Any) -> Mapping[str, Any]:
+    def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        correction = runtime.get("correction")
-        return correction if isinstance(correction, Mapping) else {}
+        return self._correction_config_for_task(task=task, runtime=runtime)
 
-    def _resolve_actuators(self, runtime: Mapping[str, Any]) -> dict:
-        corr = runtime.get("correction") if isinstance(runtime.get("correction"), Mapping) else {}
+    def _resolve_actuators(self, *, runtime: Mapping[str, Any], task: Any, plan: Any) -> dict:
+        corr = self._correction_config(plan=plan, task=task)
         actuators = corr.get("actuators") if isinstance(corr.get("actuators"), Mapping) else {}
         return {
             "ec": actuators.get("ec"),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -389,6 +389,105 @@ def test_build_dose_plan_returns_retry_delay_when_min_interval_is_active() -> No
     assert dose_plan.retry_after_sec == 60
 
 
+def test_build_dose_plan_handles_mixed_naive_aware_last_dose_at() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 8, 12, 10, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.6,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_min=5.9,
+        ph_max=6.1,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ph_overrides={
+                "kp": 1.0,
+                "ki": 0.1,
+                "kd": 0.0,
+                "deadband": 0.01,
+                "max_dose_ml": 10.0,
+                "min_interval_sec": 90,
+            }
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.2}},
+        ec_component_policy={},
+        pid_state={
+            "ph": {
+                "last_dose_at": (now - timedelta(seconds=30)).replace(tzinfo=UTC),
+            }
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_any is False
+    assert dose_plan.retry_after_sec == 60
+
+
+def test_build_dose_plan_handles_mixed_naive_aware_last_measurement() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 8, 12, 5, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ec_min=1.95,
+        ec_max=2.05,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 2.0,
+                "ki": 0.5,
+                "kd": 0.0,
+                "deadband": 0.05,
+                "max_dose_ml": 20.0,
+                "max_integral": 1.0,
+                "min_interval_sec": 0,
+            },
+            dosing_overrides={"solution_volume_l": 20.0},
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 0.25}},
+        ec_component_policy={"solution_fill": {"npk": 1.0}},
+        pid_state={
+            "ec": {
+                "integral": 0.9,
+                "prev_error": 0.7,
+                "prev_derivative": 0.0,
+                "last_measurement_at": (now - timedelta(seconds=10)).replace(tzinfo=UTC),
+            }
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "ec_npk_pump",
+                "calibration": {"ml_per_sec": 10.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.pid_state_updates["ec"]["integral"] == 1.0
+
+
 def test_build_dose_plan_allows_ph_when_ec_is_in_retry_window() -> None:
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 8, 12, 10, 0)
@@ -662,3 +761,89 @@ def test_pid_integral_accumulates_over_time() -> None:
     assert plan.pid_state_updates["ec"]["integral"] == 30.0, (
         "PID integral must accumulate gap*dt each step; ki term is dead if integral stays 0"
     )
+
+
+def test_build_dose_plan_sets_last_dose_at_when_dose_is_nonzero() -> None:
+    """pid_state_updates must include last_dose_at=now when dose_ml > 0.
+
+    BUG-5 regression: _compute_amount_ml omitted last_dose_at from the update
+    dict, making min_interval_sec enforcement permanently inoperative.
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,  # below target 2.0
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 10.0, "deadband": 0.0, "min_interval_sec": 0},
+            dosing_overrides={"solution_volume_l": 10.0},
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={},
+        now=now,
+        ec_actuators={
+            "dose_ec_a": {
+                "node_uid": "ec-node",
+                "channel": "dose_ec_a",
+                "calibration": {"ml_per_sec": 1.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is True
+    assert plan.ec_duration_ms > 0
+    assert "ec" in plan.pid_state_updates
+    assert plan.pid_state_updates["ec"].get("last_dose_at") == now, (
+        "last_dose_at must be set to now when a non-zero dose is computed"
+    )
+
+
+def test_build_dose_plan_does_not_set_last_dose_at_when_dose_is_zero() -> None:
+    """last_dose_at must NOT appear in pid_state_updates when dose is forced to zero.
+
+    Ensures we don't inadvertently suppress future corrections by recording a
+    phantom dose when the controller produced dose_ml = 0 (e.g., output capped).
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0)
+
+    # kp=0, ki=0, kd=0 → output_units = 0 → dose_ml = 0
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 0.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+            dosing_overrides={"solution_volume_l": 10.0},
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={},
+        now=now,
+        ec_actuators={
+            "dose_ec_a": {
+                "node_uid": "ec-node",
+                "channel": "dose_ec_a",
+                "calibration": {"ml_per_sec": 1.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is False
+    if "ec" in plan.pid_state_updates:
+        assert "last_dose_at" not in plan.pid_state_updates["ec"], (
+            "last_dose_at must not be set when dose_ml == 0"
+        )

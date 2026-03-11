@@ -153,6 +153,15 @@ class PgZoneSnapshotReadModel:
                     zone_id,
                 )
 
+                correction_config_row = await conn.fetchrow(
+                    """
+                    SELECT version, resolved_config, phase_overrides
+                    FROM zone_correction_configs
+                    WHERE zone_id = $1
+                    """,
+                    zone_id,
+                )
+
                 actuator_rows = await conn.fetch(
                     """
                     SELECT
@@ -219,6 +228,7 @@ class PgZoneSnapshotReadModel:
         telemetry_last = self._build_telemetry_last(telemetry_rows)
         pid_state = self._build_pid_state(pid_state_rows)
         pid_configs = self._build_pid_configs(pid_config_rows)
+        correction_config = self._build_correction_config(correction_config_row)
         actuators = tuple(
             ZoneActuatorRef(
                 node_uid=str(row.get("node_uid") or "").strip(),
@@ -251,6 +261,7 @@ class PgZoneSnapshotReadModel:
             pid_state=pid_state,
             pid_configs=pid_configs,
             actuators=actuators,
+            correction_config=correction_config,
         )
 
     def _build_targets(
@@ -354,6 +365,24 @@ class PgZoneSnapshotReadModel:
         for phase, phase_policy in policy.items():
             if isinstance(phase_policy, Mapping):
                 result[str(phase).strip()] = dict(phase_policy)
+        return result
+
+    def _build_correction_config(self, row: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+        if row is None:
+            return None
+        version = row.get("version")
+        try:
+            version_int = int(version)
+        except (TypeError, ValueError):
+            return None
+        resolved = row.get("resolved_config")
+        result: Dict[str, Any] = dict(resolved) if isinstance(resolved, Mapping) else {}
+        meta = result.get("meta")
+        result["meta"] = dict(meta) if isinstance(meta, dict) else {}
+        result["meta"]["version"] = version_int
+        phase_overrides = row.get("phase_overrides")
+        if isinstance(phase_overrides, Mapping):
+            result["meta"]["phase_overrides"] = dict(phase_overrides)
         return result
 
     def _build_process_calibrations(self, rows: List[Mapping[str, Any]]) -> Dict[str, Any]:

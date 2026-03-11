@@ -1,19 +1,19 @@
-# E93: Scheduler -> start-cycle -> intent -> scheduler task -> executor
+# E93: Scheduler -> start-cycle -> intent -> AE task executor
 # DoD:
 # - scheduler-подобный intent вставлен в zone_automation_intents
 # - /zones/{id}/start-cycle успешно принят automation-engine
 # - intent перешел в terminal
-# - scheduler task прошел running -> terminal в scheduler_logs
-# - Laravel scheduler-task detail читает terminal snapshot из scheduler_logs
+# - создан AE task с числовым task_id
+# - internal task endpoint отдает terminal snapshot
 
 name: E93_start_cycle_intent_executor_path
 description: |
   Проверяет полный runtime путь запуска task из scheduler ingress:
   1) симулируем шаг scheduler (insert pending intent),
   2) вызываем AE endpoint /zones/{id}/start-cycle с scheduler security headers,
-  3) проверяем lifecycle intent и scheduler-task,
-  4) убеждаемся, что task прошел running -> terminal в snapshot scheduler_logs,
-  5) проверяем детализацию через /api/zones/{zone}/scheduler-tasks/{task_id}.
+  3) проверяем lifecycle intent и AE task,
+  4) убеждаемся, что task дошел до terminal status,
+  5) проверяем детализацию через /internal/tasks/{task_id}.
 
 actions:
   - step: set_test_context
@@ -38,19 +38,6 @@ actions:
   - step: set_zone_id
     type: set
     zone_id: ${zone_row.0.id}
-
-  - step: capture_baseline
-    type: database_query
-    query: |
-      SELECT
-        NOW() AS started_at,
-        COALESCE((
-          SELECT MAX(id)
-          FROM scheduler_logs
-          WHERE position('ae_scheduler_task_st-' IN task_name) = 1
-        ), 0) AS baseline_scheduler_log_id
-    save: baseline_row
-    expected_rows: 1
 
   - step: insert_scheduler_like_intent
     type: database_execute
@@ -128,64 +115,41 @@ actions:
     expected_rows: 1
     save: intent_terminal
 
-  - step: wait_scheduler_task_running
-    type: db.wait
-    query: |
-      SELECT
-        id,
-        task_name,
-        status,
-        details->>'task_id' AS task_id,
-        details->>'correlation_id' AS correlation_id
-      FROM scheduler_logs
-      WHERE id > :baseline_scheduler_log_id
-        AND position('ae_scheduler_task_st-' IN task_name) = 1
-        AND status = 'running'
-        AND COALESCE(details->>'zone_id', '') = CAST(:zone_id AS text)
-        AND COALESCE(details->>'task_type', '') = 'diagnostics'
-        AND position('start-cycle-intent:' IN COALESCE(details->>'correlation_id', '')) = 1
-      ORDER BY id DESC
-      LIMIT 1
-    params:
-      baseline_scheduler_log_id: ${baseline_row.0.baseline_scheduler_log_id}
-      zone_id: ${zone_id}
-    timeout: 120.0
-    expected_rows: 1
-    save: scheduler_task_running
-
-  - step: wait_scheduler_task_terminal
-    type: db.wait
-    query: |
-      SELECT
-        id,
-        task_name,
-        status,
-        details->>'task_id' AS task_id,
-        details->>'correlation_id' AS correlation_id
-      FROM scheduler_logs
-      WHERE id > :baseline_scheduler_log_id
-        AND position('ae_scheduler_task_st-' IN task_name) = 1
-        AND status IN ('completed', 'failed')
-        AND COALESCE(details->>'zone_id', '') = CAST(:zone_id AS text)
-        AND COALESCE(details->>'task_type', '') = 'diagnostics'
-        AND position('start-cycle-intent:' IN COALESCE(details->>'correlation_id', '')) = 1
-      ORDER BY id DESC
-      LIMIT 1
-    params:
-      baseline_scheduler_log_id: ${baseline_row.0.baseline_scheduler_log_id}
-      zone_id: ${zone_id}
-    timeout: 120.0
-    expected_rows: 1
-    save: scheduler_task_terminal
-
-  - step: set_scheduler_task_id
+  - step: set_task_id
     type: set
-    scheduler_task_id: ${scheduler_task_terminal.0.task_id}
+    task_id: ${start_cycle_response.json.data.task_id}
 
-  - step: get_scheduler_task_detail
-    type: api_get
-    endpoint: /api/zones/${zone_id}/scheduler-tasks/${scheduler_task_id}
-    save: scheduler_task_detail
+  - step: wait_ae_task_terminal
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        status,
+        task_type,
+        error_code,
+        error_message
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND zone_id = :zone_id
+        AND status IN ('completed', 'failed', 'cancelled')
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+    timeout: 120.0
+    expected_rows: 1
+    save: ae_task_terminal
+
+  - step: get_internal_task_detail
+    type: http_request
+    method: GET
+    url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/internal/tasks/${task_id}
+    headers:
+      Accept: application/json
+      X-Trace-Id: ${scheduler_trace_id}
+      X-Scheduler-Id: laravel-scheduler
+      Authorization: Bearer dev-token-12345
+    capture_response: internal_task_detail
 
 assertions:
   - name: start_cycle_http_200
@@ -207,38 +171,33 @@ assertions:
         operator: equals
         value: active
 
-  - name: start_cycle_returns_intent_task_id
+  - name: start_cycle_returns_numeric_task_id
     type: custom_assert
-    condition: "str(context.get('start_cycle_response', {}).get('json', {}).get('data', {}).get('task_id', '')).startswith('intent-')"
+    condition: "str(context.get('task_id', '')).isdigit()"
 
   - name: intent_terminal_status_valid
     type: custom_assert
     condition: "str(context.get('intent_terminal', [{}])[0].get('status', '')).lower() in {'completed', 'failed', 'cancelled'}"
 
-  - name: scheduler_task_id_has_st_prefix
+  - name: ae_task_terminal_status_valid
     type: custom_assert
-    condition: "str(context.get('scheduler_task_id', '')).startswith('st-')"
+    condition: "str(context.get('ae_task_terminal', [{}])[0].get('status', '')).lower() in {'completed', 'failed', 'cancelled'}"
 
-  - name: scheduler_task_terminal_status_valid
-    type: custom_assert
-    condition: "str(context.get('scheduler_task_terminal', [{}])[0].get('status', '')).lower() in {'completed', 'failed'}"
-
-  - name: scheduler_task_detail_terminal
+  - name: internal_task_detail_terminal
     type: json_assertion
-    source: scheduler_task_detail
+    source: internal_task_detail
+    path: json
     expected:
       - field: status
         operator: equals
         value: ok
-      - field: data.task_id
-        operator: equals
-        value: ${scheduler_task_id}
       - field: data.status
         operator: in
-        value: [completed, failed]
-      - field: data.source
-        operator: equals
-        value: scheduler_logs
+        value: [completed, failed, cancelled]
+
+  - name: internal_task_id_matches_start_cycle_task_id
+    type: custom_assert
+    condition: "str(context.get('internal_task_detail', {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', ''))"
 
   - name: intent_not_left_in_non_terminal
     type: database_query
@@ -269,12 +228,22 @@ cleanup:
       idempotency_key: ${idempotency_key}
     optional: true
 
-  - step: delete_test_scheduler_logs
+  - step: delete_test_ae_commands
     type: database_execute
     query: |
-      DELETE FROM scheduler_logs
-      WHERE task_name = :task_name
+      DELETE FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
     params:
-      task_name: ae_scheduler_task_${scheduler_task_id}
+      task_id: ${task_id}
     optional: true
-    condition: ${scheduler_task_id is not None and scheduler_task_id != ''}
+    condition: ${task_id is not None and task_id != ''}
+
+  - step: delete_test_ae_task
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+    optional: true
+    condition: ${task_id is not None and task_id != ''}

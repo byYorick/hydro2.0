@@ -951,21 +951,24 @@ async def refresh_caches() -> None:
             JOIN greenhouses g ON g.id = z.greenhouse_id
             """
         )
-        _zone_cache.clear()
-        _zone_greenhouse_cache.clear()
-        for zone in zones:
-            zone_uid = zone.get("uid")
-            zone_id = zone.get("id")
-            if not zone_uid or zone_id is None:
-                continue
-            gh_uid = zone.get("gh_uid")
-            key = (zone_uid, gh_uid)
-            _zone_cache[key] = zone_id
-            if (zone_uid, None) not in _zone_cache:
-                _zone_cache[(zone_uid, None)] = zone_id
-            greenhouse_id = zone.get("greenhouse_id")
-            if greenhouse_id is not None:
-                _zone_greenhouse_cache[zone_id] = greenhouse_id
+        if zones:
+            _zone_cache.clear()
+            _zone_greenhouse_cache.clear()
+            for zone in zones:
+                zone_uid = zone.get("uid")
+                zone_id = zone.get("id")
+                if not zone_uid or zone_id is None:
+                    continue
+                gh_uid = zone.get("gh_uid")
+                key = (zone_uid, gh_uid)
+                _zone_cache[key] = zone_id
+                if (zone_uid, None) not in _zone_cache:
+                    _zone_cache[(zone_uid, None)] = zone_id
+                greenhouse_id = zone.get("greenhouse_id")
+                if greenhouse_id is not None:
+                    _zone_greenhouse_cache[zone_id] = greenhouse_id
+        else:
+            logger.warning("refresh_caches: zones query returned 0 rows, keeping existing cache to avoid data loss")
 
         nodes = await fetch(
             """
@@ -975,6 +978,13 @@ async def refresh_caches() -> None:
             LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
             """
         )
+        if not nodes:
+            logger.warning("refresh_caches: nodes query returned 0 rows, keeping existing cache to avoid data loss")
+            _cache_last_update = time.time()
+            logger.info(
+                f"Cache refreshed: {len(_zone_cache)} zone entries, {len(_node_cache)} node entries"
+            )
+            return
         _node_cache.clear()
         for node in nodes:
             node_uid = node.get("uid")

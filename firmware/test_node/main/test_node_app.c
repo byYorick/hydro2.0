@@ -54,7 +54,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CLEAN_FILL_MIN_DELAY_SEC 10
 #define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
-#define SOLUTION_FILL_DELAY_SEC 60
+#define SOLUTION_FILL_DELAY_SEC 20
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
 #define SOLUTION_MAX_LATCH_LEVEL 0.92f
 #define IRR_STATE_MAX_AGE_SEC 30
@@ -64,6 +64,10 @@ static const char *CMD_TAG = "test_node_cmd";
 #define EC_REACTION_BASE_DELTA 0.055f
 #define PH_REACTION_NOMINAL_ML 8.0f
 #define EC_REACTION_NOMINAL_ML 12.0f
+#define CORRECTION_DURATION_TO_ML_PER_SEC 1.0f
+#define CORRECTION_FILL_PHASE_FACTOR 0.50f
+#define CORRECTION_RECIRC_PH_PHASE_FACTOR 2.50f
+#define CORRECTION_RECIRC_EC_PHASE_FACTOR 3.20f
 #define CORRECTION_SETTLE_TICKS 4
 #define CORRECTION_REACTION_SCALE_MIN 0.5f
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
@@ -264,6 +268,7 @@ static QueueHandle_t s_command_queue = NULL;
 static QueueHandle_t s_state_command_queue = NULL;
 static SemaphoreHandle_t s_topic_mutex = NULL;
 static bool s_wildcard_subscriptions_ready = false;
+static bool s_wildcard_subscribe_warned = false;
 static bool s_factory_reset_pending = false;
 static volatile bool s_config_report_on_connect_pending = false;
 static bool s_state_command_fastpath_enabled = false;
@@ -615,6 +620,13 @@ static bool namespace_matches_node(const char *node_uid, const char *gh_uid, con
     return strcmp(current_gh, gh_uid) == 0 && strcmp(current_zone, zone_uid) == 0;
 }
 
+static bool is_temp_namespace(const char *gh_uid, const char *zone_uid) {
+    if (!gh_uid || !zone_uid) {
+        return false;
+    }
+    return strcmp(gh_uid, "gh-temp") == 0 && strcmp(zone_uid, "zn-temp") == 0;
+}
+
 static bool update_node_namespace(const char *node_uid, const char *gh_uid, const char *zone_uid, const char *reason) {
     size_t node_index = 0;
     bool locked = false;
@@ -749,12 +761,32 @@ static float resolve_correction_reaction_scale(const pending_command_t *job, flo
     if (job->amount_present && job->amount_value > 0.0f) {
         commanded_ml = job->amount_value;
     } else if (job->duration_ms_present && job->duration_ms > 0) {
-        /* Fallback estimate when only duration_ms is provided. */
-        commanded_ml = ((float)job->duration_ms / 1000.0f);
+        /* E2E correction scenarios configure calibration at 1 ml/s (duration_ms ~= target ml * 1000). */
+        commanded_ml = (((float)job->duration_ms) / 1000.0f) * CORRECTION_DURATION_TO_ML_PER_SEC;
     }
 
     scale = commanded_ml / nominal_ml;
     return clamp_float(scale, CORRECTION_REACTION_SCALE_MIN, CORRECTION_REACTION_SCALE_MAX);
+}
+
+static float resolve_correction_phase_factor(bool ec_channel) {
+    bool recirculation_path =
+        s_virtual_state.main_pump_on &&
+        s_virtual_state.valve_solution_supply_on &&
+        s_virtual_state.valve_solution_fill_on;
+    bool solution_fill_path =
+        s_virtual_state.main_pump_on &&
+        s_virtual_state.valve_clean_supply_on &&
+        s_virtual_state.valve_solution_fill_on &&
+        !s_virtual_state.valve_solution_supply_on;
+
+    if (recirculation_path) {
+        return ec_channel ? CORRECTION_RECIRC_EC_PHASE_FACTOR : CORRECTION_RECIRC_PH_PHASE_FACTOR;
+    }
+    if (solution_fill_path) {
+        return CORRECTION_FILL_PHASE_FACTOR;
+    }
+    return 1.0f;
 }
 
 static int random_range_ms(int min_value, int max_value) {
@@ -1906,6 +1938,8 @@ static void publish_command_response(
 ) {
     char topic[192];
     cJSON *json = cJSON_CreateObject();
+    esp_err_t publish_err = ESP_FAIL;
+    int attempts = 1;
     if (!json) {
         return;
     }
@@ -1918,8 +1952,29 @@ static void publish_command_response(
     }
 
     if (build_topic(topic, sizeof(topic), node_uid, channel, "command_response") == ESP_OK) {
-        publish_json_payload(topic, json, 1, 0);
-        ui_logf(node_uid, "cmd_resp %s %s", status ? status : "?", channel ? channel : "-");
+        if (status && strcmp(status, "ACK") != 0) {
+            attempts = 4;
+        }
+        for (int i = 0; i < attempts; i++) {
+            publish_err = publish_json_payload(topic, json, 1, 0);
+            if (publish_err == ESP_OK) {
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(80));
+        }
+        if (publish_err == ESP_OK) {
+            ui_logf(node_uid, "cmd_resp %s %s", status ? status : "?", channel ? channel : "-");
+        } else {
+            ESP_LOGW(
+                CMD_TAG,
+                "command_response publish failed: node=%s channel=%s cmd_id=%s status=%s err=%s",
+                node_uid ? node_uid : "unknown",
+                channel ? channel : "unknown",
+                cmd_id ? cmd_id : "unknown",
+                status ? status : "unknown",
+                esp_err_to_name(publish_err)
+            );
+        }
     } else {
         ESP_LOGE(TAG, "Failed to build command_response topic for %s/%s", node_uid, channel);
     }
@@ -2437,17 +2492,21 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         }
     } else if (strcmp(job->channel, "pump_acid") == 0) {
         float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
-        float delta = PH_REACTION_BASE_DELTA * scale;
+        float phase_factor = resolve_correction_phase_factor(false);
+        float delta = PH_REACTION_BASE_DELTA * scale * phase_factor;
         s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value - delta, 4.8f, 7.2f);
         s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", -delta);
         cJSON_AddNumberToObject(details, "ph_after", s_virtual_state.ph_value);
         handled = true;
     } else if (strcmp(job->channel, "pump_base") == 0) {
         float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
-        float delta = PH_REACTION_BASE_DELTA * scale;
+        float phase_factor = resolve_correction_phase_factor(false);
+        float delta = PH_REACTION_BASE_DELTA * scale * phase_factor;
         s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + delta, 4.8f, 7.2f);
         s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", delta);
         cJSON_AddNumberToObject(details, "ph_after", s_virtual_state.ph_value);
         handled = true;
@@ -2458,9 +2517,11 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         strcmp(job->channel, "pump_d") == 0
     ) {
         float scale = resolve_correction_reaction_scale(job, EC_REACTION_NOMINAL_ML);
-        float delta = EC_REACTION_BASE_DELTA * scale;
+        float phase_factor = resolve_correction_phase_factor(true);
+        float delta = EC_REACTION_BASE_DELTA * scale * phase_factor;
         s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + delta, 0.4f, 3.2f);
         s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ec", delta);
         cJSON_AddNumberToObject(details, "ec_after", s_virtual_state.ec_value);
         handled = true;
@@ -2532,6 +2593,26 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             }
             if (job->level_solution_max_override_present) {
                 s_virtual_state.level_solution_max_override = job->level_solution_max_override;
+            }
+            if (s_virtual_state.level_clean_max_override > 0 && s_virtual_state.clean_fill_stage_active) {
+                s_virtual_state.clean_fill_stage_active = false;
+                s_virtual_state.clean_fill_started_at = 0;
+                s_virtual_state.clean_max_latched = true;
+                if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
+                    s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
+                }
+                publish_irrig_node_event("clean_fill_completed");
+                cJSON_AddBoolToObject(details, "clean_fill_forced_complete", true);
+            }
+            if (s_virtual_state.level_solution_max_override > 0 && s_virtual_state.solution_fill_stage_active) {
+                s_virtual_state.solution_fill_stage_active = false;
+                s_virtual_state.solution_fill_started_at = 0;
+                s_virtual_state.solution_max_latched = true;
+                if (s_virtual_state.solution_level < SOLUTION_MAX_LATCH_LEVEL) {
+                    s_virtual_state.solution_level = SOLUTION_MAX_LATCH_LEVEL;
+                }
+                publish_irrig_node_event("solution_fill_completed");
+                cJSON_AddBoolToObject(details, "solution_fill_forced_complete", true);
             }
             cJSON_AddBoolToObject(details, "sensor_conflict_clean", s_virtual_state.force_clean_sensor_conflict);
             cJSON_AddBoolToObject(details, "sensor_conflict_solution", s_virtual_state.force_solution_sensor_conflict);
@@ -2644,11 +2725,18 @@ static void execute_pending_command(const pending_command_t *job) {
 
     node = find_virtual_node(job->node_uid);
     if (!node) {
+        cJSON *error_details = cJSON_CreateObject();
+        if (error_details) {
+            cJSON_AddStringToObject(error_details, "error", "unknown_node");
+        }
+        publish_command_response(job->node_uid, job->channel, job->cmd_id, "ERROR", error_details);
+        cJSON_Delete(error_details);
         return;
     }
 
     details = cJSON_CreateObject();
     if (!details) {
+        publish_command_response(job->node_uid, job->channel, job->cmd_id, "ERROR", NULL);
         return;
     }
 
@@ -2892,20 +2980,37 @@ static void command_callback(const char *topic, const char *channel, const char 
     }
 
     if (!namespace_matches_node(node_uid, topic_gh_uid, topic_zone_uid)) {
+        bool current_is_temp = false;
+        bool topic_is_temp = is_temp_namespace(topic_gh_uid, topic_zone_uid);
         if (!get_node_namespace(node_uid, current_gh_uid, sizeof(current_gh_uid), current_zone_uid, sizeof(current_zone_uid), NULL)) {
             snprintf(current_gh_uid, sizeof(current_gh_uid), "unknown");
             snprintf(current_zone_uid, sizeof(current_zone_uid), "unknown");
         }
-        ESP_LOGW(
-            TAG,
-            "Ignoring command from stale namespace: topic=%s node=%s current=%s/%s",
-            topic,
-            node_uid,
-            current_gh_uid,
-            current_zone_uid
-        );
-        ui_logf(node_uid, "cmd stale ns ignored");
-        return;
+        current_is_temp = is_temp_namespace(current_gh_uid, current_zone_uid);
+        if (current_is_temp && !topic_is_temp) {
+            update_node_namespace(node_uid, topic_gh_uid, topic_zone_uid, "command_namespace_auto_bind");
+            ui_logf(node_uid, "cmd ns adopt %s/%s", topic_gh_uid, topic_zone_uid);
+            ESP_LOGW(
+                TAG,
+                "Auto-adopted namespace from command: node=%s old=%s/%s new=%s/%s",
+                node_uid,
+                current_gh_uid,
+                current_zone_uid,
+                topic_gh_uid,
+                topic_zone_uid
+            );
+        } else {
+            ESP_LOGW(
+                TAG,
+                "Ignoring command from stale namespace: topic=%s node=%s current=%s/%s",
+                topic,
+                node_uid,
+                current_gh_uid,
+                current_zone_uid
+            );
+            ui_logf(node_uid, "cmd stale ns ignored");
+            return;
+        }
     }
 
     node = find_virtual_node(node_uid);
@@ -3328,6 +3433,41 @@ static void publish_virtual_telemetry_batch(void) {
     s_telemetry_tick++;
 }
 
+static void refresh_wildcard_subscriptions(const char *reason) {
+    esp_err_t cmd_sub_err;
+    esp_err_t cfg_sub_err;
+
+    if (!mqtt_manager_is_connected()) {
+        s_wildcard_subscriptions_ready = false;
+        s_wildcard_subscribe_warned = false;
+        return;
+    }
+    if (s_wildcard_subscriptions_ready) {
+        return;
+    }
+
+    cmd_sub_err = mqtt_manager_subscribe_raw(COMMAND_WILDCARD_TOPIC, 1);
+    cfg_sub_err = mqtt_manager_subscribe_raw(CONFIG_WILDCARD_TOPIC, 1);
+
+    if (cmd_sub_err == ESP_OK && cfg_sub_err == ESP_OK) {
+        s_wildcard_subscriptions_ready = true;
+        s_wildcard_subscribe_warned = false;
+        ESP_LOGI(TAG, "Wildcard subscriptions ready (reason=%s)", reason ? reason : "unknown");
+        return;
+    }
+
+    if (!s_wildcard_subscribe_warned) {
+        ESP_LOGW(
+            TAG,
+            "Wildcard subscribe attempt failed (reason=%s, cmd=%s, cfg=%s), will retry",
+            reason ? reason : "unknown",
+            esp_err_to_name(cmd_sub_err),
+            esp_err_to_name(cfg_sub_err)
+        );
+        s_wildcard_subscribe_warned = true;
+    }
+}
+
 static void task_publish_telemetry(void *pv_parameters) {
     size_t index;
     TickType_t last_wake_time = xTaskGetTickCount();
@@ -3383,12 +3523,8 @@ static void task_publish_telemetry(void *pv_parameters) {
             last_mqtt_connected = mqtt_connected;
         }
 
-        if (mqtt_connected && !s_wildcard_subscriptions_ready) {
-            esp_err_t cmd_sub_err = mqtt_manager_subscribe_raw(COMMAND_WILDCARD_TOPIC, 1);
-            esp_err_t cfg_sub_err = mqtt_manager_subscribe_raw(CONFIG_WILDCARD_TOPIC, 1);
-            if (cmd_sub_err == ESP_OK && cfg_sub_err == ESP_OK) {
-                s_wildcard_subscriptions_ready = true;
-            }
+        if (mqtt_connected) {
+            refresh_wildcard_subscriptions("telemetry_loop");
         }
 
         if (mqtt_connected) {
@@ -3446,6 +3582,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
 
     if (!connected) {
         s_wildcard_subscriptions_ready = false;
+        s_wildcard_subscribe_warned = false;
         // При разрыве соединения сохраняем отложенный флаг,
         // чтобы после reconnect гарантированно перепослать config_report.
         s_config_report_on_connect_pending = true;
@@ -3467,6 +3604,9 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
         ESP_LOGW(TAG, "MQTT callback(connected=true) ignored: manager is already disconnected");
         return;
     }
+
+    // Подписываем wildcard сразу после reconnect, чтобы не терять ранние команды.
+    refresh_wildcard_subscriptions("mqtt_connected_cb");
 
     for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
         bool node_preconfig_mode = false;
@@ -3849,6 +3989,7 @@ static void cleanup_init_runtime_resources(void) {
     }
 
     s_wildcard_subscriptions_ready = false;
+    s_wildcard_subscribe_warned = false;
     s_state_command_fastpath_enabled = false;
     (void)mqtt_manager_deinit();
     wifi_manager_deinit();
@@ -3871,6 +4012,7 @@ esp_err_t test_node_app_init(void) {
     s_start_time_seconds = get_timestamp_seconds();
     s_factory_reset_pending = false;
     s_state_command_fastpath_enabled = false;
+    s_wildcard_subscribe_warned = false;
     test_node_ui_set_mode("BOOT");
     test_node_ui_set_wifi_status(false, "X");
     test_node_ui_set_mqtt_status(false, "X");

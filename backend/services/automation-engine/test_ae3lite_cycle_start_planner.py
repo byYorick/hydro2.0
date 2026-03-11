@@ -99,7 +99,7 @@ def test_cycle_start_planner_builds_native_two_tank_named_plans() -> None:
                 "startup": {
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
-                    "prepare_recirculation_timeout_sec": 60,
+                    "prepare_recirculation_timeout_sec": 240,
                 },
                 "two_tank_commands": {
                     "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
@@ -141,7 +141,7 @@ def test_cycle_start_planner_builds_native_two_tank_with_short_alias() -> None:
                 "startup": {
                     "clean_fill_timeout_sec": 30,
                     "solution_fill_timeout_sec": 45,
-                    "prepare_recirculation_timeout_sec": 60,
+                    "prepare_recirculation_timeout_sec": 240,
                 },
                 "two_tank_commands": {
                     "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],

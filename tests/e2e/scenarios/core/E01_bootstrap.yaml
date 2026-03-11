@@ -63,7 +63,7 @@ actions:
   - step: find_test_zone_and_node
     type: set
     test_zone_uid: ${TEST_NODE_ZONE_UID}
-    test_node_uid: ${TEST_NODE_UID}
+    test_node_uid: nd-ph-esp32una
   
   # Шаг 3: Получаем zone_id и node_id по UID через API
   # Runner автоматически устанавливает zone_id/node_id из setup, но проверим через API

@@ -18,12 +18,14 @@ make reset-db
 make test
 make lint
 make smoke
+make logs-core
 ```
 
 Optional:
 
 ```bash
 make down
+make logs SERVICE=laravel TAIL=300
 ```
 
 ## What each target does
@@ -35,6 +37,22 @@ make down
 - `make test`: run PHP (phpunit) and Python (pytest) tests via containers
 - `make lint`: run PHP lint via Pint in the Laravel container
 - `make smoke`: run a short end-to-end smoke (telemetry -> DB, command -> MQTT)
+- `make logs-core`: stream logs for core services (`laravel`, `automation-engine`, `history-logger`, `mqtt-bridge`)
+- `make logs SERVICE=<service> TAIL=<n>`: stream logs for any service from compose
+
+## Debug shortcuts
+
+```bash
+make logs-laravel
+make logs-ae
+make logs-hl
+make logs-mqttb
+make logs-db
+make logs-redis
+make logs-mqtt
+```
+
+See also: `DEBUG_CHECKLIST.md`.
 
 ## Smoke test details
 

@@ -107,7 +107,7 @@ class CorrectionPlanner:
         process_cfg = _phase_mapping(process_calibrations).get(phase_key, {})
         process_cfg = process_cfg if isinstance(process_cfg, Mapping) else {}
         pid_state = pid_state if isinstance(pid_state, Mapping) else {}
-        now = now or datetime.now(UTC).replace(tzinfo=None)
+        now = _to_utc_naive(now or datetime.now(UTC))
 
         ph_lo, ph_hi = _resolve_bounds(
             target=target_ph,
@@ -366,7 +366,7 @@ def _retry_after(
     last_dose_at = pid_entry.get("last_dose_at")
     if not isinstance(last_dose_at, datetime):
         return None
-    elapsed = (now - last_dose_at).total_seconds()
+    elapsed = (_to_utc_naive(now) - _to_utc_naive(last_dose_at)).total_seconds()
     remaining = float(min_interval_sec) - elapsed
     if remaining <= 0:
         return None
@@ -380,7 +380,9 @@ def _apply_feedforward_bias(
     now: datetime,
 ) -> float:
     hold_until = pid_entry.get("hold_until")
-    if not isinstance(hold_until, datetime) or hold_until <= now:
+    if not isinstance(hold_until, datetime):
+        return current_value
+    if _to_utc_naive(hold_until) <= _to_utc_naive(now):
         return current_value
     if str(pid_entry.get("last_correction_kind") or "").strip().lower() != "ec":
         return current_value
@@ -434,7 +436,10 @@ def _compute_amount_ml(
         contract_max = _positive_float(correction_config.get("max_ph_dose_ml"), 20.0)
     max_ml = min(value for value in (controller_max, contract_max) if value > 0) if controller_max > 0 else contract_max
     dose_ml = min(dose_ml, max_ml)
-    return round(max(0.0, dose_ml), 4), pid_update
+    dose_ml = round(max(0.0, dose_ml), 4)
+    if dose_ml > 0:
+        pid_update = {**pid_update, "last_dose_at": now}
+    return dose_ml, pid_update
 
 
 def _process_gain(*, kind: str, process_cfg: Mapping[str, Any]) -> float | None:
@@ -464,6 +469,7 @@ def _next_pid_state(
     pid_entry: Mapping[str, Any],
     now: datetime,
 ) -> Mapping[str, Any]:
+    now = _to_utc_naive(now)
     integral = float(pid_entry.get("integral") or 0.0)
     prev_error = float(pid_entry.get("prev_error") or 0.0)
     prev_derivative = float(pid_entry.get("prev_derivative") or 0.0)
@@ -472,7 +478,7 @@ def _next_pid_state(
     alpha = min(1.0, max(0.0, alpha))
     derivative = 0.0
     if isinstance(last_measurement_at, datetime):
-        dt = (now - last_measurement_at).total_seconds()
+        dt = (now - _to_utc_naive(last_measurement_at)).total_seconds()
         if dt > 0:
             integral += gap * dt
             raw_derivative = (gap - prev_error) / dt
@@ -533,6 +539,12 @@ def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
             f"Pump calibration ml_per_sec must be positive, got {ml_per_sec}"
         )
     return max(0, int(dose_ml / ml_per_sec * 1000))
+
+
+def _to_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _positive_float(raw: Any, default: float) -> float:

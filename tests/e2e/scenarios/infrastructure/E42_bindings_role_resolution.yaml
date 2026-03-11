@@ -68,6 +68,17 @@ actions:
     zone_id: ${node_row.0.zone_id}
     node_id: ${node_row.0.node_id}
 
+  - step: ensure_main_pump_actuator_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES (:node_id, 'main_pump', 'ACTUATOR', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = 'ACTUATOR',
+          updated_at = NOW()
+    params:
+      node_id: ${node_id}
+
   # Создаем binding (role → node_channel)
   # Используем правильный endpoint и таблицу согласно контракту
   # Проверяем через БД таблицу channel_bindings

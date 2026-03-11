@@ -34,7 +34,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         await self._run_commands(task=task, plan=plan, plan_names=("prepare_recirculation_stop", "sensor_mode_deactivate"), now=now)
 
         retry_count = int(task.workflow.stage_retry_count)
-        correction_cfg = self._correction_config(plan)
+        correction_cfg = self._correction_config(plan=plan, task=task)
         attempt_limit = int(correction_cfg.get("prepare_recirculation_max_attempts", 3))
         if retry_count >= attempt_limit:
             await self._emit_retry_limit_alert(
@@ -102,7 +102,6 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
 
-    def _correction_config(self, plan: Any) -> Mapping[str, Any]:
+    def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        correction = runtime.get("correction")
-        return correction if isinstance(correction, Mapping) else {}
+        return self._correction_config_for_task(task=task, runtime=runtime)

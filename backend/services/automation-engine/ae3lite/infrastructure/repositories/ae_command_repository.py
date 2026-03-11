@@ -26,6 +26,7 @@ class PgAeCommandRepository:
         channel: str,
         payload: Mapping[str, Any],
         now: datetime,
+        stage_name: Optional[str] = None,
     ) -> int:
         pool = await get_pool()
         normalized_now = self._normalize_timestamp(now)
@@ -38,11 +39,12 @@ class PgAeCommandRepository:
                     node_uid,
                     channel,
                     payload,
+                    stage_name,
                     publish_status,
                     created_at,
                     updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5::jsonb, 'pending', $6, $6)
+                VALUES ($1, $2, $3, $4, $5::jsonb, $6, 'pending', $7, $7)
                 RETURNING id
                 """,
                 task_id,
@@ -50,6 +52,7 @@ class PgAeCommandRepository:
                 node_uid,
                 channel,
                 dict(payload),
+                stage_name or None,
                 normalized_now,
             )
         return int(row["id"])

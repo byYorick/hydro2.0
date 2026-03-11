@@ -124,7 +124,7 @@ class ExecuteTaskUseCase:
             return
         if getattr(task, "is_active", False):
             return
-        if str(getattr(task, "status", "")).strip().lower() != "completed":
+        if str(getattr(task, "status", "")).strip().lower() not in {"completed", "failed"}:
             return
 
         topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()

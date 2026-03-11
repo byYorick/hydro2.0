@@ -1,33 +1,31 @@
-# E101: AE3-Lite two-tank full setup path on real test_node
+# E106: AE3-Lite piggyback EC->PH full correction cycle on real test_node
 # DoD:
-# - real test_node проходит полный setup path:
-#   clean fill -> solution fill + correction -> recirculation + correction -> ready
-# - correction публикует реальные run_pump команды на EC/pH ноды
-# - canonical task завершается completed
-# - zone_workflow_state переходит в ready
+# - real test_node проходит staged setup до `prepare_recirculation_check`
+# - correction публикует EC run_pump, затем PH run_pump в recirculation path
+# - обе дозировки происходят без reset_state и без раннего fail task
+# - task остаётся живым в `prepare_recirculation_check` после piggyback-пары
 
-name: E101_ae3_two_tank_realhw_setup_ready
+name: E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle
 description: |
-  Полный real-hardware setup-flow для native AE3-Lite на `firmware/test_node`.
+  Real-hardware piggyback flow для native AE3-Lite на `firmware/test_node`.
   Сценарий готовит test-zone под AE3 two-tank topology, делает reset через protected
-  command pipeline и затем проводит staged setup до готовности:
-  startup -> clean fill -> solution fill -> correction(fail to recirc) ->
-  prepare recirculation -> correction(success) -> ready.
-  Проверяются реальные публикации correction-команд на EC/pH ноды и финальный
-  выход системы в `ready`, что означает разрешённый полив.
+  command pipeline и затем проводит staged setup до `prepare_recirculation_check`.
+  После входа в recirculation window сценарий проверяет correction v2 инвариант:
+  сначала проходит EC correction, затем PH correction в том же полном correction loop,
+  без reset ноды и без раннего failed terminal state.
 
 actions:
   - step: set_test_context
     type: set
-    fixture_prefix: ae3-realhw-setup-${TIMESTAMP_MS}
+    fixture_prefix: ae3-realhw-piggyback-${TIMESTAMP_MS}
     test_zone_uid: ${TEST_NODE_ZONE_UID}
     test_node_uid: ${TEST_NODE_UID}
     test_ph_node_uid: ${TEST_PH_NODE_UID}
     test_ec_node_uid: ${TEST_EC_NODE_UID}
-    recipe_name: ae3-realhw-setup-recipe-${TIMESTAMP_MS}
-    idempotency_key: ae3-realhw-setup-start-cycle-${TIMESTAMP_MS}
+    recipe_name: ae3-realhw-piggyback-recipe-${TIMESTAMP_MS}
+    idempotency_key: ae3-realhw-piggyback-start-cycle-${TIMESTAMP_MS}
     scheduler_source: laravel_scheduler
-    scheduler_trace_id: ae3-realhw-setup-trace-${TIMESTAMP_MS}
+    scheduler_trace_id: ae3-realhw-piggyback-trace-${TIMESTAMP_MS}
 
   - step: capture_scenario_window
     type: database_query
@@ -488,9 +486,9 @@ actions:
         updated_at
       )
       VALUES
-        (CAST(:ec_pump_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
-        (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
-        (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
+        (CAST(:ec_pump_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_up_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_down_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
     params:
       ec_pump_channel_id: ${ec_pump_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
@@ -528,35 +526,11 @@ actions:
               'workflow', 'cycle_start',
               'topology', 'two_tank_drip_substrate_trays',
               'required_node_types', jsonb_build_array('irrig'),
-              'startup', jsonb_build_object(
-                'level_poll_interval_sec', 5,
-                'clean_fill_timeout_sec', 120,
-                'solution_fill_timeout_sec', 420,
-                'prepare_recirculation_timeout_sec', 600,
-                'telemetry_max_age_sec', 300,
-                'irr_state_max_age_sec', 30,
-                'sensor_mode_stabilization_time_sec', 0
-              ),
-              'target_ph', 5.0,
-              'target_ec', 2.4,
+              'target_ph', 5.1,
+              'target_ec', 2.33,
               'prepare_tolerance', jsonb_build_object(
                 'ph_pct', 2,
                 'ec_pct', 2
-              ),
-              'correction', jsonb_build_object(
-                'dose_ec_channel', 'dose_ec_a',
-                'dose_ph_up_channel', 'dose_ph_up',
-                'dose_ph_down_channel', 'dose_ph_down',
-                'ec_dose_ml_per_mS_L', 4.0,
-                'ph_dose_ml_per_unit_L', 1.2,
-                'max_ec_dose_ml', 60.0,
-                'max_ph_dose_ml', 40.0,
-                'ec_mix_wait_sec', 2,
-                'ph_mix_wait_sec', 2,
-                'stabilization_sec', 0,
-                'max_ec_correction_attempts', 8,
-                'max_ph_correction_attempts', 8,
-                'solution_volume_l', 20.0
               ),
               'two_tank_commands', jsonb_build_object(
                 'clean_fill_start', jsonb_build_array(
@@ -776,12 +750,12 @@ actions:
         :grow_cycle_id,
         0,
         'VEG',
+        5.10,
         5.00,
-        4.80,
-        5.20,
-        2.40,
-        2.20,
-        2.60,
+        5.15,
+        2.33,
+        2.30,
+        2.38,
         'SUBSTRATE',
         600,
         45,
@@ -844,6 +818,33 @@ actions:
       LIMIT 1
     params:
       cmd_id: ${reset_state_response.data.cmd_id}
+    timeout: 30.0
+    expected_rows: 1
+    optional: true
+
+  - step: reset_test_node_state_confirm
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: reset_state
+      params: {}
+    save: reset_state_response_confirm
+
+  - step: wait_reset_state_done_confirm
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${reset_state_response_confirm.data.cmd_id}
     timeout: 30.0
     expected_rows: 1
 
@@ -1096,11 +1097,15 @@ actions:
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
         AND status = 'pending'
-        AND current_stage = 'solution_fill_check'
+        AND current_stage IN (
+          'solution_fill_check',
+          'prepare_recirculation_start',
+          'prepare_recirculation_check'
+        )
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 40.0
+    timeout: 80.0
     expected_rows: 1
     save: solution_fill_stage_row
 
@@ -1205,22 +1210,21 @@ actions:
     expected_rows: 1
     save: fill_ec_correction_row
 
-  - step: wait_fill_ph_correction_command
-    type: db.wait
+  - step: load_fill_ph_correction_commands_if_any
+    type: database_query
     query: |
       SELECT id, channel, payload->>'cmd' AS cmd
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel = 'pump_acid'
+        AND channel IN ('pump_acid', 'pump_base')
         AND payload->>'cmd' = 'run_pump'
       ORDER BY id DESC
-      LIMIT 1
+      LIMIT 5
     params:
       task_id: ${task_id}
-    timeout: 40.0
-    expected_rows: 1
-    save: fill_ph_correction_row
+    expected_rows: 0
+    save: fill_ph_correction_rows
 
   - step: wait_prepare_recirculation_stage
     type: db.wait
@@ -1230,7 +1234,8 @@ actions:
         status,
         current_stage,
         workflow_phase,
-        corr_step
+        corr_step,
+        updated_at AS stage_started_at
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
         AND status = 'pending'
@@ -1238,7 +1243,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 720.0
+    timeout: 180.0
     expected_rows: 1
     save: prepare_recirc_stage_row
 
@@ -1278,15 +1283,15 @@ actions:
       SELECT id, channel, payload->>'cmd' AS cmd
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
-        AND id > CAST(:after_command_id AS bigint)
         AND publish_status = 'accepted'
         AND channel = 'pump_a'
         AND payload->>'cmd' = 'run_pump'
-      ORDER BY id DESC
+        AND created_at >= CAST(:after_stage_started_at AS timestamptz)
+      ORDER BY id ASC
       LIMIT 1
     params:
       task_id: ${task_id}
-      after_command_id: ${fill_ec_correction_row.0.id}
+      after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
     timeout: 120.0
     expected_rows: 1
     save: recirc_ec_correction_row
@@ -1299,86 +1304,38 @@ actions:
       WHERE task_id = CAST(:task_id AS bigint)
         AND id > CAST(:after_command_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel = 'pump_acid'
+        AND channel IN ('pump_acid', 'pump_base')
         AND payload->>'cmd' = 'run_pump'
-      ORDER BY id DESC
+        AND created_at >= CAST(:after_stage_started_at AS timestamptz)
+      ORDER BY id ASC
       LIMIT 1
     params:
       task_id: ${task_id}
-      after_command_id: ${fill_ph_correction_row.0.id}
+      after_command_id: ${recirc_ec_correction_row.0.id}
+      after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
     timeout: 120.0
     expected_rows: 1
     save: recirc_ph_correction_row
 
-  - step: wait_targets_reached_on_node
+  - step: wait_task_not_failed_after_piggyback
     type: db.wait
     query: |
       SELECT
-        ph.last_value AS ph_value,
-        ec.last_value AS ec_value,
-        ph.last_ts AS ph_ts,
-        ec.last_ts AS ec_ts
-      FROM telemetry_last ph
-      JOIN sensors phs ON phs.id = ph.sensor_id
-      JOIN telemetry_last ec ON true
-      JOIN sensors ecs ON ecs.id = ec.sensor_id
-      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
-        AND phs.type = 'PH'
-        AND phs.label = 'ph_sensor'
-        AND ecs.node_id = CAST(:ec_node_id AS bigint)
-        AND ecs.type = 'EC'
-        AND ecs.label = 'ec_sensor'
-        AND (
-          (
-            ph.last_ts >= NOW() - INTERVAL '30 seconds'
-            AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
-            AND ph.last_value BETWEEN 4.80 AND 5.20
-            AND ec.last_value BETWEEN 2.20 AND 2.60
-          )
-          OR EXISTS (
-            SELECT 1
-            FROM ae_tasks t
-            WHERE t.id = CAST(:task_id AS bigint)
-              AND t.status = 'completed'
-          )
-        )
-      LIMIT 1
-    params:
-      ph_node_id: ${ph_node_id}
-      ec_node_id: ${ec_node_id}
-      task_id: ${task_id}
-    timeout: 420.0
-    expected_rows: 1
-    save: targets_reached_row
-
-  - step: wait_task_completed
-    type: db.wait
-    query: |
-      SELECT id, status, completed_at, error_code, error_message
+        id,
+        status,
+        current_stage,
+        workflow_phase,
+        error_code,
+        corr_step
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status = 'completed'
+        AND status IN ('pending', 'completed')
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 720.0
+    timeout: 120.0
     expected_rows: 1
-    save: completed_task_row
-
-  - step: wait_workflow_ready
-    type: db.wait
-    query: |
-      SELECT zone_id, workflow_phase, updated_at
-      FROM zone_workflow_state
-      WHERE zone_id = :zone_id
-        AND workflow_phase = 'ready'
-      ORDER BY updated_at DESC
-      LIMIT 1
-    params:
-      zone_id: ${zone_id}
-    timeout: 40.0
-    expected_rows: 1
-    save: workflow_ready_row
+    save: task_not_failed_after_piggyback_row
 
   - step: load_expected_ae_command_counts
     type: database_query
@@ -1414,15 +1371,29 @@ actions:
         )::int AS ec_correction_cnt,
         COUNT(*) FILTER (
           WHERE publish_status = 'accepted'
-            AND channel = 'pump_acid'
+            AND channel IN ('pump_acid', 'pump_base')
             AND payload->>'cmd' = 'run_pump'
-        )::int AS ph_down_correction_cnt
+        )::int AS ph_correction_cnt
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
     params:
       task_id: ${task_id}
     expected_rows: 1
     save: expected_ae_command_counts_row
+
+  - step: load_runtime_reset_commands
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS runtime_reset_cnt
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND channel = 'storage_state'
+        AND payload->>'cmd' = 'reset_state'
+    params:
+      task_id: ${task_id}
+    expected_rows: 1
+    save: runtime_reset_commands_row
 
   - step: count_task_commands
     type: database_query
@@ -1484,19 +1455,15 @@ assertions:
 
   - name: solution_fill_stage_reached
     type: custom_assert
-    condition: "str(context.get('solution_fill_stage_row', [{}])[0].get('current_stage', '')).lower() == 'solution_fill_check'"
+    condition: "str(context.get('solution_fill_stage_row', [{}])[0].get('current_stage', '')).lower() in ('solution_fill_check', 'prepare_recirculation_start', 'prepare_recirculation_check')"
 
   - name: prepare_recirculation_stage_reached
     type: custom_assert
     condition: "str(context.get('prepare_recirc_stage_row', [{}])[0].get('current_stage', '')).lower() == 'prepare_recirculation_check' and str(context.get('prepare_recirc_stage_row', [{}])[0].get('workflow_phase', '')).lower() == 'tank_recirc'"
 
-  - name: task_completed
+  - name: task_not_failed_after_piggyback
     type: custom_assert
-    condition: "str(context.get('completed_task_row', [{}])[0].get('status', '')).lower() == 'completed'"
-
-  - name: workflow_phase_ready
-    type: custom_assert
-    condition: "str(context.get('workflow_ready_row', [{}])[0].get('workflow_phase', '')).lower() == 'ready'"
+    condition: "str(context.get('task_not_failed_after_piggyback_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not context.get('task_not_failed_after_piggyback_row', [{}])[0].get('error_code')"
 
   - name: at_least_ten_ae_commands_logged
     type: custom_assert
@@ -1522,219 +1489,17 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 2"
 
-  - name: ph_down_correction_logged_twice
+  - name: piggyback_ph_correction_logged
     type: custom_assert
-    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ph_down_correction_cnt', 0)) >= 2"
+    condition: "len(context.get('recirc_ph_correction_row', [])) == 1"
 
-  - name: internal_task_completed
-    type: json_assertion
-    source: internal_task_response
-    path: json
-    expected:
-      - field: status
-        operator: equals
-        value: ok
-      - field: data.task_id
-        operator: equals
-        value: ${task_id}
-      - field: data.status
-        operator: equals
-        value: completed
+  - name: runtime_never_resets_node_during_task
+    type: custom_assert
+    condition: "int(context.get('runtime_reset_commands_row', [{}])[0].get('runtime_reset_cnt', 0)) == 0"
 
-cleanup:
-  - step: reset_test_node_after_run
-    type: ae_test_hook
-    optional: true
-    zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: reset_state
-      params: {}
+  - name: internal_task_not_failed
+    type: custom_assert
+    condition: "str(context.get('internal_task_response', {}).get('json', {}).get('status', '')).lower() == 'ok' and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', '')) and str(context.get('internal_task_response', {}).get('json', {}).get('data', {}).get('status', '')).lower() in ('pending', 'completed')"
 
-  - step: cleanup_runtime_events
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM zone_events
-      WHERE zone_id = :zone_id
-        AND created_at >= :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
 
-  - step: cleanup_e2e_calibrations
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM pump_calibrations
-      WHERE source = 'e2e_realhw_setup_ready'
-        AND node_channel_id IN (
-          CAST(:ec_pump_channel_id AS bigint),
-          CAST(:ph_up_channel_id AS bigint),
-          CAST(:ph_down_channel_id AS bigint)
-        )
-    params:
-      ec_pump_channel_id: ${ec_pump_channel_id}
-      ph_up_channel_id: ${ph_up_channel_id}
-      ph_down_channel_id: ${ph_down_channel_id}
-
-  - step: cleanup_e2e_bindings
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM channel_bindings
-      WHERE role IN ('dose_ec_a', 'dose_ph_up', 'dose_ph_down')
-        AND node_channel_id IN (
-          CAST(:ec_pump_channel_id AS bigint),
-          CAST(:ph_up_channel_id AS bigint),
-          CAST(:ph_down_channel_id AS bigint)
-        )
-    params:
-      ec_pump_channel_id: ${ec_pump_channel_id}
-      ph_up_channel_id: ${ph_up_channel_id}
-      ph_down_channel_id: ${ph_down_channel_id}
-
-  - step: cleanup_e2e_infrastructure
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM infrastructure_instances
-      WHERE owner_type = 'zone'
-        AND owner_id = :zone_id
-        AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH Down')
-    params:
-      zone_id: ${zone_id}
-
-  - step: cleanup_runtime_ae_commands
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM ae_commands
-      WHERE task_id = CAST(:task_id AS bigint)
-    params:
-      task_id: ${task_id}
-
-  - step: cleanup_runtime_ae_task
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM ae_tasks
-      WHERE id = CAST(:task_id AS bigint)
-    params:
-      task_id: ${task_id}
-
-  - step: cleanup_runtime_ae_leases
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM ae_zone_leases
-      WHERE zone_id = :zone_id
-    params:
-      zone_id: ${zone_id}
-
-  - step: cleanup_runtime_intent
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM zone_automation_intents
-      WHERE zone_id = :zone_id
-        AND idempotency_key = :idempotency_key
-    params:
-      zone_id: ${zone_id}
-      idempotency_key: ${idempotency_key}
-
-  - step: cleanup_created_phase
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM grow_cycle_phases
-      WHERE id = CAST(:phase_id AS bigint)
-    params:
-      phase_id: ${phase_id}
-
-  - step: cleanup_created_cycle
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM grow_cycles
-      WHERE id = CAST(:grow_cycle_id AS bigint)
-    params:
-      grow_cycle_id: ${grow_cycle_id}
-
-  - step: cleanup_created_recipe_revision
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM recipe_revisions
-      WHERE id = CAST(:recipe_revision_id AS bigint)
-    params:
-      recipe_revision_id: ${recipe_revision_id}
-
-  - step: cleanup_created_recipe
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM recipes
-      WHERE id = CAST(:recipe_id AS bigint)
-    params:
-      recipe_id: ${recipe_id}
-
-  - step: cleanup_created_profile
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM zone_automation_logic_profiles
-      WHERE zone_id = :zone_id
-        AND created_at >= :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
-
-  - step: cleanup_e2e_ph_ec_sensors
-    type: database_execute
-    optional: true
-    query: |
-      DELETE FROM sensors
-      WHERE (node_id = CAST(:ph_node_id AS bigint) AND type = 'PH' AND label = 'ph_sensor')
-         OR (node_id = CAST(:ec_node_id AS bigint) AND type = 'EC' AND label = 'ec_sensor')
-    params:
-      ph_node_id: ${ph_node_id}
-      ec_node_id: ${ec_node_id}
-
-  - step: restore_previous_profile_state
-    type: database_execute
-    optional: true
-    query: |
-      UPDATE zone_automation_logic_profiles
-      SET is_active = CASE
-        WHEN id = (
-          SELECT id
-          FROM zone_automation_logic_profiles
-          WHERE zone_id = :zone_id
-            AND created_at < :started_at
-          ORDER BY id DESC
-          LIMIT 1
-        ) THEN TRUE
-        ELSE FALSE
-      END,
-      updated_at = NOW()
-      WHERE zone_id = :zone_id
-        AND created_at < :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
-
-  - step: restore_previous_zone_runtime
-    type: database_execute
-    optional: true
-    query: |
-      UPDATE zones
-      SET automation_runtime = :automation_runtime,
-          updated_at = NOW()
-      WHERE id = :zone_id
-    params:
-      zone_id: ${zone_id}
-      automation_runtime: ${previous_automation_runtime}
+cleanup: []
