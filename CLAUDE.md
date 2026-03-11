@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Этот файл содержит рекомендации для Claude Code (claude.ai/code) при работе с кодом в этом репозитории.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Язык общения
 
@@ -69,17 +69,29 @@ make reset-db     # Полная пересборка + заполнение
 ### Тестирование
 
 ```bash
-# Запустить все тесты (PHP + Python)
+# Запустить все тесты (PHP + Python через mqtt-bridge)
 make test
 
 # Запустить тесты протокольных контрактов
 make protocol-check
 
-# Laravel тесты (внутри контейнера)
+# Laravel — все тесты
 docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test
 
-# Python тесты (внутри контейнера)
-docker compose -f backend/docker-compose.dev.yml exec mqtt-bridge pytest
+# Laravel — один тест / фильтр
+docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test --filter=TestClassName
+docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test tests/Unit/FooTest.php
+
+# Python — automation-engine (рекомендуемый способ для AE тестов)
+docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest -x -q
+docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest tests/path/to/test_file.py -x -q
+docker compose -f backend/docker-compose.dev.yml exec automation-engine pytest -x -q -k "test_name"
+
+# Python — history-logger
+docker compose -f backend/docker-compose.dev.yml exec history-logger pytest -x -q
+
+# Python — mqtt-bridge / общие схемы
+docker compose -f backend/docker-compose.dev.yml exec mqtt-bridge pytest -x -q
 
 # Frontend тесты (из backend/laravel/)
 npm run test              # Vitest unit тесты
@@ -112,15 +124,28 @@ make audit
 make erd
 ```
 
+### Просмотр логов
+
+```bash
+make logs-ae        # automation-engine
+make logs-hl        # history-logger
+make logs-mqttb     # mqtt-bridge
+make logs-laravel   # laravel
+make logs-core      # laravel + ae + hl + mqtt-bridge (все основные)
+make logs SERVICE=<имя>  # произвольный сервис
+```
+
 ### Доступ к dev сервисам
 
-- Laravel: http://localhost:8080
-- mqtt-bridge: http://localhost:9000
-- history-logger метрики: http://localhost:9301/metrics
-- automation-engine метрики: http://localhost:9401/metrics
-- scheduler метрики: http://localhost:9402/metrics
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
+| Сервис | REST API | Метрики |
+|--------|----------|---------|
+| Laravel | http://localhost:8080 | — |
+| mqtt-bridge | http://localhost:9000 | — |
+| history-logger | http://localhost:9300 | http://localhost:9301/metrics |
+| automation-engine | http://localhost:9405 | http://localhost:9401/metrics |
+| scheduler | — | http://localhost:9402/metrics |
+| Grafana | http://localhost:3000 | — |
+| Prometheus | http://localhost:9090 | — |
 
 ## Архитектурные особенности
 
@@ -343,23 +368,13 @@ alias get_idf='source /home/georgiy/esp/esp-idf/export.sh'
 ### Сборка прошивки
 
 ```bash
-# Активировать окружение ESP-IDF (если еще не активировано)
-source /home/georgiy/esp/esp-idf/export.sh
+source /home/georgiy/esp/esp-idf/export.sh  # активировать окружение
 
-# Перейти в директорию ноды и собрать
 cd firmware/nodes/<имя_ноды>
 idf.py build
 idf.py flash monitor
-```
 
-### Основные команды ESP-IDF
-
-```bash
-idf.py menuconfig  # Настройка проекта
-idf.py build       # Сборка прошивки
-idf.py flash       # Прошивка устройства
-idf.py monitor     # Просмотр serial вывода
-idf.py erase-flash # Очистка flash памяти
+# Другие команды: menuconfig, erase-flash
 ```
 
 ### Типы узлов
@@ -462,12 +477,6 @@ docker compose -f backend/docker-compose.dev.yml logs -f mqtt-bridge history-log
 
 См. `backend/docs/LOGS_VIEWING.md` для детального руководства по просмотру логов.
 
-### Endpoints метрик
-
-- history-logger: http://localhost:9301/metrics
-- automation-engine: http://localhost:9401/metrics
-- scheduler: http://localhost:9402/metrics
-
 ### Дашборды Grafana
 
 Доступ по http://localhost:3000 (по умолчанию: admin/admin):
@@ -479,13 +488,10 @@ docker compose -f backend/docker-compose.dev.yml logs -f mqtt-bridge history-log
 
 ## Важные замечания
 
-1. **Всегда запускай команды внутри Docker контейнеров** для backend сервисов (используй `docker compose exec`)
-2. **ESP-IDF окружение:** Перед работой с прошивками активируй окружение: `source /home/georgiy/esp/esp-idf/export.sh`
-3. **MQTT_EXTERNAL_HOST:** В dev по умолчанию `host.docker.internal`. Для реальных ESP32 устройств установи IP адрес хоста
-4. **WebSocket/Reverb:** Автоматически запускается в dev (REVERB_AUTO_START=true). Ручной запуск нужен только вне docker-compose
-5. **Миграции базы данных:** Запускай `make migrate` после получения изменений схемы
-6. **Статус компонентов:** Проверяй README файлы для флагов статуса (PLANNED, IN_PROGRESS, MVP_DONE)
-7. **Изменения протокола:** Всегда обновляй контрактные тесты при изменении форматов MQTT сообщений
+- **Backend команды** всегда запускаются внутри Docker контейнеров через `docker compose exec`
+- **MQTT_EXTERNAL_HOST:** В dev по умолчанию `host.docker.internal`. Для реальных ESP32 — IP адрес хоста
+- **Миграции:** Запускай `make migrate` после получения изменений схемы
+- **Изменения протокола:** Всегда обновляй контрактные тесты (`make protocol-check`)
 
 ## Troubleshooting
 
