@@ -60,7 +60,7 @@ class Ae3RuntimeConfig:
             ).strip(),
             scheduler_security_baseline_enforce=_env_true("AE_SCHEDULER_SECURITY_BASELINE_ENFORCE", "1"),
             scheduler_require_trace_id=_env_true("AE_SCHEDULER_REQUIRE_TRACE_ID", "1"),
-            lease_ttl_sec=max(30, int(os.getenv("AE_LEASE_TTL_SEC", "300"))),
+            lease_ttl_sec=max(30, min(3600, int(os.getenv("AE_LEASE_TTL_SEC", "300")))),
             reconcile_poll_interval_sec=max(0.1, float(os.getenv("AE_RECONCILE_POLL_INTERVAL_SEC", "0.5"))),
             start_cycle_claim_stale_sec=max(30, int(os.getenv("AE_START_CYCLE_CLAIM_STALE_SEC", "180"))),
             start_cycle_rate_limit_enabled=_env_true("AE_START_CYCLE_RATE_LIMIT_ENABLED", "1"),
@@ -69,6 +69,16 @@ class Ae3RuntimeConfig:
             verbose_http_logging=_env_true("AE_DEV_VERBOSE_HTTP_LOGGING", default_verbose),
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
         )
+
+    def validate(self) -> None:
+        """Raise ValueError if required config is missing."""
+        if not self.history_logger_api_token:
+            raise ValueError(
+                "history_logger_api_token is required. "
+                "Set HISTORY_LOGGER_API_TOKEN (or AE_API_TOKEN / PY_API_TOKEN)."
+            )
+        if not self.db_dsn:
+            raise ValueError("db_dsn is required. Set AE_DB_DSN or DATABASE_URL.")
 
 
 __all__ = ["Ae3RuntimeConfig"]

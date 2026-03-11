@@ -29,7 +29,8 @@ class LegacyIntentMapper:
         """Extract structured intent metadata from legacy intent row."""
         payload = intent_row.get("payload")
         intent_payload = dict(payload) if isinstance(payload, Mapping) else {}
-        intent_id = int(intent_row.get("id") or 0) or None
+        _raw_id = intent_row.get("id")
+        intent_id = int(_raw_id) if _raw_id is not None else None
         topology = str(
             intent_payload.get("topology")
             or intent_row.get("topology")
@@ -44,7 +45,7 @@ class LegacyIntentMapper:
             intent_meta={
                 "intent_type": str(intent_row.get("intent_type") or "").strip().lower() or None,
                 "intent_retry_count": int(intent_row.get("retry_count") or 0),
-                "intent_zone_id": int(intent_row.get("zone_id") or 0) or None,
+                "intent_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
                 "intent_payload": intent_payload,
             },
         )
@@ -64,7 +65,7 @@ class LegacyIntentMapper:
             "source": str(source or "").strip() or "laravel_scheduler",
             "trigger": "start_cycle_api",
             "workflow": "cycle_start",
-            "intent_id": int(intent_row.get("id") or 0) or None,
+            "intent_id": (lambda v: int(v) if v is not None else None)(intent_row.get("id")),
             "intent_type": str(intent_row.get("intent_type") or "").strip().lower() or None,
             "intent_retry_count": int(intent_row.get("retry_count") or 0),
             "intent_zone_id": int(intent_row.get("zone_id") or zone_id),

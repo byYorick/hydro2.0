@@ -69,7 +69,11 @@ class AutomationTask:
         """Construct from an asyncpg Record or dict-like row."""
         # control_mode_snapshot takes priority (task-level snapshot);
         # pending_manual_step is always from ae_tasks (set via POST /manual-step).
-        raw_control_mode = row.get("control_mode_snapshot") or row.get("control_mode") or "auto"
+        raw_control_mode = (
+            row.get("control_mode_snapshot")
+            if row.get("control_mode_snapshot") is not None
+            else row.get("control_mode") or "auto"
+        )
         workflow = WorkflowState(
             current_stage=str(row.get("current_stage") or "startup"),
             workflow_phase=str(row.get("workflow_phase") or "idle"),

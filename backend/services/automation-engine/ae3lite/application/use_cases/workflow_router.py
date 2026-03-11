@@ -215,6 +215,8 @@ class WorkflowRouter:
         # Record metrics for completed stage
         self._record_stage_duration(task=task, now=now)
         STAGE_ENTERED.labels(topology=topology, stage=next_stage).inc()
+        if (outcome.stage_retry_count or 0) > 0:
+            STAGE_RETRY.labels(topology=topology, stage=next_stage).inc()
 
         # Compute new workflow state
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}

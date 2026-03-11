@@ -354,6 +354,11 @@ class PgZoneSnapshotReadModel:
             path="diagnostics.execution",
         )
 
+    def _normalize_two_tank_execution_contract(self, execution: Dict[str, Any]) -> None:
+        """Remove legacy top-level fields from two_tank execution contract (in-place)."""
+        execution.pop("startup", None)
+        execution.pop("required_node_types", None)
+
     def _resolve_ec_component_policy(self, execution: Mapping[str, Any]) -> Dict[str, Any]:
         correction = execution.get("correction")
         if not isinstance(correction, Mapping):

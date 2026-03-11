@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import replace
 from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
+from ae3lite.infrastructure.metrics import COMMAND_DISPATCHED, COMMAND_DISPATCH_DURATION, COMMAND_TERMINAL
 
 _NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "ACCEPTED", "RUNNING"})
 _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"})
@@ -85,6 +87,7 @@ class SequentialCommandGateway:
             greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
             if not greenhouse_uid:
                 raise CommandPublishError(f"Unable to resolve greenhouse_uid for zone_id={task.zone_id}")
+            _dispatch_start = time.monotonic()
             published_cmd_id = await self._history_logger_client.publish(
                 greenhouse_uid=greenhouse_uid,
                 zone_id=task.zone_id,
@@ -94,6 +97,8 @@ class SequentialCommandGateway:
                 params=params,
                 cmd_id=cmd_id,
             )
+            COMMAND_DISPATCHED.labels(stage=planned.channel or "unknown").inc()
+            COMMAND_DISPATCH_DURATION.observe(time.monotonic() - _dispatch_start)
             legacy_command_id = await self._command_repository.resolve_legacy_command_id(
                 zone_id=task.zone_id,
                 cmd_id=published_cmd_id,
@@ -118,9 +123,19 @@ class SequentialCommandGateway:
             await self._command_repository.mark_publish_failed(ae_command_id=ae_command_id, last_error=str(exc), now=now)
             raise TaskExecutionError("command_send_failed", str(exc)) from exc
 
+        _poll_deadline = (
+            task.workflow.stage_deadline_at
+            if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
+            else None
+        )
         while True:
             await asyncio.sleep(self._poll_interval_sec)
             reconcile_now = datetime.utcnow().replace(microsecond=0)
+            if _poll_deadline is not None and reconcile_now > _poll_deadline:
+                raise TaskExecutionError(
+                    "ae3_command_poll_deadline_exceeded",
+                    f"Command polling exceeded stage deadline for task {task.id}",
+                )
             result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
             if result["state"] == "waiting_command":
                 continue
@@ -206,6 +221,7 @@ class SequentialCommandGateway:
         if terminal_status is None:
             return {"state": "waiting_command", "task": task, "legacy_status": legacy_status, "external_id": external_id, "cmd_id": cmd_id}
         if terminal_status == "DONE":
+            COMMAND_TERMINAL.labels(terminal_status="DONE").inc()
             resumed_task = await self._task_repository.resume_after_waiting_command(
                 task_id=task.id,
                 owner=str(task.claimed_by or ""),
@@ -215,6 +231,7 @@ class SequentialCommandGateway:
                 raise TaskExecutionError("ae3_running_transition_failed", f"Task {task.id} could not resume running after DONE")
             return {"state": "done", "task": resumed_task, "legacy_status": terminal_status, "external_id": external_id, "cmd_id": cmd_id}
 
+        COMMAND_TERMINAL.labels(terminal_status=terminal_status).inc()
         failed_task = await self._task_repository.mark_failed(
             task_id=task.id,
             owner=str(task.claimed_by or ""),

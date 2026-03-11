@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
+
+_logger = logging.getLogger(__name__)
 
 
 class CommandHandler(BaseStageHandler):
@@ -27,14 +30,26 @@ class CommandHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome:
         commands = self._resolve_commands(plan=plan, stage_def=stage_def)
+        _logger.debug(
+            "command_handler: running batch stage=%s commands=%s zone_id=%s",
+            stage_def.name, len(commands), task.zone_id,
+        )
         result = await self._command_gateway.run_batch(
             task=task, commands=commands, now=now,
         )
         if not result["success"]:
+            _logger.warning(
+                "command_handler: batch failed stage=%s error=%s zone_id=%s",
+                stage_def.name, result.get("error_code"), task.zone_id,
+            )
             raise TaskExecutionError(
                 str(result["error_code"]), str(result["error_message"]),
             )
 
+        _logger.debug(
+            "command_handler: batch succeeded stage=%s commands_total=%s zone_id=%s",
+            stage_def.name, result.get("commands_total", 0), task.zone_id,
+        )
         # After run_batch, task is back in 'running' with same current_stage.
         # Routing comes from topology registry (StageDef), not from task state.
         if stage_def.terminal_error is not None:

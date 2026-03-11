@@ -91,7 +91,7 @@ async def test_prepare_recirc_window_restarts_when_limit_not_reached():
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_check"
-    assert outcome.stage_retry_count == 1
+    assert outcome.stage_retry_count == 2  # retry_count(1) + 1 = 2 after fix
     assert len(gateway.calls) == 2
     assert alerts.calls == []
 

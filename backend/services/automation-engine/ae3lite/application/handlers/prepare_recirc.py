@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState
+
+_logger = logging.getLogger(__name__)
 
 
 class PrepareRecircCheckHandler(BaseStageHandler):
@@ -41,6 +44,10 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         # Check deadline first (fail-fast)
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
+            _logger.info(
+                "prepare_recirculation_check: deadline exceeded, exhausting window zone_id=%s retry=%s",
+                task.zone_id, task.workflow.stage_retry_count + 1,
+            )
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
@@ -48,12 +55,14 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             )
 
         if await self._targets_reached(task=task, plan=plan):
+            _logger.debug("prepare_recirculation_check: targets reached zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_stop_to_ready",
             )
 
         # Targets not reached — enter correction.
+        _logger.info("prepare_recirculation_check: targets not met, entering correction zone_id=%s", task.zone_id)
         # Sensors already active (activated by prepare_recirculation_start → sensor_mode_activate).
         corr = self._build_correction_state(
             task=task,
@@ -79,7 +88,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         return CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             attempt=1,
-            max_attempts=int(correction_cfg.get("prepare_recirculation_max_correction_attempts", 32767)),
+            max_attempts=int(correction_cfg.get("prepare_recirculation_max_correction_attempts", 20)),
             ec_attempt=0,
             ec_max_attempts=ec_max_attempts,
             ph_attempt=0,

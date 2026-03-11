@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from ae3lite.application.dto import TaskCreationResult
 from ae3lite.domain.errors import TaskCreateError
+from ae3lite.infrastructure.metrics import TASK_CREATED
 from common.db import get_pool
 
 
@@ -105,6 +106,7 @@ class CreateTaskFromIntentUseCase:
                     now=now,
                 )
                 if created_task is not None:
+                    TASK_CREATED.labels(topology=meta.topology).inc()
                     return TaskCreationResult(task=created_task, created=True)
 
         # INSERT returned None (UNIQUE conflict on idempotency_key from concurrent req)

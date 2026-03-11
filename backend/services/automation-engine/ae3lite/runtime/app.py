@@ -118,6 +118,8 @@ def _spawn_background_task(
 
 def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     runtime_config = config or Ae3RuntimeConfig.from_env()
+    if config is None:
+        runtime_config.validate()
     background_tasks: set[asyncio.Task] = set()
     rate_limiter = SlidingWindowRateLimiter(
         max_requests=runtime_config.start_cycle_rate_limit_max_requests,

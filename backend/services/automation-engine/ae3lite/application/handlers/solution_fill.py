@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState
+
+_logger = logging.getLogger(__name__)
 
 
 class SolutionFillCheckHandler(BaseStageHandler):
@@ -60,12 +63,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
             )
 
             if await self._targets_reached(task=task, plan=plan):
+                _logger.debug("solution_fill_check: targets reached, stopping fill zone_id=%s", task.zone_id)
                 return StageOutcome(
                     kind="transition",
                     next_stage="solution_fill_stop_to_ready",
                 )
 
             # Targets not met — enter correction.
+            _logger.info("solution_fill_check: tank full but targets not met, entering correction zone_id=%s", task.zone_id)
             # Sensors already active (activated by solution_fill_start → sensor_mode_activate).
             # on_corr_success → stop fill → ready
             # on_corr_fail → stop fill → prepare_recirculation
@@ -81,6 +86,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         # Check deadline
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
+            _logger.warning("solution_fill_check: deadline exceeded, stopping zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
         # Still filling — poll

@@ -27,6 +27,7 @@ from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
+from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT
 from common.db import create_zone_event
 
 _logger = logging.getLogger(__name__)
@@ -175,7 +176,7 @@ class CorrectionHandler(BaseStageHandler):
                 _logger.warning("Failed to log CORRECTION_COMPLETE zone event", exc_info=True)
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
-        if corr.attempt > corr.max_attempts:
+        if corr.attempt >= corr.max_attempts:
             return await self._correction_exhausted(task=task, corr=corr)
 
         # Build dose plan
@@ -274,6 +275,7 @@ class CorrectionHandler(BaseStageHandler):
                 "corr_dose_ec_missing_plan",
                 f"EC dose plan missing (node={corr.ec_node_uid}, ch={corr.ec_channel}, ms={corr.ec_duration_ms})",
             )
+        CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step="corr_dose_ec").inc()
         cmd = PlannedCommand(
             step_no=1,
             node_uid=corr.ec_node_uid,
@@ -340,6 +342,8 @@ class CorrectionHandler(BaseStageHandler):
                 "corr_dose_ph_missing_plan",
                 f"PH dose plan missing (node={corr.ph_node_uid}, ch={corr.ph_channel}, ms={corr.ph_duration_ms})",
             )
+        ph_step = "corr_dose_ph_up" if corr.needs_ph_up else "corr_dose_ph_down"
+        CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step=ph_step).inc()
         cmd = PlannedCommand(
             step_no=1,
             node_uid=corr.ph_node_uid,

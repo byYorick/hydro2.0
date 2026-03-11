@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
+
+_logger = logging.getLogger(__name__)
 
 
 class PrepareRecircWindowHandler(BaseStageHandler):
@@ -37,6 +40,10 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         correction_cfg = self._correction_config(plan=plan, task=task)
         attempt_limit = int(correction_cfg.get("prepare_recirculation_max_attempts", 3))
         if retry_count >= attempt_limit:
+            _logger.warning(
+                "prepare_recirc_window: retry limit reached retry_count=%s/%s zone_id=%s",
+                retry_count, attempt_limit, task.zone_id,
+            )
             await self._emit_retry_limit_alert(
                 task=task,
                 retry_count=retry_count,
@@ -49,11 +56,15 @@ class PrepareRecircWindowHandler(BaseStageHandler):
                 error_message="Prepare recirculation retry limit reached",
             )
 
+        _logger.info(
+            "prepare_recirc_window: rolling over window retry=%s/%s zone_id=%s",
+            retry_count + 1, attempt_limit, task.zone_id,
+        )
         await self._run_commands(task=task, plan=plan, plan_names=("sensor_mode_activate", "prepare_recirculation_start"), now=now)
         return StageOutcome(
             kind="transition",
             next_stage="prepare_recirculation_check",
-            stage_retry_count=retry_count,
+            stage_retry_count=retry_count + 1,
         )
 
     async def _emit_retry_limit_alert(

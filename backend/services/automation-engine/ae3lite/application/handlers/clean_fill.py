@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+
+_logger = logging.getLogger(__name__)
 
 
 class CleanFillCheckHandler(BaseStageHandler):
@@ -48,6 +51,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                 min_unavailable_error="two_tank_clean_min_level_unavailable",
                 min_stale_error="two_tank_clean_min_level_stale",
             )
+            _logger.debug("clean_fill_check: clean tank full, transitioning zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
 
         # Check deadline
@@ -57,12 +61,20 @@ class CleanFillCheckHandler(BaseStageHandler):
             retry_limit = 1 + int(runtime.get("clean_fill_retry_cycles", 0))
             if cycle < retry_limit:
                 # Retry: increment cycle, new deadline will be set by WorkflowRouter
+                _logger.info(
+                    "clean_fill_check: deadline exceeded, retrying cycle=%s/%s zone_id=%s",
+                    cycle + 1, retry_limit, task.zone_id,
+                )
                 return StageOutcome(
                     kind="transition",
                     next_stage="clean_fill_retry_stop",
                     clean_fill_cycle=cycle + 1,
                 )
             # Max retries exceeded — terminal timeout
+            _logger.warning(
+                "clean_fill_check: deadline exceeded, max retries reached cycle=%s zone_id=%s",
+                cycle, task.zone_id,
+            )
             return StageOutcome(kind="transition", next_stage="clean_fill_timeout_stop")
 
         # Still filling — poll again

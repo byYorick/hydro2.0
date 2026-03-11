@@ -10,6 +10,11 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from ae3lite.api.contracts import StartCycleRequest
 
 
+def _utcnow() -> datetime:
+    """Return current UTC time as naive datetime (no tzinfo)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def bind_start_cycle_route(
     app: FastAPI,
     *,
@@ -43,7 +48,7 @@ def bind_start_cycle_route(
         try:
             await mark_intent_terminal_fn(
                 intent_id=intent_id,
-                now=datetime.now(timezone.utc).replace(tzinfo=None),
+                now=_utcnow(),
                 success=False,
                 error_code=error_code,
                 error_message=error_message,
@@ -65,7 +70,7 @@ def bind_start_cycle_route(
         try:
             await mark_intent_terminal_fn(
                 intent_id=requested_intent_id,
-                now=datetime.now(timezone.utc).replace(tzinfo=None),
+                now=_utcnow(),
                 success=False,
                 error_code="start_cycle_zone_busy",
                 error_message=f"Intent skipped: zone busy (zone_id={zone_id})",
@@ -94,7 +99,7 @@ def bind_start_cycle_route(
                 },
             )
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = _utcnow()
         intent_claim = await claim_start_cycle_intent_fn(
             zone_id=zone_id,
             req=req,
@@ -111,7 +116,7 @@ def bind_start_cycle_route(
                 detail={
                     "error": "start_cycle_zone_busy",
                     "zone_id": zone_id,
-                    "active_intent_id": int(intent_row.get("id") or 0) or None,
+                    "active_intent_id": (lambda v: int(v) if v is not None else None)(intent_row.get("id")),
                     "active_status": str(intent_row.get("status") or "").strip().lower() or "running",
                 },
             )
@@ -121,7 +126,7 @@ def bind_start_cycle_route(
                 detail={
                     "error": "start_cycle_idempotency_key_conflict",
                     "zone_id": zone_id,
-                    "conflict_zone_id": int(intent_row.get("zone_id") or 0) or None,
+                    "conflict_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
                     "idempotency_key": req.idempotency_key,
                 },
             )

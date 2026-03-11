@@ -157,7 +157,7 @@ async def _insert_profile(zone_id: int) -> None:
             "level_poll_interval_sec": 11,
             "clean_fill_timeout_sec": 30,
             "solution_fill_timeout_sec": 45,
-            "prepare_recirculation_timeout_sec": 60,
+            "prepare_recirculation_timeout_sec": 600,
         },
         "target_ph": 5.8,
         "target_ec": 1.4,

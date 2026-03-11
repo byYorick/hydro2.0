@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime
 from typing import Any, Callable, Optional
 
+from ae3lite.infrastructure.metrics import ACTIVE_TASKS
+
 
 class Ae3RuntimeWorker:
     """Drains pending AE3 tasks sequentially and performs startup recovery."""
@@ -107,9 +109,11 @@ class Ae3RuntimeWorker:
                 task_name="ae3lite_lease_heartbeat",
             )
             final_task = task
+            ACTIVE_TASKS.labels(topology=task.topology).inc()
             try:
                 final_task = await self._execute_task_use_case.run(task=task, now=self._now_fn())
             finally:
+                ACTIVE_TASKS.labels(topology=task.topology).dec()
                 cancel = getattr(heartbeat_task, "cancel", None)
                 if callable(cancel):
                     cancel()
