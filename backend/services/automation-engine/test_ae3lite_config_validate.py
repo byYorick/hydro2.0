@@ -47,19 +47,9 @@ class TestAe3RuntimeConfigValidate:
         with pytest.raises(ValueError, match="history_logger_api_token"):
             cfg.validate()
 
-    def test_empty_db_dsn_raises_value_error(self) -> None:
-        cfg = _config(db_dsn="")
-        with pytest.raises(ValueError, match="db_dsn"):
-            cfg.validate()
-
     def test_token_is_required_error_mentions_env_vars(self) -> None:
         cfg = _config(history_logger_api_token="")
         with pytest.raises(ValueError, match="HISTORY_LOGGER_API_TOKEN"):
-            cfg.validate()
-
-    def test_db_dsn_error_mentions_env_vars(self) -> None:
-        cfg = _config(db_dsn="")
-        with pytest.raises(ValueError, match="AE_DB_DSN"):
             cfg.validate()
 
     def test_whitespace_only_token_raises(self) -> None:

@@ -77,8 +77,6 @@ class Ae3RuntimeConfig:
                 "history_logger_api_token is required. "
                 "Set HISTORY_LOGGER_API_TOKEN (or AE_API_TOKEN / PY_API_TOKEN)."
             )
-        if not self.db_dsn:
-            raise ValueError("db_dsn is required. Set AE_DB_DSN or DATABASE_URL.")
 
 
 __all__ = ["Ae3RuntimeConfig"]
