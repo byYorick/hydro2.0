@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable, Deque, Dict
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,6 +36,10 @@ class SlidingWindowRateLimiter:
             self._events.pop(key, None)
             q = self._events.setdefault(key, deque())
         if len(q) >= int(self.max_requests):
+            _logger.warning(
+                "AE3 rate-limit: zone_id=%s rejected requests=%s/%s window_sec=%s",
+                zone_id, len(q), self.max_requests, self.window_sec,
+            )
             return False
         q.append(now)
         return True
