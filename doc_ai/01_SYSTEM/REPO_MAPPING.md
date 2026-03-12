@@ -4,10 +4,6 @@
 Документ описывает, как файлы документации Hydro 2.0
 соотносятся с реальными репозиториями кода.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Общие принципы
@@ -36,8 +32,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Каждый репозиторий должен иметь:
 
-- ссылку на `../02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`;
-- ссылку на `../02_HARDWARE_FIRMWARE/SDKCONFIG_PROFILES.md`;
+- ссылку на `ESP32_C_CODING_STANDARDS.md`;
+- ссылку на `SDKCONFIG_PROFILES.md`;
 - ссылку на специфику ноды (`PH_NODE_SPEC`, `EC_NODE_SPEC` и т.п., если есть).
 
 ### 2.2. Backend
@@ -52,10 +48,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 Внутри backend-репозитория:
 
 - README с ссылками на:
- - `../04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
- - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
- - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
- - `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`
+ - `BACKEND_ARCH_FULL.md`
+ - `DATA_MODEL_REFERENCE.md`
+ - `MQTT_SPEC_FULL.md`
+ - `BACKEND_NODE_CONTRACT_FULL.md`
 
 ### 2.3. Android-приложение
 

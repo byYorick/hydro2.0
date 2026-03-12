@@ -2,18 +2,16 @@
 
 namespace Tests\Feature;
 
-use App\Models\Plant;
-use App\Models\Recipe;
-use App\Models\RecipeRevision;
-use App\Models\RecipeRevisionPhase;
-use App\Models\Sensor;
-use App\Models\TelemetryLast;
-use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
-use App\Services\GrowCycleService;
+use App\Models\TelemetrySample;
+use App\Models\TelemetryLast;
+use App\Models\Recipe;
+use App\Models\RecipePhase;
+use App\Models\ZoneRecipeInstance;
+use App\Models\ParameterPrediction;
 use Carbon\Carbon;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class AiControllerTest extends TestCase
@@ -21,7 +19,6 @@ class AiControllerTest extends TestCase
     use RefreshDatabase;
 
     private User $user;
-
     private string $token;
 
     protected function setUp(): void
@@ -41,33 +38,22 @@ class AiControllerTest extends TestCase
     public function test_predict_endpoint(): void
     {
         $zone = Zone::factory()->create(['status' => 'RUNNING']);
-        $sensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
-            'zone_id' => $zone->id,
-            'node_id' => null,
-            'scope' => 'inside',
-            'type' => 'PH',
-            'label' => 'ph_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
-        ]);
 
         // Создаем телеметрию
         $now = Carbon::now();
         for ($i = 0; $i < 10; $i++) {
             TelemetrySample::create([
                 'zone_id' => $zone->id,
-                'sensor_id' => $sensor->id,
+                'metric_type' => 'ph',
                 'value' => 6.0 + ($i * 0.05),
                 'ts' => $now->copy()->subHours(2)->addMinutes($i * 12),
             ]);
         }
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
+        $response = $this->withHeader('Authorization', 'Bearer ' . $this->token)
             ->postJson('/api/ai/predict', [
                 'zone_id' => $zone->id,
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'horizon_minutes' => 60,
             ]);
 
@@ -91,10 +77,10 @@ class AiControllerTest extends TestCase
     {
         $zone = Zone::factory()->create();
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
+        $response = $this->withHeader('Authorization', 'Bearer ' . $this->token)
             ->postJson('/api/ai/predict', [
                 'zone_id' => $zone->id,
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'horizon_minutes' => 60,
             ]);
 
@@ -107,58 +93,37 @@ class AiControllerTest extends TestCase
     public function test_explain_zone_endpoint(): void
     {
         $zone = Zone::factory()->create();
-        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        $revision = RecipeRevision::factory()->create([
+        $phase = RecipePhase::factory()->create([
             'recipe_id' => $recipe->id,
-            'status' => 'PUBLISHED',
-        ]);
-        RecipeRevisionPhase::factory()->create([
-            'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
-            'ph_target' => 6.0,
-            'ec_target' => 1.2,
+            'targets' => [
+                'ph' => 6.0,
+                'ec' => 1.2,
+            ],
         ]);
-        $service = app(GrowCycleService::class);
-        $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
+
+        ZoneRecipeInstance::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_id' => $recipe->id,
+            'current_phase_index' => 0,
+        ]);
 
         // Создаем телеметрию
-        $phSensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
+        TelemetryLast::create([
             'zone_id' => $zone->id,
-            'node_id' => null,
-            'scope' => 'inside',
-            'type' => 'PH',
-            'label' => 'ph_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
-        ]);
-        $ecSensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
-            'zone_id' => $zone->id,
-            'node_id' => null,
-            'scope' => 'inside',
-            'type' => 'EC',
-            'label' => 'ec_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
+            'metric_type' => 'ph',
+            'value' => 6.5, // выше цели
+            'updated_at' => now(),
         ]);
         TelemetryLast::create([
-            'sensor_id' => $phSensor->id,
-            'last_value' => 6.5, // выше цели
-            'last_ts' => now(),
-            'last_quality' => 'GOOD',
-        ]);
-        TelemetryLast::create([
-            'sensor_id' => $ecSensor->id,
-            'last_value' => 1.0, // ниже цели
-            'last_ts' => now(),
-            'last_quality' => 'GOOD',
+            'zone_id' => $zone->id,
+            'metric_type' => 'ec',
+            'value' => 1.0, // ниже цели
+            'updated_at' => now(),
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
+        $response = $this->withHeader('Authorization', 'Bearer ' . $this->token)
             ->postJson('/api/ai/explain_zone', [
                 'zone_id' => $zone->id,
             ]);
@@ -183,58 +148,37 @@ class AiControllerTest extends TestCase
     public function test_recommend_endpoint(): void
     {
         $zone = Zone::factory()->create();
-        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        $revision = RecipeRevision::factory()->create([
+        $phase = RecipePhase::factory()->create([
             'recipe_id' => $recipe->id,
-            'status' => 'PUBLISHED',
-        ]);
-        RecipeRevisionPhase::factory()->create([
-            'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
-            'ph_target' => 6.0,
-            'ec_target' => 1.2,
+            'targets' => [
+                'ph' => 6.0,
+                'ec' => 1.2,
+            ],
         ]);
-        $service = app(GrowCycleService::class);
-        $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
+
+        ZoneRecipeInstance::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_id' => $recipe->id,
+            'current_phase_index' => 0,
+        ]);
 
         // Создаем телеметрию с отклонениями
-        $phSensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
+        TelemetryLast::create([
             'zone_id' => $zone->id,
-            'node_id' => null,
-            'scope' => 'inside',
-            'type' => 'PH',
-            'label' => 'ph_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
-        ]);
-        $ecSensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
-            'zone_id' => $zone->id,
-            'node_id' => null,
-            'scope' => 'inside',
-            'type' => 'EC',
-            'label' => 'ec_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
+            'metric_type' => 'ph',
+            'value' => 6.5, // выше цели на 0.5
+            'updated_at' => now(),
         ]);
         TelemetryLast::create([
-            'sensor_id' => $phSensor->id,
-            'last_value' => 6.5, // выше цели на 0.5
-            'last_ts' => now(),
-            'last_quality' => 'GOOD',
-        ]);
-        TelemetryLast::create([
-            'sensor_id' => $ecSensor->id,
-            'last_value' => 0.8, // ниже цели на 0.4
-            'last_ts' => now(),
-            'last_quality' => 'GOOD',
+            'zone_id' => $zone->id,
+            'metric_type' => 'ec',
+            'value' => 0.8, // ниже цели на 0.4
+            'updated_at' => now(),
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
+        $response = $this->withHeader('Authorization', 'Bearer ' . $this->token)
             ->postJson('/api/ai/recommend', [
                 'zone_id' => $zone->id,
             ]);
@@ -259,7 +203,7 @@ class AiControllerTest extends TestCase
         $zone1 = Zone::factory()->create(['status' => 'RUNNING']);
         $zone2 = Zone::factory()->create(['status' => 'online']);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
+        $response = $this->withHeader('Authorization', 'Bearer ' . $this->token)
             ->postJson('/api/ai/diagnostics');
 
         $response->assertOk()

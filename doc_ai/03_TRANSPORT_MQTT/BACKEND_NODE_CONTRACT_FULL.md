@@ -5,9 +5,6 @@
 протоколы, структуры JSON, ответственность сторон, гарантии доставки,
 обработку ошибок, синхронизацию состояний и правила безопасности.
 
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Общие принципы контракта
@@ -36,9 +33,8 @@ Backend ⇄ MQTT Broker ⇄ ESP32 Nodes
 3. **Heartbeat** (node → backend)
 4. **Command** (backend → node)
 5. **Command Response** (node → backend)
-6. **Event** (node → backend)
-7. **NodeConfig** (backend → node)
-8. **Config Response** (node → backend)
+6. **NodeConfig** (backend → node)
+7. **Config Response** (node → backend)
 
 ---
 
@@ -48,7 +44,7 @@ Backend ⇄ MQTT Broker ⇄ ESP32 Nodes
 - расчёты pH/EC/климата,
 - принятие решений,
 - определение расписаний,
-- хранение NodeConfig, присланного нодой,
+- построение NodeConfig,
 - генерацию команд,
 - контроль выполнения команд,
 - обработку telemetry,
@@ -58,7 +54,6 @@ Backend ⇄ MQTT Broker ⇄ ESP32 Nodes
 - чтение сенсоров,
 - исправное выполнение команд,
 - соблюдение безопасных таймеров,
-- формирование NodeConfig в прошивке,
 - корректную публикацию telemetry,
 - сохранение NodeConfig в NVS,
 - локальный SAFE MODE.
@@ -71,19 +66,18 @@ Backend ⇄ MQTT Broker ⇄ ESP32 Nodes
 hydro/{gh}/{zone}/{node}/status
 hydro/{gh}/{zone}/{node}/lwt
 hydro/{gh}/{zone}/{node}/heartbeat
-hydro/{gh}/{zone}/{node}/error
-hydro/{gh}/{zone}/{node}/config_report
+hydro/{gh}/{zone}/{node}/config
+hydro/{gh}/{zone}/{node}/config_response
 hydro/{gh}/{zone}/{node}/{channel}/telemetry
 hydro/{gh}/{zone}/{node}/{channel}/command
 hydro/{gh}/{zone}/{node}/{channel}/command_response
-hydro/{gh}/{zone}/{node}/{channel}/event
 ```
 
 ---
 
 # 5. NodeConfig Contract
 
-NodeConfig формируется на стороне ноды (прошивка/NVS) и отправляется на сервер в `config_report`.
+Backend формирует единственный источник конфигурации узла.
 
 ## 5.1. Payload
 
@@ -116,87 +110,72 @@ NodeConfig формируется на стороне ноды (прошивка
  "host": "192.168.1.50",
  "port": 1883,
  "keepalive": 30
- },
- "node_secret": "unique-secret-key-for-this-node"
-}
-```
-
-**Примечание:** Поле `node_secret` обязательно для всех узлов.
-
-## 5.2. Требования
-- Узел обязан валидировать весь конфиг.
-- Версия `version` используется для контроля конфигурации и обновлений.
-- Узел обязан сохранять конфиг в NVS.
-- Узел обязан перезапускать каналы после применения.
-- Узел обязан отправлять `config_report` при подключении.
-
----
-
-# 6. Config Report Contract
-
-## 6.1. Payload
-```json
-{
- "node_id": "nd-ph-1",
- "version": 3,
- "channels": [
-  {
-   "name": "ph_sensor",
-   "type": "SENSOR",
-   "metric": "PH",
-   "poll_interval_ms": 3000
-  }
- ],
- "wifi": {
-  "ssid": "FarmWiFi",
-  "pass": "12345678"
- },
- "mqtt": {
-  "host": "192.168.1.50",
-  "port": 1883,
-  "keepalive": 30
  }
 }
 ```
 
-## 6.2. Обработка на backend
+## 5.2. Требования
+- Узел обязан валидировать весь конфиг.
+- При ошибке → config_response(ERROR).
+- Версия `version` используется для совместимости.
+- Узел обязан сохранять конфиг в NVS.
+- Узел обязан перезапускать каналы после применения.
 
-Backend подписывается на топик `hydro/+/+/+/config_report` через сервис `history-logger` и обрабатывает сообщения:
+---
 
-- Сохраняет `nodes.config` и синхронизирует `node_channels`
-- Если нода в `REGISTERED_BACKEND` и имеет `zone_id`/`pending_zone_id`, переводит в `ASSIGNED_TO_ZONE`
+# 6. Config Response Contract
 
-**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения `config_report` от ноды. Это обеспечивает надежность привязки и гарантирует, что сервер использует актуальный конфиг.
+## 6.1. Успех
+```json
+{
+ "status": "OK",
+ "node_id": "nd-ph-1",
+ "applied": true,
+ "timestamp": 1710002222
+}
+```
 
-**Примечание:** Если `config_report` пришёл в temp‑namespace до регистрации узла, History Logger буферизует его на короткое время и обрабатывает сразу после успешной регистрации. Параметры буфера задаются переменными `CONFIG_REPORT_BUFFER_TTL_SEC` и `CONFIG_REPORT_BUFFER_MAX`.
+## 6.2. Ошибка
+```json
+{
+ "status": "ERROR",
+ "error": "invalid channel pump_x",
+ "timestamp": 1710002222
+}
+```
+
+## 6.3. Обработка на backend
+
+Backend подписывается на топик `hydro/+/+/+/config_response` через сервис `history-logger` и обрабатывает сообщения:
+
+- **При `status: "OK"`:**
+  - Если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, backend переводит ноду в `ASSIGNED_TO_ZONE` через Laravel API `/api/nodes/{node}/lifecycle/transition`
+  - Это гарантирует, что нода считается привязанной к зоне только после успешной установки конфига
+- **При `status: "ERROR"`:**
+  - Backend логирует ошибку
+  - Нода остается в состоянии `REGISTERED_BACKEND`
+  - Нода не считается привязанной к зоне
+
+**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это обеспечивает надежность привязки и гарантирует, что нода получила и применила конфиг перед началом работы.
+
+---
 
 # 7. Telemetry Contract
 
 ## 7.1. Payload
 ```json
 {
+ "node_id": "nd-ph-1",
+ "channel": "ph_sensor",
  "metric_type": "PH",
  "value": 5.83,
+ "raw": 1460,
  "ts": 1710012345
 }
 ```
 
-**Обязательные поля:**
-- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP` и др.
-- `value` (number) — значение метрики
-- `ts` (integer) — UTC timestamp в секундах
-
-**Опциональные поля:**
-- `unit` (string) — единица измерения
-- `raw` (integer) — сырое значение сенсора
-- `stub` (boolean) — флаг симулированного значения
-- `stable` (boolean) — флаг стабильности значения
-
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
-
 ## 7.2. Требования
 - QoS=1
-- Retain=false
 - Узел обязан публиковать telemetry регулярно.
 - Узел обязан фильтровать шумы (медиана/усреднение).
 - Backend обязан сохранять sample в TSDB и кэшировать.
@@ -225,14 +204,14 @@ hydro/{gh}/{zone}/{node}/status
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **до** подписки на command топики
+- Публикация выполняется **до** подписки на config/command топики
 - Поле `ts` содержит Unix timestamp в секундах
 
 **Последовательность при подключении:**
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО
-4. Подписка на command топики (config — опционально)
+4. Подписка на config и command топики
 5. Вызов connection callback (если зарегистрирован)
 
 **Backend обязан:**
@@ -253,8 +232,6 @@ Payload:
 - LWT настраивается при инициализации MQTT клиента
 - Брокер автоматически публикует LWT при неожиданном отключении узла
 - QoS = 1, Retain = true
-- Для node-sim в режиме preconfig допустим temp-namespace:
-  `hydro/gh-temp/zn-temp/{node_uid_or_hw}/lwt`
 
 **Backend обязан:**
 - отметить node OFFLINE,
@@ -268,20 +245,12 @@ Payload:
 ## 9.1. Payload
 ```json
 {
- "uptime": 3600,
- "free_heap": 102300,
- "rssi": -56
+ "uptime": 55100,
+ "heap": 102300,
+ "rssi": -56,
+ "ts": 1710012900
 }
 ```
-
-**Обязательные поля:**
-- `uptime` (integer) — время работы узла в секундах
-- `free_heap` (integer) — свободная память в байтах
-
-**Опциональные поля:**
-- `rssi` (integer) — сила сигнала Wi-Fi в dBm
-
-> **Важно:** Поле `ts` **не включается** в heartbeat согласно эталону node-sim.
 
 Backend обязан сохранять heartbeat для диагностики.
 
@@ -296,83 +265,16 @@ Backend → Node
 {
  "cmd_id": "cmd-9123",
  "cmd": "run_pump",
- "params": {
-   "duration_ms": 2500
- },
- "ts": 1737355112,
- "sig": "a1b2c3d4e5f6..."
+ "duration_ms": 2500
 }
 ```
 
-**Тест сенсора канала:**
-- `cmd`: `test_sensor`
-- `params`: `{}` (канал определяется из MQTT топика)
-**Правило (для всех нод):** команда `test_sensor` обязательна для любых узлов, у которых есть
-каналы типа `SENSOR`. Узел выполняет разовое чтение датчика для канала из топика
-`.../{channel}/command` и отвечает:
-- при успехе: `command_response` содержит `details.value`, `details.unit`, `details.metric_type`
-  (доп. поля допустимы);
-- при ошибке чтения/инициализации или если канал не является `SENSOR`: `status=ERROR`/`INVALID`
-  и `error_code`/`error_message`.
-
-**Перезапуск ноды:**
-- `cmd`: `restart`
-- `params`: `{}`
-**Правило (для всех нод):** узел обязан отправить `command_response` со статусом `DONE`,
-после чего выполнить перезагрузку.
-
-**Снимок состояния IRR-ноды:**
-- `cmd`: `state`
-- `params`: `{}`
-**Правило (для нод типа `irrig`):** узел обязан вернуть `command_response` со статусом `DONE`
-и `details.snapshot` (все дискретные поля только `bool`):
-- `clean_level_max`, `clean_level_min`
-- `solution_level_max`, `solution_level_min`
-- `valve_clean_fill`, `valve_clean_supply`
-- `valve_solution_fill`, `valve_solution_supply`
-- `valve_irrigation`
-- `pump_main`
-
 ## 10.2. Требования
 - Узел обязан:
- - валидировать команду (HMAC подпись, timestamp, параметры),
+ - валидировать команду,
  - учитывать safe_limits,
  - выполнить действие,
  - отправить command_response.
-
-Дополнительное требование для 2-бакового контура:
-- для `valve_clean_fill` и `valve_solution_fill` узел обязан локально завершать наполнение по датчику `*_max`
-  и отправлять подтверждение в backend без ожидания внешней stop-команды.
-
-## 10.3. HMAC проверка команд
-
-**Формат подписи:**
-```
-sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
-```
-
-`canonical_json` — каноническая JSON-строка команды без `sig`:
-- ключи объектов отсортированы лексикографически,
-- порядок массивов сохраняется,
-- сериализация без пробелов,
-- числа форматируются как в cJSON (int если целое, иначе 15/17 значащих),
-- строки JSON-экранируются, UTF-8, слэши не экранируются.
-
-**Проверки на узле:**
-1. **Timestamp проверка:**
-   - `abs(now - ts) < 10 секунд`
-   - Если timestamp истек, команда отклоняется с ошибкой `timestamp_expired`
-
-2. **HMAC подпись проверка:**
-   - Узел получает `node_secret` из NodeConfig (поле `node_secret`)
-   - Вычисляется ожидаемая подпись: `HMAC_SHA256(node_secret, canonical_json(command_without_sig))`
-   - Сравнивается с полученной подписью `sig` (константное время)
-   - Если подписи не совпадают, команда отклоняется с ошибкой `invalid_signature`
-
-3. **Требования к полям:**
-   - `ts` и `sig` обязательны. При отсутствии любого из полей команда отклоняется с ошибкой `invalid_hmac_format`.
-
-**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
 ---
 
@@ -383,7 +285,7 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ACK",
- "ts": 1710012930123
+ "ts": 1710012930
 }
 ```
 
@@ -392,141 +294,9 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "ts": 1710012930123,
- "error_code": "pump_in_cooldown",
- "error_message": "Pump is in cooldown period",
- "details": {
-  "cooldown_ms": 1200
- }
+ "error": "cooldown_active"
 }
 ```
-
-**Важно:** Поле `ts` содержит UTC timestamp в **миллисекундах** (не секундах).
-
-## 11.3. Ошибки валидации HMAC
-
-Если команда отклонена из-за невалидной HMAC подписи:
-```json
-{
- "cmd_id": "cmd-9123",
- "status": "ERROR",
- "ts": 1710012930123,
- "error_code": "invalid_signature",
- "error_message": "Command HMAC signature verification failed"
-}
-```
-
-Если команда отклонена из-за истекшего timestamp:
-```json
-{
- "cmd_id": "cmd-9123",
- "status": "ERROR",
- "ts": 1710012930123,
- "error_code": "timestamp_expired",
- "error_message": "Command timestamp is outside acceptable range"
-}
-```
-
-Канонические статусы `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.
-Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
-Статус `SEND_FAILED` фиксируется на backend-слое при ошибке публикации и не приходит от ноды как `command_response`.
-
-## 11.4. Подтверждение авто-остановки наполнения (2-бака)
-
-При достижении верхнего уровня бака (`level_clean_max` или `level_solution_max`) нода обязана:
-
-1. Локально закрыть соответствующий клапан наполнения.
-2. Отправить `command_response` для активной команды:
-
-```json
-{
-  "cmd_id": "cmd-701",
-  "status": "DONE",
-  "ts": 1710012930123,
-  "details": {
-    "result": "auto_stopped",
-    "reason_code": "level_max_reached",
-    "tank": "clean"
-  }
-}
-```
-
-3. Опубликовать событие состояния:
-
-Топик:
-```text
-hydro/{gh}/{zone}/{node}/storage_state/event
-```
-
-Payload:
-```json
-{
-  "event_code": "clean_fill_completed",
-  "ts": 1710012930,
-  "snapshot": {
-    "clean_level_min": true,
-    "clean_level_max": true,
-    "solution_level_min": false,
-    "solution_level_max": false,
-    "pump_main": false
-  },
-  "state": {
-    "level_clean_min": 1,
-    "level_clean_max": 1,
-    "level_solution_min": 0,
-    "level_solution_max": 0
-  }
-}
-```
-
-## 11.5. Ответ `command_response` для `cmd=state` (IRR)
-
-```json
-{
-  "cmd_id": "cmd-9201",
-  "status": "DONE",
-  "ts": 1710012930123,
-  "details": {
-    "snapshot": {
-      "clean_level_max": true,
-      "clean_level_min": true,
-      "solution_level_max": false,
-      "solution_level_min": true,
-      "valve_clean_fill": false,
-      "valve_clean_supply": true,
-      "valve_solution_fill": true,
-      "valve_solution_supply": false,
-      "valve_irrigation": false,
-      "pump_main": true
-    },
-    "sample_ts": 1710012930
-  }
-}
-```
-
-Требования:
-- `details.snapshot.*` — только `bool`;
-- отсутствие ключа трактуется backend как `unknown`;
-- `details.sample_ts` используется automation-engine для freshness-check.
-
-Нормализация `event_code` в backend:
-- источник: `event_code` (fallback: `event`, `type`);
-- целевое поле: `zone_events.type`;
-- правило: `UPPERCASE` + замена неалфанумерических символов на `_` + схлопывание повторяющихся `_`;
-- если код пустой, используется `NODE_EVENT`.
-- лимит `zone_events.type` = 255 символов; при превышении код усечётся детерминированно с suffix
-  `_{SHA1_10}` (первые 10 hex-символов SHA1 от нормализованного кода).
-
-Ограничение кардинальности метрик backend:
-- `history-logger` инкрементирует `node_event_received_total{event_code=...}` только для
-  разрешённого набора кодов;
-- неизвестные/кастомные коды агрегируются в `event_code="OTHER"`.
-
-Backend обязан:
-- принимать оба канала подтверждения (response + event);
-- сохранять событие в `zone_events`;
-- для `storage_state/event` извлекать `IRR_STATE_SNAPSHOT` из `snapshot` (основное поле) или `state` (fallback);
-- использовать poll как fallback-контроль при потере event.
 
 ---
 
@@ -568,15 +338,15 @@ Backend обязан:
 # 14. Synchronization Contract
 
 ## Узел обязан:
-- публиковать config_report при подключении,
+- подтверждать config_response,
 - подтверждать command_response,
 - публиковать status/heartbeat,
 - хранить version NodeConfig.
 
 ## Backend обязан:
-- хранить NodeConfig от ноды и использовать его в сервисах,
+- держать NodeConfig как источник истины,
 - синхронизировать состояния зон,
-- не пересылать конфиги на ноды.
+- пересылать config при обновлении рецептов/фаз.
 
 ---
 
@@ -584,9 +354,6 @@ Backend обязан:
 
 - Если backend повышает version → узлы должны уметь игнорировать неизвестные поля.
 - Если узлы повышают version → backend валидирует node_type/hw_version.
-- `node_type` в payload-ах (`node_hello`, registration, config-report metadata) допускает только канонические
-  значения: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Legacy-алиасы `node_type` (`pump_node`, `irrigation`, `climate_node`, `lighting_node` и т.п.) не поддерживаются.
 
 ---
 

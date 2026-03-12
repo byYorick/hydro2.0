@@ -3,7 +3,6 @@
  * Автоматически отключает debug логи в production
  * Поддерживает структурированное логирование с контекстом
  */
-/* eslint-disable no-console */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -38,8 +37,6 @@ export interface LogContext {
   restoredCount?: number
   [key: string]: unknown
 }
-
-export type LogContextInput = LogContext | Record<string, unknown> | unknown
 
 /**
  * Проверяет, нужно ли логировать на данном уровне
@@ -81,25 +78,14 @@ function shouldSample(level: LogLevel): boolean {
 /**
  * Форматирует сообщение с префиксом уровня и контекстом
  */
-function normalizeContext(context?: LogContextInput): LogContext | undefined {
-  if (context === undefined || context === null) {
-    return undefined
-  }
-  if (typeof context === 'object') {
-    return context as LogContext
-  }
-  return { value: context }
-}
-
-function formatMessage(level: LogLevel, message: string, context?: LogContextInput): unknown[] {
+function formatMessage(level: LogLevel, message: string, context?: LogContext): unknown[] {
   const prefix = `[${level.toUpperCase()}]`
-  const normalizedContext = normalizeContext(context)
   
   // Если есть контекст, форматируем как JSON для структурированного логирования
-  if (normalizedContext && Object.keys(normalizedContext).length > 0) {
+  if (context && Object.keys(context).length > 0) {
     try {
       // Удаляем циклические ссылки перед передачей в консоль
-      const cleanedContext = removeCircularReferences(normalizedContext) as LogContext
+      const cleanedContext = removeCircularReferences(context) as LogContext
       const jsonContext = safeStringify(cleanedContext)
       
       if (isDev) {
@@ -111,7 +97,7 @@ function formatMessage(level: LogLevel, message: string, context?: LogContextInp
       }
     } catch (err) {
       // Если не удалось очистить, передаем только JSON строку
-      const jsonContext = safeStringify(normalizedContext)
+      const jsonContext = safeStringify(context)
       return [`${prefix} ${message}`, jsonContext]
     }
   }
@@ -187,24 +173,23 @@ function writeToConsole(level: LogLevel, args: unknown[]): void {
 function logWithLevel(
   level: LogLevel,
   message: string,
-  context?: LogContextInput,
+  context?: LogContext,
   err?: Error | unknown
 ): void {
   if (!shouldLog(level) || !shouldSample(level)) return
 
-  const normalizedContext = normalizeContext(context)
-  const formattedMessage = formatMessage(level, message, normalizedContext)
+  const formattedMessage = formatMessage(level, message, context)
   writeToConsole(level, formattedMessage)
 
   if (level === 'error') {
-    sendToErrorSink(level, message, normalizedContext, err instanceof Error ? err : undefined)
+    sendToErrorSink(level, message, context, err instanceof Error ? err : undefined)
   }
 }
 
 /**
  * Отправляет ошибку во внешний sink (Sentry/HTTP endpoint)
  */
-function sendToErrorSink(_level: LogLevel, _message: string, _context?: LogContext, _error?: Error): void {
+function sendToErrorSink(level: LogLevel, message: string, context?: LogContext, error?: Error): void {
   // В будущем можно добавить отправку в Sentry или HTTP endpoint
   // const errorEndpoint = import.meta.env.VITE_ERROR_SINK_URL
   // if (errorEndpoint && level === 'error') {
@@ -215,29 +200,28 @@ function sendToErrorSink(_level: LogLevel, _message: string, _context?: LogConte
 /**
  * Логирует debug сообщение (только в dev режиме)
  */
-export function debug(message: string, context?: LogContextInput): void {
+export function debug(message: string, context?: LogContext): void {
   logWithLevel('debug', message, context)
 }
 
 /**
  * Логирует информационное сообщение (только в dev режиме)
  */
-export function info(message: string, context?: LogContextInput): void {
+export function info(message: string, context?: LogContext): void {
   logWithLevel('info', message, context)
 }
 
 /**
  * Логирует предупреждение (всегда)
  */
-export function warn(message: string, context?: LogContextInput): void {
+export function warn(message: string, context?: LogContext): void {
   logWithLevel('warn', message, context)
 }
 
 /**
  * Логирует ошибку (всегда)
  */
-export function error(message: string, context?: LogContextInput, err?: Error | unknown): void {
-  const normalizedContext = normalizeContext(context) ?? {}
+export function error(message: string, context?: LogContext, err?: Error | unknown): void {
   const errorDetails: LogContext = err instanceof Error
     ? {
         errorMessage: err.message,
@@ -249,7 +233,7 @@ export function error(message: string, context?: LogContextInput, err?: Error | 
       : {}
 
   const errorContext: LogContext = {
-    ...normalizedContext,
+    ...context,
     ...errorDetails,
   }
 

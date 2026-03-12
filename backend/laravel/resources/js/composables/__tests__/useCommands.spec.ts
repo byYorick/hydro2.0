@@ -1,5 +1,3 @@
-import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useCommands } from '../useCommands'
 
@@ -36,30 +34,13 @@ vi.mock('@inertiajs/vue3', () => ({
 }))
 
 describe('useCommands', () => {
-  const mountUseCommands = () => {
-    let api: ReturnType<typeof useCommands> | null = null
-    const wrapper = mount(defineComponent({
-      setup() {
-        api = useCommands()
-        return () => null
-      },
-    }))
-
-    if (!api) {
-      throw new Error('useCommands not initialized')
-    }
-
-    return { wrapper, api }
-  }
-
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('should initialize with loading false', () => {
-    const { wrapper, api } = mountUseCommands()
-    expect(api.loading.value).toBe(false)
-    wrapper.unmount()
+    const { loading } = useCommands()
+    expect(loading.value).toBe(false)
   })
 
   it('should send zone command', async () => {
@@ -67,21 +48,20 @@ describe('useCommands', () => {
     const mockApi = {
       api: {
         post: vi.fn().mockResolvedValue({
-          data: { data: { id: 1, status: 'QUEUED' } }
+          data: { data: { id: 1, status: 'pending' } }
         })
       }
     }
     vi.mocked(useApi).mockReturnValue(mockApi)
 
-    const { wrapper, api } = mountUseCommands()
-    const result = await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
+    const { sendZoneCommand } = useCommands()
+    const result = await sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
 
-    expect(result).toEqual({ id: 1, status: 'QUEUED' })
+    expect(result).toEqual({ id: 1, status: 'pending' })
     expect(mockApi.api.post).toHaveBeenCalledWith('/api/zones/1/commands', {
       type: 'FORCE_IRRIGATION',
       params: { duration_sec: 10 }
     })
-    wrapper.unmount()
   })
 
   it('should update command status', async () => {
@@ -95,49 +75,19 @@ describe('useCommands', () => {
     }
     vi.mocked(useApi).mockReturnValue(mockApi)
 
-    const { wrapper, api } = mountUseCommands()
+    const { sendZoneCommand, updateCommandStatus, pendingCommands } = useCommands()
     
     // First send a command to add it to pending
-    await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
+    await sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
 
     // Update status
-    api.updateCommandStatus(1, 'DONE', 'Success')
+    updateCommandStatus(1, 'completed', 'Success')
 
     // Check that command status was updated
-    const commands = api.pendingCommands.value
+    const commands = pendingCommands.value
     const command = commands.find(c => c.id === 1)
     expect(command).toBeDefined()
-    expect(command?.status).toBe('DONE')
-    wrapper.unmount()
-  })
-
-  it('should send sensor mode commands via system channel', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        post: vi.fn().mockResolvedValue({
-          data: { data: { id: 7, status: 'QUEUED' } }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
-
-    const { wrapper, api } = mountUseCommands()
-
-    await api.sendNodeCommand(42, 'activate_sensor_mode', {})
-    expect(mockApi.api.post).toHaveBeenCalledWith('/api/nodes/42/commands', {
-      type: 'activate_sensor_mode',
-      channel: 'system',
-      params: {},
-    })
-
-    await api.sendNodeCommand(42, 'deactivate_sensor_mode', {})
-    expect(mockApi.api.post).toHaveBeenCalledWith('/api/nodes/42/commands', {
-      type: 'deactivate_sensor_mode',
-      channel: 'system',
-      params: {},
-    })
-
-    wrapper.unmount()
+    expect(command?.status).toBe('completed')
   })
 })
+

@@ -6,7 +6,7 @@ use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\PythonBridgeService;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -23,9 +23,6 @@ class PythonBridgeServiceTest extends TestCase
         $this->service = new PythonBridgeService;
 
         // Настраиваем моки для HTTP и конфига
-        // PythonBridgeService теперь использует history-logger для команд зон
-        Config::set('services.history_logger.url', 'http://test-bridge');
-        Config::set('services.history_logger.token', 'test-token');
         Config::set('services.python_bridge.base_url', 'http://test-bridge');
         Config::set('services.python_bridge.token', 'test-token');
 
@@ -41,7 +38,7 @@ class PythonBridgeServiceTest extends TestCase
         NodeChannel::create([
             'node_id' => $node->id,
             'channel' => 'pump_main',
-            'type' => 'ACTUATOR',
+            'type' => 'pump',
             'metric' => null,
         ]);
 
@@ -56,9 +53,7 @@ class PythonBridgeServiceTest extends TestCase
 
         Http::assertSent(function ($request) use ($zone) {
             $data = $request->data();
-            $url = $request->url();
-            // PythonBridgeService использует history-logger для команд зон
-            return str_contains($url, "zones/{$zone->id}/commands")
+            return $request->url() === "http://test-bridge/bridge/zones/{$zone->id}/commands"
                 && $request->hasHeader('Authorization', 'Bearer test-token')
                 && isset($data['node_uid']) && $data['node_uid'] === 'nd-pump-1'
                 && isset($data['channel']) && $data['channel'] === 'pump_main';
@@ -148,7 +143,7 @@ class PythonBridgeServiceTest extends TestCase
         // Зона без узлов
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
+        $this->expectExceptionMessage('node_uid and channel are required');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -166,7 +161,7 @@ class PythonBridgeServiceTest extends TestCase
         // Узел без каналов
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
+        $this->expectExceptionMessage('node_uid and channel are required');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -179,7 +174,7 @@ class PythonBridgeServiceTest extends TestCase
         $zone = Zone::factory()->create();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
+        $this->expectExceptionMessage('node_uid and channel are required');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -194,77 +189,13 @@ class PythonBridgeServiceTest extends TestCase
         $zone = Zone::factory()->create();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
+        $this->expectExceptionMessage('node_uid and channel are required');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
             'params' => [],
             // node_uid не указан
             'channel' => 'pump_main',
-        ]);
-    }
-
-    public function test_send_growth_cycle_config_uses_real_zone_node_with_case_insensitive_online_status(): void
-    {
-        $zone = Zone::factory()->create();
-
-        $offlineNode = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-offline-1',
-            'status' => 'OFFLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $offlineNode->id,
-            'channel' => 'default',
-            'type' => 'ACTUATOR',
-            'metric' => null,
-        ]);
-
-        $onlineNode = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-online-1',
-            'status' => 'ONLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $onlineNode->id,
-            'channel' => 'default',
-            'type' => 'ACTUATOR',
-            'metric' => null,
-        ]);
-
-        $cmdId = $this->service->sendZoneCommand($zone, [
-            'type' => 'GROWTH_CYCLE_CONFIG',
-            'params' => [
-                'mode' => 'adjust',
-                'profile_mode' => 'setup',
-            ],
-        ]);
-
-        $this->assertNotEmpty($cmdId);
-
-        Http::assertSent(function ($request) use ($zone, $onlineNode) {
-            $data = $request->data();
-            $url = $request->url();
-
-            return str_contains($url, "zones/{$zone->id}/commands")
-                && ($data['node_uid'] ?? null) === $onlineNode->uid
-                && ($data['channel'] ?? null) === 'default';
-        });
-    }
-
-    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_nodes(): void
-    {
-        $zone = Zone::factory()->create();
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/No nodes are assigned to zone/');
-
-        $this->service->sendZoneCommand($zone, [
-            'type' => 'GROWTH_CYCLE_CONFIG',
-            'params' => [
-                'mode' => 'adjust',
-                'profile_mode' => 'setup',
-            ],
         ]);
     }
 }

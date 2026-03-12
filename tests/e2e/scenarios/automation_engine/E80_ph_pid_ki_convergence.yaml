@@ -1,7 +1,0 @@
-# E80: Legacy PID convergence scenario ported to canonical AE3 happy path
-
-name: E80_ph_pid_ki_convergence
-description: |
-  AE2-only PID convergence loop removed from standalone AE3-Lite v1.
-  Для real-hardware regression pack используется каноничный AE3 two-tank smoke.
-scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

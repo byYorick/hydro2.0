@@ -3,14 +3,10 @@
 
 Документ дополняет:
 - `EVENTS_AND_ALERTS_ENGINE.md`
-- `../04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md`
-- `../12_ANDROID_APP/ANDROID_APP_ARCH.md`
+- `REALTIME_UPDATES_ARCH.md`
+- `ANDROID_APP_ARCH.md`
 
 и описывает, **как алерты доставляются пользователю**.
-
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
 
 ---
 
@@ -21,7 +17,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Любое изменение статуса алерта:
  - фиксируется в БД,
  - генерирует событие `alert_created` или `alert_updated`
- (см. `../04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md`).
+ (см. `REALTIME_UPDATES_ARCH.md`).
 
 ---
 

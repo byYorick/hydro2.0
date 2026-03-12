@@ -2,10 +2,6 @@
 
 Этот раздел содержит документацию по Android-приложению для управления системой hydro 2.0.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 📋 Документы раздела
@@ -51,4 +47,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ---
 
+## 📊 Статус документов
+
+- **SPEC_READY:** Все спецификации готовы
+- **PLANNED:** Android-приложение в планах (см. [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md))
+
+---
+
 **См. также:** [Главный индекс документации](../INDEX.md)
+

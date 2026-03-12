@@ -219,17 +219,12 @@ describe('HeaderStatusBar', () => {
 
   it('renders all four status indicators', () => {
     mockUseSystemStatus.mockReturnValue({
-      coreStatus: ref('ok'),
-      dbStatus: ref('ok'),
-      wsStatus: ref('connected'),
-      mqttStatus: ref('online'),
-      historyLoggerStatus: ref('online'),
-      automationEngineStatus: ref('online'),
-      lastUpdate: ref(new Date()),
-      wsReconnectAttempts: ref(0),
-      wsLastError: ref(null),
-      wsConnectionDetails: ref(null)
-    } as any)
+      coreStatus: { value: 'ok' },
+      dbStatus: { value: 'ok' },
+      wsStatus: { value: 'connected' },
+      mqttStatus: { value: 'online' },
+      lastUpdate: { value: new Date() }
+    })
 
     const wrapper = mount(HeaderStatusBar)
     

@@ -83,7 +83,7 @@ describe('useWebSocket - Reconnect Logic', () => {
     // Создаем mockEcho как объект
     const echoObj: any = {
       private: vi.fn((channelName: string) => {
-        if (channelName === 'hydro.events.global') {
+        if (channelName === 'events.global') {
           pusherChannels[channelName] = mockGlobalChannel
           return mockGlobalChannel
         }
@@ -139,7 +139,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       // Подписываемся на канал
       subscribeToZoneCommands(1, handler)
       
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
       expect(mockZoneChannel.listen).toHaveBeenCalled()
       
       // Симулируем reconnect - вызываем resubscribeAllChannels
@@ -162,7 +162,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       subscribeToGlobalEvents(globalHandler)
       
       expect(mockEcho.private).toHaveBeenCalledTimes(3)
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+      expect(mockEcho.private).toHaveBeenCalledWith('events.global')
       
       // Симулируем reconnect
       mockConnection.state = 'connected'
@@ -170,7 +170,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Все подписки должны быть восстановлены (3 первоначально + 3 при resubscribe)
       expect(mockEcho.private.mock.calls.length).toBeGreaterThanOrEqual(6)
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+      expect(mockEcho.private).toHaveBeenCalledWith('events.global')
     })
   })
 
@@ -187,10 +187,10 @@ describe('useWebSocket - Reconnect Logic', () => {
       const unsubscribe2 = comp2.subscribeToZoneCommands(1, handler2)
       
       // Канал должен быть создан (может быть создан при каждой подписке, если нет в channelControls)
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
       // При повторной подписке канал может пересоздаваться, но должен переиспользоваться через channelControls
       // Проверяем, что канал был создан хотя бы один раз
-      const commands1Calls = mockEcho.private.mock.calls.filter(call => call[0] === 'hydro.commands.1')
+      const commands1Calls = mockEcho.private.mock.calls.filter(call => call[0] === 'commands.1')
       expect(commands1Calls.length).toBeGreaterThanOrEqual(1)
       
       // Отписываемся от первого компонента
@@ -199,7 +199,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       // Второй компонент все еще должен получать события
       // stopListening может быть вызван при переподключении listeners, но канал не закрывается
       // Проверяем, что канал не был полностью закрыт (leave не вызывается)
-      expect(mockEcho.leave).not.toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.leave).not.toHaveBeenCalledWith('commands.1')
     })
 
     it('should call stopListening only when last component unsubscribes', () => {
@@ -218,20 +218,20 @@ describe('useWebSocket - Reconnect Logic', () => {
       const stopListeningCallsBefore = mockZoneChannel.stopListening.mock.calls.length
       unsubscribe1()
       // Проверяем, что канал не был полностью закрыт (leave не вызывается)
-      expect(mockEcho.leave).not.toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.leave).not.toHaveBeenCalledWith('commands.1')
       
       // Отписываемся от второго - теперь stopListening должен вызваться и канал удаляется
       unsubscribe2()
       // stopListening вызывается через removeChannelListeners, но может быть вызван ранее
       // Главное - канал должен быть отсоединен (leave)
-      expect(mockEcho.leave).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.leave).toHaveBeenCalledWith('commands.1')
     })
   })
 
   describe('dead channel handling', () => {
     it('should recreate dead channel on subscribe', () => {
       // Симулируем "мертвый" канал - есть в Pusher, но нет подписки
-      mockPusher.channels.channels['hydro.commands.1'] = {
+      mockPusher.channels.channels['commands.1'] = {
         _events: {},
         _callbacks: {},
         bindings: []
@@ -244,13 +244,13 @@ describe('useWebSocket - Reconnect Logic', () => {
       subscribeToZoneCommands(1, handler)
       
       // Канал должен быть пересоздан через Echo API
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
       expect(mockZoneChannel.listen).toHaveBeenCalled()
     })
 
     it('should detect dead channel by missing listeners', () => {
       // Канал существует, но нет обработчиков
-      mockPusher.channels.channels['hydro.commands.1'] = {
+      mockPusher.channels.channels['commands.1'] = {
         _events: {},
         _callbacks: {},
         bindings: []
@@ -263,7 +263,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       subscribeToZoneCommands(1, handler)
       
       // Канал должен быть пересоздан
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
     })
   })
 
@@ -299,13 +299,13 @@ describe('useWebSocket - Reconnect Logic', () => {
       // Второй компонент все еще должен быть подписан
       // stopListening может быть вызван при переподключении listeners, но канал не закрыт
       // Проверяем, что канал не был полностью закрыт (leave не вызывается)
-      expect(mockEcho.leave).not.toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.leave).not.toHaveBeenCalledWith('commands.1')
       
       // Отписываемся от второго
       unsubscribe2()
       
       // Теперь stopListening должен быть вызван и канал удален
-      expect(mockEcho.leave).toHaveBeenCalledWith('hydro.commands.1')
+      expect(mockEcho.leave).toHaveBeenCalledWith('commands.1')
     })
   })
 

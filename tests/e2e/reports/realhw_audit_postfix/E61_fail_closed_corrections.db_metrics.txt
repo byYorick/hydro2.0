@@ -1,2 +1,0 @@
-zone_events_error_like=101
-alerts_open=0

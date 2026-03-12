@@ -46,8 +46,7 @@ void climate_node_publish_hello(void) {
 
 ### 2️⃣ History Logger получает node_hello
 
-**Python код:** `handle_node_hello()` в `mqtt_handlers.py`  
-Подписки на MQTT топики настраиваются в `app.py` (lifespan startup).
+**Python код:** `handle_node_hello()` в `main.py`
 
 **Действия:**
 1. Получает сообщение через MQTT подписку `hydro/node_hello`
@@ -95,7 +94,16 @@ HTTP Request: POST http://laravel/api/nodes/register "HTTP/1.1 201 Created"
 
 **Логика:**
 - Если нода отправила `node_hello`, значит она **уже подключена** к WiFi и MQTT с правильными настройками
-- Сервер не публикует NodeConfig, конфиг приходит только через `config_report`
+- Публикация конфига с новыми WiFi/MQTT настройками **НЕ происходит**
+- Событие `NodeConfigUpdated` **НЕ срабатывает** для новых узлов без zone_id/pending_zone_id
+
+**Лог:**
+```
+DeviceNode: Skipping config publish for new node without zone assignment
+{
+  "reason": "Node sent node_hello, already has working WiFi/MQTT config"
+}
+```
 
 **Состояние узла после регистрации:**
 ```sql
@@ -122,36 +130,102 @@ SET pending_zone_id = 6
 WHERE id = 7;
 ```
 
-**⚡ Нода отправляет config_report:**
+**⚡ Триггер публикации конфига:**
 
-После установки `pending_zone_id` сервер **не публикует** конфиг. При подключении к MQTT нода отправляет `config_report` со своим актуальным NodeConfig.
+При установке `pending_zone_id` срабатывает событие `NodeConfigUpdated` (в `DeviceNode::saved`):
 
-**MQTT топик:**
-- `hydro/{gh_uid}/{zone_uid}/{node_uid}/config_report`
+```php
+// Условие в DeviceNode модели:
+$needsConfigPublish = $node->pending_zone_id && !$node->zone_id;
 
-**Пример payload:**
-```json
-{
-  "node_id": "nd-clim-esp32new",
-  "version": 1,
-  "type": "climate",
-  "channels": [
-    { "name": "temp_air", "type": "SENSOR", "metric": "TEMPERATURE" }
-  ],
-  "wifi": { "ssid": "HydroFarm", "password": "***" },
-  "mqtt": { "host": "192.168.1.100", "port": 1883 }
+if (!$skipNewNodeWithoutZone && ($hasChanges || $needsConfigPublish)) {
+    event(new NodeConfigUpdated($node));
 }
 ```
 
-### 5️⃣ History Logger сохраняет config_report
+**Listener запускает Job:**
+```php
+PublishNodeConfigJob::dispatch($node->id);
+```
 
-**Python код:** `handle_config_report()` в `mqtt_handlers.py`
+**Job публикует конфигурацию через History Logger:**
+```
+POST http://history-logger:9300/nodes/{node_uid}/config
+Authorization: Bearer {HISTORY_LOGGER_API_TOKEN}
+
+{
+  "node_id": "nd-clim-esp32new",
+  "zone_id": 6,
+  "greenhouse_uid": "gh-temp",
+  "hardware_id": "esp32-newnode123",
+  "config": {
+    "node_id": "nd-clim-esp32new",
+    "version": 1,
+    "type": "climate",
+    "gh_uid": "gh-temp",
+    "zone_uid": "zn-temp",
+    "channels": [...],
+    "wifi": {
+      "ssid": "HydroFarm",
+      "password": "..."
+    },
+    "mqtt": {
+      "host": "192.168.1.100",
+      "port": 1883,
+      "username": "...",
+      "password": "..."
+    }
+  }
+}
+```
+
+**ВАЖНО:** Теперь конфиг публикуется **ТОЛЬКО** при привязке к зоне (установке pending_zone_id), а не при первой регистрации!
+
+### 5️⃣ History Logger публикует конфиг в MQTT
+
+**Python код:** `POST /nodes/{node_uid}/config` endpoint
+
+**MQTT топики:**
+1. `hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config` - основной топик
+2. `hydro/{gh_uid}/{zone_uid}/{hardware_id}/config` - временный топик (до получения config_response)
+
+**Логи:**
+```
+[PUBLISH_CONFIG] Publishing config for node nd-clim-esp3278e, zone_id: 6
+[PUBLISH_CONFIG_MQTT] Config published successfully to hydro/gh-temp/zn-6/nd-clim-esp3278e/config
+[PUBLISH_CONFIG_MQTT] Config published to temp topic: hydro/gh-temp/zn-temp/esp32-78e36ddde468/config
+```
+
+### 6️⃣ ESP32 получает конфигурацию
+
+**Узел подписан на:**
+- Основной топик с zone_id (когда знает свой uid)
+- Временный топик с zone_uid (при первой настройке)
+
+**Действия узла:**
+1. Получает конфигурацию
+2. Сохраняет её в NVS (энергонезависимую память)
+3. Применяет настройки (Wi-Fi, MQTT, каналы)
+4. Отправляет подтверждение
+
+**config_response:**
+```json
+{
+  "status": "ACK",
+  "config_version": "1",
+  "cmd_id": "..."
+}
+```
+
+**MQTT топик:** `hydro/{gh_uid}/{zone_uid}/{node_uid}/config_response`
+
+### 7️⃣ History Logger завершает привязку
+
+**Python код:** `handle_config_response()` в `main.py`
 
 **Действия (ДЛЯ REGISTERED_BACKEND узлов с pending_zone_id):**
 
-**Step 1:** Сохраняет `nodes.config` и синхронизирует `node_channels`
-
-**Step 2:** Обновляет `zone_id` из `pending_zone_id` и переводит узел в ASSIGNED_TO_ZONE
+**Step 1:** Обновляет `zone_id` из `pending_zone_id`
 ```
 PATCH http://laravel/api/nodes/{node_id}/service-update
 Authorization: Bearer {PY_INGEST_TOKEN}
@@ -162,20 +236,24 @@ Authorization: Bearer {PY_INGEST_TOKEN}
 }
 ```
 
+**Step 2:** Переводит узел в ASSIGNED_TO_ZONE
 ```
 POST http://laravel/api/nodes/{node_id}/lifecycle/service-transition
 Authorization: Bearer {PY_INGEST_TOKEN}
 
 {
   "target_state": "ASSIGNED_TO_ZONE",
-  "reason": "Config report received from node"
+  "reason": "Config successfully installed and confirmed by node"
 }
 ```
 
 **Логи:**
 ```
-[CONFIG_REPORT] Config stored for node nd-clim-esp3278e
-[CONFIG_REPORT] Synced 3 channel(s) for node nd-clim-esp3278e
+[CONFIG_RESPONSE] Config successfully installed for node nd-clim-esp3278e
+[CONFIG_RESPONSE] Step 1/2: Updating zone_id from pending_zone_id=6
+[CONFIG_RESPONSE] Step 1/2 SUCCESS: Node zone_id updated
+[CONFIG_RESPONSE] Step 2/2: Transitioning to ASSIGNED_TO_ZONE
+[CONFIG_RESPONSE] Node successfully transitioned to ASSIGNED_TO_ZONE
 ```
 
 **Итоговое состояние:**
@@ -208,15 +286,42 @@ lifecycle_state: ASSIGNED_TO_ZONE
 
 ## Важные особенности архитектуры
 
-### 🔐 Конфиг всегда firmware-defined
+### 🔐 Не перезаписываем рабочие настройки WiFi/MQTT
 
-**Ранее:** сервер публиковал конфиг и мог перезаписывать рабочие WiFi/MQTT настройки.
+**Проблема (было раньше):**
+- Узел отправляет `node_hello` (значит уже подключен к WiFi и MQTT)
+- Laravel регистрирует узел
+- Автоматически публикуется конфиг с **дефолтными** WiFi/MQTT настройками
+- Узел получает конфиг и **перезаписывает** свои рабочие настройки
+- Узел может потерять подключение!
 
-**Сейчас:**
+**Решение (сейчас):**
 - ✅ Узел отправляет `node_hello`
 - ✅ Laravel регистрирует узел без zone_id
-- ✅ Сервер **не публикует** NodeConfig
-- ✅ Нода использует конфиг из прошивки/NVS и отправляет `config_report`
+- ✅ Конфиг **НЕ публикуется** автоматически
+- ✅ Узел сохраняет свои рабочие WiFi/MQTT настройки
+- ✅ Конфиг публикуется **только при привязке к зоне** (установке `pending_zone_id`)
+
+**Логика в коде:**
+```php
+// DeviceNode::saved event
+$skipNewNodeWithoutZone = $node->wasRecentlyCreated 
+    && !$node->zone_id 
+    && !$node->pending_zone_id;
+
+if (!$skipNewNodeWithoutZone && ($hasChanges || $needsConfigPublish)) {
+    event(new NodeConfigUpdated($node));
+}
+```
+
+**Когда конфиг БУДЕТ опубликован:**
+- ✅ При установке `pending_zone_id` (привязка к зоне)
+- ✅ При изменении `zone_id`, `type`, `config`, `uid`
+- ✅ При обновлении настроек через UI
+
+**Когда конфиг НЕ публикуется:**
+- ❌ При первой регистрации через `node_hello` (zone_id и pending_zone_id пустые)
+- ❌ При обновлении только метаданных (`fw_version`, `last_heartbeat_at`, и т.д.)
 
 ## Проблемы и решения
 
@@ -233,7 +338,7 @@ lifecycle_state: ASSIGNED_TO_ZONE
 4. ✅ NodeController::update добавлена проверка всех токенов: `PY_API_TOKEN`, `PY_INGEST_TOKEN`, `HISTORY_LOGGER_API_TOKEN`
 
 **Файлы изменены:**
-- `backend/services/history-logger/mqtt_handlers.py` - исправлена переменная токена
+- `backend/services/history-logger/main.py` - исправлена переменная токена
 - `backend/laravel/routes/api.php` - добавлены service маршруты
 - `backend/laravel/app/Http/Controllers/NodeController.php` - улучшена проверка токенов
 
@@ -254,14 +359,14 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 
 **Тест 2: Завершение привязки**
 ```bash
-# После привязки узла к зоне через UI, узел отправляет config_report:
+# После привязки узла к зоне через UI, узел получает config и отправляет ACK:
 docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
-  -t 'hydro/gh-temp/zn-temp/nd-clim-esp3278e/config_report' \
-  -m '{"node_id":"nd-clim-esp3278e","version":1,"channels":[{"name":"temp_air","type":"SENSOR","metric":"TEMPERATURE"}]}'
+  -t 'hydro/gh-temp/zn-temp/nd-clim-esp3278e/config_response' \
+  -m '{"status":"ACK","config_version":"1"}'
 ```
 
 **Ожидаемый результат:**
-- ✅ History Logger получает config_report
+- ✅ History Logger получает config_response
 - ✅ Обновляет zone_id из pending_zone_id (PATCH /service-update)
 - ✅ Переводит в ASSIGNED_TO_ZONE (POST /lifecycle/service-transition)
 - ✅ Узел полностью настроен
@@ -270,20 +375,18 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
-| `PY_INGEST_TOKEN` | History Logger → Laravel | Токен ingest-вызовов (register/service-update/lifecycle transition) |
-| `HISTORY_LOGGER_API_TOKEN` | History Logger (auth + ingest) | Основной токен для HTTP ingest-аутентификации и fallback для исходящих ingest-вызовов в Laravel |
+| `PY_INGEST_TOKEN` | History Logger → Laravel | Токен для регистрации и обновления узлов |
+| `HISTORY_LOGGER_API_TOKEN` | Laravel → History Logger | Токен для публикации конфигурации |
 | `LARAVEL_API_URL` | History Logger | URL Laravel API (http://laravel) |
-| `CONFIG_REPORT_BUFFER_TTL_SEC` | History Logger | Сколько секунд хранить config_report, пришедший до регистрации (по умолчанию 120) |
-| `CONFIG_REPORT_BUFFER_MAX` | History Logger | Максимум буферизованных config_report (по умолчанию 128) |
 
 ## Мониторинг
 
 **History Logger метрики (Prometheus):**
 - `node_hello_received_total` - количество полученных node_hello
 - `node_hello_errors_total{error_type}` - ошибки при обработке
-- `config_report_received_total` - количество config_report
-- `config_report_processed_total` - количество успешно сохранённых config_report
-- `config_report_error_total{node_uid}` - ошибки обработки config_report
+- `config_response_received_total` - количество config_response
+- `config_response_success_total{node_uid}` - успешные обработки
+- `config_response_processed_total` - количество завершённых привязок
 
 **Endpoint:** http://localhost:9301/metrics
 
@@ -316,8 +419,8 @@ docker compose -f docker-compose.dev.yml logs history-logger -f
 # Только node_hello
 docker compose -f docker-compose.dev.yml logs history-logger | grep NODE_HELLO
 
-# Только config_report
-docker compose -f docker-compose.dev.yml logs history-logger | grep CONFIG_REPORT
+# Только config_response  
+docker compose -f docker-compose.dev.yml logs history-logger | grep CONFIG_RESPONSE
 
 # Только ошибки
 docker compose -f docker-compose.dev.yml logs history-logger | grep ERROR
@@ -331,8 +434,8 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_sub -h localhost -t
 # Только node_hello
 docker compose -f docker-compose.dev.yml exec mqtt mosquitto_sub -h localhost -t 'hydro/node_hello' -v
 
-# Только config_report
-docker compose -f docker-compose.dev.yml exec mqtt mosquitto_sub -h localhost -t 'hydro/+/+/+/config_report' -v
+# Только config_response
+docker compose -f docker-compose.dev.yml exec mqtt mosquitto_sub -h localhost -t 'hydro/+/+/+/config_response' -v
 ```
 
 ### Проверка узлов в базе
@@ -366,7 +469,7 @@ ORDER BY n.id;
 2. Если нет логов node_hello - узел не отправляет сообщение при старте
 3. **Решение:** Перезагрузите ESP32, чтобы он отправил node_hello
 
-### Config_report получен, но привязка не завершена
+### Config_response получен, но привязка не завершена
 
 **Симптомы:** Узел в ASSIGNED_TO_ZONE, но zone_id = NULL
 
@@ -381,18 +484,6 @@ environment:
   - PY_INGEST_TOKEN=dev-token-12345
   - HISTORY_LOGGER_API_TOKEN=dev-token-12345
 ```
-
-### Config_report пришёл до регистрации
-
-**Симптомы:** В логах History Logger есть строка  
-`Node not found for hardware_id ... skipping config_report` перед успешным `node_hello`.
-
-**Что происходит:** History Logger буферизует `config_report` из temp‑топика до завершения регистрации.
-
-**Решение:**
-1. Дождитесь регистрации узла — буфер будет обработан автоматически.
-2. Если узел не привязался, перезагрузите ESP32 (чтобы повторно отправить config_report).
-3. При частых гонках увеличьте `CONFIG_REPORT_BUFFER_TTL_SEC`.
 
 ### Узел отправляет данные, но они не записываются
 
@@ -417,3 +508,4 @@ environment:
 - ESP32 ↔ MQTT ↔ History Logger ↔ Laravel
 - Никаких прямых подключений узлов к Laravel API
 - Централизованная обработка всех сообщений
+

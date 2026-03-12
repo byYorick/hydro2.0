@@ -2,10 +2,6 @@
 
 Этот раздел содержит документацию по аппаратной части и прошивкам узлов ESP32.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 📋 Документы раздела
@@ -25,7 +21,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Справочник каналов узлов**
 - Типы каналов (SENSOR, ACTUATOR, VIRTUAL)
 - Сенсорные каналы (pH, EC, температура, влажность)
-- Разделение domain-ключей и firmware channel id
 - Актуаторные каналы (насосы, клапаны, свет)
 - Форматы payload
 
@@ -65,24 +60,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 #### [DEVICE_NODE_PROTOCOL.md](DEVICE_NODE_PROTOCOL.md)
 Протокол взаимодействия с узлами
 
-#### [TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md](TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md)
-Спецификация `firmware/test_node` для HIL/E2E и доведения реальных нод до production-ready режима:
-- фактические каналы и топики;
-- режимы (`configured`/`preconfig`, sensor mode);
-- ограничения runtime и чек-лист для боевого rollout.
-
-#### [TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md](TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md)
-Матрица соответствия `test_node` и боевых прошивок:
-- сопоставление каналов `test -> real`;
-- сопоставление команд `test -> real`;
-- обязательные адаптеры/алиасы перед production rollout.
-
-#### [STORAGE_IRRIGATION_NODE_PROD_SPEC.md](STORAGE_IRRIGATION_NODE_PROD_SPEC.md)
-Production-спецификация `storage_irrigation_node`:
-- канонический контракт `type=irrig`;
-- GPIO-профиль (фиксированные и динамические пины);
-- режимы, ограничения и checklist для боевого запуска.
-
 ### Wi‑Fi и подключение
 
 #### [WIFI_CONNECTIVITY_ENGINE.md](WIFI_CONNECTIVITY_ENGINE.md)
@@ -106,6 +83,13 @@ Production-спецификация `storage_irrigation_node`:
 #### [ESP32_C_CODING_STANDARDS.md](ESP32_C_CODING_STANDARDS.md)
 Стандарты кодирования для ESP32
 
+### Задачи
+
+#### [TASK_INA209_PUMP_NODE.md](TASK_INA209_PUMP_NODE.md)
+Задача по реализации INA209 для pump_node
+
+---
+
 ## 🔗 Связанные разделы
 
 - **[01_SYSTEM](../01_SYSTEM/)** — системная архитектура
@@ -123,4 +107,12 @@ Production-спецификация `storage_irrigation_node`:
 
 ---
 
+## 📊 Статус документов
+
+- **SPEC_READY:** Все основные спецификации готовы
+- **IN_PROGRESS:** Реализация узлов в процессе (см. [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md))
+
+---
+
 **См. также:** [Главный индекс документации](../INDEX.md)
+

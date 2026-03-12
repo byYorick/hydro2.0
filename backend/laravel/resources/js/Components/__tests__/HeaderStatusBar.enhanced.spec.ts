@@ -119,9 +119,8 @@ describe('HeaderStatusBar Enhanced', () => {
       vm.metrics = { alertsCount: 5 }
       await nextTick()
 
-      const alertsElement = wrapper.find('[data-testid="alerts-metric"]')
-      expect(alertsElement).toBeDefined()
-      expect(alertsElement.classes()).toContain('bg-[color:var(--badge-danger-bg)]')
+      const alertsElement = wrapper.find('.bg-red-900\\/30')
+      expect(alertsElement.exists()).toBe(true)
     })
 
     it('применяет нейтральный цвет при отсутствии алертов', async () => {
@@ -129,9 +128,8 @@ describe('HeaderStatusBar Enhanced', () => {
       vm.metrics = { alertsCount: 0 }
       await nextTick()
 
-      const alertsElement = wrapper.find('[data-testid="alerts-metric"]')
-      expect(alertsElement).toBeDefined()
-      expect(alertsElement.classes()).toContain('bg-[color:var(--bg-elevated)]')
+      const alertsElement = wrapper.find('.bg-neutral-800\\/50')
+      expect(alertsElement.exists()).toBe(true)
     })
   })
 
@@ -177,3 +175,4 @@ describe('HeaderStatusBar Enhanced', () => {
     })
   })
 })
+

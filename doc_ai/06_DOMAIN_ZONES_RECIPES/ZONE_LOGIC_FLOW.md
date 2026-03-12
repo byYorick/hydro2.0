@@ -16,10 +16,6 @@
 - события,
 - алерты.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Главная концепция
@@ -69,7 +65,7 @@ Scheduler собирает состояние зоны:
 ```
 ph = telemetry_last["PH"]
 ec = telemetry_last["EC"]
-temp = telemetry_last["TEMPERATURE"]
+temp = telemetry_last["TEMP_AIR"]
 humidity = telemetry_last["HUMIDITY"]
 water_level = telemetry_last["WATER_LEVEL"]
 light = telemetry_last["LIGHT"]
@@ -114,13 +110,7 @@ else → OFF
 
 Команда:
 ```json
-{
-  "cmd_id": "cmd-light-001",
-  "cmd": "set_relay",
-  "params": { "state": true },
-  "ts": 1737355112,
-  "sig": "a1b2c3d4e5f6..."
-}
+{ "cmd": "on" }
 ```
 
 События:
@@ -151,8 +141,8 @@ if temp < target - hysteresis → включить нагрев
 - `CLIMATE_HEATING_ON`
 
 Алерты:
-- `TEMPERATURE_HIGH`
-- `TEMPERATURE_LOW`
+- `TEMP_HIGH`
+- `TEMP_LOW`
 
 ---
 
@@ -234,7 +224,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
  "cmd": "dose",
  "params": { "ml": 1.2 },
  "cmd_id": "cmd-abc123",
- "ts": 1737355112,
+ "ts": 1737355111111,
  "sig": "hmacsha256"
 }
 ```
@@ -299,12 +289,12 @@ last_update_time
 
 ## 12.1. Сценарий: высокая температура
 
-1. TEMPERATURE = 29°C (target 24°C)
+1. TEMP_AIR = 29°C (target 24°C)
 2. Climate Controller:
  - создаёт событие `CLIMATE_OVERHEAT`
  - включает вентилятор и охлаждение
  - создаёт команду включения реле
-3. Устанавливается алерт `TEMPERATURE_HIGH`
+3. Устанавливается алерт `TEMP_HIGH`
 4. Узел выполняет команду → отправляет командный ответ
 5. Vue показывает предупреждение + изменение статуса
 

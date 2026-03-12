@@ -8,6 +8,7 @@ describe('Badge', () => {
   })
   it('applies variant classes', () => {
     const w = mount(Badge, { props: { variant: 'success' }, slots: { default: 'OK' } })
-    expect(w.classes()).toContain('badge--success')
+    expect(w.classes().join(' ')).toContain('bg-emerald')
   })
 })
+

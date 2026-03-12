@@ -1,103 +1,23 @@
 <template>
   <AppLayout>
     <div class="flex flex-col gap-4">
-      <div
-        v-if="!canConfigureDevices"
-        class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-sm text-[color:var(--badge-warning-text)]"
-      >
-        Режим только для просмотра. Добавление и удаление устройств доступно только агроному.
+      <div class="flex items-center justify-between">
+        <h1 class="text-lg font-semibold">Добавление новой ноды</h1>
+        <Button size="sm" variant="secondary" @click="refreshNodes">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Обновить список
+        </Button>
       </div>
-      <section class="ui-hero p-5 space-y-4">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
-              onboarding устройств
-            </p>
-            <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
-              Добавление новой ноды
-            </h1>
-            <p class="text-sm text-[color:var(--text-muted)]">
-              Найдите ноду в discovery и привяжите ее к теплице и зоне.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="refreshNodes"
-          >
-            <svg
-              class="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            Обновить список
-          </Button>
-        </div>
-        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Новых нод
-            </div>
-            <div class="ui-kpi-value">
-              {{ discoveredNodesCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              Обнаружено через discovery
-            </div>
-          </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Онлайн
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
-              {{ onlineNodesCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              Готовы к настройке
-            </div>
-          </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              С lifecycle
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
-              {{ lifecycleNodesCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              Передают состояние узла
-            </div>
-          </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Готовы к привязке
-            </div>
-            <div class="ui-kpi-value">
-              {{ readyToAssignCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              Выбрана зона в форме
-            </div>
-          </div>
-        </div>
-      </section>
 
       <!-- Инструкция -->
       <Card>
-        <div class="text-sm font-semibold mb-2">
-          Инструкция по добавлению ноды
-        </div>
-        <ol class="text-xs text-[color:var(--text-muted)] space-y-1 list-decimal list-inside">
+        <div class="text-sm font-semibold mb-2">Инструкция по добавлению ноды</div>
+        <ol class="text-xs text-neutral-400 space-y-1 list-decimal list-inside">
           <li>Включите новую ноду. Она поднимет точку доступа Wi-Fi.</li>
           <li>Подключитесь с телефона к точке доступа ноды.</li>
-          <li>Откройте в браузере <code class="text-[color:var(--accent-cyan)]">192.168.4.1</code></li>
+          <li>Откройте в браузере <code class="text-sky-400">192.168.4.1</code></li>
           <li>Введите SSID и пароль вашей Wi-Fi сети.</li>
           <li>Нода перезагрузится и отправит discovery сообщение.</li>
           <li>Нажмите "Обновить список" или нода появится автоматически.</li>
@@ -107,56 +27,34 @@
 
       <!-- Список новых нод -->
       <Card>
-        <div class="text-sm font-semibold mb-3">
-          Новые ноды (без привязки к зоне)
-        </div>
-        <div
-          v-if="loading"
-          class="text-sm text-[color:var(--text-dim)] py-4 text-center"
-        >
+        <div class="text-sm font-semibold mb-3">Новые ноды (без привязки к зоне)</div>
+        <div v-if="loading" class="text-sm text-neutral-400 py-4 text-center">
           Загрузка...
         </div>
-        <div
-          v-else-if="newNodes.length === 0"
-          class="text-sm text-[color:var(--text-dim)] py-4 text-center"
-        >
+        <div v-else-if="newNodes.length === 0" class="text-sm text-neutral-400 py-4 text-center">
           Новых нод не найдено. Убедитесь, что нода подключена к Wi-Fi и отправила discovery сообщение.
         </div>
-        <div
-          v-else
-          class="space-y-3"
-        >
+        <div v-else class="space-y-3">
           <div
             v-for="node in newNodes"
             :key="node.id"
-            class="p-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+            class="p-3 rounded-lg border border-neutral-800 bg-neutral-900"
           >
-            <div class="flex items-start justify-between mb-2">
+              <div class="flex items-start justify-between mb-2">
               <div>
-                <div class="text-sm font-semibold">
-                  {{ node.name || node.uid || `Node #${node.id}` }}
-                </div>
-                <div class="text-xs text-[color:var(--text-muted)] mt-1">
+                <div class="text-sm font-semibold">{{ node.name || node.uid || `Node #${node.id}` }}</div>
+                <div class="text-xs text-neutral-400 mt-1">
                   <span v-if="node.uid">UID: {{ node.uid }}</span>
-                  <span
-                    v-if="node.type"
-                    class="ml-2"
-                  >Тип: {{ node.type }}</span>
-                  <span
-                    v-if="node.fw_version"
-                    class="ml-2"
-                  >FW: {{ node.fw_version }}</span>
+                  <span v-if="node.type" class="ml-2">Тип: {{ node.type }}</span>
+                  <span v-if="node.fw_version" class="ml-2">FW: {{ node.fw_version }}</span>
                 </div>
-                <div class="text-xs text-[color:var(--text-dim)] mt-1">
+                <div class="text-xs text-neutral-500 mt-1">
                   <span v-if="node.last_seen_at">
                     Последний раз видели: {{ formatDate(node.last_seen_at) }}
                   </span>
                   <span v-else>Никогда не видели</span>
-                  <span
-                    v-if="node.lifecycle_state"
-                    class="ml-2"
-                  >
-                    · Lifecycle: <span class="text-[color:var(--accent-cyan)]">{{ getStateLabel(node.lifecycle_state) }}</span>
+                  <span v-if="node.lifecycle_state" class="ml-2">
+                    · Lifecycle: <span class="text-sky-400">{{ getStateLabel(node.lifecycle_state) }}</span>
                   </span>
                 </div>
               </div>
@@ -170,89 +68,53 @@
                 >
                   {{ getStateLabel(node.lifecycle_state) }}
                 </Badge>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  :disabled="!canConfigureDevices || deleting[node.id] || assigning[node.id]"
-                  :data-test="`delete-node-${node.id}`"
-                  @click="deleteNode(node)"
-                >
-                  <span v-if="deleting[node.id]">Удаление...</span>
-                  <span v-else>Удалить</span>
-                </Button>
               </div>
             </div>
 
             <!-- Форма привязки к зоне -->
-            <div class="mt-3 pt-3 border-t border-[color:var(--border-muted)]">
-              <div class="text-xs font-semibold mb-2 text-[color:var(--text-muted)]">
-                Привязать к зоне:
-              </div>
-              <form
-                class="grid grid-cols-1 md:grid-cols-4 gap-2"
-                @submit.prevent="assignNode(node)"
-              >
-                <label
-                  :for="`node-${node.id}-greenhouse`"
-                  class="sr-only"
-                >Теплица</label>
+            <div class="mt-3 pt-3 border-t border-neutral-800">
+              <div class="text-xs font-semibold mb-2 text-neutral-300">Привязать к зоне:</div>
+              <form @submit.prevent="assignNode(node)" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <label :for="`node-${node.id}-greenhouse`" class="sr-only">Теплица</label>
                 <select
                   :id="`node-${node.id}-greenhouse`"
-                  v-model="assignmentForms[node.id].greenhouse_id"
                   :name="`node_${node.id}_greenhouse_id`"
-                  class="input-select"
-                  required
+                  v-model="assignmentForms[node.id].greenhouse_id"
                   @change="onGreenhouseChange(node.id)"
+                  class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                  required
                 >
-                  <option :value="null">
-                    Выберите теплицу
-                  </option>
-                  <option
-                    v-for="gh in greenhouses"
-                    :key="gh.id"
-                    :value="gh.id"
-                  >
+                  <option :value="null">Выберите теплицу</option>
+                  <option v-for="gh in greenhouses" :key="gh.id" :value="gh.id">
                     {{ gh.name }}
                   </option>
                 </select>
-                <label
-                  :for="`node-${node.id}-zone`"
-                  class="sr-only"
-                >Зона</label>
+                <label :for="`node-${node.id}-zone`" class="sr-only">Зона</label>
                 <select
                   :id="`node-${node.id}-zone`"
-                  v-model="assignmentForms[node.id].zone_id"
                   :name="`node_${node.id}_zone_id`"
-                  class="input-select"
+                  v-model="assignmentForms[node.id].zone_id"
+                  class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
                   :disabled="!assignmentForms[node.id].greenhouse_id"
                   required
                 >
-                  <option :value="null">
-                    Выберите зону
-                  </option>
-                  <option
-                    v-for="zone in getZonesForGreenhouse(assignmentForms[node.id].greenhouse_id)"
-                    :key="zone.id"
-                    :value="zone.id"
-                  >
+                  <option :value="null">Выберите зону</option>
+                  <option v-for="zone in getZonesForGreenhouse(assignmentForms[node.id].greenhouse_id)" :key="zone.id" :value="zone.id">
                     {{ zone.name }}
                   </option>
                 </select>
-                <label
-                  :for="`node-${node.id}-name`"
-                  class="sr-only"
-                >Имя ноды</label>
+                <label :for="`node-${node.id}-name`" class="sr-only">Имя ноды</label>
                 <input
                   :id="`node-${node.id}-name`"
-                  v-model="assignmentForms[node.id].name"
                   :name="`node_${node.id}_name`"
+                  v-model="assignmentForms[node.id].name"
                   placeholder="Имя ноды (опционально)"
-                  class="input-field"
+                  class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
                 />
                 <Button
                   type="submit"
                   size="sm"
-                  :disabled="!canConfigureDevices || assigning[node.id] || !assignmentForms[node.id].zone_id"
+                  :disabled="assigning[node.id] || !assignmentForms[node.id].zone_id"
                 >
                   <span v-if="assigning[node.id]">Привязка...</span>
                   <span v-else>Привязать</span>
@@ -268,7 +130,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
-import { usePage } from '@inertiajs/vue3'
+import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -286,11 +148,6 @@ import type { Device, Greenhouse, Zone } from '@/types'
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
-const page = usePage<{ auth?: { user?: { role?: string } } }>()
-const canConfigureDevices = computed(() => {
-  const role = page.props.auth?.user?.role ?? 'viewer'
-  return role === 'agronomist' || role === 'admin'
-})
 
 // Инициализация composables для lifecycle
 const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)
@@ -300,38 +157,15 @@ const newNodes = ref<Device[]>([])
 const greenhouses = ref<Greenhouse[]>([])
 const zones = ref<Zone[]>([])
 const assigning = reactive<Record<number, boolean>>({})
-const deleting = reactive<Record<number, boolean>>({})
 const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
-const pendingAssignments = reactive<Record<number, string>>({})
 let refreshInterval: ReturnType<typeof setInterval> | null = null
-const discoveredNodesCount = computed(() => newNodes.value.length)
-const onlineNodesCount = computed(() => newNodes.value.filter((node) => node.status === 'online').length)
-const lifecycleNodesCount = computed(() => newNodes.value.filter((node) => Boolean(node.lifecycle_state)).length)
-const readyToAssignCount = computed(() =>
-  newNodes.value.filter((node) => Boolean(assignmentForms[node.id]?.zone_id)).length
-)
 
-function unwrapListResponse<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) {
-    return payload as T[]
-  }
-
-  if (payload && typeof payload === 'object' && 'data' in payload) {
-    const inner = (payload as { data?: unknown }).data
-    if (Array.isArray(inner)) {
-      return inner as T[]
-    }
-  }
-
-  return []
-}
-
-function formatDate(dateString: string | null | undefined) {
+function formatDate(dateString) {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleString('ru-RU')
 }
 
-function getStatusVariant(status: string) {
+function getStatusVariant(status) {
   switch (status) {
     case 'online': return 'success'
     case 'offline': return 'neutral'
@@ -341,7 +175,7 @@ function getStatusVariant(status: string) {
   }
 }
 
-function getLifecycleVariant(lifecycleState: string) {
+function getLifecycleVariant(lifecycleState) {
   switch (lifecycleState) {
     case 'ACTIVE': return 'success'
     case 'REGISTERED_BACKEND': return 'info'
@@ -353,12 +187,12 @@ function getLifecycleVariant(lifecycleState: string) {
   }
 }
 
-function getZonesForGreenhouse(greenhouseId: number | null) {
+function getZonesForGreenhouse(greenhouseId) {
   if (!greenhouseId) return []
   return zones.value.filter(z => z.greenhouse_id === greenhouseId)
 }
 
-function onGreenhouseChange(nodeId: number) {
+function onGreenhouseChange(nodeId) {
   // Сбросить zone_id при смене теплицы
   if (assignmentForms[nodeId]) {
     assignmentForms[nodeId].zone_id = null
@@ -368,15 +202,18 @@ function onGreenhouseChange(nodeId: number) {
 async function loadNewNodes(): Promise<void> {
   startLoading()
   try {
-    const previousNodes = new Map(newNodes.value.map(node => [node.id, node]))
-
     const response = await api.get<{ data?: Device[] } | Device[]>(
       '/nodes',
       { params: { unassigned: true } }
     )
     
-    const data = extractData<unknown>(response.data)
-    newNodes.value = unwrapListResponse<Device>(data)
+    const data = extractData<Device[]>(response.data) || []
+    // Обработка пагинации или прямого массива
+    if (Array.isArray(data)) {
+      newNodes.value = data
+    } else {
+      newNodes.value = []
+    }
     
     // Инициализировать формы для каждой ноды
     newNodes.value.forEach(node => {
@@ -386,24 +223,6 @@ async function loadNewNodes(): Promise<void> {
           zone_id: null,
           name: node.name || '',
         }
-      }
-    })
-
-    // Показать успех привязки для нод, которые исчезли из списка (zone_id установлен)
-    const currentIds = new Set(newNodes.value.map(node => node.id))
-    Object.entries(pendingAssignments).forEach(([idStr, label]) => {
-      const id = Number(idStr)
-      if (Number.isFinite(id) && !currentIds.has(id)) {
-        showToast(`Нода "${label}" успешно привязана к зоне!`, 'success', TOAST_TIMEOUT.NORMAL)
-        delete pendingAssignments[id]
-        delete assignmentForms[id]
-      }
-    })
-
-    // Удаляем формы для нод, которые больше не в списке (на всякий случай)
-    previousNodes.forEach((_node, id) => {
-      if (!currentIds.has(id)) {
-        delete assignmentForms[id]
       }
     })
   } catch (err) {
@@ -418,8 +237,13 @@ async function loadGreenhouses(): Promise<void> {
   try {
     const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
     
-    const data = extractData<unknown>(response.data)
-    greenhouses.value = unwrapListResponse<Greenhouse>(data)
+    const data = extractData<Greenhouse[]>(response.data) || []
+    // Обработка пагинации или прямого массива
+    if (Array.isArray(data)) {
+      greenhouses.value = data
+    } else {
+      greenhouses.value = []
+    }
   } catch (err) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load greenhouses:', err)
@@ -430,20 +254,20 @@ async function loadZones(): Promise<void> {
   try {
     const response = await api.get<{ data?: Zone[] } | Zone[]>('/zones')
     
-    const data = extractData<unknown>(response.data)
-    zones.value = unwrapListResponse<Zone>(data)
+    const data = extractData<Zone[]>(response.data) || []
+    // Обработка пагинации или прямого массива
+    if (Array.isArray(data)) {
+      zones.value = data
+    } else {
+      zones.value = []
+    }
   } catch (err) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load zones:', err)
   }
 }
 
-async function assignNode(node: any) {
-  if (!canConfigureDevices.value) {
-    showToast('Привязка устройств доступна только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
+async function assignNode(node) {
   const form = assignmentForms[node.id]
   if (!form.zone_id) {
     showToast('Выберите зону для привязки', 'error', TOAST_TIMEOUT.NORMAL)
@@ -501,28 +325,25 @@ async function assignNode(node: any) {
       
       if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
         // Полностью завершено (редкий случай - обычно это происходит асинхронно)
-        showToast(`Нода "${node.uid}" успешно привязана к зоне и отправила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
+        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
         
         // Удалить ноду из списка новых (так как она теперь привязана)
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
-        delete pendingAssignments[node.id]
       } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
-        // Ожидаем config_report от ноды (через history-logger)
+        // Конфиг публикуется, ожидаем подтверждения от ноды (через history-logger)
         showToast(
-          `Нода "${node.uid}" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...`,
+          `Нода "${node.uid}" привязывается к зоне. Конфиг публикуется, ожидайте подтверждения (~2-5 сек)...`,
           'info',
           5000
         )
-
-        pendingAssignments[node.id] = node.uid || node.name || `Node #${node.id}`
-
+        
         // Обновляем данные ноды, но оставляем в списке
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
         if (nodeIndex >= 0) {
           newNodes.value[nodeIndex] = { ...newNodes.value[nodeIndex], ...updatedNode }
         }
-
+        
         // Автоматически обновим список через 3 секунды для проверки завершения
         setTimeout(() => {
           loadNewNodes()
@@ -531,11 +352,10 @@ async function assignNode(node: any) {
         // zone_id установлен, pending_zone_id сброшен → привязка успешно завершена
         // (lifecycle может еще быть REGISTERED_BACKEND, но это не важно - привязка завершена)
         showToast(`Нода "${node.uid}" успешно привязана к зоне!`, 'success', TOAST_TIMEOUT.NORMAL)
-
+        
         // Удалить ноду из списка новых
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
-        delete pendingAssignments[node.id]
       } else {
         // Неизвестное состояние
         logger.warn('[Devices/Add] Unexpected node state after assignment:', {
@@ -553,7 +373,7 @@ async function assignNode(node: any) {
     }
   } catch (err) {
     logger.error('[Devices/Add] Failed to assign node:', err)
-
+    
     // Используем централизованный обработчик ошибок
     handleError(err, {
       component: 'Devices/Add',
@@ -561,55 +381,18 @@ async function assignNode(node: any) {
       nodeId: node.id,
       zoneId: form.zone_id,
     })
-
+    
     // Дополнительная обработка lifecycle ошибок
-    const apiErr = err as { response?: { data?: { message?: string } } }
-    const errMsg = apiErr?.response?.data?.message
-    if (errMsg?.includes('lifecycle') || errMsg?.includes('state')) {
+    if (err?.response?.data?.message?.includes('lifecycle') || 
+        err?.response?.data?.message?.includes('state')) {
       showToast(
-        `Ошибка lifecycle: ${errMsg}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
+        `Ошибка lifecycle: ${err.response.data.message}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
         'error',
         7000
       )
     }
   } finally {
     assigning[node.id] = false
-  }
-}
-
-async function deleteNode(node: Device): Promise<void> {
-  if (!canConfigureDevices.value) {
-    showToast('Удаление устройств доступно только агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  if (!node?.id) return
-
-  const label = node.name || node.uid || `Node #${node.id}`
-  if (typeof window !== 'undefined') {
-    const ok = window.confirm(`Удалить ноду "${label}"? Это действие нельзя отменить.`)
-    if (!ok) {
-      return
-    }
-  }
-
-  deleting[node.id] = true
-  try {
-    await api.delete(`/nodes/${node.id}`)
-    showToast(`Нода "${label}" удалена.`, 'success', TOAST_TIMEOUT.NORMAL)
-
-    newNodes.value = newNodes.value.filter(n => n.id !== node.id)
-    delete assignmentForms[node.id]
-    delete pendingAssignments[node.id]
-  } catch (err) {
-    logger.error('[Devices/Add] Failed to delete node:', err)
-    handleError(err, {
-      component: 'Devices/Add',
-      action: 'deleteNode',
-      nodeId: node.id,
-    })
-  } finally {
-    deleting[node.id] = false
   }
 }
 
@@ -639,3 +422,4 @@ onUnmounted(() => {
   }
 })
 </script>
+

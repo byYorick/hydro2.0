@@ -244,9 +244,9 @@ describe('Devices/Show.vue', () => {
   it('отображает кнопку Restart', () => {
     const wrapper = mount(DevicesShow)
     
-    expect(wrapper.text()).toContain('Перезапустить')
+    expect(wrapper.text()).toContain('Restart')
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find((btn) => btn.text().includes('Перезапустить'))
+    const restartButton = buttons.find(btn => btn.text().includes('Restart'))
     expect(restartButton).toBeTruthy()
   })
 
@@ -257,7 +257,7 @@ describe('Devices/Show.vue', () => {
     await wrapper.vm.$nextTick()
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find((btn) => btn.text().includes('Перезапустить'))
+    const restartButton = buttons.find(btn => btn.text().includes('Restart'))
     
     if (restartButton) {
       await restartButton.trigger('click')
@@ -279,7 +279,7 @@ describe('Devices/Show.vue', () => {
     await wrapper.vm.$nextTick()
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find((btn) => btn.text().includes('Перезапустить') || btn.text().includes('Перезапуск'))
+    const restartButton = buttons.find(btn => btn.text().includes('Restart') || btn.text().includes('Перезапуск'))
     
     if (restartButton) {
       await restartButton.trigger('click')
@@ -363,7 +363,7 @@ describe('Devices/Show.vue', () => {
     await new Promise(resolve => setTimeout(resolve, 100))
     
     // Проверяем, что компонент MultiSeriesTelemetryChart отображается
-    wrapper.findAllComponents({ name: 'MultiSeriesTelemetryChart' })
+    const charts = wrapper.findAllComponents({ name: 'MultiSeriesTelemetryChart' })
     // Графики могут не отображаться сразу, если нет данных, но компонент должен быть доступен
     // Проверяем, что компонент существует в шаблоне
     expect(wrapper.html()).toBeTruthy()
@@ -409,3 +409,4 @@ describe('Devices/Show.vue', () => {
     expect(text).toBeTruthy()
   })
 })
+

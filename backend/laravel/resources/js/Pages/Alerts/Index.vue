@@ -1,487 +1,206 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
-      <PageHeader
-        title="Алерты"
-        subtitle="Операционные предупреждения и статус подтверждения."
-        eyebrow="мониторинг"
-      />
-
-      <FilterBar>
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-          <select
-            v-model="statusFilter"
-            data-testid="alerts-filter-active"
-            class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
-          >
-            <option value="active">
-              Только активные
-            </option>
-            <option value="resolved">
-              Только решённые
-            </option>
-            <option value="all">
-              Все
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-          <select
-            v-model="zoneIdFilter"
-            data-testid="alerts-filter-zone"
-            class="input-select flex-1 sm:w-auto sm:min-w-[180px]"
-          >
-            <option value="">
-              Все зоны
-            </option>
-            <option
-              v-for="zone in zoneOptions"
-              :key="zone.id"
-              :value="String(zone.id)"
-            >
-              {{ zone.name }}
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Source:</label>
-          <select
-            v-model="sourceFilter"
-            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
-          >
-            <option value="">
-              Все
-            </option>
-            <option value="biz">
-              biz
-            </option>
-            <option value="infra">
-              infra
-            </option>
-            <option value="node">
-              node
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Severity:</label>
-          <select
-            v-model="severityFilter"
-            class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
-          >
-            <option value="">
-              Все
-            </option>
-            <option value="critical">
-              critical
-            </option>
-            <option value="error">
-              error
-            </option>
-            <option value="warning">
-              warning
-            </option>
-            <option value="info">
-              info
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Category:</label>
-          <select
-            v-model="categoryFilter"
-            class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
-          >
-            <option value="">
-              Все
-            </option>
-            <option value="agronomy">
-              agronomy
-            </option>
-            <option value="operations">
-              operations
-            </option>
-            <option value="infrastructure">
-              infrastructure
-            </option>
-            <option value="node">
-              node
-            </option>
-            <option value="safety">
-              safety
-            </option>
-            <option value="config">
-              config
-            </option>
-            <option value="other">
-              other
-            </option>
-          </select>
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-          <input
-            v-model="searchQuery"
-            placeholder="type / code / message"
-            class="input-field flex-1 sm:w-60"
-          />
-        </div>
-
-        <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Подавление:</label>
-          <input
-            v-model.number="toastSuppressionSec"
-            type="number"
-            min="0"
-            max="600"
-            step="5"
-            class="input-field w-24"
-          />
-          <span class="text-xs text-[color:var(--text-dim)]">сек</span>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
-            :class="recentOnly
-              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)] bg-[color:var(--bg-elevated)]'
-              : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
-            @click="recentOnly = !recentOnly"
-          >
-            24ч
-          </button>
-          <button
-            type="button"
-            class="h-9 px-3 rounded-lg border text-xs font-semibold transition-colors"
-            :class="alarmsOnly
-              ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
-              : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
-            @click="alarmsOnly = !alarmsOnly"
-          >
-            Тревоги
-          </button>
-        </div>
-
-        <template #actions>
-          <div
-            v-if="selectedCount"
-            class="text-xs text-[color:var(--text-dim)]"
-          >
-            Выбрано: {{ selectedCount }}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            :disabled="isRefreshing"
-            @click="loadAlerts"
-          >
-            {{ isRefreshing ? 'Обновляем...' : 'Обновить' }}
-          </Button>
-          <Button
-            v-if="selectedCount"
-            size="sm"
-            variant="secondary"
-            @click="bulkConfirm.open = true"
-          >
-            Подтвердить выбранные
-          </Button>
-        </template>
-      </FilterBar>
-
-      <DataTableV2
-        :columns="columns"
-        :rows="filteredAlerts"
-        :loading="isInitialLoading"
-        table-test-id="alerts-table"
-        row-test-id-prefix="alert-row-"
-        container-class="h-[720px]"
-        :virtualize="true"
-        :virtualize-threshold="100"
-        :virtual-item-size="52"
-        row-clickable
-        @row-click="openDetails"
-      >
-        <template #header-select>
-          <input
-            type="checkbox"
-            class="h-4 w-4 accent-[color:var(--accent-cyan)]"
-            :checked="allVisibleSelected"
-            :disabled="selectableAlerts.length === 0"
-            @change="toggleSelectAll"
-            @click.stop
-          />
-        </template>
-
-        <template #cell-select="{ row }">
-          <input
-            type="checkbox"
-            class="h-4 w-4 accent-[color:var(--accent-cyan)]"
-            :checked="selectedIds.has(row.id)"
-            :disabled="isResolved(row)"
-            @change="toggleSelection(row)"
-            @click.stop
-          />
-        </template>
-
-        <template #cell-zone="{ row }">
-          <span class="truncate block max-w-[220px]">
-            {{ row.zone?.name || (row.zone_id ? `Zone #${row.zone_id}` : '-') }}
-          </span>
-        </template>
-
-        <template #cell-type="{ row }">
-          <span class="truncate block max-w-[320px]">
-            {{ getAlertMeta(row).title }}
-          </span>
-        </template>
-
-        <template #cell-created_at="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-
-        <template #cell-status="{ row }">
-          {{ translateStatus(row.status) }}
-        </template>
-
-        <template #row-actions="{ row }">
-          <Button
-            size="sm"
-            variant="secondary"
-            :data-testid="`alert-resolve-btn-${row.id}`"
-            :disabled="isResolved(row)"
-            @click.stop="openResolve(row)"
-          >
-            Подтвердить
-          </Button>
-        </template>
-      </DataTableV2>
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">Алерты</h1>
     </div>
-
-    <ConfirmModal
-      :open="confirm.open"
-      title="Подтвердить алерт"
-      message="Вы уверены, что алерт будет помечен как решённый?"
-      :loading="confirm.loading"
-      @close="closeConfirm"
-      @confirm="doResolve"
-    />
-
-    <ConfirmModal
-      :open="bulkConfirm.open"
-      title="Подтвердить выбранные"
-      message="Подтвердить выбранные алерты?"
-      :loading="bulkConfirm.loading"
-      @close="bulkConfirm.open = false"
-      @confirm="resolveSelected"
-    />
-
-    <div
-      v-if="selectedAlert"
-      class="fixed inset-0 z-50"
-    >
-      <div
-        class="absolute inset-0 bg-[color:var(--bg-main)] opacity-70"
-        @click="closeDetails"
-      ></div>
-      <div
-        class="absolute right-0 top-0 h-full w-full max-w-md bg-[color:var(--bg-surface-strong)] border-l border-[color:var(--border-muted)] p-5 overflow-y-auto"
-      >
-        <div class="flex items-center justify-between mb-4">
-          <div class="text-base font-semibold">
-            Детали алерта
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            @click="closeDetails"
-          >
-            Закрыть
-          </Button>
-        </div>
-        <div class="space-y-4 text-sm text-[color:var(--text-muted)]">
-          <div class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Тип
-            </div>
-            <div class="text-[color:var(--text-primary)] font-semibold">
-              {{ getAlertMeta(selectedAlert).title }}
-            </div>
-          </div>
-          <div
-            v-if="selectedAlert.code"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Code
-            </div>
-            <div class="text-[color:var(--text-primary)] font-semibold">
-              {{ selectedAlert.code }}
-            </div>
-          </div>
-          <div
-            v-if="selectedAlert.source"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Source
-            </div>
-            <div class="text-[color:var(--text-primary)] font-semibold">
-              {{ selectedAlert.source }}
-            </div>
-          </div>
-          <div
-            v-if="selectedAlertMessage"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Сообщение
-            </div>
-            <div class="text-[color:var(--text-primary)]">
-              {{ selectedAlertMessage }}
-            </div>
-          </div>
-          <div
-            v-if="getAlertMeta(selectedAlert).recommendation"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Рекомендация
-            </div>
-            <div class="text-[color:var(--text-primary)]">
-              {{ getAlertMeta(selectedAlert).recommendation }}
-            </div>
-          </div>
-          <div class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Статус
-            </div>
-            <div class="text-[color:var(--text-primary)]">
-              {{ translateStatus(selectedAlert.status) }}
-            </div>
-          </div>
-          <div class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Создан
-            </div>
-            <div class="text-[color:var(--text-primary)]">
-              {{ formatDate(selectedAlert.created_at) }}
-            </div>
-          </div>
-          <div
-            v-if="selectedAlert.resolved_at"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Подтвержден
-            </div>
-            <div class="text-[color:var(--text-primary)]">
-              {{ formatDate(selectedAlert.resolved_at) }}
-            </div>
-          </div>
-          <div
-            v-if="selectedAlert.zone_id"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Зона
-            </div>
-            <Link
-              class="text-[color:var(--accent-cyan)] font-semibold hover:underline"
-              :href="`/zones/${selectedAlert.zone_id}`"
-            >
-              {{ selectedAlert.zone?.name || `Zone #${selectedAlert.zone_id}` }}
-            </Link>
-          </div>
-          <div
-            v-if="detailsJson"
-            class="space-y-1"
-          >
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Details
-            </div>
-            <pre class="text-xs whitespace-pre-wrap rounded-lg border border-[color:var(--border-muted)] p-3 bg-[color:var(--bg-surface)]">
-{{ detailsJson }}
-            </pre>
-          </div>
-        </div>
+    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Фильтр:</label>
+        <select v-model="onlyActive" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+          <option :value="true">Только активные</option>
+          <option :value="false">Все</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Зона:</label>
+        <input v-model="zoneQuery" placeholder="Зона..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
       </div>
     </div>
+
+    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+      <div class="overflow-auto flex-1">
+        <table class="w-full border-collapse">
+          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Тип</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Зона</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Время</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Статус</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(a, index) in filtered"
+              :key="a.id"
+              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
+              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+            >
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ a.type }}</td>
+              <td class="px-3 py-2 text-xs text-neutral-400">
+                <span class="truncate block">{{ a.zone?.name || `Zone #${a.zone_id}` || '-' }}</span>
+              </td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ translateStatus(a.status) }}</td>
+              <td class="px-3 py-2">
+                <Button size="sm" variant="secondary" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
+              </td>
+            </tr>
+            <tr v-if="!filtered.length">
+              <td colspan="5" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет алертов по текущим фильтрам</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <Modal :open="confirm.open" title="Подтвердить алерт" @close="confirm.open=false">
+      <div class="text-sm">Вы уверены, что алерт будет помечен как решённый?</div>
+      <template #footer>
+        <Button size="sm" variant="secondary" @click="confirm.open=false">Отмена</Button>
+        <Button size="sm" @click="doResolve">Подтвердить</Button>
+      </template>
+    </Modal>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3'
+import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
-import ConfirmModal from '@/Components/ConfirmModal.vue'
-import DataTableV2 from '@/Components/DataTableV2.vue'
-import FilterBar from '@/Components/FilterBar.vue'
-import PageHeader from '@/Components/PageHeader.vue'
+import Modal from '@/Components/Modal.vue'
+import { usePage } from '@inertiajs/vue3'
+import { subscribeAlerts } from '@/bootstrap'
 import { translateStatus } from '@/utils/i18n'
-import { useAlertsPage, type AlertRecord } from '@/composables/useAlertsPage'
+import { logger } from '@/utils/logger'
+import { useApi } from '@/composables/useApi'
+import { useFilteredList } from '@/composables/useFilteredList'
+import type { Alert } from '@/types'
 
-const {
-  statusFilter,
-  zoneIdFilter,
-  sourceFilter,
-  severityFilter,
-  categoryFilter,
-  searchQuery,
-  recentOnly,
-  alarmsOnly,
-  filteredAlerts,
-  zoneOptions,
-  selectableAlerts,
-  isRefreshing,
-  isInitialLoading,
-  selectedIds,
-  selectedCount,
-  allVisibleSelected,
-  toggleSelection,
-  toggleSelectAll,
-  confirm,
-  bulkConfirm,
-  openResolve,
-  closeConfirm,
-  doResolve,
-  resolveSelected,
-  selectedAlert,
-  selectedAlertMessage,
-  detailsJson,
-  openDetails,
-  closeDetails,
-  toastSuppressionSec,
-  isSyncingSuppressionPreference,
-  isResolved,
-  isAlarm,
-  formatDate,
-  getAlertMeta,
-  loadAlerts,
-} = useAlertsPage()
+interface PageProps {
+  alerts?: Alert[]
+}
 
-const columns = [
-  { key: 'select', label: '', sortable: false, headerClass: 'w-10' },
-  { key: 'type', label: 'Тип', sortable: true },
-  {
-    key: 'zone',
-    label: 'Зона',
-    sortable: true,
-    sortAccessor: (alert: AlertRecord) => alert.zone?.name || `Zone #${alert.zone_id}`,
+const page = usePage<PageProps>()
+const alerts = ref<Alert[]>(Array.isArray(page.props.alerts) ? [...page.props.alerts] : [])
+
+// Синхронизируем локальный список с props без перезагрузок страницы
+watch(
+  () => page.props.alerts,
+  (newAlerts) => {
+    alerts.value = Array.isArray(newAlerts) ? [...newAlerts] : []
   },
-  {
-    key: 'created_at',
-    label: 'Время',
-    sortable: true,
-    sortAccessor: (alert: AlertRecord) => new Date(alert.created_at).getTime(),
-  },
-  { key: 'status', label: 'Статус', sortable: true },
-]
+  { deep: true }
+)
+
+const upsertAlert = (alert: Alert): void => {
+  if (!alert || !('id' in alert)) return
+  const idx = alerts.value.findIndex(a => a.id === alert.id)
+  if (idx >= 0) {
+    alerts.value[idx] = { ...alerts.value[idx], ...alert }
+  } else {
+    alerts.value.unshift(alert)
+  }
+}
+
+const markResolved = (id: number): void => {
+  const idx = alerts.value.findIndex(a => a.id === id)
+  if (idx >= 0) {
+    alerts.value[idx] = {
+      ...alerts.value[idx],
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+    }
+  }
+}
+
+// Инициализация API без Toast (используем стандартную обработку ошибок)
+const { api } = useApi()
+
+const headers = ['Тип', 'Зона', 'Время', 'Статус', 'Действия']
+const onlyActive = ref<boolean>(true)
+const zoneQuery = ref<string>('')
+
+const filtered = useFilteredList(alerts, (alert) => {
+  const activeOk = onlyActive.value ? alert.status !== 'resolved' && alert.status !== 'RESOLVED' : true
+  const zoneName = alert.zone?.name || `Zone #${alert.zone_id}` || ''
+  const zoneOk = zoneQuery.value ? zoneName.toLowerCase().includes(zoneQuery.value.toLowerCase()) : true
+  return activeOk && zoneOk
+})
+const confirm = reactive<{ open: boolean; alertId: number | null }>({ open: false, alertId: null })
+const onResolve = (a: Alert): void => {
+  confirm.open = true
+  confirm.alertId = a.id
+}
+const doResolve = (): void => {
+  const id = confirm.alertId
+  if (!id) return
+  api.patch(`/api/alerts/${id}/ack`, {}).then((res) => {
+    // Обновляем локальный список без перезагрузки страницы
+    const updated = (res?.data as { data?: Alert })?.data
+    if (updated) {
+      upsertAlert(updated)
+    } else {
+      markResolved(id)
+    }
+    confirm.open = false
+  }).catch((err) => {
+    logger.error('Failed to resolve alert:', err)
+    confirm.open = false
+  })
+}
+
+// subscribe realtime
+let unsubscribeAlerts: (() => void) | null = null
+
+onMounted(() => {
+  unsubscribeAlerts = subscribeAlerts((e) => {
+    if (e?.alert) {
+      upsertAlert(e.alert as Alert)
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubscribeAlerts?.()
+  unsubscribeAlerts = null
+})
+
 </script>
+
+<style scoped>
+table {
+  table-layout: auto;
+}
+
+th, td {
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  min-width: 120px;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  min-width: 150px;
+  max-width: 250px;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  min-width: 180px;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+  min-width: 100px;
+}
+
+th:last-child,
+td:last-child {
+  min-width: 140px;
+  text-align: center;
+}
+</style>

@@ -1,8 +1,7 @@
 """Tests for format synchronization between firmware and history-logger."""
 import pytest
 from datetime import datetime
-from models import TelemetryPayloadModel
-from utils import _extract_channel_from_topic, _extract_node_uid, _extract_zone_uid
+from main import TelemetryPayloadModel, _extract_channel_from_topic, _extract_node_uid, _extract_zone_uid
 
 
 class TestTelemetryPayloadFormat:
@@ -18,9 +17,7 @@ class TestTelemetryPayloadFormat:
             "node_id": "nd-ph-1",
             "raw": 1465,
             "stub": False,
-            "stable": True,
-            "flow_active": True,
-            "corrections_allowed": True,
+            "stable": True
         }
         
         model = TelemetryPayloadModel(**payload)
@@ -32,8 +29,6 @@ class TestTelemetryPayloadFormat:
         assert model.raw == 1465
         assert model.stub is False
         assert model.stable is True
-        assert model.flow_active is True
-        assert model.corrections_allowed is True
     
     def test_telemetry_payload_with_ts_only(self):
         """Тест payload только с полем ts (формат от прошивок)."""
@@ -99,22 +94,22 @@ class TestTelemetryTopicFormat:
         assert _extract_zone_uid(topic_with_3_parts) == "format"
 
 
-class TestConfigReportFormat:
-    """Тесты формата config_report."""
+class TestConfigResponseFormat:
+    """Тесты формата config_response."""
     
-    def test_config_report_minimal_format(self):
-        """Тест минимального payload config_report от прошивок."""
+    def test_config_response_ack_format(self):
+        """Тест обработки config_response со статусом ACK (от прошивок)."""
+        # Этот тест проверяет, что history-logger принимает только "ACK"
+        # Реальная проверка будет в интеграционных тестах
         data = {
-            "node_id": "nd-ph-1",
-            "version": 1,
-            "channels": [
-                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
-            ],
+            "status": "ACK",
+            "applied_at": 1737979.2,
+            "restarted": ["pump_driver"]
         }
         
-        assert data["node_id"] == "nd-ph-1"
-        assert data["version"] == 1
-        assert isinstance(data["channels"], list)
+        # Проверяем, что статус должен быть "ACK"
+        status = data.get("status", "").upper()
+        assert status == "ACK"
 
 
 class TestHeartbeatFormat:
@@ -162,3 +157,4 @@ class TestNodeHelloFormat:
         # Опциональные поля могут отсутствовать
         assert "hardware_revision" not in payload  # Опциональное
         assert "provisioning_meta" not in payload  # Опциональное
+

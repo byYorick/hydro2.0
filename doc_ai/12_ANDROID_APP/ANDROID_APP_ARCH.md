@@ -10,10 +10,6 @@
 - приёма алертов,
 - базового управления.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Технологический стек
@@ -128,4 +124,4 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. ИИ должен создавать новые экраны и ViewModel’ы в соответствии с этой архитектурой.
 2. Нельзя шить бизнес-логику напрямую в Compose-экраны — только через ViewModel.
 3. Любые изменения в API-интерфейсах должны быть согласованы с
- `../04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` и `ANDROID_APP_API_INTEGRATION.md`.
+ `API_SPEC_FRONTEND_BACKEND_FULL.md` и `ANDROID_APP_API_INTEGRATION.md`.

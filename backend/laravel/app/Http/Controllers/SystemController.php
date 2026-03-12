@@ -4,10 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
-use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class SystemController extends Controller
@@ -47,22 +45,18 @@ class SystemController extends Controller
         }
 
         // Для аутентифицированных пользователей возвращаем детальную информацию
-        // Быстрая проверка подключения к БД с таймаутом и измерением времени отклика
+        // Быстрая проверка подключения к БД с таймаутом
         $dbOk = false;
         $dbError = null;
-        $dbLatencyMs = null;
         try {
-            // Измеряем время отклика БД
-            $startTime = microtime(true);
             // Используем простой SELECT 1 вместо getPdo() для быстрой проверки
             DB::connection()->selectOne('SELECT 1 as test');
-            $dbLatencyMs = round((microtime(true) - $startTime) * 1000, 2);
             $dbOk = true;
         } catch (\Throwable $e) {
             $dbOk = false;
             $dbError = $e->getMessage();
             // Логируем ошибку БД для диагностики
-            Log::error('Database health check failed', [
+            \Log::error('Database health check failed', [
                 'message' => $e->getMessage(),
                 'code' => $e->getCode(),
                 'file' => $e->getFile(),
@@ -70,67 +64,55 @@ class SystemController extends Controller
             ]);
         }
 
-        // Проверка статуса MQTT через mqtt-bridge сервис с измерением времени отклика
+        // Проверка статуса MQTT через mqtt-bridge сервис
         $mqttOk = 'unknown';
-        $mqttLatencyMs = null;
         try {
             // Проверяем доступность mqtt-bridge сервиса через метрики
             // В dev окружении он доступен на mqtt-bridge:9000, в prod может быть другой адрес
             $mqttBridgeUrl = env('MQTT_BRIDGE_URL', 'http://mqtt-bridge:9000');
 
-            // Измеряем время отклика MQTT bridge
-            $startTime = microtime(true);
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(2)
                 ->get($mqttBridgeUrl.'/metrics');
-            $mqttLatencyMs = round((microtime(true) - $startTime) * 1000, 2);
 
             if ($response->successful() && $response->body()) {
                 $mqttOk = 'ok';
             } else {
                 $mqttOk = 'fail';
-                Log::warning('MQTT bridge health check failed', [
+                \Log::warning('MQTT bridge health check failed', [
                     'url' => $mqttBridgeUrl.'/metrics',
                     'status' => $response->status(),
                     'has_body' => ! empty($response->body()),
-                    'latency_ms' => $mqttLatencyMs,
                 ]);
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $mqttOk = 'fail';
-            Log::warning('MQTT bridge health check: connection failed', [
+            \Log::warning('MQTT bridge health check: connection failed', [
                 'url' => $mqttBridgeUrl ?? 'unknown',
                 'error' => $e->getMessage(),
-                'latency_ms' => $mqttLatencyMs,
             ]);
         } catch (\Illuminate\Http\Client\TimeoutException $e) {
             $mqttOk = 'fail';
-            Log::warning('MQTT bridge health check: timeout', [
+            \Log::warning('MQTT bridge health check: timeout', [
                 'url' => $mqttBridgeUrl ?? 'unknown',
-                'latency_ms' => $mqttLatencyMs,
             ]);
         } catch (\Throwable $e) {
             // Если не удалось проверить MQTT, считаем недоступным
             $mqttOk = 'fail';
-            Log::error('MQTT bridge health check: exception', [
+            \Log::error('MQTT bridge health check: exception', [
                 'url' => $mqttBridgeUrl ?? 'unknown',
                 'error' => $e->getMessage(),
-                'latency_ms' => $mqttLatencyMs,
             ]);
         }
 
-        // Проверка статуса history-logger сервиса с измерением времени отклика
+        // Проверка статуса history-logger сервиса
         $historyLoggerOk = 'unknown';
-        $historyLoggerLatencyMs = null;
         try {
             $historyLoggerUrl = env('HISTORY_LOGGER_URL', 'http://history-logger:9300');
 
-            // Измеряем время отклика history-logger
-            $startTime = microtime(true);
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(3)
                 ->get($historyLoggerUrl.'/health');
-            $historyLoggerLatencyMs = round((microtime(true) - $startTime) * 1000, 2);
 
             if ($response->successful()) {
                 $healthData = $response->json();
@@ -138,96 +120,78 @@ class SystemController extends Controller
                     $historyLoggerOk = 'ok';
                 } else {
                     // Логируем проблему для отладки
-                    Log::warning('History Logger health check failed', [
+                    \Log::warning('History Logger health check failed', [
                         'url' => $historyLoggerUrl.'/health',
                         'status' => $response->status(),
                         'response_status' => $healthData['status'] ?? 'unknown',
-                        'latency_ms' => $historyLoggerLatencyMs,
                     ]);
                     $historyLoggerOk = 'fail';
                 }
             } else {
                 // Логируем ошибку HTTP-кода
-                Log::warning('History Logger health check: non-successful response', [
+                \Log::warning('History Logger health check: non-successful response', [
                     'url' => $historyLoggerUrl.'/health',
                     'status' => $response->status(),
                     'body_preview' => substr($response->body(), 0, 200),
-                    'latency_ms' => $historyLoggerLatencyMs,
                 ]);
                 $historyLoggerOk = 'fail';
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $historyLoggerOk = 'fail';
-            Log::warning('History Logger health check: connection failed', [
+            \Log::warning('History Logger health check: connection failed', [
                 'url' => $historyLoggerUrl ?? 'unknown',
                 'error' => $e->getMessage(),
-                'latency_ms' => $historyLoggerLatencyMs,
             ]);
         } catch (\Illuminate\Http\Client\TimeoutException $e) {
             $historyLoggerOk = 'fail';
-            Log::warning('History Logger health check: timeout', [
+            \Log::warning('History Logger health check: timeout', [
                 'url' => $historyLoggerUrl ?? 'unknown',
-                'latency_ms' => $historyLoggerLatencyMs,
             ]);
         } catch (\Throwable $e) {
             // Логируем исключение
-            Log::error('History Logger health check: exception', [
+            \Log::error('History Logger health check: exception', [
                 'url' => $historyLoggerUrl ?? 'unknown',
                 'exception' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'latency_ms' => $historyLoggerLatencyMs,
             ]);
             $historyLoggerOk = 'fail';
         }
 
-        // Проверка статуса automation-engine сервиса через canonical AE3 runtime endpoint.
+        // Проверка статуса automation-engine сервиса (через Prometheus metrics)
         $automationEngineOk = 'unknown';
-        $automationEngineLatencyMs = null;
         try {
-            $runtimeConfig = app(AutomationRuntimeConfigService::class);
-            $automationEngineUrl = rtrim((string) (
-                env('AUTOMATION_ENGINE_URL')
-                ?: $runtimeConfig->automationEngineValue('api_url', 'http://automation-engine:9405')
-            ), '/');
+            $automationEngineUrl = env('AUTOMATION_ENGINE_URL', 'http://automation-engine:9401');
 
-            // Измеряем время отклика automation-engine
-            $startTime = microtime(true);
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(2)
-                ->get($automationEngineUrl.'/health/live');
-            $automationEngineLatencyMs = round((microtime(true) - $startTime) * 1000, 2);
+                ->get($automationEngineUrl.'/metrics');
 
-            if ($response->successful()) {
-                $healthData = $response->json();
-                $healthStatus = is_array($healthData) ? ($healthData['status'] ?? 'ok') : 'ok';
-                $automationEngineOk = $healthStatus === 'ok' ? 'ok' : 'fail';
+            if ($response->successful() && $response->body()) {
+                $automationEngineOk = 'ok';
             } else {
                 $automationEngineOk = 'fail';
-                Log::warning('Automation engine health check failed', [
-                    'url' => $automationEngineUrl.'/health/live',
+                \Log::warning('Automation engine health check failed', [
+                    'url' => $automationEngineUrl.'/metrics',
                     'status' => $response->status(),
-                    'latency_ms' => $automationEngineLatencyMs,
+                    'has_body' => ! empty($response->body()),
                 ]);
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $automationEngineOk = 'fail';
-            Log::warning('Automation engine health check: connection failed', [
+            \Log::warning('Automation engine health check: connection failed', [
                 'url' => $automationEngineUrl ?? 'unknown',
                 'error' => $e->getMessage(),
-                'latency_ms' => $automationEngineLatencyMs,
             ]);
         } catch (\Illuminate\Http\Client\TimeoutException $e) {
             $automationEngineOk = 'fail';
-            Log::warning('Automation engine health check: timeout', [
+            \Log::warning('Automation engine health check: timeout', [
                 'url' => $automationEngineUrl ?? 'unknown',
-                'latency_ms' => $automationEngineLatencyMs,
             ]);
         } catch (\Throwable $e) {
             $automationEngineOk = 'fail';
-            Log::error('Automation engine health check: exception', [
+            \Log::error('Automation engine health check: exception', [
                 'url' => $automationEngineUrl ?? 'unknown',
                 'error' => $e->getMessage(),
-                'latency_ms' => $automationEngineLatencyMs,
             ]);
         }
 
@@ -260,32 +224,13 @@ class SystemController extends Controller
                     'websocket' => 'unknown', // WebSocket проверяется на клиенте
                     'ui' => 'ok', // UI всегда доступен, если запрос получен
                 ],
-                // Метрики времени отклика для всех компонентов
-                'checks' => [
-                    'db' => [
-                        'status' => $dbOk ? 'ok' : 'fail',
-                        'latency_ms' => $dbLatencyMs,
-                    ],
-                    'mqtt' => [
-                        'status' => $mqttOk,
-                        'latency_ms' => $mqttLatencyMs,
-                    ],
-                    'history_logger' => [
-                        'status' => $historyLoggerOk,
-                        'latency_ms' => $historyLoggerLatencyMs,
-                    ],
-                    'automation_engine' => [
-                        'status' => $automationEngineOk,
-                        'latency_ms' => $automationEngineLatencyMs,
-                    ],
-                ],
             ],
             // Добавляем метаданные для диагностики (только для админов или в dev режиме)
             ...(($isAdmin || $isDev) ? [
                 'meta' => [
                     'timestamp' => now()->toIso8601String(),
                     'db_error' => $dbError,
-                    'timeouts' => [
+                    'checks' => [
                         'db_timeout' => '2s',
                         'mqtt_timeout' => '2s',
                         'history_logger_timeout' => '3s',
@@ -299,13 +244,14 @@ class SystemController extends Controller
     public function configFull()
     {
         try {
-            // Middleware verify.python.service уже проверил сервисный токен или Sanctum.
-            // В режиме сервисного токена (без user в БД) разрешаем доступ без привязки к пользователю.
-            $isServiceTokenRequest = (bool) request()->attributes->get('python_service_authenticated', false);
+            // Проверяем авторизацию через Sanctum или сессию
+            // Middleware verify.python.service уже проверил токен или Sanctum
+            // Здесь просто получаем пользователя, если он авторизован
             $user = Auth::guard('sanctum')->user() ?? Auth::user();
 
-            // Если нет пользователя и это не сервисный запрос, доступ запрещаем.
-            if (! $user && ! $isServiceTokenRequest) {
+            // Если пользователь не авторизован (ни через Sanctum, ни через сессию),
+            // значит middleware должен был отклонить запрос, но на всякий случай проверяем
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
                     'code' => 'UNAUTHENTICATED',
@@ -313,9 +259,8 @@ class SystemController extends Controller
                 ], 401);
             }
 
-            // Для сервисного запроса без user отдаем полную конфигурацию без user-based фильтра.
-            // Для пользовательских запросов сохраняем прежнюю user/role фильтрацию.
-            $accessibleZoneIds = $user ? ZoneAccessHelper::getAccessibleZoneIds($user) : null;
+            // Получаем доступные зоны для пользователя
+            $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
 
             // Строим список колонок зон с учетом наличия миграций (чтобы не падать на неподнятой схеме)
             $zoneColumns = [
@@ -343,11 +288,8 @@ class SystemController extends Controller
             // Загружаем теплицы с зонами, фильтруя по доступным зонам
             $greenhouses = Greenhouse::with([
                 'zones' => function ($query) use ($accessibleZoneIds, $zoneColumns) {
-                    if (is_array($accessibleZoneIds)) {
-                        $query->whereIn('id', $accessibleZoneIds);
-                    }
-
-                    $query->select($zoneColumns)
+                    $query->whereIn('id', $accessibleZoneIds)
+                        ->select($zoneColumns)
                         ->with(['nodes' => function ($nodeQuery) {
                             // Загружаем ноды без чувствительных данных конфига (Wi-Fi пароли, MQTT креды)
                             // Поле config исключаем для предотвращения утечки креденшалов
@@ -356,7 +298,7 @@ class SystemController extends Controller
                             // Загружаем каналы без чувствительных данных из config
                             $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
                             // Исключаем config из каналов для предотвращения утечки данных
-                        }, 'activeGrowCycle.recipeRevision.recipe']);
+                        }, 'recipeInstance.recipe']);
                 },
             ])->get();
 
@@ -377,7 +319,7 @@ class SystemController extends Controller
 
             // Фильтруем теплицы, оставляя только те, у которых есть доступные зоны
             // (или если пользователь админ - оставляем все)
-            if ($user !== null && ! $user->isAdmin()) {
+            if (! $user->isAdmin()) {
                 $greenhouses = $greenhouses->filter(function ($greenhouse) {
                     return $greenhouse->zones->isNotEmpty();
                 })->values();
@@ -396,7 +338,7 @@ class SystemController extends Controller
                              str_contains($errorMessage, "doesn't exist") ||
                              str_contains($errorMessage, 'relation does not exist');
 
-            Log::error('SystemController::configFull: Database error', [
+            \Log::error('SystemController::configFull: Database error', [
                 'error' => $errorMessage,
                 'is_missing_table' => $isMissingTable,
             ]);
@@ -421,7 +363,7 @@ class SystemController extends Controller
                 ],
             ], 503);
         } catch (\Exception $e) {
-            Log::error('SystemController::configFull: Error', [
+            \Log::error('SystemController::configFull: Error', [
                 'error' => $e->getMessage(),
             ]);
 

@@ -37,7 +37,7 @@ test.describe.skip('PID Configuration', () => {
 
     // Пытаемся ввести невалидное значение
     const targetInput = page.locator('input').first()
-    await targetInput.fill('20') // Невалидное для pH (должно быть 4-9)
+    await targetInput.fill('20') // Невалидное для pH (должно быть 0-14)
 
     // Пытаемся сохранить
     await page.click('text=Сохранить')
@@ -78,3 +78,4 @@ test.describe.skip('PID Configuration', () => {
     // (в реальном тесте нужно проверить содержимое таблицы)
   })
 })
+

@@ -27,8 +27,8 @@ class UpdateZonePidConfigRequest extends FormRequest
             'config.target' => [
                 'required',
                 'numeric',
-                $isPh ? 'min:4' : 'min:0',
-                $isPh ? 'max:9' : 'max:10',
+                $isPh ? 'min:0' : 'min:0',
+                $isPh ? 'max:14' : 'max:10',
             ],
             'config.dead_zone' => ['required', 'numeric', 'min:0', 'max:2'],
             'config.close_zone' => ['required', 'numeric', 'min:0', 'max:5'],
@@ -44,7 +44,8 @@ class UpdateZonePidConfigRequest extends FormRequest
             'config.zone_coeffs.far.kd' => ['required', 'numeric', 'min:0', 'max:100'],
             'config.max_output' => ['required', 'numeric', 'min:0', 'max:1000'],
             'config.min_interval_ms' => ['required', 'integer', 'min:1000', 'max:3600000'],
-            'config.max_integral' => ['required', 'numeric', 'min:1', 'max:500'],
+            'config.enable_autotune' => ['required', 'boolean'],
+            'config.adaptation_rate' => ['required', 'numeric', 'min:0', 'max:1'],
         ];
     }
 
@@ -84,7 +85,8 @@ class UpdateZonePidConfigRequest extends FormRequest
             'config.max_output.required' => 'Максимальный выход обязателен для заполнения.',
             'config.min_interval_ms.required' => 'Минимальный интервал обязателен для заполнения.',
             'config.min_interval_ms.min' => 'Минимальный интервал не может быть меньше 1000 мс.',
-            'config.max_integral.required' => 'Лимит интеграла обязателен для заполнения.',
+            'config.enable_autotune.required' => 'Параметр enable_autotune обязателен для заполнения.',
+            'config.adaptation_rate.required' => 'Параметр adaptation_rate обязателен для заполнения.',
         ];
     }
 }

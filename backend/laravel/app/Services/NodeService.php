@@ -6,15 +6,13 @@ use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
 use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
-use App\Helpers\TransactionHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class NodeService
 {
     public function __construct(
-        private NodeLifecycleService $lifecycleService,
-        private NodeRegistryService $registryService,
+        private NodeLifecycleService $lifecycleService
     ) {
     }
 
@@ -52,19 +50,7 @@ class NodeService
      */
     public function update(DeviceNode $node, array $data): DeviceNode
     {
-        // Используем SERIALIZABLE isolation level для критичной операции обновления узла
-        // с retry логикой на serialization failures
-        return TransactionHelper::withSerializableRetry(function () use ($node, $data) {
-            
-            // Блокируем строку для предотвращения lost updates
-            $node = DeviceNode::where('id', $node->id)
-                ->lockForUpdate()
-                ->first();
-            
-            if (!$node) {
-                throw new \RuntimeException('Node not found');
-            }
-            
+        return DB::transaction(function () use ($node, $data) {
             Log::info('NodeService::update START', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -81,10 +67,11 @@ class NodeService
              * Сценарий 1: Пользователь привязывает/перепривязывает узел к зоне (UI)
              *   - Приходит: {"zone_id": 6} (БЕЗ pending_zone_id в запросе)
              *   - Устанавливаем: pending_zone_id = 6, zone_id = null
-             *   - Узел публикует config_report после подключения/инициализации
+             *   - Публикуется конфиг
+             *   - Узел получает конфиг и отправляет config_response
              *   - History Logger делает финализацию
              * 
-             * Сценарий 2: History Logger завершает привязку после config_report
+             * Сценарий 2: History Logger завершает привязку после config_response
              *   - Приходит: {"zone_id": 6, "pending_zone_id": null} (С pending_zone_id в запросе)
              *   - Устанавливаем: zone_id = 6, pending_zone_id = null
              *   - Конфиг НЕ публикуется (узел уже имеет конфиг)
@@ -141,7 +128,7 @@ class NodeService
                 
                 /**
                  * КРИТИЧНО: ВСЕГДА сохраняем в pending_zone_id для получения подтверждения от ноды
-                 * zone_id будет обновлен только после config_report от ноды
+                 * zone_id будет обновлен только после config_response от ноды
                  */
                 $data['pending_zone_id'] = $newZoneId;
                 unset($data['zone_id']); // Удаляем zone_id из данных обновления!
@@ -150,7 +137,6 @@ class NodeService
                 if ($oldZoneId && $oldZoneId != $newZoneId) {
                     $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                     $node->zone_id = null; // Явно очищаем старый zone_id
-                    $this->clearNodeChannelBindings($node->id, 'reassign_to_another_zone');
                     Log::info('Node re-assignment: reset to REGISTERED_BACKEND, waiting for confirmation', [
                         'node_id' => $node->id,
                         'old_zone_id' => $oldZoneId,
@@ -171,13 +157,6 @@ class NodeService
             
             $node->update($data);
             
-            // БАГ #2 FIX: Убрана дублирующая публикация конфига
-            // Публикация происходит только через событие NodeConfigUpdated в DeviceNode::saved
-            // Это предотвращает двойную публикацию конфига
-            // if ($isAssignmentFromUI) {
-            //     \App\Jobs\PublishNodeConfigJob::dispatch($node->id);
-            // }
-            
             // Логируем завершение привязки от history-logger (когда zone_id устанавливается и pending_zone_id очищается)
             if ($isBindingCompletion && $node->zone_id && !$node->pending_zone_id) {
                 Log::info('NodeService: Binding completed by history-logger (zone_id set, pending_zone_id cleared)', [
@@ -189,21 +168,8 @@ class NodeService
                     'new_zone_id' => $node->zone_id,
                     'new_pending_zone_id' => $node->pending_zone_id,
                     'lifecycle_state' => $node->lifecycle_state?->value,
-                    'reason' => 'History-logger completed node binding after config_report',
+                    'reason' => 'History-logger completed node binding after config_response',
                 ]);
-
-                // Превращаем накопленные unassigned ошибки в alerts теперь, когда зона известна.
-                try {
-                    $this->registryService->attachUnassignedErrorsForNode($node);
-                } catch (\Throwable $e) {
-                    Log::error('NodeService: Failed to attach unassigned node errors on binding completion', [
-                        'node_id' => $node->id,
-                        'uid' => $node->uid,
-                        'hardware_id' => $node->hardware_id,
-                        'zone_id' => $node->zone_id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
             }
             
             /**
@@ -215,7 +181,6 @@ class NodeService
                 $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $node->pending_zone_id = null; // Очищаем pending_zone_id при отвязке
                 $node->save();
-                $this->clearNodeChannelBindings($node->id, 'zone_cleared_via_update');
                 
                 Log::info('Node detached from zone via update, reset to REGISTERED_BACKEND', [
                     'node_id' => $node->id,
@@ -246,7 +211,7 @@ class NodeService
             }
             
             return $node->fresh();
-        }, maxRetries: 6, baseDelayMs: 75, useSerializable: false);
+        });
     }
 
     /**
@@ -283,7 +248,6 @@ class NodeService
             $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
             
             $node->save();
-            $this->clearNodeChannelBindings($node->id, 'explicit_detach');
             
             Log::info('Node detached from zone', [
                 'node_id' => $node->id,
@@ -324,31 +288,6 @@ class NodeService
             Log::info('Node deleted', ['node_id' => $nodeId, 'uid' => $nodeUid]);
         });
     }
-
-    private function clearNodeChannelBindings(int $nodeId, string $reason): void
-    {
-        try {
-            $deleted = DB::table('channel_bindings')
-                ->whereIn('node_channel_id', function ($query) use ($nodeId) {
-                    $query->select('id')
-                        ->from('node_channels')
-                        ->where('node_id', $nodeId);
-                })
-                ->delete();
-
-            if ($deleted > 0) {
-                Log::info('NodeService: Cleared channel bindings for node', [
-                    'node_id' => $nodeId,
-                    'deleted_bindings' => $deleted,
-                    'reason' => $reason,
-                ]);
-            }
-        } catch (\Throwable $e) {
-            Log::error('NodeService: Failed to clear node channel bindings', [
-                'node_id' => $nodeId,
-                'reason' => $reason,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
 }
+
+

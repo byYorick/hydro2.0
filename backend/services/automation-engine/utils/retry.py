@@ -1,8 +1,6 @@
 """
 Retry механизм для критических операций.
 """
-# NOTE: This module is currently unused by the codebase.
-# If retry logic is needed, use tenacity or add explicit retry loops.
 import asyncio
 import logging
 from typing import Callable, Awaitable, TypeVar, Optional, List, Type

@@ -1,221 +1,139 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
-      <section class="ui-hero p-5">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
-              мониторинг зон
-            </p>
-            <h1 class="text-2xl font-semibold tracking-tight mt-1">
-              Зоны выращивания
-            </h1>
-            <p class="text-sm text-[color:var(--text-dim)] mt-1">
-              Статусы, быстрые действия и сравнение зон.
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2 justify-end">
-            <Button
-              size="sm"
-              variant="secondary"
-              :disabled="filteredZones.length < 2"
-              @click="showComparisonModal = true"
-            >
-              📊 Сравнить зоны
-            </Button>
-          </div>
-        </div>
-        <div class="ui-kpi-grid grid-cols-2 lg:grid-cols-5 mt-4">
-          <div class="ui-kpi-card border-[color:var(--badge-success-border)]">
-            <div class="ui-kpi-label">
-              Активные
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-green)]">
-              {{ runningCount }}
-            </div>
-          </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Пауза
-            </div>
-            <div class="ui-kpi-value">
-              {{ pausedCount }}
-            </div>
-          </div>
-          <div class="ui-kpi-card border-[color:var(--badge-warning-border)]">
-            <div class="ui-kpi-label">
-              Warning
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
-              {{ warningCount }}
-            </div>
-          </div>
-          <div class="ui-kpi-card border-[color:var(--badge-danger-border)]">
-            <div class="ui-kpi-label">
-              Alarm
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-red)]">
-              {{ alarmCount }}
-            </div>
-          </div>
-          <div class="ui-kpi-card border-[color:var(--badge-info-border)]">
-            <div class="ui-kpi-label">
-              Всего
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
-              {{ totalZones }}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[var(--shadow-card)]">
-        <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-            <select
-              v-model="status"
-              class="input-select h-10 flex-1 sm:w-auto sm:min-w-[160px]"
-              data-testid="zones-filter-status"
-            >
-              <option value="">
-                Все
-              </option>
-              <option value="RUNNING">
-                Запущено
-              </option>
-              <option value="PAUSED">
-                Приостановлено
-              </option>
-              <option value="WARNING">
-                Предупреждение
-              </option>
-              <option value="ALARM">
-                Тревога
-              </option>
-            </select>
-          </div>
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-            <input
-              v-model="query"
-              placeholder="Имя зоны..."
-              class="input-field h-10 flex-1 sm:w-64"
-              data-testid="zones-filter-query"
-            />
-          </div>
-          <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <button
-              class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-surface-strong)]"
-              :class="showOnlyFavorites
-                ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
-                : 'border-[color:var(--border-muted)] text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]'"
-              data-testid="zones-filter-favorites"
-              @click="showOnlyFavorites = !showOnlyFavorites"
-            >
-              <svg
-                class="w-4 h-4"
-                :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                />
-              </svg>
-              <span>Избранные</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl overflow-hidden shadow-[var(--shadow-card)] max-h-[720px] flex flex-col">
-        <DataTableV2
-          :columns="columns"
-          :rows="paginatedZones"
-          empty-title="Нет зон по текущим фильтрам"
-          empty-description="Попробуйте изменить фильтры или дождитесь новых зон."
-          container-class="max-h-[720px]"
-        >
-          <template #cell-name="{ row }">
-            <div class="flex items-center gap-2 min-w-0">
-              <button
-                class="p-1 rounded-md hover:bg-[color:var(--bg-elevated)] transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
-                :title="isZoneFavorite(row.id) ? 'Удалить из избранного' : 'Добавить в избранное'"
-                @click.stop="toggleZoneFavorite(row.id)"
-              >
-                <svg
-                  class="w-4 h-4 transition-colors"
-                  :class="isZoneFavorite(row.id) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                  />
-                </svg>
-              </button>
-              <Link
-                :href="`/zones/${row.id}`"
-                class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold"
-              >
-                {{ row.name || '-' }}
-              </Link>
-            </div>
-          </template>
-          <template #cell-status="{ row }">
-            <Badge
-              :variant="getStatusVariant(row.status)"
-              class="shrink-0"
-            >
-              {{ translateStatus(row.status) }}
-            </Badge>
-          </template>
-          <template #cell-greenhouse="{ row }">
-            <span class="truncate block">{{ row.greenhouse?.name || '-' }}</span>
-          </template>
-          <template #cell-ph="{ row }">
-            {{ formatNumber(row.telemetry?.ph, 2) }}
-          </template>
-          <template #cell-ec="{ row }">
-            {{ formatNumber(row.telemetry?.ec, 1) }}
-          </template>
-          <template #cell-temperature="{ row }">
-            {{ formatTemperature(row.telemetry?.temperature) }}
-          </template>
-          <template #cell-actions="{ row }">
-            <Link :href="`/zones/${row.id}`">
-              <Button
-                size="sm"
-                variant="secondary"
-              >
-                Подробнее
-              </Button>
-            </Link>
-          </template>
-        </DataTableV2>
-        <Pagination
-          v-model:current-page="currentPage"
-          v-model:per-page="perPage"
-          :total="filteredZones.length"
-        />
-      </div>
-
-      <!-- Модальное окно сравнения зон -->
-      <ZoneComparisonModal
-        :open="showComparisonModal"
-        :zones="filteredZones"
-        @close="showComparisonModal = false"
-      />
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">Зоны</h1>
+      <Button
+        size="sm"
+        variant="secondary"
+        @click="showComparisonModal = true"
+        :disabled="filteredZones.length < 2"
+      >
+        📊 Сравнить зоны
+      </Button>
     </div>
+
+    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Статус:</label>
+        <select v-model="status" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+          <option value="">Все</option>
+          <option value="RUNNING">Запущено</option>
+          <option value="PAUSED">Приостановлено</option>
+          <option value="WARNING">Предупреждение</option>
+          <option value="ALARM">Тревога</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Поиск:</label>
+        <input v-model="query" placeholder="Имя зоны..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+      </div>
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <button
+          @click="showOnlyFavorites = !showOnlyFavorites"
+          class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5"
+          :class="showOnlyFavorites
+            ? 'border-amber-500 bg-amber-950/30 text-amber-300'
+            : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600'"
+        >
+          <svg
+            class="w-4 h-4"
+            :class="showOnlyFavorites ? 'fill-amber-400' : ''"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+            />
+          </svg>
+          <span>Избранные</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+      <div class="overflow-auto flex-1">
+        <table class="w-full border-collapse">
+          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">
+                <div class="flex items-center gap-2">
+                  <div class="w-5"></div>
+                  <span>Название</span>
+                </div>
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Статус</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Теплица</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">pH</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">EC</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Температура</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(r, index) in rows"
+              :key="r[0]"
+              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
+              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+            >
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <button
+                    @click.stop="toggleZoneFavorite(getZoneIdFromRow(r))"
+                    class="p-0.5 rounded hover:bg-neutral-800 transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
+                    :title="isZoneFavorite(getZoneIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
+                  >
+                    <svg
+                      class="w-3.5 h-3.5 transition-colors"
+                      :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-amber-400 fill-amber-400' : 'text-neutral-600'"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                      />
+                    </svg>
+                  </button>
+                  <Link :href="`/zones/${r[0]}`" class="text-sky-400 hover:underline truncate min-w-0">{{ r[1] }}</Link>
+                </div>
+              </td>
+              <td class="px-3 py-2">
+                <Badge :variant="getStatusVariant(r[2])" class="shrink-0">{{ r[2] }}</Badge>
+              </td>
+              <td class="px-3 py-2 text-xs text-neutral-400">
+                <span class="truncate block">{{ r[3] || '-' }}</span>
+              </td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[4] || '-' }}</td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[5] || '-' }}</td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[6] || '-' }}</td>
+              <td class="px-3 py-2">
+                <Link :href="`/zones/${r[0]}`">
+                  <Button size="sm" variant="secondary">Подробнее</Button>
+                </Link>
+              </td>
+            </tr>
+            <tr v-if="!rows.length">
+              <td colspan="7" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет зон по текущим фильтрам</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Модальное окно сравнения зон -->
+    <ZoneComparisonModal
+      :open="showComparisonModal"
+      :zones="filteredZones"
+      @close="showComparisonModal = false"
+    />
   </AppLayout>
 </template>
 
@@ -225,17 +143,15 @@ import { router, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
-import Badge, { type BadgeVariant } from '@/Components/Badge.vue'
-import DataTableV2, { type DataTableColumn } from '@/Components/DataTableV2.vue'
-import Pagination from '@/Components/Pagination.vue'
+import Badge from '@/Components/Badge.vue'
 import { useZonesStore } from '@/stores/zones'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useBatchUpdates } from '@/composables/useOptimizedUpdates'
 import { useFavorites } from '@/composables/useFavorites'
-import { useUrlState } from '@/composables/useUrlState'
 import { translateStatus } from '@/utils/i18n'
 import type { Zone } from '@/types'
 
+const headers = ['Название', 'Статус', 'Теплица', 'pH', 'EC', 'Температура', 'Действия']
 const page = usePage<{ zones?: Zone[] }>()
 const zonesStore = useZonesStore()
 const { subscribeWithCleanup } = useStoreEvents()
@@ -245,12 +161,6 @@ zonesStore.initFromProps(page.props)
 
 // Используем getter allZones для получения всех зон
 const zones = computed(() => zonesStore.allZones)
-
-const totalZones = computed(() => zones.value.length || 0)
-const runningCount = computed(() => zones.value.filter((z) => z.status === 'RUNNING').length)
-const pausedCount = computed(() => zones.value.filter((z) => z.status === 'PAUSED').length)
-const warningCount = computed(() => zones.value.filter((z) => z.status === 'WARNING').length)
-const alarmCount = computed(() => zones.value.filter((z) => z.status === 'ALARM').length)
 
 // Оптимизированные batch updates для обновлений зон
 // Используем silent: true чтобы предотвратить рекурсию (события уже были эмитнуты извне)
@@ -302,7 +212,7 @@ onMounted(() => {
         }
     } catch (error) {
       // Fallback к частичному reload при ошибке
-      router.reload({ only: ['zones'], preserveUrl: true })
+      router.reload({ only: ['zones'], preserveScroll: true })
     }
   })
 })
@@ -318,43 +228,12 @@ watch(() => zonesStore.cacheVersion, () => {
   // Но лучше обновить через Inertia только если зоны действительно изменились
 })
 
-const status = useUrlState<string>({
-  key: 'status',
-  defaultValue: '',
-  parse: (value) => value ?? '',
-  serialize: (value) => value || null,
-})
-const query = useUrlState<string>({
-  key: 'query',
-  defaultValue: '',
-  parse: (value) => value ?? '',
-  serialize: (value) => value || null,
-})
+// Инициализация статуса из URL параметров
+const urlParams = new URLSearchParams(window.location.search)
+const status = ref<string>(urlParams.get('status') || '')
+const query = ref<string>('')
 const showComparisonModal = ref<boolean>(false)
-const showOnlyFavorites = useUrlState<boolean>({
-  key: 'favorites',
-  defaultValue: false,
-  parse: (value) => value === '1',
-  serialize: (value) => (value ? '1' : null),
-})
-const currentPage = useUrlState<number>({
-  key: 'page',
-  defaultValue: 1,
-  parse: (value) => {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-  },
-  serialize: (value) => (value > 1 ? String(value) : null),
-})
-const perPage = useUrlState<number>({
-  key: 'perPage',
-  defaultValue: 25,
-  parse: (value) => {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 25
-  },
-  serialize: (value) => (value !== 25 ? String(value) : null),
-})
+const showOnlyFavorites = ref<boolean>(false)
 
 const { isZoneFavorite, toggleZoneFavorite } = useFavorites()
 
@@ -376,94 +255,53 @@ const filteredZones = computed(() => {
   })
 })
 
-const clampCurrentPage = (total: number): number => {
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  if (validPage !== currentPage.value) {
-    currentPage.value = validPage
-  }
-  return validPage
+// Преобразуем зоны в строки таблицы
+const rows = computed(() => {
+  return filteredZones.value.map(z => {
+    // Безопасное форматирование чисел
+    const formatNumber = (value: unknown, decimals: number): string => {
+      if (value === null || value === undefined) return '-'
+      const num = typeof value === 'number' ? value : Number(value)
+      return !isNaN(num) && isFinite(num) ? num.toFixed(decimals) : '-'
+    }
+    
+    return [
+      z.id,
+      z.name || '-',
+      translateStatus(z.status),
+      z.greenhouse?.name || '-',
+      formatNumber(z.telemetry?.ph, 2),
+      formatNumber(z.telemetry?.ec, 1),
+      z.telemetry?.temperature !== null && z.telemetry?.temperature !== undefined 
+        ? (() => {
+            const temp = typeof z.telemetry.temperature === 'number' 
+              ? z.telemetry.temperature 
+              : Number(z.telemetry.temperature)
+            return !isNaN(temp) && isFinite(temp) ? `${temp.toFixed(1)}°C` : '-'
+          })()
+        : '-',
+      z.id // Добавляем ID в конец для удобства доступа
+    ]
+  })
+})
+
+// Функция для получения ID зоны из строки таблицы
+function getZoneIdFromRow(row: (string | number)[]): number {
+  // Последний элемент строки - это ID
+  const id = row[row.length - 1]
+  return typeof id === 'number' ? id : 0
 }
-
-watch([filteredZones, perPage], () => {
-  if (filteredZones.value.length > 0) {
-    clampCurrentPage(filteredZones.value.length)
-  } else {
-    currentPage.value = 1
-  }
-})
-
-// Пагинированные зоны
-const paginatedZones = computed(() => {
-  const total = filteredZones.value.length
-  if (total === 0) return []
-  
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  const start = (validPage - 1) * perPage.value
-  const end = start + perPage.value
-  return filteredZones.value.slice(start, end)
-})
-
-const columns: DataTableColumn<Zone>[] = [
-  {
-    key: 'name',
-    label: 'Название',
-    headerClass: 'min-w-[200px] max-w-[300px]',
-    class: 'min-w-[200px] max-w-[300px]',
-  },
-  { key: 'status', label: 'Статус', headerClass: 'min-w-[120px]', class: 'min-w-[120px]' },
-  {
-    key: 'greenhouse',
-    label: 'Теплица',
-    headerClass: 'min-w-[120px] max-w-[200px]',
-    class: 'min-w-[120px] max-w-[200px]',
-  },
-  { key: 'ph', label: 'pH', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
-  { key: 'ec', label: 'EC', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
-  {
-    key: 'temperature',
-    label: 'Температура',
-    headerClass: 'min-w-[100px]',
-    class: 'min-w-[100px]',
-    align: 'center',
-  },
-  {
-    key: 'actions',
-    label: 'Действия',
-    headerClass: 'min-w-[120px]',
-    class: 'min-w-[120px]',
-    align: 'center',
-  },
-]
-
-// Сбрасываем на первую страницу при изменении фильтров
-watch([status, query, showOnlyFavorites], () => {
-  currentPage.value = 1
-})
 
 // Функция для получения варианта Badge по статусу
-const formatNumber = (value: unknown, decimals: number): string => {
-  if (value === null || value === undefined) return '-'
-  const num = typeof value === 'number' ? value : Number(value)
-  return !isNaN(num) && isFinite(num) ? num.toFixed(decimals) : '-'
-}
-
-const formatTemperature = (value: unknown): string => {
-  if (value === null || value === undefined) return '-'
-  const num = typeof value === 'number' ? value : Number(value)
-  return !isNaN(num) && isFinite(num) ? `${num.toFixed(1)}°C` : '-'
-}
-
-function getStatusVariant(status: string): BadgeVariant {
+function getStatusVariant(status: string): string {
   switch (status) {
-    case 'RUNNING':
+    case 'Запущено':
       return 'success'
-    case 'PAUSED':
-      return 'warning' // Changed from neutral to warning for better UX
-    case 'WARNING':
+    case 'Приостановлено':
+      return 'neutral'
+    case 'Предупреждение':
       return 'warning'
-    case 'ALARM':
+    case 'Тревога':
       return 'danger'
     default:
       return 'neutral'
@@ -471,3 +309,46 @@ function getStatusVariant(status: string): BadgeVariant {
 }
 
 </script>
+
+<style scoped>
+table {
+  table-layout: auto;
+}
+
+th, td {
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  white-space: normal;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  min-width: 120px;
+  max-width: 200px;
+}
+
+th:nth-child(4),
+td:nth-child(4),
+th:nth-child(5),
+td:nth-child(5) {
+  min-width: 60px;
+  text-align: center;
+}
+
+th:nth-child(6),
+td:nth-child(6) {
+  min-width: 100px;
+}
+
+th:last-child,
+td:last-child {
+  min-width: 120px;
+  text-align: center;
+}
+</style>
+

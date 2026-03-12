@@ -34,9 +34,8 @@ class SyncNodeChannels extends Command
         $all = $this->option('all');
         $dryRun = $this->option('dry-run');
 
-        if (! $nodeUid && ! $all) {
+        if (!$nodeUid && !$all) {
             $this->error('Please specify either --node-uid=<uid> or --all');
-
             return Command::FAILURE;
         }
 
@@ -50,7 +49,6 @@ class SyncNodeChannels extends Command
 
         if ($nodes->isEmpty()) {
             $this->warn('No nodes found');
-
             return Command::SUCCESS;
         }
 
@@ -75,15 +73,14 @@ class SyncNodeChannels extends Command
 
         if (empty($capabilities)) {
             $this->warn("  No default capabilities for type '{$node->type}', skipping");
-
             return;
         }
 
-        $this->line('  Capabilities: '.implode(', ', $capabilities));
+        $this->line("  Capabilities: " . implode(', ', $capabilities));
 
         // Маппинг capability -> channel configuration
         $capabilityConfig = [
-            'temperature' => ['type' => 'sensor', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+            'temperature' => ['type' => 'sensor', 'metric' => 'TEMP_AIR', 'unit' => '°C'],
             'humidity' => ['type' => 'sensor', 'metric' => 'HUMIDITY', 'unit' => '%'],
             'co2' => ['type' => 'sensor', 'metric' => 'CO2', 'unit' => 'ppm'],
             'lighting' => ['type' => 'actuator', 'metric' => 'LIGHT', 'unit' => ''],
@@ -114,7 +111,6 @@ class SyncNodeChannels extends Command
             if ($existing) {
                 $this->line("    ✓ Channel '{$capability}' already exists");
                 $skipped++;
-
                 continue;
             }
 
@@ -144,8 +140,9 @@ class SyncNodeChannels extends Command
             'climate' => ['temperature', 'humidity', 'co2', 'lighting', 'ventilation'],
             'ph' => ['ph_sensor'],
             'ec' => ['ec_sensor'],
-            'irrig' => ['pump_A', 'pump_B', 'pump_C', 'pump_D'],
+            'pump', 'irrig' => ['pump_A', 'pump_B', 'pump_C', 'pump_D'],
             default => [],
         };
     }
 }
+

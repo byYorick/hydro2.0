@@ -1,15 +1,11 @@
 <template>
-  <div
-    ref="el"
-    :class="containerClass"
-    :style="containerStyle"
-  ></div>
+  <div ref="el" :class="containerClass" :style="containerStyle"></div>
 </template>
 
 <script setup lang="ts">
 import * as echarts from 'echarts'
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
-import type { ECharts, EChartsOption } from 'echarts'
+import type { EChartsOption } from 'echarts'
 
 interface Props {
   option: EChartsOption
@@ -41,23 +37,16 @@ const containerStyle = computed(() => {
 })
 
 const el = ref()
-let chart: ECharts | undefined
-let resizeObserver: ResizeObserver | undefined
-
-const onResize = () => {
-  if (chart && el.value) {
-    chart.resize()
-  }
-}
+let chart
 
 onMounted(() => {
   if (!el.value) return
-
+  
   chart = echarts.init(el.value, props.dark ? 'dark' : undefined, {
     renderer: 'canvas',
     useDirtyRect: false, // Отключаем для стабильности
   })
-
+  
   // Настраиваем глобальные стили для tooltip (только один раз)
   if (!window.__echartsTooltipStyleAdded) {
     const tooltipStyle = document.createElement('style')
@@ -75,29 +64,42 @@ onMounted(() => {
     document.head.appendChild(tooltipStyle)
     window.__echartsTooltipStyleAdded = true
   }
-
+  
   // Улучшаем опции для предотвращения выхода за границы
-  const gridOption = Array.isArray(props.option.grid) ? props.option.grid[0] : props.option.grid
   const safeOption = {
     ...props.option,
     grid: {
-      left: gridOption?.left ?? 40,
-      right: gridOption?.right ?? 16,
-      top: gridOption?.top ?? 16,
-      bottom: gridOption?.bottom ?? 32,
-      containLabel: gridOption?.containLabel ?? false,
-      ...(gridOption || {}), // Сохраняем все настройки grid из опций
+      left: props.option.grid?.left ?? 40,
+      right: props.option.grid?.right ?? 16,
+      top: props.option.grid?.top ?? 16,
+      bottom: props.option.grid?.bottom ?? 32,
+      containLabel: props.option.grid?.containLabel ?? false,
+      ...(props.option.grid || {}), // Сохраняем все настройки grid из опций
     },
   }
-
+  
   chart.setOption(safeOption)
-
+  
+  const onResize = () => {
+    if (chart && el.value) {
+      chart.resize()
+    }
+  }
+  
   window.addEventListener('resize', onResize)
-
+  
   // Используем ResizeObserver для более точного отслеживания изменений размера
   if (window.ResizeObserver && el.value) {
-    resizeObserver = new ResizeObserver(onResize)
+    const resizeObserver = new ResizeObserver(() => {
+      onResize()
+    })
     resizeObserver.observe(el.value)
+    onBeforeUnmount(() => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', onResize)
+    })
+  } else {
+    onBeforeUnmount(() => window.removeEventListener('resize', onResize))
   }
 })
 
@@ -106,16 +108,15 @@ watch(
   (opt) => {
     if (chart) {
       // Улучшаем опции для предотвращения выхода за границы
-      const gridOption = Array.isArray(opt.grid) ? opt.grid[0] : opt.grid
       const safeOption = {
         ...opt,
         grid: {
-          left: gridOption?.left ?? 40,
-          right: gridOption?.right ?? 16,
-          top: gridOption?.top ?? 16,
-          bottom: gridOption?.bottom ?? 32,
-          containLabel: gridOption?.containLabel ?? false,
-          ...(gridOption || {}), // Сохраняем все настройки grid из опций
+          left: opt.grid?.left ?? 40,
+          right: opt.grid?.right ?? 16,
+          top: opt.grid?.top ?? 16,
+          bottom: opt.grid?.bottom ?? 32,
+          containLabel: opt.grid?.containLabel ?? false,
+          ...(opt.grid || {}), // Сохраняем все настройки grid из опций
         },
       }
       // Используем notMerge: false для инкрементальных обновлений (добавляем только новые данные)
@@ -127,14 +128,9 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', onResize)
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-    resizeObserver = undefined
-  }
   if (chart) {
     chart.dispose()
-    chart = undefined
+    chart = null
   }
 })
 </script>

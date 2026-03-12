@@ -2,7 +2,6 @@ idf_component_register(
     SRCS 
         "node_framework.c"
         "node_config_handler.c"
-        "node_config_utils.c"
         "node_command_handler.c"
         "node_telemetry_engine.c"
         "node_state_manager.c"
@@ -21,5 +20,4 @@ idf_component_register(
         memory_pool
         i2c_cache
         diagnostics
-        mbedtls
 )

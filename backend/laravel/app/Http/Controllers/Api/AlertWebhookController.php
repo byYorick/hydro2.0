@@ -80,12 +80,7 @@ class AlertWebhookController extends Controller
                 ->first();
 
             if ($alert) {
-                $this->alertService->acknowledge($alert, [
-                    'resolved_by' => 'alertmanager_webhook',
-                    'resolved_via' => 'auto',
-                    'resolved_source' => 'alertmanager',
-                    'resolved_alertname' => $alertName,
-                ]);
+                $this->alertService->acknowledge($alert);
             }
             return;
         }

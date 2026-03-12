@@ -19,17 +19,9 @@ class ZoneFactory extends Factory
             'uid' => 'zn-'.str()->slug($this->faker->words(2, true)).'-'.str()->random(6),
             'name' => $this->faker->word(),
             'description' => $this->faker->sentence(),
-            'status' => $this->faker->randomElement(['online', 'offline', 'warning', 'critical']),
+            'status' => $this->faker->randomElement(['RUNNING', 'PAUSED', 'WARNING', 'ALARM']),
             'greenhouse_id' => Greenhouse::factory(),
-            'capabilities' => [
-                'ph_control' => false,
-                'ec_control' => false,
-                'climate_control' => false,
-                'light_control' => false,
-                'irrigation_control' => false,
-                'recirculation' => false,
-                'flow_sensor' => false,
-            ],
         ];
     }
 }
+

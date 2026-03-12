@@ -1,7 +1,7 @@
 /**
  * Composable для унификации работы с Inertia page props
  */
-import { computed, type ComputedRef } from 'vue'
+import { computed } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 
 /**
@@ -9,29 +9,21 @@ import { usePage } from '@inertiajs/vue3'
  * @param propKeys - Массив ключей props для извлечения
  * @returns Объект с computed свойствами для каждого prop
  */
-type PagePropRefs<T extends Record<string, unknown>> = Partial<{
-  [K in keyof T]: ComputedRef<T[K]>
-}>
-
-export function usePageProps<T extends Record<string, unknown>>(
-  propKeys: (keyof T)[]
-): PagePropRefs<T>
-export function usePageProps<T extends Record<string, unknown>>(): ComputedRef<T>
-export function usePageProps<T extends Record<string, unknown>>(
+export function usePageProps<T extends Record<string, any>>(
   propKeys?: (keyof T)[]
-): PagePropRefs<T> | ComputedRef<T> {
+): Partial<Record<keyof T, ReturnType<typeof computed>>> {
   const page = usePage<T>()
   
   if (!propKeys || propKeys.length === 0) {
     // Если ключи не указаны, возвращаем все props
-    return computed(() => page.props) as ComputedRef<T>
+    return computed(() => page.props) as any
   }
   
   // Создаем объект с computed свойствами для каждого ключа
-  const result: PagePropRefs<T> = {}
+  const result: Partial<Record<keyof T, ReturnType<typeof computed>>> = {}
   
   propKeys.forEach(key => {
-    result[key] = computed(() => page.props[key as string]) as ComputedRef<T[typeof key]>
+    result[key] = computed(() => page.props[key as string])
   })
   
   return result
@@ -42,9 +34,10 @@ export function usePageProps<T extends Record<string, unknown>>(
  * @param key - Ключ prop
  * @returns Computed свойство для prop
  */
-export function usePageProp<K extends string, T = unknown>(
+export function usePageProp<K extends string, T = any>(
   key: K
-): ComputedRef<T> {
+): ReturnType<typeof computed<T>> {
   const page = usePage()
   return computed(() => page.props[key] as T)
 }
+

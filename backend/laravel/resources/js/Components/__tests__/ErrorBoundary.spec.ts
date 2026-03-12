@@ -19,7 +19,7 @@ describe('ErrorBoundary (P1-3)', () => {
     })
 
     expect(wrapper.text()).toContain('Test Content')
-    expect(wrapper.find('h2').exists()).toBe(false)
+    expect(wrapper.find('.text-red-400').exists()).toBe(false)
   })
 
   it('catches and displays error when child component throws', async () => {
@@ -40,9 +40,7 @@ describe('ErrorBoundary (P1-3)', () => {
 
     // ErrorBoundary должен отобразить fallback UI
     expect(wrapper.text()).toContain('Произошла ошибка')
-    const heading = wrapper.find('h2')
-    expect(heading.exists()).toBe(true)
-    expect(heading.classes()).toContain('text-[color:var(--accent-red)]')
+    expect(wrapper.find('.text-red-400').exists()).toBe(true)
   })
 
   it('displays error message in fallback UI', async () => {
@@ -127,7 +125,6 @@ describe('ErrorBoundary (P1-3)', () => {
     // Проверяем, что ошибка очищена (error должен быть null)
     // В компоненте error может быть недоступен напрямую через wrapper.vm
     // Проверяем через отображение компонента - если ошибка очищена, должен отображаться слот
-    // @ts-ignore - errorContainer не используется в этом тесте
     const errorContainer = wrapper.find('.error-container')
     // Если ошибка очищена, error-container не должен отображаться
     // Но в тестах это может работать по-другому, поэтому просто проверяем, что компонент обработал клик
@@ -186,3 +183,4 @@ describe('ErrorBoundary (P1-3)', () => {
     expect(throwCount).toBeGreaterThan(1)
   })
 })
+

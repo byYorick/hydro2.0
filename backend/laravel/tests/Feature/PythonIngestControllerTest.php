@@ -5,11 +5,9 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\DeviceNode;
-use App\Models\Command;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
-use App\Models\Alert;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
@@ -30,7 +28,7 @@ class PythonIngestControllerTest extends TestCase
     {
         $this->postJson('/api/python/ingest/telemetry', [
             'zone_id' => 1,
-            'metric_type' => 'PH',
+            'metric_type' => 'ph',
             'value' => 6.5,
         ])->assertStatus(401);
     }
@@ -56,7 +54,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
                 'channel' => 'ph_sensor',
             ]);
@@ -72,7 +70,7 @@ class PythonIngestControllerTest extends TestCase
                 && count($request->data()['samples']) === 1
                 && $request->data()['samples'][0]['node_uid'] === $node->uid
                 && $request->data()['samples'][0]['zone_id'] === $zone->id
-                && $request->data()['samples'][0]['metric_type'] === 'PH'
+                && $request->data()['samples'][0]['metric_type'] === 'ph'
                 && $request->data()['samples'][0]['value'] === 6.5;
         });
     }
@@ -99,7 +97,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
 
@@ -127,7 +125,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
 
@@ -143,7 +141,7 @@ class PythonIngestControllerTest extends TestCase
         // Тест: отсутствует zone_id
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422); // Validation error
@@ -152,7 +150,7 @@ class PythonIngestControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => 99999, // Несуществующий zone_id
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422); // Validation error
@@ -163,7 +161,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
                 'node_id' => 99999, // Несуществующий node_id
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422); // Validation error (exists:nodes,id)
@@ -177,7 +175,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone2->id, // Другая зона
                 'node_id' => $node->id, // Нода привязана к zone1
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
         $response->assertStatus(422) // Validation error
@@ -198,7 +196,7 @@ class PythonIngestControllerTest extends TestCase
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone2->id, // Другая зона
                 'node_id' => $node->id, // Нода из zone1
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
 
@@ -225,7 +223,7 @@ class PythonIngestControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
-                'metric_type' => 'PH',
+                'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
 
@@ -240,149 +238,23 @@ class PythonIngestControllerTest extends TestCase
         // Создаём команду напрямую
         $command = \App\Models\Command::create([
             'cmd_id' => 'cmd-test-123',
-            'status' => Command::STATUS_QUEUED,
+            'status' => 'pending',
             'cmd' => 'test_command',
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/commands/ack', [
                 'cmd_id' => 'cmd-test-123',
-                'status' => 'DONE',
+                'status' => 'completed',
             ]);
 
         $response->assertOk()
             ->assertJson(['status' => 'ok']);
 
-        // Проверяем, что статус команды обновлён
+        // Проверяем, что статус команды НЕ обновлён
         $command->refresh();
-        $this->assertEquals(Command::STATUS_DONE, $command->status);
-    }
-
-    public function test_command_ack_endpoint_returns_404_when_command_not_found(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-
-        $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/commands/ack', [
-                'cmd_id' => 'cmd-missing-404',
-                'status' => 'SENT',
-            ])
-            ->assertStatus(404)
-            ->assertJson([
-                'status' => 'error',
-                'code' => 'COMMAND_NOT_FOUND',
-                'message' => 'Command not found',
-            ]);
-    }
-
-    public function test_command_ack_endpoint_accepts_timeout_as_terminal_status(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-
-        $command = Command::create([
-            'cmd_id' => 'cmd-timeout-001',
-            'status' => Command::STATUS_ACK,
-            'cmd' => 'test_command',
-        ]);
-
-        $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/commands/ack', [
-                'cmd_id' => 'cmd-timeout-001',
-                'status' => 'TIMEOUT',
-                'details' => [
-                    'error_code' => 'TIMEOUT',
-                    'result_code' => 1,
-                ],
-            ])
-            ->assertOk()
-            ->assertJson(['status' => 'ok']);
-
-        $command->refresh();
-        $this->assertEquals(Command::STATUS_TIMEOUT, $command->status);
-        $this->assertNotNull($command->failed_at);
-        $this->assertEquals('TIMEOUT', $command->error_code);
-        $this->assertEquals(1, $command->result_code);
-    }
-
-    public function test_command_ack_endpoint_accepts_send_failed_as_terminal_status(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-
-        $command = Command::create([
-            'cmd_id' => 'cmd-sendfailed-001',
-            'status' => Command::STATUS_QUEUED,
-            'cmd' => 'test_command',
-        ]);
-
-        $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/commands/ack', [
-                'cmd_id' => 'cmd-sendfailed-001',
-                'status' => 'SEND_FAILED',
-                'details' => [
-                    'error_code' => 'SEND_FAILED',
-                    'error_message' => 'publish_failed',
-                    'result_code' => 1,
-                ],
-            ])
-            ->assertOk()
-            ->assertJson(['status' => 'ok']);
-
-        $command->refresh();
-        $this->assertEquals(Command::STATUS_SEND_FAILED, $command->status);
-        $this->assertNotNull($command->failed_at);
-        $this->assertEquals('SEND_FAILED', $command->error_code);
-        $this->assertEquals('publish_failed', $command->error_message);
-        $this->assertEquals(1, $command->result_code);
-    }
-
-    public function test_command_ack_endpoint_prevents_terminal_timeout_to_ack_rollback(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-
-        $command = Command::create([
-            'cmd_id' => 'cmd-timeout-rollback-001',
-            'status' => Command::STATUS_TIMEOUT,
-            'cmd' => 'test_command',
-        ]);
-
-        $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/commands/ack', [
-                'cmd_id' => 'cmd-timeout-rollback-001',
-                'status' => 'ACK',
-            ])
-            ->assertOk()
-            ->assertJson([
-                'status' => 'ok',
-                'message' => 'Command already in final status',
-            ]);
-
-        $command->refresh();
-        $this->assertEquals(Command::STATUS_TIMEOUT, $command->status);
-    }
-
-    public function test_command_ack_endpoint_prevents_done_to_ack_rollback(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-
-        $command = Command::create([
-            'cmd_id' => 'cmd-done-rollback-001',
-            'status' => Command::STATUS_DONE,
-            'cmd' => 'test_command',
-        ]);
-
-        $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/commands/ack', [
-                'cmd_id' => 'cmd-done-rollback-001',
-                'status' => 'ACK',
-            ])
-            ->assertOk()
-            ->assertJson([
-                'status' => 'ok',
-                'message' => 'Command already in final status',
-            ]);
-
-        $command->refresh();
-        $this->assertEquals(Command::STATUS_DONE, $command->status);
+        $this->assertEquals('pending', $command->status);
+        // Laravel больше не обновляет статусы команд
     }
 
     public function test_command_ack_endpoint_requires_auth(): void
@@ -393,111 +265,8 @@ class PythonIngestControllerTest extends TestCase
         
         $this->postJson('/api/python/commands/ack', [
             'cmd_id' => 'cmd-test-123',
-            'status' => 'DONE',
+            'status' => 'completed',
         ])->assertStatus(401);
     }
-
-    public function test_alerts_endpoint_returns_202_when_rate_limited(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-        Config::set('services.python_bridge.token', 'test-token');
-        Config::set('alerts.rate_limiting.enabled', true);
-        Config::set('alerts.rate_limiting.max_per_minute', 0);
-        Config::set('alerts.rate_limiting.critical_codes', []);
-
-        $zone = Zone::factory()->create();
-
-        $response = $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/alerts', [
-                'zone_id' => $zone->id,
-                'source' => 'infra',
-                'code' => 'infra_rate_limited_test',
-                'type' => 'Infrastructure Error',
-                'status' => 'ACTIVE',
-                'details' => ['message' => 'test'],
-            ]);
-
-        $response->assertStatus(202)
-            ->assertJsonPath('data.rate_limited', true);
-
-        $this->assertDatabaseMissing('alerts', [
-            'zone_id' => $zone->id,
-            'code' => 'infra_rate_limited_test',
-            'status' => 'ACTIVE',
-        ]);
-    }
-
-    public function test_alerts_endpoint_resolves_active_alert_with_status_resolved(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-        Config::set('services.python_bridge.token', 'test-token');
-
-        $zone = Zone::factory()->create();
-        $alert = Alert::factory()->create([
-            'zone_id' => $zone->id,
-            'source' => 'infra',
-            'code' => 'infra_resolve_test',
-            'type' => 'Infrastructure Error',
-            'status' => 'ACTIVE',
-        ]);
-
-        $response = $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/alerts', [
-                'zone_id' => $zone->id,
-                'source' => 'infra',
-                'code' => 'infra_resolve_test',
-                'type' => 'Infrastructure Error',
-                'status' => 'RESOLVED',
-                'details' => ['reason' => 'recovered'],
-            ]);
-
-        $response->assertOk()
-            ->assertJsonPath('data.resolved', true)
-            ->assertJsonPath('data.alert_id', $alert->id);
-
-        $this->assertDatabaseHas('alerts', [
-            'id' => $alert->id,
-            'status' => 'RESOLVED',
-        ]);
-
-        $alert->refresh();
-        $this->assertSame('python_ingest', $alert->details['resolved_by'] ?? null);
-        $this->assertSame('auto', $alert->details['resolved_via'] ?? null);
-        $this->assertSame('infra', $alert->details['resolved_source'] ?? null);
-    }
-
-    public function test_alerts_endpoint_accepts_node_source_and_normalizes_severity(): void
-    {
-        Config::set('services.python_bridge.ingest_token', 'test-token');
-        Config::set('services.python_bridge.token', 'test-token');
-
-        $zone = Zone::factory()->create();
-
-        $response = $this->withHeader('Authorization', 'Bearer test-token')
-            ->postJson('/api/python/alerts', [
-                'zone_id' => $zone->id,
-                'source' => 'node',
-                'code' => 'node_error_sensor_timeout',
-                'type' => 'node_error',
-                'severity' => 'CRITICAL',
-                'node_uid' => 'nd-node-1',
-                'hardware_id' => 'esp32-node-1',
-                'status' => 'active',
-                'details' => ['message' => 'Node timeout'],
-            ]);
-
-        $response->assertOk()
-            ->assertJsonPath('status', 'ok');
-
-        $this->assertDatabaseHas('alerts', [
-            'zone_id' => $zone->id,
-            'source' => 'node',
-            'code' => 'node_error_sensor_timeout',
-            'status' => 'ACTIVE',
-            'severity' => 'critical',
-            'category' => 'node',
-            'node_uid' => 'nd-node-1',
-            'hardware_id' => 'esp32-node-1',
-        ]);
-    }
 }
+

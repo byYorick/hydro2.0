@@ -2,15 +2,14 @@
  * Composable для унификации работы с Inertia формами
  * Предоставляет стандартные callbacks для onSuccess, onError, onFinish
  */
-import { useForm } from '@inertiajs/vue3'
+import { useForm, type UseFormReturn } from '@inertiajs/vue3'
 import { router } from '@inertiajs/vue3'
-import type { FormDataKeys, FormDataType } from '@inertiajs/core'
 import { useToast } from './useToast'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from './useApi'
 
-export interface UseInertiaFormOptions<T extends FormDataType<T>> {
+export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
   /**
    * Функция для показа Toast уведомлений (опционально)
    * Если не передана, будет использован useToast
@@ -48,7 +47,7 @@ export interface UseInertiaFormOptions<T extends FormDataType<T>> {
    * Какие поля формы сбрасывать при успехе (опционально)
    * Если не указано, но resetOnSuccess=true, будет сброшена вся форма
    */
-  resetFieldsOnSuccess?: FormDataKeys<T>[]
+  resetFieldsOnSuccess?: (keyof T)[]
 
   /**
    * Функция, вызываемая при успехе (опционально)
@@ -66,14 +65,7 @@ export interface UseInertiaFormOptions<T extends FormDataType<T>> {
   onFinish?: () => void
 
   /**
-   * Callback для обновления store после успеха (рекомендуется)
-   * Вместо reloadOnSuccess используйте этот callback для обновления данных
-   */
-  onStoreUpdate?: (data: any) => void
-
-  /**
-   * Должен ли выполняться reload после успеха (deprecated)
-   * @deprecated Используйте onStoreUpdate для обновления store напрямую
+   * Должен ли выполняться reload после успеха (опционально)
    * Можно передать массив ключей для partial reload (only)
    */
   reloadOnSuccess?: boolean | string[]
@@ -81,7 +73,7 @@ export interface UseInertiaFormOptions<T extends FormDataType<T>> {
   /**
    * Сохранять ли прокрутку (по умолчанию true)
    */
-  preserveUrl?: boolean
+  preserveScroll?: boolean
 
   /**
    * Сохранять ли состояние (по умолчанию false)
@@ -92,7 +84,7 @@ export interface UseInertiaFormOptions<T extends FormDataType<T>> {
 /**
  * Создает обертку над useForm с унифицированными callbacks
  */
-export function useInertiaForm<T extends FormDataType<T>>(
+export function useInertiaForm<T extends Record<string, unknown>>(
   initialData: T,
   options: UseInertiaFormOptions<T> = {}
 ) {
@@ -107,9 +99,8 @@ export function useInertiaForm<T extends FormDataType<T>>(
     onSuccess: customOnSuccess,
     onError: customOnError,
     onFinish: customOnFinish,
-    onStoreUpdate,
     reloadOnSuccess = false,
-    preserveUrl = true,
+    preserveScroll = true,
     preserveState = false,
   } = options
 
@@ -139,24 +130,15 @@ export function useInertiaForm<T extends FormDataType<T>>(
       }
     }
 
-    // Обновляем store через callback (рекомендуемый способ)
-    if (onStoreUpdate) {
-      try {
-        onStoreUpdate(page.props || page)
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('[useInertiaForm] Error in onStoreUpdate callback:', error)
-      }
-    }
-
-    // Выполняем reload, если нужно (deprecated - используйте onStoreUpdate)
+    // Выполняем reload, если нужно (не рекомендуется - лучше обновлять store напрямую)
+    // TODO: Рассмотреть замену на опциональный callback для обновления store
     if (reloadOnSuccess) {
       // eslint-disable-next-line no-console
-      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
+      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Consider updating store directly instead of using router.reload')
       if (Array.isArray(reloadOnSuccess)) {
-        router.reload({ only: reloadOnSuccess, preserveUrl })
+        router.reload({ only: reloadOnSuccess, preserveScroll, preserveState })
       } else {
-        router.reload({ preserveUrl })
+        router.reload({ preserveScroll, preserveState })
       }
     }
 
@@ -172,21 +154,11 @@ export function useInertiaForm<T extends FormDataType<T>>(
   function handleError(errors: Record<string, string>): void {
     // Показываем Toast при ошибке
     if (showErrorToast) {
-      // Если есть конкретное сообщение об ошибке, используем его
-      // Иначе берем первое сообщение об ошибке из валидации
-      // Или используем переданное errorMessage
-      let message = errorMessage
-      
-      if (!message && Object.keys(errors).length > 0) {
-        // Берем первое сообщение об ошибке
-        const firstErrorKey = Object.keys(errors)[0]
-        message = errors[firstErrorKey] || ERROR_MESSAGES.VALIDATION
-      }
-      
-      if (!message) {
-        message = ERROR_MESSAGES.UNKNOWN
-      }
-      
+      const message =
+        errorMessage ||
+        (Object.keys(errors).length > 0
+          ? ERROR_MESSAGES.VALIDATION
+          : ERROR_MESSAGES.UNKNOWN)
       showToast(message, 'error', TOAST_TIMEOUT.LONG)
     }
 
@@ -213,7 +185,7 @@ export function useInertiaForm<T extends FormDataType<T>>(
     method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     url: string,
     options: {
-      preserveUrl?: boolean
+      preserveScroll?: boolean
       preserveState?: boolean
       only?: string[]
       onSuccess?: (page: any) => void
@@ -222,7 +194,7 @@ export function useInertiaForm<T extends FormDataType<T>>(
     } = {}
   ) {
     const {
-      preserveUrl: optionPreserveScroll = preserveUrl,
+      preserveScroll: optionPreserveScroll = preserveScroll,
       preserveState: optionPreserveState = preserveState,
       only,
       onSuccess: optionOnSuccess,
@@ -254,7 +226,7 @@ export function useInertiaForm<T extends FormDataType<T>>(
 
     // Создаем опции для submit
     const submitOptions: any = {
-      preserveUrl: optionPreserveScroll,
+      preserveScroll: optionPreserveScroll,
       preserveState: optionPreserveState,
       onSuccess: combinedOnSuccess,
       onError: combinedOnError,
@@ -293,3 +265,4 @@ export function useInertiaForm<T extends FormDataType<T>>(
     handleFinish,
   }
 }
+

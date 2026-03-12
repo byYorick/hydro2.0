@@ -83,9 +83,8 @@ describe('ZonesHeatmap', () => {
       }
     })
 
-    const runningElement = wrapper.findAll('.cursor-pointer').find((entry) => entry.text().includes('Запущено'))
-    expect(runningElement).toBeDefined()
-    expect(runningElement?.classes()).toContain('bg-[color:var(--badge-success-bg)]')
+    const runningElement = wrapper.find('.bg-emerald-500\\/10')
+    expect(runningElement.exists()).toBe(true)
   })
 
   it('applies correct CSS classes for PAUSED status', () => {
@@ -99,9 +98,8 @@ describe('ZonesHeatmap', () => {
       }
     })
 
-    const pausedElement = wrapper.findAll('.cursor-pointer').find((entry) => entry.text().includes('Приостановлено'))
-    expect(pausedElement).toBeDefined()
-    expect(pausedElement?.classes()).toContain('bg-[color:var(--bg-elevated)]')
+    const pausedElement = wrapper.find('.bg-neutral-500\\/10')
+    expect(pausedElement.exists()).toBe(true)
   })
 
   it('applies correct CSS classes for WARNING status', () => {
@@ -115,9 +113,8 @@ describe('ZonesHeatmap', () => {
       }
     })
 
-    const warningElement = wrapper.findAll('.cursor-pointer').find((entry) => entry.text().includes('Предупреждение'))
-    expect(warningElement).toBeDefined()
-    expect(warningElement?.classes()).toContain('bg-[color:var(--badge-warning-bg)]')
+    const warningElement = wrapper.find('.bg-amber-500\\/10')
+    expect(warningElement.exists()).toBe(true)
   })
 
   it('applies correct CSS classes for ALARM status', () => {
@@ -131,9 +128,8 @@ describe('ZonesHeatmap', () => {
       }
     })
 
-    const alarmElement = wrapper.findAll('.cursor-pointer').find((entry) => entry.text().includes('Тревога'))
-    expect(alarmElement).toBeDefined()
-    expect(alarmElement?.classes()).toContain('bg-[color:var(--badge-danger-bg)]')
+    const alarmElement = wrapper.find('.bg-red-500\\/10')
+    expect(alarmElement.exists()).toBe(true)
   })
 
   it('emits filter event when status item is clicked', async () => {
@@ -217,3 +213,4 @@ describe('ZonesHeatmap', () => {
     expect(wrapper.find('.card').exists()).toBe(true)
   })
 })
+

@@ -39,7 +39,8 @@ async def fetch_test(query: str, *args):
 
 async def cleanup_test():
     """Cleanup test database."""
-    global _pool
     if _pool:
         await _pool.close()
+        global _pool
         _pool = None
+

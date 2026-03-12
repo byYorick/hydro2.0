@@ -5,10 +5,6 @@
 Он фиксирует правила поведения, внутренние процессы, машинные состояния, обработку команд,
 алгоритмы сенсоров, диагностику, fail‑safe и протоколы взаимодействия.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Главная концепция логики узла
@@ -24,12 +20,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Главного цикла (main loop)
 - Системы безопасности (SafeMode)
 
-Узел **не принимает агрономических решений**:
+Узел **не принимает решений**:
 - не рассчитывает pH/EC дозировки,
 - не оценивает климат,
 - не управляет рецептами.
 
-Domain-логика — на backend; на ноде остаются runtime/safety проверки и исполнение команд.
+Вся логика → только на backend.
 
 ---
 
@@ -101,7 +97,7 @@ SAFE_MODE → ограниченный режим
  - telemetry
  - status
  - command_response
- - config_report
+ - config_response
  - heartbeat
 - авто‑reconnect
 
@@ -121,12 +117,15 @@ SAFE_MODE → ограниченный режим
 3. Проверить валидность каналов.
 4. Сохранить в NVS.
 5. Перезапустить sensor loops.
-6. Опубликовать config_report.
+6. Ответить config_response.
 
 В случае ошибки:
-- логировать причину,
-- оставить текущую конфигурацию без изменений,
-- не публиковать обновление.
+```json
+{
+ "status": "ERROR",
+ "error": "Invalid channel name"
+}
+```
 
 ---
 
@@ -158,13 +157,13 @@ SensorChannel {
 
 - PH
 - EC
-- TEMPERATURE
+- TEMP_AIR
+- TEMP_WATER
 - HUMIDITY
-- LIGHT_INTENSITY
+- LUX
 - CO2 (опционально)
 - WATER_LEVEL
 - FLOW_RATE
-- PUMP_CURRENT
 
 ---
 
@@ -209,11 +208,7 @@ ActuatorChannel {
 {
  "cmd_id": "cmd-19292",
  "cmd": "run_pump",
- "params": {
-  "duration_ms": 2000
- },
- "ts": 1737355112,
- "sig": "a1b2c3d4e5f6..."
+ "duration_ms": 2000
 }
 ```
 
@@ -229,7 +224,7 @@ on_command_received:
 
 ## 4.2.1. Специальный случай: команды к насосам с проверкой суммарного тока (INA209)
 
-Для всех команд, затрагивающих насосы (`pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`, `pump_in` и др.),
+Для всех команд, затрагивающих насосы (`pump_acid`, `pump_base`, `pump_nutrient`, `pump_in` и др.),
 алгоритм `on_command_received` расширяется проверкой по **суммарному току** через INA209,
 включённому в разрыв общего плюса питания насосов.
 
@@ -289,21 +284,12 @@ on_command_received for pump_channel:
 Таким образом, узел подтверждает не только факт приёма команды,
 но и реальное включение насосов по показаниям суммарного тока.
 ## 4.3. Ответы
-### Успех (быстрый ACK)
+### Успех
 ```json
 {
  "cmd_id": "cmd-19292",
  "status": "ACK",
- "ts": 1710012345000
-}
-```
-
-### Успех (terminal)
-```json
-{
- "cmd_id": "cmd-19292",
- "status": "DONE",
- "ts": 1710012345200
+ "ts": 1710012345
 }
 ```
 
@@ -312,14 +298,9 @@ on_command_received for pump_channel:
 {
  "cmd_id": "cmd-19292",
  "status": "ERROR",
- "error_code": "cooldown_active",
- "error_message": "Cooldown window is active",
- "ts": 1710012345678
+ "error": "cooldown_active"
 }
 ```
-
-`command_response.ts` публикуется в миллисекундах.
-Для long-running команд рекомендуется `ACK -> terminal (DONE/ERROR/INVALID/BUSY/NO_EFFECT)`.
 
 ---
 
@@ -328,20 +309,20 @@ on_command_received for pump_channel:
 ## 5.1. Стандартный JSON
 ```json
 {
+ "node_id": "nd-ph-1",
+ "channel": "ph_sensor",
  "metric_type": "PH",
  "value": 5.82,
+ "raw": 1463,
  "ts": 1710012567
 }
 ```
 
-> **Важно:** поля `node_uid` и `channel` не включаются в JSON, так как они уже есть в топике.
-> `metric_type` в UPPERCASE, `ts` в секундах (до time sync допускается uptime-seconds).
-
 ## 5.2. Правила:
 - отправка с QoS=1
-- interval задаётся NodeConfig (`poll_interval_ms`) и может переопределяться серверным config apply
+- interval определяет backend
 - raw значение сохраняется для диагностики
-- timestamp в секундах (uptime до синхронизации времени, Unix time после `set_time`)
+- timestamp обязан быть UNIX time или millis()
 
 ---
 
@@ -352,8 +333,9 @@ on_command_received for pump_channel:
 ```json
 {
  "uptime": 58222,
- "free_heap": 102300,
- "rssi": -59
+ "heap": 102300,
+ "rssi": -59,
+ "ts": 1710012711
 }
 ```
 
@@ -378,8 +360,8 @@ on_command_received for pump_channel:
 
 При повреждении конфигурации:
 - fallback в SAFE MODE
-- перейти на встроенный NodeConfig или provisioning
-- после восстановления опубликовать config_report
+- запросить config с backend
+- отправить config_response(ERROR)
 
 ---
 
@@ -438,11 +420,11 @@ Command Parser → Actuator Channel → command_response
 
 ---
 
-# 11. Diagnostics режим (опционально)
+# 11. Debug режим (опционально)
 
 Топик:
 ```
-hydro/{gh}/{zone}/{node}/diagnostics
+hydro/{node}/debug
 ```
 
 Публикует:
@@ -458,16 +440,18 @@ hydro/{gh}/{zone}/{node}/diagnostics
 Цепочка:
 
 ```
-backend (Laravel) → trigger publish config via history-logger
-history-logger → publish MQTT .../{node}/config
+backend → build NodeConfig
+backend → publish config
 node → validate config
-node → apply + save in NVS
-node → restart affected components/sensor loops
-node → publish config_report
-backend → store фактический config_report + sync channels
+node → save in NVS
+node → restart sensor loops
+node → config_response(OK)
 ```
 
-Если ошибка: логировать причину и оставить текущую конфигурацию.
+Если ошибка:
+```
+node → config_response(ERROR)
+```
 
 ---
 

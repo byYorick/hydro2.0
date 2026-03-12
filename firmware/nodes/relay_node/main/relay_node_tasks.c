@@ -16,6 +16,7 @@
 #include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_wifi.h"
 #include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -103,11 +104,11 @@ void relay_node_publish_status(void) {
         }
     }
     
-    // Получение RSSI через connection_status
-    connection_status_t conn_status;
+    // Получение RSSI
+    wifi_ap_record_t ap_info;
     int8_t rssi = -100;
-    if (connection_status_get(&conn_status) == ESP_OK) {
-        rssi = conn_status.wifi_rssi;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        rssi = ap_info.rssi;
     }
     
     // Версия прошивки
@@ -116,8 +117,6 @@ void relay_node_publish_status(void) {
     // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
     cJSON *status = cJSON_CreateObject();
     if (status) {
-        cJSON_AddStringToObject(status, "status", "ONLINE");
-        cJSON_AddNumberToObject(status, "ts", (double)node_utils_get_timestamp_seconds());
         cJSON_AddBoolToObject(status, "online", true);
         cJSON_AddStringToObject(status, "ip", ip_str);
         cJSON_AddNumberToObject(status, "rssi", rssi);

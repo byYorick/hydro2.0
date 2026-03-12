@@ -6,10 +6,6 @@ telemetry, commands, config, status/LWT, heartbeat, alerts, events,
 и то, как Backend, MQTT, узлы ESP32, фронтенд и базы данных
 обмениваются информацией в реальном времени.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Общая концепция потоков данных
@@ -18,7 +14,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 1. **Telemetry Flow** — вверх (узлы → backend).
 2. **Command Flow** — вниз (backend → узлы).
-3. **Config Flow** — вверх (узлы → backend, через `config_report`).
+3. **Config Flow** — вниз (backend → узлы).
 4. **Status/LWT Flow** — вверх (узлы → backend).
 5. **Heartbeat Flow** — вверх (узлы → backend).
 6. **Events Flow** — backend → frontend.
@@ -62,7 +58,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 3.1. Назначение
 Telemetry — это поток измерений, поступающих от узлов:
-pH, EC, t°, RH, LIGHT_INTENSITY, CO₂, уровень, расход и т.п.
+pH, EC, t°, RH, LUX, CO₂, уровень, расход и т.п.
 
 ## 3.2. Шаги
 
@@ -84,13 +80,14 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.4. Пример JSON
 ```json
 {
+ "node_id": "nd-ph-1",
+ "channel": "ph_sensor",
  "metric_type": "PH",
  "value": 5.81,
+ "raw": 1461,
  "ts": 1710023000
 }
 ```
-
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в UPPERCASE, `ts` в секундах.
 
 ## 3.5. QoS = 1 
 ## Retain = false
@@ -125,11 +122,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 {
  "cmd_id": "cmd-88122",
  "cmd": "run_pump",
- "params": {
-  "duration_ms": 2500
- },
- "ts": 1737355112,
- "sig": "a1b2c3d4e5f6..."
+ "duration_ms": 2500
 }
 ```
 
@@ -138,13 +131,13 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 {
  "cmd_id": "cmd-88122",
  "status": "ACK",
- "ts": 1710023005123
+ "ts": 1710023005
 }
 ```
 
 ---
 
-# 5. CONFIG FLOW (узлы → backend)
+# 5. CONFIG FLOW (backend → узел)
 
 ## 5.1. Назначение
 NodeConfig определяет:
@@ -153,24 +146,24 @@ NodeConfig определяет:
 - безопасные лимиты,
 - параметры Wi‑Fi/MQTT.
 
-Узел использует этот файл как источник настроек, конфиг хранится в прошивке/NVS.
-
-Важно по типам:
-- `node_type` на уровне узла передается отдельно (в `node_hello`) и использует только канонические значения
-  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- поле `channels[].type` в NodeConfig (`SENSOR`/`ACTUATOR`/`VIRTUAL`) — это тип канала, а не тип узла.
+Узел не имеет своей логики — всё определяется этим файлом.
 
 ## 5.2. Шаги
 
-1. Нода формирует NodeConfig в прошивке/NVS.
-2. Отправляет `config_report` в топик `hydro/{gh}/{zone}/{node}/config_report`.
-3. Backend сохраняет конфиг и синхронизирует `node_channels`.
-4. Нода валидирует и применяет конфиг локально.
-5. **Backend переводит ноду в `ASSIGNED_TO_ZONE`** после получения `config_report`.
+1. Backend генерирует NodeConfig.
+2. Публикует MQTT config в топик `hydro/{gh}/{zone}/{node}/config`.
+3. Узел принимает config.
+4. Валидирует.
+5. Сохраняет в NVS.
+6. Перезапускает каналы.
+7. Отправляет config_response в топик `hydro/{gh}/{zone}/{node}/config_response`.
+8. **Backend обрабатывает config_response:**
+   - При `status: "OK"`: если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, переводит в `ASSIGNED_TO_ZONE`
+   - При `status: "ERROR"`: логирует ошибку, нода остается в `REGISTERED_BACKEND`
 
 ## 5.3. Топик
 ```
-hydro/{gh}/{zone}/{node}/config_report
+hydro/{gh}/{zone}/{node}/config
 ```
 
 ## 5.4. Пример payload
@@ -214,13 +207,13 @@ hydro/{gh}/{zone}/{node}/status
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО (выполняется сразу после `MQTT_EVENT_CONNECTED`)
-4. Подписка на command топики (config — опционально, legacy)
+4. Подписка на config и command топики
 5. Вызов connection callback (если зарегистрирован)
 
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **до** подписки на command топики
+- Публикация выполняется **до** подписки на config/command топики
 - Backend обновляет `nodes.status = 'ONLINE'` и `nodes.last_seen_at = NOW()`
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
@@ -356,10 +349,11 @@ pH_sensor → telemetry
 1. Пользователь жмёт «Next Phase» 
 2. Фронтенд → Backend (REST) 
 3. Backend обновляет модель Zone 
-4. Backend обновляет target-параметры и расчёты 
-5. Backend → Commands → MQTT 
-6. Узлы выполняют команды 
-7. Backend → Events → Фронтенд 
+4. Backend генерирует новый NodeConfig для всех узлов зоны 
+5. MQTT → config 
+6. Узлы применяют config 
+7. Узлы → config_response 
+8. Backend → Events → Фронтенд 
 
 ---
 
@@ -387,7 +381,7 @@ pH_sensor → telemetry
 
 [BACKEND CONTROLLER] → decision → command JSON → MQTT → node → execute → command_response → backend → UI
 
-[NODE CONFIG] → config_report JSON → MQTT → backend → DB/Channels
+[BACKEND CONFIG MANAGER] → config JSON → MQTT → node → apply → config_response → backend
 
 [NODE WIFI] → status/connectivity → status/LWT → MQTT → backend → alert
 

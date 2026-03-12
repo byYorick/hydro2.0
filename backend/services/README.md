@@ -9,9 +9,9 @@ Python Core (MVP 1a)
 - **Общая библиотека:** `common/` (env, db, mqtt, schemas, commands)
 - **Сервисы:**
   - `mqtt-bridge` — FastAPI мост REST→MQTT (порт 9000)
-  - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT** (порт 9300)
-  - `automation-engine` — AE2-Lite рантайм зон, wake-up `start-cycle`, управление mode/manual-step, публикация команд через history-logger REST API (порты 9401/metrics, 9405/REST API)
-  - `Laravel scheduler-dispatch` — owner planning/dispatch intents и wake-up в `automation-engine` (через `automation:dispatch-schedules`)
+  - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL
+  - `automation-engine` — контроллер зон, проверка targets, публикация команд (порт 9401)
+  - `scheduler` — расписания поливов/света из recipe phases (порт 9402)
   - `device-registry` — PLANNED (см. `device-registry/README.md`)
 
 ## Переменные окружения (dev)
@@ -27,17 +27,6 @@ Python Core (MVP 1a)
 docker compose -f backend/docker-compose.dev.yml up -d --build
 ```
 
-## Тесты
-
-Единый прогон по всем Python-сервисам (избегает конфликтов импортов между сервисами):
-```bash
-PG_HOST=localhost PG_PORT=5432 PG_DB=hydro_dev PG_USER=hydro PG_PASS=hydro \
-PYTHONPATH=/home/georgiy/esp/hydro/hydro2.0/backend/services \
-.venv/bin/python -m pytest -rs --import-mode=importlib
-```
-
-Если нужны локальные прогоны по сервисам, запускайте из соответствующей папки сервиса.
-
 ## Проверка сервисов
 
 ### mqtt-bridge
@@ -52,42 +41,13 @@ POST http://localhost:9000/bridge/zones/{zone_id}/commands
 }
 ```
 
-### REST API Endpoints
-
-**History-Logger (порт 9300):**
-- `POST /commands` - универсальный endpoint для команд
-- `POST /zones/{zone_id}/commands` - команды для зоны
-- `POST /nodes/{node_uid}/commands` - команды для ноды
-- `GET /health` - health check
-
-**Automation-Engine (порт 9405):**
-- `POST /zones/{id}/start-cycle` - каноничный wake-up цикла
-- `GET /zones/{id}/state` - runtime state зоны
-- `GET /zones/{id}/control-mode` - режим и доступные manual-step
-- `POST /zones/{id}/control-mode` - смена режима
-- `POST /zones/{id}/manual-step` - ручной шаг
-- `GET /health/live` - liveness
-- `GET /health/ready` - readiness
-
 ### Prometheus metrics
-- history-logger: `http://localhost:9301/metrics`
 - automation-engine: `http://localhost:9401/metrics`
-
-## Архитектура команд
-
-**Централизованная публикация команд:**
-```
-Laravel Scheduler → POST /zones/{id}/start-cycle → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
-```
-
-**Важно:** 
-- `history-logger` — **единственная точка публикации команд в MQTT**
-- `automation-engine` публикует device-команды только через history-logger REST API, не напрямую в MQTT
-- Это обеспечивает единую точку логирования и мониторинга команд
+- scheduler: `http://localhost:9402/metrics`
 
 ## Документация
 
 - Архитектура Python-сервисов: `PYTHON_SERVICES_ARCH.md`
-- Changelog: `CHANGELOG.md`
-- Общая архитектура backend: `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- MQTT спецификация: `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Общая архитектура backend: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+

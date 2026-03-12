@@ -2,12 +2,12 @@
 
 namespace Tests\Unit\Services;
 
-use App\Models\DeviceNode;
-use App\Models\GrowCycle;
-use App\Models\RecipeRevision;
 use App\Models\Zone;
+use App\Models\ZoneRecipeInstance;
+use App\Models\Recipe;
+use App\Models\DeviceNode;
 use App\Services\ZoneService;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ZoneServiceTest extends TestCase
@@ -19,7 +19,7 @@ class ZoneServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new ZoneService;
+        $this->service = new ZoneService();
     }
 
     public function test_create_zone(): void
@@ -34,7 +34,7 @@ class ZoneServiceTest extends TestCase
 
         $this->assertInstanceOf(Zone::class, $zone);
         $this->assertEquals('Test Zone', $zone->name);
-        $this->assertEquals('NEW', $zone->status);
+        $this->assertEquals('RUNNING', $zone->status);
         $this->assertDatabaseHas('zones', [
             'id' => $zone->id,
             'name' => 'Test Zone',
@@ -66,15 +66,14 @@ class ZoneServiceTest extends TestCase
     public function test_delete_zone_with_active_recipe_throws_exception(): void
     {
         $zone = Zone::factory()->create();
-        $revision = RecipeRevision::factory()->create();
-        GrowCycle::factory()->create([
+        $recipe = Recipe::factory()->create();
+        ZoneRecipeInstance::factory()->create([
             'zone_id' => $zone->id,
-            'recipe_revision_id' => $revision->id,
-            'status' => \App\Enums\GrowCycleStatus::PLANNED,
+            'recipe_id' => $recipe->id,
         ]);
 
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('Cannot delete zone with active grow cycle');
+        $this->expectExceptionMessage('Cannot delete zone with active recipe');
 
         $this->service->delete($zone);
     }
@@ -88,6 +87,78 @@ class ZoneServiceTest extends TestCase
         $this->expectExceptionMessage('Cannot delete zone with attached nodes');
 
         $this->service->delete($zone);
+    }
+
+    public function test_attach_recipe_to_zone(): void
+    {
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+
+        $instance = $this->service->attachRecipe($zone, $recipe->id);
+
+        $this->assertInstanceOf(ZoneRecipeInstance::class, $instance);
+        $this->assertEquals($zone->id, $instance->zone_id);
+        $this->assertEquals($recipe->id, $instance->recipe_id);
+        $this->assertEquals(0, $instance->current_phase_index);
+        $this->assertDatabaseHas('zone_recipe_instances', [
+            'zone_id' => $zone->id,
+            'recipe_id' => $recipe->id,
+        ]);
+    }
+
+    public function test_attach_recipe_replaces_existing(): void
+    {
+        $zone = Zone::factory()->create();
+        $oldRecipe = Recipe::factory()->create();
+        $newRecipe = Recipe::factory()->create();
+
+        $this->service->attachRecipe($zone, $oldRecipe->id);
+        // Обновить зону, чтобы связь recipeInstance обновилась
+        $zone->refresh();
+        $this->service->attachRecipe($zone, $newRecipe->id);
+
+        $this->assertDatabaseMissing('zone_recipe_instances', [
+            'zone_id' => $zone->id,
+            'recipe_id' => $oldRecipe->id,
+        ]);
+        $this->assertDatabaseHas('zone_recipe_instances', [
+            'zone_id' => $zone->id,
+            'recipe_id' => $newRecipe->id,
+        ]);
+    }
+
+    public function test_change_phase(): void
+    {
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+        // Создать фазы в рецепте
+        \App\Models\RecipePhase::factory()->create([
+            'recipe_id' => $recipe->id,
+            'phase_index' => 0,
+        ]);
+        \App\Models\RecipePhase::factory()->create([
+            'recipe_id' => $recipe->id,
+            'phase_index' => 1,
+        ]);
+        $instance = ZoneRecipeInstance::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_id' => $recipe->id,
+            'current_phase_index' => 0,
+        ]);
+
+        $updated = $this->service->changePhase($zone, 1);
+
+        $this->assertEquals(1, $updated->current_phase_index);
+    }
+
+    public function test_change_phase_without_recipe_throws_exception(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('Zone has no active recipe');
+
+        $this->service->changePhase($zone, 1);
     }
 
     public function test_pause_zone(): void
@@ -128,3 +199,4 @@ class ZoneServiceTest extends TestCase
         $this->service->resume($zone);
     }
 }
+

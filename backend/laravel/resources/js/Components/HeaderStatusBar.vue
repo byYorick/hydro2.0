@@ -1,5 +1,5 @@
 <template>
-  <div class="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-2 bg-[color:var(--bg-surface-strong)] border-b border-[color:var(--border-muted)] overflow-x-auto">
+  <div class="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-2 bg-neutral-900 border-b border-neutral-800 overflow-x-auto">
     <div class="flex items-center gap-2 sm:gap-4 text-xs shrink-0">
       <!-- Core Status -->
       <div class="flex items-center gap-2 group relative">
@@ -15,7 +15,7 @@
           ></div>
         </div>
         <div class="flex flex-col">
-          <span class="text-[color:var(--text-dim)] text-[10px] leading-tight">Core</span>
+          <span class="text-neutral-400 text-[10px] leading-tight">Core</span>
           <span
             class="text-[11px] font-medium leading-tight transition-colors"
             :class="getStatusTextClass(coreStatus)"
@@ -24,18 +24,13 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
         >
-          <div class="font-medium">
-            Core Service
-          </div>
-          <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+          <div class="font-medium">Core Service</div>
+          <div class="text-[10px] text-neutral-400 mt-0.5">
             Статус: {{ getStatusText(coreStatus) }}
           </div>
-          <div
-            v-if="lastUpdate"
-            class="text-[10px] text-[color:var(--text-dim)] mt-1"
-          >
+          <div v-if="lastUpdate" class="text-[10px] text-neutral-400 mt-1">
             Обновлено: {{ formatTime(lastUpdate) }}
           </div>
         </div>
@@ -55,7 +50,7 @@
           ></div>
         </div>
         <div class="flex flex-col">
-          <span class="text-[color:var(--text-dim)] text-[10px] leading-tight">Database</span>
+          <span class="text-neutral-400 text-[10px] leading-tight">Database</span>
           <span
             class="text-[11px] font-medium leading-tight transition-colors"
             :class="getStatusTextClass(dbStatus)"
@@ -64,33 +59,24 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
         >
-          <div class="font-medium">
-            Database
-          </div>
-          <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+          <div class="font-medium">Database</div>
+          <div class="text-[10px] text-neutral-400 mt-0.5">
             Статус: {{ getStatusText(dbStatus) }}
           </div>
-          <div
-            v-if="lastUpdate"
-            class="text-[10px] text-[color:var(--text-dim)] mt-1"
-          >
+          <div v-if="lastUpdate" class="text-[10px] text-neutral-400 mt-1">
             Обновлено: {{ formatTime(lastUpdate) }}
           </div>
         </div>
       </div>
 
       <!-- WebSocket Status -->
-      <div
-        class="flex items-center gap-2 group relative"
-        data-testid="ws-status-indicator"
-      >
+      <div class="flex items-center gap-2 group relative">
         <div class="relative">
           <div
             class="w-2.5 h-2.5 rounded-full transition-all duration-300"
             :class="[getWsStatusDotClass(wsStatus), wsStatus === 'connected' ? 'animate-pulse' : '']"
-            :data-testid="wsStatus === 'connected' ? 'ws-status-connected' : 'ws-status-disconnected'"
           ></div>
           <div
             v-if="wsStatus === 'connected'"
@@ -99,7 +85,7 @@
           ></div>
         </div>
         <div class="flex flex-col">
-          <span class="text-[color:var(--text-dim)] text-[10px] leading-tight">WebSocket</span>
+          <span class="text-neutral-400 text-[10px] leading-tight">WebSocket</span>
           <span
             class="text-[11px] font-medium leading-tight transition-colors"
             :class="getWsStatusTextClass(wsStatus)"
@@ -108,82 +94,46 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)] max-w-xs"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700 max-w-xs"
         >
-          <div class="font-medium">
-            WebSocket Connection
-          </div>
-          <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+          <div class="font-medium">WebSocket Connection</div>
+          <div class="text-[10px] text-neutral-400 mt-0.5">
             Статус: {{ getWsStatusText(wsStatus) }}
           </div>
-          <div
-            v-if="wsStatus === 'connected'"
-            class="text-[10px] text-[color:var(--accent-green)] mt-1"
-          >
+          <div v-if="wsStatus === 'connected'" class="text-[10px] text-emerald-400 mt-1">
             ✓ Соединение активно
-            <div
-              v-if="wsConnectionDetails?.socketId"
-              class="text-[color:var(--text-dim)] mt-0.5 text-[9px]"
-            >
+            <div v-if="wsConnectionDetails?.socketId" class="text-neutral-500 mt-0.5 text-[9px]">
               Socket ID: {{ wsConnectionDetails.socketId.substring(0, 8) }}...
             </div>
           </div>
-          <div
-            v-else-if="wsStatus === 'disconnected' || wsStatus === 'connecting'"
-            class="text-[10px] text-[color:var(--accent-red)] mt-1"
-          >
+          <div v-else-if="wsStatus === 'disconnected' || wsStatus === 'connecting'" class="text-[10px] text-red-400 mt-1">
             <div>✗ Соединение разорвано</div>
-            <div
-              v-if="wsReconnectAttempts > 0"
-              class="text-[color:var(--accent-amber)] mt-1 text-[9px]"
-            >
+            <div v-if="wsReconnectAttempts > 0" class="text-yellow-400 mt-1 text-[9px]">
               Попыток переподключения: {{ wsReconnectAttempts }}
             </div>
-            <div
-              v-if="wsLastError"
-              class="text-[color:var(--badge-danger-text)] mt-1 text-[9px]"
-            >
-              <div class="font-medium">
-                Последняя ошибка:
-              </div>
-              <div class="break-words">
-                {{ wsLastError.message }}
-              </div>
-              <div
-                v-if="wsLastError.code"
-                class="text-[color:var(--text-dim)] mt-0.5"
-              >
+            <div v-if="wsLastError" class="text-red-300 mt-1 text-[9px]">
+              <div class="font-medium">Последняя ошибка:</div>
+              <div class="break-words">{{ wsLastError.message }}</div>
+              <div v-if="wsLastError.code" class="text-neutral-500 mt-0.5">
                 Код: {{ wsLastError.code }}
               </div>
-              <div
-                v-if="wsLastError.timestamp"
-                class="text-[color:var(--text-dim)] mt-0.5"
-              >
+              <div v-if="wsLastError.timestamp" class="text-neutral-500 mt-0.5">
                 {{ formatTime(new Date(wsLastError.timestamp)) }}
               </div>
             </div>
-            <div class="text-[color:var(--text-dim)] mt-1 text-[9px]">
+            <div class="text-neutral-500 mt-1 text-[9px]">
               Проверьте настройки WebSocket
             </div>
           </div>
-          <div
-            v-else
-            class="text-[10px] text-[color:var(--text-dim)] mt-1"
-          >
+          <div v-else class="text-[10px] text-neutral-500 mt-1">
             ? Инициализация...
-            <div class="text-[9px] text-[color:var(--text-dim)] mt-0.5">
+            <div class="text-[9px] text-neutral-500 mt-0.5">
               Ожидание подключения
             </div>
-            <div
-              v-if="wsStatus === 'unknown'"
-              class="text-[9px] text-[color:var(--accent-amber)] mt-1"
-            >
+            <div v-if="wsStatus === 'unknown'" class="text-[9px] text-amber-400 mt-1">
               WebSocket клиент не инициализирован
             </div>
-            <div
-              v-if="wsStatus === 'unknown' && wsConnectionDetails?.reconnectAttempts > 0"
-              class="text-[9px] text-[color:var(--accent-amber)] mt-1"
-            >
+            <div v-if="wsStatus === 'unknown' && wsConnectionDetails?.reconnectAttempts > 0" class="text-[9px] text-yellow-400 mt-1">
               Попыток переподключения: {{ wsConnectionDetails.reconnectAttempts }}
             </div>
           </div>
@@ -204,7 +154,7 @@
           ></div>
         </div>
         <div class="flex flex-col">
-          <span class="text-[color:var(--text-dim)] text-[10px] leading-tight">MQTT</span>
+          <span class="text-neutral-400 text-[10px] leading-tight">MQTT</span>
           <span
             class="text-[11px] font-medium leading-tight transition-colors"
             :class="getMqttStatusTextClass(mqttStatus)"
@@ -213,36 +163,22 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
         >
-          <div class="font-medium">
-            MQTT Broker
-          </div>
-          <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+          <div class="font-medium">MQTT Broker</div>
+          <div class="text-[10px] text-neutral-400 mt-0.5">
             Статус: {{ getMqttStatusText(mqttStatus) }}
           </div>
-          <div
-            v-if="mqttStatus === 'online'"
-            class="text-[10px] text-[color:var(--accent-green)] mt-1"
-          >
+          <div v-if="mqttStatus === 'online'" class="text-[10px] text-emerald-400 mt-1">
             ✓ Брокер доступен
           </div>
-          <div
-            v-else-if="mqttStatus === 'offline'"
-            class="text-[10px] text-[color:var(--accent-red)] mt-1"
-          >
+          <div v-else-if="mqttStatus === 'offline'" class="text-[10px] text-red-400 mt-1">
             ✗ Брокер недоступен
           </div>
-          <div
-            v-else-if="mqttStatus === 'degraded'"
-            class="text-[10px] text-[color:var(--accent-amber)] mt-1"
-          >
+          <div v-else-if="mqttStatus === 'degraded'" class="text-[10px] text-amber-400 mt-1">
             ⚠ Частичная доступность
           </div>
-          <div
-            v-else
-            class="text-[10px] text-[color:var(--text-dim)] mt-1"
-          >
+          <div v-else class="text-[10px] text-neutral-500 mt-1">
             ? Статус неизвестен
           </div>
         </div>
@@ -253,24 +189,19 @@
         <!-- Активные зоны -->
         <div 
           v-if="metrics.zonesCount !== null"
-          class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)] transition-colors group relative"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-800/50 hover:bg-neutral-800 transition-colors group relative"
         >
-          <span class="text-[color:var(--text-dim)]">🌱</span>
-          <span class="font-medium text-[color:var(--text-primary)]">{{ metrics.zonesCount }}</span>
-          <span class="text-[color:var(--text-dim)] hidden sm:inline">зон</span>
+          <span class="text-neutral-400">🌱</span>
+          <span class="font-medium text-neutral-200">{{ metrics.zonesCount }}</span>
+          <span class="text-neutral-500 hidden sm:inline">зон</span>
           <div
-            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
           >
-            <div class="font-medium">
-              Активные зоны
-            </div>
-            <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+            <div class="font-medium">Активные зоны</div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
               Всего: {{ metrics.zonesCount }}
             </div>
-            <div
-              v-if="metrics.zonesRunning !== null"
-              class="text-[10px] text-[color:var(--accent-green)] mt-1"
-            >
+            <div v-if="metrics.zonesRunning !== null" class="text-[10px] text-emerald-400 mt-1">
               Запущено: {{ metrics.zonesRunning }}
             </div>
           </div>
@@ -279,30 +210,22 @@
         <!-- Устройства -->
         <div 
           v-if="metrics.devicesCount !== null"
-          class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)] transition-colors group relative"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-800/50 hover:bg-neutral-800 transition-colors group relative"
         >
-          <span class="text-[color:var(--text-dim)]">📱</span>
-          <span class="font-medium text-[color:var(--text-primary)]">{{ metrics.devicesCount }}</span>
-          <span class="text-[color:var(--text-dim)] hidden sm:inline">устр.</span>
+          <span class="text-neutral-400">📱</span>
+          <span class="font-medium text-neutral-200">{{ metrics.devicesCount }}</span>
+          <span class="text-neutral-500 hidden sm:inline">устр.</span>
           <div
-            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
           >
-            <div class="font-medium">
-              Устройства
-            </div>
-            <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+            <div class="font-medium">Устройства</div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
               Всего: {{ metrics.devicesCount }}
             </div>
-            <div
-              v-if="metrics.devicesOnline !== null"
-              class="text-[10px] text-[color:var(--accent-green)] mt-1"
-            >
+            <div v-if="metrics.devicesOnline !== null" class="text-[10px] text-emerald-400 mt-1">
               Онлайн: {{ metrics.devicesOnline }}
             </div>
-            <div
-              v-if="metrics.devicesOffline !== null && metrics.devicesOffline > 0"
-              class="text-[10px] text-[color:var(--accent-red)] mt-1"
-            >
+            <div v-if="metrics.devicesOffline !== null && metrics.devicesOffline > 0" class="text-[10px] text-red-400 mt-1">
               Офлайн: {{ metrics.devicesOffline }}
             </div>
           </div>
@@ -312,38 +235,29 @@
         <div 
           v-if="metrics.alertsCount !== null"
           class="flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative"
-          data-testid="alerts-metric"
           :class="metrics.alertsCount > 0 
-            ? 'bg-[color:var(--badge-danger-bg)] hover:bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]' 
-            : 'bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)]'"
+            ? 'bg-red-900/30 hover:bg-red-900/40 border border-red-800/30' 
+            : 'bg-neutral-800/50 hover:bg-neutral-800'"
         >
-          <span :class="metrics.alertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'">⚠️</span>
+          <span :class="metrics.alertsCount > 0 ? 'text-red-400' : 'text-neutral-400'">⚠️</span>
           <span 
             class="font-medium transition-colors"
-            :class="metrics.alertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-primary)]'"
+            :class="metrics.alertsCount > 0 ? 'text-red-400' : 'text-neutral-200'"
           >
             {{ metrics.alertsCount }}
           </span>
-          <span class="text-[color:var(--text-dim)] hidden sm:inline">алерт.</span>
+          <span class="text-neutral-500 hidden sm:inline">алерт.</span>
           <div
-            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
           >
-            <div class="font-medium">
-              Активные алерты
-            </div>
-            <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
+            <div class="font-medium">Активные алерты</div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
               Всего: {{ metrics.alertsCount }}
             </div>
-            <div
-              v-if="metrics.alertsCount > 0"
-              class="text-[10px] text-[color:var(--accent-red)] mt-1"
-            >
+            <div v-if="metrics.alertsCount > 0" class="text-[10px] text-red-400 mt-1">
               ⚠️ Требуют внимания
             </div>
-            <div
-              v-else
-              class="text-[10px] text-[color:var(--accent-green)] mt-1"
-            >
+            <div v-else class="text-[10px] text-emerald-400 mt-1">
               ✓ Нет активных алертов
             </div>
           </div>
@@ -351,14 +265,13 @@
         
         <!-- Кнопка мониторинга сервисов -->
         <button
-          class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[color:var(--bg-surface-strong)] transition-colors text-xs text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]"
-          title="Мониторинг сервисов"
           @click="openMonitoringModal()"
+          class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors text-xs text-neutral-400 hover:text-neutral-200"
+          title="Мониторинг сервисов"
         >
           <span>📊</span>
           <span class="hidden sm:inline">Сервисы</span>
         </button>
-        <ThemeToggle />
       </div>
     </div>
     
@@ -377,41 +290,26 @@ import { useSystemStatus } from '@/composables/useSystemStatus'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { formatTime } from '@/utils/formatTime'
 import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
-import ThemeToggle from '@/Components/ThemeToggle.vue'
 import { useApi } from '@/composables/useApi'
 import { useSimpleModal } from '@/composables/useModal'
 import { logger } from '@/utils/logger'
-import type { User } from '@/types'
-
-interface DashboardData {
-  alertsCount?: number
-  zonesCount?: number
-  devicesCount?: number
-  zonesByStatus?: Record<string, number>
-  nodesByStatus?: Record<string, number>
-  [key: string]: unknown
-}
-
-interface PageProps {
-  auth?: { user?: User }
-  dashboard?: DashboardData
-  [key: string]: unknown
-}
 
 const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useSimpleModal()
 
-const {
-  coreStatus,
-  dbStatus,
-  wsStatus,
-  mqttStatus,
+const { 
+  coreStatus, 
+  dbStatus, 
+  wsStatus, 
+  mqttStatus, 
+  historyLoggerStatus,
+  automationEngineStatus,
   lastUpdate,
   wsReconnectAttempts,
   wsLastError,
   wsConnectionDetails
 } = useSystemStatus()
 
-const page = usePage<PageProps>()
+const page = usePage()
 const { api } = useApi()
 
 // Real-time метрики
@@ -456,7 +354,7 @@ async function loadMetrics() {
   }
   
   // Используем данные из props, если они доступны (предпочтительно)
-  const dashboardData = page.props.dashboard
+  const dashboardData = page.props.dashboard as any
   if (dashboardData?.alertsCount !== undefined) {
     metrics.value.alertsCount = dashboardData.alertsCount
     return
@@ -467,7 +365,7 @@ async function loadMetrics() {
   if (!currentUser || isUnauthenticated) {
     return
   }
-
+  
   try {
     // Загружаем только активные алерты, данные dashboard уже в props
     const alertsRes = await Promise.allSettled([
@@ -519,7 +417,7 @@ async function loadMetrics() {
 }
 
 // Обновление метрик из props (если доступны)
-const dashboardData = computed(() => page.props.dashboard)
+const dashboardData = computed(() => page.props.dashboard as any)
 watch(dashboardData, (data) => {
   if (data) {
     metrics.value.zonesCount = data.zonesCount || null
@@ -595,18 +493,18 @@ onUnmounted(() => {
   }
 })
 
-function getStatusDotClass(status: string | undefined) {
+function getStatusDotClass(status) {
   switch (status) {
     case 'ok':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-emerald-400'
     case 'fail':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-red-400'
     default:
-      return 'bg-[color:var(--text-dim)]'
+      return 'bg-neutral-500'
   }
 }
 
-function getStatusText(status: string | undefined) {
+function getStatusText(status) {
   switch (status) {
     case 'ok':
       return 'Онлайн'
@@ -617,29 +515,29 @@ function getStatusText(status: string | undefined) {
   }
 }
 
-function getStatusTextClass(status: string | undefined) {
+function getStatusTextClass(status) {
   switch (status) {
     case 'ok':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-emerald-400'
     case 'fail':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-red-400'
     default:
-      return 'text-[color:var(--text-dim)]'
+      return 'text-neutral-500'
   }
 }
 
-function getWsStatusDotClass(status: string | undefined) {
+function getWsStatusDotClass(status) {
   switch (status) {
     case 'connected':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-emerald-400'
     case 'disconnected':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-red-400'
     default:
-      return 'bg-[color:var(--text-dim)]'
+      return 'bg-neutral-500'
   }
 }
 
-function getWsStatusText(status: string | undefined) {
+function getWsStatusText(status) {
   switch (status) {
     case 'connected':
       return 'Подключено'
@@ -650,57 +548,54 @@ function getWsStatusText(status: string | undefined) {
   }
 }
 
-function getWsStatusTextClass(status: string | undefined) {
+function getWsStatusTextClass(status) {
   switch (status) {
     case 'connected':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-emerald-400'
     case 'disconnected':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-red-400'
     default:
-      return 'text-[color:var(--text-dim)]'
+      return 'text-neutral-500'
   }
 }
 
-function getMqttStatusDotClass(status: string | undefined) {
+function getMqttStatusDotClass(status) {
   switch (status) {
     case 'online':
-      return 'bg-[color:var(--accent-green)]'
+      return 'bg-emerald-400'
     case 'offline':
-      return 'bg-[color:var(--accent-red)]'
+      return 'bg-red-400'
     case 'degraded':
-      return 'bg-[color:var(--accent-amber)]'
+      return 'bg-amber-400'
     default:
-      return 'bg-[color:var(--text-dim)]'
+      return 'bg-neutral-500'
   }
 }
 
-function getMqttStatusText(status: string | undefined) {
+function getMqttStatusText(status) {
   switch (status) {
-    case 'online': {
+    case 'online':
       return 'Онлайн'
-    }
-    case 'offline': {
+    case 'offline':
       return 'Офлайн'
-    }
-    case 'degraded': {
+    case 'degraded':
       return 'Частично'
-    }
-    default: {
+    default:
       return 'Неизвестно'
-    }
   }
 }
 
-function getMqttStatusTextClass(status: string | undefined) {
+function getMqttStatusTextClass(status) {
   switch (status) {
     case 'online':
-      return 'text-[color:var(--accent-green)]'
+      return 'text-emerald-400'
     case 'offline':
-      return 'text-[color:var(--accent-red)]'
+      return 'text-red-400'
     case 'degraded':
-      return 'text-[color:var(--accent-amber)]'
+      return 'text-amber-400'
     default:
-      return 'text-[color:var(--text-dim)]'
+      return 'text-neutral-500'
   }
 }
 </script>
+

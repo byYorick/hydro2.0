@@ -5,10 +5,6 @@
 Документ описывает всю модель авторизации (Auth System) в системе 2.0:
 от входа пользователя до распределения прав, токенов и API-доступа.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Общая архитектура безопасности
@@ -35,7 +31,7 @@ id PK
 name
 email UNIQUE
 password (bcrypt)
-role VARCHAR (admin/operator/viewer/agronomist/engineer)
+role VARCHAR (admin/operator/viewer/automation_bot)
 created_at
 updated_at
 ```
@@ -85,19 +81,14 @@ updated_at
 - создавать команды 
 - менять настройки 
 
-## 3.4. role = agronomist
-Профиль технолога выращивания:
+## 3.4. role = automation_bot
+Используется ИИ и Python:
 
-- управление циклами выращивания (grow-cycle)
-- управление ревизиями рецептов и публикацией DRAFT
-- доступ к операционным данным и аналитике
-
-## 3.5. role = engineer
-Профиль инженерной эксплуатации:
-
-- операции диагностики и сервисные действия
-- работа с логами и инфраструктурным наблюдением
-- без прав управления пользователями
+- может читать всё (zone data, controller state)
+- может создавать команды
+- НЕ может менять пользователей
+- НЕ может менять рецепты
+- НЕ может менять зоны
 
 ---
 
@@ -106,7 +97,7 @@ updated_at
 ## 4.1. Генерация токена
 
 ```
-POST /api/auth/login
+POST /api/auth/token
 {
  "email": "user@mail.com",
  "password": "******"
@@ -115,12 +106,7 @@ POST /api/auth/login
 
 Ответ:
 ```
-{
-  "status": "ok",
-  "data": {
-    "token": "xxxxxxxx"
-  }
-}
+{ "token": "xxxxxxxx" }
 ```
 
 ## 4.2. Токен хранит роль
@@ -142,16 +128,16 @@ abilities = ["zones:read", "commands:write"]
 
 ТОП‑уровень:
 
-| Permission | admin | operator | agronomist | engineer | viewer |
-|------------|--------|----------|------------|----------|--------|
-| zones.read | yes | yes | yes | yes | yes |
-| zones.write | yes | yes | limited | limited | no |
-| nodes.write | yes | yes | limited | yes | no |
-| telemetry.read | yes | yes | yes | yes | yes |
-| commands.write | yes | yes | yes | yes | no |
-| recipes.write | yes | limited | yes | limited | no |
-| grow_cycles.manage | yes | limited | yes | no | no |
-| users.manage | yes | no | no | no | no |
+| Permission | admin | operator | viewer | bot |
+|------------|--------|----------|---------|------|
+| zones.read | yes | yes | yes | yes |
+| zones.write | yes | yes | no | no |
+| nodes.write | yes | yes | no | no |
+| telemetry.read | yes | yes | yes | yes |
+| commands.write | yes | yes | no | yes |
+| recipes.write | yes | yes | no | no |
+| ota | yes | limited | no | no |
+| users.manage | yes | no | no | no |
 
 ---
 
@@ -183,8 +169,7 @@ UI скрывает:
 |------|------------------|
 | viewer | всё управление |
 | operator | управление пользователями |
-| agronomist | инженерные логи и часть сервисных разделов |
-| engineer | разделы управления рецептами и grow-cycle |
+| bot | UI не используется |
 
 Vue должен фильтровать доступ по `props.auth.user.role`.
 
@@ -194,16 +179,15 @@ Vue должен фильтровать доступ по `props.auth.user.role`
 
 ### 8.1. Пример: отправка команды
 ```
-POST /api/zones/{zone}/commands
+POST /api/commands
 ```
 
 | Роль | Доступ |
 |-------|--------|
 | admin | ✔ |
 | operator | ✔ |
-| agronomist | ✔ |
-| engineer | ✔ |
 | viewer | ✖ |
+| bot | ✔ |
 
 ### 8.2. OTA
 ```
@@ -214,9 +198,8 @@ POST /api/ota/push
 |--------|--------|
 | admin | ✔ |
 | operator | частично |
-| agronomist | ✖ |
-| engineer | частично |
 | viewer | ✖ |
+| bot | ✖ |
 
 ---
 

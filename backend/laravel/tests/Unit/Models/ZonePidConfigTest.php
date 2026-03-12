@@ -5,7 +5,7 @@ namespace Tests\Unit\Models;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZonePidConfig;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ZonePidConfigTest extends TestCase
@@ -47,6 +47,8 @@ class ZonePidConfigTest extends TestCase
             ],
             'max_output' => 60.0,
             'min_interval_ms' => 90000,
+            'enable_autotune' => true,
+            'adaptation_rate' => 0.1,
         ];
 
         $pidConfig = ZonePidConfig::factory()->create([
@@ -59,6 +61,8 @@ class ZonePidConfigTest extends TestCase
         $this->assertEquals(1.2, $pidConfig->far_zone);
         $this->assertEquals(60.0, $pidConfig->max_output);
         $this->assertEquals(90000, $pidConfig->min_interval_ms);
+        $this->assertTrue($pidConfig->enable_autotune);
+        $this->assertEquals(0.1, $pidConfig->adaptation_rate);
 
         $this->assertIsArray($pidConfig->close_coeffs);
         $this->assertEquals(15.0, $pidConfig->close_coeffs['kp']);

@@ -1191,39 +1191,9 @@ static void render_normal_screen(void) {
                 frame_buffer_draw_line(6, line);
                 break;
             }
-            case OLED_UI_NODE_TYPE_PUMP:
-            case OLED_UI_NODE_TYPE_UNKNOWN:
-            default: {
-                if (s_ui.model.channel_count > 0) {
-                    for (size_t i = 0; i < s_ui.model.channel_count && i < 2; i++) {
-                        char line[22];
-                        char short_name[11] = {0};
-                        const char *channel_name = s_ui.model.channels[i].name[0] != '\0' ?
-                            s_ui.model.channels[i].name : "ch";
-                        float value = s_ui.model.channels[i].value;
-
-                        strncpy(short_name, channel_name, sizeof(short_name) - 1);
-                        short_name[sizeof(short_name) - 1] = '\0';
-
-                        bool likely_binary =
-                            strncmp(channel_name, "level_", 6) == 0 ||
-                            strncmp(channel_name, "valve_", 6) == 0 ||
-                            strncmp(channel_name, "pump_", 5) == 0 ||
-                            (fabsf(value) < 0.05f) ||
-                            (fabsf(value - 1.0f) < 0.05f);
-
-                        if (likely_binary) {
-                            snprintf(line, sizeof(line), "%s: %s", short_name, value >= 0.5f ? "ON" : "OFF");
-                        } else {
-                            snprintf(line, sizeof(line), "%s: %.1f", short_name, value);
-                        }
-                        frame_buffer_draw_line(5 + (int)i, line);
-                    }
-                } else {
-                    frame_buffer_draw_line(5, "Node active");
-                }
+            default:
+                frame_buffer_draw_line(5, "Node active");
                 break;
-            }
         }
     } else if (s_ui.current_screen == 1) {
         // Экран каналов

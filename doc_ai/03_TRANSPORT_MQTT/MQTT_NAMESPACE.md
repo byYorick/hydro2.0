@@ -9,24 +9,14 @@
 
 Frontend и Android **не** обращаются к MQTT напрямую.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Базовый формат топиков
 
-Общий паттерн для сообщений уровня канала (channel-level):
+Общий паттерн:
 
 ```text
 hydro/{gh}/{zone}/{node}/{channel}/{message_type}
-```
-
-Для сообщений уровня узла (node-level, без канала) используется паттерн:
-
-```text
-hydro/{gh}/{zone}/{node}/{message_type}
 ```
 
 Где:
@@ -34,7 +24,7 @@ hydro/{gh}/{zone}/{node}/{message_type}
 - `{gh}` — UID теплицы (`greenhouses.uid`),
 - `{zone}` — UID зоны (`zones.uid`),
 - `{node}` — UID узла (`nodes.uid`),
-- `{channel}` — ключ канала (`channels.key`), используется только для channel-level сообщений,
+- `{channel}` — ключ канала (`channels.key`),
 - `{message_type}` — тип сообщения: 
  `telemetry`, `command`, `status`, `event`, `config` и т.п.
 
@@ -42,7 +32,7 @@ hydro/{gh}/{zone}/{node}/{message_type}
 
 ---
 
-## 2. Типы сообщений
+## 2. Типы сообщений по каналам
 
 ### 2.1. telemetry
 
@@ -59,14 +49,11 @@ Payload (пример):
 
 ```json
 {
- "metric_type": "TEMPERATURE",
  "value": 23.4,
- "ts": 1737355600
+ "metric": "TEMP_AIR",
+ "ts": 1737355600456
 }
 ```
-
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
-> Канонические примеры `metric_type`: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `WATER_LEVEL`, `WATER_LEVEL_SWITCH`, `SOIL_MOISTURE`, `SOIL_TEMP`, `WIND_SPEED`, `OUTSIDE_TEMP`.
 
 ### 2.2. command
 
@@ -81,13 +68,11 @@ Payload (пример):
 
 ```json
 {
- "cmd_id": "cmd-2025-01-01-12-00-00-001",
- "cmd": "set_pwm",
- "params": {
-   "value": 128
- },
- "ts": 1737355112,
- "sig": "a1b2c3d4e5f6..."
+ "cmd": "SET_PWM",
+ "value": 128,
+ "ttl_ms": 5000,
+ "reason": "ZONE_PH_CORRECTION",
+ "request_id": "cmd-2025-01-01-12-00-00-001"
 }
 ```
 
@@ -97,32 +82,18 @@ Payload (пример):
 Получатель: **Python-сервис**
 
 ```text
-hydro/{gh}/{zone}/{node}/status
+hydro/{gh}/{zone}/{node}/{channel}/status
 ```
 
 Payload (пример):
 
 ```json
 {
- "status": "ONLINE",
- "ts": 1710001555
+ "request_id": "cmd-2025-01-01-12-00-00-001",
+ "status": "OK",
+ "ts": 1737355601123
 }
 ```
-
-> `status` является node-level сообщением и публикуется без сегмента `{channel}`.
-
-### 2.3.1. command_response
-
-Отправитель: **узел ESP32**  
-Получатель: **Python-сервис / Backend**
-
-```text
-hydro/{gh}/{zone}/{node}/{channel}/command_response
-```
-
-Канонические `status`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.  
-Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
-Статус `SEND_FAILED` относится к backend/publish-layer и не публикуется нодой в MQTT `command_response`.
 
 ### 2.4. event
 
@@ -138,12 +109,6 @@ hydro/{gh}/{zone}/{node}/{channel}/event
 - `SENSOR_ERROR`, `SENSOR_CALIBRATION_REQUIRED`;
 - `ACTUATOR_FAULT`, `PUMP_OVERCURRENT`;
 - `PH_DRIFT_TOO_HIGH`, `EC_OUT_OF_RANGE`.
-
-Для канала `storage_state` (контур `2 бака`) payload события должен включать `event_code`.
-На стороне backend (`history-logger`) `event_code` нормализуется в `zone_events.type`:
-- `UPPERCASE`, замена не `[A-Z0-9]` на `_`, схлопывание повторов `_`;
-- если после нормализации длина >255, тип усекётся детерминированно с suffix `_{SHA1_10}`;
-- пустой код заменяется на `NODE_EVENT`.
 
 ---
 
@@ -167,20 +132,14 @@ hydro/system/{subtopic}
 ## 4. Правила именования каналов
 
 Ключи каналов (`{channel}`) соответствуют полю `channels.key` и описаны в
-`../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`.
+`NODE_CHANNELS_REFERENCE.md`.
 
 Примеры:
 
 - `ph_main`;
 - `ec_main`;
 - `temp_air`, `temp_water`;
-- `pump_acid`, `pump_base`, `pump_a`, `pump_b`, `pump_c`, `pump_d`;
-- `pump_main`;
-- `level_clean_min`, `level_clean_max`, `level_solution_min`, `level_solution_max`;
-- `valve_clean_fill`, `valve_clean_supply`, `valve_solution_fill`, `valve_solution_supply`, `valve_irrigation`;
-- `soil_moisture`, `soil_temp`;
-- `wind_speed`, `outside_temp`;
-- `storage_state` (service/event channel для 2-бакового контура);
+- `pump_acid`, `pump_base`, `pump_nutrient`;
 - `fan_in`, `fan_out`;
 - `light_main`.
 
@@ -203,28 +162,19 @@ hydro/v2/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Конкретные изменения протокола должны быть задокументированы и отражены в:
 
-- `../05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md`,
-- `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`,
-- `../10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`.
+- `TELEMETRY_PIPELINE.md`,
+- `NODE_CHANNELS_REFERENCE.md`,
+- `MQTT_TOPICS_SPEC_AI_GUIDE.md`.
 
 ---
 
 ## 6. Правила для ИИ-агентов
 
-1. Не менять базовые паттерны:
- - channel-level: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`;
- - node-level: `hydro/{gh}/{zone}/{node}/{message_type}`.
+1. Не менять базовый паттерн `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`.
 2. Любые новые темы должны быть расширением, а не заменой.
 3. Все изменения должны быть:
 
- - согласованы с `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`;
- - отражены в `../10_AI_DEV_GUIDES/PYTHON_MQTT_SERVICE_AI_GUIDE.md` и `../10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`.
+ - согласованы с `DATA_MODEL_REFERENCE.md`;
+ - отражены в `PYTHON_MQTT_SERVICE_AI_GUIDE.md` и `MQTT_TOPICS_SPEC_AI_GUIDE.md`.
 
 MQTT-namespace — это **хребет системы 2.0**, поэтому изменения здесь должны происходить крайне аккуратно.
-
-## 7. Source Of Truth для runtime-схем
-
-- Источник схем: `backend/services/common/schemas`
-- Зеркало для прошивки: `firmware/schemas`
-- Проверка паритета: `./tools/check_runtime_schema_parity.sh`
-- Синхронизация зеркала: `./tools/sync_runtime_schemas.sh`

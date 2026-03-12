@@ -9,10 +9,6 @@
 - сохранить единообразный UX для всех типов узлов (pH, EC, климат, свет);
 - не перегружать MCU и шину I²C.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Общие принципы
@@ -51,7 +47,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 - Режим точки доступа (AP):
  - отображается SSID AP и пароль/QR-код (если возможно).
- - строка: `Connect to: {NODE_TYPE}_SETUP_{PIN}` (пример: `PH_SETUP_123456`).
+ - строка: `Connect to: HYDRO-SETUP`.
 - Подсказка: «Откройте Android-приложение для настройки».
 - Состояние меняется на `NORMAL` после успешной настройки.
 
@@ -106,12 +102,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Модуль `oled_ui.c` должен предоставлять API:
 
-- `oled_ui_init(oled_ui_node_type_t node_type, const char *node_uid, const oled_ui_config_t *config)`;
-- `oled_ui_set_state(oled_ui_state_t state)`;
-- `oled_ui_update_model(const oled_ui_model_t *model)`;
-- обработчики событий ввода (`oled_ui_handle_encoder`, `oled_ui_handle_button`).
+- `ui_init(node_type, node_uid)`;
+- `ui_set_state(UI_STATE_xxx)`;
+- `ui_update_model(struct UiModel *model)`;
+- обработчики событий ввода (`ui_handle_encoder`, `ui_handle_button`).
 
-`oled_ui_model_t` содержит:
+`UiModel` содержит:
 
 - текущие измерения (pH, EC, температуру);
 - статус соединений (Wi-Fi/MQTT);

@@ -12,27 +12,6 @@ export interface RecipePhaseTargets {
     min: number
     max: number
   }
-  temp_air?: number
-  humidity_air?: number
-  light_hours?: number
-  irrigation_interval_sec?: number
-  irrigation_duration_sec?: number
-  irrigation?: Record<string, unknown>
-  lighting?: Record<string, unknown>
-  climate?: Record<string, unknown>
-}
-
-export interface NutrientProduct {
-  id: number
-  manufacturer: string
-  name: string
-  component: 'npk' | 'calcium' | 'magnesium' | 'micro'
-  composition?: string | null
-  recommended_stage?: string | null
-  notes?: string | null
-  metadata?: Record<string, any> | null
-  created_at?: string
-  updated_at?: string
 }
 
 /**
@@ -43,37 +22,7 @@ export interface RecipePhase {
   phase_index: number
   name: string
   duration_hours: number
-  duration_days?: number
-  phase_started_at?: string | null
-  phase_ends_at?: string | null
   targets?: RecipePhaseTargets
-  // Flat API fields (alternative to nested targets)
-  ph_min?: number | null
-  ph_max?: number | null
-  ec_min?: number | null
-  ec_max?: number | null
-  temp_air_target?: number | null
-  humidity_target?: number | null
-  lighting_photoperiod_hours?: number | null
-  irrigation_interval_sec?: number | null
-  irrigation_duration_sec?: number | null
-  nutrient_program_code?: string | null
-  nutrient_mode?: 'ratio_ec_pid' | 'delta_ec_by_k' | 'dose_ml_l_only' | null
-  nutrient_npk_ratio_pct?: number | string | null
-  nutrient_calcium_ratio_pct?: number | string | null
-  nutrient_magnesium_ratio_pct?: number | string | null
-  nutrient_micro_ratio_pct?: number | string | null
-  nutrient_npk_dose_ml_l?: number | string | null
-  nutrient_calcium_dose_ml_l?: number | string | null
-  nutrient_magnesium_dose_ml_l?: number | string | null
-  nutrient_micro_dose_ml_l?: number | string | null
-  nutrient_npk_product_id?: number | null
-  nutrient_calcium_product_id?: number | null
-  nutrient_magnesium_product_id?: number | null
-  nutrient_micro_product_id?: number | null
-  nutrient_dose_delay_sec?: number | null
-  nutrient_ec_stop_tolerance?: number | string | null
-  nutrient_solution_volume_l?: number | string | null
   created_at?: string
   updated_at?: string
 }
@@ -87,10 +36,6 @@ export interface Recipe {
   description?: string
   phases?: RecipePhase[]
   phases_count?: number
-  latest_published_revision_id?: number | null
-  latest_draft_revision_id?: number | null
-  draft_revision_id?: number | null
-  plants?: Array<{ id: number; name: string }>
   created_at?: string
   updated_at?: string
 }
@@ -109,3 +54,4 @@ export interface RecipeInstance {
   created_at?: string
   updated_at?: string
 }
+

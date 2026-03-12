@@ -15,32 +15,17 @@ class ZoneEvent extends Model
     protected $fillable = [
         'zone_id',
         'type',
-        'payload_json',  // Используем payload_json вместо details (колонка переименована в миграции)
-        'details', // Обратная совместимость для тестов/кода, использующего details
-        'entity_type',
-        'entity_id',
-        'server_ts',
+        'details',
     ];
 
     protected $casts = [
-        'payload_json' => 'array',  // Используем payload_json вместо details
+        'details' => 'array',
         'created_at' => 'datetime',
     ];
-    
-    // Accessor для обратной совместимости с кодом, использующим 'details'
-    public function getDetailsAttribute()
-    {
-        return $this->payload_json;
-    }
-    
-    // Mutator для обратной совместимости
-    public function setDetailsAttribute($value)
-    {
-        $this->payload_json = $value;
-    }
 
     public function zone(): BelongsTo
     {
         return $this->belongsTo(Zone::class);
     }
 }
+

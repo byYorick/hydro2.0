@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
-use App\Helpers\TransactionHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -69,8 +68,7 @@ class NodeLifecycleService
         NodeLifecycleState $targetState,
         ?string $reason = null
     ): bool {
-        // Используем SERIALIZABLE isolation level для критичной операции перехода состояния
-        return TransactionHelper::withSerializableRetry(function () use ($node, $targetState, $reason) {
+        return DB::transaction(function () use ($node, $targetState, $reason) {
             $currentState = $node->lifecycleState();
             $targetValue = $targetState->value;
 

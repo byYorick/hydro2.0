@@ -2,10 +2,6 @@
 
 Этот раздел содержит высокоуровневую системную архитектуру и логику работы системы hydro 2.0.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 📋 Документы раздела
@@ -23,7 +19,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Полные потоки данных**
 - Telemetry Flow (узлы → backend)
 - Command Flow (backend → узлы)
-- Config Flow (`config_report`: узлы → backend)
+- Config Flow (backend → узлы)
 - Status/LWT Flow
 - Heartbeat Flow
 - Events Flow
@@ -48,6 +44,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 #### [REPO_MAPPING.md](REPO_MAPPING.md)
 Маппинг репозиториев и компонентов
 
+#### [MIGRATION_PLAN_FROM_MESH_HYDRO.md](MIGRATION_PLAN_FROM_MESH_HYDRO.md)
+План миграции с mesh_hydro на hydro 2.0
+
 #### [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
 Предложение по полной системной архитектуре
 
@@ -56,6 +55,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 #### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
 Реализация отвязки узлов от зон
+
+**Примечание:** Исторические отчеты об аудите и улучшениях перемещены в архив: `00_ARCHIVE/REPORTS/`
 
 ---
 
@@ -84,3 +85,4 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ---
 
 **См. также:** [Главный индекс документации](../INDEX.md)
+

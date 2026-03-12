@@ -11,29 +11,27 @@ idf_component_register(
         "."
     REQUIRES
         mqtt_manager
+        mqtt_client
         wifi_manager
         config_storage
         config_apply
         node_framework
-        node_utils
-        init_steps_utils
         relay_driver
+        heartbeat_task
         i2c_bus
         sht3x
         ccs811
-        oled_ui
         setup_portal
-        heartbeat_task
+        oled_ui
         connection_status
-        factory_reset_button
-        driver
+        node_utils
         esp_wifi
+        esp_timer
+        esp_system
         nvs_flash
         esp_netif
         esp_event
         freertos
-        mqtt
-        esp_timer
+        driver
         json
-        mbedtls
 )

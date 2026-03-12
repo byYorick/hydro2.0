@@ -6,7 +6,6 @@ export interface ZoneTelemetry {
   ec?: number | null
   temperature?: number | null
   humidity?: number | null
-  co2?: number | null
   last_updated?: string
 }
 
@@ -16,12 +15,9 @@ export interface ZoneTelemetry {
 export interface TelemetrySample {
   ts: number
   value: number
-  avg?: number | null
-  min?: number | null
-  max?: number | null
 }
 
 /**
  * Тип метрики телеметрии
  */
-export type TelemetryMetric = 'PH' | 'EC' | 'TEMPERATURE' | 'HUMIDITY'
+export type TelemetryMetric = 'PH' | 'EC' | 'TEMP' | 'HUMIDITY'

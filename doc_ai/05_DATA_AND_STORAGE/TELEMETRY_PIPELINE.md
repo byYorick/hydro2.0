@@ -3,10 +3,6 @@
 
 Документ описывает путь телеметрии от узла ESP32 до UI/Android.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Цепочка телеметрии
@@ -27,26 +23,18 @@ Payload (пример):
 
 ```json
 {
- "metric_type": "TEMPERATURE",
  "value": 23.4,
- "ts": 1737355600
+ "metric": "TEMP_AIR",
+ "ts": 1737355600456
 }
 ```
 
-**Обязательные поля:**
-- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT` и т.д.
-- `value` (float или int) — значение метрики
-- `ts` (integer) — unix-время в секундах (не миллисекундах)
+Ограничения:
 
-**Опциональные поля:**
-- `unit` (string) — единица измерения
-- `raw` (integer) — сырое значение сенсора
-- `stub` (boolean) — флаг симулированного значения
-- `stable` (boolean) — флаг стабильности значения
-- `flow_active` (boolean) — доменный флаг активности потока для gating коррекции
-- `corrections_allowed` (boolean) — доменный флаг разрешения коррекций
-
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
+- `value` — `float` или `int`;
+- `metric` — строковый код метрики (PH, EC, TEMP_AIR и т.п.);
+- `ts` — unix-время в миллисекундах;
+- никаких лишних полей без необходимости.
 
 Частота публикаций настраивается (обычно 1–15 секунд).
 
@@ -65,23 +53,21 @@ Python-сервис:
 
 1. Принимает сообщение из MQTT.
 2. Валидирует структуру JSON (формат, диапазоны).
-3. Резолвит `sensor_id` через таблицу `sensors` (по `zone_id`, `node_id`, `metric_type`, `channel`, `scope`).
-4. Преобразует во внутреннюю структуру (sensor_id, ts, value, quality, metadata, zone_id/cycle_id).
-5. Записывает:
+3. Преобразует во внутреннюю структуру (zone_id, node_id, channel_id, metric, value, ts).
+4. Записывает:
 
  - в таблицу `telemetry_samples` — полная история;
- - в таблицу `telemetry_last` — последнее значение по `sensor_id`.
+ - в таблицу `telemetry_last` — последнее значение по связке (`zone`, `node`, `channel`, `metric`).
 
 Пример записи в `telemetry_samples` (логика, не SQL):
 
 - `id`
-- `sensor_id`
-- `ts`
-- `zone_id` (optional)
-- `cycle_id` (optional)
+- `zone_id`
+- `node_id`
+- `channel_id`
+- `metric`
 - `value`
-- `quality`
-- `metadata`
+- `ts`
 
 ---
 

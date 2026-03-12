@@ -16,12 +16,11 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 #include "node_utils.h"
+#include "esp_timer.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -53,23 +52,15 @@ void oled_ui_notify_mqtt_rx(void) __attribute__((weak));
 #endif
 
 static const char *TAG = "mqtt_manager";
-// Конфигурация под burst публикации (например, batch config_report от test_node)
-#define MQTT_MANAGER_BUFFER_SIZE_BYTES 2048
-#define MQTT_MANAGER_OUTBOX_LIMIT_BYTES (32 * 1024)
-// MQTT callback может вызывать тяжёлые обработчики (config/apply/report), поэтому
-// используем увеличенный stack mqtt_task для запаса.
-#define MQTT_MANAGER_TASK_STACK_SIZE_BYTES (12 * 1024)
 
 // Внутренние структуры
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static mqtt_manager_config_t s_config = {0};
 static mqtt_node_info_t s_node_info = {0};
 static bool s_is_connected = false;
-static bool s_client_started = false;
 static bool s_was_connected = false;  // Флаг, что было хотя бы одно подключение
 static char s_mqtt_uri[256] = {0};
 static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
-static TaskHandle_t s_mqtt_event_task_handle = NULL;
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -78,11 +69,6 @@ static mqtt_connection_callback_t s_connection_cb = NULL;
 static void *s_config_user_ctx = NULL;
 static void *s_command_user_ctx = NULL;
 static void *s_connection_user_ctx = NULL;
-static char s_rx_topic_buf[192] = {0};
-static char s_rx_payload_buf[2049] = {0}; // 2048 bytes payload + '\0'
-static int s_rx_expected_len = 0;
-static int s_rx_received_len = 0;
-static bool s_rx_assembly_active = false;
 
 // Mutex для защиты s_node_info и статических буферов от гонок данных
 static SemaphoreHandle_t s_node_info_mutex = NULL;
@@ -91,8 +77,6 @@ static SemaphoreHandle_t s_node_info_mutex = NULL;
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, 
                                int32_t event_id, void *event_data);
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain);
-static esp_err_t mqtt_manager_create_client(void);
-static void mqtt_manager_reset_rx_assembly(void);
 
 /**
  * @brief Построение MQTT топика
@@ -144,114 +128,6 @@ static esp_err_t build_topic(char *topic_buf, size_t buf_size, const char *type,
     }
 
     return ESP_OK;
-}
-
-static esp_err_t mqtt_manager_create_client(void) {
-    if (s_mqtt_client != NULL) {
-        ESP_LOGE(TAG, "MQTT client already created");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (!s_config.host || s_config.host[0] == '\0' || s_config.port == 0) {
-        ESP_LOGE(TAG, "MQTT config is incomplete");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (!s_node_info.node_uid || s_node_info.node_uid[0] == '\0') {
-        ESP_LOGE(TAG, "Node UID is not configured");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
-    int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u",
-                           protocol, s_config.host, s_config.port);
-    if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
-        ESP_LOGE(TAG, "MQTT URI is too long");
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    const char *client_id = s_config.client_id;
-    static char client_id_fallback[32] = {0};
-    if (!client_id || client_id[0] == '\0') {
-        uint8_t mac[6] = {0};
-        if (esp_efuse_mac_get_default(mac) == ESP_OK) {
-            snprintf(
-                client_id_fallback,
-                sizeof(client_id_fallback),
-                "esp32-%02x%02x%02x%02x%02x%02x",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-            );
-            client_id = client_id_fallback;
-        } else {
-            client_id = s_node_info.node_uid;
-        }
-    }
-
-    static char lwt_topic_static[192];
-    if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to build LWT topic");
-        return ESP_FAIL;
-    }
-
-    esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = s_mqtt_uri,
-        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 60,
-        .session.disable_clean_session = 0,
-        .network.reconnect_timeout_ms = 5000,
-        .network.timeout_ms = 30000,
-        .network.disable_auto_reconnect = false,
-        .task.stack_size = MQTT_MANAGER_TASK_STACK_SIZE_BYTES,
-        .buffer.size = MQTT_MANAGER_BUFFER_SIZE_BYTES,
-        .buffer.out_size = MQTT_MANAGER_BUFFER_SIZE_BYTES,
-        .outbox.limit = MQTT_MANAGER_OUTBOX_LIMIT_BYTES,
-        .session.last_will.topic = lwt_topic_static,
-        .session.last_will.msg = "offline",
-        .session.last_will.qos = 1,
-        .session.last_will.retain = 1,
-    };
-
-    ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
-    ESP_LOGI(TAG, "MQTT task stack: %d bytes", MQTT_MANAGER_TASK_STACK_SIZE_BYTES);
-    ESP_LOGI(TAG, "MQTT buffers: in/out=%d bytes, outbox_limit=%llu bytes",
-             MQTT_MANAGER_BUFFER_SIZE_BYTES,
-             (unsigned long long)MQTT_MANAGER_OUTBOX_LIMIT_BYTES);
-
-    if (s_config.username && s_config.username[0] != '\0') {
-        mqtt_cfg.credentials.username = s_config.username;
-        if (s_config.password && s_config.password[0] != '\0') {
-            mqtt_cfg.credentials.authentication.password = s_config.password;
-        }
-    }
-
-    mqtt_cfg.credentials.client_id = client_id;
-    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
-    if (s_mqtt_client == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize MQTT client");
-        return ESP_FAIL;
-    }
-
-    esp_err_t err = esp_mqtt_client_register_event(
-        s_mqtt_client,
-        ESP_EVENT_ANY_ID,
-        mqtt_event_handler,
-        NULL
-    );
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
-        esp_mqtt_client_destroy(s_mqtt_client);
-        s_mqtt_client = NULL;
-        return err;
-    }
-
-    return ESP_OK;
-}
-
-static void mqtt_manager_reset_rx_assembly(void) {
-    s_rx_topic_buf[0] = '\0';
-    s_rx_payload_buf[0] = '\0';
-    s_rx_expected_len = 0;
-    s_rx_received_len = 0;
-    s_rx_assembly_active = false;
 }
 
 esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node_info_t *node_info) {
@@ -363,11 +239,75 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
     s_config.keepalive = config->keepalive;
     s_config.use_tls = config->use_tls;
 
-    esp_err_t err = mqtt_manager_create_client();
+    // Формируем URI
+    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
+    int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u", 
+                          protocol, s_config.host, s_config.port);
+    if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
+        ESP_LOGE(TAG, "MQTT URI is too long");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    // Определяем client_id
+    const char *client_id = s_config.client_id;
+    if (!client_id || client_id[0] == '\0') {
+        client_id = s_node_info.node_uid;  // Используем уже скопированное значение
+    }
+
+    // Настройка LWT (Last Will and Testament) - нужно статическое хранилище
+    static char lwt_topic_static[192];
+    if (build_topic(lwt_topic_static, sizeof(lwt_topic_static), "lwt", NULL) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to build LWT topic");
+        return ESP_FAIL;
+    }
+
+    // Конфигурация MQTT клиента
+    esp_mqtt_client_config_t mqtt_cfg = {
+        .broker.address.uri = s_mqtt_uri,
+        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 30,
+        .session.disable_clean_session = 0,
+        .network.reconnect_timeout_ms = 10000,
+        .network.timeout_ms = 10000,
+        .session.last_will.topic = lwt_topic_static,
+        .session.last_will.msg = "offline",
+        .session.last_will.qos = 1,
+        .session.last_will.retain = 1,
+    };
+
+    ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
+
+    // Аутентификация (если указана)
+    if (s_config.username && s_config.username[0] != '\0') {
+        mqtt_cfg.credentials.username = s_config.username;
+        if (s_config.password && s_config.password[0] != '\0') {
+            mqtt_cfg.credentials.authentication.password = s_config.password;
+        }
+    }
+
+    // Client ID
+    mqtt_cfg.credentials.client_id = client_id;
+
+    // Инициализация клиента
+    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    if (s_mqtt_client == NULL) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT client");
+        return ESP_FAIL;
+    }
+
+    // Регистрация обработчика событий
+    esp_err_t err = esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID,
+                                                   mqtt_event_handler, NULL);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register MQTT event handler: %s", esp_err_to_name(err));
+        esp_mqtt_client_destroy(s_mqtt_client);
+        s_mqtt_client = NULL;
         return err;
     }
 
+    // КРИТИЧНО: Убираем логирование сразу после регистрации обработчика для предотвращения паники
+    // Проблема возникает при вызове ESP_LOGI - возможно из-за повреждения стека или heap
+    // Логирование будет выполнено позже, когда система стабилизируется
+    // ESP_LOGI(TAG, "MQTT manager initialized successfully");
     return ESP_OK;
 }
 
@@ -377,11 +317,6 @@ esp_err_t mqtt_manager_start(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_client_started) {
-        ESP_LOGW(TAG, "MQTT manager already started");
-        return ESP_OK;
-    }
-
     ESP_LOGI(TAG, "Starting MQTT manager...");
     esp_err_t err = esp_mqtt_client_start(s_mqtt_client);
     if (err != ESP_OK) {
@@ -389,7 +324,6 @@ esp_err_t mqtt_manager_start(void) {
         return err;
     }
 
-    s_client_started = true;
     return ESP_OK;
 }
 
@@ -398,58 +332,22 @@ esp_err_t mqtt_manager_stop(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (!s_client_started) {
-        ESP_LOGW(TAG, "MQTT manager stop requested, but client was not started");
-        return ESP_ERR_INVALID_STATE;
-    }
-
     ESP_LOGI(TAG, "Stopping MQTT manager...");
-    esp_err_t err = esp_mqtt_client_stop(s_mqtt_client);
-    if (err == ESP_OK) {
-        s_client_started = false;
-    }
-    return err;
+    return esp_mqtt_client_stop(s_mqtt_client);
 }
 
 esp_err_t mqtt_manager_deinit(void) {
-    TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
-
-    if (s_mqtt_event_task_handle != NULL && current_task == s_mqtt_event_task_handle) {
-        ESP_LOGE(TAG, "MQTT manager deinit from MQTT task is forbidden");
-        return ESP_ERR_INVALID_STATE;
-    }
-
     if (s_mqtt_client) {
-        if (s_client_started) {
-            esp_err_t stop_err = mqtt_manager_stop();
-            if (stop_err != ESP_OK) {
-                ESP_LOGE(TAG, "MQTT manager deinit aborted: stop failed: %s", esp_err_to_name(stop_err));
-                return stop_err;
-            }
-        }
+        esp_mqtt_client_stop(s_mqtt_client);
         esp_mqtt_client_destroy(s_mqtt_client);
         s_mqtt_client = NULL;
-    }
-    if (s_node_info_mutex) {
-        vSemaphoreDelete(s_node_info_mutex);
-        s_node_info_mutex = NULL;
     }
 
     memset(&s_config, 0, sizeof(s_config));
     memset(&s_node_info, 0, sizeof(s_node_info));
-    memset(s_mqtt_uri, 0, sizeof(s_mqtt_uri));
     s_is_connected = false;
-    s_client_started = false;
     s_was_connected = false;
     s_reconnect_count = 0;
-    s_mqtt_event_task_handle = NULL;
-    s_config_cb = NULL;
-    s_command_cb = NULL;
-    s_connection_cb = NULL;
-    s_config_user_ctx = NULL;
-    s_command_user_ctx = NULL;
-    s_connection_user_ctx = NULL;
-    mqtt_manager_reset_rx_assembly();
 
     ESP_LOGI(TAG, "MQTT manager deinitialized");
     return ESP_OK;
@@ -511,30 +409,6 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info) {
     return ESP_OK;
 }
 
-esp_err_t mqtt_manager_get_node_info(mqtt_node_info_t *node_info) {
-    if (node_info == NULL) {
-        ESP_LOGE(TAG, "Invalid argument: node_info is NULL");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (s_node_info_mutex == NULL) {
-        ESP_LOGW(TAG, "Node info mutex is not initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    if (xSemaphoreTake(s_node_info_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        ESP_LOGW(TAG, "Failed to take node_info mutex");
-        return ESP_ERR_TIMEOUT;
-    }
-
-    node_info->gh_uid = s_node_info.gh_uid;
-    node_info->zone_uid = s_node_info.zone_uid;
-    node_info->node_uid = s_node_info.node_uid;
-    xSemaphoreGive(s_node_info_mutex);
-
-    return ESP_OK;
-}
-
 void mqtt_manager_register_config_cb(mqtt_config_callback_t cb, void *user_ctx) {
     s_config_cb = cb;
     s_config_user_ctx = user_ctx;
@@ -589,7 +463,7 @@ esp_err_t mqtt_manager_publish_heartbeat(const char *data) {
         return err;
     }
 
-    return mqtt_manager_publish_internal(topic, data, 1, 0);  // QoS = 1 согласно MQTT_SPEC_FULL.md
+    return mqtt_manager_publish_internal(topic, data, 0, 0);
 }
 
 esp_err_t mqtt_manager_publish_command_response(const char *channel, const char *data) {
@@ -606,13 +480,13 @@ esp_err_t mqtt_manager_publish_command_response(const char *channel, const char 
     return mqtt_manager_publish_internal(topic, data, 1, 0);
 }
 
-esp_err_t mqtt_manager_publish_config_report(const char *data) {
+esp_err_t mqtt_manager_publish_config_response(const char *data) {
     if (!data) {
         return ESP_ERR_INVALID_ARG;
     }
 
     char topic[192];
-    esp_err_t err = build_topic(topic, sizeof(topic), "config_report", NULL);
+    esp_err_t err = build_topic(topic, sizeof(topic), "config_response", NULL);
     if (err != ESP_OK) {
         return err;
     }
@@ -647,11 +521,7 @@ esp_err_t mqtt_manager_reconnect(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (s_is_connected) {
-        return ESP_OK;
-    }
-
-    ESP_LOGI(TAG, "Manual reconnect requested");
+    ESP_LOGI(TAG, "Reconnecting to MQTT broker...");
     return esp_mqtt_client_reconnect(s_mqtt_client);
 }
 
@@ -660,48 +530,6 @@ esp_err_t mqtt_manager_reconnect(void) {
  */
 esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos, int retain) {
     return mqtt_manager_publish_internal(topic, data, qos, retain);
-}
-
-esp_err_t mqtt_manager_subscribe_raw(const char *topic, int qos) {
-    if (!topic || topic[0] == '\0') {
-        ESP_LOGE(TAG, "Invalid subscribe topic");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (!s_mqtt_client) {
-        ESP_LOGE(TAG, "MQTT manager not initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    int msg_id = esp_mqtt_client_subscribe(s_mqtt_client, topic, qos);
-    if (msg_id < 0) {
-        ESP_LOGE(TAG, "Failed to subscribe raw topic: %s", topic);
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Subscribed to raw topic: %s (msg_id=%d)", topic, msg_id);
-    return ESP_OK;
-}
-
-esp_err_t mqtt_manager_unsubscribe_raw(const char *topic) {
-    if (!topic || topic[0] == '\0') {
-        ESP_LOGE(TAG, "Invalid unsubscribe topic");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (!s_mqtt_client) {
-        ESP_LOGE(TAG, "MQTT manager not initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    int msg_id = esp_mqtt_client_unsubscribe(s_mqtt_client, topic);
-    if (msg_id < 0) {
-        ESP_LOGE(TAG, "Failed to unsubscribe raw topic: %s", topic);
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Unsubscribed from raw topic: %s (msg_id=%d)", topic, msg_id);
-    return ESP_OK;
 }
 
 /**
@@ -720,9 +548,7 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     // Уведомляем OLED UI о MQTT активности (отправка)
     // Используем слабые символы для опциональной зависимости от oled_ui
     // Если функция не определена, линкер разрешит слабый символ (NULL)
-    if (oled_ui_notify_mqtt_tx) {
-        oled_ui_notify_mqtt_tx();
-    }
+    oled_ui_notify_mqtt_tx();
 
     int data_len = strlen(data);
     
@@ -751,8 +577,8 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Failed to publish to %s (msg_id=%d)", topic, msg_id);
-        // Не форсируем s_is_connected=false здесь:
-        // msg_id<0 может быть временной ошибкой очереди/outbox.
+        // При ошибке публикации не устанавливаем s_is_connected = false,
+        // так как это может быть временная проблема, и клиент сам обработает переподключение
         // Обновление метрик диагностики (ошибка публикации)
         #if DIAGNOSTICS_AVAILABLE
         if (diagnostics_is_initialized()) {
@@ -780,9 +606,6 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                                int32_t event_id, void *event_data) {
     esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
-    if (s_mqtt_event_task_handle == NULL) {
-        s_mqtt_event_task_handle = xTaskGetCurrentTaskHandle();
-    }
 
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
@@ -863,14 +686,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 ESP_LOGE(TAG, "Failed to subscribe to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
             }
             
-            // Подписка на time/response для получения синхронизации времени от сервера
-            int time_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, "hydro/time/response", 1);
-            if (time_sub_msg_id >= 0) {
-                ESP_LOGI(TAG, "Subscribed to hydro/time/response (msg_id=%d)", time_sub_msg_id);
-            } else {
-                ESP_LOGW(TAG, "Failed to subscribe to hydro/time/response (msg_id=%d)", time_sub_msg_id);
-            }
-            
             // Также подписываемся на временный топик команд для узлов, которые еще не получили конфигурацию
             // Это позволяет получить команды даже если нода использует временные идентификаторы
             // Используем hardware_id (MAC адрес) для временного топика, чтобы избежать конфликтов при одинаковом node_uid
@@ -901,25 +716,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                         ESP_LOGW(TAG, "Failed to subscribe to temp command topic: %s (msg_id=%d)", temp_command_topic, temp_cmd_sub_msg_id);
                     }
                 }
-            }
-            
-            // Запрос времени у сервера для синхронизации часов устройства
-            // Это обеспечивает единую временную линию между устройствами и бэкендом
-            esp_err_t time_req_err = node_utils_request_time();
-            if (time_req_err == ESP_OK) {
-                ESP_LOGI(TAG, "Requested time synchronization from server");
-            } else {
-                ESP_LOGW(
-                    TAG,
-                    "Time synchronization request skipped/failed: err=0x%x (%s)",
-                    (unsigned)time_req_err,
-                    esp_err_to_name(time_req_err)
-                );
-            }
-
-            if (!s_is_connected) {
-                ESP_LOGW(TAG, "MQTT disconnected before connection callback, skip connected callback");
-                break;
             }
 
             // Вызов callback подключения
@@ -955,20 +751,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
 
         case MQTT_EVENT_DATA: {
-            const size_t max_topic_len = sizeof(s_rx_topic_buf) - 1;
-            const size_t max_data_len = sizeof(s_rx_payload_buf) - 1;
-            int total_data_len = (event->total_data_len > 0) ? event->total_data_len : event->data_len;
-            int current_offset = event->current_data_offset;
-
-            if (event->data_len < 0 || total_data_len < 0 || current_offset < 0) {
-                ESP_LOGW(
-                    TAG,
-                    "Invalid MQTT chunk lengths: data_len=%d total_data_len=%d offset=%d",
-                    event->data_len,
-                    total_data_len,
-                    current_offset
-                );
-                mqtt_manager_reset_rx_assembly();
+            // Проверка длины topic и data перед обработкой
+            // max_topic_len должен соответствовать размеру буфера build_topic (192 байта)
+            // с небольшим запасом для безопасности
+            const size_t max_topic_len = 192;
+            const size_t max_data_len = 2048;
+            
+            // Проверяем, не превышает ли длина допустимые значения
+            if (event->topic_len > max_topic_len) {
+                ESP_LOGW(TAG, "MQTT topic too long: %d bytes (max %zu), dropping message", 
+                         event->topic_len, max_topic_len);
                 #if DIAGNOSTICS_AVAILABLE
                 if (diagnostics_is_initialized()) {
                     diagnostics_update_mqtt_metrics(false, true, false);
@@ -976,11 +768,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 #endif
                 break;
             }
-
-            if ((size_t)total_data_len > max_data_len) {
-                ESP_LOGW(TAG, "MQTT data too long: %d bytes (max %zu), dropping message",
-                         total_data_len, max_data_len);
-                mqtt_manager_reset_rx_assembly();
+            
+            if (event->data_len > max_data_len) {
+                ESP_LOGW(TAG, "MQTT data too long: %d bytes (max %zu), dropping message", 
+                         event->data_len, max_data_len);
                 #if DIAGNOSTICS_AVAILABLE
                 if (diagnostics_is_initialized()) {
                     diagnostics_update_mqtt_metrics(false, true, false);
@@ -988,149 +779,61 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 #endif
                 break;
             }
+            
+            // Создание null-terminated строк для topic и data
+            // Размер буфера topic увеличен до 192 для соответствия build_topic
+            // КРИТИЧНО: Используем статические буферы вместо стека для предотвращения переполнения
+            // ВАЖНО: ESP-IDF MQTT клиент вызывает обработчики событий последовательно из одного потока,
+            // поэтому статические буферы безопасны (нет гонки данных)
+            static char topic[192] = {0};
+            static char data[2048] = {0};
 
-            if (current_offset == 0) {
-                if (!event->topic || event->topic_len <= 0 || (size_t)event->topic_len > max_topic_len) {
-                    ESP_LOGW(
-                        TAG,
-                        "Invalid MQTT topic for first chunk: topic_len=%d (max %zu)",
-                        event->topic_len,
-                        max_topic_len
-                    );
-                    mqtt_manager_reset_rx_assembly();
-                    #if DIAGNOSTICS_AVAILABLE
-                    if (diagnostics_is_initialized()) {
-                        diagnostics_update_mqtt_metrics(false, true, false);
-                    }
-                    #endif
-                    break;
-                }
+            int topic_len = (event->topic_len < sizeof(topic) - 1) ? 
+                           event->topic_len : sizeof(topic) - 1;
+            int data_len = (event->data_len < sizeof(data) - 1) ? 
+                          event->data_len : sizeof(data) - 1;
 
-                memcpy(s_rx_topic_buf, event->topic, event->topic_len);
-                s_rx_topic_buf[event->topic_len] = '\0';
-                memset(s_rx_payload_buf, 0, sizeof(s_rx_payload_buf));
-                s_rx_expected_len = total_data_len;
-                s_rx_received_len = 0;
-                s_rx_assembly_active = true;
+            if (event->topic) {
+                memcpy(topic, event->topic, topic_len);
+                topic[topic_len] = '\0';  // КРИТИЧНО: Добавляем null-terminator
             } else {
-                if (!s_rx_assembly_active) {
-                    ESP_LOGW(
-                        TAG,
-                        "MQTT chunk without active assembly: offset=%d data_len=%d",
-                        current_offset,
-                        event->data_len
-                    );
-                    break;
-                }
-
-                if (total_data_len != s_rx_expected_len) {
-                    ESP_LOGW(
-                        TAG,
-                        "MQTT chunk total_len mismatch: chunk=%d expected=%d",
-                        total_data_len,
-                        s_rx_expected_len
-                    );
-                    mqtt_manager_reset_rx_assembly();
-                    #if DIAGNOSTICS_AVAILABLE
-                    if (diagnostics_is_initialized()) {
-                        diagnostics_update_mqtt_metrics(false, true, false);
-                    }
-                    #endif
-                    break;
-                }
-
-                if (event->topic && event->topic_len > 0) {
-                    size_t current_topic_len = strlen(s_rx_topic_buf);
-                    if ((size_t)event->topic_len > max_topic_len ||
-                        current_topic_len != (size_t)event->topic_len ||
-                        memcmp(s_rx_topic_buf, event->topic, event->topic_len) != 0) {
-                        ESP_LOGW(TAG, "MQTT topic changed across chunks, dropping message");
-                        mqtt_manager_reset_rx_assembly();
-                        #if DIAGNOSTICS_AVAILABLE
-                        if (diagnostics_is_initialized()) {
-                            diagnostics_update_mqtt_metrics(false, true, false);
-                        }
-                        #endif
-                        break;
-                    }
-                }
+                topic[0] = '\0';
             }
-
-            if (!event->data && event->data_len > 0) {
-                ESP_LOGW(TAG, "MQTT chunk has NULL data pointer with len=%d", event->data_len);
-                mqtt_manager_reset_rx_assembly();
-                #if DIAGNOSTICS_AVAILABLE
-                if (diagnostics_is_initialized()) {
-                    diagnostics_update_mqtt_metrics(false, true, false);
-                }
-                #endif
-                break;
+            if (event->data) {
+                memcpy(data, event->data, data_len);
+                data[data_len] = '\0';  // КРИТИЧНО: Добавляем null-terminator
+            } else {
+                data[0] = '\0';
             }
-
-            if ((size_t)(current_offset + event->data_len) > max_data_len ||
-                (current_offset + event->data_len) > s_rx_expected_len) {
-                ESP_LOGW(
-                    TAG,
-                    "MQTT chunk out of bounds: offset=%d data_len=%d expected=%d max=%zu",
-                    current_offset,
-                    event->data_len,
-                    s_rx_expected_len,
-                    max_data_len
-                );
-                mqtt_manager_reset_rx_assembly();
-                #if DIAGNOSTICS_AVAILABLE
-                if (diagnostics_is_initialized()) {
-                    diagnostics_update_mqtt_metrics(false, true, false);
-                }
-                #endif
-                break;
-            }
-
-            if (event->data_len > 0 && event->data) {
-                memcpy(s_rx_payload_buf + current_offset, event->data, event->data_len);
-            }
-            if ((current_offset + event->data_len) > s_rx_received_len) {
-                s_rx_received_len = current_offset + event->data_len;
-            }
-
-            if (s_rx_received_len < s_rx_expected_len) {
-                ESP_LOGD(
-                    TAG,
-                    "MQTT chunk buffered: topic='%s' offset=%d chunk_len=%d total=%d",
-                    s_rx_topic_buf,
-                    current_offset,
-                    event->data_len,
-                    s_rx_expected_len
-                );
-                break;
-            }
-
-            s_rx_payload_buf[s_rx_expected_len] = '\0';
-
-            const char *topic = s_rx_topic_buf;
-            const char *data = s_rx_payload_buf;
-            int payload_len = s_rx_expected_len;
-
+            
+            // Логирование входящих сообщений
             const int log_data_max = 200;
             char log_data[log_data_max + 4];
-            if (payload_len <= log_data_max) {
-                memcpy(log_data, data, payload_len);
-                log_data[payload_len] = '\0';
+            if (event->data_len <= log_data_max) {
+                if (event->data) {
+                    memcpy(log_data, event->data, event->data_len);
+                    log_data[event->data_len] = '\0';
+                } else {
+                    log_data[0] = '\0';
+                }
             } else {
-                memcpy(log_data, data, log_data_max);
-                log_data[log_data_max] = '\0';
-                strcat(log_data, "...");
+                if (event->data) {
+                    memcpy(log_data, event->data, log_data_max);
+                    log_data[log_data_max] = '\0';
+                    strcat(log_data, "...");
+                } else {
+                    log_data[0] = '\0';
+                }
             }
-
-            ESP_LOGI(TAG, "MQTT RECEIVE: topic='%s', len=%d, data=%s",
-                     topic, payload_len, log_data);
+            
+            ESP_LOGI(TAG, "MQTT RECEIVE: topic='%.*s', len=%d, data=%s", 
+                     event->topic_len, event->topic ? event->topic : "", 
+                     event->data_len, log_data);
             
             // Уведомляем OLED UI о MQTT активности (прием)
             // Используем слабые символы для опциональной зависимости от oled_ui
             // Если функция не определена, линкер разрешит слабый символ (NULL)
-            if (oled_ui_notify_mqtt_rx) {
-                oled_ui_notify_mqtt_rx();
-            }
+            oled_ui_notify_mqtt_rx();
             
             // Обновление метрик диагностики (получение сообщения)
             #if DIAGNOSTICS_AVAILABLE
@@ -1143,36 +846,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Согласно MQTT_SPEC_FULL.md раздел 2:
             // - Config: hydro/{gh}/{zone}/{node}/config
             // - Command: hydro/{gh}/{zone}/{node}/{channel}/command
-            // - Time Response: hydro/time/response (для синхронизации времени)
-            if (strcmp(topic, "hydro/time/response") == 0) {
-                // Time response топик - обрабатываем синхронизацию времени
-                ESP_LOGI(TAG, "Time response message received, len=%d", payload_len);
-                
-                // Парсим JSON для получения unix_ts
-                cJSON *json = cJSON_ParseWithLength(data, payload_len);
-                if (json) {
-                    cJSON *unix_ts_item = cJSON_GetObjectItem(json, "unix_ts");
-                    if (unix_ts_item && cJSON_IsNumber(unix_ts_item)) {
-                        int64_t unix_ts = (int64_t)cJSON_GetNumberValue(unix_ts_item);
-                        esp_err_t err = node_utils_set_time(unix_ts);
-                        if (err == ESP_OK) {
-                            ESP_LOGI(TAG, "Time synchronized successfully: %lld", (long long)unix_ts);
-                        } else {
-                            ESP_LOGE(TAG, "Failed to set time: %s", esp_err_to_name(err));
-                        }
-                    } else {
-                        ESP_LOGW(TAG, "Invalid time response format: missing or invalid unix_ts");
-                    }
-                    cJSON_Delete(json);
-                } else {
-                    ESP_LOGW(TAG, "Failed to parse time response JSON");
-                }
-            } else if (strstr(topic, "/config") != NULL) {
+            if (strstr(topic, "/config") != NULL) {
                 // Config топик - вызываем callback для обработки конфигурации
-                ESP_LOGI(TAG, "Config message received on topic: %s, len=%d", topic, payload_len);
+                ESP_LOGI(TAG, "Config message received on topic: %s, len=%d", topic, event->data_len);
                 if (s_config_cb) {
                     ESP_LOGI(TAG, "Calling registered config callback");
-                    s_config_cb(topic, data, payload_len, s_config_user_ctx);
+                    // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
+                    s_config_cb(topic, data, event->data_len, s_config_user_ctx);
                     ESP_LOGI(TAG, "Config callback completed");
                 } else {
                     ESP_LOGW(TAG, "Config message received but no callback registered");
@@ -1199,16 +879,24 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                             // Логирование приема команды
                             const int log_data_max = 200;
                             char cmd_log_data[log_data_max + 4];
-                            if (payload_len <= log_data_max) {
-                                memcpy(cmd_log_data, data, payload_len);
-                                cmd_log_data[payload_len] = '\0';
+                            if (event->data_len <= log_data_max) {
+                                if (event->data) {
+                                    memcpy(cmd_log_data, event->data, event->data_len);
+                                    cmd_log_data[event->data_len] = '\0';
+                                } else {
+                                    cmd_log_data[0] = '\0';
+                                }
                             } else {
-                                memcpy(cmd_log_data, data, log_data_max);
-                                cmd_log_data[log_data_max] = '\0';
-                                strcat(cmd_log_data, "...");
+                                if (event->data) {
+                                    memcpy(cmd_log_data, event->data, log_data_max);
+                                    cmd_log_data[log_data_max] = '\0';
+                                    strcat(cmd_log_data, "...");
+                                } else {
+                                    cmd_log_data[0] = '\0';
+                                }
                             }
                             ESP_LOGI(TAG, "MQTT COMMAND RECEIVED: topic='%s', channel='%s', len=%d, data=%s", 
-                                     topic, channel, payload_len, cmd_log_data);
+                                     topic, channel, event->data_len, cmd_log_data);
                             
                             // Проверка: в setup режиме не обрабатываем команды
                             #if SETUP_PORTAL_AVAILABLE
@@ -1218,7 +906,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                             #endif
                             {
                                 if (s_command_cb) {
-                                    s_command_cb(topic, channel, data, payload_len, s_command_user_ctx);
+                                    // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
+                                    s_command_cb(topic, channel, data, event->data_len, s_command_user_ctx);
                                 } else {
                                     ESP_LOGW(TAG, "Command message received but no callback registered");
                                 }
@@ -1235,8 +924,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             } else {
                 ESP_LOGD(TAG, "Unknown topic type: %s", topic);
             }
-
-            mqtt_manager_reset_rx_assembly();
             break;
         }
 
@@ -1247,9 +934,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 esp_mqtt_error_type_t err_type = event->error_handle->error_type;
                 if (err_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                     ESP_LOGE(TAG, "TCP transport error");
-                    // Для TCP ошибок считаем соединение потерянным и ждём reconnect
-                    // от ESP-IDF MQTT клиента.
-                    s_is_connected = false;
+                    // При ошибке транспорта (некорректное сообщение) не устанавливаем s_is_connected = false,
+                    // так как ESP-IDF MQTT клиент сам обработает переподключение.
+                    // Установка s_is_connected = false здесь может вызвать проблемы при попытке закрыть соединение.
+                    // Вместо этого, просто логируем ошибку и позволяем клиенту обработать ситуацию.
                 } else if (err_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
                     ESP_LOGE(TAG, "Connection refused");
                     s_is_connected = false;
@@ -1269,3 +957,4 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
     }
 }
+

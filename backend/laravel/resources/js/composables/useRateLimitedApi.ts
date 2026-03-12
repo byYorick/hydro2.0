@@ -2,7 +2,6 @@
  * Composable для работы с rate-limited API запросами с exponential backoff
  */
 import { ref, type Ref } from 'vue'
-import type { AxiosResponse } from 'axios'
 import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -18,6 +17,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
   
   const isProcessing: Ref<boolean> = ref(false)
+  const requestQueue: Ref<Array<() => Promise<any>>> = ref([])
 
   /**
    * Sleep утилита
@@ -57,9 +57,9 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
    * Выполнить запрос с учетом rate limiting и retry логики
    */
   async function rateLimitedRequest<T>(
-    requestFn: () => Promise<AxiosResponse<T>>,
+    requestFn: () => Promise<T>,
     options: RateLimitedRequestOptions = {}
-  ): Promise<AxiosResponse<T>> {
+  ): Promise<T> {
     const {
       retries = 3,
       backoff = 'exponential',
@@ -139,11 +139,11 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
   /**
    * Обертка для GET запросов с rate limiting
    */
-  async function rateLimitedGet<T = unknown>(
+  async function rateLimitedGet<T = any>(
     url: string,
     config?: any,
     options?: RateLimitedRequestOptions
-  ): Promise<AxiosResponse<T>> {
+  ): Promise<T> {
     return rateLimitedRequest(
       () => api.get<T>(url, config),
       options
@@ -153,12 +153,12 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
   /**
    * Обертка для POST запросов с rate limiting
    */
-  async function rateLimitedPost<T = unknown>(
+  async function rateLimitedPost<T = any>(
     url: string,
     data?: any,
     config?: any,
     options?: RateLimitedRequestOptions
-  ): Promise<AxiosResponse<T>> {
+  ): Promise<T> {
     return rateLimitedRequest(
       () => api.post<T>(url, data, config),
       options
@@ -168,12 +168,12 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
   /**
    * Обертка для PATCH запросов с rate limiting
    */
-  async function rateLimitedPatch<T = unknown>(
+  async function rateLimitedPatch<T = any>(
     url: string,
     data?: any,
     config?: any,
     options?: RateLimitedRequestOptions
-  ): Promise<AxiosResponse<T>> {
+  ): Promise<T> {
     return rateLimitedRequest(
       () => api.patch<T>(url, data, config),
       options
@@ -183,11 +183,11 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
   /**
    * Обертка для DELETE запросов с rate limiting
    */
-  async function rateLimitedDelete<T = unknown>(
+  async function rateLimitedDelete<T = any>(
     url: string,
     config?: any,
     options?: RateLimitedRequestOptions
-  ): Promise<AxiosResponse<T>> {
+  ): Promise<T> {
     return rateLimitedRequest(
       () => api.delete<T>(url, config),
       options
@@ -203,3 +203,4 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
     rateLimitedDelete,
   }
 }
+

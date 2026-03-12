@@ -11,17 +11,6 @@
 - UI (OLED и Android),
 - процессы эксплуатации.
 
-## Термины (для единообразия)
-
-- `firmware_module` — имя прошивочного ESP-IDF проекта (`ph_node`, `ec_node`, `climate_node`, `storage_irrigation_node`).
-- `node_type` — тип узла в MQTT/API/БД (`nodes.type`) с каноническими значениями:
-  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Имена `*_node` не используются как `node_type` в payload и базе данных.
-
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Состояния жизненного цикла узла
@@ -72,7 +61,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - шьётся базовая прошивка 2.0;
 - задаются:
  - hardware-ID (MAC),
- - factory-config (канонический `node_type`: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`),
+ - factory-config (тип ноды: pH/EC/климат/свет),
  - версия схемы NVS;
 - узел проходит минимальный self-test.
 
@@ -86,7 +75,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 1. Узел включают на объекте.
 2. Прошивка не находит валидный Wi-Fi-конфиг → `WIFI_STATE_UNPROVISIONED`.
-3. Узел поднимает AP (см. `../02_HARDWARE_FIRMWARE/WIFI_PROVISIONING_FIRST_RUN.md`).
+3. Узел поднимает AP (см. `WIFI_PROVISIONING_FIRST_RUN.md`).
 4. Оператор с Android-приложения:
  - находит узел,
  - вводит Wi-Fi + привязку к теплице/зоне (или только Wi-Fi).
@@ -118,8 +107,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 }
 ```
 
-`node_type` в `node_hello` передается только в канонической схеме (см. блок терминов выше).
-
 ### Соответствие идентификаторов
 
 - `hardware_id` — низкоуровневый ID устройства (MAC/серийный номер), используется только для bootstrap и диагностики.
@@ -130,7 +117,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Этот `uid`:
  - передаётся узлу в конфигурации (NodeConfig);
  - далее используется узлом как сегмент `{node}` во всех MQTT-топиках;
- - соответствует `nodes.uid` в БД и `node_uid` в hardware-справочнике (`../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`).
+ - соответствует `nodes.uid` в БД и `node_uid` в hardware-справочнике (`NODE_CHANNELS_REFERENCE.md`).
 
 Во всех документах 2.0 под `logical_node_id` понимается именно этот строковый `uid` (`nodes.uid`), а не числовой PK `nodes.id`.
 
@@ -159,13 +146,14 @@ Backend:
    - `node_role` (например, `ZONE_PH_CONTROLLER`),
    - имя
 3. **Нода остается в состоянии `REGISTERED_BACKEND`**
-4. **Нода подключается и отправляет `config_report`** в топик `hydro/{gh}/{zone}/{node}/config_report`
-5. **Нода использует встроенный конфиг**, валидирует, сохраняет в NVS и применяет
-6. **Backend обрабатывает `config_report`** и переводит ноду в `ASSIGNED_TO_ZONE`
+4. **Backend публикует `NodeConfig`** в MQTT топик `hydro/{gh}/{zone}/{node}/config`
+5. **Нода получает конфиг**, валидирует, сохраняет в NVS и применяет
+6. **Нода отправляет `config_response`** с `status: "OK"` в топик `hydro/{gh}/{zone}/{node}/config_response`
+7. **Backend обрабатывает `config_response`** и переводит ноду в `ASSIGNED_TO_ZONE`
 8. **После перехода в `ASSIGNED_TO_ZONE`** узел участвует в **зонной логике** 
-   (`../06_DOMAIN_ZONES_RECIPES/ZONE_CONTROLLER_FULL.md`, `../06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md`)
+   (`ZONE_CONTROLLER_FULL.md`, `RECIPE_ENGINE_FULL.md`)
 
-**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения `config_report` от ноды. Это гарантирует, что сервер использует актуальный конфиг. Любые `greenhouse_token`/`zone_id`, присланные в `node_hello`, на привязку не влияют.
+**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это гарантирует, что нода получила и применила конфиг перед началом работы. Если установка конфига не удалась (`config_response` с `status: "ERROR"`), нода остается в `REGISTERED_BACKEND` и не считается привязанной к зоне. Любые `greenhouse_token`/`zone_id`, присланные в `node_hello`, на привязку не влияют.
 
 Состояние: `ASSIGNED_TO_ZONE`.
 
@@ -207,7 +195,7 @@ Backend:
  - сохраняет историю телеметрии,
  - помечает старый hardware-ID как `DECOMMISSIONED` или `MIGRATED`.
 
-Это должно быть отражено в моделях данных (см. `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`).
+Это должно быть отражено в моделях данных (см. `DATA_MODEL_REFERENCE.md`).
 
 ---
 
@@ -228,7 +216,7 @@ Backend:
 
 - OLED показывает этапы:
  - BOOT, provisioning, подключение, нормальная работа, ошибки;
- - см. `../02_HARDWARE_FIRMWARE/NODE_OLED_UI_SPEC.md`.
+ - см. `NODE_OLED_UI_SPEC.md`.
 - Android-приложение:
  - помогает в provisioning,
  - показывает список узлов и их статусы (`ACTIVE`, `DEGRADED`, и т.п.),
@@ -242,8 +230,8 @@ Backend:
 
 1. ИИ не должен менять общую структуру состояний lifecycle, может **добавлять подстатусы**.
 2. Любые изменения в процессах регистрации/привязки узлов должны:
- - быть отражены в MQTT-контракте (`../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`),
- - быть отражены в API (`../04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`),
+ - быть отражены в MQTT-контракте (`BACKEND_NODE_CONTRACT_FULL.md`),
+ - быть отражены в API (`API_SPEC_FRONTEND_BACKEND_FULL.md`),
  - обновить соответствующие схемы БД.
 3. При добавлении новых типов нод нужно описать:
  - их роли в `DeviceNode`,
@@ -300,3 +288,5 @@ Backend:
 - `backend/laravel/routes/api.php`
 
 ---
+
+**Подробности:** См. `00_ARCHIVE/REPORTS/01_SYSTEM_IMPROVEMENTS_COMPLETED.md` (архивный файл) для исторической справки о выполненных доработках.

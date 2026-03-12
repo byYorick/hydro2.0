@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Harvest;
 use App\Models\Recipe;
-use App\Models\RecipeAnalytics;
 use App\Models\Zone;
+use App\Models\RecipeAnalytics;
+use App\Models\Harvest;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class ReportController extends Controller
 {
@@ -173,15 +172,15 @@ class ReportController extends Controller
         // Если есть recipe_id, можно обновить аналитику
         if ($harvest->recipe_id) {
             try {
-                // Проверяем, есть ли активный цикл выращивания для зоны
+                // Проверяем, есть ли активный recipe instance для зоны
                 $zone = Zone::find($harvest->zone_id);
-                if ($zone && $zone->activeGrowCycle) {
+                if ($zone && $zone->recipeInstance) {
                     \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($harvest->zone_id);
                 }
             } catch (\Exception $e) {
                 // В тестах Job может не работать - игнорируем ошибку
                 if (!app()->environment('testing')) {
-                    Log::warning('Failed to dispatch CalculateRecipeAnalyticsJob', [
+                    \Log::warning('Failed to dispatch CalculateRecipeAnalyticsJob', [
                         'zone_id' => $harvest->zone_id,
                         'error' => $e->getMessage(),
                     ]);

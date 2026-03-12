@@ -13,17 +13,8 @@ if [ ! -f /app/.env ] || ! grep -q "APP_KEY=base64:" /app/.env 2>/dev/null; then
     php artisan key:generate --force || true
 fi
 
-# В dev/testing сбрасываем закешированную конфигурацию, чтобы не ловить устаревший DB_HOST
-if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testing" ]; then
-    if [ -f /app/bootstrap/cache/config.php ]; then
-        echo "Clearing cached config for local/testing environment..."
-        rm -f /app/bootstrap/cache/config.php 2>/dev/null || true
-        php artisan config:clear >/dev/null 2>&1 || true
-    fi
-fi
-
-# Wait for database to be ready (dev + testing)
-if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testing" ]; then
+# Wait for database to be ready (only in dev mode)
+if [ "${APP_ENV:-production}" = "local" ]; then
     echo "Waiting for database connection..."
     max_attempts=30
     attempt=0
@@ -42,87 +33,30 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
         fi
     done
     
-    echo "Running database migrations (with retry)..."
-    migrate_attempts=30
-    migrate_try=0
-    migrated_ok=0
-    while [ $migrate_try -lt $migrate_attempts ]; do
-        if php artisan migrate --force >/dev/null 2>&1; then
-            migrated_ok=1
-            break
-        fi
-        migrate_try=$((migrate_try + 1))
-        echo "  migrate attempt $migrate_try/$migrate_attempts failed, retrying..."
-        sleep 2
-    done
-
-    if [ "$migrated_ok" != "1" ]; then
-        echo "⚠ Migrations failed after $migrate_attempts attempts, continuing..."
-    else
-        echo "✓ Migrations completed successfully"
-
-        # Check if seeders need to run (only if no users exist)
-        USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
-        if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
-            echo "No users found, running database seeders..."
-            if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --force 2>/dev/null; then
-                echo "✓ Seeders completed successfully"
-                echo "✓ Database setup completed"
+    # Run migrations if database is available
+    if php artisan db:show >/dev/null 2>&1; then
+        echo "Running database migrations..."
+        if php artisan migrate --force 2>&1; then
+            echo "✓ Migrations completed successfully"
+            
+            # Check if seeders need to run (only if no users exist)
+            USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
+            if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
+                echo "No users found, running database seeders..."
+                if php artisan db:seed --force 2>&1; then
+                    echo "✓ Seeders completed successfully"
+                    echo "✓ Database setup completed"
+                else
+                    echo "⚠ Seeding failed (some data may have been created), continuing..."
+                fi
             else
-                echo "⚠ Seeding failed (some data may have been created), continuing..."
+                echo "✓ Database already seeded ($USER_COUNT users found), skipping seeders"
             fi
         else
-            echo "✓ Database already seeded ($USER_COUNT users found), skipping seeders"
+            echo "⚠ Migration failed, continuing..."
         fi
-
-        # Ensure a stable E2E user for runner login (token will be minted via /api/auth/login)
-        echo "Ensuring E2E user exists..."
-        php artisan tinker --execute="
-            \$user = \\App\\Models\\User::updateOrCreate(
-                ['email' => 'e2e@example.com'],
-                ['name' => 'E2E', 'password' => bcrypt('e2e'), 'role' => 'operator']
-            );
-            echo 'OK';
-        " >/dev/null 2>&1 || echo "⚠ Failed to ensure E2E user, continuing..."
-
-        # В testing окружении всегда прогоняем E2E сидер (он идемпотентный)
-        if [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then
-            echo "Ensuring AutomationEngineE2ESeeder data..."
-            seeder_attempts=10
-            seeder_try=0
-            seeder_ok=0
-
-            while [ $seeder_try -lt $seeder_attempts ]; do
-                if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --class=AutomationEngineE2ESeeder --force >/dev/null 2>&1; then
-                    echo "✓ AutomationEngineE2ESeeder completed"
-                    seeder_ok=1
-                    break
-                fi
-
-                seeder_try=$((seeder_try + 1))
-                echo "  AutomationEngineE2ESeeder attempt $seeder_try/$seeder_attempts failed, retrying..."
-                sleep 2
-            done
-
-            if [ "$seeder_ok" != "1" ]; then
-                echo "⚠ Failed to provision AutomationEngineE2ESeeder data after $seeder_attempts attempts"
-                echo "  Checking if required E2E data already exists..."
-
-                E2E_DATA_OK=$(php artisan tinker --execute="
-                    \$ghExists = \App\Models\Greenhouse::where('uid', 'gh-test-1')->exists();
-                    \$zoneExists = \App\Models\Zone::where('uid', 'zn-test-1')->exists();
-                    \$nodeExists = \App\Models\DeviceNode::where('uid', 'nd-ph-esp32una')->exists();
-                    echo (\$ghExists && \$zoneExists && \$nodeExists) ? '1' : '0';
-                " 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
-
-                if [ "$E2E_DATA_OK" = "1" ]; then
-                    echo "✓ Required E2E seed data already present, continuing startup"
-                else
-                    echo "✗ Required E2E data missing and seeder failed"
-                    exit 1
-                fi
-            fi
-        fi
+    else
+        echo "⚠ Skipping migrations and seeders (database not available)"
     fi
 fi
 
@@ -255,14 +189,6 @@ if [ -f /opt/docker/etc/nginx/vhost.common.d/10-php.conf ]; then
         sed -i '/^}$/i\    # FastCGI buffers для больших заголовков (решение 502 Bad Gateway)\n    fastcgi_buffers 16 16k;\n    fastcgi_buffer_size 32k;\n    fastcgi_busy_buffers_size 64k;\n    fastcgi_temp_file_write_size 64k;' /opt/docker/etc/nginx/vhost.common.d/10-php.conf
         echo "✓ FastCGI buffers configuration added"
     fi
-
-    # Важно для Bearer токенов (Sanctum): без этого nginx/PHP-FPM может не прокидывать Authorization header,
-    # из-за чего все /api/* запросы будут UNAUTHENTICATED (401) даже с валидным токеном.
-    if ! grep -q "HTTP_AUTHORIZATION" /opt/docker/etc/nginx/vhost.common.d/10-php.conf; then
-        echo "Adding HTTP_AUTHORIZATION passthrough to 10-php.conf..."
-        sed -i '/^}$/i\    # Pass Authorization header to PHP-FPM (required for Bearer tokens)\n    fastcgi_param HTTP_AUTHORIZATION $http_authorization;' /opt/docker/etc/nginx/vhost.common.d/10-php.conf
-        echo "✓ HTTP_AUTHORIZATION passthrough added"
-    fi
 fi
 
 # Всегда обновляем конфигурацию Reverb для применения изменений
@@ -279,13 +205,6 @@ if [ -f /app/queue-supervisor.conf ]; then
     cp /app/queue-supervisor.conf /opt/docker/etc/supervisor.d/queue.conf
     cp /app/queue-supervisor.conf /opt/docker/etc/supervisor.d/queue-worker.conf
     chmod 644 /opt/docker/etc/supervisor.d/queue.conf /opt/docker/etc/supervisor.d/queue-worker.conf 2>/dev/null || true
-fi
-
-# Копируем конфигурацию scheduler worker (Laravel Schedule)
-if [ -f /app/schedule-supervisor.conf ]; then
-    echo "Copying scheduler supervisor config to base image directory..."
-    cp /app/schedule-supervisor.conf /opt/docker/etc/supervisor.d/scheduler.conf
-    chmod 644 /opt/docker/etc/supervisor.d/scheduler.conf 2>/dev/null || true
 fi
 
 # Vite supervisor only in development mode

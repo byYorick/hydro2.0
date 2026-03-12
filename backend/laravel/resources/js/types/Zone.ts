@@ -1,14 +1,14 @@
 import type { Greenhouse } from './Greenhouse'
 import type { RecipeInstance } from './Recipe'
 import type { Device } from './Device'
-import type { GrowCycle } from './GrowCycle'
+import type { Cycle } from './Cycle'
 import type { ZoneTargets } from './ZoneTargets'
 import type { ZoneTelemetry } from './Telemetry'
 
 /**
  * Статус зоны
  */
-export type ZoneStatus = 'RUNNING' | 'PAUSED' | 'ALARM' | 'WARNING' | 'IDLE' | 'NEW'
+export type ZoneStatus = 'RUNNING' | 'PAUSED' | 'ALARM' | 'WARNING' | 'IDLE'
 
 /**
  * Модель зоны
@@ -25,11 +25,7 @@ export interface Zone {
   targets: ZoneTargets
   telemetry?: ZoneTelemetry
   devices?: Device[]
-  cycles?: GrowCycle[]
-  activeGrowCycle?: GrowCycle | null
-  alerts_count?: number
-  crop?: string
-  issues?: string[]
+  cycles?: Cycle[]
   created_at: string
   updated_at: string
 }

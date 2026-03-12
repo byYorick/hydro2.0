@@ -13,7 +13,6 @@
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
 #include <stddef.h>
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,20 +27,6 @@ extern "C" {
  * @return ESP_OK при успехе
  */
 esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size);
-
-/**
- * @brief Сохранить тип ноды для использования в утилитах
- *
- * @param node_type Тип ноды (канонический: "ph", "ec", "climate", "irrig", "relay", "light")
- */
-void node_utils_set_node_type(const char *node_type);
-
-/**
- * @brief Получить сохраненный тип ноды
- *
- * @return Тип ноды или NULL
- */
-const char *node_utils_get_node_type(void);
 
 /**
  * @brief Получить hardware_id (MAC-основанный идентификатор ноды)
@@ -140,26 +125,9 @@ esp_err_t node_utils_set_time(int64_t unix_ts_sec);
 int64_t node_utils_get_unix_timestamp(void);
 
 /**
- * @brief Проверка синхронизации времени
- * 
- * @return true если время синхронизировано через set_time
- */
-bool node_utils_is_time_synced(void);
-
-/**
- * @brief Базовая инициализация NVS, esp_netif, event loop и Wi‑Fi STA
- * 
- * Идёмпотентная: повторные вызовы не считаются ошибкой. Используется
- * всеми нодами для одинакового пути старта перед node_framework.
- * 
- * @return ESP_OK при успехе или ESP_ERR_xxx при фатальной ошибке
- */
-esp_err_t node_utils_bootstrap_network_stack(void);
-
-/**
  * @brief Публикация node_hello сообщения для регистрации узла
  * 
- * @param node_type Тип ноды (канонический: "ph", "ec", "climate", "irrig", "relay", "light")
+ * @param node_type Тип ноды ("ph", "ec", "pump", "climate")
  * @param capabilities Массив capabilities (например, ["ph", "temperature"])
  * @param capabilities_count Количество capabilities
  * @return ESP_OK при успехе
@@ -169,26 +137,6 @@ esp_err_t node_utils_publish_node_hello(
     const char *capabilities[],
     size_t capabilities_count
 );
-
-/**
- * @brief Нужно ли отправлять node_hello при текущем состоянии конфига
- *
- * Возвращает true, если в конфиге отсутствуют/временные node_id, gh_uid или zone_uid.
- * Используется для единой стратегии регистрации узлов.
- *
- * @return true если node_hello требуется, иначе false
- */
-bool node_utils_should_send_node_hello(void);
-
-/**
- * @brief Публикация NodeConfig отчета на сервер
- *
- * Отправляет полный NodeConfig, сохраненный в NVS, в топик
- * hydro/{gh}/{zone}/{node}/config_report.
- *
- * @return ESP_OK при успехе
- */
-esp_err_t node_utils_publish_config_report(void);
 
 /**
  * @brief Запрос времени у сервера через MQTT

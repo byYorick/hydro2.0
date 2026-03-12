@@ -1,13 +1,5 @@
 from typing import Any, Dict, Optional, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from datetime import datetime
-import time
-import re
-
-from common.node_types import CANONICAL_NODE_TYPES, normalize_node_type
-
-SIG_HEX64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
-DEV_SIG_HEX64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+from pydantic import BaseModel, Field, validator
 
 
 class TelemetryPayload(BaseModel):
@@ -19,168 +11,57 @@ class TelemetryPayload(BaseModel):
     timestamp: Optional[int] = None
 
 
-# ============================================================================
-# Единый контракт команд (Protocol/Contracts Agent)
-# ============================================================================
-
-class Command(BaseModel):
-    """
-    Единый контракт команды для всех сервисов.
-    Соответствует JSON схеме: schemas/command.json
-    """
-    cmd_id: str = Field(..., max_length=128, description="Уникальный идентификатор команды")
-    cmd: str = Field(..., max_length=64, description="Тип команды")
-    params: Dict[str, Any] = Field(default_factory=dict, description="Параметры команды")
-    ts: int = Field(..., description="Unix timestamp создания команды в секундах")
-    sig: str = Field(..., min_length=64, max_length=64, description="HMAC-SHA256 подпись команды (hex, 64 символа)")
-    
-    @field_validator('cmd_id')
-    @classmethod
-    def validate_cmd_id_format(cls, v):
-        """Валидация формата cmd_id."""
-        if v and not all(c.isalnum() or c in '_-' for c in v):
-            raise ValueError(f"Invalid format: {v}. Only alphanumeric, underscore and dash allowed")
-        return v
-
-    @field_validator('sig')
-    @classmethod
-    def validate_sig_format(cls, v):
-        """Валидация HMAC подписи: ровно 64 hex-символа."""
-        if not SIG_HEX64_RE.fullmatch(v):
-            raise ValueError("sig must be a 64-char hex string")
-        return v
-    
-    @classmethod
-    def create(
-        cls,
-        cmd: str,
-        params: Optional[Dict[str, Any]] = None,
-        cmd_id: Optional[str] = None,
-        sig: Optional[str] = None
-    ) -> 'Command':
-        """Создает команду с автоматической генерацией cmd_id и ts."""
-        import uuid
-        return cls(
-            cmd_id=cmd_id or str(uuid.uuid4()),
-            cmd=cmd,
-            params=params or {},
-            ts=int(time.time()),
-            sig=sig or DEV_SIG_HEX64
-        )
-
-
-class CommandResponse(BaseModel):
-    """
-    Единый контракт ответа на команду для всех сервисов.
-    Соответствует JSON схеме: schemas/command_response.json
-    """
-    cmd_id: str = Field(..., max_length=128, description="Идентификатор команды")
-    status: Literal["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT"] = Field(
-        ..., description="Статус выполнения команды"
-    )
-    ts: int = Field(..., description="Unix timestamp ответа в миллисекундах")
-    details: Optional[Dict[str, Any]] = Field(None, description="Дополнительные детали ответа")
-    
-    @classmethod
-    def ack(cls, cmd_id: str, ts: Optional[int] = None) -> 'CommandResponse':
-        """Создает ответ со статусом ACK."""
-        return cls(
-            cmd_id=cmd_id,
-            status="ACK",
-            ts=ts or int(time.time() * 1000)
-        )
-    
-    @classmethod
-    def done(cls, cmd_id: str, details: Optional[Dict[str, Any]] = None, ts: Optional[int] = None) -> 'CommandResponse':
-        """Создает ответ со статусом DONE."""
-        return cls(
-            cmd_id=cmd_id,
-            status="DONE",
-            ts=ts or int(time.time() * 1000),
-            details=details
-        )
-    
-    @classmethod
-    def error(cls, cmd_id: str, details: Optional[Dict[str, Any]] = None, ts: Optional[int] = None) -> 'CommandResponse':
-        """Создает ответ со статусом ERROR."""
-        return cls(
-            cmd_id=cmd_id,
-            status="ERROR",
-            ts=ts or int(time.time() * 1000),
-            details=details
-        )
-
-    @classmethod
-    def timeout(cls, cmd_id: str, details: Optional[Dict[str, Any]] = None, ts: Optional[int] = None) -> 'CommandResponse':
-        """Создает ответ со статусом TIMEOUT."""
-        return cls(
-            cmd_id=cmd_id,
-            status="TIMEOUT",
-            ts=ts or int(time.time() * 1000),
-            details=details
-        )
-
-
 class CommandRequest(BaseModel):
-    """HTTP модель для команд (strict format)."""
-    cmd: str = Field(..., max_length=64, description="Command name")
+    type: str = Field(..., max_length=64, description="Command type")
     params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
     node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")
     channel: Optional[str] = Field(None, max_length=64, description="Channel name")
     greenhouse_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
-    cmd_id: Optional[str] = Field(None, max_length=128, description="Command ID from Laravel")
+    cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
     hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
-    ts: Optional[int] = Field(None, description="Command timestamp (seconds)")
-    sig: Optional[str] = Field(
-        None,
-        min_length=64,
-        max_length=64,
-        description="Command HMAC signature (hex, 64 chars)",
-    )
     
-    def to_command(self) -> Command:
-        """Конвертирует CommandRequest в единый контракт Command."""
-        return Command.create(
-            cmd=self.cmd,
-            params=self.params,
-            cmd_id=self.cmd_id,
-            sig=self.sig
-        )
-    
-    @field_validator('cmd')
-    @classmethod
+    @validator('type')
     def validate_command_type(cls, v):
         """Валидация типа команды."""
         allowed_types = [
-            'dose', 'run_pump', 'set_relay', 'set_pwm', 'test_sensor', 'restart'
+            'run_pump', 'calibrate_ph', 'calibrate_ec', 'manual_dose',
+            'adjust_ph', 'adjust_ec', 'fill', 'drain', 'calibrate_flow',
+            'set_light', 'set_fan', 'set_heater', 'reboot', 'update_config'
         ]
         if v not in allowed_types:
             # Предупреждение, но не блокируем (для расширяемости)
             pass
         return v
 
-    @field_validator('sig')
-    @classmethod
-    def validate_request_sig_format(cls, v):
-        if v is None:
-            return v
-        if not SIG_HEX64_RE.fullmatch(v):
-            raise ValueError("sig must be a 64-char hex string")
-        return v
 
+class CommandResponse(BaseModel):
+    cmd_id: str = Field(..., max_length=64)
+    status: str = Field(..., description="Command status")
+    ts: Optional[int] = Field(None, description="Timestamp")
+    error_code: Optional[str] = Field(None, max_length=64)
+    error_message: Optional[str] = Field(None, max_length=512)
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional details")
+    
+    @validator('status')
+    def validate_status(cls, v):
+        """Валидация статуса команды."""
+        allowed_statuses = ['accepted', 'completed', 'failed', 'rejected', 'timeout']
+        if v not in allowed_statuses:
+            raise ValueError(f"Invalid status: {v}. Allowed: {allowed_statuses}")
+        return v
 
 
 class NodeConfigModel(BaseModel):
     """Модель для конфигурации узла."""
-    model_config = ConfigDict(extra="allow")
-
     node_id: Optional[str] = Field(None, max_length=128, description="Node UID")
     version: Optional[int] = Field(None, ge=1, description="Config version")
     type: Optional[str] = Field(None, max_length=32, description="Node type")
+    node_type: Optional[str] = Field(None, max_length=32, description="Node type (legacy)")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
     gh_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
+    channel: Optional[str] = Field(None, max_length=64, description="Channel name (legacy)")
     channels: Optional[list] = Field(None, description="List of node channels")
     wifi: Optional[Dict[str, Any]] = Field(None, description="WiFi configuration")
     mqtt: Optional[Dict[str, Any]] = Field(None, description="MQTT configuration")
@@ -188,18 +69,18 @@ class NodeConfigModel(BaseModel):
     thresholds: Optional[Dict[str, float]] = None
     schedule: Optional[Dict[str, Any]] = None
     
-    @field_validator('type')
-    @classmethod
+    class Config:
+        extra = "allow"  # Разрешаем дополнительные поля для обратной совместимости
+    
+    @validator('node_type', 'type')
     def validate_node_type(cls, v):
         """Валидация типа узла."""
-        if v is None:
-            return v
-
-        normalized = normalize_node_type(v)
-        if normalized == "unknown" and str(v).strip().lower() != "unknown":
-            allowed_types = ", ".join(sorted(CANONICAL_NODE_TYPES))
-            raise ValueError(f"type must be one of canonical node types: {allowed_types}")
-        return normalized
+        if v:
+            allowed_types = ['ph', 'ec', 'climate', 'pump', 'irrig', 'light', 'unknown']
+            if v not in allowed_types:
+                # Предупреждение, но не блокируем (для расширяемости)
+                pass
+        return v
 
 
 class SimulationScenario(BaseModel):
@@ -207,8 +88,7 @@ class SimulationScenario(BaseModel):
     recipe_id: Optional[int] = Field(None, ge=1, description="Recipe ID")
     initial_state: Optional[Dict[str, float]] = Field(None, description="Initial state")
     
-    @field_validator('initial_state')
-    @classmethod
+    @validator('initial_state')
     def validate_initial_state(cls, v):
         """Валидация начального состояния."""
         if v:

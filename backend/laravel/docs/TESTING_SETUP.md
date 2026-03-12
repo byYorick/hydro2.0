@@ -83,9 +83,8 @@ php artisan db:create hydro_test
 - `ZoneFactory`
 - `GreenhouseFactory`
 - `RecipeFactory`
-- `RecipeRevisionFactory`
-- `RecipeRevisionPhaseFactory`
-- `GrowCycleFactory`
+- `RecipePhaseFactory`
+- `ZoneRecipeInstanceFactory`
 - `DeviceNodeFactory`
 - `AlertFactory`
 - `UserFactory` (стандартная Laravel)
@@ -95,3 +94,4 @@ php artisan db:create hydro_test
 1. **Broadcasting отключен** - используется `Event::fake()` в `TestCase`, чтобы не зависеть от Reverb
 2. **Notifications отключены** - используется `Notification::fake()`
 3. **База данных** - используется `RefreshDatabase` trait для изоляции тестов
+

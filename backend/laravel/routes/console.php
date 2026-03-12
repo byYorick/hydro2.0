@@ -3,25 +3,17 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use App\Services\AutomationRuntimeConfigService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote')->hourly();
 
 // Retention политики: очистка старых raw данных (ежедневно в 2:00)
-// ВНИМАНИЕ: Python telemetry-aggregator (сервис) также выполняет cleanup согласно
-// RETENTION_SAMPLES_DAYS=90. Текущий дефолт --days=30 здесь означает, что реальная
-// retention для telemetry_samples — 30 дней (более агрессивная политика побеждает).
-// Если нужно изменить, синхронизировать с RETENTION_SAMPLES_DAYS в docker-compose.
 Schedule::command('telemetry:cleanup-raw --days=30')
     ->dailyAt('02:00')
     ->description('Очистка старых raw данных телеметрии');
 
 // Агрегация данных: каждые 15 минут
-// ВНИМАНИЕ: Python telemetry-aggregator (сервис) выполняет ту же агрегацию в фоне.
-// Оба используют ON CONFLICT (1m - DO UPDATE SET, Laravel - DO NOTHING), данные не дублируются.
-// При наличии Python-сервиса эта команда избыточна, но безопасна.
 Schedule::command('telemetry:aggregate')
     ->everyFifteenMinutes()
     ->description('Агрегация телеметрии в таблицы 1m, 1h, daily');
@@ -57,31 +49,17 @@ Schedule::call(function () {
     ->dailyAt('03:30')
     ->description('Ротация старых бэкапов (удаление старше 30 дней)');
 
-// Retention policies для commands и zone_events настроены через TimescaleDB/PostgreSQL
-// Старые данные удаляются автоматически согласно retention policies
-// Архивные таблицы удалены - используем партиционирование вместо дублей
+// Архивирование команд: еженедельно в воскресенье в 1:00
+Schedule::command('commands:archive --days=90')
+    ->weeklyOn(0, '01:00')
+    ->description('Архивирование старых команд (90 дней hot → 3 года archive)');
+
+// Архивирование событий: еженедельно в воскресенье в 1:30
+Schedule::command('zone-events:archive --days=180')
+    ->weeklyOn(0, '01:30')
+    ->description('Архивирование старых событий (180 дней hot → 5 лет archive)');
 
 // Очистка логов: еженедельно в воскресенье в 2:00
 Schedule::command('logs:cleanup --days=30')
     ->weeklyOn(0, '02:00')
     ->description('Очистка старых логов (7-30 дней hot logs)');
-
-// Обработка timeout команд: каждые 30 секунд
-Schedule::command('commands:process-timeouts')
-    ->everyThirtySeconds()
-    ->description('Автоматическая обработка timeout для команд в статусе SENT');
-
-// Автоматический replay DLQ алертов: ежедневно в 4:00
-Schedule::command('alerts:dlq-replay --older-than-hours=24')
-    ->dailyAt('04:00')
-    ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');
-
-// MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
-// Команда будит зону в automation-engine через /zones/{id}/start-cycle.
-// Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
-Schedule::command('automation:dispatch-schedules')
-    ->everyMinute()
-    ->withoutOverlapping(1)
-    ->onOneServer()
-    ->when(fn (): bool => app(AutomationRuntimeConfigService::class)->schedulerEnabled())
-    ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');

@@ -18,21 +18,10 @@ class NodeChannel extends Model
         'metric',
         'unit',
         'config',
-        'last_seen_at',
-        'is_active',
     ];
 
     protected $casts = [
         'config' => 'array',
-        'last_seen_at' => 'datetime',
-        'is_active' => 'boolean',
-    ];
-
-    /**
-     * Атрибуты, которые должны быть скрыты при сериализации.
-     */
-    protected $hidden = [
-        'config', // Никогда не сериализуется в JSON (защита параметров актуаторов)
     ];
 
     public function node(): BelongsTo
@@ -72,4 +61,5 @@ class NodeChannel extends Model
         });
     }
 }
+
 

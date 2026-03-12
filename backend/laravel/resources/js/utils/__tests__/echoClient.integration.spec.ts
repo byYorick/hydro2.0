@@ -18,32 +18,16 @@ const mockPusher = vi.hoisted(() => ({
   disconnect: vi.fn(),
 }))
 
-const MockPusher = vi.hoisted(() =>
-  vi.fn(function MockPusherConstructor() {
-    return mockPusher
-  })
-)
+const MockPusher = vi.hoisted(() => vi.fn().mockImplementation(() => mockPusher))
 
 // Создаем отдельный мок для disconnect, чтобы можно было отслеживать вызовы
 const mockEchoDisconnect = vi.fn()
-const MockEcho = vi.hoisted(() =>
-  vi.fn(function MockEchoConstructor() {
-    return {
-      connector: {
-        pusher: mockPusher,
-      },
-      disconnect: mockEchoDisconnect,
-    }
-  })
-)
-
-const setEnv = (overrides: Record<string, string | undefined>) => {
-  const meta = import.meta as any
-  meta.env = {
-    ...meta.env,
-    ...overrides,
-  }
-}
+const MockEcho = vi.hoisted(() => vi.fn().mockImplementation(() => ({
+  connector: {
+    pusher: mockPusher,
+  },
+  disconnect: mockEchoDisconnect,
+})))
 
 // Mock laravel-echo and pusher-js modules
 vi.mock('laravel-echo', () => ({
@@ -64,11 +48,9 @@ import {
   onWsStateChange,
   getConnectionState as getState,
 } from '../echoClient'
-import * as envUtils from '../env'
 
 describe('echoClient - Integration Tests', () => {
-  // Используем global.window напрямую, чтобы изменения в initEcho были видны
-  const originalWindow = typeof window !== 'undefined' ? window : (global.window = {} as any)
+  const originalWindow = global.window ?? (global.window = {} as any)
   let previousEcho: any
   let previousPusher: any
   let previousEnv: any
@@ -92,14 +74,14 @@ describe('echoClient - Integration Tests', () => {
     originalWindow.Echo = undefined
 
     // Mock environment
-    setEnv({
+    ;(import.meta as any).env = {
       VITE_ENABLE_WS: 'true',
       VITE_REVERB_APP_KEY: 'test-key',
       VITE_REVERB_HOST: 'localhost',
       VITE_REVERB_PORT: '8080',
       VITE_REVERB_SCHEME: 'http',
       ...previousEnv,
-    })
+    }
   })
 
   afterEach(() => {
@@ -118,7 +100,7 @@ describe('echoClient - Integration Tests', () => {
       originalWindow.Pusher = previousPusher
     }
 
-    (import.meta as any).env = previousEnv
+    ;(import.meta as any).env = previousEnv
   })
 
   describe('Initialization', () => {
@@ -134,21 +116,12 @@ describe('echoClient - Integration Tests', () => {
       // Сбрасываем перед тестом
       initEcho(true)
       MockEcho.mockClear()
-      originalWindow.Echo = undefined
       
       const echo = initEcho()
       
       expect(echo).toBeDefined()
       expect(MockEcho).toHaveBeenCalled()
-      // window.Echo устанавливается внутри initEcho на строке 945: window.Echo = echoInstance
-      // В тестовой среде window может отсутствовать, поэтому проверяем через доступный объект
-      const winEcho = (typeof window !== 'undefined' ? (window as any).Echo : undefined) ?? originalWindow.Echo
-      if (winEcho) {
-        expect(winEcho).toBe(echo)
-      } else {
-        // fallback: проверяем что хотя бы сам echo создан
-        expect(echo).toBeDefined()
-      }
+      expect(originalWindow.Echo).toBeDefined()
     })
 
     it('should not initialize when WebSocket is disabled', () => {
@@ -156,34 +129,25 @@ describe('echoClient - Integration Tests', () => {
       initEcho(true)
       MockEcho.mockClear()
       
-      ;(import.meta as any).env = {
-        VITE_ENABLE_WS: 'false',
-      }
-      const envSpy = vi.spyOn(envUtils, 'readBooleanEnv').mockReturnValue(false)
+      ;(import.meta as any).env.VITE_ENABLE_WS = 'false'
+      
       const echo = initEcho()
       
       expect(echo).toBeNull()
-      envSpy.mockRestore()
       // Восстанавливаем для следующих тестов
-      ;(import.meta as any).env = {
-        VITE_ENABLE_WS: 'true',
-      }
+      ;(import.meta as any).env.VITE_ENABLE_WS = 'true'
     })
 
     it('should return existing instance if already initialized', () => {
       // Сбрасываем перед тестом
       initEcho(true)
       MockEcho.mockClear()
-      originalWindow.Echo = undefined
       
       const echo1 = initEcho()
-      mockPusherConnection.state = 'connecting'
-      // Второй вызов должен вернуть тот же экземпляр
       const echo2 = initEcho()
       
       expect(echo1).toBe(echo2)
-      // MockEcho может быть вызван повторно из-за внутренних проверок, поэтому не ограничиваем количество вызовов
-      expect(MockEcho).toHaveBeenCalled()
+      expect(MockEcho).toHaveBeenCalledTimes(1)
     })
 
     it('should force reinitialize when forceReinit is true', () => {
@@ -208,25 +172,20 @@ describe('echoClient - Integration Tests', () => {
       mockPusherConnection.socket_id = null
     })
 
-    it('should track connection state changes', async () => {
+    it('should track connection state changes', () => {
       const stateListener = vi.fn()
       const unsubscribe = onWsStateChange(stateListener)
 
       initEcho()
-      
-      // Даем время для установки состояния
-      vi.advanceTimersByTime(100)
 
-      // initEcho вызывает emitState('connecting') после bindConnectionEvents
+      // Simulate connection state change - initEcho вызывает emitState('connecting')
       // Проверяем, что состояние было установлено
       const state = getConnectionState()
-      // Состояние может быть 'connecting' или 'disconnected' в зависимости от того, когда проверяем
-      expect(['connecting', 'disconnected']).toContain(state.state)
-      // Проверяем, что listener был вызван хотя бы один раз
-      expect(stateListener).toHaveBeenCalled()
+      expect(state.state).toBe('connecting')
+      expect(stateListener).toHaveBeenCalledWith('connecting')
 
       unsubscribe()
-    }, 10000)
+    })
 
     it('should emit connected state when connection succeeds', () => {
       const stateListener = vi.fn()
@@ -234,6 +193,7 @@ describe('echoClient - Integration Tests', () => {
 
       initEcho()
 
+      // Simulate connected event - находим обработчик через последний вызов bind с 'connected'
       const connectedCalls = mockPusherConnection.bind.mock.calls.filter(
         (call: any[]) => call[0] === 'connected'
       )
@@ -245,20 +205,20 @@ describe('echoClient - Integration Tests', () => {
         connectedHandler()
       }
 
-      expect(stateListener).toHaveBeenCalled()
+      expect(stateListener).toHaveBeenCalledWith('connected')
       const state = getConnectionState()
-      expect(['connected', 'connecting', 'disconnected']).toContain(state.state)
+      expect(state.state).toBe('connected')
+      expect(state.socketId).toBe('123.456')
+      expect(state.reconnectAttempts).toBe(0)
 
       unsubscribe()
     })
 
-    it('should emit disconnected state and schedule reconnect', async () => {
+    it('should emit disconnected state and schedule reconnect', () => {
       const stateListener = vi.fn()
       const unsubscribe = onWsStateChange(stateListener)
 
       initEcho()
-      
-      vi.advanceTimersByTime(100)
 
       // First connect
       const connectedCalls = mockPusherConnection.bind.mock.calls.filter(
@@ -268,7 +228,6 @@ describe('echoClient - Integration Tests', () => {
       if (connectedHandler) {
         mockPusherConnection.state = 'connected'
         connectedHandler()
-        vi.advanceTimersByTime(100)
       }
 
       // Then disconnect
@@ -280,19 +239,17 @@ describe('echoClient - Integration Tests', () => {
       if (disconnectedHandler) {
         mockPusherConnection.state = 'disconnected'
         disconnectedHandler()
-        vi.advanceTimersByTime(100)
       }
 
       expect(stateListener).toHaveBeenCalledWith('disconnected')
       
       // Should schedule reconnect
-      vi.advanceTimersByTime(100)
+      vi.advanceTimersByTime(0)
       const state = getConnectionState()
-      // isReconnecting может быть true или false в зависимости от логики reconnect
-      expect(['connecting', 'disconnected']).toContain(state.state)
+      expect(state.isReconnecting).toBe(true)
 
       unsubscribe()
-    }, 10000)
+    })
 
     it('should handle multiple state listeners', () => {
       const listener1 = vi.fn()
@@ -314,9 +271,9 @@ describe('echoClient - Integration Tests', () => {
         connectedHandler()
       }
 
-      expect(listener1).toHaveBeenCalled()
-      expect(listener2).toHaveBeenCalled()
-      expect(listener3).toHaveBeenCalled()
+      expect(listener1).toHaveBeenCalledWith('connected')
+      expect(listener2).toHaveBeenCalledWith('connected')
+      expect(listener3).toHaveBeenCalledWith('connected')
 
       unsub1()
       unsub2()
@@ -358,38 +315,31 @@ describe('echoClient - Integration Tests', () => {
       }
     })
 
-    it('should reset reconnect attempts on successful connection', async () => {
+    it('should reset reconnect attempts on successful connection', () => {
       initEcho()
-      
-      vi.advanceTimersByTime(100)
 
+      // Disconnect first
       const disconnectedCalls = mockPusherConnection.bind.mock.calls.filter(
         (call: any[]) => call[0] === 'disconnected'
       )
       const disconnectedHandler = disconnectedCalls[disconnectedCalls.length - 1]?.[1]
       if (disconnectedHandler) {
-        mockPusherConnection.state = 'disconnected'
         disconnectedHandler()
-        vi.advanceTimersByTime(100)
       }
 
-      const attemptsAfterDisconnect = getReconnectAttempts()
-      expect(attemptsAfterDisconnect).toBeGreaterThanOrEqual(0)
+      expect(getReconnectAttempts()).toBeGreaterThan(0)
 
+      // Then connect
       const connectedCalls = mockPusherConnection.bind.mock.calls.filter(
         (call: any[]) => call[0] === 'connected'
       )
       const connectedHandler = connectedCalls[connectedCalls.length - 1]?.[1]
       if (connectedHandler) {
-        mockPusherConnection.state = 'connected'
-        mockPusherConnection.socket_id = '123.456'
         connectedHandler()
-        vi.advanceTimersByTime(100)
       }
 
-      const attemptsAfterConnect = getReconnectAttempts()
-      expect(attemptsAfterConnect).toBe(0)
-    }, 10000)
+      expect(getReconnectAttempts()).toBe(0)
+    })
 
     it('should cap reconnect delay at MAX_RECONNECT_DELAY', () => {
       initEcho()
@@ -440,20 +390,21 @@ describe('echoClient - Integration Tests', () => {
           },
         }
         errorHandler(errorPayload)
-        vi.advanceTimersByTime(100)
       }
 
-      // Проверяем, что функция завершилась без ошибок; детали ошибки не критичны для теста
-      expect(true).toBe(true)
+      const error = getLastError()
+      expect(error).toBeDefined()
+      if (error) {
+        expect(error.message).toBe('Connection failed')
+        expect(error.code).toBe(1006)
+      }
     })
 
-    it('should handle failed state', async () => {
+    it('should handle failed state', () => {
       const stateListener = vi.fn()
       const unsubscribe = onWsStateChange(stateListener)
 
       initEcho()
-      
-      vi.advanceTimersByTime(100)
 
       const failedCalls = mockPusherConnection.bind.mock.calls.filter(
         (call: any[]) => call[0] === 'failed'
@@ -461,31 +412,21 @@ describe('echoClient - Integration Tests', () => {
       const failedHandler = failedCalls[failedCalls.length - 1]?.[1]
 
       if (failedHandler) {
-        mockPusherConnection.state = 'failed'
-        // Вызываем обработчик напрямую
         failedHandler()
-        vi.advanceTimersByTime(100)
       }
 
-      // Проверяем, что listener был вызван с 'failed'
-      expect(stateListener).toHaveBeenCalled()
-      const calls = stateListener.mock.calls.map(call => call[0])
-      expect(calls).toContain('failed')
-      
+      expect(stateListener).toHaveBeenCalledWith('failed')
       const state = getConnectionState()
-      // Состояние может быть 'failed' или другим, в зависимости от логики
-      expect(['failed', 'disconnected', 'connecting']).toContain(state.state)
+      expect(state.state).toBe('failed')
 
       unsubscribe()
-    }, 10000)
+    })
 
-    it('should handle unavailable state', async () => {
+    it('should handle unavailable state', () => {
       const stateListener = vi.fn()
       const unsubscribe = onWsStateChange(stateListener)
 
       initEcho()
-      
-      vi.advanceTimersByTime(100)
 
       const unavailableCalls = mockPusherConnection.bind.mock.calls.filter(
         (call: any[]) => call[0] === 'unavailable'
@@ -493,16 +434,13 @@ describe('echoClient - Integration Tests', () => {
       const unavailableHandler = unavailableCalls[unavailableCalls.length - 1]?.[1]
 
       if (unavailableHandler) {
-        mockPusherConnection.state = 'unavailable'
-        // Вызываем обработчик напрямую
         unavailableHandler()
-        vi.advanceTimersByTime(100)
       }
 
-      expect(stateListener).toHaveBeenCalled()
+      expect(stateListener).toHaveBeenCalledWith('unavailable')
 
       unsubscribe()
-    }, 10000)
+    })
   })
 
   describe('Configuration Resolution', () => {
@@ -539,24 +477,33 @@ describe('echoClient - Integration Tests', () => {
   })
 
   describe('Cleanup', () => {
-    it('should cleanup connection handlers on teardown', async () => {
+    it('should cleanup connection handlers on teardown', () => {
       const echo = initEcho()
       
-      vi.advanceTimersByTime(100)
+      // Сбрасываем моки, чтобы отслеживать вызовы
+      mockPusherConnection.bind.mockClear()
+      mockPusherConnection.unbind.mockClear()
       
       // Создаем обработчики событий, чтобы они были добавлены в connectionHandlers
+      // Для этого нужно, чтобы bind был вызван при инициализации
       // initEcho вызывает bindConnectionEvents, который вызывает bind
-      const bindCallsBefore = mockPusherConnection.bind.mock.calls.length
-      expect(bindCallsBefore).toBeGreaterThanOrEqual(0)
+      expect(mockPusherConnection.bind).toHaveBeenCalled()
       
       // Reinitialize to trigger cleanup
       initEcho(true)
-      
-      vi.advanceTimersByTime(100)
 
-      // Проверяем, что тест завершился без исключений
-      expect(true).toBe(true)
-    }, 10000)
+      // cleanupConnectionHandlers вызывается только если connectionHandlers.length > 0
+      // Проверяем, что если были обработчики, они были очищены
+      // Если bind был вызван, то должен быть вызван и unbind при cleanup
+      const bindCalls = mockPusherConnection.bind.mock.calls.length
+      if (bindCalls > 0) {
+        // Если были обработчики, они должны быть очищены
+        // Но cleanupConnectionHandlers вызывается только если echoInstance существует
+        // и connectionHandlers.length > 0
+        // В тестах может не быть обработчиков, поэтому проверяем, что teardown прошел без ошибок
+        expect(echo).toBeDefined()
+      }
+    })
 
     it('should disconnect on teardown', () => {
       const echo = initEcho()
@@ -568,8 +515,13 @@ describe('echoClient - Integration Tests', () => {
       // Reinitialize to trigger teardown
       initEcho(true)
 
-      // Проверяем, что не произошло исключений
-      expect(true).toBe(true)
+      // Проверяем, что disconnect был вызван на echo и на pusher
+      // В teardownEcho вызывается echoInstance?.disconnect?.() и echoInstance?.connector?.pusher?.disconnect?.()
+      // Но только если echoInstance существует перед вызовом teardownEcho
+      // После teardownEcho echoInstance становится null, поэтому проверяем, что он был создан до этого
+      expect(mockEchoDisconnect).toHaveBeenCalled()
+      expect(mockPusher.disconnect).toHaveBeenCalled()
     })
   })
 })
+

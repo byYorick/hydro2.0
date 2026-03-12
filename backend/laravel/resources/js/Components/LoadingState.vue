@@ -3,7 +3,7 @@
     v-if="loading"
     :class="[
       'flex items-center justify-center',
-      fullScreen ? 'fixed inset-0 z-50 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm' : 'py-8',
+      fullScreen ? 'fixed inset-0 z-50 bg-neutral-950/80 backdrop-blur-sm' : 'py-8',
       containerClass
     ]"
   >
@@ -18,7 +18,7 @@
           borderColor: color,
           borderTopColor: 'transparent',
         }"
-      ></div>
+      />
       
       <!-- Message -->
       <p
@@ -41,13 +41,13 @@
     <div
       v-for="i in skeletonLines"
       :key="i"
-      class="animate-pulse rounded bg-[color:var(--bg-elevated)]"
+      class="animate-pulse rounded bg-neutral-800"
       :style="{
         height: skeletonHeight,
         width: i === skeletonLines ? '60%' : '100%',
         marginBottom: '0.5rem',
       }"
-    ></div>
+    />
   </div>
 </template>
 
@@ -70,7 +70,7 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   message: '',
   size: 'md',
-  color: 'var(--accent-cyan)',
+  color: '#3b82f6',
   fullScreen: false,
   containerClass: '',
   skeleton: false,
@@ -85,7 +85,7 @@ const sizeClasses = {
 }
 
 const textColorClass = computed(() => {
-  return props.fullScreen ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-muted)]'
+  return props.fullScreen ? 'text-neutral-100' : 'text-neutral-400'
 })
 
 const skeletonClass = computed(() => {
@@ -117,3 +117,4 @@ const skeletonClass = computed(() => {
   }
 }
 </style>
+

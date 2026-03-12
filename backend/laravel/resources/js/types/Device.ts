@@ -3,55 +3,24 @@ import type { Zone } from './Zone'
 /**
  * Тип устройства
  */
-export type DeviceType =
-  | 'sensor'
-  | 'actuator'
-  | 'controller'
-  | 'ph'
-  | 'ec'
-  | 'climate'
-  | 'irrig'
-  | 'light'
-  | 'relay'
-  | 'water_sensor'
-  | 'recirculation'
-  | 'unknown'
+export type DeviceType = 'sensor' | 'actuator' | 'controller' | 'ph' | 'ec' | 'pump' | 'climate'
 
 /**
  * Статус устройства
  */
 export type DeviceStatus = 'online' | 'offline' | 'degraded' | 'unknown'
 
-export interface PumpCalibrationConfig {
-  ml_per_sec?: number
-  k_ms_per_ml_l?: number
-  duration_sec?: number
-  actual_ml?: number
-  component?: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down' | string | null
-  test_volume_l?: number
-  ec_before_ms?: number
-  ec_after_ms?: number
-  delta_ec_ms?: number
-  temperature_c?: number
-  calibrated_at?: string | null
-}
-
 /**
  * Канал устройства
  */
 export interface DeviceChannel {
-  id?: number
-  node_channel_id?: number
-  node_id?: number
   channel: string
   type: 'SENSOR' | 'ACTUATOR' | string
   metric: string | number | null
   unit: string | null
   config?: Record<string, unknown>
-  pump_calibration?: PumpCalibrationConfig | null
   actuator_type?: string | null
-  pump_component?: string | null
-  binding_role?: string | null
+  gpio?: number | null
   description?: string | null
 }
 
@@ -88,7 +57,6 @@ export interface Device {
   config?: DeviceConfig
   zone?: Zone
   zone_id?: number
-  pending_zone_id?: number | null
   channels?: DeviceChannel[]
   last_seen_at?: string
   created_at?: string

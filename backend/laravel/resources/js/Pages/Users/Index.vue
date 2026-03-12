@@ -1,264 +1,150 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">
-      Пользователи
-    </h1>
+    <h1 class="text-lg font-semibold mb-4">Пользователи</h1>
 
-    <div
-      v-if="isAdmin"
-      class="mb-6"
-    >
+    <div v-if="isAdmin" class="mb-6">
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <input
             v-model="searchQuery"
             placeholder="Поиск по имени/email..."
-            class="input-field w-64"
+            class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
           />
           <select
             v-model="roleFilter"
-            class="input-select"
+            class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
           >
-            <option value="">
-              Все роли
-            </option>
-            <option value="admin">
-              Администратор
-            </option>
-            <option value="operator">
-              Оператор
-            </option>
-            <option value="viewer">
-              Наблюдатель
-            </option>
+            <option value="">Все роли</option>
+            <option value="admin">Администратор</option>
+            <option value="operator">Оператор</option>
+            <option value="viewer">Наблюдатель</option>
           </select>
-          <Button
-            size="sm"
-            :disabled="loading.load"
-            @click="loadUsers"
-          >
-            Обновить
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            @click="openCreateModal()"
-          >
-            Создать пользователя
-          </Button>
+          <Button size="sm" @click="loadUsers" :disabled="loading.load">Обновить</Button>
+          <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
         </div>
 
-        <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
-          <div
-            v-if="loading.load && users.length === 0"
-            class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
-          >
+        <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+          <div v-if="loading.load && users.length === 0" class="text-sm text-neutral-400 px-3 py-6 text-center">
             Загрузка пользователей...
           </div>
           <template v-else>
             <!-- Заголовок таблицы -->
-            <div class="flex-shrink-0 grid grid-cols-6 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
-              <div
-                v-for="(h, i) in headers"
-                :key="i"
-                class="px-3 py-2 text-left font-medium"
-              >
+            <div class="flex-shrink-0 grid grid-cols-6 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
+              <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
                 {{ h }}
               </div>
             </div>
             <!-- Виртуализированный список -->
             <div class="flex-1 overflow-hidden">
               <RecycleScroller
-                v-slot="{ item: r, index }"
                 :items="rows"
                 :item-size="rowHeight"
                 key-field="0"
+                v-slot="{ item: r, index }"
                 class="virtual-table-body h-full"
               >
                 <div 
-                  :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'" 
-                  class="grid grid-cols-6 gap-0 text-sm border-b border-[color:var(--border-muted)]"
+                  :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
+                  class="grid grid-cols-6 gap-0 text-sm border-b border-neutral-900"
                   style="height:44px"
                 >
-                  <div class="px-3 py-2 flex items-center">
-                    {{ r[0] }}
-                  </div>
-                  <div class="px-3 py-2 flex items-center">
-                    {{ r[1] }}
-                  </div>
-                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
-                    {{ r[2] }}
-                  </div>
+                  <div class="px-3 py-2 flex items-center">{{ r[0] }}</div>
+                  <div class="px-3 py-2 flex items-center">{{ r[1] }}</div>
+                  <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[2] }}</div>
                   <div class="px-3 py-2 flex items-center">
                     <Badge :variant="r[3]">
                       {{ r[4] }}
                     </Badge>
                   </div>
-                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
-                    {{ r[5] }}
-                  </div>
+                  <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[5] }}</div>
                   <div class="px-3 py-2 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      @click="editUser(getUserFromRow(r))"
-                    >
-                      Изменить
-                    </Button>
+                    <Button size="sm" variant="secondary" @click="editUser(getUserFromRow(r))">Изменить</Button>
                     <Button
                       size="sm"
                       variant="danger"
-                      :disabled="getUserFromRow(r).id === currentUserId"
                       @click="confirmDelete(getUserFromRow(r))"
+                      :disabled="getUserFromRow(r).id === currentUserId"
                     >
                       Удалить
                     </Button>
                   </div>
                 </div>
               </RecycleScroller>
-              <div
-                v-if="!rows.length && !loading.load"
-                class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
-              >
+              <div v-if="!rows.length && !loading.load" class="text-sm text-neutral-400 px-3 py-6 text-center">
                 {{ users.length === 0 ? 'Нет пользователей' : 'Нет пользователей по текущим фильтрам' }}
               </div>
             </div>
           </template>
-          <Pagination
-            v-model:current-page="currentPage"
-            v-model:per-page="perPage"
-            :total="filteredUsers.length"
-          />
         </div>
       </Card>
     </div>
-    <div
-      v-else
-      class="text-sm text-[color:var(--text-dim)]"
-    >
+    <div v-else class="text-sm text-neutral-400">
       У вас нет доступа к управлению пользователями
     </div>
 
     <!-- Create/Edit User Modal -->
-    <Modal
-      :open="showCreateModal || editingUser !== null"
-      title="Пользователь"
-      @close="closeModal"
-    >
+    <Modal :open="showCreateModal || editingUser !== null" title="Пользователь" @close="closeModal">
       <div class="space-y-3">
         <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
+          <label class="text-sm text-neutral-300">Имя</label>
           <input
             v-model="userForm.name"
-            class="input-field mt-1"
-            :class="formErrors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
+            :class="formErrors.name ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
           />
-          <div
-            v-if="formErrors.name"
-            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
-          >
-            {{ formErrors.name }}
-          </div>
+          <div v-if="formErrors.name" class="text-xs text-red-400 mt-1">{{ formErrors.name }}</div>
         </div>
         <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Email</label>
+          <label class="text-sm text-neutral-300">Email</label>
           <input
             v-model="userForm.email"
             type="email"
-            class="input-field mt-1"
-            :class="formErrors.email ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
+            :class="formErrors.email ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
           />
-          <div
-            v-if="formErrors.email"
-            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
-          >
-            {{ formErrors.email }}
-          </div>
+          <div v-if="formErrors.email" class="text-xs text-red-400 mt-1">{{ formErrors.email }}</div>
         </div>
         <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
+          <label class="text-sm text-neutral-300">Пароль</label>
           <input
             v-model="userForm.password"
             type="password"
-            class="input-field mt-1"
-            :class="formErrors.password ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
+            :class="formErrors.password ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
           />
-          <div
-            v-if="formErrors.password"
-            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
-          >
-            {{ formErrors.password }}
-          </div>
+          <div v-if="formErrors.password" class="text-xs text-red-400 mt-1">{{ formErrors.password }}</div>
         </div>
         <div>
-          <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
+          <label class="text-sm text-neutral-300">Роль</label>
           <select
             v-model="userForm.role"
-            class="input-select mt-1"
-            :class="formErrors.role ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
+            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
+            :class="formErrors.role ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
           >
-            <option value="viewer">
-              Наблюдатель
-            </option>
-            <option value="operator">
-              Оператор
-            </option>
-            <option value="admin">
-              Администратор
-            </option>
+            <option value="viewer">Наблюдатель</option>
+            <option value="operator">Оператор</option>
+            <option value="admin">Администратор</option>
           </select>
-          <div
-            v-if="formErrors.role"
-            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
-          >
-            {{ formErrors.role }}
-          </div>
+          <div v-if="formErrors.role" class="text-xs text-red-400 mt-1">{{ formErrors.role }}</div>
         </div>
       </div>
       <template #footer>
-        <Button
-          size="sm"
-          variant="secondary"
-          :disabled="loading.save"
-          @click="closeModal"
-        >
-          Отмена
-        </Button>
-        <Button
-          size="sm"
-          :disabled="loading.save"
-          @click="saveUser"
-        >
+        <Button size="sm" variant="secondary" @click="closeModal" :disabled="loading.save">Отмена</Button>
+        <Button size="sm" @click="saveUser" :disabled="loading.save">
           {{ loading.save ? 'Сохранение...' : 'Сохранить' }}
         </Button>
       </template>
     </Modal>
 
     <!-- Delete Confirmation Modal -->
-    <Modal
-      :open="deletingUser !== null"
-      title="Удалить пользователя?"
-      @close="deletingUser = null"
-    >
-      <div class="text-sm text-[color:var(--text-muted)]">
+    <Modal :open="deletingUser !== null" title="Удалить пользователя?" @close="deletingUser = null">
+      <div class="text-sm">
         Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?
       </div>
       <template #footer>
-        <Button
-          size="sm"
-          variant="secondary"
-          :disabled="loading.delete"
-          @click="deletingUser = null"
-        >
-          Отмена
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          :disabled="loading.delete"
-          @click="doDelete"
-        >
+        <Button size="sm" variant="secondary" @click="deletingUser = null" :disabled="loading.delete">Отмена</Button>
+        <Button size="sm" variant="danger" @click="doDelete" :disabled="loading.delete">
           {{ loading.delete ? 'Удаление...' : 'Удалить' }}
         </Button>
       </template>
@@ -267,50 +153,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { usePage } from '@inertiajs/vue3'
-import type { AxiosError } from 'axios'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
-import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
-import type { User } from '@/types'
+import { ERROR_MESSAGES } from '@/constants/messages'
 
-interface PageProps {
-  auth?: {
-    user?: User
-  }
-  [key: string]: unknown
-}
-
-interface ErrorResponse {
-  message?: string
-  errors?: Record<string, string[]>
-}
-
-const isAxiosError = (err: unknown): err is AxiosError<ErrorResponse> => {
-  return !!err && typeof err === 'object' && 'isAxiosError' in err
-}
-
-const getErrorMessage = (err: unknown): string => {
-  if (isAxiosError(err)) {
-    return err.response?.data?.message || err.message || 'Неизвестная ошибка'
-  }
-  if (err instanceof Error) {
-    return err.message || 'Неизвестная ошибка'
-  }
-  return 'Неизвестная ошибка'
-}
-
-const page = usePage<PageProps>()
+const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
@@ -320,14 +178,12 @@ const { showToast } = useToast()
 // Инициализация API с Toast
 const { api } = useApi(showToast)
 
-const users = ref<User[]>([])
+const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
-const currentPage = ref<number>(1)
-const perPage = ref<number>(25)
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
-const editingUser = ref<User | null>(null)
-const deletingUser = ref<User | null>(null)
+const editingUser = ref(null)
+const deletingUser = ref(null)
 
 const userForm = reactive({
   name: '',
@@ -362,38 +218,9 @@ const filteredUsers = computed(() => {
   })
 })
 
-const clampCurrentPage = (total: number): number => {
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  if (validPage !== currentPage.value) {
-    currentPage.value = validPage
-  }
-  return validPage
-}
-
-watch([filteredUsers, perPage], () => {
-  if (filteredUsers.value.length > 0) {
-    clampCurrentPage(filteredUsers.value.length)
-  } else {
-    currentPage.value = 1
-  }
-})
-
-// Пагинированные пользователи
-const paginatedUsers = computed(() => {
-  const total = filteredUsers.value.length
-  if (total === 0) return []
-  
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  const start = (validPage - 1) * perPage.value
-  const end = start + perPage.value
-  return filteredUsers.value.slice(start, end)
-})
-
 // Преобразуем пользователей в строки таблицы
 const rows = computed(() => {
-  return paginatedUsers.value.map(u => [
+  return filteredUsers.value.map(u => [
     u.id, // r[0]
     u.name, // r[1]
     u.email, // r[2]
@@ -470,7 +297,7 @@ const loadUsers = async () => {
   }
 }
 
-const editUser = (user: User) => {
+const editUser = (user) => {
   editingUser.value = user
   userForm.name = user.name
   userForm.email = user.email
@@ -480,7 +307,7 @@ const editUser = (user: User) => {
   Object.keys(formErrors).forEach(key => formErrors[key] = '')
 }
 
-const confirmDelete = (user: User) => {
+const confirmDelete = (user) => {
   deletingUser.value = user
 }
 
@@ -496,7 +323,8 @@ const doDelete = async () => {
     deletingUser.value = null
   } catch (err) {
     logger.error('Failed to delete user:', err)
-    showToast(`Ошибка: ${getErrorMessage(err)}`, 'error', TOAST_TIMEOUT.LONG)
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
     deletingUser.value = null
   } finally {
     loading.value.delete = false
@@ -543,7 +371,7 @@ const saveUser = async () => {
     logger.error('Failed to save user:', err)
     
     // Обработка ошибок валидации
-    if (isAxiosError(err) && err.response?.status === 422 && err.response.data?.errors) {
+    if (err.response?.status === 422 && err.response?.data?.errors) {
       const errors = err.response.data.errors
       if (errors.name) formErrors.name = errors.name[0]
       if (errors.email) formErrors.email = errors.email[0]
@@ -551,7 +379,8 @@ const saveUser = async () => {
       if (errors.role) formErrors.role = errors.role[0]
       showToast('Ошибки валидации', 'error', TOAST_TIMEOUT.LONG)
     } else {
-      showToast(`Ошибка: ${getErrorMessage(err)}`, 'error', TOAST_TIMEOUT.LONG)
+      const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+      showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } finally {
     loading.value.save = false
@@ -571,16 +400,12 @@ const closeModal = () => {
 
 onMounted(() => {
   if (isAdmin.value) {
-    const propsUsers = (page.props.users as any[]) || []
+    const propsUsers = page.props.users || []
     users.value = propsUsers.map((u) => ({
       ...u,
       created_at: u.created_at,
     }))
   }
 })
-
-// Сбрасываем на первую страницу при изменении фильтров
-watch([searchQuery, roleFilter], () => {
-  currentPage.value = 1
-})
 </script>
+

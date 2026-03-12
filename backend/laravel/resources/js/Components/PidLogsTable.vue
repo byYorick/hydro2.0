@@ -2,14 +2,12 @@
   <Card>
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <div class="text-sm font-semibold">
-          Логи PID
-        </div>
+        <div class="text-sm font-semibold">Логи PID</div>
         <div class="flex gap-2">
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': filterType === 'ph' }"
+            :class="{ 'bg-sky-600 text-white': filterType === 'ph' }"
             @click="filterType = 'ph'"
           >
             pH
@@ -17,7 +15,7 @@
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': filterType === 'ec' }"
+            :class="{ 'bg-sky-600 text-white': filterType === 'ec' }"
             @click="filterType = 'ec'"
           >
             EC
@@ -25,7 +23,7 @@
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': filterType === null }"
+            :class="{ 'bg-sky-600 text-white': filterType === null }"
             @click="filterType = null"
           >
             Все
@@ -33,57 +31,34 @@
         </div>
       </div>
 
-      <div
-        v-if="loading"
-        class="text-sm text-[color:var(--text-muted)] text-center py-4"
-      >
+      <div v-if="loading" class="text-sm text-neutral-400 text-center py-4">
         Загрузка...
       </div>
 
-      <div
-        v-else-if="logs.length === 0"
-        class="text-sm text-[color:var(--text-muted)] text-center py-4"
-      >
+      <div v-else-if="logs.length === 0" class="text-sm text-neutral-400 text-center py-4">
         Нет логов
       </div>
 
-      <div
-        v-else
-        class="overflow-x-auto"
-      >
+      <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-[color:var(--border-muted)]">
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Время
-              </th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Тип
-              </th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Зона
-              </th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Output
-              </th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Error
-              </th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Current
-              </th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
-                Target
-              </th>
+            <tr class="border-b border-neutral-800">
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Время</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Тип</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Зона</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Output</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Error</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Current</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-neutral-400">Target</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="log in logs"
               :key="log.id"
-              class="border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)]"
+              class="border-b border-neutral-800 hover:bg-neutral-900/50"
             >
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
+              <td class="py-2 px-3 text-neutral-300">
                 {{ new Date(log.created_at).toLocaleString('ru-RU') }}
               </td>
               <td class="py-2 px-3">
@@ -100,50 +75,29 @@
                   {{ log.type === 'config_updated' ? 'Config' : log.type.toUpperCase() }}
                 </Badge>
               </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span
-                  v-if="log.zone_state"
-                  class="text-xs"
-                >
+              <td class="py-2 px-3 text-neutral-300">
+                <span v-if="log.zone_state" class="text-xs">
                   {{ log.zone_state }}
                 </span>
-                <span
-                  v-else
-                  class="text-xs text-[color:var(--text-dim)]"
-                >-</span>
+                <span v-else class="text-xs text-neutral-500">-</span>
               </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
+              <td class="py-2 px-3 text-neutral-300">
                 <span v-if="log.output !== undefined">{{ log.output.toFixed(2) }}</span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
+                <span v-else class="text-neutral-500">-</span>
               </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span
-                  v-if="log.error !== undefined"
-                  :class="getErrorClass(log.error)"
-                >
+              <td class="py-2 px-3 text-neutral-300">
+                <span v-if="log.error !== undefined" :class="getErrorClass(log.error)">
                   {{ log.error.toFixed(3) }}
                 </span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
+                <span v-else class="text-neutral-500">-</span>
               </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
+              <td class="py-2 px-3 text-neutral-300">
                 <span v-if="log.current !== undefined">{{ log.current.toFixed(2) }}</span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
+                <span v-else class="text-neutral-500">-</span>
               </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
+              <td class="py-2 px-3 text-neutral-300">
                 <span v-if="log.target !== undefined">{{ log.target.toFixed(2) }}</span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
+                <span v-else class="text-neutral-500">-</span>
               </td>
             </tr>
           </tbody>
@@ -151,11 +105,8 @@
       </div>
 
       <!-- Пагинация -->
-      <div
-        v-if="total > limit"
-        class="flex items-center justify-between pt-4 border-t border-[color:var(--border-muted)]"
-      >
-        <div class="text-xs text-[color:var(--text-muted)]">
+      <div v-if="total > limit" class="flex items-center justify-between pt-4 border-t border-neutral-800">
+        <div class="text-xs text-neutral-400">
           Показано {{ logs.length }} из {{ total }}
         </div>
         <div class="flex gap-2">
@@ -209,9 +160,9 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 
 function getErrorClass(error: number): string {
   const absError = Math.abs(error)
-  if (absError > 1.0) return 'text-[color:var(--accent-red)]'
-  if (absError > 0.5) return 'text-[color:var(--accent-amber)]'
-  return 'text-[color:var(--text-primary)]'
+  if (absError > 1.0) return 'text-red-400'
+  if (absError > 0.5) return 'text-amber-400'
+  return 'text-neutral-300'
 }
 
 async function loadLogs(newOffset: number = 0) {
@@ -262,3 +213,4 @@ onUnmounted(() => {
   stopPolling()
 })
 </script>
+

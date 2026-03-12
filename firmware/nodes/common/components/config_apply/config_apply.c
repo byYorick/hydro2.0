@@ -318,9 +318,6 @@ esp_err_t config_apply_wifi(const cJSON *new_config,
     wifi_manager_config_t wifi_config = {
         .ssid = s_wifi_ssid,
         .password = s_wifi_password,
-        .timeout_sec = wifi_cfg.timeout_sec > 0 ? wifi_cfg.timeout_sec : 30,
-        .auto_reconnect = wifi_cfg.auto_reconnect,
-        .max_reconnect_attempts = 0,
     };
 
     err = wifi_manager_connect(&wifi_config);
@@ -563,5 +560,44 @@ esp_err_t config_apply_channels_relay(config_apply_result_t *result) {
         ESP_LOGE(TAG, "Failed to init relay driver: %s", esp_err_to_name(err));
     }
 
+    return err;
+}
+
+esp_err_t config_apply_publish_ack(const config_apply_result_t *result) {
+    if (result == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *ack = cJSON_CreateObject();
+    if (ack == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(ack, "status", "ACK");
+    cJSON_AddNumberToObject(ack, "applied_at", (double)node_utils_get_timestamp_seconds());
+
+    cJSON *restarted = cJSON_AddArrayToObject(ack, "restarted");
+    if (restarted == NULL) {
+        cJSON_Delete(ack);
+        return ESP_ERR_NO_MEM;
+    }
+
+    for (size_t i = 0; i < result->count; i++) {
+        cJSON_AddItemToArray(restarted, cJSON_CreateString(result->components[i]));
+    }
+
+    char *json_str = cJSON_PrintUnformatted(ack);
+    if (json_str == NULL) {
+        cJSON_Delete(ack);
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = mqtt_manager_publish_config_response(json_str);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to publish config ACK: %s", esp_err_to_name(err));
+    }
+
+    free(json_str);
+    cJSON_Delete(ack);
     return err;
 }

@@ -9,7 +9,7 @@ describe('useStoreEvents', () => {
 
   it('should subscribe to events', () => {
     const { subscribe } = useStoreEvents()
-    let receivedData: unknown = null
+    let receivedData: any = null
 
     subscribe('zone:updated', (data) => {
       receivedData = data
@@ -38,7 +38,7 @@ describe('useStoreEvents', () => {
 
   it('should emit events', () => {
     const { emit, subscribe } = useStoreEvents()
-    let receivedData: unknown = null
+    let receivedData: any = null
 
     subscribe('zone:created', (data) => {
       receivedData = data
@@ -70,7 +70,7 @@ describe('useStoreEvents', () => {
 
   it('should handle zone events', () => {
     const { subscribe } = useStoreEvents()
-    const events: Array<{ type: string; data: unknown }> = []
+    const events: any[] = []
 
     subscribe('zone:updated', (data) => events.push({ type: 'updated', data }))
     subscribe('zone:created', (data) => events.push({ type: 'created', data }))
@@ -94,7 +94,7 @@ describe('useStoreEvents', () => {
 
   it('should handle device events', () => {
     const { subscribe } = useStoreEvents()
-    const events: Array<{ type: string; data: unknown }> = []
+    const events: any[] = []
 
     subscribe('device:updated', (data) => events.push({ type: 'updated', data }))
     subscribe('device:created', (data) => events.push({ type: 'created', data }))
@@ -115,7 +115,7 @@ describe('useStoreEvents', () => {
 
   it('should handle recipe events', () => {
     const { subscribe } = useStoreEvents()
-    const events: Array<{ type: string; data: unknown }> = []
+    const events: any[] = []
 
     subscribe('recipe:updated', (data) => events.push({ type: 'updated', data }))
     subscribe('recipe:created', (data) => events.push({ type: 'created', data }))
@@ -147,3 +147,4 @@ describe('useStoreEvents', () => {
     consoleErrorSpy.mockRestore()
   })
 })
+

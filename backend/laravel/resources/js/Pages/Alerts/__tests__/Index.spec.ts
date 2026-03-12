@@ -1,6 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createPinia, setActivePinia } from 'pinia'
+import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
@@ -81,7 +80,7 @@ vi.mock('@inertiajs/vue3', () => ({
 
 const subscribeAlertsMock = vi.hoisted(() => vi.fn(() => vi.fn()))
 
-vi.mock('@/ws/subscriptions', () => ({
+vi.mock('@/bootstrap', () => ({
   subscribeAlerts: subscribeAlertsMock,
 }))
 
@@ -103,38 +102,31 @@ config.global.components.RecycleScroller = {
 }
 
 describe('Alerts/Index.vue', () => {
-  const mountWithPinia = () => mount(AlertsIndex, {
-    global: {
-      plugins: [createPinia()],
-    },
-  })
-
   beforeEach(() => {
-    setActivePinia(createPinia())
     axiosGetMock.mockReset()
     axiosPatchMock.mockClear()
     routerReloadMock.mockClear()
     subscribeAlertsMock.mockClear()
-    axiosGetMock.mockResolvedValue({ data: { data: itemsDataValue } })
+    axiosGetMock.mockResolvedValue({ data: itemsDataValue })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
-  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid^="alert-row-"]')
+  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('tbody tr').filter(row => !row.text().includes('Нет алертов'))
 
   it('фильтрует только активные', async () => {
-    const wrapper = mountWithPinia()
+    const wrapper = mount(AlertsIndex)
     // onlyActive=true по умолчанию -> исключает resolved
     await wrapper.vm.$nextTick()
     const rows = findRows(wrapper)
     expect(rows.length).toBeGreaterThan(0)
-    rows.forEach(r => expect(r.text()).not.toContain('Решено'))
+    rows.forEach(r => expect(r.text()).not.toContain('RESOLVED'))
   })
 
   it('фильтрует по зоне', async () => {
-    const wrapper = mountWithPinia()
+    const wrapper = mount(AlertsIndex)
     await wrapper.vm.$nextTick()
-    const select = wrapper.find('select[data-testid="alerts-filter-zone"]')
-    await select.setValue('1')
+    const input = wrapper.find('input[placeholder*="Зона"]')
+    await input.setValue('A1')
     await wrapper.vm.$nextTick()
     const rows = findRows(wrapper)
     expect(rows.length).toBeGreaterThanOrEqual(1)
@@ -142,19 +134,22 @@ describe('Alerts/Index.vue', () => {
   })
 
   it('подтверждение алерта вызывает API', async () => {
-    const wrapper = mountWithPinia()
+    const wrapper = mount(AlertsIndex)
     await wrapper.vm.$nextTick()
     
-    // Эмулируем выбор алерта и подтверждение напрямую через метод
-    // чтобы избежать сложной работы со слотами виртуализатора
-    // @ts-ignore accessing component instance internals for testing
-    wrapper.vm.confirm = { open: true, alertId: itemsDataValue[0].id, loading: false }
+  // Эмулируем выбор алерта и подтверждение напрямую через метод
+  // чтобы избежать сложной работы со слотами виртуализатора
+  // @ts-ignore accessing component instance internals for testing
+  wrapper.vm.confirm.open = true
+  // @ts-ignore
+  wrapper.vm.confirm.alertId = itemsDataValue[0].id
 
-    // @ts-ignore
-    await wrapper.vm.doResolve()
-    await new Promise(resolve => setTimeout(resolve, 10))
-            
-    expect(axiosPatchMock).toHaveBeenCalled()
+  // @ts-ignore
+  await wrapper.vm.doResolve()
+  await new Promise(resolve => setTimeout(resolve, 10))
+          
+          expect(axiosPatchMock).toHaveBeenCalled()
   })
 })
+
 

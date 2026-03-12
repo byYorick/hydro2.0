@@ -3,25 +3,19 @@
 namespace Database\Seeders;
 
 use App\Models\Alert;
-use App\Models\ChannelBinding;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
-use App\Models\GrowCycle;
-use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
-use App\Models\Plant;
 use App\Models\Preset;
 use App\Models\Recipe;
-use App\Models\RecipeRevision;
-use App\Models\RecipeRevisionPhase;
-use App\Models\Sensor;
+use App\Models\RecipePhase;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Services\GrowCycleService;
+use App\Models\ZoneRecipeInstance;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -59,9 +53,6 @@ class FullServiceTestSeeder extends Seeder
 
         // 5. Узлы и каналы
         $nodes = $this->seedNodes($zones);
-
-        // 5.5. Инфраструктура и привязки каналов
-        $this->seedInfrastructureAndBindings($zones);
 
         // 6. Рецепты и фазы
         $recipes = $this->seedRecipes();
@@ -220,14 +211,14 @@ class FullServiceTestSeeder extends Seeder
 
         $nodes = [];
         $nodeTypes = [
-            ['type' => 'ph', 'uid' => 'nd-ph-001', 'name' => 'pH Sensor 1', 'channels' => ['ph']],
-            ['type' => 'ec', 'uid' => 'nd-ec-001', 'name' => 'EC Sensor 1', 'channels' => ['ec']],
-            ['type' => 'climate', 'uid' => 'nd-temp-001', 'name' => 'Temperature Sensor 1', 'channels' => ['temperature', 'humidity']],
-            ['type' => 'irrig', 'uid' => 'nd-pump-001', 'name' => 'Pump 1', 'channels' => ['pump1', 'pump2']],
-            ['type' => 'relay', 'uid' => 'nd-combo-001', 'name' => 'Combo Controller', 'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light']],
+            ['type' => 'sensor', 'uid' => 'nd-ph-001', 'name' => 'pH Sensor 1', 'channels' => ['ph']],
+            ['type' => 'sensor', 'uid' => 'nd-ec-001', 'name' => 'EC Sensor 1', 'channels' => ['ec']],
+            ['type' => 'sensor', 'uid' => 'nd-temp-001', 'name' => 'Temperature Sensor 1', 'channels' => ['temperature', 'humidity']],
+            ['type' => 'actuator', 'uid' => 'nd-pump-001', 'name' => 'Pump 1', 'channels' => ['pump1', 'pump2']],
+            ['type' => 'controller', 'uid' => 'nd-combo-001', 'name' => 'Combo Controller', 'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light']],
         ];
 
-        $statuses = ['online', 'online', 'offline', 'online', 'online'];
+        $statuses = ['ONLINE', 'ONLINE', 'OFFLINE', 'ONLINE', 'DEGRADED'];
         $lifecycleStates = ['ACTIVE', 'ACTIVE', 'UNPROVISIONED', 'ASSIGNED_TO_ZONE', 'ACTIVE'];
 
         foreach ($zones as $zoneIndex => $zone) {
@@ -244,8 +235,8 @@ class FullServiceTestSeeder extends Seeder
                     'status' => $status,
                     'lifecycle_state' => $lifecycle,
                     'fw_version' => '1.2.3',
-                    'last_seen_at' => $status === 'online' ? now() : now()->subHours(2),
-                    'last_heartbeat_at' => $status === 'online' ? now() : now()->subHours(2),
+                    'last_seen_at' => $status === 'ONLINE' ? now() : now()->subHours(2),
+                    'last_heartbeat_at' => $status === 'ONLINE' ? now() : now()->subHours(2),
                 ]
             );
 
@@ -278,130 +269,11 @@ class FullServiceTestSeeder extends Seeder
         return $nodes;
     }
 
-    /**
-     * Создание инфраструктуры зон и привязок к каналам (для automation-engine).
-     */
-    private function seedInfrastructureAndBindings(array $zones): void
-    {
-        $this->command->info('Создание инфраструктуры и привязок каналов...');
-
-        $createdInfra = 0;
-        $createdBindings = 0;
-
-        $channelMap = [
-            'pump1' => ['asset_type' => 'PUMP', 'label' => 'Main Pump', 'role' => 'main_pump', 'required' => true],
-            'pump2' => ['asset_type' => 'DRAIN', 'label' => 'Drain Pump', 'role' => 'drain', 'required' => false],
-            'light' => ['asset_type' => 'LIGHT', 'label' => 'Light', 'role' => 'light', 'required' => false],
-            'fan' => ['asset_type' => 'FAN', 'label' => 'Fan', 'role' => 'fan', 'required' => false],
-            'heater' => ['asset_type' => 'HEATER', 'label' => 'Heater', 'role' => 'heater', 'required' => false],
-            'mist' => ['asset_type' => 'MISTER', 'label' => 'Mister', 'role' => 'mister', 'required' => false],
-        ];
-
-        foreach ($zones as $zone) {
-            $nodeIds = DeviceNode::where('zone_id', $zone->id)->pluck('id');
-            if ($nodeIds->isEmpty()) {
-                continue;
-            }
-
-            $channels = NodeChannel::whereIn('node_id', $nodeIds)
-                ->where('type', 'actuator')
-                ->get();
-
-            if ($channels->isEmpty()) {
-                continue;
-            }
-
-            $capabilities = array_merge([
-                'ph_control' => false,
-                'ec_control' => false,
-                'climate_control' => false,
-                'light_control' => false,
-                'irrigation_control' => false,
-                'recirculation' => false,
-                'flow_sensor' => false,
-            ], $zone->capabilities ?? []);
-
-            foreach ($channels as $channel) {
-                $channelName = $channel->channel;
-                if (! isset($channelMap[$channelName])) {
-                    continue;
-                }
-
-                $mapping = $channelMap[$channelName];
-                $infra = InfrastructureInstance::firstOrCreate(
-                    [
-                        'owner_type' => 'zone',
-                        'owner_id' => $zone->id,
-                        'asset_type' => $mapping['asset_type'],
-                        'label' => $mapping['label'],
-                    ],
-                    [
-                        'required' => $mapping['required'],
-                    ]
-                );
-
-                if ($infra->wasRecentlyCreated) {
-                    $createdInfra++;
-                }
-
-                $existingBinding = ChannelBinding::query()
-                    ->where('node_channel_id', $channel->id)
-                    ->first();
-
-                $binding = ChannelBinding::updateOrCreate(
-                    [
-                        'node_channel_id' => $channel->id,
-                    ],
-                    [
-                        'infrastructure_instance_id' => $infra->id,
-                        'direction' => $channel->type === 'sensor' ? 'sensor' : 'actuator',
-                        'role' => $mapping['role'],
-                    ]
-                );
-
-                if ($binding && ! $existingBinding) {
-                    $createdBindings++;
-                }
-
-                if ($channelName === 'pump1') {
-                    $capabilities['irrigation_control'] = true;
-                } elseif ($channelName === 'light') {
-                    $capabilities['light_control'] = true;
-                } elseif (in_array($channelName, ['fan', 'heater'], true)) {
-                    $capabilities['climate_control'] = true;
-                }
-            }
-
-            $zone->capabilities = $capabilities;
-            $zone->save();
-        }
-
-        $this->command->info("Создано инфраструктуры: {$createdInfra}");
-        $this->command->info("Создано привязок: {$createdBindings}");
-    }
-
     private function seedRecipes(): array
     {
         $this->command->info('Создание рецептов...');
 
         $recipes = [];
-        $creatorId = User::query()->value('id');
-
-        $lettucePlant = Plant::firstOrCreate(
-            ['slug' => 'lettuce-service'],
-            [
-                'name' => 'Lettuce',
-                'species' => 'Lactuca sativa',
-            ]
-        );
-
-        $tomatoPlant = Plant::firstOrCreate(
-            ['slug' => 'tomato-service'],
-            [
-                'name' => 'Tomato',
-                'species' => 'Solanum lycopersicum',
-            ]
-        );
 
         $recipe1 = Recipe::firstOrCreate(
             ['name' => 'Lettuce Growing Recipe'],
@@ -410,46 +282,20 @@ class FullServiceTestSeeder extends Seeder
             ]
         );
 
-        $recipe1->plants()->syncWithoutDetaching([
-            $lettucePlant->id => ['is_default' => true],
-        ]);
-
-        $revision1 = RecipeRevision::firstOrCreate(
-            ['recipe_id' => $recipe1->id, 'revision_number' => 1],
-            [
-                'status' => 'PUBLISHED',
-                'description' => 'Initial revision',
-                'created_by' => $creatorId,
-                'published_at' => now(),
-            ]
-        );
-
         // Фазы для рецепта 1
         $phases1 = [
-            ['phase_index' => 0, 'name' => 'Germination', 'duration_hours' => 72, 'ph_min' => 5.8, 'ph_max' => 6.0, 'ec_min' => 0.8, 'ec_max' => 1.0],
-            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 336, 'ph_min' => 5.9, 'ph_max' => 6.2, 'ec_min' => 1.4, 'ec_max' => 1.6],
-            ['phase_index' => 2, 'name' => 'Maturation', 'duration_hours' => 720, 'ph_min' => 6.0, 'ph_max' => 6.5, 'ec_min' => 1.6, 'ec_max' => 1.8],
+            ['phase_index' => 0, 'name' => 'Germination', 'duration_hours' => 72, 'targets' => ['ph' => ['min' => 5.8, 'max' => 6.0], 'ec' => ['min' => 0.8, 'max' => 1.0]]],
+            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 336, 'targets' => ['ph' => ['min' => 5.9, 'max' => 6.2], 'ec' => ['min' => 1.4, 'max' => 1.6]]],
+            ['phase_index' => 2, 'name' => 'Maturation', 'duration_hours' => 720, 'targets' => ['ph' => ['min' => 6.0, 'max' => 6.5], 'ec' => ['min' => 1.6, 'max' => 1.8]]],
         ];
 
         foreach ($phases1 as $phaseData) {
-            $phTarget = ($phaseData['ph_min'] + $phaseData['ph_max']) / 2;
-            $ecTarget = ($phaseData['ec_min'] + $phaseData['ec_max']) / 2;
-
-            RecipeRevisionPhase::firstOrCreate(
+            RecipePhase::firstOrCreate(
                 [
-                    'recipe_revision_id' => $revision1->id,
+                    'recipe_id' => $recipe1->id,
                     'phase_index' => $phaseData['phase_index'],
                 ],
-                [
-                    'name' => $phaseData['name'],
-                    'duration_hours' => $phaseData['duration_hours'],
-                    'ph_min' => $phaseData['ph_min'],
-                    'ph_max' => $phaseData['ph_max'],
-                    'ph_target' => $phTarget,
-                    'ec_min' => $phaseData['ec_min'],
-                    'ec_max' => $phaseData['ec_max'],
-                    'ec_target' => $ecTarget,
-                ]
+                $phaseData
             );
         }
 
@@ -462,46 +308,20 @@ class FullServiceTestSeeder extends Seeder
             ]
         );
 
-        $recipe2->plants()->syncWithoutDetaching([
-            $tomatoPlant->id => ['is_default' => true],
-        ]);
-
-        $revision2 = RecipeRevision::firstOrCreate(
-            ['recipe_id' => $recipe2->id, 'revision_number' => 1],
-            [
-                'status' => 'PUBLISHED',
-                'description' => 'Initial revision',
-                'created_by' => $creatorId,
-                'published_at' => now(),
-            ]
-        );
-
         // Фазы для рецепта 2
         $phases2 = [
-            ['phase_index' => 0, 'name' => 'Seedling', 'duration_hours' => 336, 'ph_min' => 6.0, 'ph_max' => 6.3, 'ec_min' => 1.2, 'ec_max' => 1.5],
-            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 720, 'ph_min' => 6.2, 'ph_max' => 6.5, 'ec_min' => 1.8, 'ec_max' => 2.2],
-            ['phase_index' => 2, 'name' => 'Fruiting', 'duration_hours' => 1008, 'ph_min' => 6.3, 'ph_max' => 6.8, 'ec_min' => 2.2, 'ec_max' => 2.5],
+            ['phase_index' => 0, 'name' => 'Seedling', 'duration_hours' => 336, 'targets' => ['ph' => ['min' => 6.0, 'max' => 6.3], 'ec' => ['min' => 1.2, 'max' => 1.5]]],
+            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 720, 'targets' => ['ph' => ['min' => 6.2, 'max' => 6.5], 'ec' => ['min' => 1.8, 'max' => 2.2]]],
+            ['phase_index' => 2, 'name' => 'Fruiting', 'duration_hours' => 1008, 'targets' => ['ph' => ['min' => 6.3, 'max' => 6.8], 'ec' => ['min' => 2.2, 'max' => 2.5]]],
         ];
 
         foreach ($phases2 as $phaseData) {
-            $phTarget = ($phaseData['ph_min'] + $phaseData['ph_max']) / 2;
-            $ecTarget = ($phaseData['ec_min'] + $phaseData['ec_max']) / 2;
-
-            RecipeRevisionPhase::firstOrCreate(
+            RecipePhase::firstOrCreate(
                 [
-                    'recipe_revision_id' => $revision2->id,
+                    'recipe_id' => $recipe2->id,
                     'phase_index' => $phaseData['phase_index'],
                 ],
-                [
-                    'name' => $phaseData['name'],
-                    'duration_hours' => $phaseData['duration_hours'],
-                    'ph_min' => $phaseData['ph_min'],
-                    'ph_max' => $phaseData['ph_max'],
-                    'ph_target' => $phTarget,
-                    'ec_min' => $phaseData['ec_min'],
-                    'ec_max' => $phaseData['ec_max'],
-                    'ec_target' => $ecTarget,
-                ]
+                $phaseData
             );
         }
 
@@ -512,9 +332,7 @@ class FullServiceTestSeeder extends Seeder
 
     private function seedRecipeInstances(array $zones, array $recipes): void
     {
-        $this->command->info('Создание циклов выращивания...');
-        $growCycleService = app(GrowCycleService::class);
-        $creatorId = User::query()->value('id');
+        $this->command->info('Создание экземпляров рецептов...');
 
         foreach ($zones as $index => $zone) {
             if ($zone->status !== 'RUNNING') {
@@ -522,29 +340,17 @@ class FullServiceTestSeeder extends Seeder
             }
 
             $recipe = $recipes[$index % count($recipes)];
-            $revision = RecipeRevision::query()
-                ->where('recipe_id', $recipe->id)
-                ->where('status', 'PUBLISHED')
-                ->orderByDesc('revision_number')
-                ->first();
-
-            $plant = $recipe->plants()->first();
-
-            if (! $revision || ! $plant || $zone->activeGrowCycle) {
-                continue;
-            }
-
             $startedAt = now()->subDays(rand(5, 15));
 
-            $growCycleService->createCycle(
-                $zone,
-                $revision,
-                $plant->id,
+            ZoneRecipeInstance::firstOrCreate(
                 [
-                    'start_immediately' => true,
-                    'planting_at' => $startedAt,
+                    'zone_id' => $zone->id,
                 ],
-                $creatorId
+                [
+                    'recipe_id' => $recipe->id,
+                    'started_at' => $startedAt,
+                    'current_phase_index' => rand(0, 2),
+                ]
             );
         }
     }
@@ -555,59 +361,17 @@ class FullServiceTestSeeder extends Seeder
 
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
         $now = now();
-        $sensorsByZoneMetric = [];
 
-        foreach ($zones as $zone) {
-            $zoneNodes = array_filter($nodes, fn ($n) => $n->zone_id === $zone->id);
-            if (empty($zoneNodes)) {
-                $zoneNodes = $nodes; // Fallback если нет узлов для зоны
-            }
-
-            foreach ($metricTypes as $metricType) {
-                $sensorType = $this->sensorTypeFromMetric($metricType);
-                if (! $sensorType) {
-                    continue;
-                }
-
-                $randomNode = $zoneNodes[array_rand($zoneNodes)];
-                $sensor = Sensor::firstOrCreate(
-                    [
-                        'greenhouse_id' => $zone->greenhouse_id,
-                        'zone_id' => $zone->id,
-                        'node_id' => $randomNode->id,
-                        'scope' => 'inside',
-                        'type' => $sensorType,
-                        'label' => $this->buildSensorLabel($metricType, $sensorType),
-                    ],
-                    [
-                        'unit' => null,
-                        'specs' => [
-                            'metric' => $metricType,
-                        ],
-                        'is_active' => true,
-                    ]
-                );
-                $sensorsByZoneMetric[$zone->id][$metricType] = $sensor;
-            }
-        }
-
-        // Создаем samples за последние 24 часа (каждые 15 минут)
+        // Создаем samples за последние 24 часа (каждые 5 минут)
         $samplesCount = 0;
-        $intervalMinutes = 60;
-        $hoursBack = 6;
-        for ($hoursAgo = $hoursBack; $hoursAgo >= 0; $hoursAgo--) {
+        for ($hoursAgo = 23; $hoursAgo >= 0; $hoursAgo--) {
             $timestamp = $now->copy()->subHours($hoursAgo);
 
-            for ($minute = 0; $minute < 60; $minute += $intervalMinutes) {
+            for ($minute = 0; $minute < 60; $minute += 5) {
                 $sampleTime = $timestamp->copy()->addMinutes($minute);
 
                 foreach ($zones as $zone) {
                     foreach ($metricTypes as $metricType) {
-                        $sensor = $sensorsByZoneMetric[$zone->id][$metricType] ?? null;
-                        if (! $sensor) {
-                            continue;
-                        }
-
                         // Генерируем реалистичные значения
                         $value = match ($metricType) {
                             'ph' => 6.0 + (rand(0, 20) / 10), // 6.0-8.0
@@ -617,16 +381,14 @@ class FullServiceTestSeeder extends Seeder
                             default => rand(0, 100) / 10,
                         };
 
+                        $randomNode = $nodes[array_rand($nodes)];
                         TelemetrySample::create([
                             'zone_id' => $zone->id,
-                            'sensor_id' => $sensor->id,
+                            'node_id' => $randomNode->id,
+                            'channel' => $metricType,
+                            'metric_type' => $metricType,
                             'value' => $value,
                             'ts' => $sampleTime,
-                            'quality' => 'GOOD',
-                            'metadata' => [
-                                'metric_type' => strtoupper($metricType),
-                                'channel' => $metricType,
-                            ],
                         ]);
 
                         $samplesCount++;
@@ -636,27 +398,30 @@ class FullServiceTestSeeder extends Seeder
         }
 
         // Создаем последние значения (telemetry_last)
+        // Primary key: (zone_id, metric_type) - только одна запись на зону и метрику
         foreach ($zones as $zone) {
-            foreach ($metricTypes as $metricType) {
-                $sensor = $sensorsByZoneMetric[$zone->id][$metricType] ?? null;
-                if (! $sensor) {
-                    continue;
-                }
+            $zoneNodes = array_filter($nodes, fn ($n) => $n->zone_id === $zone->id);
+            if (empty($zoneNodes)) {
+                $zoneNodes = $nodes; // Fallback если нет узлов для зоны
+            }
 
+            foreach ($metricTypes as $metricType) {
+                $randomNode = $zoneNodes[array_rand($zoneNodes)];
                 TelemetryLast::updateOrCreate(
                     [
-                        'sensor_id' => $sensor->id,
+                        'zone_id' => $zone->id,
+                        'metric_type' => $metricType,
                     ],
                     [
-                        'last_value' => match ($metricType) {
+                        'node_id' => $randomNode->id,
+                        'value' => match ($metricType) {
                             'ph' => 6.5,
                             'ec' => 1.8,
                             'temperature' => 22.5,
                             'humidity' => 65.0,
                             default => 0,
                         },
-                        'last_ts' => now(),
-                        'last_quality' => 'GOOD',
+                        'updated_at' => now(),
                     ]
                 );
             }
@@ -665,45 +430,13 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info("Создано {$samplesCount} samples телеметрии");
     }
 
-    private function sensorTypeFromMetric(string $metric): ?string
-    {
-        $metric = strtoupper($metric);
-
-        return match ($metric) {
-            'PH' => 'PH',
-            'EC' => 'EC',
-            'TEMPERATURE' => 'TEMPERATURE',
-            'HUMIDITY' => 'HUMIDITY',
-            default => null,
-        };
-    }
-
-    private function buildSensorLabel(string $metricType, string $sensorType): string
-    {
-        $base = str_replace('_', ' ', strtolower($metricType));
-        $base = trim($base) ?: strtolower($sensorType);
-
-        return ucfirst($base);
-    }
-
     private function seedCommands(array $zones, array $nodes): void
     {
         $this->command->info('Создание команд...');
 
         $commandTypes = ['DOSE', 'IRRIGATE', 'SET_LIGHT', 'SET_CLIMATE', 'READ_SENSOR'];
-        $statuses = [
-            Command::STATUS_QUEUED,
-            Command::STATUS_SENT,
-            Command::STATUS_ACK,
-            Command::STATUS_DONE,
-            Command::STATUS_NO_EFFECT,
-            Command::STATUS_ERROR,
-            Command::STATUS_INVALID,
-            Command::STATUS_BUSY,
-            Command::STATUS_TIMEOUT,
-            Command::STATUS_SEND_FAILED,
-        ];
-        $statusWeights = [5, 20, 10, 45, 5, 5, 3, 2, 3, 2]; // Процентное распределение
+        $statuses = ['pending', 'sent', 'ack', 'failed'];
+        $statusWeights = [5, 20, 70, 5]; // Процентное распределение
 
         $commandsCount = 0;
         for ($daysAgo = 7; $daysAgo >= 0; $daysAgo--) {
@@ -720,7 +453,7 @@ class FullServiceTestSeeder extends Seeder
                 // Выбираем статус по весам
                 $rand = rand(1, 100);
                 $cumulative = 0;
-                $status = Command::STATUS_QUEUED;
+                $status = 'pending';
                 foreach ($statuses as $index => $stat) {
                     $cumulative += $statusWeights[$index];
                     if ($rand <= $cumulative) {
@@ -730,26 +463,8 @@ class FullServiceTestSeeder extends Seeder
                 }
 
                 $createdAt = $dayStart->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
-                $sentAt = in_array($status, [
-                    Command::STATUS_SENT,
-                    Command::STATUS_ACK,
-                    Command::STATUS_DONE,
-                    Command::STATUS_NO_EFFECT,
-                    Command::STATUS_ERROR,
-                    Command::STATUS_INVALID,
-                    Command::STATUS_BUSY,
-                    Command::STATUS_TIMEOUT,
-                ], true) ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
-                $ackAt = in_array($status, [Command::STATUS_ACK, Command::STATUS_DONE, Command::STATUS_NO_EFFECT], true)
-                    ? ($sentAt ? $sentAt->copy()->addMinutes(rand(1, 10)) : $createdAt->copy()->addMinutes(rand(1, 10)))
-                    : null;
-                $failedAt = in_array($status, [
-                    Command::STATUS_ERROR,
-                    Command::STATUS_INVALID,
-                    Command::STATUS_BUSY,
-                    Command::STATUS_TIMEOUT,
-                    Command::STATUS_SEND_FAILED,
-                ], true) ? $createdAt->copy()->addMinutes(rand(2, 15)) : null;
+                $sentAt = $status !== 'pending' ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
+                $ackAt = ($status === 'ack' || $status === 'failed') ? $sentAt->copy()->addMinutes(rand(1, 10)) : null;
 
                 Command::create([
                     'zone_id' => $zone->id,
@@ -763,7 +478,6 @@ class FullServiceTestSeeder extends Seeder
                     'created_at' => $createdAt,
                     'sent_at' => $sentAt,
                     'ack_at' => $ackAt,
-                    'failed_at' => $failedAt,
                 ]);
 
                 $commandsCount++;
@@ -852,22 +566,15 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание моделей и симуляций...');
 
         foreach ($zones as $zone) {
-            // Zone Model Params - проверяем существование перед вставкой
-            $exists = DB::table('zone_model_params')
-                ->where('zone_id', $zone->id)
-                ->where('model_type', 'growth_prediction')
-                ->exists();
-
-            if (! $exists) {
-                DB::table('zone_model_params')->insert([
-                    'zone_id' => $zone->id,
-                    'model_type' => 'growth_prediction',
-                    'params' => json_encode(['growth_rate' => rand(80, 120) / 100, 'efficiency' => rand(70, 95) / 100]),
-                    'calibrated_at' => now()->subDays(rand(1, 10)),
-                    'created_at' => now()->subDays(rand(1, 10)),
-                    'updated_at' => now()->subDays(rand(1, 10)),
-                ]);
-            }
+            // Zone Model Params
+            DB::table('zone_model_params')->insert([
+                'zone_id' => $zone->id,
+                'model_type' => 'growth_prediction',
+                'params' => json_encode(['growth_rate' => rand(80, 120) / 100, 'efficiency' => rand(70, 95) / 100]),
+                'calibrated_at' => now()->subDays(rand(1, 10)),
+                'created_at' => now()->subDays(rand(1, 10)),
+                'updated_at' => now()->subDays(rand(1, 10)),
+            ]);
 
             // Zone Simulations
             DB::table('zone_simulations')->insert([
@@ -953,7 +660,7 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание логов...');
 
         // System Logs
-        for ($i = 0; $i < 10; $i++) {
+        for ($i = 0; $i < 50; $i++) {
             DB::table('system_logs')->insert([
                 'level' => ['info', 'warning', 'error'][rand(0, 2)],
                 'message' => 'System log entry '.($i + 1),
@@ -964,7 +671,7 @@ class FullServiceTestSeeder extends Seeder
 
         // Node Logs
         foreach ($nodes as $node) {
-            for ($i = 0; $i < 5; $i++) {
+            for ($i = 0; $i < 20; $i++) {
                 DB::table('node_logs')->insert([
                     'node_id' => $node->id,
                     'level' => ['info', 'warning', 'error'][rand(0, 2)],
@@ -977,7 +684,7 @@ class FullServiceTestSeeder extends Seeder
 
         // AI Logs
         foreach ($zones as $zone) {
-            for ($i = 0; $i < 3; $i++) {
+            for ($i = 0; $i < 10; $i++) {
                 DB::table('ai_logs')->insert([
                     'zone_id' => $zone->id,
                     'action' => ['predict', 'recommend', 'explain', 'diagnostics'][rand(0, 3)],
@@ -987,151 +694,15 @@ class FullServiceTestSeeder extends Seeder
             }
         }
 
-        // Scheduler Logs (Protocol 2.0 task lifecycle contract)
-        $taskTypes = ['irrigation', 'lighting', 'ventilation', 'solution_change', 'mist', 'diagnostics'];
-        $statusWeights = [
-            'accepted' => 14,
-            'running' => 18,
-            'completed' => 36,
-            'failed' => 12,
-            'rejected' => 7,
-            'expired' => 5,
-            'timeout' => 5,
-            'not_found' => 3,
-        ];
-
-        for ($i = 0; $i < 8; $i++) {
-            $createdAt = now()->subHours(rand(0, 24));
-            $zone = $zones[array_rand($zones)];
-            $taskType = $taskTypes[array_rand($taskTypes)];
-            $status = $this->pickWeightedSchedulerStatus($statusWeights);
-            $taskId = 'st-'.$zone->id.'-'.Str::lower(Str::random(10));
-            $correlationId = "sch:z{$zone->id}:{$taskType}:".Str::lower(Str::random(12));
-            $scheduledFor = $createdAt->copy()->subMinutes(rand(1, 30));
-            $dueAt = $scheduledFor->copy()->addSeconds(rand(20, 90));
-            $expiresAt = $dueAt->copy()->addMinutes(rand(2, 10));
-
-            $details = [
-                'task_id' => $taskId,
-                'zone_id' => $zone->id,
-                'task_type' => $taskType,
-                'status' => $status,
-                'correlation_id' => $correlationId,
-                'scheduled_for' => $scheduledFor->toIso8601String(),
-                'due_at' => $dueAt->toIso8601String(),
-                'expires_at' => $expiresAt->toIso8601String(),
-                'contract_version' => 'scheduler_task_v2',
-                'message' => 'Scheduler log entry '.($i + 1),
-            ];
-
-            if (! in_array($status, ['accepted', 'running'], true)) {
-                $details['result'] = $this->buildSchedulerResult($status);
-            }
-
+        // Scheduler Logs
+        for ($i = 0; $i < 30; $i++) {
             DB::table('scheduler_logs')->insert([
-                'task_name' => $taskType,
-                'status' => $status,
-                'details' => json_encode($details),
-                'created_at' => $createdAt,
+                'task_name' => ['recipe_phase', 'irrigation', 'dosing', 'light_control'][rand(0, 3)],
+                'status' => ['success', 'failed'][rand(0, 1)],
+                'details' => json_encode(['message' => 'Scheduler log entry '.($i + 1)]),
+                'created_at' => now()->subHours(rand(0, 24)),
             ]);
         }
-    }
-
-    private function pickWeightedSchedulerStatus(array $weights): string
-    {
-        $random = rand(1, array_sum($weights));
-        $acc = 0;
-        foreach ($weights as $status => $weight) {
-            $acc += $weight;
-            if ($random <= $acc) {
-                return $status;
-            }
-        }
-
-        return 'failed';
-    }
-
-    private function buildSchedulerResult(string $status): array
-    {
-        return match ($status) {
-            'completed' => [
-                'action_required' => true,
-                'decision' => 'run',
-                'reason_code' => 'required_nodes_checked',
-                'error_code' => null,
-                'command_submitted' => true,
-                'command_effect_confirmed' => true,
-                'commands_total' => 1,
-                'commands_effect_confirmed' => 1,
-                'commands_failed' => 0,
-            ],
-            'failed' => [
-                'action_required' => true,
-                'decision' => 'fail',
-                'reason_code' => 'command_effect_not_confirmed',
-                'error_code' => 'command_effect_not_confirmed',
-                'command_submitted' => true,
-                'command_effect_confirmed' => false,
-                'commands_total' => 1,
-                'commands_effect_confirmed' => 0,
-                'commands_failed' => 1,
-            ],
-            'rejected' => [
-                'action_required' => false,
-                'decision' => 'skip',
-                'reason_code' => 'task_due_deadline_exceeded',
-                'error_code' => 'task_due_deadline_exceeded',
-                'command_submitted' => false,
-                'command_effect_confirmed' => false,
-                'commands_total' => 0,
-                'commands_effect_confirmed' => 0,
-                'commands_failed' => 0,
-            ],
-            'expired' => [
-                'action_required' => false,
-                'decision' => 'skip',
-                'reason_code' => 'task_expired',
-                'error_code' => 'task_expired',
-                'command_submitted' => false,
-                'command_effect_confirmed' => false,
-                'commands_total' => 0,
-                'commands_effect_confirmed' => 0,
-                'commands_failed' => 0,
-            ],
-            'timeout' => [
-                'action_required' => false,
-                'decision' => 'skip',
-                'reason_code' => 'task_status_timeout',
-                'error_code' => 'task_status_timeout',
-                'command_submitted' => false,
-                'command_effect_confirmed' => false,
-                'commands_total' => 0,
-                'commands_effect_confirmed' => 0,
-                'commands_failed' => 0,
-            ],
-            'not_found' => [
-                'action_required' => false,
-                'decision' => 'skip',
-                'reason_code' => 'task_status_not_found',
-                'error_code' => 'task_status_not_found',
-                'command_submitted' => false,
-                'command_effect_confirmed' => false,
-                'commands_total' => 0,
-                'commands_effect_confirmed' => 0,
-                'commands_failed' => 0,
-            ],
-            default => [
-                'action_required' => false,
-                'decision' => 'skip',
-                'reason_code' => 'task_execution_failed',
-                'error_code' => 'task_execution_failed',
-                'command_submitted' => false,
-                'command_effect_confirmed' => false,
-                'commands_total' => 0,
-                'commands_effect_confirmed' => 0,
-                'commands_failed' => 0,
-            ],
-        };
     }
 
     private function printStatistics(): void
@@ -1144,8 +715,8 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Nodes: '.DeviceNode::count());
         $this->command->info('Node Channels: '.NodeChannel::count());
         $this->command->info('Recipes: '.Recipe::count());
-        $this->command->info('Recipe Phases: '.RecipeRevisionPhase::count());
-        $this->command->info('Grow Cycles: '.GrowCycle::count());
+        $this->command->info('Recipe Phases: '.RecipePhase::count());
+        $this->command->info('Recipe Instances: '.ZoneRecipeInstance::count());
         $this->command->info('Telemetry Samples: '.number_format(TelemetrySample::count()));
         $this->command->info('Telemetry Last: '.TelemetryLast::count());
         $this->command->info('Commands: '.Command::count());

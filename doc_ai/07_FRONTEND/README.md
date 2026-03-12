@@ -2,10 +2,6 @@
 
 Этот раздел содержит документацию по архитектуре фронтенда, UI/UX спецификации и тестированию.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 📋 Документы раздела
@@ -37,11 +33,19 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### Вспомогательные документы
 
+#### [FRONTEND_REWORK_PLAN.md](FRONTEND_REWORK_PLAN.md)
+План доработки фронтенда после анализа backend 2.0
+
 #### [API_MAPPING.md](API_MAPPING.md)
 Маппинг API endpoints между фронтендом и бэкендом
 
 #### [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md)
 Спецификация ролевого UI
+
+#### [UI_UX_IMPROVEMENT_PLAN.md](UI_UX_IMPROVEMENT_PLAN.md)
+План улучшений UI/UX
+
+**Примечание:** Исторические отчеты об аудите и исправлениях перемещены в архив: `00_ARCHIVE/FRONTEND_REPORTS/`
 
 ---
 
@@ -61,4 +65,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ---
 
+## 📊 Статус документов
+
+- **SPEC_READY:** Все основные спецификации готовы
+- **MVP_DONE:** Основные страницы и компоненты реализованы (см. [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md))
+
+---
+
 **См. также:** [Главный индекс документации](../INDEX.md)
+

@@ -3,7 +3,8 @@
 namespace Database\Factories;
 
 use App\Models\TelemetrySample;
-use App\Models\Sensor;
+use App\Models\Zone;
+use App\Models\DeviceNode;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Carbon\Carbon;
 
@@ -17,20 +18,12 @@ class TelemetrySampleFactory extends Factory
     public function definition(): array
     {
         return [
-            'sensor_id' => Sensor::factory(),
-            'zone_id' => function (array $attributes) {
-                $sensorAttr = $attributes['sensor_id'] ?? null;
-                if ($sensorAttr instanceof Sensor) {
-                    return $sensorAttr->zone_id;
-                }
-
-                $sensor = $sensorAttr ? Sensor::find($sensorAttr) : null;
-                return $sensor?->zone_id;
-            },
-            'cycle_id' => null,
+            'zone_id' => Zone::factory(),
+            'node_id' => DeviceNode::factory(),
+            'channel' => $this->faker->word(),
+            'metric_type' => $this->faker->randomElement(['ph', 'ec', 'temp_air', 'temp_water', 'humidity_air']),
             'value' => $this->faker->randomFloat(2, 0, 10),
-            'quality' => 'GOOD',
-            'metadata' => [],
+            'raw' => null,
             'ts' => Carbon::now(),
         ];
     }

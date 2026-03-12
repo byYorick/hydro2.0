@@ -8,10 +8,6 @@
 Backend является «мозгом» всех контроллеров.
 Узлы ESP32 — исполнители, работающие через MQTT.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Общая концепция контроллеров зоны
@@ -254,14 +250,14 @@ ALARM_EXIT
 
 # 11. API для контроллеров
 
-## 11.1. POST /api/grow-cycles/{growCycle}/pause 
-Приостанавливает активный grow-cycle зоны.
+## 11.1. POST /api/zones/{id}/pause 
+Приостанавливает ВСЕ контроллеры зоны.
 
-## 11.2. POST /api/grow-cycles/{growCycle}/resume 
-Возобновляет активный grow-cycle.
+## 11.2. POST /api/zones/{id}/resume 
+Возобновляет работу контроллеров.
 
-## 11.3. POST /api/grow-cycles/{growCycle}/advance-phase 
-Сигнал для перехода на следующую фазу рецепта.
+## 11.3. POST /api/zones/{id}/next_phase 
+Сигнал для смены фазы рецепта.
 
 ---
 

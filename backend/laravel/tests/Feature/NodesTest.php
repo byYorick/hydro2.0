@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\DeviceNode;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class NodesTest extends TestCase
@@ -135,7 +135,6 @@ class NodesTest extends TestCase
 
     public function test_register_node_with_valid_token(): void
     {
-        config(['services.python_bridge.ingest_token' => 'test-token-123']);
         config(['services.python_bridge.token' => 'test-token-123']);
         
         $response = $this->withHeader('Authorization', 'Bearer test-token-123')
@@ -172,25 +171,25 @@ class NodesTest extends TestCase
 
     public function test_register_node_without_token_when_not_configured(): void
     {
-        // Токен не настроен - регистрация должна быть запрещена
-        config(['services.python_bridge.ingest_token' => null]);
+        // Токен не настроен
         config(['services.python_bridge.token' => null]);
         
-        // Регистрация должна быть запрещена, если токен не настроен
+        // Должен разрешить регистрацию (для обратной совместимости)
         $response = $this->postJson('/api/nodes/register', [
             'node_uid' => 'test-node-004',
             'type' => 'ec',
         ]);
         
-        // Если токен не настроен, регистрация запрещена
-        $response->assertStatus(500)
-            ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Node registration token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.');
+        $response->assertCreated()
+            ->assertJsonPath('status', 'ok');
+        
+        $this->assertDatabaseHas('nodes', [
+            'uid' => 'test-node-004',
+        ]);
     }
 
     public function test_register_node_hello_with_token(): void
     {
-        config(['services.python_bridge.ingest_token' => 'test-token-123']);
         config(['services.python_bridge.token' => 'test-token-123']);
         
         $response = $this->withHeader('Authorization', 'Bearer test-token-123')

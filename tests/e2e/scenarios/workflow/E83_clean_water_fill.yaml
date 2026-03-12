@@ -1,7 +1,0 @@
-# E83: Legacy clean water fill stage ported to canonical AE3 two-tank smoke
-
-name: E83_clean_water_fill
-description: |
-  Legacy AE2 clean-water-fill workflow stage migrated to standalone AE3-Lite.
-  Каноничная проверка: AE3 two-tank real-hardware smoke.
-scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

@@ -1,27 +1,15 @@
 <template>
-  <Modal
-    :open="open"
-    :title="title"
-    @close="$emit('close')"
-  >
-    <slot>
-      <div class="text-sm text-[color:var(--text-muted)]">
-        {{ message }}
-      </div>
-    </slot>
+  <Modal :open="open" :title="title" @close="$emit('close')">
+    <div class="text-sm text-neutral-300">{{ message }}</div>
     <template #footer>
-      <Button
-        size="sm"
-        variant="secondary"
-        @click="$emit('close')"
-      >
+      <Button size="sm" variant="secondary" @click="$emit('close')">
         {{ cancelText }}
       </Button>
       <Button 
         size="sm" 
         :variant="confirmVariant"
-        :disabled="loading || confirmDisabled"
         @click="$emit('confirm')"
+        :disabled="loading"
       >
         {{ loading ? loadingText : confirmText }}
       </Button>
@@ -30,9 +18,11 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-import type { ButtonVariant } from '@/Components/Button.vue'
+
+type ButtonVariant = 'primary' | 'danger' | 'warning' | 'secondary'
 
 interface Props {
   open?: boolean
@@ -42,18 +32,16 @@ interface Props {
   cancelText?: string
   confirmVariant?: ButtonVariant
   loading?: boolean
-  confirmDisabled?: boolean
   loadingText?: string
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   open: false,
   title: 'Подтверждение',
   confirmText: 'Подтвердить',
   cancelText: 'Отмена',
   confirmVariant: 'primary',
   loading: false,
-  confirmDisabled: false,
   loadingText: 'Загрузка...'
 })
 
@@ -62,3 +50,4 @@ defineEmits<{
   confirm: []
 }>()
 </script>
+

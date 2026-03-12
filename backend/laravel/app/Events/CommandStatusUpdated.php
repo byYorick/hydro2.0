@@ -2,9 +2,6 @@
 
 namespace App\Events;
 
-use App\Services\EventSequenceService;
-use App\Traits\RecordsZoneEvent;
-use App\Traits\RecordsWsBroadcastMetric;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -14,7 +11,7 @@ use Illuminate\Queue\SerializesModels;
 
 class CommandStatusUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent, RecordsWsBroadcastMetric;
+    use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public string $queue = 'broadcasts';
 
@@ -28,10 +25,6 @@ class CommandStatusUpdated implements ShouldBroadcast
 
     public ?int $zoneId;
 
-    public int $eventId;
-
-    public int $serverTs;
-
     public function __construct(
         int|string $commandId,
         string $status,
@@ -44,11 +37,6 @@ class CommandStatusUpdated implements ShouldBroadcast
         $this->message = $message;
         $this->error = $error;
         $this->zoneId = $zoneId;
-        
-        // Генерируем event_id и server_ts для reconciliation
-        $sequence = EventSequenceService::generateEventId();
-        $this->eventId = $sequence['event_id'];
-        $this->serverTs = $sequence['server_ts'];
     }
 
     /**
@@ -58,11 +46,11 @@ class CommandStatusUpdated implements ShouldBroadcast
     {
         // Если указана зона, отправляем в приватный канал зоны
         if ($this->zoneId) {
-            return new PrivateChannel("hydro.commands.{$this->zoneId}");
+            return new PrivateChannel("commands.{$this->zoneId}");
         }
 
         // Иначе отправляем в глобальный канал команд
-        return new PrivateChannel('hydro.commands.global');
+        return new PrivateChannel('commands.global');
     }
 
     /**
@@ -84,32 +72,6 @@ class CommandStatusUpdated implements ShouldBroadcast
             'message' => $this->message,
             'error' => $this->error,
             'zoneId' => $this->zoneId,
-            'event_id' => $this->eventId,
-            'server_ts' => $this->serverTs,
         ];
-    }
-
-    /**
-     * Записывает событие в zone_events после успешного broadcast.
-     */
-    public function broadcasted(): void
-    {
-        $this->recordWsBroadcastMetric('CommandStatusUpdated');
-
-        if ($this->zoneId) {
-            $this->recordZoneEvent(
-                zoneId: $this->zoneId,
-                type: 'command_status',
-                entityType: 'command',
-                entityId: $this->commandId,
-                payload: [
-                    'status' => $this->status,
-                    'message' => $this->message,
-                    'error' => $this->error,
-                ],
-                eventId: $this->eventId,
-                serverTs: $this->serverTs
-            );
-        }
     }
 }

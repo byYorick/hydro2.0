@@ -1,7 +1,7 @@
 /**
  * Целевые значения для зоны
  */
-export interface ZoneTargets extends Record<string, number | undefined> {
+export interface ZoneTargets {
   ph_min: number
   ph_max: number
   ec_min: number

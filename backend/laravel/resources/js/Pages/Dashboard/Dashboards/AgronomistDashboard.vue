@@ -1,346 +1,225 @@
 <template>
-  <div class="space-y-4">
-    <!-- ══════════════════════════════════════════════════════════════
-         CRITICAL ALERT BAR — shown only when zones have issues
-    ══════════════════════════════════════════════════════════════ -->
-    <div
-      v-if="criticalZones.length > 0"
-      class="rounded-xl border px-4 py-3 flex items-center justify-between gap-3"
-      :class="hasAlarm
-        ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
-        : 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]'"
-    >
-      <div class="flex items-center gap-2 min-w-0">
-        <span class="shrink-0 text-base">{{ hasAlarm ? '🔴' : '⚠️' }}</span>
-        <div class="text-sm font-medium truncate">
-          <span :class="hasAlarm ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--accent-amber)]'">
-            {{ criticalZones[0].name }}:
-          </span>
-          <span class="ml-1 text-[color:var(--text-primary)]">
-            {{ criticalZoneHint(criticalZones[0]) }}
-          </span>
-          <span
-            v-if="criticalZones.length > 1"
-            class="ml-2 text-[color:var(--text-muted)]"
-          >
-            и ещё {{ criticalZones.length - 1 }} {{ criticalZones.length - 1 === 1 ? 'зона' : 'зон' }}
-          </span>
-        </div>
-      </div>
-      <Link :href="`/zones/${criticalZones[0].id}`">
-        <Button
-          size="sm"
-          :variant="hasAlarm ? 'danger' : 'warning'"
-          class="shrink-0"
-        >
-          Перейти
-        </Button>
-      </Link>
-    </div>
-
-    <!-- ══════════════════════════════════════════════════════════════
-         KPI ROW — compact counters
-    ══════════════════════════════════════════════════════════════ -->
-    <div class="grid grid-cols-4 gap-2">
-      <div class="glass-panel rounded-xl p-3 text-center border border-[color:var(--border-muted)]">
-        <div class="text-2xl font-bold text-[color:var(--accent-green)]">
-          {{ runningCount }}
-        </div>
-        <div class="text-[10px] uppercase tracking-wider text-[color:var(--text-dim)] mt-0.5">
-          В работе
-        </div>
-      </div>
-      <div
-        class="glass-panel rounded-xl p-3 text-center border"
-        :class="warningCount > 0 ? 'border-[color:var(--badge-warning-border)]' : 'border-[color:var(--border-muted)]'"
-      >
-        <div
-          class="text-2xl font-bold"
-          :class="warningCount > 0 ? 'text-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
-        >
-          {{ warningCount }}
-        </div>
-        <div class="text-[10px] uppercase tracking-wider text-[color:var(--text-dim)] mt-0.5">
-          Warning
-        </div>
-      </div>
-      <div
-        class="glass-panel rounded-xl p-3 text-center border"
-        :class="alarmCount > 0 ? 'border-[color:var(--badge-danger-border)]' : 'border-[color:var(--border-muted)]'"
-      >
-        <div
-          class="text-2xl font-bold"
-          :class="alarmCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'"
-        >
-          {{ alarmCount }}
-        </div>
-        <div class="text-[10px] uppercase tracking-wider text-[color:var(--text-dim)] mt-0.5">
-          Alarm
-        </div>
-      </div>
-      <div class="glass-panel rounded-xl p-3 text-center border border-[color:var(--border-muted)]">
-        <div class="text-2xl font-bold text-[color:var(--accent-cyan)]">
-          {{ activeCyclesCount }}
-        </div>
-        <div class="text-[10px] uppercase tracking-wider text-[color:var(--text-dim)] mt-0.5">
-          Циклов
-        </div>
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <h1 class="text-lg font-semibold">Панель агронома</h1>
+      <div class="flex flex-wrap gap-2">
+        <Link href="/recipes/create" class="flex-1 sm:flex-none min-w-[140px]">
+          <Button size="sm" variant="primary" class="w-full sm:w-auto">Создать рецепт</Button>
+        </Link>
+        <Link href="/analytics" class="flex-1 sm:flex-none min-w-[120px]">
+          <Button size="sm" variant="outline" class="w-full sm:w-auto">Аналитика</Button>
+        </Link>
       </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════════════════════
-         ZONE HEALTH GRID — main view
-    ══════════════════════════════════════════════════════════════ -->
-    <div
-      v-if="zones.length > 0"
-      class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
-    >
-      <div
-        v-for="zone in sortedZones"
-        :key="zone.id"
-        class="surface-card surface-card--elevated rounded-2xl border transition-all duration-200 overflow-hidden"
-        :class="zoneCardBorder(zone)"
-      >
-        <!-- Zone header -->
-        <div
-          class="flex items-start justify-between px-4 pt-4 pb-3 border-b"
-          :class="zoneHeaderBorder(zone)"
+    <!-- Обзор зон по культурам -->
+    <div v-if="zonesByCrop.length > 0" class="space-y-4">
+      <h2 class="text-md font-semibold">Зоны по культурам</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <Card
+          v-for="crop in zonesByCrop"
+          :key="crop.cropName"
+          class="hover:border-neutral-700 transition-colors"
         >
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <div
-                class="w-2 h-2 rounded-full shrink-0 transition-all duration-500"
-                :class="zoneDotClass(zone)"
-              />
-              <Link
-                :href="`/zones/${zone.id}`"
-                class="text-sm font-semibold truncate hover:text-[color:var(--accent-cyan)] transition-colors"
-              >
-                {{ zone.name }}
-              </Link>
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <div class="text-sm font-semibold">{{ crop.cropName }}</div>
+              <div class="text-xs text-neutral-400 mt-1">
+                {{ crop.zones.length }} {{ crop.zones.length === 1 ? 'зона' : 'зон' }}
+              </div>
             </div>
-            <div
-              v-if="zoneCropInfo(zone)"
-              class="text-xs text-[color:var(--text-muted)] mt-0.5 truncate"
-            >
-              {{ zoneCropInfo(zone) }}
+            <Badge :variant="crop.overallStatus === 'OK' ? 'success' : crop.overallStatus === 'WARNING' ? 'warning' : 'danger'">
+              {{ crop.overallStatus }}
+            </Badge>
+          </div>
+          
+          <!-- Прогресс фазы -->
+          <div v-if="crop.averageProgress !== null" class="mb-3">
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span class="text-neutral-400">Общий прогресс</span>
+              <span class="font-medium">{{ Math.round(crop.averageProgress) }}%</span>
+            </div>
+            <div class="w-full bg-neutral-800 rounded-full h-2">
+              <div
+                class="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                :style="{ width: `${crop.averageProgress}%` }"
+              />
             </div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0 ml-2">
-            <Badge
-              :variant="zoneStatusVariant(zone)"
-              size="sm"
-            >
+
+          <!-- Средние метрики -->
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div v-if="crop.avgPh !== null">
+              <span class="text-neutral-400">pH:</span>
+              <span class="ml-1 font-medium">{{ crop.avgPh.toFixed(2) }}</span>
+            </div>
+            <div v-if="crop.avgEc !== null">
+              <span class="text-neutral-400">EC:</span>
+              <span class="ml-1 font-medium">{{ crop.avgEc.toFixed(2) }}</span>
+            </div>
+          </div>
+
+          <!-- Фаза -->
+          <div v-if="crop.currentPhase" class="mt-3 text-xs text-neutral-400">
+            Фаза: {{ crop.currentPhase }} (день {{ crop.averageDay }}/{{ crop.totalDays }})
+          </div>
+        </Card>
+      </div>
+    </div>
+
+    <!-- Ключевые метрики всех зон -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <MetricCard
+        label="Средний pH"
+        :value="averagePh"
+        color="#3b82f6"
+        :status="getPhStatus(averagePh)"
+        :trend="phTrend"
+        trend-label="за 24ч"
+        :target="phTarget"
+        :decimals="2"
+      >
+        <template #icon>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+        </template>
+      </MetricCard>
+      
+      <MetricCard
+        label="Средний EC"
+        :value="averageEc"
+        unit="мСм/см"
+        color="#10b981"
+        :status="getEcStatus(averageEc)"
+        :trend="ecTrend"
+        trend-label="за 24ч"
+        :target="ecTarget"
+        :decimals="2"
+      >
+        <template #icon>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </template>
+      </MetricCard>
+      
+      <MetricCard
+        label="Активных зон"
+        :value="activeZonesCount"
+        color="#10b981"
+        status="success"
+        :subtitle="`из ${totalZonesCount}`"
+      >
+        <template #icon>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+        </template>
+      </MetricCard>
+      
+      <MetricCard
+        label="Активных рецептов"
+        :value="activeRecipesCount"
+        color="#8b5cf6"
+        status="info"
+      >
+        <template #icon>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+        </template>
+      </MetricCard>
+    </div>
+
+    <!-- Активные рецепты -->
+    <div v-if="activeRecipes.length > 0" class="space-y-4">
+      <h2 class="text-md font-semibold">Активные рецепты</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card
+          v-for="recipe in activeRecipes"
+          :key="recipe.id"
+          class="hover:border-neutral-700 transition-colors"
+        >
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <div class="text-sm font-semibold">{{ recipe.name }}</div>
+              <div class="text-xs text-neutral-400 mt-1">
+                Применен в {{ recipe.zonesCount }} {{ recipe.zonesCount === 1 ? 'зоне' : 'зонах' }}
+              </div>
+            </div>
+            <Link :href="`/recipes/${recipe.id}`">
+              <Button size="sm" variant="secondary">Открыть</Button>
+            </Link>
+          </div>
+          
+          <!-- Прогресс по фазам -->
+          <div v-if="recipe.currentPhase" class="space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-neutral-400">Текущая фаза</span>
+              <span class="font-medium">{{ recipe.currentPhase }}</span>
+            </div>
+            <div class="w-full bg-neutral-800 rounded-full h-2">
+              <div
+                class="bg-sky-500 h-2 rounded-full transition-all duration-300"
+                :style="{ width: `${recipe.phaseProgress}%` }"
+              />
+            </div>
+            <div v-if="recipe.nextPhaseTransition" class="text-xs text-neutral-400">
+              Следующая фаза через: {{ formatTimeUntil(recipe.nextPhaseTransition) }}
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+
+    <!-- Проблемные зоны -->
+    <div v-if="problematicZones.length > 0" class="space-y-4">
+      <h2 class="text-md font-semibold">Требуют внимания</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <Card
+          v-for="zone in problematicZones"
+          :key="zone.id"
+          class="hover:border-neutral-700 transition-colors"
+        >
+          <div class="flex items-start justify-between mb-2">
+            <div>
+              <div class="text-sm font-semibold">{{ zone.name }}</div>
+              <div v-if="zone.crop" class="text-xs text-neutral-400 mt-1">
+                {{ zone.crop }}
+              </div>
+            </div>
+            <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'">
               {{ translateStatus(zone.status) }}
             </Badge>
           </div>
-        </div>
-
-        <!-- Phase progress strip -->
-        <div
-          v-if="zonePhaseInfo(zone)"
-          class="px-4 py-2 border-b border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
-        >
-          <div class="flex items-center justify-between text-[10px] text-[color:var(--text-muted)] mb-1">
-            <span>{{ zonePhaseInfo(zone)!.phaseName }}</span>
-            <span class="tabular-nums">
-              День {{ zonePhaseInfo(zone)!.dayElapsed }}/{{ zonePhaseInfo(zone)!.dayTotal }}
-            </span>
-          </div>
-          <div class="w-full h-1 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
-            <div
-              class="h-full bg-[color:var(--accent-cyan)] rounded-full transition-all duration-500"
-              :style="{ width: `${zonePhaseInfo(zone)!.progress}%` }"
-            />
-          </div>
-        </div>
-
-        <!-- Gauges + sparkline area -->
-        <div class="px-4 py-4">
-          <!-- pH / EC / Temp gauges in a row -->
-          <div class="flex items-start justify-around gap-1">
-            <ZoneHealthGauge
-              :value="zone.telemetry?.ph"
-              :target-min="resolveTarget(zone, 'ph', 'min')"
-              :target-max="resolveTarget(zone, 'ph', 'max')"
-              :global-min="4.0"
-              :global-max="9.0"
-              label="pH"
-              :decimals="2"
-            />
-            <div class="w-px self-stretch bg-[color:var(--border-muted)]" />
-            <ZoneHealthGauge
-              :value="zone.telemetry?.ec"
-              :target-min="resolveTarget(zone, 'ec', 'min')"
-              :target-max="resolveTarget(zone, 'ec', 'max')"
-              :global-min="0"
-              :global-max="5.0"
-              label="EC"
-              unit=" мСм"
-              :decimals="2"
-            />
-            <template v-if="zone.telemetry?.temperature != null">
-              <div class="w-px self-stretch bg-[color:var(--border-muted)]" />
-              <ZoneHealthGauge
-                :value="zone.telemetry.temperature"
-                :target-min="resolveTarget(zone, 'temperature', 'min')"
-                :target-max="resolveTarget(zone, 'temperature', 'max')"
-                :global-min="10"
-                :global-max="40"
-                label="T°C"
-                :decimals="1"
-              />
-            </template>
-          </div>
-
-          <!-- pH sparkline (24h) -->
-          <div
-            v-if="sparklineData(zone.id)"
-            class="mt-3"
-          >
-            <div class="text-[9px] text-[color:var(--text-dim)] mb-1 uppercase tracking-wider">
-              pH · 24 часа
-            </div>
-            <Sparkline
-              :data="sparklineData(zone.id)!"
-              :width="240"
-              :height="28"
-              :color="sparklineColor(zone)"
-              :show-area="true"
-              :stroke-width="1.5"
-            />
-          </div>
-
-          <!-- AI prediction hint -->
-          <div class="mt-2">
-            <ZoneAIPredictionHint
-              :zone-id="zone.id"
-              metric-type="PH"
-              :target-min="resolveTarget(zone, 'ph', 'min')"
-              :target-max="resolveTarget(zone, 'ph', 'max')"
-              :horizon-minutes="90"
-            />
-          </div>
-        </div>
-
-        <!-- Footer actions -->
-        <div class="px-4 pb-3 flex items-center gap-2 border-t border-[color:var(--border-muted)] pt-3">
-          <Button
-            size="sm"
-            variant="outline"
-            class="flex-1 text-xs"
-            @click="handleForceIrrigation(zone.id)"
-          >
-            💧 Полить
-          </Button>
-          <Link
-            :href="`/zones/${zone.id}`"
-            class="flex-1"
-          >
-            <Button
-              size="sm"
-              variant="secondary"
-              class="w-full text-xs"
-            >
-              ↗ Зона
-            </Button>
-          </Link>
-        </div>
-      </div>
-    </div>
-
-    <!-- Empty zones state -->
-    <div
-      v-else
-      class="glass-panel border border-[color:var(--border-muted)] rounded-2xl text-center py-12 text-[color:var(--text-dim)]"
-    >
-      <div class="text-4xl mb-3">
-        🌿
-      </div>
-      <div class="text-sm font-medium">
-        Нет зон для мониторинга
-      </div>
-      <div class="text-xs mt-1 text-[color:var(--text-muted)]">
-        Создайте зоны и запустите циклы выращивания
-      </div>
-      <Link
-        href="/zones"
-        class="mt-4 inline-block"
-      >
-        <Button
-          size="sm"
-          variant="primary"
-        >
-          Управление зонами
-        </Button>
-      </Link>
-    </div>
-
-    <!-- ══════════════════════════════════════════════════════════════
-         ACTIVE RECIPES — compact list
-    ══════════════════════════════════════════════════════════════ -->
-    <div
-      v-if="activeRecipesSummary.length > 0"
-      class="space-y-2"
-    >
-      <div class="flex items-center justify-between">
-        <h2 class="text-xs font-semibold uppercase tracking-widest text-[color:var(--text-dim)]">
-          Активные рецепты
-        </h2>
-        <Link
-          href="/recipes"
-          class="text-xs text-[color:var(--accent-cyan)] hover:underline transition-colors"
-        >
-          Все рецепты →
-        </Link>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <div
-          v-for="recipe in activeRecipesSummary"
-          :key="recipe.id"
-          class="glass-panel border border-[color:var(--border-muted)] rounded-xl px-3 py-2.5 flex items-center justify-between gap-3 hover:border-[color:var(--border-strong)] transition-colors"
-        >
-          <div class="min-w-0">
-            <div class="text-sm font-medium truncate">
-              {{ recipe.name }}
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)] mt-0.5">
-              {{ recipe.zonesCount }} {{ recipe.zonesCount === 1 ? 'зона' : 'зон' }}
-              <span
-                v-if="recipe.phaseName"
-                class="ml-1"
-              >· {{ recipe.phaseName }}</span>
+          <div v-if="zone.issues && zone.issues.length > 0" class="text-xs text-red-400 mt-2">
+            <div v-for="issue in zone.issues" :key="issue">
+              • {{ issue }}
             </div>
           </div>
-          <Link :href="`/recipes/${recipe.id}`">
-            <Button
-              size="sm"
-              variant="outline"
-              class="shrink-0 text-xs"
-            >
-              Открыть
-            </Button>
-          </Link>
-        </div>
+          <div class="mt-3">
+            <Link :href="`/zones/${zone.id}`">
+              <Button size="sm" variant="secondary">Подробнее</Button>
+            </Link>
+          </div>
+        </Card>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
-import Badge from '@/Components/Badge.vue'
+import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import Sparkline from '@/Components/Sparkline.vue'
-import ZoneHealthGauge from '@/Components/ZoneHealthGauge.vue'
-import ZoneAIPredictionHint from '@/Components/ZoneAIPredictionHint.vue'
+import Badge from '@/Components/Badge.vue'
+import MetricCard from '@/Components/MetricCard.vue'
 import { translateStatus } from '@/utils/i18n'
-import { useTelemetry } from '@/composables/useTelemetry'
+import { formatTime } from '@/utils/formatTime'
 import type { Zone, Recipe } from '@/types'
-import type { BadgeVariant } from '@/Components/Badge.vue'
 
-// ─── Props ────────────────────────────────────────────────────────────────────
 interface Props {
   dashboard: {
     zones?: Zone[]
@@ -352,194 +231,155 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const emit = defineEmits<{
-  (e: 'force-irrigation', zoneId: number): void
-}>()
-
-// ─── Data ──────────────────────────────────────────────────────────────────────
-const zones = computed<Zone[]>(() => props.dashboard.zones ?? [])
-const recipes = computed<Recipe[]>(() => props.dashboard.recipes ?? [])
-
-// ─── KPI counts ───────────────────────────────────────────────────────────────
-const runningCount = computed(() => props.dashboard.zonesByStatus?.RUNNING ?? 0)
-const warningCount = computed(() => props.dashboard.zonesByStatus?.WARNING ?? 0)
-const alarmCount   = computed(() => props.dashboard.zonesByStatus?.ALARM ?? 0)
-const activeCyclesCount = computed(() =>
-  zones.value.filter(z => z.activeGrowCycle != null).length
-)
-
-// ─── Critical zones (ALARM first, then WARNING) ───────────────────────────────
-const criticalZones = computed(() =>
-  zones.value
-    .filter(z => z.status === 'ALARM' || z.status === 'WARNING')
-    .sort((a, b) => (a.status === 'ALARM' ? 0 : 1) - (b.status === 'ALARM' ? 0 : 1))
-)
-const hasAlarm = computed(() => criticalZones.value.some(z => z.status === 'ALARM'))
-
-function criticalZoneHint(zone: Zone): string {
-  const issues = (zone.issues ?? []).slice(0, 1)
-  if (issues.length) return issues[0]
-  if (zone.alerts_count && zone.alerts_count > 0) return `${zone.alerts_count} активных алертов`
-  return zone.status === 'ALARM' ? 'критическое отклонение' : 'требует внимания'
-}
-
-// ─── Zone sort: ALARM → WARNING → RUNNING → others ───────────────────────────
-const sortedZones = computed(() => {
-  const priority: Record<string, number> = { ALARM: 0, WARNING: 1, RUNNING: 2, PAUSED: 3, IDLE: 4, NEW: 5 }
-  return [...zones.value].sort((a, b) => (priority[a.status] ?? 9) - (priority[b.status] ?? 9))
-})
-
-// ─── Zone card styles ─────────────────────────────────────────────────────────
-function zoneCardBorder(zone: Zone): string {
-  if (zone.status === 'ALARM') return 'border-[color:var(--badge-danger-border)]'
-  if (zone.status === 'WARNING') return 'border-[color:var(--badge-warning-border)]'
-  return 'border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]'
-}
-
-function zoneHeaderBorder(zone: Zone): string {
-  if (zone.status === 'ALARM') return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
-  if (zone.status === 'WARNING') return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]'
-  return 'border-[color:var(--border-muted)]'
-}
-
-function zoneDotClass(zone: Zone): string {
-  const map: Record<string, string> = {
-    RUNNING: 'bg-[color:var(--accent-green)] shadow-[0_0_6px_var(--accent-green)]',
-    WARNING: 'bg-[color:var(--accent-amber)]',
-    ALARM: 'bg-[color:var(--accent-red)] animate-pulse',
-    PAUSED: 'bg-[color:var(--text-dim)]',
-    IDLE: 'bg-[color:var(--text-dim)]',
-    NEW: 'bg-[color:var(--text-dim)]',
-  }
-  return map[zone.status] ?? 'bg-[color:var(--text-dim)]'
-}
-
-function zoneStatusVariant(zone: Zone): BadgeVariant {
-  const map: Record<string, BadgeVariant> = {
-    RUNNING: 'success', WARNING: 'warning', ALARM: 'danger',
-    PAUSED: 'neutral', IDLE: 'neutral', NEW: 'neutral',
-  }
-  return map[zone.status] ?? 'neutral'
-}
-
-// ─── Zone info ────────────────────────────────────────────────────────────────
-function zoneCropInfo(zone: Zone): string | null {
-  return zone.activeGrowCycle?.recipeRevision?.recipe?.name
-    ?? zone.recipe_instance?.recipe?.name
-    ?? zone.crop
-    ?? null
-}
-
-interface PhaseInfo {
-  phaseName: string
-  dayElapsed: number
-  dayTotal: number
-  progress: number
-}
-
-function zonePhaseInfo(zone: Zone): PhaseInfo | null {
-  const cycle = zone.activeGrowCycle
-  if (!cycle) return null
-
-  const currentPhaseIndex = cycle.current_phase_index
-    ?? cycle.currentPhase?.phase_index
-    ?? 0
-  const phaseName = cycle.current_phase_name
-    ?? (cycle.currentPhase?.phase_index != null
-      ? `Фаза ${currentPhaseIndex + 1}`
-      : null)
-  if (!phaseName) return null
-
-  const startedAt = cycle.phase_started_at
-    ? new Date(cycle.phase_started_at)
-    : cycle.started_at
-      ? new Date(cycle.started_at)
-      : null
-  if (!startedAt) return null
-
-  const daysElapsed = Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / (1000 * 60 * 60 * 24)))
-
-  const recipePhase = cycle.recipe?.phases?.find((p: any) => (p.phase_index ?? 0) === currentPhaseIndex)
-  const durationHours = recipePhase?.duration_hours
-  const daysTotal = durationHours ? Math.ceil(durationHours / 24) : daysElapsed || 1
-  const progress = Math.min(100, Math.round((daysElapsed / daysTotal) * 100))
-
-  return { phaseName: phaseName as string, dayElapsed: daysElapsed, dayTotal: daysTotal, progress }
-}
-
-// ─── Target resolution ────────────────────────────────────────────────────────
-type TargetKey = 'ph' | 'ec' | 'temperature' | 'humidity'
-type TargetSide = 'min' | 'max'
-
-function resolveTarget(zone: Zone, key: TargetKey, side: TargetSide): number | null {
-  const t = zone.targets as any
-  if (!t) return null
-  // Nested: { ph: { min, max } }
-  if (t[key] && typeof t[key] === 'object') return t[key][side] ?? null
-  // Flat: ph_min, ph_max, temp_min, temp_max
-  const flatKeyMap: Record<TargetKey, string> = { ph: 'ph', ec: 'ec', temperature: 'temp', humidity: 'humidity' }
-  return t[`${flatKeyMap[key]}_${side}`] ?? null
-}
-
-// ─── Sparklines ───────────────────────────────────────────────────────────────
-const { fetchHistory } = useTelemetry()
-const sparklines = ref<Record<number, number[]>>({})
-
-async function loadSparkline(zone: Zone): Promise<void> {
-  try {
-    const now = new Date()
-    const from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    const history = await fetchHistory(zone.id, 'PH', {
-      from: from.toISOString(),
-      to: now.toISOString(),
-    })
-    if (history.length > 0) {
-      sparklines.value = { ...sparklines.value, [zone.id]: history.map(p => p.value) }
+// Группировка зон по культурам
+const zonesByCrop = computed(() => {
+  if (!props.dashboard.zones) return []
+  
+  const grouped = new Map<string, {
+    cropName: string
+    zones: Zone[]
+    avgPh: number | null
+    avgEc: number | null
+    averageProgress: number | null
+    currentPhase: string | null
+    averageDay: number
+    totalDays: number
+    overallStatus: 'OK' | 'WARNING' | 'ALARM'
+  }>()
+  
+  props.dashboard.zones.forEach(zone => {
+    const cropName = zone.recipe_instance?.recipe?.name || 'Без рецепта'
+    
+    if (!grouped.has(cropName)) {
+      grouped.set(cropName, {
+        cropName,
+        zones: [],
+        avgPh: null,
+        avgEc: null,
+        averageProgress: null,
+        currentPhase: null,
+        averageDay: 0,
+        totalDays: 0,
+        overallStatus: 'OK'
+      })
     }
-  } catch {
-    // Non-critical
-  }
-}
-
-onMounted(() => {
-  zones.value.forEach((zone, i) => {
-    setTimeout(() => loadSparkline(zone), i * 250)
+    
+    const group = grouped.get(cropName)!
+    group.zones.push(zone)
+    
+    // Определяем общий статус (если хотя бы одна зона в ALARM, то ALARM)
+    if (zone.status === 'ALARM') {
+      group.overallStatus = 'ALARM'
+    } else if (zone.status === 'WARNING' && group.overallStatus === 'OK') {
+      group.overallStatus = 'WARNING'
+    }
   })
+  
+  return Array.from(grouped.values())
 })
 
-function sparklineData(zoneId: number): number[] | null {
-  return sparklines.value[zoneId] ?? null
+// Средние метрики
+const averagePh = computed(() => {
+  if (!props.dashboard.zones || props.dashboard.zones.length === 0) return null
+  const zonesWithPh = props.dashboard.zones.filter(z => z.telemetry?.ph !== null && z.telemetry?.ph !== undefined)
+  if (zonesWithPh.length === 0) return null
+  const sum = zonesWithPh.reduce((acc, z) => acc + (z.telemetry?.ph || 0), 0)
+  return sum / zonesWithPh.length
+})
+
+const averageEc = computed(() => {
+  if (!props.dashboard.zones || props.dashboard.zones.length === 0) return null
+  const zonesWithEc = props.dashboard.zones.filter(z => z.telemetry?.ec !== null && z.telemetry?.ec !== undefined)
+  if (zonesWithEc.length === 0) return null
+  const sum = zonesWithEc.reduce((acc, z) => acc + (z.telemetry?.ec || 0), 0)
+  return sum / zonesWithEc.length
+})
+
+const phTrend = computed(() => {
+  // TODO: Вычислить тренд на основе исторических данных
+  return null
+})
+
+const ecTrend = computed(() => {
+  // TODO: Вычислить тренд на основе исторических данных
+  return null
+})
+
+// Целевые значения для pH (стандартный диапазон для гидропоники)
+const phTarget = computed(() => {
+  return { min: 5.5, max: 6.5 }
+})
+
+// Целевые значения для EC (зависит от культуры, используем общий диапазон)
+const ecTarget = computed(() => {
+  return { min: 1.0, max: 3.0 }
+})
+
+// Определение статуса pH
+function getPhStatus(ph: number | null): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (ph === null) return 'neutral'
+  const target = phTarget.value
+  if (ph >= target.min && ph <= target.max) return 'success'
+  if (ph >= target.min - 0.3 && ph <= target.max + 0.3) return 'warning'
+  return 'danger'
 }
 
-function sparklineColor(zone: Zone): string {
-  if (zone.status === 'ALARM') return 'var(--accent-red)'
-  if (zone.status === 'WARNING') return 'var(--accent-amber)'
-  return 'var(--accent-cyan)'
+// Определение статуса EC
+function getEcStatus(ec: number | null): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (ec === null) return 'neutral'
+  const target = ecTarget.value
+  if (ec >= target.min && ec <= target.max) return 'success'
+  if (ec >= target.min - 0.5 && ec <= target.max + 0.5) return 'warning'
+  return 'danger'
 }
 
-// ─── Quick actions ────────────────────────────────────────────────────────────
-function handleForceIrrigation(zoneId: number): void {
-  emit('force-irrigation', zoneId)
-}
+const activeZonesCount = computed(() => {
+  return props.dashboard.zonesByStatus?.RUNNING || 0
+})
 
-// ─── Active recipes summary ───────────────────────────────────────────────────
-const activeRecipesSummary = computed(() =>
-  recipes.value
-    .map(recipe => {
-      const zonesWithRecipe = zones.value.filter(z =>
-        z.activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
-        || (z.recipe_instance as any)?.recipe_id === recipe.id
-      )
-      if (zonesWithRecipe.length === 0) return null
-      const phaseInfo = zonePhaseInfo(zonesWithRecipe[0])
-      return {
-        id: recipe.id,
-        name: recipe.name,
-        zonesCount: zonesWithRecipe.length,
-        phaseName: phaseInfo?.phaseName ?? zonesWithRecipe[0].activeGrowCycle?.current_phase_name ?? null,
-      }
-    })
-    .filter(Boolean)
-    .slice(0, 6) as Array<{ id: number; name: string; zonesCount: number; phaseName: string | null }>
-)
+const totalZonesCount = computed(() => {
+  return props.dashboard.zones?.length || 0
+})
+
+const activeRecipes = computed(() => {
+  if (!props.dashboard.recipes) return []
+  // Рецепты считаются активными, если они применены к зонам
+  return props.dashboard.recipes.slice(0, 6).map(recipe => {
+    const zonesWithRecipe = props.dashboard.zones?.filter(z => 
+      z.recipe_instance?.recipe_id === recipe.id
+    ) || []
+    return {
+      ...recipe,
+      zonesCount: zonesWithRecipe.length,
+      currentPhase: null, // TODO: Вычислить из zones
+      phaseProgress: 0, // TODO: Вычислить из zones
+      nextPhaseTransition: null // TODO: Вычислить из zones
+    }
+  }).filter(r => r.zonesCount > 0)
+})
+
+const activeRecipesCount = computed(() => {
+  return activeRecipes.value.length
+})
+
+const problematicZones = computed(() => {
+  return props.dashboard.problematicZones || []
+})
+
+function formatTimeUntil(timestamp: string | Date): string {
+  const now = new Date()
+  const target = new Date(timestamp)
+  const diff = target.getTime() - now.getTime()
+  
+  if (diff < 0) return 'Прошло'
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+  
+  if (days > 0) return `${days} дн. ${hours} ч.`
+  if (hours > 0) return `${hours} ч. ${minutes} мин.`
+  return `${minutes} мин.`
+}
 </script>
+

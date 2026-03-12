@@ -1,5 +1,4 @@
-// @ts-expect-error - Test file with Vue component testing
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import type { Zone } from '@/types'
@@ -77,7 +76,7 @@ const sampleZones: Zone[] = [
     telemetry: {
       ph: 5.8,
       ec: 2.0,
-      temperature: 22.5,
+      temp_air: 22.5,
       humidity: 65
     },
     created_at: '2025-01-01T00:00:00Z',
@@ -96,7 +95,7 @@ const sampleZones: Zone[] = [
     telemetry: {
       ph: 5.9,
       ec: 2.1,
-      temperature: 23.0,
+      temp_air: 23.0,
       humidity: 70
     },
     created_at: '2025-01-01T00:00:00Z',
@@ -115,7 +114,7 @@ const sampleZones: Zone[] = [
     telemetry: {
       ph: 5.7,
       ec: 1.9,
-      temperature: 21.0,
+      temp_air: 21.0,
       humidity: 60
     },
     created_at: '2025-01-01T00:00:00Z',
@@ -407,3 +406,4 @@ describe('ZoneComparisonModal', () => {
     })
   })
 })
+

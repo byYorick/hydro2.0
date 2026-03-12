@@ -6,7 +6,7 @@ use App\Models\User;
 use App\Models\Preset;
 use App\Models\Recipe;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class PresetsTest extends TestCase

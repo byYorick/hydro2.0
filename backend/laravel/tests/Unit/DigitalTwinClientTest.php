@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\DigitalTwinClient;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 

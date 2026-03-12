@@ -1,5 +1,0 @@
-zone_events_error_like_window=2
-fixed_timeout_reason_window=0
-schedule_finished_failed_window=0
-command_failed_window=0
-alerts_open_total=10

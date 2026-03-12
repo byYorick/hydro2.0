@@ -90,7 +90,7 @@
 2. **`private-commands.{zoneId}`** - команды зоны ✅
 3. **`private-commands.global`** - глобальные команды ✅
 4. **`private-events.global`** - глобальные события ✅
-5. **`private-hydro.devices`** - обновления unassigned устройств ✅
+5. **`private-hydro.devices`** - обновления устройств ✅
 6. **`private-hydro.alerts`** - алерты ✅
 
 ---
@@ -114,7 +114,7 @@
    - Данные: zone (id, name, status)
 
 4. **`NodeConfigUpdated`** ✅
-   - Канал: `private-hydro.zones.{zoneId}` (fallback: `private-hydro.devices` без зоны)
+   - Канал: `private-hydro.devices`
    - Имя: `device.updated`
    - Данные: device (полный объект узла)
 
@@ -122,12 +122,7 @@
    - Канал: `private-hydro.alerts`
    - Данные: alert (id, type, message, etc.)
 
-6. **`TelemetryBatchUpdated`** ✅
-   - Канал: `private-hydro.zones.{zoneId}`
-   - Имя: `telemetry.batch.updated`
-   - Данные: zone_id, updates[]
-
-7. **`EventCreated`** ✅
+6. **`EventCreated`** ✅
    - Канал: `private-events.global`
    - Имя: `EventCreated`
    - Данные: id, kind, message, zoneId, occurredAt
@@ -210,3 +205,4 @@ php artisan dusk --filter=WebSocketConnection
 
 **Дата обновления:** 2025-11-27  
 **Версия:** 1.0
+

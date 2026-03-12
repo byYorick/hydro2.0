@@ -3,13 +3,9 @@
 namespace Tests\Feature\Broadcasting;
 
 use App\Models\User;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-/**
- * @group skip-in-ci
- * Broadcasting tests require Reverb server to be running
- */
 class BroadcastAuthTest extends TestCase
 {
     use RefreshDatabase;
@@ -27,18 +23,16 @@ class BroadcastAuthTest extends TestCase
             'socket_id' => '123.456',
         ]);
 
-        // В тестах middleware возвращает 403 вместо 401
-        $response->assertStatus(403);
+        // Middleware 'auth' returns 401 before route handler executes
+        $response->assertStatus(401);
     }
 
     public function test_authorizes_authenticated_users_for_zone_command_channels(): void
     {
-        $user = User::factory()->create(['role' => 'operator']);
+        $user = User::factory()->create();
 
-        $zone = \App\Models\Zone::factory()->create();
-        
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
-            'channel_name' => "private-hydro.commands.{$zone->id}",
+            'channel_name' => 'private-commands.25',
             'socket_id' => '654.321',
         ]);
 

@@ -3,10 +3,6 @@
 
 Этот документ описывает параметры PID-конфигурации для контроллеров pH и EC в системе Hydro 2.0.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Общая информация
@@ -42,21 +38,11 @@ PID (Proportional-Integral-Derivative) контроллеры использую
     }
   },
   "max_output": float,          // Максимальный выход (мл)
-  "anti_windup_mode": "clamp|conditional|back_calculation",
-  "back_calculation_gain": float,
-  "derivative_filter_alpha": float, // low-pass фильтр производной (0..1)
   "min_interval_ms": int,      // Минимальный интервал между дозировками (мс)
   "enable_autotune": bool,     // Включить автонастройку
-  "autotune_mode": "disabled|service", // autotune только в service-режиме
   "adaptation_rate": float      // Скорость адаптации (0-1)
 }
 ```
-
-### Контракт расчёта выхода (важно)
-
-- PID возвращает **только модуль дозы** (`magnitude-only`).
-- Направление коррекции (`add_acid/add_base/add_nutrients/dilute`) определяется отдельно policy-слоем.
-- Это обязательный инвариант для совместимости automation-engine.
 
 ---
 
@@ -410,3 +396,4 @@ Python-сервис автоматически:
 ---
 
 **Последнее обновление:** 2025-01-28
+

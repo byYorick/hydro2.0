@@ -7,7 +7,6 @@ let useWebSocketModule: UseWebSocketModule
 vi.mock('@/utils/echoClient', () => ({
   onWsStateChange: vi.fn(() => vi.fn()), // Returns unsubscribe function
   getEcho: vi.fn(() => null),
-  getEchoInstance: vi.fn(() => null),
   getReconnectAttempts: vi.fn(() => 0),
   getLastError: vi.fn(() => null),
   getConnectionState: vi.fn(() => 'disconnected'),
@@ -61,7 +60,7 @@ describe('useWebSocket', () => {
     
     mockEcho = {
       private: vi.fn((channelName: string) => {
-        if (channelName === 'hydro.events.global') {
+        if (channelName === 'events.global') {
           pusherChannels[channelName] = mockGlobalChannel
           return mockGlobalChannel
         }
@@ -107,7 +106,7 @@ describe('useWebSocket', () => {
     const unsubscribe = subscribeToZoneCommands(1, vi.fn())
 
     expect(typeof unsubscribe).toBe('function')
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+    expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
     expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
@@ -132,7 +131,7 @@ describe('useWebSocket', () => {
     
     subscribeToZoneCommands(1, onCommandUpdate)
 
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+    expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
     // Listeners могут быть вызваны через attachChannelListeners, проверяем, что они вызывались
     expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
@@ -157,7 +156,7 @@ describe('useWebSocket', () => {
       const event = {
         commandId: 123,
         command_id: 123,
-        status: 'DONE',
+        status: 'completed',
         message: 'Command completed',
         zoneId: 1,
         zone_id: 1
@@ -168,7 +167,7 @@ describe('useWebSocket', () => {
       const call = onCommandUpdate.mock.calls[0]?.[0]
       expect(call).toMatchObject({
         commandId: 123,
-        status: 'DONE',
+        status: 'completed',
         message: 'Command completed',
         zoneId: 1
       })
@@ -195,7 +194,6 @@ describe('useWebSocket', () => {
       const event = {
         commandId: 123,
         command_id: 123,
-        status: 'ERROR',
         message: 'Command failed',
         error: 'Some error',
         zoneId: 1,
@@ -217,7 +215,7 @@ describe('useWebSocket', () => {
 
     // stopListening вызывается только если это последний подписчик
     // но leave вызывается всегда при удалении последнего подписчика
-    expect(mockEcho.leave).toHaveBeenCalledWith('hydro.commands.1')
+    expect(mockEcho.leave).toHaveBeenCalledWith('commands.1')
   })
 
   it('should subscribe to global events channel', () => {
@@ -227,7 +225,7 @@ describe('useWebSocket', () => {
     
     subscribeToGlobalEvents(onEvent)
 
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+    expect(mockEcho.private).toHaveBeenCalledWith('events.global')
     expect(mockGlobalChannel.listen).toHaveBeenCalledWith('.App\\Events\\EventCreated', expect.any(Function))
   })
 
@@ -303,3 +301,4 @@ describe('useWebSocket', () => {
     expect(mockEcho.leave).toHaveBeenCalled()
   })
 })
+

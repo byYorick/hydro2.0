@@ -1,7 +1,7 @@
 /**
  * Composable для отправки команд зонам и узлам
  */
-import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
@@ -18,77 +18,11 @@ interface PendingCommandInternal {
   message?: string
 }
 
-/** Нормализованный ответ API команды (может быть в разных форматах) */
-interface CommandRawResponse {
-  data?: {
-    id?: number | string
-    type?: CommandType
-    command_id?: string
-    status?: CommandStatus
-    created_at?: string
-    [key: string]: unknown
-  }
-  id?: number | string
-  type?: CommandType
-  status?: CommandStatus
-  created_at?: string
-}
-
-function extractCommandErrorMessage(err: unknown): string {
-  const fallback = 'Неизвестная ошибка'
-  if (!err || typeof err !== 'object') {
-    return fallback
-  }
-
-  const response = (err as { response?: { data?: Record<string, unknown> } }).response
-  const data = response?.data
-  const message = data?.message
-  const details = data?.details
-
-  const safeMessage = typeof message === 'string' && message.trim().length > 0
-    ? message.trim()
-    : null
-  const safeDetails = typeof details === 'string' && details.trim().length > 0
-    ? details.trim()
-    : null
-
-  if (safeMessage && safeDetails && !safeMessage.includes(safeDetails)) {
-    return `${safeMessage} ${safeDetails}`
-  }
-  if (safeMessage) {
-    return safeMessage
-  }
-  if (safeDetails) {
-    return safeDetails
-  }
-
-  const directMessage = (err as { message?: string }).message
-  if (typeof directMessage === 'string' && directMessage.trim().length > 0) {
-    return directMessage.trim()
-  }
-
-  return fallback
-}
-
-export function normalizeStatus(status: CommandStatus | string): CommandStatus {
-  const statusUpper = String(status).toUpperCase()
-
-  if ([
-    'QUEUED',
-    'SENT',
-    'ACK',
-    'DONE',
-    'NO_EFFECT',
-    'ERROR',
-    'INVALID',
-    'BUSY',
-    'TIMEOUT',
-    'SEND_FAILED'
-  ].includes(statusUpper)) {
-    return statusUpper as CommandStatus
-  }
-
-  return 'UNKNOWN'
+function normalizeStatus(status: CommandStatus | string): CommandStatus {
+  // MQTT/bridge присылает 'ack' как успешное выполнение
+  if (status === 'ack') return 'completed'
+  if (status === 'accepted') return 'executing'
+  return (status as CommandStatus) || 'unknown'
 }
 
 /**
@@ -121,7 +55,7 @@ export function useCommands(showToast?: ToastHandler) {
         }
       )
 
-      const raw = response.data as CommandRawResponse
+      const raw = response.data as any
 
       // Пытаемся извлечь идентификатор команды из разных форматов ответа:
       // 1) { data: { id, type, ... } } - полный объект команды
@@ -147,7 +81,7 @@ export function useCommands(showToast?: ToastHandler) {
       // Сохраняем информацию о команде для отслеживания статуса
       if (commandId) {
         pendingCommands.value.set(commandId, {
-          status: 'QUEUED',
+          status: 'pending',
           zoneId,
           type: commandType,
           timestamp: Date.now(),
@@ -166,12 +100,15 @@ export function useCommands(showToast?: ToastHandler) {
       return {
         id: (commandId ?? Date.now()) as number,
         type: commandType,
-        status: 'QUEUED',
+        status: 'pending',
         created_at: new Date().toISOString(),
       } as Command
     } catch (err) {
       error.value = err as Error
-      const errorMsg = extractCommandErrorMessage(err)
+      const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })
+        ?.response?.data?.message || 
+        (err as { message?: string })?.message || 
+        'Неизвестная ошибка'
       
       if (showToast) {
         showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
@@ -195,24 +132,15 @@ export function useCommands(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const commandTypeLower = String(type || '').toLowerCase()
-      const isSensorModeCommand =
-        commandTypeLower === 'activate_sensor_mode' ||
-        commandTypeLower === 'deactivate_sensor_mode'
-      const requestPayload: { type: CommandType; params: CommandParams; channel?: string } = {
-        type,
-        params,
-      }
-      if (isSensorModeCommand) {
-        requestPayload.channel = 'system'
-      }
-
       const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
         `/api/nodes/${nodeId}/commands`,
-        requestPayload
+        {
+          type,
+          params
+        }
       )
 
-      const raw = response.data as CommandRawResponse
+      const raw = response.data as any
 
       let command: Command | null = null
       let commandId: number | string | null = null
@@ -233,7 +161,7 @@ export function useCommands(showToast?: ToastHandler) {
       
       if (commandId) {
         pendingCommands.value.set(commandId, {
-          status: 'QUEUED',
+          status: 'pending',
           nodeId,
           type: commandType,
           timestamp: Date.now(),
@@ -251,7 +179,7 @@ export function useCommands(showToast?: ToastHandler) {
       return {
         id: (commandId ?? Date.now()) as number,
         type: commandType,
-        status: 'QUEUED',
+        status: 'pending',
         created_at: new Date().toISOString(),
       } as Command
     } catch (err) {
@@ -281,15 +209,13 @@ export function useCommands(showToast?: ToastHandler) {
       
       // Обновляем статус в pendingCommands
       if (pendingCommands.value.has(commandId)) {
-        const command = pendingCommands.value.get(commandId)
-        if (command) {
-          command.status = normalizeStatus(status.status || 'UNKNOWN')
-          pendingCommands.value.set(commandId, command)
-        }
+        const command = pendingCommands.value.get(commandId)!
+        command.status = normalizeStatus(status.status || 'unknown')
+        pendingCommands.value.set(commandId, command)
       }
       
       return {
-        status: normalizeStatus(status.status || 'UNKNOWN'),
+        status: normalizeStatus(status.status || 'unknown'),
       }
     } catch (err) {
       const normalizedError = handleError(err, {
@@ -312,10 +238,7 @@ export function useCommands(showToast?: ToastHandler) {
   ): void {
     const normalizedStatus = normalizeStatus(status)
     if (pendingCommands.value.has(commandId)) {
-      const command = pendingCommands.value.get(commandId)
-      if (!command) {
-        return
-      }
+      const command = pendingCommands.value.get(commandId)!
       command.status = normalizedStatus
       if (message) {
         command.message = message
@@ -323,9 +246,9 @@ export function useCommands(showToast?: ToastHandler) {
       pendingCommands.value.set(commandId, command)
       
       // Показываем уведомление при завершении
-      if (['DONE', 'NO_EFFECT'].includes(normalizedStatus) && showToast) {
+      if (normalizedStatus === 'completed' && showToast) {
         showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
-      } else if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus) && showToast) {
+      } else if (normalizedStatus === 'failed' && showToast) {
         showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
@@ -353,7 +276,7 @@ export function useCommands(showToast?: ToastHandler) {
     const now = Date.now()
     for (const [id, command] of pendingCommands.value.entries()) {
       if (
-        (['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(command.status)) &&
+        (command.status === 'completed' || command.status === 'failed') &&
         (now - command.timestamp) > maxAge
       ) {
         pendingCommands.value.delete(id)
@@ -368,12 +291,11 @@ export function useCommands(showToast?: ToastHandler) {
    * Обновить зону после выполнения команды через API и store (вместо reload)
    * Используется для сохранения состояния страницы и избежания лишних перерисовок
    */
-  function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveUrl: boolean = true): void {
+  function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveScroll: boolean = true): void {
     const key = `${zoneId}:${only.join(',')}`
     
-    const existingTimer = reloadTimers.get(key)
-    if (existingTimer) {
-      clearTimeout(existingTimer)
+    if (reloadTimers.has(key)) {
+      clearTimeout(reloadTimers.get(key)!)
     }
     
     reloadTimers.set(key, setTimeout(async () => {
@@ -395,81 +317,10 @@ export function useCommands(showToast?: ToastHandler) {
       } catch (error) {
         logger.error('[useCommands] Failed to update zone after command, falling back to reload', { zoneId, error })
         // Fallback к частичному reload при ошибке
-        router.reload({ only, preserveUrl })
+        router.reload({ only, preserveScroll })
       }
     }, RELOAD_DEBOUNCE_MS))
   }
-
-  // Обработчик события reconciliation для обновления статусов команд при переподключении
-  function handleReconciliation(event: CustomEvent) {
-    const { commands } = event.detail || {}
-    
-    if (!commands || !Array.isArray(commands)) {
-      return
-    }
-
-    logger.debug('[useCommands] Processing reconciliation commands data', {
-      count: commands.length,
-    })
-
-    // Обновляем статусы команд из snapshot
-    for (const cmd of commands) {
-      if (!cmd.cmd_id) continue
-      
-      const commandId = cmd.cmd_id
-      const status = normalizeStatus(cmd.status || 'UNKNOWN')
-      
-      // Обновляем только если команда еще не завершена или статус изменился
-      if (pendingCommands.value.has(commandId)) {
-        const existing = pendingCommands.value.get(commandId)
-        if (existing && existing.status !== status) {
-          pendingCommands.value.set(commandId, {
-            ...existing,
-            status,
-            message: cmd.error_message,
-            timestamp: cmd.ack_at || cmd.sent_at || cmd.created_at || Date.now(),
-          })
-          logger.debug('[useCommands] Updated command status from reconciliation', {
-            commandId,
-            oldStatus: existing.status,
-            newStatus: status,
-          })
-        }
-      } else if (!['DONE', 'NO_EFFECT', 'ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(status)) {
-        // Добавляем активные команды, которых еще нет в pendingCommands
-        pendingCommands.value.set(commandId, {
-          status,
-          zoneId: cmd.zone_id,
-          nodeId: cmd.node_id,
-          type: cmd.type || 'unknown',
-          timestamp: cmd.ack_at || cmd.sent_at || cmd.created_at || Date.now(),
-          message: cmd.error_message,
-        })
-        logger.debug('[useCommands] Added command from reconciliation', {
-          commandId,
-          status,
-        })
-      }
-    }
-
-    logger.info('[useCommands] Reconciliation completed', {
-      commandsProcessed: commands.length,
-      pendingCount: pendingCommands.value.size,
-    })
-  }
-
-  // Подписываемся на событие reconciliation при монтировании
-  onMounted(() => {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('ws:reconciliation:commands', handleReconciliation as EventListener)
-    }
-  })
-
-  onUnmounted(() => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('ws:reconciliation:commands', handleReconciliation as EventListener)
-    }
-  })
 
   return {
     loading: computed(() => loading.value) as ComputedRef<boolean>,

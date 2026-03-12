@@ -2,7 +2,6 @@
 
 namespace App\Events;
 
-use App\Services\EventSequenceService;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -25,10 +24,6 @@ class EventCreated implements ShouldBroadcast
 
     public string $occurredAt;
 
-    public int $eventId;
-
-    public int $serverTs;
-
     public function __construct(
         int $id,
         string $kind,
@@ -41,11 +36,6 @@ class EventCreated implements ShouldBroadcast
         $this->message = $message;
         $this->zoneId = $zoneId;
         $this->occurredAt = $occurredAt ?? now()->toIso8601String();
-        
-        // Генерируем event_id и server_ts для reconciliation
-        $sequence = EventSequenceService::generateEventId();
-        $this->eventId = $sequence['event_id'];
-        $this->serverTs = $sequence['server_ts'];
     }
 
     /**
@@ -53,7 +43,7 @@ class EventCreated implements ShouldBroadcast
      */
     public function broadcastOn(): PrivateChannel
     {
-        return new PrivateChannel('hydro.events.global');
+        return new PrivateChannel('events.global');
     }
 
     /**
@@ -75,8 +65,6 @@ class EventCreated implements ShouldBroadcast
             'message' => $this->message,
             'zoneId' => $this->zoneId,
             'occurredAt' => $this->occurredAt,
-            'event_id' => $this->eventId,
-            'server_ts' => $this->serverTs,
         ];
     }
 }

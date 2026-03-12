@@ -2,14 +2,12 @@
   <Card>
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <div class="text-sm font-semibold">
-          Настройки PID
-        </div>
+        <div class="text-sm font-semibold">Настройки PID</div>
         <div class="flex gap-2">
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedType === 'ph' }"
+            :class="{ 'bg-sky-600 text-white': selectedType === 'ph' }"
             @click="selectedType = 'ph'"
           >
             pH
@@ -17,7 +15,7 @@
           <Button
             size="sm"
             variant="outline"
-            :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedType === 'ec' }"
+            :class="{ 'bg-sky-600 text-white': selectedType === 'ec' }"
             @click="selectedType = 'ec'"
           >
             EC
@@ -25,31 +23,29 @@
         </div>
       </div>
 
-      <form
-        class="space-y-4"
-        @submit.prevent="onSubmit"
-      >
+      <form @submit.prevent="onSubmit" class="space-y-4">
+        <!-- Основные параметры -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
               Целевое значение (target)
             </label>
             <input
               v-model.number="form.target"
               type="number"
-              :step="selectedType === 'ph' ? 0.01 : 0.01"
-              :min="selectedType === 'ph' ? 4 : 0"
-              :max="selectedType === 'ph' ? 9 : 10"
-              class="input-field w-full"
+              step="0.01"
+              :min="selectedType === 'ph' ? 0 : 0"
+              :max="selectedType === 'ph' ? 14 : 10"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              {{ selectedType === 'ph' ? 'Диапазон: 4.0-9.0' : 'Диапазон: 0.0-10.0' }}
+            <p class="text-xs text-neutral-400 mt-1">
+              {{ selectedType === 'ph' ? 'Диапазон: 0-14' : 'Диапазон: 0-10' }}
             </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
               Мертвая зона (dead_zone)
             </label>
             <input
@@ -58,16 +54,14 @@
               step="0.01"
               min="0"
               max="2"
-              class="input-field w-full"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              Диапазон: 0-2
-            </p>
+            <p class="text-xs text-neutral-400 mt-1">Диапазон: 0-2</p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
               Ближняя зона (close_zone)
             </label>
             <input
@@ -76,16 +70,14 @@
               step="0.01"
               min="0"
               max="5"
-              class="input-field w-full"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              Должна быть больше dead_zone
-            </p>
+            <p class="text-xs text-neutral-400 mt-1">Должна быть больше dead_zone</p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
               Дальняя зона (far_zone)
             </label>
             <input
@@ -94,187 +86,180 @@
               step="0.01"
               min="0"
               max="10"
-              class="input-field w-full"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              Должна быть больше close_zone
-            </p>
+            <p class="text-xs text-neutral-400 mt-1">Должна быть больше close_zone</p>
           </div>
         </div>
 
-        <div class="border-t border-[color:var(--border-muted)] pt-4">
-          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">
-            Коэффициенты для близкой зоны
-          </div>
+        <!-- Коэффициенты для близкой зоны -->
+        <div class="border-t border-neutral-800 pt-4">
+          <div class="text-xs font-medium text-neutral-300 mb-3">Коэффициенты для близкой зоны</div>
           <div class="grid grid-cols-3 gap-4">
             <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kp</label>
+              <label class="block text-xs text-neutral-400 mb-1">Kp</label>
               <input
                 v-model.number="form.zone_coeffs.close.kp"
                 type="number"
                 step="0.1"
                 min="0"
                 max="1000"
-                class="input-field w-full"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ki</label>
+              <label class="block text-xs text-neutral-400 mb-1">Ki</label>
               <input
                 v-model.number="form.zone_coeffs.close.ki"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="input-field w-full"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kd</label>
+              <label class="block text-xs text-neutral-400 mb-1">Kd</label>
               <input
                 v-model.number="form.zone_coeffs.close.kd"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="input-field w-full"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
                 required
               />
             </div>
           </div>
         </div>
 
-        <div class="border-t border-[color:var(--border-muted)] pt-4">
-          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">
-            Коэффициенты для дальней зоны
-          </div>
+        <!-- Коэффициенты для дальней зоны -->
+        <div class="border-t border-neutral-800 pt-4">
+          <div class="text-xs font-medium text-neutral-300 mb-3">Коэффициенты для дальней зоны</div>
           <div class="grid grid-cols-3 gap-4">
             <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kp</label>
+              <label class="block text-xs text-neutral-400 mb-1">Kp</label>
               <input
                 v-model.number="form.zone_coeffs.far.kp"
                 type="number"
                 step="0.1"
                 min="0"
                 max="1000"
-                class="input-field w-full"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Ki</label>
+              <label class="block text-xs text-neutral-400 mb-1">Ki</label>
               <input
                 v-model.number="form.zone_coeffs.far.ki"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="input-field w-full"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
                 required
               />
             </div>
             <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kd</label>
+              <label class="block text-xs text-neutral-400 mb-1">Kd</label>
               <input
                 v-model.number="form.zone_coeffs.far.kd"
                 type="number"
                 step="0.01"
                 min="0"
                 max="100"
-                class="input-field w-full"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
                 required
               />
             </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[color:var(--border-muted)] pt-4">
+        <!-- Дополнительные параметры -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-neutral-800 pt-4">
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
-              Максимальная доза (мл)
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
+              Максимальный выход (max_output)
             </label>
             <input
               v-model.number="form.max_output"
               type="number"
               step="0.1"
-              min="0.1"
-              max="500"
-              class="input-field w-full"
+              min="0"
+              max="1000"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              pH: 20 мл, EC: 50 мл — рекомендуемые значения
-            </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
-              Пауза между дозами (мин)
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
+              Минимальный интервал (min_interval_ms)
             </label>
             <input
-              v-model.number="intervalMinutes"
+              v-model.number="form.min_interval_ms"
               type="number"
-              step="0.5"
-              min="0.5"
-              max="60"
-              class="input-field w-full"
+              step="1000"
+              min="1000"
+              max="3600000"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              pH: 1.5 мин, EC: 2 мин — рекомендуемые значения
-            </p>
+            <p class="text-xs text-neutral-400 mt-1">В миллисекундах (1000-3600000)</p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
-              Лимит интеграла (max_integral)
+            <label class="block text-xs font-medium text-neutral-300 mb-1">
+              Скорость адаптации (adaptation_rate)
             </label>
             <input
-              v-model.number="form.max_integral"
+              v-model.number="form.adaptation_rate"
               type="number"
-              step="1"
-              min="1"
-              max="500"
-              class="input-field w-full"
+              step="0.01"
+              min="0"
+              max="1"
+              class="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              Ограничивает накопление интегральной ошибки. pH: 20, EC: 100
-            </p>
+            <p class="text-xs text-neutral-400 mt-1">Диапазон: 0-1</p>
+          </div>
+
+          <div class="flex items-center gap-2 pt-6">
+            <input
+              v-model="form.enable_autotune"
+              type="checkbox"
+              id="autotune"
+              class="rounded border-neutral-700 bg-neutral-900 text-sky-600 focus:ring-sky-500"
+            />
+            <label for="autotune" class="text-xs font-medium text-neutral-300">
+              Включить автонастройку (autotune)
+            </label>
           </div>
         </div>
 
+        <!-- Safeguard предупреждение -->
         <div
           v-if="needsConfirmation"
-          class="rounded-md border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3"
+          class="rounded-md border border-amber-500/50 bg-amber-500/10 p-3"
         >
-          <div class="text-xs font-medium text-[color:var(--badge-warning-text)] mb-1">
-            Внимание
-          </div>
-          <div class="text-xs text-[color:var(--badge-warning-text)]">
-            Обнаружены агрессивные настройки (Kp &gt; 200 или пауза &lt; 30 сек).
-            <span v-if="!confirmed"> Нажмите кнопку сохранения ещё раз для подтверждения.</span>
+          <div class="text-xs font-medium text-amber-400 mb-1">Внимание!</div>
+          <div class="text-xs text-amber-300">
+            Обнаружены агрессивные настройки (высокие коэффициенты или короткий интервал).
+            Пожалуйста, подтвердите сохранение.
           </div>
         </div>
 
-        <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            @click="onReset"
-          >
+        <!-- Кнопки -->
+        <div class="flex justify-end gap-2 pt-4 border-t border-neutral-800">
+          <Button type="button" variant="outline" size="sm" @click="onReset">
             Сбросить
           </Button>
-          <Button
-            type="submit"
-            size="sm"
-            :disabled="loading"
-          >
-            {{ loading ? 'Сохранение...' : (needsConfirmation && !confirmed ? 'Подтвердить и сохранить' : 'Сохранить') }}
+          <Button type="submit" size="sm" :disabled="loading || (needsConfirmation && !confirmed)">
+            {{ loading ? 'Сохранение...' : 'Сохранить' }}
           </Button>
         </div>
       </form>
@@ -283,7 +268,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { usePidConfig } from '@/composables/usePidConfig'
 import { logger } from '@/utils/logger'
 import Card from './Card.vue'
@@ -300,103 +285,41 @@ const emit = defineEmits<{
   saved: [config: PidConfigWithMeta]
 }>()
 
-const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
-  ph: {
-    target: 5.8,
-    dead_zone: 0.05,
-    close_zone: 0.3,
-    far_zone: 1.0,
-    zone_coeffs: {
-      close: { kp: 5.0, ki: 0.05, kd: 0.0 },
-      far: { kp: 8.0, ki: 0.02, kd: 0.0 },
-    },
-    max_output: 20.0,
-    min_interval_ms: 90_000,
-    max_integral: 20.0,
-  },
-  ec: {
-    target: 1.6,
-    dead_zone: 0.1,
-    close_zone: 0.5,
-    far_zone: 1.5,
-    zone_coeffs: {
-      close: { kp: 30.0, ki: 0.3, kd: 0.0 },
-      far: { kp: 50.0, ki: 0.1, kd: 0.0 },
-    },
-    max_output: 50.0,
-    min_interval_ms: 120_000,
-    max_integral: 100.0,
-  },
-}
-
 const selectedType = ref<'ph' | 'ec'>('ph')
 const confirmed = ref(false)
 const { getPidConfig, updatePidConfig, loading } = usePidConfig()
 
-const form = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
-
-const intervalMinutes = computed({
-  get: () => Number(form.value.min_interval_ms || 0) / 60000,
-  set: (val: number) => {
-    const safeValue = Number.isFinite(val) ? Math.max(0, val) : 0
-    form.value.min_interval_ms = Math.round(safeValue * 60000)
+const form = ref<PidConfig>({
+  target: 6.0,
+  dead_zone: 0.2,
+  close_zone: 0.5,
+  far_zone: 1.0,
+  zone_coeffs: {
+    close: { kp: 10.0, ki: 0.0, kd: 0.0 },
+    far: { kp: 12.0, ki: 0.0, kd: 0.0 },
   },
+  max_output: 50.0,
+  min_interval_ms: 60000,
+  enable_autotune: false,
+  adaptation_rate: 0.05,
 })
 
 const needsConfirmation = computed(() => {
   return (
-    form.value.zone_coeffs.close.kp > 200 ||
-    form.value.zone_coeffs.far.kp > 200 ||
-    form.value.min_interval_ms < 30_000
+    form.value.zone_coeffs.close.kp > 500 ||
+    form.value.zone_coeffs.far.kp > 500 ||
+    form.value.min_interval_ms < 30000
   )
 })
-
-function cloneConfig(config: PidConfig): PidConfig {
-  return JSON.parse(JSON.stringify(config)) as PidConfig
-}
-
-function toNumberOr(value: unknown, fallback: number): number {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : fallback
-}
-
-function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' | 'ec'): PidConfig {
-  const defaults = DEFAULT_CONFIGS[type]
-  const closeRaw: Partial<PidConfig['zone_coeffs']['close']> = raw?.zone_coeffs?.close ?? {}
-  const farRaw: Partial<PidConfig['zone_coeffs']['far']> = raw?.zone_coeffs?.far ?? {}
-
-  return {
-    target: toNumberOr(raw?.target, defaults.target),
-    dead_zone: toNumberOr(raw?.dead_zone, defaults.dead_zone),
-    close_zone: toNumberOr(raw?.close_zone, defaults.close_zone),
-    far_zone: toNumberOr(raw?.far_zone, defaults.far_zone),
-    zone_coeffs: {
-      close: {
-        kp: toNumberOr(closeRaw.kp, defaults.zone_coeffs.close.kp),
-        ki: toNumberOr(closeRaw.ki, defaults.zone_coeffs.close.ki),
-        kd: toNumberOr(closeRaw.kd, defaults.zone_coeffs.close.kd),
-      },
-      far: {
-        kp: toNumberOr(farRaw.kp, defaults.zone_coeffs.far.kp),
-        ki: toNumberOr(farRaw.ki, defaults.zone_coeffs.far.ki),
-        kd: toNumberOr(farRaw.kd, defaults.zone_coeffs.far.kd),
-      },
-    },
-    max_output: toNumberOr(raw?.max_output, defaults.max_output),
-    min_interval_ms: Math.max(1000, Math.round(toNumberOr(raw?.min_interval_ms, defaults.min_interval_ms))),
-    max_integral: toNumberOr(raw?.max_integral, defaults.max_integral),
-  }
-}
 
 async function loadConfig() {
   try {
     const config = await getPidConfig(props.zoneId, selectedType.value)
-    const source = config.is_default ? DEFAULT_CONFIGS[selectedType.value] : (config.config || DEFAULT_CONFIGS[selectedType.value])
-    form.value = normalizeConfig(source, selectedType.value)
-    confirmed.value = false
+    if (config.config) {
+      form.value = { ...config.config }
+    }
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID config:', error)
-    form.value = cloneConfig(DEFAULT_CONFIGS[selectedType.value])
   }
 }
 
@@ -416,24 +339,17 @@ async function onSubmit() {
 }
 
 function onReset() {
-  void loadConfig()
+  loadConfig()
+  confirmed.value = false
 }
 
 watch(selectedType, () => {
-  void loadConfig()
+  loadConfig()
+  confirmed.value = false
 })
-
-watch(
-  form,
-  () => {
-    if (confirmed.value) {
-      confirmed.value = false
-    }
-  },
-  { deep: true }
-)
 
 onMounted(() => {
-  void loadConfig()
+  loadConfig()
 })
 </script>
+

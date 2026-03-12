@@ -109,8 +109,9 @@ typedef struct {
 
 ## Документация
 
-- Спецификация NodeConfig: `../../../../NODE_CONFIG_SPEC.md`
-- Архитектура нод: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- Спецификация NodeConfig: `firmware/NODE_CONFIG_SPEC.md`
+- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+
 
 
 

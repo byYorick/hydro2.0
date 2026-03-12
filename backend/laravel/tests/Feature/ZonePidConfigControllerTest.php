@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZonePidConfig;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -70,7 +70,8 @@ class ZonePidConfigControllerTest extends TestCase
             ],
             'max_output' => 50.0,
             'min_interval_ms' => 60000,
-            'max_integral' => 20.0,
+            'enable_autotune' => false,
+            'adaptation_rate' => 0.05,
         ];
 
         $response = $this->putJson("/api/zones/{$zone->id}/pid-configs/ph", [
@@ -111,7 +112,8 @@ class ZonePidConfigControllerTest extends TestCase
                 ],
                 'max_output' => 50.0,
                 'min_interval_ms' => 60000,
-                'max_integral' => 20.0,
+                'enable_autotune' => false,
+                'adaptation_rate' => 0.05,
             ],
         ]);
 
@@ -126,7 +128,8 @@ class ZonePidConfigControllerTest extends TestCase
             ],
             'max_output' => 60.0,
             'min_interval_ms' => 90000,
-            'max_integral' => 25.0,
+            'enable_autotune' => true,
+            'adaptation_rate' => 0.1,
         ];
 
         $response = $this->putJson("/api/zones/{$zone->id}/pid-configs/ph", [
@@ -146,7 +149,7 @@ class ZonePidConfigControllerTest extends TestCase
 
         $response = $this->putJson("/api/zones/{$zone->id}/pid-configs/ph", [
             'config' => [
-                'target' => 20.0, // Невалидное значение для pH (должно быть 4-9)
+                'target' => 20.0, // Невалидное значение для pH (должно быть 0-14)
                 'dead_zone' => 0.2,
             ],
         ]);
@@ -170,7 +173,8 @@ class ZonePidConfigControllerTest extends TestCase
             ],
             'max_output' => 50.0,
             'min_interval_ms' => 60000,
-            'max_integral' => 20.0,
+            'enable_autotune' => false,
+            'adaptation_rate' => 0.05,
         ];
 
         // Делаем 11 запросов (лимит 10 в минуту)
@@ -209,7 +213,8 @@ class ZonePidConfigControllerTest extends TestCase
             ],
             'max_output' => 50.0,
             'min_interval_ms' => 60000,
-            'max_integral' => 20.0,
+            'enable_autotune' => false,
+            'adaptation_rate' => 0.05,
         ];
 
         $response = $this->putJson("/api/zones/{$zone->id}/pid-configs/ph", [

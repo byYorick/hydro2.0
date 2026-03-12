@@ -21,10 +21,6 @@ class Settings:
     pg_user: str = os.getenv("PG_USER", "hydro")
     # Пароль БД обязателен в продакшене (не используем дефолтный "hydro")
     pg_pass: str = os.getenv("PG_PASS") or os.getenv("POSTGRES_PASSWORD") or ""
-    pg_pool_min_size: int = int(os.getenv("PG_POOL_MIN_SIZE", "1"))
-    pg_pool_max_size: int = int(os.getenv("PG_POOL_MAX_SIZE", "5"))
-    # application_name помогает быстро диагностировать источник коннектов в pg_stat_activity.
-    pg_app_name: str = os.getenv("PG_APP_NAME", f"hydro:{os.getenv('HOSTNAME', 'python-service')}")
 
     laravel_api_url: str = os.getenv("LARAVEL_API_URL", "http://laravel")
     laravel_api_token: str = os.getenv("LARAVEL_API_TOKEN", "")
@@ -33,29 +29,19 @@ class Settings:
     ingest_token: str = os.getenv("PY_INGEST_TOKEN", "") or os.getenv("PY_API_TOKEN", "")
     history_logger_api_token: str = os.getenv("HISTORY_LOGGER_API_TOKEN", "") or os.getenv("PY_INGEST_TOKEN", "") or os.getenv("PY_API_TOKEN", "")  # Используем PY_INGEST_TOKEN как основной fallback
 
-    telemetry_batch_size: int = int(os.getenv("TELEMETRY_BATCH_SIZE", "1000"))  # Увеличено для высокой нагрузки
-    telemetry_flush_ms: int = int(os.getenv("TELEMETRY_FLUSH_MS", "200"))  # Уменьшено для быстрой обработки
-    realtime_queue_max_size: int = int(os.getenv("REALTIME_QUEUE_MAX_SIZE", "5000"))
-    realtime_flush_ms: int = int(os.getenv("REALTIME_FLUSH_MS", "500"))
-    realtime_batch_max_updates: int = int(os.getenv("REALTIME_BATCH_MAX_UPDATES", "200"))
-    http_max_concurrent_requests: int = int(os.getenv("HTTP_MAX_CONCURRENT_REQUESTS", "20"))
-    http_max_connections: int = int(os.getenv("HTTP_MAX_CONNECTIONS", "30"))
-    http_max_keepalive_connections: int = int(os.getenv("HTTP_MAX_KEEPALIVE_CONNECTIONS", "10"))
-    http_keepalive_expiry_sec: float = float(os.getenv("HTTP_KEEPALIVE_EXPIRY_SEC", "15.0"))
+    telemetry_batch_size: int = int(os.getenv("TELEMETRY_BATCH_SIZE", "200"))
+    telemetry_flush_ms: int = int(os.getenv("TELEMETRY_FLUSH_MS", "500"))
     command_timeout_sec: int = int(os.getenv("COMMAND_TIMEOUT_SEC", "30"))
     mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
     service_port: int = int(os.getenv("SERVICE_PORT", "9300"))  # Порт для history-logger
-    node_default_secret: str = os.getenv("NODE_DEFAULT_SECRET", "hydro-default-secret-key-2025")
     
     # History Logger specific settings
     shutdown_wait_sec: int = int(os.getenv("SHUTDOWN_WAIT_SEC", "2"))  # Время ожидания перед закрытием Redis
     shutdown_timeout_sec: float = float(os.getenv("SHUTDOWN_TIMEOUT_SEC", "30.0"))  # Таймаут graceful shutdown
     final_batch_multiplier: int = int(os.getenv("FINAL_BATCH_MULTIPLIER", "10"))  # Множитель для финального батча
-    queue_check_interval_sec: float = float(os.getenv("QUEUE_CHECK_INTERVAL_SEC", "0.05"))  # Уменьшено для быстрой реакции (50ms)
+    queue_check_interval_sec: float = float(os.getenv("QUEUE_CHECK_INTERVAL_SEC", "0.1"))  # Интервал проверки очереди
     queue_error_retry_delay_sec: float = float(os.getenv("QUEUE_ERROR_RETRY_DELAY_SEC", "1.0"))  # Задержка при ошибке обработки очереди
     laravel_api_timeout_sec: float = float(os.getenv("LARAVEL_API_TIMEOUT_SEC", "10.0"))  # Таймаут для Laravel API
-    node_offline_timeout_sec: int = int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120"))  # Таймаут офлайна по last_seen_at
-    node_offline_check_interval_sec: int = int(os.getenv("NODE_OFFLINE_CHECK_INTERVAL_SEC", "30"))  # Интервал проверки офлайна
     
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
@@ -90,3 +76,5 @@ def get_settings() -> Settings:
             )
     
     return settings
+
+

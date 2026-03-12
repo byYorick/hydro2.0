@@ -1,139 +1,309 @@
 # WIFI_CONNECTIVITY_ENGINE.md
-# Wi-Fi connectivity runtime для ESP32-нод (2.0)
-# Current implementation • constraints • production checklist
+# Полный движок Wi‑Fi подключений для ESP32 в архитектуре 2.0
+# Multi-AP • Auto-Reconnect • Signal Health • Roaming • Diagnostics
 
-Документ фиксирует фактическое состояние Wi-Fi слоя в текущем production baseline.
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Документ описывает всю логику Wi‑Fi работы узлов ESP32 в системе 2.0.
 
 ---
 
-# 1. Область и статус
+# 1. Цели Wi‑Fi движка
 
-Этот документ описывает:
-- текущую реализацию `wifi_manager` в `firmware/nodes/common/components/wifi_manager/`;
-- связь с provisioning (`setup_portal`) и NodeConfig (`config_storage`);
-- ограничения runtime, которые надо учитывать при выводе real-node в боевой режим.
+Wi‑Fi Engine отвечает за:
 
-Важно:
-- ранее описанная модульная архитектура (`wifi_scan`, `wifi_roaming`, `multi-ap`) является целевым планом;
-- в текущем runtime она не реализована как отдельные компоненты.
-
----
-
-# 2. Фактическая архитектура (runtime)
-
-## 2.1. Основной компонент
-
-Текущая реализация Wi-Fi находится в одном компоненте:
-- `firmware/nodes/common/components/wifi_manager/wifi_manager.c`
-- `firmware/nodes/common/components/wifi_manager/include/wifi_manager.h`
-
-Функции:
-- `wifi_manager_init()`
-- `wifi_manager_connect()`
-- `wifi_manager_disconnect()`
-- `wifi_manager_is_connected()`
-- `wifi_manager_get_rssi()`
-- `wifi_manager_register_connection_cb()`
-- `wifi_manager_deinit()`
-
-## 2.2. Хранение конфигурации
-
-Wi-Fi и MQTT параметры берутся из общего NodeConfig (`config_storage`), а не из отдельного `network` namespace:
-- `wifi.ssid`, `wifi.pass`, `wifi.auto_reconnect`, `wifi.timeout_sec`
-- `mqtt.host`, `mqtt.port`, `mqtt.keepalive`, `mqtt.username/password`, `mqtt.use_tls`
-
-## 2.3. Provisioning
-
-Первичная настройка выполняется через `setup_portal`:
-- AP + HTTP (`GET /`, `POST /wifi/connect`);
-- после успешного приёма данных обновляется NodeConfig и выполняется перезапуск.
-
-Детали см. `WIFI_PROVISIONING_FIRST_RUN.md`.
+- автоматическое подключение к точкам доступа,
+- устойчивую работу при слабом сигнале,
+- повторные подключения,
+- диагностику RSSI/качества сигнала,
+- роуминг между точками,
+- управление сетевыми параметрами,
+- безопасное хранение Wi‑Fi данных.
 
 ---
 
-# 3. Поведение подключения
+# 2. Архитектура Wi‑Fi Engine
 
-## 3.1. connect flow
+Компоненты:
 
-Базовый flow:
-1. `wifi_manager_connect(config)` применяет SSID/password в `esp_wifi_set_config`.
-2. Запускает `esp_wifi_connect()`.
-3. Ждёт `WIFI_CONNECTED_BIT` или `WIFI_FAIL_BIT` в event group.
-4. Возвращает `ESP_OK`/`ESP_FAIL`/`ESP_ERR_TIMEOUT`.
-
-## 3.2. reconnect flow
-
-Текущая логика reconnect:
-- повторное подключение выполняется сразу в `WIFI_EVENT_STA_DISCONNECTED` через `esp_wifi_connect()`;
-- без прогрессивного backoff;
-- с лимитом `max_reconnect_attempts` (0 = безлимит).
-
-Значения по умолчанию:
-- `timeout_sec`: 30;
-- `auto_reconnect`: `true`;
-- `max_reconnect_attempts`: 5.
-
-## 3.3. power save
-
-В `wifi_manager_connect()` выставляется:
-- `esp_wifi_set_ps(WIFI_PS_NONE)`.
-
-То есть режимы `WIFI_PS_MIN_MODEM`/`Light Sleep` в текущем baseline не используются.
+```
+wifi_manager.c
+wifi_connect.c
+wifi_reconnect.c
+wifi_scan.c
+wifi_health.c
+wifi_events.c
+wifi_config_nvs.c
+```
 
 ---
 
-# 4. Интеграция с MQTT и статусами
+# 3. Хранение данных в NVS
 
-- Wi-Fi компонент отдаёт состояние через callback `wifi_connection_cb_t`.
-- Публикация MQTT `status` выполняется отдельным MQTT-слоем (`mqtt_manager`) и задачами нод.
-- Для `status` в MQTT используется QoS 1 + retain=true.
+Данные хранятся в namespace `network`:
 
-Важно:
-- нет отдельного публичного MQTT-потока "Wi-Fi events" (`WIFI_AUTH_FAIL`, `WIFI_CHANGED_AP` и т.п.) как стабильного контракта;
-- часть диагностических полей (`ip`, `rssi`, `fw`) публикуется из node-specific задач.
-
----
-
-# 5. Не реализовано в текущем runtime (tech debt)
-
-Следующие возможности считаются целевыми, но сейчас отсутствуют как production-функции:
-- Multi-AP с primary/backup SSID;
-- roaming между BSSID;
-- периодический scan engine и публикация таблицы AP;
-- автоматический fail-safe уровня "отключить dosing/irrigation/heater после X минут offline";
-- стандартный alarm `NODE_WIFI_UNSTABLE` как закреплённый runtime-контракт.
+| key | значение |
+|-----|----------|
+| wifi_ssid | строка |
+| wifi_pass | строка |
+| wifi_backup_ssid | строка |
+| wifi_backup_pass | строка |
+| wifi_mode | station |
+| mesh_enabled | false |
 
 ---
 
-# 6. Ограничения для production rollout
+# 4. Процесс подключения
 
-1. Нельзя рассчитывать на автоматическое переключение на backup AP.
-2. Нельзя рассчитывать на backoff reconnect; повторные попытки идут immediately.
-3. Нельзя рассчитывать на отдельные Wi-Fi event payload в MQTT как на контракт.
-4. Для setup portal сейчас принимается только IPv4-формат `mqtt_host` (не DNS hostname).
+Алгоритм:
 
----
-
-# 7. Чек-лист перед боевым запуском real-node
-
-1. В NodeConfig заданы валидные `wifi.ssid/pass` и `mqtt.host/port`.
-2. Проверен reconnect при кратковременном пропадании AP.
-3. Проверен reconnect при рестарте MQTT broker.
-4. Проверено, что после reconnect публикуются `status` и `heartbeat`.
-5. Подтверждена корректная работа provisioning (`POST /wifi/connect`) на реальном устройстве.
-6. Подтверждено отсутствие утечек/роста heap при длительном reconnect-цикле.
+```
+load_credentials_from_nvs()
+start_wifi()
+connect(ssid, pass)
+wait(event_group_connected)
+if not connected → retry
+```
 
 ---
 
-# 8. Требования к ИИ-агенту
+# 5. Auto‑Reconnect Strategy
 
-1. Не документировать как runtime-факт функции, которых нет в коде (`multi-ap`, roaming, scan engine).
-2. При добавлении Wi-Fi возможностей сначала обновлять этот документ и `WIFI_PROVISIONING_FIRST_RUN.md`.
-3. Не менять контракт хранения NodeConfig без синхронизации с `NODE_CONFIG_SPEC.md`.
+Стратегии восстановления:
+
+### 5.1. Immediate reconnect (до 5 раз)
+
+```
+retry_interval = 1 сек
+```
+
+### 5.2. Progressive Backoff
+
+```
+1 → 3 → 5 → 7 → 10 сек
+```
+
+### 5.3. Full reset после 3 минут неудач
+
+```
+esp_restart()
+```
+
+---
+
+# 6. Multi‑AP Support
+
+Узел поддерживает два набора параметров:
+
+```
+primary_ssid
+backup_ssid
+```
+
+Алгоритм:
+
+```
+if rssi < -78 or connection fails:
+ switch_to_backup()
+```
+
+---
+
+# 7. Wi‑Fi Roaming
+
+Если в зоне несколько точек доступа с одинаковым SSID:
+
+Алгоритм:
+
+```
+scan networks
+if stronger BSSID available:
+ disconnect()
+ connect(new_bssid)
+```
+
+Порог переключения:
+
+```
+difference ≥ 12 dB
+```
+
+---
+
+# 8. Wi‑Fi Health Monitoring
+
+Параметры:
+
+- RSSI
+- disconnect count
+- reconnect attempts
+- ping latency (опционально)
+- MQTT reconnects
+
+Возраст RSSI:
+
+```
+good = > -65
+medium = -66 to -75
+bad = < -76
+```
+
+---
+
+# 9. Status Telemetry
+
+Узел отправляет статус:
+
+```
+{
+ "rssi": -69,
+ "reconnects": 3,
+ "uptime": 55200,
+ "heap": 182000,
+ "wifi_quality": "medium"
+}
+```
+
+---
+
+# 10. Wi‑Fi Events
+
+События:
+
+- WIFI_CONNECTED
+- WIFI_DISCONNECTED
+- WIFI_AUTH_FAIL
+- WIFI_NO_SSID
+- WIFI_CHANGED_AP
+- WIFI_BAD_RSSI
+- WIFI_RECOVERED
+
+Все идут в MQTT `/status` и Python Scheduler.
+
+---
+
+# 11. Wi‑Fi Diagnostics
+
+Узел собирает:
+
+- сбросы Wi‑Fi
+- ошибки DHCP
+- падения MQTT
+- плохой сигнал
+- попытки подключения
+
+Если много проблем → ALARM:
+
+```
+NODE_WIFI_UNSTABLE
+```
+
+---
+
+# 12. Fail‑Safe режим
+
+Если Wi‑Fi отсутствует ≥ 5 минут:
+
+```
+enable_limited_mode()
+```
+
+Отключается:
+
+- dosing
+- irrigation
+- heater
+
+Безопасные системы продолжают работать.
+
+---
+
+# 13. Wi‑Fi Scan Engine
+
+Узел периодически:
+
+```
+scan every 5–10 minutes:
+ gather RSSI table
+```
+
+Передаёт:
+
+```
+{
+ "networks": [
+ {"ssid":"gh1","rssi":-60},
+ {"ssid":"gh1","rssi":-72}
+ ]
+}
+```
+
+---
+
+# 14. MQTT Connectivity Integration
+
+Если MQTT не отвечает:
+
+Алгоритм:
+
+```
+mqtt_retries = 5
+if failed:
+ restart_wifi()
+if still failed:
+ switch_to_backup_ssid()
+```
+
+---
+
+# 15. Оптимизация для энергоэффективности
+
+Используется:
+
+- Modem Sleep
+- Light Sleep (опционально)
+
+Режимы:
+
+```
+wifi_ps_type_t = WIFI_PS_MIN_MODEM
+```
+
+---
+
+# 16. ИИ‑интеграция
+
+AI получает:
+
+- RSSI историю
+- reconnect count
+- wifi quality
+- AP switches
+
+И может предложить:
+
+- поставить репитер,
+- сменить расположение узла,
+- заменить антенну,
+- сменить канал AP.
+
+ИИ НЕ может:
+
+- отключать Wi‑Fi защиту,
+- менять SSID без подтверждения.
+
+---
+
+# 17. Чек‑лист Wi‑Fi Engine перед релизом
+
+1. Подключается к обоим AP? 
+2. Работает автопереключение? 
+3. Reconnect стабильный? 
+4. MQTT стабильный? 
+5. Статус отправляется? 
+6. RSSI точный? 
+7. Fail‑Safe режим работает? 
+8. Диагностика корректная? 
+9. Авторизация SSID работает? 
+10. Нет утечек памяти? 
 
 ---
 

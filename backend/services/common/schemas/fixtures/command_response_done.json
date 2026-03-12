@@ -1,8 +1,0 @@
-{
-  "cmd_id": "cmd-12345",
-  "status": "DONE",
-  "ts": 1737979200000,
-  "details": {
-    "duration_ms": 1000
-  }
-}

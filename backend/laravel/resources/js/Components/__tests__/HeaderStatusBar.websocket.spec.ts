@@ -116,8 +116,6 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
   })
 
   it('should subscribe to global events WebSocket channel on mount', async () => {
-    // @ts-ignore - wrapper не используется в этом тесте
-    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(HeaderStatusBarComponent, {
       global: {
         stubs: {
@@ -145,7 +143,6 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
       return vi.fn() // unsubscribe function
     })
 
-    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(HeaderStatusBarComponent, {
       global: {
         stubs: {
@@ -170,7 +167,7 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
         occurredAt: new Date().toISOString(),
       }
 
-      ;(globalEventHandler as any)(event)
+      globalEventHandler(event)
 
       // Should update alerts count (through dashboard props or store)
       // This depends on implementation - checking that handler was called
@@ -193,7 +190,6 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
       isLoading: { value: false },
     })
 
-    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(HeaderStatusBarComponent, {
       global: {
         stubs: {
@@ -235,7 +231,6 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
       isLoading: { value: false },
     })
 
-    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(HeaderStatusBarComponent, {
       global: {
         stubs: {
@@ -262,7 +257,6 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
     const mockUnsubscribe = vi.fn()
     mockSubscribeToGlobalEvents.mockReturnValue(mockUnsubscribe)
 
-    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(HeaderStatusBarComponent, {
       global: {
         stubs: {
@@ -292,7 +286,6 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
       return vi.fn()
     })
 
-    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(HeaderStatusBarComponent, {
       global: {
         stubs: {
@@ -311,7 +304,7 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
     if (globalEventHandler) {
       // Handler should not throw
       expect(() => {
-        (globalEventHandler as any)({
+        globalEventHandler({
           id: 1,
           kind: 'ERROR',
           message: 'Error occurred',

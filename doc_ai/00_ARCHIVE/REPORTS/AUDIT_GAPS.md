@@ -1,0 +1,346 @@
+# Аудит папки 01_SYSTEM: Что не сделано
+
+**Дата аудита:** 2025-01-27  
+**Последнее обновление:** 2025-01-27 (документация обновлена под реальную структуру)  
+**Основа:** Сравнение требований из `doc_ai/01_SYSTEM/` с текущей реализацией
+
+**Примечание:** Документация обновлена для соответствия реальной структуре проекта. Структура `firmware/nodes/common/components/` теперь является эталонной.
+
+---
+
+## 1. Структура проекта (`01_PROJECT_STRUCTURE_PROD.md`)
+
+### ❌ Несоответствия структуры
+
+#### 1.1. Backend сервисы
+**Требуется:** Структура с `src/` и `tests/` для каждого сервиса
+```text
+backend/services/
+├─ mqtt-bridge/
+│  ├─ src/
+│  │  ├─ main.py
+│  │  └─ publisher.py
+│  ├─ tests/
+│  │  └─ test_main.py
+│  └─ Dockerfile
+```
+
+**Текущее состояние:** Плоская структура
+```text
+backend/services/
+├─ mqtt-bridge/
+│  ├─ main.py
+│  ├─ publisher.py
+│  └─ Dockerfile
+```
+
+**Статус:** ⚠️ **MVP_DONE** но не соответствует боевой структуре
+
+#### 1.2. Backend/libs
+**Требуется:** Общие библиотеки в `backend/libs/`
+```text
+backend/libs/
+├─ models/
+├─ dto/
+└─ clients/  # MQTT/БД клиенты
+```
+
+**Текущее состояние:** Отсутствует  
+**Статус:** ❌ **НЕ РЕАЛИЗОВАНО**
+
+#### 1.3. Tools/stress_test_scenarios
+**Требуется:** Сценарии стресс-тестирования
+```text
+tools/
+└─ stress_test_scenarios/
+```
+
+**Текущее состояние:** Отсутствует  
+**Статус:** ❌ **НЕ РЕАЛИЗОВАНО**
+
+---
+
+## 2. Потоки данных (`DATAFLOW_FULL.md`)
+
+### ✅ Реализовано
+- **Telemetry Flow** — ✅ Реализован через `history-logger`
+- **Command Flow** — ✅ Реализован через `mqtt-bridge` и `automation-engine`
+- **WebSocket Flow** — ✅ Реализован через Laravel Reverb
+- **Events Flow** — ✅ Реализован через Laravel Broadcasting
+
+### ❌ Не реализовано или частично
+
+#### 2.1. Config Flow (backend → узел)
+**Требуется:**
+- Backend генерирует `NodeConfig`
+- Публикует в MQTT топик `hydro/{gh}/{zone}/{node}/config`
+- Узел принимает config, валидирует, сохраняет в NVS
+- Узел отправляет `config_response`
+- Backend обрабатывает `config_response` и переводит ноду в `ASSIGNED_TO_ZONE` (если нода была привязана к зоне)
+
+**Текущее состояние:**
+- ✅ Есть модель `NodeConfig` в firmware
+- ✅ Есть API `/api/nodes/register` в Laravel
+- ✅ Есть обработка `config_response` в `history-logger` (подписка на `hydro/+/+/+/config_response`)
+- ✅ Обработка `config_response` переводит ноду в `ASSIGNED_TO_ZONE` после успешной установки конфига
+- ✅ Есть топик `hydro/{gh}/{zone}/{node}/config` в MQTT спецификации
+- ✅ Есть публикация `NodeConfig` через MQTT от backend (mqtt-bridge, NodeConfigService)
+- ✅ Есть автоматическая синхронизация `NodeConfig` при изменениях (Event/Listener система)
+- ✅ Есть API endpoints: `GET /api/nodes/{node}/config`, `POST /api/nodes/{node}/config/publish`
+
+**Статус:** ✅ **РЕАЛИЗОВАНО**
+
+#### 2.2. Status/LWT Flow (узлы → backend)
+**Требуется:**
+- Узлы публикуют `hydro/{gh}/{zone}/{node}/status` при подключении
+- MQTT LWT (Last Will and Testament) при отключении
+- Backend автоматически фиксирует OFFLINE и создаёт Alert
+
+**Текущее состояние:**
+- ✅ Есть поле `status` в таблице `nodes` (online/offline)
+- ✅ Есть обновление `last_seen_at` при получении телеметрии
+- ✅ Есть обработка MQTT LWT в `history-logger` (подписка на `hydro/+/+/+/lwt`)
+- ✅ Есть автоматическое создание Alert при потере связи (через LWT)
+- ❌ Нет явной публикации `status` топика узлами при подключении (только LWT при отключении)
+
+**Статус:** ⚠️ **ЧАСТИЧНО РЕАЛИЗОВАНО** (LWT работает, но нет явного status при подключении)
+
+#### 2.3. Heartbeat Flow (узлы → backend)
+**Требуется:**
+- Узлы публикуют каждые 15 секунд `hydro/{gh}/{zone}/{node}/heartbeat`
+- Payload: `{"uptime": 88000, "free_heap": 111000, "rssi": -55}`
+- Backend мониторит и показывает метрики в UI
+
+**Текущее состояние:**
+- ⚠️ Нет публикации heartbeat от узлов (требуется реализация в firmware)
+- ✅ Есть обработка heartbeat в backend (history-logger, обработчик `handle_heartbeat`)
+- ✅ Есть метрики uptime/free_heap/rssi в БД (поля `uptime_seconds`, `free_heap_bytes`, `rssi` в таблице `nodes`)
+- ✅ Есть подписка на топик `hydro/+/+/+/heartbeat` в history-logger
+- ✅ Есть метрика Prometheus `heartbeat_received_total` для мониторинга
+
+**Статус:** ⚠️ **ЧАСТИЧНО РЕАЛИЗОВАНО** (backend готов, требуется реализация публикации в firmware)
+
+---
+
+## 3. Логическая архитектура (`LOGIC_ARCH.md`)
+
+### ✅ Соответствует
+- Иерархия: Greenhouse → Zone → Node → Channel
+- Роли компонентов (ESP32, Python-сервисы, Laravel, UI)
+- Логические потоки конфигурации и телеметрии
+
+### ⚠️ Частичные несоответствия
+
+#### 3.1. NodeConfig синхронизация
+**Требуется:** Python-сервис периодически синхронизирует `NodeConfig` с узлами через MQTT
+
+**Текущее состояние:**
+- ✅ Есть автоматическая синхронизация `NodeConfig` при изменениях (Event/Listener система в Laravel)
+- ✅ `NodeConfig` автоматически публикуется через MQTT при изменении узла или каналов
+- ✅ `NodeConfig` создаётся при регистрации и автоматически обновляется при изменениях
+
+**Статус:** ✅ **РЕАЛИЗОВАНО** (автоматическая синхронизация через Events)
+
+---
+
+## 4. Жизненный цикл узлов (`NODE_LIFECYCLE_AND_PROVISIONING.md`)
+
+### ❌ Критически не реализовано
+
+#### 4.1. Состояния жизненного цикла
+**Требуется:** Поддержка состояний:
+- `MANUFACTURED` — узел произведён
+- `UNPROVISIONED` — нет Wi-Fi/привязки
+- `PROVISIONED_WIFI` — Wi-Fi настроен, но не зарегистрирован
+- `REGISTERED_BACKEND` — узел известен backend
+- `ASSIGNED_TO_ZONE` — узел привязан к зоне
+- `ACTIVE` — нормальная эксплуатация
+- `DEGRADED` — работает с проблемами
+- `MAINTENANCE` — режим обслуживания
+- `DECOMMISSIONED` — списан
+
+**Текущее состояние:**
+- ✅ Есть поле `status` в таблице `nodes` (online/offline)
+- ✅ Есть поле `lifecycle_state` в таблице `nodes` (enum, default: 'UNPROVISIONED')
+- ✅ Есть Enum `NodeLifecycleState` в Laravel со всеми состояниями
+- ✅ Есть логика переходов между состояниями (`NodeLifecycleService` с валидацией переходов)
+- ✅ Есть методы в модели `DeviceNode` для работы с состояниями
+
+**Статус:** ✅ **РЕАЛИЗОВАНО**
+
+#### 4.2. Идентификаторы узла
+**Требуется:**
+- **Hardware ID** (MAC-адрес, серийный номер)
+- **Logical Node ID** (`nodes.uid` — строковый ID)
+- **Human-Readable Name** (`nodes.name`)
+
+**Текущее состояние:**
+- ✅ Есть `uid` (Logical Node ID)
+- ✅ Есть `name` (Human-Readable Name)
+- ✅ Есть поле `hardware_id` в таблице `nodes` (string, nullable, unique)
+- ✅ Есть связь между `hardware_id` и `uid` (поиск узла по hardware_id при регистрации)
+
+**Статус:** ✅ **РЕАЛИЗОВАНО**
+
+#### 4.3. Регистрация узла (node_hello)
+**Требуется (на момент отчёта):**
+- Узел публикует `node_hello` сообщение при первом подключении
+- Payload: `{"message_type": "node_hello", "hardware_id": "...", "node_type": "...", "fw_version": "...", "capabilities": [...], "provisioning_meta": {...}}`
+- Backend обрабатывает и создаёт `DeviceNode` с `logical_node_id`
+- Поддержка `greenhouse_token` для привязки к теплице
+
+**Текущее состояние (архив):**
+- ✅ Есть API `/api/nodes/register` (ручная регистрация)
+- ✅ Есть обработка MQTT `node_hello` сообщения (обработчик `handle_node_hello` в history-logger)
+- ✅ Есть подписка на топики `hydro/node_hello` и `hydro/+/+/+/node_hello`
+- ✅ Была поддержка `greenhouse_token` в процессе регистрации (метод `registerNodeFromHello` в NodeRegistryService)
+- ✅ Есть генерация `uid` на основе `hardware_id` и типа узла
+
+**Статус:** ✅ **РЕАЛИЗОВАНО** (для состояния на дату отчёта).
+
+**Примечание (актуально):** Автопривязка по `greenhouse_token` отключена, привязка теплицы/зоны теперь выполняется только вручную через UI/Android; поля `greenhouse_token`/`zone_id` в `node_hello` игнорируются (см. обновлённые спецификации 2.0).
+
+#### 4.4. Замена узла (node swap)
+**Требуется:**
+- Операция замены старого узла новым (с другим hardware_id)
+- Сохранение истории телеметрии
+- Перепривязка `logical_node_id` к новому hardware_id
+- Помечание старого hardware_id как `DECOMMISSIONED` или `MIGRATED`
+
+**Текущее состояние:**
+- ✅ Есть API для замены узла (`POST /api/nodes/{node}/swap`)
+- ✅ Есть логика перепривязки hardware_id (`NodeSwapService::swapNode`)
+- ✅ Есть поддержка миграции истории телеметрии (опционально)
+- ✅ Есть перепривязка каналов к новому узлу (опционально)
+- ✅ Есть помечание старого узла как `DECOMMISSIONED`
+
+**Статус:** ✅ **РЕАЛИЗОВАНО**
+
+---
+
+## 5. Миграция (`MIGRATION_PLAN_FROM_MESH_HYDRO.md`)
+
+### ⚠️ Только документация
+
+**Статус:** 📝 **SPEC_READY** (только документ, нет реализации)
+- Нет миграционных скриптов
+- Нет утилит для экспорта/импорта данных
+- Нет маппинга ролей между старой и новой системой
+
+---
+
+## 6. Соответствие репозиториям (`REPO_MAPPING.md`)
+
+### ✅ Соответствует
+- Документация в `doc_ai/`
+- Backend репозиторий структурирован
+- Firmware структура соответствует
+
+### ⚠️ Неопределённости
+- Точные URL репозиториев не указаны (согласно документу это нормально)
+
+---
+
+## 7. Предложение архитектуры (`FULL_SYSTEM_ARCH_PROPOSAL.md`)
+
+### 📝 Только предложение
+Это документ с предложениями для будущей архитектуры 2.0, не требования для текущей реализации.
+
+**Статус:** 📝 **SPEC_READY** (документ для планирования)
+
+---
+
+## Приоритеты доработок
+
+### 🔴 Высокий приоритет (критично для MVP)
+
+1. **Жизненный цикл узлов** (`NODE_LIFECYCLE_AND_PROVISIONING.md`):
+   - Добавить поле `lifecycle_state` в таблицу `nodes`
+   - Добавить поле `hardware_id` в таблицу `nodes`
+   - Реализовать обработку `node_hello` через MQTT
+   - Реализовать переходы между состояниями
+
+2. **Config Flow** (`DATAFLOW_FULL.md`):
+   - Реализовать публикацию `NodeConfig` через MQTT
+   - Реализовать обработку `config_response`
+
+3. **Status Flow** (`DATAFLOW_FULL.md`):
+   - Реализовать явную публикацию `status` от узлов при подключении
+   - ✅ Обработка MQTT LWT уже реализована в `history-logger`
+   - ✅ Автоматическое создание Alert при потере связи уже реализовано
+
+### 🟡 Средний приоритет (важно для продакшена)
+
+4. **Heartbeat Flow** (`DATAFLOW_FULL.md`):
+   - Реализовать публикацию heartbeat от узлов
+   - Реализовать обработку heartbeat в backend
+   - Добавить метрики uptime/free_heap/rssi
+
+5. **Структура проекта** (`01_PROJECT_STRUCTURE_PROD.md`):
+   - Реорганизовать backend сервисы с `src/` и `tests/`
+   - Создать `backend/libs/` для общих библиотек
+
+6. **Замена узлов** (`NODE_LIFECYCLE_AND_PROVISIONING.md`):
+   - Реализовать API для замены узла
+   - Реализовать логику перепривязки hardware_id
+
+### 🟢 Низкий приоритет (улучшения)
+
+7. **Tools** (`01_PROJECT_STRUCTURE_PROD.md`):
+   - Добавить `tools/stress_test_scenarios/`
+
+8. **Миграция** (`MIGRATION_PLAN_FROM_MESH_HYDRO.md`):
+   - Создать миграционные скрипты (когда потребуется)
+
+---
+
+## Итоговая сводка
+
+| Компонент | Статус | Приоритет |
+|-----------|--------|-----------|
+| Структура проекта (src/tests) | ⚠️ Частично | 🟡 Средний |
+| Backend/libs | ❌ Не реализовано | 🟡 Средний |
+| Tools/stress_test | ❌ Не реализовано | 🟢 Низкий |
+| Config Flow (публикация) | ✅ Реализовано | - |
+| Config Flow (обработка ответов) | ✅ Реализовано | - |
+| Config Flow (автосинхронизация) | ✅ Реализовано | - |
+| Status/LWT Flow (LWT) | ✅ Реализовано | - |
+| Status/LWT Flow (status при подключении) | ⚠️ Частично | 🟡 Средний |
+| Heartbeat Flow (backend) | ✅ Реализовано | - |
+| Heartbeat Flow (firmware публикация) | ⚠️ Требуется реализация | 🟡 Средний |
+| Жизненный цикл узлов | ✅ Реализовано | - |
+| node_hello обработка | ✅ Реализовано | - |
+| Замена узлов | ✅ Реализовано | - |
+| Миграция скрипты | ❌ Не реализовано | 🟢 Низкий |
+
+---
+
+## Рекомендации
+
+1. ✅ **Жизненный цикл узлов** — реализовано
+2. ✅ **MQTT Config Flow** — реализовано
+3. ✅ **Status/LWT Flow (LWT)** — реализовано
+4. ✅ **Heartbeat Flow (backend)** — реализовано
+5. ⚠️ **Heartbeat Flow (firmware)** — требуется реализация публикации heartbeat в firmware
+6. ⚠️ **Status при подключении** — можно добавить явную публикацию status топика при подключении (в дополнение к LWT)
+
+---
+
+## Выполненные доработки
+
+**Дата:** 2025-11-17
+
+Все критические компоненты из аудита реализованы:
+- ✅ Жизненный цикл узлов (lifecycle_state, hardware_id, node_hello)
+- ✅ Config Flow (публикация и автоматическая синхронизация NodeConfig)
+- ✅ Heartbeat Flow (обработка heartbeat в backend)
+- ✅ Замена узлов (API и логика замены)
+
+Подробности см. в `01_SYSTEM_IMPROVEMENTS_COMPLETED.md`.
+
+---
+
+**Следующие шаги:**
+1. Реализовать публикацию heartbeat в firmware (требуется для полной поддержки heartbeat flow)
+2. Добавить явную публикацию status при подключении (опционально)
+3. Реорганизовать структуру проекта (низкий приоритет)

@@ -2,11 +2,10 @@
 
 namespace Tests\Feature;
 
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 use Carbon\Carbon;
-use App\Models\Sensor;
 
 class TelemetryCleanupCommandTest extends TestCase
 {
@@ -20,17 +19,6 @@ class TelemetryCleanupCommandTest extends TestCase
         // Создаем необходимые зависимости
         $zone = \App\Models\Zone::factory()->create();
         $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        $sensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
-            'zone_id' => $zone->id,
-            'node_id' => $node->id,
-            'scope' => 'inside',
-            'type' => 'PH',
-            'label' => 'ph_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
-        ]);
         
         // Создаем старые записи телеметрии
         $oldDate = Carbon::now()->subDays(35);
@@ -40,7 +28,8 @@ class TelemetryCleanupCommandTest extends TestCase
         for ($i = 0; $i < 2500; $i++) {
             DB::table('telemetry_samples')->insert([
                 'zone_id' => $zone->id,
-                'sensor_id' => $sensor->id,
+                'node_id' => $node->id,
+                'metric_type' => 'PH',
                 'value' => 6.5,
                 'ts' => $oldDate->copy()->addSeconds($i),
                 'created_at' => $oldDate->copy()->addSeconds($i),
@@ -51,7 +40,8 @@ class TelemetryCleanupCommandTest extends TestCase
         for ($i = 0; $i < 100; $i++) {
             DB::table('telemetry_samples')->insert([
                 'zone_id' => $zone->id,
-                'sensor_id' => $sensor->id,
+                'node_id' => $node->id,
+                'metric_type' => 'PH',
                 'value' => 6.5,
                 'ts' => $newDate->copy()->addSeconds($i),
                 'created_at' => $newDate->copy()->addSeconds($i),
@@ -60,16 +50,11 @@ class TelemetryCleanupCommandTest extends TestCase
         
         // Проверяем начальное количество
         $oldCount = DB::table('telemetry_samples')
-            ->where('zone_id', $zone->id)
-            ->where('sensor_id', $sensor->id)
             ->where('ts', '<', Carbon::now()->subDays(30))
             ->count();
         $this->assertEquals(2500, $oldCount);
         
-        $totalCount = DB::table('telemetry_samples')
-            ->where('zone_id', $zone->id)
-            ->where('sensor_id', $sensor->id)
-            ->count();
+        $totalCount = DB::table('telemetry_samples')->count();
         $this->assertEquals(2600, $totalCount);
         
         // Запускаем команду очистки (без подтверждения VACUUM)
@@ -79,8 +64,6 @@ class TelemetryCleanupCommandTest extends TestCase
         
         // Проверяем, что старые записи удалены
         $remainingOld = DB::table('telemetry_samples')
-            ->where('zone_id', $zone->id)
-            ->where('sensor_id', $sensor->id)
             ->where('ts', '<', Carbon::now()->subDays(30))
             ->count();
         $this->assertEquals(0, $remainingOld);
@@ -88,8 +71,6 @@ class TelemetryCleanupCommandTest extends TestCase
         // Проверяем, что новые записи остались (используем более точное условие)
         $cutoffDate = Carbon::now()->subDays(30);
         $remainingNew = DB::table('telemetry_samples')
-            ->where('zone_id', $zone->id)
-            ->where('sensor_id', $sensor->id)
             ->where('ts', '>', $cutoffDate)
             ->count();
         // Проверяем, что осталось хотя бы 100 записей
@@ -119,33 +100,20 @@ class TelemetryCleanupCommandTest extends TestCase
         // Создаем необходимые зависимости
         $zone = \App\Models\Zone::factory()->create();
         $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        $sensor = Sensor::query()->create([
-            'greenhouse_id' => $zone->greenhouse_id,
-            'zone_id' => $zone->id,
-            'node_id' => $node->id,
-            'scope' => 'inside',
-            'type' => 'PH',
-            'label' => 'ph_sensor',
-            'unit' => null,
-            'specs' => null,
-            'is_active' => true,
-        ]);
         
         // Создаем только новые записи
         for ($i = 0; $i < 100; $i++) {
             DB::table('telemetry_samples')->insert([
                 'zone_id' => $zone->id,
-                'sensor_id' => $sensor->id,
+                'node_id' => $node->id,
+                'metric_type' => 'PH',
                 'value' => 6.5,
                 'ts' => Carbon::now()->subDays(5)->addSeconds($i),
                 'created_at' => Carbon::now()->subDays(5)->addSeconds($i),
             ]);
         }
         
-        $initialCount = DB::table('telemetry_samples')
-            ->where('zone_id', $zone->id)
-            ->where('sensor_id', $sensor->id)
-            ->count();
+        $initialCount = DB::table('telemetry_samples')->count();
         $this->assertEquals(100, $initialCount);
         
         $this->artisan('telemetry:cleanup-raw', ['--days' => 30])
@@ -153,10 +121,8 @@ class TelemetryCleanupCommandTest extends TestCase
             ->expectsOutput('Всего удалено записей: 0')
             ->assertSuccessful();
         
-        $finalCount = DB::table('telemetry_samples')
-            ->where('zone_id', $zone->id)
-            ->where('sensor_id', $sensor->id)
-            ->count();
+        $finalCount = DB::table('telemetry_samples')->count();
         $this->assertEquals(100, $finalCount);
     }
 }
+

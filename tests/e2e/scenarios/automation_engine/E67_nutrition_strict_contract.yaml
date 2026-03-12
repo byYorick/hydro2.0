@@ -1,7 +1,0 @@
-# E67: Legacy nutrition strict contract migrated to canonical AE3 happy path
-
-name: E67_nutrition_strict_contract
-description: |
-  Legacy AE2 nutrition contract regression migrated to standalone AE3-Lite.
-  Для real-hardware regression pack используется каноничный AE3 two-tank smoke.
-scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

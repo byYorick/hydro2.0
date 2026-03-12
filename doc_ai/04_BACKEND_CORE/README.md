@@ -2,13 +2,6 @@
 
 Этот раздел содержит документацию по backend-архитектуре, API, Python-сервисам и интеграциям.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: несовместимые изменения в защищенном pipeline запрещены; миграции AE3 выполняются через compatibility bridge (`start-cycle`, `intent-*`, legacy task_type) до cutover.
-
-Канонический документ по AE3:
-- `ae3lite.md`
-
 ---
 
 ## 📋 Документы раздела
@@ -27,8 +20,7 @@ Breaking-change: несовместимые изменения в защищен
 **Архитектура Python-сервисов**
 - Общая архитектура
 - Общая библиотека (`common/`)
-- Сервисы: mqtt-bridge, history-logger, automation-engine
-- Laravel scheduler-dispatch как runtime owner planning/dispatch
+- Сервисы: mqtt-bridge, history-logger, automation-engine, scheduler
 - Взаимодействие между сервисами
 
 #### [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
@@ -53,23 +45,21 @@ Breaking-change: несовместимые изменения в защищен
 
 ### Специализированные документы
 
-#### [ae3lite.md](ae3lite.md)
-Канонический план реализации AE3-Lite (DDD/OOP/Clean, polling-first, DB-first runtime, canary/rollback).
-
-#### [AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md](AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md)
-Ручной rollout/rollback runbook для `zones.automation_runtime` и AE3 handoff guards.
-
-#### [archive/ae3full.md](archive/ae3full.md)
-Архивный план AE3FULL (исторический reference, не канон).
-
-#### [archive/AE3_ARCHITECTURE.md](archive/AE3_ARCHITECTURE.md)
-Архивная детальная архитектура AE3 (исторический reference, не канон).
-
 #### [REALTIME_UPDATES_ARCH.md](REALTIME_UPDATES_ARCH.md)
 Архитектура real-time обновлений
 
 #### [FULL_STACK_DEPLOY_DOCKER.md](FULL_STACK_DEPLOY_DOCKER.md)
-Деплой полного стека через Docker (`PARTIALLY_HISTORICAL` для legacy Python scheduler секций)
+Деплой полного стека через Docker
+
+### Рефакторинг и улучшения
+
+#### [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
+План рефакторинга
+
+#### [BACKEND_REFACTOR_PLAN.md](BACKEND_REFACTOR_PLAN.md)
+План доработок backend-системы
+
+**Примечание:** Промежуточные отчеты по фазам рефакторинга и тестирования перемещены в архив: `00_ARCHIVE/PHASE_REPORTS/`
 
 ---
 
@@ -89,16 +79,14 @@ Breaking-change: несовместимые изменения в защищен
 3. **API разработка?** → Прочитайте [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
 4. **REST API?** → См. [REST_API_REFERENCE.md](REST_API_REFERENCE.md)
 
-Важно: при вопросах ownership scheduler runtime использовать
-`PYTHON_SERVICES_ARCH.md` и
-`doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
-как приоритетные источники.
+---
 
-Для AE3 приоритет документов:
-1. `ae3lite.md` (канонический план и контракты)
-2. `archive/ae3full.md` (исторический контекст)
-3. `archive/AE3_ARCHITECTURE.md` (историческая детализация)
+## 📊 Статус документов
+
+- **SPEC_READY:** Все основные спецификации готовы
+- **MVP_DONE:** Backend и Python-сервисы реализованы (см. [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md))
 
 ---
 
 **См. также:** [Главный индекс документации](../INDEX.md)
+

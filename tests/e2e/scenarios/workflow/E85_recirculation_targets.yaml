@@ -1,7 +1,0 @@
-# E85: Legacy recirculation targets stage ported to canonical AE3 two-tank smoke
-
-name: E85_recirculation_targets
-description: |
-  Legacy AE2 recirculation targets workflow stage migrated to standalone AE3-Lite.
-  Каноничная проверка: AE3 two-tank real-hardware smoke.
-scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

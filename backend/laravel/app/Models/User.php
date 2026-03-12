@@ -3,11 +3,10 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
@@ -23,7 +22,6 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
-        'preferences',
     ];
 
     /**
@@ -46,40 +44,11 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'preferences' => 'array',
         ];
     }
 
     public function isAdmin(): bool
     {
         return ($this->role ?? 'operator') === 'admin';
-    }
-
-    /**
-     * Проверить, имеет ли пользователь указанную роль
-     */
-    public function hasRole(string $role): bool
-    {
-        return ($this->role ?? 'operator') === $role;
-    }
-
-    /**
-     * Проверить, является ли пользователь агрономом
-     */
-    public function isAgronomist(): bool
-    {
-        return $this->hasRole('agronomist');
-    }
-
-    public function zones(): BelongsToMany
-    {
-        return $this->belongsToMany(Zone::class, 'user_zones')
-            ->withTimestamps();
-    }
-
-    public function greenhouses(): BelongsToMany
-    {
-        return $this->belongsToMany(Greenhouse::class, 'user_greenhouses')
-            ->withTimestamps();
     }
 }

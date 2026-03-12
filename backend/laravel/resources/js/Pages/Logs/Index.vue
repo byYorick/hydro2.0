@@ -1,87 +1,34 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
-      <header class="ui-hero p-5 space-y-4">
-        <div>
-          <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
-            observability
-          </p>
-          <h1 class="text-2xl font-semibold tracking-tight text-[color:var(--text-primary)] mt-1">
-            Журнал сервисов
-          </h1>
-          <p class="text-sm text-[color:var(--text-muted)] max-w-3xl">
-            Отслеживайте события автоматизации, MQTT Bridge и cron в одном окне.
-          </p>
-        </div>
-        <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Всего записей
-            </div>
-            <div class="ui-kpi-value">
-              {{ totalCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              Для выбранного набора фильтров
-            </div>
+    <div class="space-y-6">
+      <header class="space-y-3">
+        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 class="text-lg font-semibold">Журнал сервисов</h1>
+            <p class="text-sm text-neutral-400 max-w-3xl">
+              Отслеживайте события автоматизации, History Logger, MQTT Bridge и cron в одном окне.
+            </p>
           </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Ошибки
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-red)]">
-              {{ errorLogsCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              На текущей странице
-            </div>
-          </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Предупреждения
-            </div>
-            <div class="ui-kpi-value text-[color:var(--accent-amber)]">
-              {{ warningLogsCount }}
-            </div>
-            <div class="ui-kpi-hint">
-              Требуют внимания
-            </div>
-          </div>
-          <div class="ui-kpi-card">
-            <div class="ui-kpi-label">
-              Сервис
-            </div>
-            <div class="ui-kpi-value text-base md:text-lg leading-tight">
-              {{ activeServiceLabel }}
-            </div>
-            <div class="ui-kpi-hint">
-              Активный контур мониторинга
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-3">
-        <Tabs
-          v-model="activeServiceTab"
-          data-testid="logs-service-tabs"
-          :tabs="serviceTabs"
-          aria-label="Сервисы"
-        />
-      </div>
-
-      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Фильтр</span>
+          <div class="flex flex-wrap gap-2 items-center">
+            <span class="text-xs uppercase text-neutral-500 tracking-[0.3em]">Фильтры</span>
+            <select
+              v-model="filters.service"
+              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+            >
+              <option value="all">Все сервисы</option>
+              <option
+                v-for="option in serviceSelectOptions"
+                :key="option.key"
+                :value="option.key"
+              >
+                {{ option.label }}
+              </option>
+            </select>
             <select
               v-model="filters.level"
-              class="input-select h-9"
-              data-testid="logs-filter-level"
+              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
             >
-              <option value="">
-                Все уровни
-              </option>
+              <option value="">Все уровни</option>
               <option
                 v-for="level in levelOptions"
                 :key="level"
@@ -94,19 +41,17 @@
               v-model="filters.search"
               type="search"
               placeholder="Поиск по сообщению/контексту"
-              class="input-field h-9 w-full sm:w-64"
+              class="h-9 w-56 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100 placeholder:text-neutral-500"
             />
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
             <input
               v-model="filters.from"
               type="date"
-              class="input-field h-9"
+              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
             />
             <input
               v-model="filters.to"
               type="date"
-              class="input-field h-9"
+              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
             />
             <Button
               size="sm"
@@ -118,90 +63,61 @@
             </Button>
           </div>
         </div>
-      </section>
+      </header>
 
-      <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              {{ activeServiceLabel }}
+      <div v-if="error" class="text-sm text-red-400">
+        {{ error }}
+      </div>
+
+      <div v-if="loading" class="text-sm text-neutral-400 text-center py-8">
+        Загрузка логов...
+      </div>
+
+      <div v-else-if="!hasLogs" class="text-sm text-neutral-400 text-center py-8">
+        Нет логов по выбранным фильтрам
+      </div>
+
+      <div v-else class="grid gap-4 lg:grid-cols-2">
+        <Card
+          v-for="service in visibleServices"
+          :key="service.key"
+          class="space-y-3"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <div class="text-sm font-semibold text-neutral-100">{{ service.label }}</div>
+              <p class="text-xs text-neutral-500">{{ service.description ?? 'Логи сервиса' }}</p>
             </div>
-            <p class="text-xs text-[color:var(--text-dim)]">
-              {{ activeServiceDescription }}
-            </p>
+            <span class="text-xs text-neutral-500">{{ entriesFor(service.key).length }} записей</span>
           </div>
-          <span class="text-xs text-[color:var(--text-dim)]">
-            {{ totalCount }} записей
-          </span>
-        </div>
-
-        <div
-          v-if="error"
-          class="text-sm text-[color:var(--accent-red)]"
-        >
-          {{ error }}
-        </div>
-
-        <div
-          v-else-if="loading"
-          class="text-sm text-[color:var(--text-dim)] text-center py-8"
-        >
-          Загрузка логов...
-        </div>
-
-        <div
-          v-else-if="!hasLogs"
-          class="text-sm text-[color:var(--text-dim)] text-center py-8"
-        >
-          Нет логов по выбранным фильтрам
-        </div>
-
-        <div
-          v-else
-          class="space-y-1 max-h-[560px] overflow-y-auto pr-1"
-        >
-          <div
-            v-for="entry in logs"
-            :key="entry.id"
-            class="text-sm text-[color:var(--text-muted)] flex items-start gap-3 py-3 border-b border-[color:var(--border-muted)]"
-            data-testid="service-log-entry"
-          >
-            <Badge
-              :variant="levelVariant(entry.level)"
-              size="xs"
-              class="shrink-0"
+          <div class="space-y-2 max-h-[360px] overflow-y-auto scrollbar-glow pr-1">
+            <div
+              v-for="entry in entriesFor(service.key)"
+              :key="entry.id"
+              class="surface-strong rounded-2xl border border-neutral-800 p-3"
             >
-              {{ entry.level }}
-            </Badge>
-            <div class="flex-1 min-w-0 space-y-1">
-              <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-dim)]">
-                <span>{{ formatTime(entry.created_at) }}</span>
-                <Badge
-                  v-if="showServiceBadge"
-                  size="xs"
-                  variant="secondary"
-                  class="uppercase tracking-[0.08em]"
-                  data-testid="service-log-service"
-                >
-                  {{ serviceLabelFor(entry.service) }}
-                </Badge>
-              </div>
-              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-                {{ entry.message }}
-              </div>
-              <div class="text-xs text-[color:var(--text-dim)]">
-                {{ summarizeContext(entry.context) }}
+              <div class="flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="text-sm font-semibold text-neutral-100">{{ entry.message }}</div>
+                  <div class="text-xs text-neutral-500">{{ summarizeContext(entry.context) }}</div>
+                </div>
+                <div class="text-right">
+                  <Badge :variant="levelVariant(entry.level)" size="xs">{{ entry.level }}</Badge>
+                  <div class="text-[10px] text-neutral-500 mt-1">
+                    {{ formatTime(entry.created_at) }}
+                  </div>
+                </div>
               </div>
             </div>
+            <div v-if="!entriesFor(service.key).length" class="text-xs text-neutral-500 text-center py-6">
+              Нет событий по выбранным фильтрам
+            </div>
           </div>
-        </div>
-      </section>
+        </Card>
+      </div>
 
-      <div
-        v-if="meta.total > 0"
-        class="flex items-center justify-between pt-2 border-t border-[color:var(--border-muted)]"
-      >
-        <div class="text-xs text-[color:var(--text-dim)]">
+      <div class="flex items-center justify-between pt-2 border-t border-neutral-800" v-if="meta.total > 0">
+        <div class="text-xs text-neutral-500">
           Страница {{ meta.page }} / {{ meta.last_page }} • {{ meta.total }} записей
         </div>
         <div class="flex gap-2">
@@ -230,12 +146,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Tabs from '@/Components/Tabs.vue'
+import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 
 interface ServiceOption {
@@ -255,14 +170,9 @@ interface ServiceLog {
 
 interface ServiceLogMeta {
   page: number
-  current_page?: number
   per_page: number
-  perPage?: number
   total: number
-  total_count?: number
   last_page: number
-  lastPage?: number
-  total_pages?: number
 }
 
 interface Props {
@@ -276,44 +186,31 @@ const props = defineProps<Props>()
 
 const { get } = useApi()
 
-const excludedServiceKeys = new Set(['history-logger', 'history-locker'])
-const defaultService = props.defaultService && !excludedServiceKeys.has(props.defaultService)
-  ? props.defaultService
-  : 'all'
-
 const filters = reactive({
-  service: defaultService,
+  service: props.defaultService || 'all',
   level: props.defaultLevel || '',
   search: props.defaultSearch || '',
   from: '',
   to: '',
 })
 
-const activeServiceTab = ref(filters.service)
-
 const levelOptions = ['ERROR', 'WARNING', 'INFO', 'DEBUG']
 const logs = ref<ServiceLog[]>([])
-const meta = reactive<ServiceLogMeta>({
+const meta = reactive({
   page: 1,
-  per_page: 50,
+  perPage: 50,
   total: 0,
   last_page: 1,
 })
 const loading = ref(false)
 const error = ref('')
 
-const POLL_INTERVAL_MS = 15000
-const POLL_KEY = '__logsPollInterval__'
-const SEARCH_KEY = '__logsSearchDebounce__'
-
 let pollInterval: ReturnType<typeof setInterval> | null = null
 let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 const dynamicServices = computed<ServiceOption[]>(() => {
   const known = new Set(props.serviceOptions.map((s) => s.key))
-  const dynamic = Array.from(new Set(logs.value.map((l) => l.service))).filter((key) =>
-    !known.has(key) && !excludedServiceKeys.has(key)
-  )
+  const dynamic = Array.from(new Set(logs.value.map((l) => l.service))).filter((key) => !known.has(key))
   return dynamic.map((key) => ({
     key,
     label: key,
@@ -322,52 +219,23 @@ const dynamicServices = computed<ServiceOption[]>(() => {
 })
 
 const serviceSelectOptions = computed<ServiceOption[]>(() =>
-  [...props.serviceOptions, ...dynamicServices.value]
-    .filter((item) => !excludedServiceKeys.has(item.key))
-    .filter((item, index, arr) => arr.findIndex((i) => i.key === item.key) === index)
+  [...props.serviceOptions, ...dynamicServices.value].filter(
+    (item, index, arr) => arr.findIndex((i) => i.key === item.key) === index
+  )
 )
 
-const serviceTabs = computed(() => {
-  const tabs = [
-    { id: 'all', label: 'Все сервисы' },
-    ...serviceSelectOptions.value.map((service) => ({
-      id: service.key,
-      label: service.label,
-    })),
-  ]
+const visibleServices = computed<ServiceOption[]>(() => {
+  const baseList = filters.service === 'all'
+    ? [...props.serviceOptions, ...dynamicServices.value]
+    : [...props.serviceOptions, ...dynamicServices.value].filter((s) => s.key === filters.service)
 
-  return tabs.filter((tab, index, arr) => arr.findIndex((item) => item.id === tab.id) === index)
+  // Убираем дубликаты
+  return baseList.filter((item, index, arr) => arr.findIndex((i) => i.key === item.key) === index)
 })
-
-const activeServiceOption = computed(() =>
-  serviceSelectOptions.value.find((service) => service.key === filters.service)
-)
-
-const activeServiceLabel = computed(() => {
-  if (filters.service === 'all') return 'Все сервисы'
-  return activeServiceOption.value?.label ?? filters.service
-})
-
-const activeServiceDescription = computed(() => {
-  if (filters.service === 'all') {
-    return 'Сводка по сервисам и системе в реальном времени.'
-  }
-  return activeServiceOption.value?.description ?? 'Логи сервиса'
-})
-
-const showServiceBadge = computed(() => filters.service === 'all')
-
-const serviceLabelFor = (serviceKey: string) =>
-  serviceSelectOptions.value.find((service) => service.key === serviceKey)?.label ?? serviceKey
 
 const hasLogs = computed(() => logs.value.length > 0)
-const totalCount = computed(() => meta.total || logs.value.length)
-const errorLogsCount = computed(() =>
-  logs.value.filter((entry) => entry.level?.toLowerCase().includes('error') || entry.level?.toLowerCase().includes('critical')).length
-)
-const warningLogsCount = computed(() =>
-  logs.value.filter((entry) => entry.level?.toLowerCase().includes('warn')).length
-)
+
+const entriesFor = (serviceKey: string) => logs.value.filter((entry) => entry.service === serviceKey)
 
 const levelVariant = (level: string) => {
   const normalized = level?.toLowerCase()
@@ -410,8 +278,7 @@ async function fetchLogs(page = 1) {
   try {
     const params: Record<string, any> = {
       page,
-      per_page: meta.per_page,
-      exclude_services: Array.from(excludedServiceKeys),
+      per_page: meta.perPage,
     }
 
     if (filters.service && filters.service !== 'all') params.service = filters.service
@@ -420,56 +287,19 @@ async function fetchLogs(page = 1) {
     if (filters.from) params.from = filters.from
     if (filters.to) params.to = filters.to
 
-    const response = await get('/logs/service', { params })
-    const parsed = normalizeLogsResponse(response)
-    logs.value = parsed.logs
-    updateMeta(parsed.meta, logs.value.length)
+    const response = await get<{ data: ServiceLog[]; meta: ServiceLogMeta }>('/logs/service', { params })
+
+    logs.value = response.data.data || []
+    meta.page = response.data.meta.page
+    meta.perPage = response.data.meta.per_page
+    meta.total = response.data.meta.total
+    meta.last_page = response.data.meta.last_page
   } catch (err) {
     logger.error('Failed to load service logs', { err })
     error.value = 'Не удалось загрузить логи. Попробуйте обновить страницу.'
   } finally {
     loading.value = false
   }
-}
-
-/**
- * Нормализует ответ API для логов (учитываем разные формы: {status, data, meta} | {data:{data,meta}} | массив)
- */
-function normalizeLogsResponse(response: { data?: unknown } | unknown): { logs: ServiceLog[]; meta?: Partial<ServiceLogMeta> | null } {
-  const payload = (response as { data?: unknown })?.data ?? response
-  const payloadRecord = payload as Record<string, unknown>
-  const directData = extractData<ServiceLog[] | Record<string, unknown>>(payload)
-
-  // Вариант: extractData вернул массив
-  if (Array.isArray(directData)) {
-    return { logs: directData, meta: (payloadRecord?.meta as Partial<ServiceLogMeta>) ?? null }
-  }
-
-  // Вариант: объект с data/meta на первом или втором уровне
-  const inner = (directData ?? payloadRecord ?? {}) as Record<string, unknown>
-  const innerData = inner?.data as Record<string, unknown> | undefined
-  const firstLevelData = Array.isArray(inner?.data) ? inner.data as ServiceLog[] : null
-  const secondLevelData = Array.isArray(innerData?.data) ? innerData?.data as ServiceLog[] : null
-
-  const logsData = firstLevelData || secondLevelData || []
-  const metaFromPayload = (inner?.meta ?? innerData?.meta ?? payloadRecord?.meta) as Partial<ServiceLogMeta> | null ?? null
-
-  return {
-    logs: Array.isArray(logsData) ? logsData : [],
-    meta: metaFromPayload,
-  }
-}
-
-function updateMeta(metaPayload?: Partial<ServiceLogMeta> | null, fallbackTotal = 0) {
-  const pageValue = metaPayload?.page ?? metaPayload?.current_page
-  const perPageValue = metaPayload?.per_page ?? metaPayload?.perPage
-  const totalValue = metaPayload?.total ?? metaPayload?.total_count
-  const lastPageValue = metaPayload?.last_page ?? metaPayload?.lastPage ?? metaPayload?.total_pages
-
-  meta.page = pageValue ?? meta.page
-  meta.per_page = perPageValue ?? meta.per_page
-  meta.total = totalValue ?? fallbackTotal ?? meta.total
-  meta.last_page = lastPageValue ?? meta.last_page
 }
 
 function changePage(newPage: number) {
@@ -483,34 +313,13 @@ function refresh() {
 
 function startPolling() {
   if (pollInterval) clearInterval(pollInterval)
-
-  if (typeof window !== 'undefined') {
-    const existing = window[POLL_KEY]
-    if (existing) clearInterval(existing)
-  }
-
-  pollInterval = setInterval(() => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    fetchLogs(meta.page)
-  }, POLL_INTERVAL_MS)
-
-  if (typeof window !== 'undefined') {
-    window[POLL_KEY] = pollInterval
-  }
+  pollInterval = setInterval(() => fetchLogs(meta.page), 5000)
 }
 
 function stopPolling() {
   if (pollInterval) {
     clearInterval(pollInterval)
     pollInterval = null
-  }
-
-  if (typeof window !== 'undefined') {
-    const existing = window[POLL_KEY]
-    if (existing) {
-      clearInterval(existing)
-      window[POLL_KEY] = null
-    }
   }
 }
 
@@ -520,38 +329,10 @@ watch(
 )
 
 watch(
-  () => filters.service,
-  (value) => {
-    if (activeServiceTab.value !== value) {
-      activeServiceTab.value = value
-    }
-  }
-)
-
-watch(
-  activeServiceTab,
-  (value) => {
-    if (filters.service !== value) {
-      filters.service = value
-    }
-  }
-)
-
-watch(
   () => filters.search,
   () => {
     if (searchDebounce) clearTimeout(searchDebounce)
-
-    if (typeof window !== 'undefined') {
-      const existing = window[SEARCH_KEY]
-      if (existing) clearTimeout(existing)
-    }
-
     searchDebounce = setTimeout(() => fetchLogs(1), 400)
-
-    if (typeof window !== 'undefined') {
-      window[SEARCH_KEY] = searchDebounce
-    }
   }
 )
 
@@ -566,19 +347,12 @@ onUnmounted(() => {
     clearTimeout(searchDebounce)
     searchDebounce = null
   }
-  if (typeof window !== 'undefined') {
-    const existing = window[SEARCH_KEY]
-    if (existing) {
-      clearTimeout(existing)
-      window[SEARCH_KEY] = null
-    }
-  }
 })
 </script>
 
 <style scoped>
 select option {
-  background-color: var(--bg-surface-strong);
-  color: var(--text-primary);
+  background-color: rgb(23 23 23); /* neutral-900 */
+  color: rgb(245 245 245); /* neutral-100 */
 }
 </style>

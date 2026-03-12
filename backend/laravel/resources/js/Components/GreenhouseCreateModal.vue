@@ -1,171 +1,120 @@
 <template>
-  <Modal
-    :open="show"
-    title="Создать теплицу"
-    size="large"
-    @close="handleClose"
-  >
-    <form
-      class="space-y-4"
-      @submit.prevent="onSubmit"
-    >
+  <Modal :open="show" title="Создать теплицу" @close="handleClose" size="large">
+    <form @submit.prevent="onSubmit" class="space-y-4">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label
-            for="greenhouse-name"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >
-            Название <span class="text-[color:var(--accent-red)]">*</span>
+          <label for="greenhouse-name" class="block text-xs text-neutral-400 mb-1">
+            Название <span class="text-red-400">*</span>
           </label>
           <input
             id="greenhouse-name"
-            v-model="form.name"
             name="name"
+            v-model="form.name"
             type="text"
             required
             placeholder="Main Greenhouse"
-            class="input-field h-9 w-full"
-            :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            class="h-9 w-full rounded-md border px-2 text-sm"
+            :class="errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'"
             autocomplete="off"
           />
-          <div
-            v-if="errors.name"
-            class="text-xs text-[color:var(--accent-red)] mt-1"
-          >
-            {{ errors.name }}
-          </div>
-          <div class="text-xs text-[color:var(--text-dim)] mt-1">
-            UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
+          <div v-if="errors.name" class="text-xs text-red-400 mt-1">{{ errors.name }}</div>
+          <div class="text-xs text-neutral-500 mt-1">
+            UID будет сгенерирован автоматически: <span class="text-neutral-400">{{ generatedUid }}</span>
           </div>
         </div>
 
         <div>
-          <label
-            for="greenhouse-width"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Ширина (м)</label>
+          <label for="greenhouse-width" class="block text-xs text-neutral-400 mb-1">Ширина (м)</label>
           <input
             id="greenhouse-width"
-            v-model.number="form.width"
             name="width"
+            v-model.number="form.width"
             type="number"
             step="0.1"
             min="0"
             placeholder="10.0"
-            class="input-field h-9 w-full"
+            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label
-            for="greenhouse-length"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Длина (м)</label>
+          <label for="greenhouse-length" class="block text-xs text-neutral-400 mb-1">Длина (м)</label>
           <input
             id="greenhouse-length"
-            v-model.number="form.length"
             name="length"
+            v-model.number="form.length"
             type="number"
             step="0.1"
             min="0"
             placeholder="20.0"
-            class="input-field h-9 w-full"
+            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label
-            for="greenhouse-height"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Высота (м)</label>
+          <label for="greenhouse-height" class="block text-xs text-neutral-400 mb-1">Высота (м)</label>
           <input
             id="greenhouse-height"
-            v-model.number="form.height"
             name="height"
+            v-model.number="form.height"
             type="number"
             step="0.1"
             min="0"
             placeholder="3.0"
-            class="input-field h-9 w-full"
+            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label
-            for="greenhouse-type"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Тип теплицы</label>
+          <label for="greenhouse-type" class="block text-xs text-neutral-400 mb-1">Тип теплицы</label>
           <select
             id="greenhouse-type"
-            v-model="form.type"
             name="type"
-            class="input-select h-9 w-full"
+            v-model="form.type"
+            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
           >
-            <option value="">
-              Выберите тип
-            </option>
-            <option value="outdoor">
-              Открытая
-            </option>
-            <option value="greenhouse">
-              Теплица
-            </option>
-            <option value="indoor">
-              Помещение
-            </option>
+            <option value="">Выберите тип</option>
+            <option value="outdoor">Открытая</option>
+            <option value="greenhouse">Теплица</option>
+            <option value="indoor">Помещение</option>
           </select>
         </div>
 
         <div>
-          <label
-            for="greenhouse-location"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Расположение</label>
+          <label for="greenhouse-location" class="block text-xs text-neutral-400 mb-1">Расположение</label>
           <input
             id="greenhouse-location"
-            v-model="form.location"
             name="location"
+            v-model="form.location"
             type="text"
             placeholder="Москва, ул. Примерная, д. 1"
-            class="input-field h-9 w-full"
+            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             autocomplete="off"
           />
         </div>
 
         <div class="md:col-span-2">
-          <label
-            for="greenhouse-description"
-            class="block text-xs text-[color:var(--text-muted)] mb-1"
-          >Описание</label>
+          <label for="greenhouse-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
           <textarea
             id="greenhouse-description"
-            v-model="form.description"
             name="description"
+            v-model="form.description"
             rows="3"
             placeholder="Описание теплицы..."
-            class="input-field w-full py-2 h-auto"
+            class="w-full rounded-md border px-2 py-1 text-sm border-neutral-700 bg-neutral-900"
             autocomplete="off"
           ></textarea>
         </div>
       </div>
 
-      <div
-        v-if="errors.general"
-        class="text-sm text-[color:var(--accent-red)]"
-      >
-        {{ errors.general }}
-      </div>
+      <div v-if="errors.general" class="text-sm text-red-400">{{ errors.general }}</div>
     </form>
 
     <template #footer>
-      <Button
-        type="button"
-        :disabled="loading || !form.name.trim()"
-        @click="onSubmit"
-      >
+      <Button type="button" @click="onSubmit" :disabled="loading || !form.name.trim()">
         {{ loading ? 'Создание...' : 'Создать' }}
       </Button>
     </template>
@@ -318,3 +267,4 @@ async function onSubmit() {
   }
 }
 </script>
+

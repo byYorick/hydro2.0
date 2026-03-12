@@ -123,16 +123,14 @@ beforeAll(async () => {
 const mountZones = () => mount(ZonesIndex)
 
 describe('Zones Index - Virtualization (P2-1)', () => {
-  // ПРИМЕЧАНИЕ: Virtualization не реализован в текущей версии Index.vue
-  // Компонент использует обычную таблицу вместо RecycleScroller
-  it.skip('should render RecycleScroller for table body', () => {
+  it('should render RecycleScroller for table body', () => {
     const wrapper = mountZones()
     
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
     expect(scroller.exists()).toBe(true)
   })
 
-  it.skip('should pass filtered rows to RecycleScroller', () => {
+  it('should pass filtered rows to RecycleScroller', () => {
     const wrapper = mountZones()
     
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
@@ -140,7 +138,7 @@ describe('Zones Index - Virtualization (P2-1)', () => {
     expect(Array.isArray(scroller.props('items'))).toBe(true)
   })
 
-  it.skip('should set item-size prop', () => {
+  it('should set item-size prop', () => {
     const wrapper = mountZones()
     
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
@@ -148,7 +146,7 @@ describe('Zones Index - Virtualization (P2-1)', () => {
     expect(sizeProp).toBe(44)
   })
 
-  it.skip('should set key-field prop', () => {
+  it('should set key-field prop', () => {
     const wrapper = mountZones()
     
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
@@ -182,7 +180,7 @@ describe('Zones Index - Virtualization (P2-1)', () => {
     expect(wrapper.vm.filteredZones[0].name).toBe('Zone 1')
   })
 
-  it.skip('should return all zones when no filters are applied', () => {
+  it('should return all zones when no filters are applied', () => {
     const wrapper = mountZones()
     
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })

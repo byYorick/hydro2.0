@@ -17,9 +17,5 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
-# Vite build artifacts
-**/vite.config.js.timestamp-*.mjs
-
-# Test results and reports (should not be tracked)
-/test-results/
-/tests/e2e/reports/
+/database/*.sqlite
+/database/*.sqlite-journal

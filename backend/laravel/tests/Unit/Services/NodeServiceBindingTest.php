@@ -6,9 +6,8 @@ use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
 use App\Models\Zone;
 use App\Services\NodeLifecycleService;
-use App\Services\NodeRegistryService;
 use App\Services\NodeService;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -22,8 +21,7 @@ class NodeServiceBindingTest extends TestCase
     {
         parent::setUp();
         $this->service = new NodeService(
-            app(NodeLifecycleService::class),
-            app(NodeRegistryService::class),
+            app(NodeLifecycleService::class)
         );
         Event::fake(); // Отключаем события для изоляции тестов
     }
@@ -159,3 +157,4 @@ class NodeServiceBindingTest extends TestCase
         $this->service->update($node, ['zone_id' => $zone->id]);
     }
 }
+

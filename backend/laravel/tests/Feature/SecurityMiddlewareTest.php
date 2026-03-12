@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
@@ -39,7 +39,7 @@ class SecurityMiddlewareTest extends TestCase
         $response->assertStatus(401)
             ->assertJson([
                 'status' => 'error',
-                'message' => 'Unauthorized: missing service token',
+                'message' => 'Unauthorized: service token not configured or missing authentication',
             ]);
     }
 
@@ -94,7 +94,7 @@ class SecurityMiddlewareTest extends TestCase
         $response->assertStatus(500)
             ->assertJson([
                 'status' => 'error',
-                'message' => 'Node registration token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.',
+                'message' => 'Node registration token not configured',
             ]);
     }
 }

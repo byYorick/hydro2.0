@@ -14,8 +14,7 @@ class TestTelemetryFormatSync:
     @pytest.mark.asyncio
     async def test_handle_telemetry_with_firmware_format(self):
         """Тест обработки телеметрии в формате от прошивок."""
-        from telemetry_processing import handle_telemetry
-        from models import TelemetryPayloadModel
+        from main import handle_telemetry, TelemetryPayloadModel
         
         # Формат от прошивок ESP32
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
@@ -27,18 +26,16 @@ class TestTelemetryFormatSync:
             "node_id": "nd-ph-1",
             "raw": 1465,
             "stub": False,
-            "stable": True,
-            "flow_active": True,
-            "corrections_allowed": True,
+            "stable": True
         }
         payload = json.dumps(payload_data).encode('utf-8')
         
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(return_value=True)
         
-        with patch('state.telemetry_queue', mock_queue), \
-             patch('telemetry_processing.TELEM_RECEIVED') as mock_telem_received, \
-             patch('telemetry_processing.TELEMETRY_DROPPED') as mock_dropped:
+        with patch('main.telemetry_queue', mock_queue), \
+             patch('main.TELEM_RECEIVED') as mock_telem_received, \
+             patch('main.TELEMETRY_DROPPED') as mock_dropped:
             
             await handle_telemetry(topic, payload)
             
@@ -56,15 +53,11 @@ class TestTelemetryFormatSync:
             assert call_args.value == 6.5
             assert call_args.channel == "ph_sensor"
             assert isinstance(call_args.ts, datetime)
-            assert call_args.raw is not None
-            assert call_args.raw.get("flow_active") is True
-            assert call_args.raw.get("corrections_allowed") is True
     
     @pytest.mark.asyncio
     async def test_handle_telemetry_extracts_channel_from_topic(self):
         """Тест извлечения channel из топика."""
-        from telemetry_processing import handle_telemetry
-        from utils import _extract_channel_from_topic
+        from main import handle_telemetry, _extract_channel_from_topic
         
         # Проверяем функцию извлечения channel
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
@@ -82,7 +75,7 @@ class TestTelemetryFormatSync:
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(return_value=True)
         
-        with patch('state.telemetry_queue', mock_queue):
+        with patch('main.telemetry_queue', mock_queue):
             await handle_telemetry(topic, payload)
             
             call_args = mock_queue.push.call_args[0][0]
@@ -92,7 +85,7 @@ class TestTelemetryFormatSync:
     @pytest.mark.asyncio
     async def test_handle_telemetry_rejects_old_format(self):
         """Тест отклонения старого формата (timestamp вместо ts)."""
-        from telemetry_processing import handle_telemetry
+        from main import handle_telemetry
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
         # Старый формат с timestamp (должен быть отклонен)
@@ -105,8 +98,8 @@ class TestTelemetryFormatSync:
         
         mock_queue = AsyncMock()
         
-        with patch('state.telemetry_queue', mock_queue), \
-             patch('telemetry_processing.TELEMETRY_DROPPED') as mock_dropped:
+        with patch('main.telemetry_queue', mock_queue), \
+             patch('main.TELEMETRY_DROPPED') as mock_dropped:
             
             await handle_telemetry(topic, payload)
             
@@ -117,320 +110,70 @@ class TestTelemetryFormatSync:
             assert mock_dropped.labels.called
 
 
-class TestConfigReportFormatSync:
-    """Тесты синхронизации формата config_report."""
+class TestConfigResponseFormatSync:
+    """Тесты синхронизации формата config_response."""
     
     @pytest.mark.asyncio
-    async def test_handle_config_report_stores_config(self):
-        """Тест обработки config_report от прошивок."""
-        from mqtt_handlers import handle_config_report
+    async def test_handle_config_response_with_ack(self):
+        """Тест обработки config_response со статусом ACK (от прошивок)."""
+        from main import handle_config_response
         
-        topic = "hydro/gh-1/zn-1/nd-ph-1/config_report"
+        topic = "hydro/gh-1/zn-1/nd-ph-1/config_response"
         payload_data = {
-            "node_id": "nd-ph-1",
-            "version": 1,
-            "channels": [
-                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
-            ],
+            "status": "ACK",
+            "applied_at": 1737979.2,
+            "restarted": ["pump_driver"]
         }
         payload = json.dumps(payload_data).encode('utf-8')
         
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute, \
-             patch('mqtt_handlers.sync_node_channels_from_payload', new_callable=AsyncMock) as mock_sync, \
-             patch('mqtt_handlers._complete_binding_after_config_report', new_callable=AsyncMock) as mock_complete, \
-             patch('mqtt_handlers.CONFIG_REPORT_RECEIVED') as mock_received, \
-             patch('mqtt_handlers.CONFIG_REPORT_PROCESSED') as mock_processed:
+        with patch('main.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('main.execute', new_callable=AsyncMock) as mock_execute, \
+             patch('main.CONFIG_RESPONSE_RECEIVED') as mock_received, \
+             patch('main.CONFIG_RESPONSE_SUCCESS') as mock_success, \
+             patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post:
             
+            # Мокаем ответ от БД
             mock_fetch.return_value = [
-                {
-                    "id": 1,
-                    "uid": "nd-ph-1",
-                    "lifecycle_state": "REGISTERED_BACKEND",
-                    "zone_id": None,
-                    "pending_zone_id": 1,
-                }
+                {"id": 1, "uid": "nd-ph-1", "lifecycle_state": "CONFIGURING"}
             ]
             
-            await handle_config_report(topic, payload)
+            # Мокаем ответ от Laravel API
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = "OK"
+            mock_post.return_value = mock_response
             
-            mock_received.inc.assert_called_once()
-            mock_execute.assert_called_once()
-            mock_sync.assert_called_once()
-            mock_complete.assert_called_once()
-            mock_processed.inc.assert_called_once()
-
+            # Мокаем настройки
+            with patch('main.get_settings') as mock_settings:
+                mock_settings.return_value.laravel_api_url = "http://localhost/api"
+                mock_settings.return_value.laravel_api_token = "test-token"
+                
+                await handle_config_response(topic, payload)
+                
+                # Проверяем, что сообщение было обработано
+                mock_received.inc.assert_called_once()
+                mock_success.labels.assert_called_once()
+    
     @pytest.mark.asyncio
-    async def test_handle_config_report_fills_default_relay_type_for_relay_actuators(self):
-        """Для relay-like actuator в config_report должен проставляться relay_type=NO при отсутствии поля."""
-        from mqtt_handlers import handle_config_report
-
-        topic = "hydro/gh-1/zn-1/nd-irrig-1/config_report"
+    async def test_handle_config_response_rejects_ok(self):
+        """Тест отклонения config_response со статусом OK (старый формат)."""
+        from main import handle_config_response
+        
+        topic = "hydro/gh-1/zn-1/nd-ph-1/config_response"
         payload_data = {
-            "node_id": "nd-irrig-1",
-            "version": 3,
-            "channels": [
-                {"name": "pump_main", "type": "ACTUATOR", "actuator_type": "PUMP"},
-                {"name": "valve_clean_fill", "type": "ACTUATOR", "actuator_type": "RELAY"},
-                {"name": "fan_air", "type": "ACTUATOR", "actuator_type": "FAN"},
-            ],
-        }
-        payload = json.dumps(payload_data).encode("utf-8")
-
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute, \
-             patch('mqtt_handlers.sync_node_channels_from_payload', new_callable=AsyncMock) as mock_sync, \
-             patch('mqtt_handlers._complete_binding_after_config_report', new_callable=AsyncMock), \
-             patch('mqtt_handlers.CONFIG_REPORT_RECEIVED'), \
-             patch('mqtt_handlers.CONFIG_REPORT_PROCESSED'):
-
-            mock_fetch.return_value = [
-                {
-                    "id": 1,
-                    "uid": "nd-irrig-1",
-                    "lifecycle_state": "REGISTERED_BACKEND",
-                    "zone_id": None,
-                    "pending_zone_id": 1,
-                }
-            ]
-
-            await handle_config_report(topic, payload)
-
-            stored_payload = mock_execute.call_args[0][1]
-            channels = stored_payload.get("channels", [])
-            relay_like = {c.get("name"): c for c in channels if isinstance(c, dict)}
-
-            assert relay_like["valve_clean_fill"].get("relay_type") == "NO"
-            assert relay_like["fan_air"].get("relay_type") == "NO"
-            assert "relay_type" not in relay_like["pump_main"]
-
-            sync_channels = mock_sync.call_args[0][2]
-            sync_map = {c.get("name"): c for c in sync_channels if isinstance(c, dict)}
-            assert sync_map["valve_clean_fill"].get("relay_type") == "NO"
-            assert sync_map["fan_air"].get("relay_type") == "NO"
-
-    @pytest.mark.asyncio
-    async def test_handle_config_report_buffers_when_node_missing(self):
-        """Тест буферизации config_report, если узел еще не зарегистрирован."""
-        from mqtt_handlers import handle_config_report
-
-        topic = "hydro/gh-temp/zn-temp/esp32-aabbccddeeff/config_report"
-        payload_data = {
-            "node_id": "esp32-aabbccddeeff",
-            "version": 1,
-            "channels": [
-                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
-            ],
+            "status": "OK"  # Старый формат (должен быть отклонен)
         }
         payload = json.dumps(payload_data).encode('utf-8')
-
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers._store_pending_config_report', new_callable=AsyncMock) as mock_store:
-
-            mock_fetch.return_value = []
-
-            await handle_config_report(topic, payload)
-
-            mock_store.assert_awaited_once_with("esp32-aabbccddeeff", topic, payload)
-
-    @pytest.mark.asyncio
-    async def test_process_pending_config_report_after_registration(self):
-        """Тест обработки буферизованного config_report после регистрации."""
-        from mqtt_handlers import (
-            _process_pending_config_report_after_registration,
-            _PENDING_CONFIG_REPORTS,
-        )
-
-        hardware_id = "esp32-aabbccddeeff"
-        topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config_report"
-        payload = b'{"node_id":"esp32-aabbccddeeff","version":1}'
-
-        _PENDING_CONFIG_REPORTS.clear()
-        _PENDING_CONFIG_REPORTS[hardware_id] = {
-            "topic": topic,
-            "payload": payload,
-            "ts": datetime.now().timestamp(),
-        }
-
-        with patch('mqtt_handlers.handle_config_report', new_callable=AsyncMock) as mock_handle:
-            await _process_pending_config_report_after_registration(hardware_id)
-
-            mock_handle.assert_awaited_once_with(topic, payload)
-            assert hardware_id not in _PENDING_CONFIG_REPORTS
-
-    @pytest.mark.asyncio
-    async def test_handle_config_report_temp_topic_maps_hardware_id(self):
-        """Тест обработки config_report из temp топика с hardware_id."""
-        from mqtt_handlers import handle_config_report
-
-        topic = "hydro/gh-temp/zn-temp/esp32-aabbccddeeff/config_report"
-        payload_data = {
-            "node_id": "esp32-aabbccddeeff",
-            "version": 3,
-            "channels": [
-                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
-            ],
-        }
-        payload = json.dumps(payload_data).encode('utf-8')
-
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute, \
-             patch('mqtt_handlers.sync_node_channels_from_payload', new_callable=AsyncMock) as mock_sync, \
-             patch('mqtt_handlers._complete_binding_after_config_report', new_callable=AsyncMock) as mock_complete, \
-             patch('mqtt_handlers.CONFIG_REPORT_RECEIVED') as mock_received, \
-             patch('mqtt_handlers.CONFIG_REPORT_PROCESSED') as mock_processed:
-
-            mock_fetch.return_value = [
-                {
-                    "id": 7,
-                    "uid": "nd-ph-esp32aa-1",
-                    "lifecycle_state": "REGISTERED_BACKEND",
-                    "zone_id": None,
-                    "pending_zone_id": 1,
-                }
-            ]
-
-            await handle_config_report(topic, payload)
-
+        
+        with patch('main.CONFIG_RESPONSE_RECEIVED') as mock_received, \
+             patch('main.CONFIG_RESPONSE_ERROR') as mock_error:
+            
+            await handle_config_response(topic, payload)
+            
+            # Проверяем, что сообщение было получено
             mock_received.inc.assert_called_once()
-            mock_execute.assert_called_once()
-            updated_payload = mock_execute.call_args[0][1]
-            assert updated_payload["node_id"] == "nd-ph-esp32aa-1"
-            mock_sync.assert_called_once()
-            mock_complete.assert_called_once_with(
-                mock_fetch.return_value[0],
-                "nd-ph-esp32aa-1",
-                is_temp_topic=True,
-                topic_gh_uid="gh-temp",
-                topic_zone_uid="zn-temp",
-            )
-            mock_processed.inc.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_complete_binding_skips_duplicate_transition_after_first_success(self):
-        """Повторный config_report не должен повторно выполнять service-update и lifecycle transition."""
-        from mqtt_handlers import (
-            _BINDING_COMPLETION_LOCKS,
-            _complete_binding_after_config_report,
-        )
-
-        _BINDING_COMPLETION_LOCKS.clear()
-
-        node_snapshot = {
-            "id": 7,
-            "uid": "nd-ph-esp32aa-1",
-            "lifecycle_state": "REGISTERED_BACKEND",
-            "zone_id": None,
-            "pending_zone_id": 1,
-        }
-
-        update_response = MagicMock(status_code=200, text="OK")
-        transition_response = MagicMock(status_code=200, text="OK")
-        http_client = AsyncMock()
-        http_client.patch = AsyncMock(return_value=update_response)
-        http_client.post = AsyncMock(return_value=transition_response)
-
-        client_ctx = AsyncMock()
-        client_ctx.__aenter__.return_value = http_client
-        client_ctx.__aexit__.return_value = False
-
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.get_settings') as mock_settings, \
-             patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
-
-            mock_fetch.side_effect = [
-                [
-                    {
-                        "lifecycle_state": "REGISTERED_BACKEND",
-                        "zone_id": None,
-                        "pending_zone_id": 1,
-                    }
-                ],
-                [{"id": 1, "zone_uid": "zn-1", "greenhouse_uid": "gh-1"}],
-                [
-                    {
-                        "lifecycle_state": "ASSIGNED_TO_ZONE",
-                        "zone_id": 1,
-                        "pending_zone_id": None,
-                    }
-                ],
-            ]
-
-            mock_settings.return_value.laravel_api_url = "http://laravel"
-            mock_settings.return_value.history_logger_api_token = "test-token"
-            mock_settings.return_value.ingest_token = None
-
-            await _complete_binding_after_config_report(
-                node_snapshot,
-                "nd-ph-esp32aa-1",
-                topic_gh_uid="gh-1",
-                topic_zone_uid="zn-1",
-            )
-            await _complete_binding_after_config_report(
-                node_snapshot,
-                "nd-ph-esp32aa-1",
-                topic_gh_uid="gh-1",
-                topic_zone_uid="zn-1",
-            )
-
-        assert http_client.patch.await_count == 1
-        assert http_client.post.await_count == 1
-
-    @pytest.mark.asyncio
-    async def test_complete_binding_deferred_on_stale_namespace_report(self):
-        from mqtt_handlers import (
-            _BINDING_COMPLETION_LOCKS,
-            _complete_binding_after_config_report,
-        )
-
-        _BINDING_COMPLETION_LOCKS.clear()
-
-        node_snapshot = {
-            "id": 8,
-            "uid": "nd-ec-esp32aa-1",
-            "lifecycle_state": "REGISTERED_BACKEND",
-            "zone_id": None,
-            "pending_zone_id": 2,
-        }
-
-        update_response = MagicMock(status_code=200, text="OK")
-        transition_response = MagicMock(status_code=200, text="OK")
-        http_client = AsyncMock()
-        http_client.patch = AsyncMock(return_value=update_response)
-        http_client.post = AsyncMock(return_value=transition_response)
-
-        client_ctx = AsyncMock()
-        client_ctx.__aenter__.return_value = http_client
-        client_ctx.__aexit__.return_value = False
-
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.get_settings') as mock_settings, \
-             patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
-
-            mock_fetch.side_effect = [
-                [
-                    {
-                        "lifecycle_state": "REGISTERED_BACKEND",
-                        "zone_id": None,
-                        "pending_zone_id": 2,
-                    }
-                ],
-                [{"id": 2, "zone_uid": "zn-target-2", "greenhouse_uid": "gh-target-1"}],
-            ]
-
-            mock_settings.return_value.laravel_api_url = "http://laravel"
-            mock_settings.return_value.history_logger_api_token = "test-token"
-            mock_settings.return_value.ingest_token = None
-
-            await _complete_binding_after_config_report(
-                node_snapshot,
-                "nd-ec-esp32aa-1",
-                topic_gh_uid="gh-old-1",
-                topic_zone_uid="zn-old-2",
-            )
-
-        assert http_client.patch.await_count == 0
-        assert http_client.post.await_count == 0
+            # Но не должно быть успешной обработки (статус не ACK)
+            # В реальной реализации статус "OK" не обрабатывается
 
 
 class TestHeartbeatFormatSync:
@@ -439,7 +182,7 @@ class TestHeartbeatFormatSync:
     @pytest.mark.asyncio
     async def test_handle_heartbeat_with_firmware_format(self):
         """Тест обработки heartbeat в формате от прошивок."""
-        from mqtt_handlers import handle_heartbeat
+        from main import handle_heartbeat
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/heartbeat"
         payload_data = {
@@ -449,8 +192,8 @@ class TestHeartbeatFormatSync:
         }
         payload = json.dumps(payload_data).encode('utf-8')
         
-        with patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute, \
-             patch('mqtt_handlers.HEARTBEAT_RECEIVED') as mock_received:
+        with patch('main.execute', new_callable=AsyncMock) as mock_execute, \
+             patch('main.HEARTBEAT_RECEIVED') as mock_received:
             
             await handle_heartbeat(topic, payload)
             
@@ -466,7 +209,7 @@ class TestNodeHelloFormatSync:
     @pytest.mark.asyncio
     async def test_handle_node_hello_with_firmware_format(self):
         """Тест обработки node_hello в формате от прошивок."""
-        from mqtt_handlers import handle_node_hello
+        from main import handle_node_hello
         
         topic = "hydro/node_hello"
         payload_data = {
@@ -483,8 +226,8 @@ class TestNodeHelloFormatSync:
         mock_response.text = "OK"
         
         with patch('httpx.AsyncClient.post', new_callable=AsyncMock) as mock_post, \
-             patch('mqtt_handlers.NODE_HELLO_RECEIVED') as mock_received, \
-             patch('mqtt_handlers.get_settings') as mock_settings:
+             patch('main.NODE_HELLO_RECEIVED') as mock_received, \
+             patch('main.get_settings') as mock_settings:
             
             mock_post.return_value = mock_response
             mock_settings.return_value.laravel_api_url = "http://localhost/api"
@@ -497,49 +240,13 @@ class TestNodeHelloFormatSync:
             # Проверяем, что был вызван Laravel API
             assert mock_post.called
 
-    @pytest.mark.asyncio
-    async def test_handle_node_hello_normalizes_non_canonical_node_type_to_unknown(self):
-        """Тест strict-нормализации node_type перед отправкой в Laravel."""
-        from mqtt_handlers import handle_node_hello
-
-        topic = "hydro/node_hello"
-        payload = json.dumps(
-            {
-                "message_type": "node_hello",
-                "hardware_id": "esp32-legacy-node-type",
-                "node_type": "pump_node",
-                "fw_version": "v5.1.0",
-            }
-        ).encode("utf-8")
-
-        mock_response = MagicMock()
-        mock_response.status_code = 201
-        mock_response.text = "OK"
-        mock_response.json.return_value = {"data": {"uid": "nd-unknown-1"}}
-
-        with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post, \
-             patch("mqtt_handlers.get_settings") as mock_settings, \
-             patch("mqtt_handlers.NODE_HELLO_RECEIVED"), \
-             patch("mqtt_handlers.NODE_HELLO_REGISTERED"), \
-             patch("mqtt_handlers._process_pending_config_report_after_registration", new_callable=AsyncMock):
-            mock_post.return_value = mock_response
-            mock_settings.return_value.laravel_api_url = "http://localhost/api"
-            mock_settings.return_value.history_logger_api_token = "test-token"
-            mock_settings.return_value.ingest_token = "test-token"
-            mock_settings.return_value.laravel_api_timeout_sec = 5
-
-            await handle_node_hello(topic, payload)
-
-        sent_payload = mock_post.await_args.kwargs["json"]
-        assert sent_payload["node_type"] == "unknown"
-
 
 class TestTopicFormatSync:
     """Тесты синхронизации формата топиков."""
     
     def test_telemetry_topic_format(self):
         """Тест формата топика телеметрии."""
-        from utils import _extract_channel_from_topic, _extract_node_uid, _extract_zone_uid
+        from main import _extract_channel_from_topic, _extract_node_uid, _extract_zone_uid
         
         # Правильный формат: hydro/{gh}/{zone}/{node}/{channel}/telemetry
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
@@ -550,7 +257,7 @@ class TestTopicFormatSync:
     
     def test_heartbeat_topic_format(self):
         """Тест формата топика heartbeat."""
-        from utils import _extract_node_uid, _extract_zone_uid
+        from main import _extract_node_uid, _extract_zone_uid
         
         # Формат: hydro/{gh}/{zone}/{node}/heartbeat
         topic = "hydro/gh-1/zn-1/nd-ph-1/heartbeat"
@@ -558,12 +265,12 @@ class TestTopicFormatSync:
         assert _extract_zone_uid(topic) == "zn-1"
         assert _extract_node_uid(topic) == "nd-ph-1"
     
-    def test_config_report_topic_format(self):
-        """Тест формата топика config_report."""
-        from utils import _extract_node_uid, _extract_zone_uid
+    def test_config_response_topic_format(self):
+        """Тест формата топика config_response."""
+        from main import _extract_node_uid, _extract_zone_uid
         
-        # Формат: hydro/{gh}/{zone}/{node}/config_report
-        topic = "hydro/gh-1/zn-1/nd-ph-1/config_report"
+        # Формат: hydro/{gh}/{zone}/{node}/config_response
+        topic = "hydro/gh-1/zn-1/nd-ph-1/config_response"
         
         assert _extract_zone_uid(topic) == "zn-1"
         assert _extract_node_uid(topic) == "nd-ph-1"
@@ -574,7 +281,7 @@ class TestPayloadValidation:
     
     def test_telemetry_payload_required_fields(self):
         """Тест обязательных полей в payload телеметрии."""
-        from models import TelemetryPayloadModel
+        from main import TelemetryPayloadModel
         from pydantic import ValidationError
         
         # Валидный payload (только обязательные поля)
@@ -595,7 +302,7 @@ class TestPayloadValidation:
     
     def test_telemetry_payload_optional_fields(self):
         """Тест опциональных полей в payload телеметрии."""
-        from models import TelemetryPayloadModel
+        from main import TelemetryPayloadModel
         
         # Полный payload со всеми опциональными полями
         payload = TelemetryPayloadModel(
@@ -615,3 +322,4 @@ class TestPayloadValidation:
         assert payload.raw == 1465
         assert payload.stub is False
         assert payload.stable is True
+

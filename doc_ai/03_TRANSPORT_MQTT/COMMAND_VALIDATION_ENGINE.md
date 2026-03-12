@@ -5,10 +5,6 @@
 Документ описывает полную архитектуру проверки команд (Command Validation)
 в системе 2.0. Это критический слой безопасности между Python → ESP32 узлами.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Основная концепция
@@ -32,8 +28,8 @@ Laravel → Python Scheduler → ESP32 Firmware
  "cmd": "dose",
  "params": { "ml": 1.2 },
  "cmd_id": "cmd-abc123",
- "ts": 1737355112,
- "sig": "a1b2c3d4e5f6..."
+ "ts": 1737355112000,
+ "sig": "HMAC_SHA256(cmd|ts|node_secret)"
 }
 ```
 
@@ -41,13 +37,11 @@ Laravel → Python Scheduler → ESP32 Firmware
 
 | Поле | Описание |
 |------|----------|
-| cmd | действие (string) |
-| params | аргументы команды (object, обязательное поле, может быть пустым) |
-| cmd_id | уникальный ID (string) |
-| ts | Unix timestamp в секундах (number, int64) |
-| sig | HMAC-SHA256 подпись в hex формате, 64 символа (string) |
-
-**Примечание:** Поля `ts` и `sig` обязательны. При отсутствии любого поля команда отклоняется.
+| cmd | действие |
+| params | аргументы команды |
+| cmd_id | уникальный ID |
+| ts | timestamp в ms |
+| sig | подпись |
 
 ---
 
@@ -82,19 +76,19 @@ abs(now - ts) < 10 секунд
 
 Пример:
 
-### Команда dose:
+### Команда DOSE:
 ```
 0.1 ≤ ml ≤ 5.0
 ```
 
-### Команда run_pump:
+### Команда RUN_PUMP:
 ```
-1 ≤ duration_ms ≤ 60000
+1 ≤ sec ≤ 60
 ```
 
-### Команда set_relay:
+### Команда LIGHT_ON:
 ```
-"cmd": "set_relay"
+"cmd": "on"
 ```
 
 ### Valve:
@@ -121,18 +115,13 @@ abs(now - ts) < 10 секунд
 
 ## 4.5. HMAC Sign
 
-Python вычисляет подпись по каноническому JSON команды:
+Python вычисляет подпись:
 
 ```
-sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
+sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
 ```
 
-Где `canonical_json`:
-- удаляет поле `sig`,
-- сортирует ключи объектов лексикографически,
-- сохраняет порядок массивов,
-- сериализует без пробелов,
-- формат чисел как в cJSON (`int` если целое, иначе 15/17 значащих).
+И добавляет ее в MQTT payload.
 
 ---
 
@@ -143,22 +132,14 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 ## 5.1. Timestamp
 
 ```
-abs(now - ts) < 10 секунд
+abs(now - ts) < 10 сек
 ```
-
-Где `now` и `ts` — Unix timestamp в секундах.
 
 ## 5.2. HMAC-подпись
 
 ```
-sig == HMAC_SHA256(node_secret, canonical_json(command_without_sig))
+sig == HMAC_SHA256(node_secret)
 ```
-
-Где:
-- `node_secret` — секретный ключ из NodeConfig (поле `node_secret`) или дефолтный
-- `canonical_json` — каноническая JSON-строка команды без `sig` (см. выше)
-- Подпись в hex формате (64 символа, нижний регистр)
-- Сравнение регистронезависимое
 
 ## 5.3. Параметры
 

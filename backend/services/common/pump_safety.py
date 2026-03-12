@@ -5,11 +5,10 @@ Pump Safety Engine - проверки безопасности насосов.
 """
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from .db import fetch, execute
 from .alerts import create_alert, AlertSource, AlertCode
 from .water_flow import check_water_level, check_flow, MIN_FLOW_THRESHOLD
-from .utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -20,40 +19,6 @@ DRY_RUN_CHECK_DELAY_SEC = 3  # Задержка перед проверкой fl
 MAX_RECENT_FAILURES = 3  # Максимальное количество недавних ошибок
 FAILURE_WINDOW_MINUTES = 30  # Окно времени для подсчёта ошибок
 MCU_OFFLINE_TIMEOUT_SEC = 300  # 5 минут - время без телеметрии для определения offline
-
-
-def _to_naive_utc(value: Optional[datetime]) -> Optional[datetime]:
-    if value is None:
-        return None
-    if getattr(value, "tzinfo", None):
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value
-
-
-def _is_telemetry_grace_active(
-    *,
-    row: Dict[str, Any],
-    now: datetime,
-    telemetry_grace_sec: int,
-    grace_node_types: set[str],
-) -> bool:
-    if telemetry_grace_sec <= 0 or not grace_node_types:
-        return False
-
-    node_type = str(row.get("type") or "").strip().lower()
-    if not node_type or node_type not in grace_node_types:
-        return False
-
-    last_seen_at = _to_naive_utc(row.get("last_seen_at"))
-    last_heartbeat_at = _to_naive_utc(row.get("last_heartbeat_at"))
-    reference_ts = max(
-        ts for ts in (last_seen_at, last_heartbeat_at) if ts is not None
-    ) if (last_seen_at is not None or last_heartbeat_at is not None) else None
-    if reference_ts is None:
-        return False
-
-    elapsed_sec = (now - reference_ts).total_seconds()
-    return elapsed_sec <= telemetry_grace_sec
 
 
 async def check_dry_run(zone_id: int, min_water_level: Optional[float] = None) -> tuple[bool, Optional[str]]:
@@ -116,8 +81,7 @@ async def check_no_flow(
     Returns:
         (is_ok, error_message): True если поток есть, False если отсутствует
     """
-    now = utcnow().replace(tzinfo=None)
-    pump_start_time = _to_naive_utc(pump_start_time)
+    now = datetime.utcnow()
     elapsed_sec = (now - pump_start_time).total_seconds()
     
     # Проверяем только если прошло больше DRY_RUN_CHECK_DELAY_SEC секунд
@@ -153,12 +117,7 @@ async def check_no_flow(
     return True, None
 
 
-async def check_mcu_offline(
-    zone_id: int,
-    node_id: Optional[int] = None,
-    telemetry_grace_sec: int = 0,
-    grace_node_types: Optional[List[str]] = None,
-) -> tuple[bool, Optional[str]]:
+async def check_mcu_offline(zone_id: int, node_id: Optional[int] = None) -> tuple[bool, Optional[str]]:
     """
     Проверка, не оффлайн ли MCU (узел).
     
@@ -167,8 +126,6 @@ async def check_mcu_offline(
     Args:
         zone_id: ID зоны
         node_id: ID узла (опционально, если не указан, проверяются все узлы зоны)
-        telemetry_grace_sec: Допустимая задержка телеметрии для selected типов нод
-        grace_node_types: Типы нод, для которых разрешен grace при отсутствии/stale telemetry
     
     Returns:
         (is_online, error_message): True если MCU онлайн, False если оффлайн
@@ -177,12 +134,11 @@ async def check_mcu_offline(
         # Проверяем конкретный узел
         rows = await fetch(
             """
-            SELECT n.id, n.type, n.status, n.last_seen_at, n.last_heartbeat_at, MAX(tl.updated_at) as last_telemetry
+            SELECT n.id, n.status, MAX(tl.updated_at) as last_telemetry
             FROM nodes n
-            LEFT JOIN sensors s ON s.node_id = n.id
-            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            LEFT JOIN telemetry_last tl ON tl.node_id = n.id
             WHERE n.id = $1 AND n.zone_id = $2
-            GROUP BY n.id, n.type, n.status, n.last_seen_at, n.last_heartbeat_at
+            GROUP BY n.id, n.status
             """,
             node_id,
             zone_id,
@@ -191,12 +147,11 @@ async def check_mcu_offline(
         # Проверяем все узлы зоны
         rows = await fetch(
             """
-            SELECT n.id, n.type, n.status, n.last_seen_at, n.last_heartbeat_at, MAX(tl.updated_at) as last_telemetry
+            SELECT n.id, n.status, MAX(tl.updated_at) as last_telemetry
             FROM nodes n
-            LEFT JOIN sensors s ON s.node_id = n.id
-            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+            LEFT JOIN telemetry_last tl ON tl.node_id = n.id
             WHERE n.zone_id = $1
-            GROUP BY n.id, n.type, n.status, n.last_seen_at, n.last_heartbeat_at
+            GROUP BY n.id, n.status
             """,
             zone_id,
         )
@@ -204,38 +159,22 @@ async def check_mcu_offline(
     if not rows:
         return False, "No nodes found for zone"
     
-    now = utcnow().replace(tzinfo=None)
-    grace_types = {
-        str(item).strip().lower()
-        for item in (grace_node_types or [])
-        if str(item).strip()
-    }
-    telemetry_grace_sec = max(0, int(telemetry_grace_sec or 0))
+    now = datetime.utcnow()
     for row in rows:
         node_status = row.get("status")
-        last_telemetry = _to_naive_utc(row.get("last_telemetry"))
+        last_telemetry = row.get("last_telemetry")
         
         # Проверяем статус узла
         if node_status != "online":
             return False, f"Node {row['id']} status is {node_status}"
         
         # Проверяем последнюю телеметрию
-        grace_active = _is_telemetry_grace_active(
-            row=row,
-            now=now,
-            telemetry_grace_sec=telemetry_grace_sec,
-            grace_node_types=grace_types,
-        )
         if last_telemetry:
             elapsed_sec = (now - last_telemetry).total_seconds()
             if elapsed_sec > MCU_OFFLINE_TIMEOUT_SEC:
-                if grace_active:
-                    continue
                 return False, f"Node {row['id']} offline: no telemetry for {elapsed_sec:.0f}s"
         else:
             # Если нет телеметрии вообще, считаем оффлайн
-            if grace_active:
-                continue
             return False, f"Node {row['id']} offline: no telemetry data"
     
     return True, None
@@ -408,24 +347,6 @@ async def get_active_critical_alerts(zone_id: int) -> List[Dict[str, Any]]:
     return rows or []
 
 
-async def resolve_active_critical_alerts_by_code(zone_id: int, codes: List[str]) -> None:
-    """Resolve ACTIVE alerts by code for the zone."""
-    normalized_codes = [str(code).strip().lower() for code in codes if str(code).strip()]
-    if not normalized_codes:
-        return
-    await execute(
-        """
-        UPDATE alerts
-        SET status = 'RESOLVED', resolved_at = NOW()
-        WHERE zone_id = $1
-          AND code = ANY($2)
-          AND status = 'ACTIVE'
-        """,
-        zone_id,
-        normalized_codes,
-    )
-
-
 async def too_many_recent_failures(
     zone_id: int,
     pump_channel: str,
@@ -444,7 +365,7 @@ async def too_many_recent_failures(
     Returns:
         True если слишком много ошибок, False если нормально
     """
-    window_start = utcnow().replace(tzinfo=None) - timedelta(minutes=window_minutes)
+    window_start = datetime.utcnow() - timedelta(minutes=window_minutes)
     
     critical_codes = [
         AlertCode.BIZ_OVERCURRENT.value,
@@ -472,36 +393,11 @@ async def too_many_recent_failures(
     return failure_count >= max_failures
 
 
-async def _resolve_pump_node_ids(zone_id: int, pump_channel: str) -> List[int]:
-    rows = await fetch(
-        """
-        SELECT DISTINCT n.id
-        FROM nodes n
-        JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1
-          AND LOWER(TRIM(COALESCE(nc.channel, ''))) = LOWER(TRIM($2))
-        ORDER BY n.id
-        """,
-        zone_id,
-        pump_channel,
-    )
-    resolved: List[int] = []
-    for row in rows or []:
-        raw_id = row.get("id")
-        try:
-            resolved.append(int(raw_id))
-        except (TypeError, ValueError):
-            continue
-    return resolved
-
-
 async def can_run_pump(
     zone_id: int,
     pump_channel: str,
     min_water_level: Optional[float] = None,
-    node_id: Optional[int] = None,
-    telemetry_grace_sec: int = 0,
-    grace_node_types: Optional[List[str]] = None,
+    node_id: Optional[int] = None
 ) -> tuple[bool, Optional[str]]:
     """
     Общая функция проверки безопасности перед запуском насоса.
@@ -517,52 +413,21 @@ async def can_run_pump(
         pump_channel: Канал насоса
         min_water_level: Минимальный уровень воды (опционально)
         node_id: ID узла (опционально, для проверки конкретного узла)
-        telemetry_grace_sec: Допустимая задержка телеметрии для grace-типов нод
-        grace_node_types: Типы нод, которым разрешен grace при старте после активации
     
     Returns:
         (can_run, error_message): True если можно запустить, False если нельзя
     """
-    target_node_ids: List[int] = []
-    if node_id is not None:
-        target_node_ids = [int(node_id)]
-    else:
-        target_node_ids = await _resolve_pump_node_ids(zone_id, pump_channel)
-
-    if target_node_ids:
-        for target_node_id in target_node_ids:
-            mcu_online, mcu_error = await check_mcu_offline(
-                zone_id,
-                target_node_id,
-                telemetry_grace_sec=telemetry_grace_sec,
-                grace_node_types=grace_node_types,
-            )
-            if not mcu_online:
-                return False, f"MCU offline: {mcu_error}"
-    else:
-        mcu_online, mcu_error = await check_mcu_offline(
-            zone_id,
-            None,
-            telemetry_grace_sec=telemetry_grace_sec,
-            grace_node_types=grace_node_types,
-        )
-        if not mcu_online:
-            return False, f"MCU offline: {mcu_error}"
-
-    # Проверяем уровень воды (dry_run) в реальном времени
-    dry_run_ok, dry_run_msg = await check_dry_run(zone_id, min_water_level)
-    if not dry_run_ok:
-        return False, dry_run_msg
-
-    # Если уровень восстановился, закрываем sticky dry-run alert.
-    # Dry-run валидируется динамически выше и не должен блокировать бесконечно.
-    await resolve_active_critical_alerts_by_code(zone_id, [AlertCode.BIZ_DRY_RUN.value])
-
+    # Проверяем MCU offline
+    mcu_online, mcu_error = await check_mcu_offline(zone_id, node_id)
+    if not mcu_online:
+        return False, f"MCU offline: {mcu_error}"
+    
     # Проверяем активные критические алерты
     active_alerts = await get_active_critical_alerts(zone_id)
     critical_codes = {
         AlertCode.BIZ_OVERCURRENT.value,
         AlertCode.BIZ_NO_FLOW.value,
+        AlertCode.BIZ_DRY_RUN.value,
         AlertCode.BIZ_PUMP_STUCK_ON.value,
     }
     
@@ -570,8 +435,14 @@ async def can_run_pump(
         if alert["code"] in critical_codes:
             return False, f"Active critical alert: {alert['code']}"
     
+    # Проверяем уровень воды (dry_run)
+    dry_run_ok, dry_run_msg = await check_dry_run(zone_id, min_water_level)
+    if not dry_run_ok:
+        return False, dry_run_msg
+    
     # Проверяем количество недавних ошибок
     if await too_many_recent_failures(zone_id, pump_channel):
         return False, f"Too many recent failures for pump {pump_channel}"
     
     return True, None
+

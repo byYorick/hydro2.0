@@ -7,14 +7,12 @@ use App\Events\CommandFailed;
 use App\Events\CommandStatusUpdated;
 use App\Events\EventCreated;
 use App\Events\NodeConfigUpdated;
-use App\Events\TelemetryBatchUpdated;
 use App\Events\ZoneUpdated;
-use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
-use Tests\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
@@ -51,7 +49,7 @@ class EventBroadcastingTest extends TestCase
             return $e->commandId === 101
                 && $e->status === 'completed'
                 && $e->zoneId === 5
-                && $e->broadcastOn()->name === 'private-hydro.commands.5';
+                && $e->broadcastOn()->name === 'private-commands.5';
         });
     }
 
@@ -74,7 +72,7 @@ class EventBroadcastingTest extends TestCase
 
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) {
             return $e->commandId === 202
-                && $e->broadcastOn()->name === 'private-hydro.commands.global';
+                && $e->broadcastOn()->name === 'private-commands.global';
         });
     }
 
@@ -142,27 +140,7 @@ class EventBroadcastingTest extends TestCase
 
         Event::assertDispatched(NodeConfigUpdated::class, function ($e) use ($node) {
             return $e->node->id === $node->id
-                && $e->broadcastOn()->name === "private-hydro.zones.{$node->zone_id}";
-        });
-    }
-
-    public function test_telemetry_batch_updated_broadcasts(): void
-    {
-        Event::fake();
-
-        $event = new TelemetryBatchUpdated(12, [[
-            'node_id' => 501,
-            'channel' => 'ec_sensor',
-            'metric_type' => 'EC',
-            'value' => 1.4,
-            'ts' => 1700000000000,
-        ]]);
-
-        event($event);
-
-        Event::assertDispatched(TelemetryBatchUpdated::class, function ($e) {
-            return $e->broadcastOn()->name === 'private-hydro.zones.12'
-                && $e->broadcastAs() === 'telemetry.batch.updated';
+                && $e->broadcastOn()->name === 'private-hydro.devices';
         });
     }
 
@@ -177,7 +155,6 @@ class EventBroadcastingTest extends TestCase
             commandId: 303,
             message: 'Ошибка выполнения',
             error: 'Connection timeout',
-            status: Command::STATUS_ERROR,
             zoneId: 7
         );
 
@@ -187,7 +164,7 @@ class EventBroadcastingTest extends TestCase
             return $e->commandId === 303
                 && $e->error === 'Connection timeout'
                 && $e->zoneId === 7
-                && $e->broadcastOn()->name === 'private-hydro.commands.7';
+                && $e->broadcastOn()->name === 'private-commands.7';
         });
     }
 
@@ -208,7 +185,7 @@ class EventBroadcastingTest extends TestCase
 
         Event::assertDispatched(EventCreated::class, function ($e) {
             return $e->id === 1001
-                && $e->broadcastOn()->name === 'private-hydro.events.global';
+                && $e->broadcastOn()->name === 'private-events.global';
         });
     }
 
@@ -219,7 +196,7 @@ class EventBroadcastingTest extends TestCase
     {
         $event = new CommandStatusUpdated(
             commandId: 404,
-            status: 'QUEUED',
+            status: 'queued',
             message: 'Ожидание выполнения',
             error: null,
             zoneId: 15
@@ -228,7 +205,7 @@ class EventBroadcastingTest extends TestCase
         $data = $event->broadcastWith();
 
         $this->assertEquals(404, $data['commandId']);
-        $this->assertEquals('QUEUED', $data['status']);
+        $this->assertEquals('queued', $data['status']);
         $this->assertEquals('Ожидание выполнения', $data['message']);
         $this->assertNull($data['error']);
         $this->assertEquals(15, $data['zoneId']);
@@ -255,3 +232,4 @@ class EventBroadcastingTest extends TestCase
         $this->assertEquals('PAUSED', $data['zone']['status']);
     }
 }
+

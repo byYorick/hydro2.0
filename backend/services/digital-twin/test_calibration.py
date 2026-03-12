@@ -4,7 +4,6 @@ Tests for Digital Twin calibration module.
 import pytest
 from unittest.mock import AsyncMock, patch, Mock
 from datetime import datetime, timedelta
-from common.utils.time import utcnow
 import sys
 from pathlib import Path
 
@@ -37,7 +36,7 @@ async def test_calibrate_ph_model_insufficient_data():
 @pytest.mark.asyncio
 async def test_calibrate_ph_model_natural_drift():
     """Test PH model calibration - natural drift calculation."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # Создаем тестовые данные: pH постепенно снижается без дозировок
     ph_samples = [
@@ -67,7 +66,7 @@ async def test_calibrate_ph_model_natural_drift():
 @pytest.mark.asyncio
 async def test_calibrate_ph_model_correction_rate():
     """Test PH model calibration - correction rate after dosing."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # pH samples с дозировкой в середине
     ph_samples = [
@@ -117,7 +116,7 @@ async def test_calibrate_ec_model_insufficient_data():
 @pytest.mark.asyncio
 async def test_calibrate_ec_model_evaporation():
     """Test EC model calibration - evaporation rate."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # EC постепенно увеличивается без дозировок (испарение)
     ec_samples = [
@@ -146,7 +145,7 @@ async def test_calibrate_ec_model_evaporation():
 @pytest.mark.asyncio
 async def test_calibrate_ec_model_nutrient_addition():
     """Test EC model calibration - nutrient addition rate."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # EC samples с дозировкой питательных веществ
     ec_samples = [
@@ -196,7 +195,7 @@ async def test_calibrate_climate_model_insufficient_data():
 @pytest.mark.asyncio
 async def test_calibrate_climate_model_heat_loss():
     """Test climate model calibration - heat loss rate."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # Температура постепенно снижается
     temp_samples = [
@@ -226,7 +225,7 @@ async def test_calibrate_climate_model_heat_loss():
 @pytest.mark.asyncio
 async def test_calibrate_climate_model_humidity_decay():
     """Test climate model calibration - humidity decay rate."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # Температура (нужна для первого запроса)
     temp_samples = [
@@ -261,7 +260,7 @@ async def test_calibrate_climate_model_humidity_decay():
 @pytest.mark.asyncio
 async def test_calibrate_zone_models_full():
     """Test full zone models calibration."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # Подготовка данных для всех моделей
     ph_samples = [
@@ -337,7 +336,7 @@ async def test_calibrate_zone_models_full():
 @pytest.mark.asyncio
 async def test_calibrate_ph_model_with_dosing_commands():
     """Test PH model calibration with actual dosing commands."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # pH samples: до дозировки 6.0, после 6.15
     ph_samples = [
@@ -373,7 +372,7 @@ async def test_calibrate_ph_model_with_dosing_commands():
 @pytest.mark.asyncio
 async def test_calibrate_ec_model_with_nutrient_commands():
     """Test EC model calibration with nutrient dosing commands."""
-    now = utcnow()
+    now = datetime.utcnow()
     
     # EC samples: до дозировки 1.2, после 1.25
     ec_samples = [
@@ -404,3 +403,4 @@ async def test_calibrate_ec_model_with_nutrient_commands():
         assert "evaporation_rate" in result
         assert "nutrient_addition_rate" in result
         assert result["nutrient_addition_rate"] > 0
+

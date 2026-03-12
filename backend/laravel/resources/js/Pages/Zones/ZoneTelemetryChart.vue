@@ -1,59 +1,57 @@
 <template>
   <Card class="relative">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-sm font-semibold">
-        {{ title }}
-      </div>
+      <div class="text-sm font-semibold">{{ title }}</div>
       <div class="flex items-center gap-2">
-        <div class="text-xs text-[color:var(--text-dim)] hidden sm:inline">
+        <div class="text-xs text-neutral-500 hidden sm:inline">
           <span class="mr-2">🖱️ Колесо мыши — zoom</span>
           <span>Перетаскивание — pan</span>
         </div>
         <Button 
           size="sm" 
           variant="outline" 
+          @click="exportData"
           class="text-xs"
           title="Экспорт данных"
-          @click="exportData"
         >
           📥 Экспорт
         </Button>
         <div class="flex gap-1">
-          <Button 
-            size="sm" 
-            :variant="timeRange === '1H' ? 'default' : 'secondary'" 
-            @click="setRange('1H')"
-          >
-            1H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '24H' ? 'default' : 'secondary'" 
-            @click="setRange('24H')"
-          >
-            24H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '7D' ? 'default' : 'secondary'" 
-            @click="setRange('7D')"
-          >
-            7D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '30D' ? 'default' : 'secondary'" 
-            @click="setRange('30D')"
-          >
-            30D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
-            @click="setRange('ALL')"
-          >
-            ALL
-          </Button>
+        <Button 
+          size="sm" 
+          :variant="timeRange === '1H' ? 'default' : 'secondary'" 
+          @click="setRange('1H')"
+        >
+          1H
+        </Button>
+        <Button 
+          size="sm" 
+          :variant="timeRange === '24H' ? 'default' : 'secondary'" 
+          @click="setRange('24H')"
+        >
+          24H
+        </Button>
+        <Button 
+          size="sm" 
+          :variant="timeRange === '7D' ? 'default' : 'secondary'" 
+          @click="setRange('7D')"
+        >
+          7D
+        </Button>
+        <Button 
+          size="sm" 
+          :variant="timeRange === '30D' ? 'default' : 'secondary'" 
+          @click="setRange('30D')"
+        >
+          30D
+        </Button>
+        <Button 
+          size="sm" 
+          :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
+          @click="setRange('ALL')"
+        >
+          ALL
+        </Button>
         </div>
       </div>
     </div>
@@ -62,13 +60,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import type { TelemetrySample } from '@/types'
-import { useTheme } from '@/composables/useTheme'
-import type { EChartsOption } from 'echarts'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
 
@@ -88,8 +84,6 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'time-range-change': [range: TimeRange]
 }>()
-
-const { theme } = useTheme()
 
 const setRange = (r: TimeRange): void => {
   emit('time-range-change', r)
@@ -128,32 +122,9 @@ function exportData(): void {
   URL.revokeObjectURL(url)
 }
 
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
-}
-
-const chartColors = computed(() => {
-  theme.value
-  return {
-    textPrimary: resolveCssColor('--text-primary', '#f3f4f6'),
-    textDim: resolveCssColor('--text-dim', '#9ca3af'),
-    borderMuted: resolveCssColor('--border-muted', '#374151'),
-    borderStrong: resolveCssColor('--border-strong', '#4b5563'),
-    tooltipBg: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
-    badgeNeutralBg: resolveCssColor('--badge-neutral-bg', 'rgba(75, 85, 99, 0.2)'),
-    badgeInfoBg: resolveCssColor('--badge-info-bg', 'rgba(96, 165, 250, 0.2)'),
-    accentCyan: resolveCssColor('--accent-cyan', '#60a5fa'),
-  }
-})
-
-const option = computed<EChartsOption>(() => {
+const option = computed(() => {
   const dataLength = props.data?.length || 0
   const hasLargeDataset = dataLength > 50 // Показываем DataZoom для наборов данных > 50 точек
-  const colors = chartColors.value
   
   return {
     tooltip: { 
@@ -188,14 +159,14 @@ const option = computed<EChartsOption>(() => {
         
         return `${dateStr}, ${timeStr}<br/>${point.seriesName}: ${valueStr}`
       },
-      backgroundColor: colors.tooltipBg,
-      borderColor: colors.borderMuted,
+      backgroundColor: 'rgba(17, 24, 39, 0.95)', // neutral-900 с прозрачностью
+      borderColor: '#374151',
       borderWidth: 1,
       textStyle: {
-        color: colors.textPrimary,
+        color: '#f3f4f6',
         fontSize: 12,
       },
-      extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 8px 12px; border-radius: 6px;',
+      extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2); padding: 8px 12px; border-radius: 6px;',
     },
     grid: { 
       left: 50, 
@@ -205,23 +176,23 @@ const option = computed<EChartsOption>(() => {
       containLabel: true, // Автоматически подстраивает размеры под подписи осей
     },
     xAxis: {
-      type: 'time' as const,
+      type: 'time',
       axisLabel: { 
-        color: colors.textDim,
+        color: '#9ca3af',
         rotate: 0, // Не поворачиваем подписи
         formatter: (value: number) => {
           // Форматируем время для компактности
           const date = new Date(value)
           return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-        },
+        }
       },
-      axisLine: { lineStyle: { color: colors.borderMuted } },
-      boundaryGap: [0, 0], // График начинается от края
+      axisLine: { lineStyle: { color: '#374151' } },
+      boundaryGap: false, // График начинается от края
     },
     yAxis: {
-      type: 'value' as const,
+      type: 'value',
       axisLabel: { 
-        color: colors.textDim,
+        color: '#9ca3af',
         formatter: (value: number) => {
           // Компактный формат для больших чисел
           if (Math.abs(value) >= 1000) {
@@ -230,7 +201,7 @@ const option = computed<EChartsOption>(() => {
           return value.toFixed(1)
         }
       },
-      splitLine: { lineStyle: { color: colors.borderMuted } },
+      splitLine: { lineStyle: { color: '#1f2937' } },
       scale: false, // Не масштабируем ось автоматически
     },
     // DataZoom для навигации по данным (zoom и pan)
@@ -252,22 +223,22 @@ const option = computed<EChartsOption>(() => {
         handleIcon: 'path://M30.9,53.2C16.8,53.2,5.3,41.7,5.3,27.6S16.8,2,30.9,2C45,2,56.4,13.5,56.4,27.6S45,53.2,30.9,53.2z M30.9,3.5C17.6,3.5,6.8,14.4,6.8,27.6c0,13.3,10.8,24.1,24.1,24.1C44.2,51.7,55,40.9,55,27.6C54.9,14.4,44.1,3.5,30.9,3.5z M36.9,35.8c0,0.6-0.4,1-1,1H26.5c-0.6,0-1-0.4-1-1V19.4c0-0.6,0.4-1,1-1h9.4c0.6,0,1,0.4,1,1V35.8z',
         handleSize: '80%',
         handleStyle: {
-          color: colors.borderStrong,
-          borderColor: colors.borderMuted,
+          color: '#4b5563',
+          borderColor: '#6b7280',
         },
         textStyle: {
-          color: colors.textDim,
+          color: '#9ca3af',
           fontSize: 10,
         },
-        borderColor: colors.borderMuted,
-        fillerColor: colors.badgeNeutralBg,
+        borderColor: '#374151',
+        fillerColor: 'rgba(75, 85, 99, 0.2)',
         dataBackground: {
-          lineStyle: { color: colors.borderStrong },
-          areaStyle: { color: colors.badgeNeutralBg },
+          lineStyle: { color: '#4b5563' },
+          areaStyle: { color: 'rgba(75, 85, 99, 0.1)' },
         },
         selectedDataBackground: {
-          lineStyle: { color: colors.accentCyan },
-          areaStyle: { color: colors.badgeInfoBg },
+          lineStyle: { color: '#60a5fa' },
+          areaStyle: { color: 'rgba(96, 165, 250, 0.2)' },
         },
         minValueSpan: dataLength > 0 ? Math.min(3600000, (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 3600000) : 3600000,
       }] : []),
@@ -290,3 +261,4 @@ const option = computed<EChartsOption>(() => {
   }
 })
 </script>
+

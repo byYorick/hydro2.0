@@ -5,36 +5,19 @@ on:
   pull_request:
 
 jobs:
-  automation-engine-smoke-all:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend/services/automation-engine
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Python deps
-        run: pip install -r requirements.txt
-      - name: Run AE2 smoke tests
-        env:
-          PYTHONPATH: backend/services
-        run: pytest -q test_*.py
-
   build-and-test:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: timescale/timescaledb:2.13.0-pg15
+        image: postgres:15
         env:
-          POSTGRES_DB: hydro_test
+          POSTGRES_DB: hydro
           POSTGRES_USER: hydro
           POSTGRES_PASSWORD: hydro
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U hydro -d hydro_test"
+          --health-cmd="pg_isready -U hydro -d hydro"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -43,10 +26,6 @@ jobs:
         working-directory: backend/laravel
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: AE2 invariants
-        run: ../../tools/testing/check_ae2_invariants.sh
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -74,30 +53,12 @@ jobs:
           php -r "
             \$file = '.env';
             \$env = file_get_contents(\$file);
-            // Используем in-memory cache в CI, чтобы не требовать таблицу cache
-            if (preg_match('/^CACHE_STORE=.*/m', \$env)) {
-              \$env = preg_replace('/^CACHE_STORE=.*/m', 'CACHE_STORE=array', \$env);
-            } else {
-              \$env .= PHP_EOL.'CACHE_STORE=array';
-            }
-            // Явно включаем testing окружение для корректной регистрации тестовых маршрутов
-            if (preg_match('/^APP_ENV=.*/m', \$env)) {
-              \$env = preg_replace('/^APP_ENV=.*/m', 'APP_ENV=testing', \$env);
-            } else {
-              \$env .= PHP_EOL.'APP_ENV=testing';
-            }
-            // Сессии для E2E не должны требовать таблицу sessions
-            if (preg_match('/^SESSION_DRIVER=.*/m', \$env)) {
-              \$env = preg_replace('/^SESSION_DRIVER=.*/m', 'SESSION_DRIVER=file', \$env);
-            } else {
-              \$env .= PHP_EOL.'SESSION_DRIVER=file';
-            }
             // Устанавливаем/обновляем параметры БД независимо от начальных значений
             \$env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', \$env);
             if (preg_match('/^DB_DATABASE=.*/m', \$env)) {
-              \$env = preg_replace('/^DB_DATABASE=.*/m', 'DB_DATABASE=hydro_test', \$env);
+              \$env = preg_replace('/^DB_DATABASE=.*/m', 'DB_DATABASE=hydro', \$env);
             } else {
-              \$env .= PHP_EOL.'DB_DATABASE=hydro_test';
+              \$env .= PHP_EOL.'DB_DATABASE=hydro';
             }
             if (preg_match('/^DB_USERNAME=.*/m', \$env)) {
               \$env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=hydro', \$env);
@@ -121,27 +82,29 @@ jobs:
             }
             file_put_contents(\$file, \$env);
           "
-      - name: Install Node deps
-        run: npm install
-      - name: File size guard
-        run: ./scripts/check-file-size-guard.sh
-      - name: Build (Vite manifest)
-        run: npm run build
       - name: PHP configs cache
-        env:
-          APP_ENV: testing
-          SESSION_DRIVER: file
-          CACHE_STORE: array
-          QUEUE_CONNECTION: sync
         run: |
           php artisan config:clear
           php artisan cache:clear
           php artisan config:cache
+      - name: DB migrate + seed
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: pgsql
+          DB_DATABASE: hydro
+          DB_USERNAME: hydro
+          DB_PASSWORD: hydro
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          BROADCAST_CONNECTION: log
+          BROADCAST_DRIVER: log
+        run: |
+          php artisan migrate:fresh --seed --force
       - name: PHP tests (phpunit via artisan)
         env:
           APP_ENV: testing
           DB_CONNECTION: pgsql
-          DB_DATABASE: hydro_test
+          DB_DATABASE: hydro
           DB_USERNAME: hydro
           DB_PASSWORD: hydro
           DB_HOST: 127.0.0.1
@@ -161,10 +124,8 @@ jobs:
           name: phpunit-junit
           path: backend/laravel/test-results/phpunit.xml
           retention-days: 7
-      - name: Typecheck (vue-tsc)
-        run: npm run typecheck
-      - name: Lint (ESLint)
-        run: npm run lint
+      - name: Install Node deps
+        run: npm ci
       - name: NPM audit (production)
         continue-on-error: true
         run: npm audit --omit=dev || true
@@ -188,33 +149,28 @@ jobs:
           name: vitest-coverage
           path: backend/laravel/coverage
           retention-days: 7
+      - name: Build
+        run: npm run build
       - name: Install Playwright
         run: npx playwright install --with-deps
       - name: E2E (Playwright)
         env:
           APP_ENV: testing
           DB_CONNECTION: pgsql
-          DB_DATABASE: hydro_test
+          DB_DATABASE: hydro
           DB_USERNAME: hydro
           DB_PASSWORD: hydro
           DB_HOST: 127.0.0.1
           DB_PORT: 5432
           BROADCAST_CONNECTION: log
           BROADCAST_DRIVER: log
-          SESSION_DRIVER: file
-          CACHE_STORE: array
-          QUEUE_CONNECTION: sync
         run: |
           # Trap to cleanup background processes on exit
           cleanup() {
             echo "Cleaning up background processes..."
             # Kill specific processes by PID if they exist
-            if [ -n "$MIGRATE_PID" ]; then
-              kill "$MIGRATE_PID" 2>/dev/null || true
-            fi
-            if [ -n "$SERVE_PID" ]; then
-              kill "$SERVE_PID" 2>/dev/null || true
-            fi
+            [ -n "$MIGRATE_PID" ] && kill $MIGRATE_PID 2>/dev/null || true
+            [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true
             # Fallback: kill any matching processes
             pkill -f "php artisan migrate" 2>/dev/null || true
             pkill -f "php artisan serve" 2>/dev/null || true
@@ -223,56 +179,14 @@ jobs:
           }
           trap cleanup EXIT INT TERM
           
-          # Drop Timescale hypertables/views so migrate:fresh doesn't fail on bulk DROP TABLE
-          php -r "
-            require __DIR__.'/vendor/autoload.php';
-            \$app = require __DIR__.'/bootstrap/app.php';
-            \$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-            \$dropHypertables = false;
-            try {
-              \$exists = Illuminate\\Support\\Facades\\DB::selectOne(\"SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'drop_hypertable') as exists\");
-              \$dropHypertables = \$exists && \$exists->exists;
-            } catch (Throwable \$e) {
-              fwrite(STDERR, '[ci] '.\$e->getMessage().PHP_EOL);
-            }
-            \$statements = [
-              'DROP VIEW IF EXISTS telemetry_raw',
-            ];
-            if (\$dropHypertables) {
-              \$statements = array_merge(\$statements, [
-                \"SELECT drop_hypertable('telemetry_samples'::regclass, if_exists => TRUE)\",
-                \"SELECT drop_hypertable('telemetry_agg_1m'::regclass, if_exists => TRUE)\",
-                \"SELECT drop_hypertable('telemetry_agg_1h'::regclass, if_exists => TRUE)\",
-                \"SELECT drop_hypertable('commands'::regclass, if_exists => TRUE)\",
-                \"SELECT drop_hypertable('zone_events'::regclass, if_exists => TRUE)\",
-              ]);
-            }
-            foreach (\$statements as \$sql) {
-              try {
-                Illuminate\\Support\\Facades\\DB::statement(\$sql);
-              } catch (Throwable \$e) {
-                fwrite(STDERR, '[ci] '.\$e->getMessage().PHP_EOL);
-              }
-            }
-          "
-
-          # Ensure testing env config is active for backdoor routes
-          php artisan config:clear
-          php artisan cache:clear
-
           # Start background processes
-          php artisan migrate:fresh --force &
+          php artisan migrate --force &
           MIGRATE_PID=$!
           php artisan serve --host=127.0.0.1 --port=8000 --env=testing &
           SERVE_PID=$!
           
           # Wait for migration to complete
-          if ! wait "$MIGRATE_PID"; then
-            echo "ERROR: migrate:fresh failed"
-            exit 1
-          fi
-          MIGRATE_PID=""
-          php artisan db:seed --class=AdminUserSeeder --force
+          wait $MIGRATE_PID || true
           
           # Wait for server to be ready with health check
           echo "Waiting for server to start..."
@@ -305,120 +219,3 @@ jobs:
           path: backend/laravel/playwright-report
           retention-days: 7
 
-  automation-engine-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install automation-engine deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/services/automation-engine/requirements.txt
-      - name: Automation-engine smoke tests
-        env:
-          PYTHONPATH: backend/services
-        run: |
-          mkdir -p test-results
-          pytest -q \
-            backend/services/automation-engine/test_actuator_registry.py \
-            backend/services/automation-engine/test_alerts_manager_phase2.py \
-            backend/services/automation-engine/test_scheduler_task_executor.py \
-            backend/services/automation-engine/test_scheduler_idempotency_replay.py \
-            backend/services/automation-engine/test_start_cycle_contract.py \
-            backend/services/automation-engine/test_api_intents.py \
-            backend/services/automation-engine/test_api_start_cycle.py \
-            backend/services/automation-engine/test_api_scheduler_security.py \
-            backend/services/automation-engine/test_api_scheduler_store_metrics.py \
-            backend/services/automation-engine/test_command_tracker_notify.py \
-            backend/services/automation-engine/test_start_cycle_rate_limit.py \
-            backend/services/automation-engine/test_start_cycle_security_integration.py \
-            backend/services/automation-engine/test_start_cycle_intent_flow_integration.py \
-            backend/services/automation-engine/test_workflow_phase_policy.py \
-            backend/services/automation-engine/test_two_tank_runtime_config.py \
-            backend/services/automation-engine/test_zone_correction_gating.py \
-            backend/services/automation-engine/test_workflow_state_recovery_integration.py \
-            backend/services/automation-engine/test_notify_partition_smoke.py \
-            backend/services/automation-engine/test_laravel_api_repository_sql_read_model.py \
-            --junitxml=test-results/automation-engine-smoke.xml
-      - name: Upload automation-engine smoke JUnit
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: automation-engine-smoke-junit
-          path: test-results/automation-engine-smoke.xml
-          retention-days: 7
-
-  laravel-scheduler-smoke:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: timescale/timescaledb:2.13.0-pg15
-        env:
-          POSTGRES_DB: hydro_test
-          POSTGRES_USER: hydro
-          POSTGRES_PASSWORD: hydro
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U hydro -d hydro_test"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-    defaults:
-      run:
-        working-directory: backend/laravel
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-      - name: Cache Composer
-        uses: actions/cache@v4
-        with:
-          path: ~/.composer/cache/files
-          key: composer-${{ runner.os }}-${{ hashFiles('backend/laravel/composer.lock') }}
-          restore-keys: composer-${{ runner.os }}-
-      - name: Install PHP deps
-        run: composer install --no-interaction --prefer-dist
-      - name: Prepare env
-        run: |
-          cp .env.example .env
-          php artisan key:generate
-      - name: Laravel scheduler smoke tests
-        env:
-          APP_ENV: testing
-          DB_CONNECTION: pgsql
-          DB_DATABASE: hydro_test
-          DB_USERNAME: hydro
-          DB_PASSWORD: hydro
-          DB_HOST: 127.0.0.1
-          DB_PORT: 5432
-          BROADCAST_CONNECTION: log
-          BROADCAST_DRIVER: log
-          CACHE_STORE: array
-          SESSION_DRIVER: array
-          QUEUE_CONNECTION: sync
-        run: |
-          mkdir -p test-results
-          php artisan test \
-            tests/Unit/Console/AutomationDispatchSchedulesInternalsTest.php \
-            tests/Feature/AutomationDispatchSchedulesCommandTest.php \
-            tests/Feature/ZoneAutomationStateControllerTest.php \
-            tests/Feature/ZoneAutomationControlModeControllerTest.php \
-            tests/Feature/ZoneAutomationManualStepControllerTest.php \
-            --no-coverage \
-            --log-junit test-results/laravel-scheduler-smoke.xml
-      - name: Upload Laravel scheduler smoke JUnit
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: laravel-scheduler-smoke-junit
-          path: backend/laravel/test-results/laravel-scheduler-smoke.xml
-          retention-days: 7

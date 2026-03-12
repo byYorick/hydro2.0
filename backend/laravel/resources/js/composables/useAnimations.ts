@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 /**
  * Composable для управления анимациями и переходами
@@ -70,19 +70,15 @@ export function useNumberAnimation(
     animationFrameId = requestAnimationFrame(animate)
   }
   
-  const hasInstance = !!getCurrentInstance()
-
-  if (hasInstance) {
-    onMounted(() => {
-      animatedValue.value = targetValue() ?? null
-    })
-    
-    onUnmounted(() => {
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId)
-      }
-    })
-  }
+  onMounted(() => {
+    animatedValue.value = targetValue() ?? null
+  })
+  
+  onUnmounted(() => {
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId)
+    }
+  })
   
   return {
     animatedValue,
@@ -192,3 +188,4 @@ export function usePageTransition() {
     endTransition,
   }
 }
+

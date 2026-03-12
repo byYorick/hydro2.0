@@ -50,6 +50,8 @@ esp_err_t config_apply_channels_pump(config_apply_result_t *result);
 
 esp_err_t config_apply_channels_relay(config_apply_result_t *result);
 
+esp_err_t config_apply_publish_ack(const config_apply_result_t *result);
+
 #ifdef __cplusplus
 }
 #endif

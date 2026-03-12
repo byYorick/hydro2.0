@@ -1,110 +1,72 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">
-      Создать теплицу
-    </h1>
+    <h1 class="text-lg font-semibold mb-4">Создать теплицу</h1>
     <Card>
-      <form
-        class="space-y-4"
-        @submit.prevent="onSubmit"
-      >
+      <form @submit.prevent="onSubmit" class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label
-              for="greenhouse-name"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Название <span class="text-[color:var(--accent-red)]">*</span></label>
+            <label for="greenhouse-name" class="block text-xs text-neutral-400 mb-1">Название <span class="text-red-400">*</span></label>
             <input
               id="greenhouse-name"
-              v-model="form.name"
               name="name"
+              v-model="form.name"
               type="text"
               required
               placeholder="Main Greenhouse"
-              class="input-field"
-              :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+              class="h-9 w-full rounded-md border px-2 text-sm"
+              :class="errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'"
             />
-            <div
-              v-if="errors.name"
-              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
-            >
-              {{ errors.name }}
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
+            <div v-if="errors.name" class="text-xs text-red-400 mt-1">{{ errors.name }}</div>
+            <div class="text-xs text-neutral-500 mt-1">
+              UID будет сгенерирован автоматически: <span class="text-neutral-400">{{ generatedUid }}</span>
             </div>
           </div>
           
           <div>
-            <label
-              for="greenhouse-timezone"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Часовой пояс</label>
+            <label for="greenhouse-timezone" class="block text-xs text-neutral-400 mb-1">Часовой пояс</label>
             <input
               id="greenhouse-timezone"
-              v-model="form.timezone"
               name="timezone"
+              v-model="form.timezone"
               type="text"
               placeholder="Europe/Moscow"
-              class="input-field"
+              class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             />
           </div>
           
           <div>
-            <label
-              for="greenhouse-type"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Тип</label>
+            <label for="greenhouse-type" class="block text-xs text-neutral-400 mb-1">Тип</label>
             <select
               id="greenhouse-type"
-              v-model.number="form.greenhouse_type_id"
-              name="greenhouse_type_id"
-              class="input-select"
+              name="type"
+              v-model="form.type"
+              class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             >
-              <option :value="null">
-                Выберите тип
-              </option>
-              <option
-                v-for="greenhouseType in greenhouseTypes"
-                :key="greenhouseType.id"
-                :value="greenhouseType.id"
-              >
-                {{ greenhouseType.name }}
-              </option>
+              <option value="">Выберите тип</option>
+              <option value="indoor">Indoor (Закрытая)</option>
+              <option value="outdoor">Outdoor (Открытая)</option>
+              <option value="greenhouse">Greenhouse (Теплица)</option>
             </select>
           </div>
           
           <div class="md:col-span-2">
-            <label
-              for="greenhouse-description"
-              class="block text-xs text-[color:var(--text-muted)] mb-1"
-            >Описание</label>
+            <label for="greenhouse-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
             <textarea
               id="greenhouse-description"
-              v-model="form.description"
               name="description"
+              v-model="form.description"
               rows="3"
               placeholder="Описание теплицы..."
-              class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--accent-green)] focus:outline-none"
+              class="w-full rounded-md border px-2 py-1 text-sm border-neutral-700 bg-neutral-900"
             ></textarea>
           </div>
         </div>
         
         <div class="flex justify-end gap-2">
           <Link href="/">
-            <Button
-              size="sm"
-              variant="secondary"
-              type="button"
-            >
-              Отмена
-            </Button>
+            <Button size="sm" variant="secondary" type="button">Отмена</Button>
           </Link>
-          <Button
-            size="sm"
-            type="submit"
-            :disabled="loading"
-          >
+          <Button size="sm" type="submit" :disabled="loading">
             {{ loading ? 'Создание...' : 'Создать' }}
           </Button>
         </div>
@@ -114,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, onMounted } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -129,14 +91,12 @@ const { showToast } = useToast()
 const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
-const loadingTypes = ref<boolean>(false)
 const errors = reactive<Record<string, string>>({})
-const greenhouseTypes = ref<Array<{ id: number; code: string; name: string }>>([])
 
 const form = reactive({
   name: '',
   timezone: 'Europe/Moscow',
-  greenhouse_type_id: null as number | null,
+  type: '',
   coordinates: null,
   description: ''
 })
@@ -148,34 +108,14 @@ const generatedUid = computed(() => {
   return generateUid(form.name, 'gh-')
 })
 
-async function loadGreenhouseTypes(): Promise<void> {
-  loadingTypes.value = true
-  try {
-    const response = await api.get('/greenhouse-types')
-    const payload = (response.data as any)?.data ?? []
-    greenhouseTypes.value = Array.isArray(payload) ? payload : []
-
-    if (!form.greenhouse_type_id && greenhouseTypes.value.length > 0) {
-      form.greenhouse_type_id = greenhouseTypes.value[0].id
-    }
-  } catch (error: any) {
-    logger.error('Failed to load greenhouse types:', error)
-  } finally {
-    loadingTypes.value = false
-  }
-}
-
 async function onSubmit() {
-  errors.name = ''
-  errors.general = ''
-
   if (!form.name || !form.name.trim()) {
-    errors.name = 'Название обязательно'
     showToast('Введите название теплицы', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
   loading.value = true
+  errors.name = ''
   
   try {
     const uid = generatedUid.value
@@ -204,8 +144,5 @@ async function onSubmit() {
     loading.value = false
   }
 }
-
-onMounted(() => {
-  void loadGreenhouseTypes()
-})
 </script>
+

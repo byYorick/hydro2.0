@@ -4,11 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePlantPriceRequest;
 use App\Http\Requests\StorePlantRequest;
-use App\Http\Requests\UpdatePlantTaxonomyRequest;
 use App\Http\Requests\UpdatePlantRequest;
 use App\Models\Plant;
 use App\Services\Profitability\ProfitabilityCalculator;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -19,9 +17,11 @@ use Inertia\Response;
 
 class PlantController extends Controller
 {
-    public function __construct(private readonly ProfitabilityCalculator $profitability) {}
+    public function __construct(private readonly ProfitabilityCalculator $profitability)
+    {
+    }
 
-    public function index(Request $request): Response|JsonResponse
+    public function index(Request $request): Response
     {
         $plants = Plant::query()
             ->with([
@@ -54,35 +54,23 @@ class PlantController extends Controller
                 ];
             });
 
-        // Если это API запрос, возвращаем JSON
-        if ($request->wantsJson() || $request->expectsJson()) {
-            return response()->json([
-                'status' => 'ok',
-                'data' => $plants,
-            ]);
-        }
-
         return Inertia::render('Plants/Index', [
             'plants' => $plants,
             'taxonomies' => $this->loadTaxonomies(),
         ]);
     }
 
-    public function show(Request $request, Plant $plant): Response|JsonResponse
+    public function show(Plant $plant): Response
     {
         $profitability = $this->profitability->calculatePlant($plant);
 
-        // Загружаем связанные рецепты с фазами ревизий
-        $plant->load([
-            'recipes.latestPublishedRevision.phases',
-            'recipes.latestDraftRevision.phases',
-        ]);
+        // Загружаем связанные рецепты с фазами
+        $plant->load(['recipes.phases' => function ($query) {
+            $query->orderBy('phase_index');
+        }]);
 
         // Формируем данные рецептов с фазами
         $recipes = $plant->recipes->map(function ($recipe) {
-            $revision = $recipe->latestPublishedRevision ?? $recipe->latestDraftRevision;
-            $phases = $revision?->phases ?? collect();
-
             return [
                 'id' => $recipe->id,
                 'name' => $recipe->name,
@@ -90,7 +78,7 @@ class PlantController extends Controller
                 'is_default' => $recipe->pivot->is_default ?? false,
                 'season' => $recipe->pivot->season,
                 'site_type' => $recipe->pivot->site_type,
-                'phases' => $phases->map(function ($phase) {
+                'phases' => $recipe->phases->map(function ($phase) {
                     return [
                         'id' => $phase->id,
                         'phase_index' => $phase->phase_index,
@@ -99,7 +87,7 @@ class PlantController extends Controller
                         'targets' => $phase->targets,
                     ];
                 })->sortBy('phase_index')->values(),
-                'phases_count' => $phases->count(),
+                'phases_count' => $recipe->phases->count(),
             ];
         });
 
@@ -122,45 +110,16 @@ class PlantController extends Controller
             'profitability' => $profitability,
         ];
 
-        // Если это API запрос, возвращаем JSON
-        if ($request->wantsJson() || $request->expectsJson()) {
-            return response()->json([
-                'status' => 'ok',
-                'data' => $plantData,
-            ]);
-        }
-
         return Inertia::render('Plants/Show', [
             'plant' => $plantData,
             'taxonomies' => $this->loadTaxonomies(),
         ]);
     }
 
-    public function store(StorePlantRequest $request)
+    public function store(StorePlantRequest $request): RedirectResponse
     {
-        $validated = $request->validated();
-
-        // Маппинг scientific_name -> species для обратной совместимости с тестами
-        if (isset($validated['scientific_name']) && ! isset($validated['species'])) {
-            $validated['species'] = $validated['scientific_name'];
-            unset($validated['scientific_name']);
-        }
-
-        $payload = $this->preparePayload($validated);
-        $plant = Plant::create($payload);
-
-        // Если это API запрос, возвращаем JSON
-        if ($request->wantsJson() || $request->expectsJson()) {
-            return response()->json([
-                'status' => 'ok',
-                'data' => [
-                    'id' => $plant->id,
-                    'name' => $plant->name,
-                    'scientific_name' => $plant->species,
-                    'slug' => $plant->slug,
-                ],
-            ], 201);
-        }
+        $payload = $this->preparePayload($request->validated());
+        Plant::create($payload);
 
         return back()->with('flash', [
             'success' => 'Растение создано',
@@ -227,62 +186,6 @@ class PlantController extends Controller
         ]);
     }
 
-    public function taxonomies(): JsonResponse
-    {
-        return response()->json([
-            'status' => 'ok',
-            'data' => $this->loadTaxonomies(),
-        ]);
-    }
-
-    public function updateTaxonomy(UpdatePlantTaxonomyRequest $request, string $taxonomy): JsonResponse
-    {
-        $taxonomies = $this->loadTaxonomies();
-        $allowedKeys = array_keys($taxonomies);
-
-        if (! in_array($taxonomy, $allowedKeys, true)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unknown taxonomy key',
-            ], 422);
-        }
-
-        $items = collect($request->validated('items'))
-            ->map(function (array $item) use ($taxonomy): array {
-                $result = [
-                    'id' => $item['id'],
-                    'label' => $item['label'],
-                ];
-
-                if ($taxonomy === 'growing_system' && array_key_exists('uses_substrate', $item)) {
-                    $result['uses_substrate'] = (bool) $item['uses_substrate'];
-                }
-
-                return $result;
-            })
-            ->values()
-            ->all();
-
-        $ids = array_column($items, 'id');
-        if (count($ids) !== count(array_unique($ids))) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Duplicate taxonomy ids are not allowed',
-            ], 422);
-        }
-
-        $taxonomies[$taxonomy] = $items;
-        $this->saveTaxonomies($taxonomies);
-
-        return response()->json([
-            'status' => 'ok',
-            'data' => [
-                'key' => $taxonomy,
-                'items' => $taxonomies[$taxonomy],
-            ],
-        ]);
-    }
-
     private function sanitizeEnvironment(mixed $value): ?array
     {
         if (! is_array($value)) {
@@ -322,25 +225,12 @@ class PlantController extends Controller
 
     private function loadTaxonomies(): array
     {
-        $path = $this->taxonomyPath();
+        $path = base_path('../configs/plant_taxonomies.json');
 
         if (! File::exists($path)) {
             return [];
         }
 
         return json_decode(File::get($path), true) ?? [];
-    }
-
-    private function saveTaxonomies(array $taxonomies): void
-    {
-        File::put(
-            $this->taxonomyPath(),
-            json_encode($taxonomies, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE).PHP_EOL
-        );
-    }
-
-    private function taxonomyPath(): string
-    {
-        return base_path('config/plant_taxonomies.json');
     }
 }

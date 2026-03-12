@@ -6,8 +6,7 @@ import MobileNavigation from '@/Components/MobileNavigation.vue'
 vi.mock('@/composables/useRole', () => ({
   useRole: () => ({
     isViewer: false,
-    canEdit: true,
-    hasAnyRole: () => true
+    canEdit: true
   })
 }))
 
@@ -67,18 +66,6 @@ describe('MobileNavigation', () => {
       const alertsLink = links.find(link => link.attributes('href') === '/alerts')
       expect(alertsLink).toBeDefined()
     })
-
-    it('показывает ссылку на Analytics', () => {
-      const links = wrapper.findAll('a')
-      const analyticsLink = links.find(link => link.attributes('href') === '/analytics')
-      expect(analyticsLink).toBeDefined()
-    })
-
-    it('показывает ссылку на Logs', () => {
-      const links = wrapper.findAll('a')
-      const logsLink = links.find(link => link.attributes('href') === '/logs')
-      expect(logsLink).toBeDefined()
-    })
   })
 
   describe('Иконки', () => {
@@ -111,3 +98,4 @@ describe('MobileNavigation', () => {
     })
   })
 })
+

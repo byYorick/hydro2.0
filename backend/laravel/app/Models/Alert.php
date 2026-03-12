@@ -19,13 +19,6 @@ class Alert extends Model
         'type',
         'details',
         'status',
-        'category',
-        'severity',
-        'node_uid',
-        'hardware_id',
-        'error_count',
-        'first_seen_at',
-        'last_seen_at',
         'created_at',
         'resolved_at',
     ];
@@ -34,8 +27,6 @@ class Alert extends Model
         'details' => 'array',
         'created_at' => 'datetime',
         'resolved_at' => 'datetime',
-        'first_seen_at' => 'datetime',
-        'last_seen_at' => 'datetime',
     ];
 
     public function zone(): BelongsTo
@@ -43,4 +34,5 @@ class Alert extends Model
         return $this->belongsTo(Zone::class);
     }
 }
+
 

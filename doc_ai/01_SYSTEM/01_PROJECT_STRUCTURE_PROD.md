@@ -18,10 +18,6 @@
 4. **Конфиг через файлы, не код**: `*.yaml` / `*.json` для нод, MQTT, правил автоматизации и т.п.
 5. **Масштабируемость**: новая нода/тип ноды добавляется по одному шаблону.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Общий обзор директорий
@@ -30,7 +26,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ```text
 hydro2.0/
-├─ ../               # Документация и спецификации (эталонная)
+├─ doc_ai/               # Документация и спецификации (эталонная)
 ├─ docs/                  # Mirror документации (опционально, для совместимости)
 ├─ firmware/              # Прошивки для всех нод на ESP32
 ├─ backend/               # Backend-сервисы, API, MQTT-мост
@@ -47,12 +43,12 @@ hydro2.0/
 
 ---
 
-## 2. `../` — документация и спеки
+## 2. `doc_ai/` — документация и спеки
 
-**Примечание:** Основная документация находится в `../`. Папка `docs/` может существовать как mirror для совместимости, но эталоном является `../`.
+**Примечание:** Основная документация находится в `doc_ai/`. Папка `docs/` может существовать как mirror для совместимости, но эталоном является `doc_ai/`.
 
 ```text
-../
+doc_ai/
 ├─ 01_SYSTEM/
 │  ├─ LOGIC_ARCH.md
 │  ├─ DATAFLOW_FULL.md
@@ -113,7 +109,8 @@ hydro2.0/
 │  ├─ ANDROID_APP_API_INTEGRATION.md
 │  └─ ...
 ├─ INDEX.md                       # Главный индекс документации
-└─ README_STRUCTURE.md            # Описание структуры папок
+├─ README_STRUCTURE.md            # Описание структуры папок
+└─ IMPLEMENTATION_STATUS.md
 ```
 
 **Боевой проект** подразумевает, что все ключевые `.md` из этих папок **заполнены полностью** и согласованы между собой.
@@ -123,12 +120,6 @@ hydro2.0/
 ## 3. `firmware/` — прошивки ESP32
 
 Здесь живут все ESP-прошивки, на чистом C, под ESP-IDF.
-
-Важно по терминологии:
-- `firmware_module` (например, `storage_irrigation_node`, `ph_node`, `ec_node`, `climate_node`) — имя папки/проекта прошивки.
-- `node_type` в MQTT payload и в БД (`nodes.type`) использует только канонику:
-  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Имена `*_node` не являются значениями `node_type`.
 
 ```text
 firmware/
@@ -153,11 +144,11 @@ firmware/
 │  │  │  ├─ setup_portal/       # Setup portal для provisioning
 │  │  │  └─ oled_ui/            # OLED UI
 │  │  └─ README.md
-│  ├─ storage_irrigation_node/               # Нода насосов с INA209
+│  ├─ pump_node/               # Нода насосов с INA209
 │  │  ├─ main/
 │  │  │  ├─ main.c
-│  │  │  ├─ storage_irrigation_node_app.c
-│  │  │  └─ storage_irrigation_node_tasks.c
+│  │  │  ├─ pump_node_app.c
+│  │  │  └─ pump_node_tasks.c
 │  │  ├─ components/           # Специфические компоненты, если нужны
 │  │  ├─ sdkconfig.defaults
 │  │  ├─ CMakeLists.txt
@@ -190,12 +181,12 @@ firmware/
 **Ключевые моменты боевой структуры:**
 
 1. **Общие компоненты** (датчики, INA209, дисплей, MQTT, Wi-Fi, config) живут в `firmware/nodes/common/components/`.
-2. Каждая нода — отдельный ESP-IDF-проект в `firmware/nodes/<firmware_module>/`.
+2. Каждая нода — отдельный ESP-IDF-проект в `firmware/nodes/<node_type>/`.
 3. Для каждой ноды:
    - есть `sdkconfig.defaults` с боевыми дефолтами,
    - есть `Kconfig` для выбора настроек,
    - есть `NodeConfig` (через JSON/NVS) для параметров: ID ноды, тип, каналы, предельные токи, пороги pH/EC и т.п.
-4. Вся логика **подтверждения команд насосной нодой через INA209** реализуется в `storage_irrigation_node_app.c` / `storage_irrigation_node_tasks.c` с использованием компонента `ina209`.
+4. Вся логика **подтверждения команд насосной нодой через INA209** реализуется в `pump_node_app.c` / `pump_node_tasks.c` с использованием компонента `ina209`.
 
 ---
 
@@ -321,7 +312,7 @@ infra/
 ```text
 configs/
 ├─ nodes/
-│  ├─ storage_irrigation_node_template.json
+│  ├─ pump_node_template.json
 │  ├─ ph_node_template.json
 │  ├─ ec_node_template.json
 │  ├─ climate_node_template.json
@@ -337,10 +328,7 @@ configs/
    └─ keystore_structure.md
 ```
 
-**Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
-
-Важно: имена шаблонов `*_node_template.json` привязаны к `firmware_module`.
-Поле `type` внутри NodeConfig должно оставаться каноническим (`ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`).
+**Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
 
 ---
 
@@ -386,12 +374,12 @@ tools/
 
 Проект можно считать **боевым**, если:
 
-1. В `../` заполнены и согласованы:
-   - `../../docs/01_OVERVIEW/SYSTEM_OVERVIEW.md`,
+1. В `doc_ai/` заполнены и согласованы:
+   - `SYSTEM_OVERVIEW.md`,
    - все ключевые спеки по нодам, MQTT и backend,
-   - индексы и README отражают текущую структуру и код.
+   - `IMPLEMENTATION_STATUS.md` актуален.
 2. В `firmware/`:
-   - есть рабочие проекты `storage_irrigation_node`, `ph_node`, `ec_node`, `climate_node`,
+   - есть рабочие проекты `pump_node`, `ph_node`, `ec_node`, `climate_node`,
    - реализован и протестирован `ina209`-драйвер,
    - насосная нода **гарантированно**:
      - включает насос по команде,
@@ -399,7 +387,7 @@ tools/
      - отдаёт `command_response` с `ACK/ERROR` и кодами ошибок (`current_not_detected`, `overcurrent`, и т.д.),
      - уходит в `SAFE_MODE` при критических ситуациях.
 3. В `backend/`:
-   - поднят MQTT-мост и он строго следует `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`,
+   - поднят MQTT-мост и он строго следует `BACKEND_NODE_CONTRACT_FULL.md`,
    - есть device-registry, automation-engine и history-logger,
    - настроено логирование и базовый мониторинг.
 4. В `mobile/`:

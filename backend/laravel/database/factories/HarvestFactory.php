@@ -22,8 +22,9 @@ class HarvestFactory extends Factory
             'harvest_date' => $this->faker->dateTimeBetween('-1 month', 'now'),
             'yield_weight_kg' => $this->faker->randomFloat(2, 1, 50),
             'yield_count' => $this->faker->numberBetween(5, 100),
-            'quality_score' => $this->faker->randomFloat(2, 5, 9.99),
+            'quality_score' => $this->faker->randomFloat(2, 5, 10),
             'notes' => ['comment' => $this->faker->sentence()],
         ];
     }
 }
+

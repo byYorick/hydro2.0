@@ -76,15 +76,14 @@ static void task_heartbeat(void *pvParameters) {
                     rssi = ap_info.rssi;
                 }
                 
-                // Формат согласно эталону node-sim: uptime (секунды), free_heap, rssi (опционально)
+                // Формат согласно MQTT_SPEC_FULL.md раздел 9.2
                 cJSON *heartbeat = cJSON_CreateObject();
                 if (heartbeat) {
-            // uptime - аптайм в секундах согласно эталону node-sim
-            int64_t uptime_seconds = (int64_t)(esp_timer_get_time() / 1000000);  // микросекунды → секунды
-            cJSON_AddNumberToObject(heartbeat, "uptime", (double)uptime_seconds);
-            // free_heap - свободная память в байтах (обязательное поле)
+            // uptime - аптайм в миллисекундах (диагностика)
+            cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
+            // ts - Unix timestamp в секундах (для синхронизации с сервером)
+            cJSON_AddNumberToObject(heartbeat, "ts", (double)node_utils_now_epoch());
             cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
-            // rssi - опциональное поле согласно эталону
             cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
             
             // Добавляем метрики памяти, если доступны

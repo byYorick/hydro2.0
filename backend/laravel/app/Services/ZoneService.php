@@ -2,13 +2,11 @@
 
 namespace App\Services;
 
-use App\Exceptions\ZoneRuntimeSwitchDeniedException;
-use App\Events\ZoneUpdated;
-use App\Models\NodeChannel;
 use App\Models\Zone;
+use App\Models\ZoneRecipeInstance;
+use App\Events\ZoneUpdated;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ZoneService
@@ -23,40 +21,38 @@ class ZoneService
             if (empty($data['uid'])) {
                 $data['uid'] = $this->generateZoneUid($data['name'] ?? 'untitled');
             }
-
-            $data['status'] = 'NEW';
-
+            
             $zone = Zone::create($data);
             Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
-
+            
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
-
+            
             return $zone;
         });
     }
 
     /**
      * Генерирует UID для зоны на основе названия
-     *
-     * @param  string  $name  Название зоны (может быть на русском)
+     * 
+     * @param string $name Название зоны (может быть на русском)
      * @return string Сгенерированный UID в формате zn-{transliterated-name}
      */
     private function generateZoneUid(string $name): string
     {
         $prefix = 'zn-';
-
+        
         if (empty($name) || trim($name) === '') {
-            return $prefix.'untitled-'.strtolower(Str::random(6));
+            return $prefix . 'untitled-' . strtolower(Str::random(6));
         }
 
         // Используем Str::slug для транслитерации и нормализации
         // Str::slug автоматически транслитерирует русские буквы
         $transliterated = Str::slug(trim($name), '-');
-
+        
         // Если после обработки ничего не осталось, используем значение по умолчанию
         if (empty($transliterated)) {
-            $transliterated = 'untitled-'.strtolower(Str::random(6));
+            $transliterated = 'untitled-' . strtolower(Str::random(6));
         }
 
         // Ограничиваем длину (оставляем место для префикса и суффикса)
@@ -67,21 +63,21 @@ class ZoneService
             $transliterated = rtrim($transliterated, '-');
         }
 
-        $uid = $prefix.$transliterated;
-
+        $uid = $prefix . $transliterated;
+        
         // Проверяем уникальность UID и добавляем суффикс, если нужно
         $counter = 0;
         $originalUid = $uid;
         while (Zone::where('uid', $uid)->exists()) {
             $counter++;
-            $suffix = '-'.$counter;
+            $suffix = '-' . $counter;
             $maxLengthWithSuffix = $maxLength - strlen($suffix);
             $base = substr($transliterated, 0, $maxLengthWithSuffix);
-            $uid = $prefix.rtrim($base, '-').$suffix;
-
+            $uid = $prefix . rtrim($base, '-') . $suffix;
+            
             // Защита от бесконечного цикла
             if ($counter > 1000) {
-                $uid = $originalUid.'-'.time();
+                $uid = $originalUid . '-' . time();
                 break;
             }
         }
@@ -95,109 +91,15 @@ class ZoneService
     public function update(Zone $zone, array $data): Zone
     {
         return DB::transaction(function () use ($zone, $data) {
-            if (
-                array_key_exists('automation_runtime', $data)
-                && (string) $data['automation_runtime'] !== (string) $zone->automation_runtime
-                && DB::getDriverName() === 'pgsql'
-            ) {
-                DB::statement('SELECT pg_advisory_xact_lock(?)', [(int) $zone->id]);
-                $zone->refresh();
-            }
-
-            $this->assertAutomationRuntimeSwitchAllowed($zone, $data);
             $zone->update($data);
             Log::info('Zone updated', ['zone_id' => $zone->id]);
             $zone = $zone->fresh();
-
+            
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
-
+            
             return $zone;
         });
-    }
-
-    private function assertAutomationRuntimeSwitchAllowed(Zone $zone, array $data): void
-    {
-        if (! array_key_exists('automation_runtime', $data)) {
-            return;
-        }
-
-        $targetRuntime = (string) $data['automation_runtime'];
-        if ($targetRuntime === (string) $zone->automation_runtime) {
-            return;
-        }
-
-        if (! Schema::hasTable('ae_tasks') || ! Schema::hasTable('ae_zone_leases') || ! Schema::hasTable('ae_commands')) {
-            return;
-        }
-
-        $activeTask = DB::table('ae_tasks')
-            ->select('id', 'status', 'claimed_by', 'updated_at')
-            ->where('zone_id', $zone->id)
-            ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->first();
-
-        if ($activeTask) {
-            throw new ZoneRuntimeSwitchDeniedException([
-                'zone_id' => $zone->id,
-                'from_runtime' => (string) $zone->automation_runtime,
-                'to_runtime' => $targetRuntime,
-                'blocker' => 'active_task',
-                'task_id' => (int) $activeTask->id,
-                'task_status' => (string) $activeTask->status,
-                'claimed_by' => $activeTask->claimed_by ? (string) $activeTask->claimed_by : null,
-            ]);
-        }
-
-        $activeLease = DB::table('ae_zone_leases')
-            ->select('owner', 'leased_until')
-            ->where('zone_id', $zone->id)
-            ->where('leased_until', '>', now())
-            ->orderByDesc('leased_until')
-            ->first();
-
-        if ($activeLease) {
-            throw new ZoneRuntimeSwitchDeniedException([
-                'zone_id' => $zone->id,
-                'from_runtime' => (string) $zone->automation_runtime,
-                'to_runtime' => $targetRuntime,
-                'blocker' => 'active_lease',
-                'owner' => (string) $activeLease->owner,
-                'leased_until' => $activeLease->leased_until,
-            ]);
-        }
-
-        $indeterminateCommand = DB::table('ae_commands as commands')
-            ->join('ae_tasks as tasks', 'tasks.id', '=', 'commands.task_id')
-            ->select(
-                'commands.id as ae_command_id',
-                'commands.publish_status',
-                'commands.external_id',
-                'tasks.id as task_id',
-                'tasks.status as task_status'
-            )
-            ->where('tasks.zone_id', $zone->id)
-            ->whereIn('commands.publish_status', ['pending', 'accepted'])
-            ->whereNull('commands.terminal_status')
-            ->orderByDesc('commands.updated_at')
-            ->orderByDesc('commands.id')
-            ->first();
-
-        if ($indeterminateCommand) {
-            throw new ZoneRuntimeSwitchDeniedException([
-                'zone_id' => $zone->id,
-                'from_runtime' => (string) $zone->automation_runtime,
-                'to_runtime' => $targetRuntime,
-                'blocker' => 'indeterminate_command_state',
-                'task_id' => (int) $indeterminateCommand->task_id,
-                'task_status' => (string) $indeterminateCommand->task_status,
-                'ae_command_id' => (int) $indeterminateCommand->ae_command_id,
-                'publish_status' => (string) $indeterminateCommand->publish_status,
-                'external_id' => $indeterminateCommand->external_id ? (string) $indeterminateCommand->external_id : null,
-            ]);
-        }
     }
 
     /**
@@ -206,9 +108,9 @@ class ZoneService
     public function delete(Zone $zone): void
     {
         DB::transaction(function () use ($zone) {
-            // Проверка: нельзя удалить зону с активным циклом
-            if ($zone->activeGrowCycle) {
-                throw new \DomainException('Cannot delete zone with active grow cycle. Please finish or abort cycle first.');
+            // Проверка: нельзя удалить зону с активным рецептом
+            if ($zone->recipeInstance) {
+                throw new \DomainException('Cannot delete zone with active recipe. Please detach recipe first.');
             }
 
             // Проверка: нельзя удалить зону с привязанными узлами
@@ -224,6 +126,126 @@ class ZoneService
     }
 
     /**
+     * Назначить рецепт на зону
+     */
+    public function attachRecipe(Zone $zone, int $recipeId, ?\DateTimeInterface $startAt = null): ZoneRecipeInstance
+    {
+        return DB::transaction(function () use ($zone, $recipeId, $startAt) {
+            // Удалить предыдущий экземпляр рецепта, если есть
+            $existing = $zone->recipeInstance;
+            if ($existing) {
+                Log::info('Deleting existing recipe instance', [
+                    'zone_id' => $zone->id,
+                    'existing_instance_id' => $existing->id,
+                ]);
+                $existing->delete();
+            }
+
+            // Проверяем, что рецепт существует
+            $recipe = \App\Models\Recipe::find($recipeId);
+            if (!$recipe) {
+                throw new \DomainException("Recipe with ID {$recipeId} not found");
+            }
+
+            $instance = ZoneRecipeInstance::create([
+                'zone_id' => $zone->id,
+                'recipe_id' => $recipeId,
+                'current_phase_index' => 0,
+                'started_at' => $startAt ?? now(),
+            ]);
+
+            Log::info('Recipe attached to zone', [
+                'zone_id' => $zone->id,
+                'recipe_id' => $recipeId,
+                'instance_id' => $instance->id,
+                'started_at' => $instance->started_at,
+            ]);
+
+            // Обновляем зону и загружаем relationships
+            $zone->refresh();
+            $zone->load(['recipeInstance.recipe']);
+
+            // Dispatch event для уведомления Python-сервиса
+            event(new ZoneUpdated($zone));
+
+            // Запустить задачу расчёта аналитики при завершении рецепта (если нужно)
+            // Можно запускать периодически или при завершении всех фаз
+
+            return $instance;
+        });
+    }
+
+    /**
+     * Изменить фазу рецепта зоны
+     */
+    public function changePhase(Zone $zone, int $phaseIndex): ZoneRecipeInstance
+    {
+        return DB::transaction(function () use ($zone, $phaseIndex) {
+            // Eager loading для предотвращения N+1 запросов
+            $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
+            if (!$instance) {
+                throw new \DomainException('Zone has no active recipe');
+            }
+
+            // Проверка: фаза должна существовать в рецепте
+            // Используем загруженные phases вместо нового запроса
+            $recipe = $instance->recipe;
+            $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
+            if ($phaseIndex < 0 || $phaseIndex > $maxPhaseIndex) {
+                throw new \DomainException("Phase index {$phaseIndex} is out of range (0-{$maxPhaseIndex})");
+            }
+
+            $instance->update([
+                'current_phase_index' => $phaseIndex,
+            ]);
+
+            Log::info('Zone phase changed', [
+                'zone_id' => $zone->id,
+                'phase_index' => $phaseIndex,
+            ]);
+
+            // Проверить, завершён ли рецепт (все фазы пройдены)
+            // Используем уже загруженные phases
+            if ($phaseIndex >= $maxPhaseIndex) {
+                // Рецепт завершён - запустить расчёт аналитики
+                \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($zone->id, $instance->id);
+            }
+
+            // Dispatch event для уведомления Python-сервиса
+            event(new ZoneUpdated($zone->fresh()));
+
+            return $instance->fresh();
+        });
+    }
+
+    /**
+     * Перейти на следующую фазу рецепта
+     */
+    public function nextPhase(Zone $zone): ZoneRecipeInstance
+    {
+        // Eager loading для предотвращения N+1 запросов
+        $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
+        if (!$instance) {
+            throw new \DomainException('Zone has no active recipe');
+        }
+
+        $currentPhaseIndex = $instance->current_phase_index;
+        $nextPhaseIndex = $currentPhaseIndex + 1;
+
+        // Проверка: следующая фаза должна существовать в рецепте
+        // Используем загруженные phases вместо нового запроса
+        $recipe = $instance->recipe;
+        $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
+        
+        if ($nextPhaseIndex > $maxPhaseIndex) {
+            throw new \DomainException("No next phase available. Current phase is {$currentPhaseIndex}, max phase is {$maxPhaseIndex}");
+        }
+
+        // Используем существующий метод changePhase
+        return $this->changePhase($zone, $nextPhaseIndex);
+    }
+
+    /**
      * Пауза/возобновление зоны
      */
     public function pause(Zone $zone): Zone
@@ -232,59 +254,14 @@ class ZoneService
             throw new \DomainException('Zone is already paused');
         }
 
-        return DB::transaction(function () use ($zone) {
-            try {
-                $oldStatus = $zone->status;
-                $zone->update(['status' => 'PAUSED']);
-
-                // Создаем zone_event
-                $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-
-                $eventPayload = json_encode([
-                    'zone_id' => $zone->id,
-                    'from_status' => $oldStatus ?? null,
-                    'to_status' => 'PAUSED',
-                    'paused_at' => now()->toIso8601String(),
-                ]);
-
-                $eventData = [
-                    'zone_id' => $zone->id,
-                    'type' => 'CYCLE_PAUSED',
-                    'created_at' => now(),
-                ];
-
-                if ($hasPayloadJson) {
-                    $eventData['payload_json'] = $eventPayload;
-                } else {
-                    $eventData['details'] = $eventPayload;
-                }
-
-                DB::table('zone_events')->insert($eventData);
-
-                Log::info('Zone paused', ['zone_id' => $zone->id]);
-                $zone = $zone->fresh();
-
-                // Dispatch event для уведомления Python-сервиса
-                try {
-                    event(new ZoneUpdated($zone));
-                } catch (\Exception $e) {
-                    // Игнорируем ошибки при dispatch event, это не критично
-                    Log::warning('Failed to dispatch ZoneUpdated event', [
-                        'zone_id' => $zone->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-
-                return $zone;
-            } catch (\Exception $e) {
-                Log::error('Error in ZoneService::pause', [
-                    'zone_id' => $zone->id,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                ]);
-                throw $e;
-            }
-        });
+        $zone->update(['status' => 'PAUSED']);
+        Log::info('Zone paused', ['zone_id' => $zone->id]);
+        $zone = $zone->fresh();
+        
+        // Dispatch event для уведомления Python-сервиса
+        event(new ZoneUpdated($zone));
+        
+        return $zone;
     }
 
     /**
@@ -296,41 +273,14 @@ class ZoneService
             throw new \DomainException('Zone is not paused');
         }
 
-        return DB::transaction(function () use ($zone) {
-            $zone->update(['status' => 'RUNNING']);
-
-            // Создаем zone_event
-            $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-
-            $eventPayload = json_encode([
-                'zone_id' => $zone->id,
-                'from_status' => 'PAUSED',
-                'to_status' => 'RUNNING',
-                'resumed_at' => now()->toIso8601String(),
-            ]);
-
-            $eventData = [
-                'zone_id' => $zone->id,
-                'type' => 'CYCLE_RESUMED',
-                'created_at' => now(),
-            ];
-
-            if ($hasPayloadJson) {
-                $eventData['payload_json'] = $eventPayload;
-            } else {
-                $eventData['details'] = $eventPayload;
-            }
-
-            DB::table('zone_events')->insert($eventData);
-
-            Log::info('Zone resumed', ['zone_id' => $zone->id]);
-            $zone = $zone->fresh();
-
-            // Dispatch event для уведомления Python-сервиса
-            event(new ZoneUpdated($zone));
-
-            return $zone;
-        });
+        $zone->update(['status' => 'RUNNING']);
+        Log::info('Zone resumed', ['zone_id' => $zone->id]);
+        $zone = $zone->fresh();
+        
+        // Dispatch event для уведомления Python-сервиса
+        event(new ZoneUpdated($zone));
+        
+        return $zone;
     }
 
     /**
@@ -340,10 +290,10 @@ class ZoneService
     {
         // Используем history-logger для всех операций с нодами
         $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
+        if (!$baseUrl) {
             throw new \DomainException('History Logger URL not configured');
         }
-
+        
         $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -359,14 +309,14 @@ class ZoneService
                 ->timeout(350) // Больше чем max_duration_sec (300) + запас
                 ->post("{$baseUrl}/zones/{$zone->id}/fill", $payload);
 
-            if (! $response->successful()) {
+            if (!$response->successful()) {
                 Log::error('ZoneService: Fill operation failed', [
                     'zone_id' => $zone->id,
                     'target_level' => $data['target_level'],
                     'status' => $response->status(),
                     'response' => substr($response->body(), 0, 500),
                 ]);
-                throw new \DomainException('Fill operation failed: '.substr($response->body(), 0, 200));
+                throw new \DomainException('Fill operation failed: ' . substr($response->body(), 0, 200));
             }
 
             Log::info('Zone fill executed', [
@@ -407,10 +357,10 @@ class ZoneService
     {
         // Используем history-logger для всех операций с нодами
         $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
+        if (!$baseUrl) {
             throw new \DomainException('History Logger URL not configured');
         }
-
+        
         $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -426,27 +376,14 @@ class ZoneService
                 ->timeout(350) // Больше чем max_duration_sec (300) + запас
                 ->post("{$baseUrl}/zones/{$zone->id}/drain", $payload);
 
-            if (! $response->successful()) {
+            if (!$response->successful()) {
                 Log::error('ZoneService: Drain operation failed', [
                     'zone_id' => $zone->id,
                     'target_level' => $data['target_level'],
                     'status' => $response->status(),
                     'response' => substr($response->body(), 0, 500),
                 ]);
-
-                // In testing environment, don't throw exception for service unavailability
-                // to allow testing of queueing behavior
-                if (app()->environment('testing')) {
-                    return [
-                        'success' => false,
-                        'error' => 'Service unavailable (simulated for testing)',
-                        'target_level' => $data['target_level'],
-                        'final_level' => $data['target_level'], // Assume operation "succeeded" for testing
-                        'elapsed_sec' => 0.0,
-                    ];
-                }
-
-                throw new \DomainException('Drain operation failed: '.substr($response->body(), 0, 200));
+                throw new \DomainException('Drain operation failed: ' . substr($response->body(), 0, 200));
             }
 
             Log::info('Zone drain executed', [
@@ -487,10 +424,10 @@ class ZoneService
     {
         // Используем history-logger для всех операций с нодами
         $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
+        if (!$baseUrl) {
             throw new \DomainException('History Logger URL not configured');
         }
-
+        
         $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -507,7 +444,7 @@ class ZoneService
                 ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
                 ->post("{$baseUrl}/zones/{$zone->id}/calibrate-flow", $payload);
 
-            if (! $response->successful()) {
+            if (!$response->successful()) {
                 Log::error('ZoneService: Flow calibration failed', [
                     'zone_id' => $zone->id,
                     'node_id' => $data['node_id'] ?? null,
@@ -515,7 +452,7 @@ class ZoneService
                     'status' => $response->status(),
                     'response' => substr($response->body(), 0, 500),
                 ]);
-                throw new \DomainException('Flow calibration failed: '.substr($response->body(), 0, 200));
+                throw new \DomainException('Flow calibration failed: ' . substr($response->body(), 0, 200));
             }
 
             Log::info('Flow calibration executed', [
@@ -552,154 +489,5 @@ class ZoneService
             throw new \DomainException('Flow calibration failed. Please check the request parameters.');
         }
     }
-
-    /**
-     * Калибровка дозирующей помпы (ml/sec).
-     */
-    public function calibratePump(Zone $zone, array $data): array
-    {
-        $channelBelongsToZone = NodeChannel::query()
-            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
-            ->where('node_channels.id', (int) ($data['node_channel_id'] ?? 0))
-            ->where('nodes.zone_id', $zone->id)
-            ->exists();
-        if (! $channelBelongsToZone) {
-            $invalidChannelId = (int) ($data['node_channel_id'] ?? 0);
-            throw new \DomainException(
-                "node_channel_id={$invalidChannelId} does not belong to zone {$zone->id}"
-            );
-        }
-
-        $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
-            throw new \DomainException('History Logger URL not configured');
-        }
-
-        $token = config('services.history_logger.token') ?? config('services.python_bridge.token');
-        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-
-        $payload = [
-            'node_channel_id' => $data['node_channel_id'],
-            'duration_sec' => $data['duration_sec'],
-            'skip_run' => (bool) ($data['skip_run'] ?? false),
-        ];
-        if (array_key_exists('actual_ml', $data) && $data['actual_ml'] !== null) {
-            $payload['actual_ml'] = $data['actual_ml'];
-        }
-        if (! empty($data['component'])) {
-            $payload['component'] = $data['component'];
-        }
-        if (array_key_exists('test_volume_l', $data) && $data['test_volume_l'] !== null) {
-            $payload['test_volume_l'] = $data['test_volume_l'];
-        }
-        if (array_key_exists('ec_before_ms', $data) && $data['ec_before_ms'] !== null) {
-            $payload['ec_before_ms'] = $data['ec_before_ms'];
-        }
-        if (array_key_exists('ec_after_ms', $data) && $data['ec_after_ms'] !== null) {
-            $payload['ec_after_ms'] = $data['ec_after_ms'];
-        }
-        if (array_key_exists('temperature_c', $data) && $data['temperature_c'] !== null) {
-            $payload['temperature_c'] = $data['temperature_c'];
-        }
-
-        try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->timeout(180)
-                ->post("{$baseUrl}/zones/{$zone->id}/calibrate-pump", $payload);
-
-            if (! $response->successful()) {
-                Log::error('ZoneService: Pump calibration failed', [
-                    'zone_id' => $zone->id,
-                    'payload' => $payload,
-                    'status' => $response->status(),
-                    'response' => substr($response->body(), 0, 500),
-                ]);
-                throw new \DomainException('Pump calibration failed: '.substr($response->body(), 0, 200));
-            }
-
-            return $response->json('data', []);
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('ZoneService: Connection error during pump calibration', [
-                'zone_id' => $zone->id,
-                'payload' => $payload,
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Unable to connect to pump calibration service. Please try again later.');
-        } catch (\Illuminate\Http\Client\TimeoutException $e) {
-            Log::error('ZoneService: Timeout during pump calibration', [
-                'zone_id' => $zone->id,
-                'payload' => $payload,
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Pump calibration timed out. Please try again later.');
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            Log::error('ZoneService: Request error during pump calibration', [
-                'zone_id' => $zone->id,
-                'payload' => $payload,
-                'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
-            ]);
-            throw new \DomainException('Pump calibration failed. Please check the request parameters.');
-        }
-    }
-
-    /**
-     * Завершить grow-cycle (harvest)
-     */
-    public function harvest(Zone $zone): Zone
-    {
-        return DB::transaction(function () use ($zone) {
-            // Проверяем, что зона в статусе RUNNING или PAUSED
-            if (! in_array($zone->status, ['RUNNING', 'PAUSED'])) {
-                throw new \DomainException("Zone must be RUNNING or PAUSED to harvest. Current status: {$zone->status}");
-            }
-
-            // Обновляем статус зоны на HARVESTED
-            $zone->update(['status' => 'HARVESTED']);
-
-            // Закрываем активный цикл, если есть
-            if ($zone->activeGrowCycle) {
-                // Завершаем цикл через GrowCycleService
-                // Это должно быть сделано через отдельный метод, но пока просто логируем
-                Log::info('Active grow cycle found on harvest', [
-                    'zone_id' => $zone->id,
-                    'grow_cycle_id' => $zone->activeGrowCycle->id,
-                ]);
-            }
-
-            // Создаем zone_event
-            $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-
-            $eventPayload = json_encode([
-                'zone_id' => $zone->id,
-                'status' => 'HARVESTED',
-                'harvested_at' => now()->toIso8601String(),
-            ]);
-
-            $eventData = [
-                'zone_id' => $zone->id,
-                'type' => 'CYCLE_HARVESTED',
-                'created_at' => now(),
-            ];
-
-            if ($hasPayloadJson) {
-                $eventData['payload_json'] = $eventPayload;
-            } else {
-                $eventData['details'] = $eventPayload;
-            }
-
-            DB::table('zone_events')->insert($eventData);
-
-            Log::info('Zone cycle harvested', [
-                'zone_id' => $zone->id,
-            ]);
-
-            $zone = $zone->fresh();
-
-            // Dispatch event для уведомления Python-сервиса
-            event(new ZoneUpdated($zone));
-
-            return $zone;
-        });
-    }
 }
+

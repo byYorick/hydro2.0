@@ -5,15 +5,15 @@
  * Запуск: php check_zone6.php [recipe_id]
  */
 
-require __DIR__.'/vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
-$app = require_once __DIR__.'/bootstrap/app.php';
+$app = require_once __DIR__ . '/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-use App\Models\Recipe;
-use App\Models\User;
 use App\Models\Zone;
-use App\Services\GrowCycleService;
+use App\Models\Recipe;
+use App\Models\ZoneRecipeInstance;
+use App\Services\ZoneService;
 use Illuminate\Support\Facades\Cache;
 
 echo "🔍 Проверка зоны 6...\n";
@@ -21,7 +21,7 @@ echo "🔍 Проверка зоны 6...\n";
 // Проверяем зону 6
 $zone = Zone::find(6);
 
-if (! $zone) {
+if (!$zone) {
     echo "❌ Зона 6 не найдена в базе данных!\n";
     exit(1);
 }
@@ -29,18 +29,17 @@ if (! $zone) {
 echo "✅ Зона 6 найдена: {$zone->name}\n";
 echo "   ID: {$zone->id}\n";
 echo "   Статус: {$zone->status}\n";
-echo '   Теплица ID: '.($zone->greenhouse_id ?? 'не указана')."\n";
-echo '   Описание: '.($zone->description ?? 'нет')."\n";
+echo "   Теплица ID: " . ($zone->greenhouse_id ?? 'не указана') . "\n";
+echo "   Описание: " . ($zone->description ?? 'нет') . "\n";
 
-// Проверяем активный цикл
-$activeCycle = $zone->activeGrowCycle;
-if ($activeCycle && $activeCycle->recipeRevision) {
-    $recipe = $activeCycle->recipeRevision->recipe;
-    $currentPhaseIndex = $activeCycle->currentPhase?->phase_index ?? 0;
-    echo "✅ Рецепт привязан: ID {$recipe->id} - {$recipe->name}\n";
-    echo "   Текущая фаза: {$currentPhaseIndex}\n";
+// Проверяем рецепт
+$recipeInstance = $zone->recipeInstance;
+if ($recipeInstance) {
+    $recipe = $recipeInstance->recipe;
+    echo "✅ Рецепт привязан: ID {$recipeInstance->recipe_id} - {$recipe->name}\n";
+    echo "   Текущая фаза: " . ($recipeInstance->current_phase_index ?? 0) . "\n";
 } else {
-    echo "⚠️  Активный цикл не найден для зоны 6\n";
+    echo "⚠️  Рецепт не привязан к зоне 6\n";
 }
 
 echo "\n";
@@ -58,7 +57,7 @@ echo "   ✅ Кеш очищен\n";
 
 // Проверяем, есть ли зона в базе при обычном запросе
 $zonesQuery = Zone::query()
-    ->select(['id', 'name', 'status', 'description', 'greenhouse_id'])
+    ->select(['id','name','status','description','greenhouse_id'])
     ->get();
 
 $zoneInQuery = $zonesQuery->firstWhere('id', 6);
@@ -71,18 +70,13 @@ if ($zoneInQuery) {
 // Список рецептов
 echo "\n";
 echo "📋 Доступные рецепты:\n";
-$recipes = Recipe::query()
-    ->with(['latestPublishedRevision.phases', 'latestDraftRevision.phases', 'plants:id,name'])
-    ->get(['id', 'name', 'description']);
+$recipes = Recipe::all(['id', 'name', 'description']);
 if ($recipes->isEmpty()) {
     echo "   Рецептов не найдено\n";
 } else {
     foreach ($recipes as $recipe) {
-        $revision = $recipe->latestPublishedRevision ?? $recipe->latestDraftRevision;
-        $phasesCount = $revision?->phases?->count() ?? 0;
-        $plants = $recipe->plants->pluck('name')->filter()->implode(', ');
-        $plantLabel = $plants ? " | Культуры: {$plants}" : '';
-        echo "   ID {$recipe->id}: {$recipe->name} ({$phasesCount} фаз){$plantLabel}\n";
+        $phasesCount = $recipe->phases()->count();
+        echo "   ID {$recipe->id}: {$recipe->name} ({$phasesCount} фаз)\n";
         if ($recipe->description) {
             echo "      Описание: {$recipe->description}\n";
         }
@@ -91,54 +85,30 @@ if ($recipes->isEmpty()) {
 
 // Привязка рецепта, если указан аргумент
 if (isset($argv[1]) && is_numeric($argv[1])) {
-    $recipeId = (int) $argv[1];
+    $recipeId = (int)$argv[1];
     echo "\n";
     echo "🔗 Привязка рецепта ID {$recipeId} к зоне 6...\n";
-
+    
     $recipe = Recipe::find($recipeId);
-    if (! $recipe) {
+    if (!$recipe) {
         echo "❌ Рецепт ID {$recipeId} не найден!\n";
         exit(1);
     }
-
-    $recipe->load(['latestPublishedRevision.phases', 'plants:id,name']);
-    $revision = $recipe->latestPublishedRevision;
-    $plant = $recipe->plants->first();
-
-    if (! $revision) {
-        echo "❌ У рецепта '{$recipe->name}' нет опубликованной ревизии!\n";
-        exit(1);
-    }
-
-    if (! $plant) {
-        echo "❌ У рецепта '{$recipe->name}' нет привязанной культуры!\n";
-        exit(1);
-    }
-
+    
     // Проверяем наличие фаз
-    $phasesCount = $revision->phases->count();
+    $phasesCount = $recipe->phases()->count();
     if ($phasesCount === 0) {
         echo "⚠️  Внимание: рецепт '{$recipe->name}' не имеет фаз!\n";
     }
-
+    
     try {
-        $growCycleService = app(GrowCycleService::class);
-        $userId = User::query()->value('id');
-        $cycle = $growCycleService->createCycle(
-            $zone,
-            $revision,
-            $plant->id,
-            [
-                'start_immediately' => true,
-                'planting_at' => now(),
-            ],
-            $userId
-        );
-
+        $zoneService = app(ZoneService::class);
+        $newInstance = $zoneService->attachRecipe($zone, $recipeId, now());
+        
         echo "✅ Рецепт '{$recipe->name}' успешно привязан к зоне 6!\n";
-        echo "   Grow cycle ID: {$cycle->id}\n";
+        echo "   Instance ID: {$newInstance->id}\n";
         echo "   Текущая фаза: 0 (первая фаза)\n";
-
+        
         // Очищаем кеш еще раз
         for ($i = 1; $i <= 100; $i++) {
             Cache::forget("zones_list_{$i}");
@@ -147,7 +117,7 @@ if (isset($argv[1]) && is_numeric($argv[1])) {
         Cache::forget('zones_list');
         Cache::forget('dashboard_data');
         echo "   ✅ Кеш очищен\n";
-
+        
     } catch (\Exception $e) {
         echo "❌ Ошибка при привязке рецепта: {$e->getMessage()}\n";
         exit(1);
@@ -159,3 +129,7 @@ if (isset($argv[1]) && is_numeric($argv[1])) {
 
 echo "\n";
 echo "✅ Проверка завершена\n";
+
+
+
+

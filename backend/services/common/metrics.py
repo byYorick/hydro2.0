@@ -7,20 +7,16 @@ from enum import Enum
 
 class Metric(str, Enum):
     """Стандартизированные типы метрик."""
-    PH = "PH"
-    EC = "EC"
-    TEMPERATURE = "TEMPERATURE"
-    HUMIDITY = "HUMIDITY"
-    CO2 = "CO2"
-    LIGHT_INTENSITY = "LIGHT_INTENSITY"
-    WATER_LEVEL = "WATER_LEVEL"
-    WATER_LEVEL_SWITCH = "WATER_LEVEL_SWITCH"
-    FLOW_RATE = "FLOW_RATE"
-    PUMP_CURRENT = "PUMP_CURRENT"
-    SOIL_MOISTURE = "SOIL_MOISTURE"
-    SOIL_TEMP = "SOIL_TEMP"
-    WIND_SPEED = "WIND_SPEED"
-    OUTSIDE_TEMP = "OUTSIDE_TEMP"
+    PH = "ph"
+    EC = "ec"
+    TEMP_AIR = "temp_air"
+    TEMP_WATER = "temp_water"
+    HUMIDITY = "humidity"
+    CO2 = "co2"
+    LUX = "lux"
+    WATER_LEVEL = "water_level"
+    FLOW_RATE = "flow_rate"
+    PUMP_CURRENT = "pump_current"
 
 
 # Словарь канонических метрик для быстрого поиска
@@ -39,7 +35,7 @@ def normalize_metric_type(raw: str) -> str:
     """
     Нормализовать тип метрики:
     - Убирает пробелы (strip)
-    - Приводит к верхнему регистру (upper)
+    - Приводит к нижнему регистру (lower)
     - Проверяет, что метрика известна
     - Возвращает каноническое значение
     
@@ -47,12 +43,13 @@ def normalize_metric_type(raw: str) -> str:
         raw: Сырое значение типа метрики (может быть с пробелами, разным регистром)
     
     Returns:
-        Каноническое значение метрики (uppercase, без пробелов)
+        Каноническое значение метрики (lowercase, без пробелов)
     
     Raises:
         UnknownMetricError: Если метрика не найдена в CANONICAL_METRICS
     """
-    key = raw.strip().upper()
+    key = raw.strip().lower()
     if key in CANONICAL_METRICS:
         return CANONICAL_METRICS[key].value
     raise UnknownMetricError(raw)
+

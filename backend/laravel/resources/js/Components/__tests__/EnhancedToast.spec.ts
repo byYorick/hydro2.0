@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import EnhancedToast from '@/Components/EnhancedToast.vue'
 
@@ -51,9 +51,8 @@ describe('EnhancedToast', () => {
         }
       })
 
-      const toast = wrapper.findAll('div').find(el => el.text().includes('Test message') && el.classes().includes('min-w-[300px]'))
-      expect(toast).toBeDefined()
-      expect(toast?.classes()).toContain('bg-[color:var(--badge-success-bg)]')
+      const toast = wrapper.find('.bg-emerald-900\\/90')
+      expect(toast.exists()).toBe(true)
     })
 
     it('применяет правильные классы для error', () => {
@@ -63,9 +62,8 @@ describe('EnhancedToast', () => {
         }
       })
 
-      const toast = wrapper.findAll('div').find(el => el.text().includes('Error message') && el.classes().includes('min-w-[300px]'))
-      expect(toast).toBeDefined()
-      expect(toast?.classes()).toContain('bg-[color:var(--badge-danger-bg)]')
+      const toast = wrapper.find('.bg-red-900\\/90')
+      expect(toast.exists()).toBe(true)
     })
   })
 
@@ -120,8 +118,8 @@ describe('EnhancedToast', () => {
         }
       })
 
-      const progressBar = wrapper.findAll('div').find(el => el.classes().includes('bg-[color:var(--border-muted)]') && el.classes().includes('h-1'))
-      expect(progressBar).toBeDefined()
+      const progressBar = wrapper.find('.bg-black\\/20')
+      expect(progressBar.exists()).toBe(true)
     })
 
     it('применяет правильную ширину прогресс-бара', () => {
@@ -153,3 +151,4 @@ describe('EnhancedToast', () => {
     })
   })
 })
+

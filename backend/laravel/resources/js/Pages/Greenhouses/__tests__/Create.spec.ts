@@ -81,16 +81,6 @@ describe('Greenhouses/Create.vue', () => {
   beforeEach(() => {
     axiosPostMock.mockClear()
     routerVisitMock.mockClear()
-    mockAxiosInstance.get.mockReset()
-    mockAxiosInstance.get.mockResolvedValue({
-      data: {
-        data: [
-          { id: 1, code: 'indoor', name: 'Indoor (Закрытая)' },
-          { id: 2, code: 'outdoor', name: 'Outdoor (Открытая)' },
-          { id: 3, code: 'greenhouse', name: 'Greenhouse (Теплица)' },
-        ],
-      },
-    })
     axiosPostMock.mockResolvedValue({
       data: {
         data: {
@@ -258,13 +248,12 @@ describe('Greenhouses/Create.vue', () => {
     // errors доступны через reactive, но не через $data в тестах
     // Проверяем, что ошибки отображаются в UI
     await wrapper.vm.$nextTick()
-    expect(wrapper.text()).toContain('Название обязательно')
+    const errorMessages = wrapper.findAll('.text-red-400')
+    expect(errorMessages.length).toBeGreaterThan(0)
   })
 
   it('позволяет выбрать тип теплицы', async () => {
     const wrapper = mount(GreenhousesCreate)
-    await wrapper.vm.$nextTick()
-    await new Promise(resolve => setTimeout(resolve, 50))
     
     const select = wrapper.find('select')
     expect(select.exists()).toBe(true)
@@ -283,3 +272,4 @@ describe('Greenhouses/Create.vue', () => {
     expect(wrapper.text()).toContain('Создать')
   })
 })
+

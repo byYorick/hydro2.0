@@ -17,7 +17,7 @@ GET /api/nodes/{id}/telemetry/history
 ```
 
 **Параметры:**
-- `metric` (required) - Тип метрики (TEMPERATURE, HUMIDITY, CO2, PH, EC и т.д.)
+- `metric` (required) - Тип метрики (TEMP_AIR, HUMIDITY, CO2, PH, EC и т.д.)
 - `channel` (optional) - Название канала для фильтрации
 - `from` (optional) - Начало временного диапазона (ISO 8601)
 - `to` (optional) - Конец временного диапазона (ISO 8601)
@@ -30,8 +30,7 @@ GET /api/nodes/{id}/telemetry/history
     {
       "ts": "2025-12-05T13:47:19.000000Z",
       "value": 21.015869140625,
-      "channel": "temperature",
-      "metric_type": "TEMPERATURE"
+      "channel": "temperature"
     },
     ...
   ]
@@ -42,7 +41,7 @@ GET /api/nodes/{id}/telemetry/history
 - Проверка авторизации пользователя
 - Проверка доступа к ноде через `ZoneAccessHelper`
 - Лимит 5000 записей
-- Данные берутся из `telemetry_samples` с джоином на `sensors`
+- Данные берутся из таблицы `telemetry` (TimescaleDB)
 
 #### 2. Роут
 
@@ -72,7 +71,7 @@ Route::get('nodes/{id}/telemetry/history', [TelemetryController::class, 'nodeHis
 
 ```typescript
 const metricColors = {
-  'TEMPERATURE': '#f59e0b', // amber-500
+  'TEMP_AIR': '#f59e0b', // amber-500
   'HUMIDITY': '#3b82f6', // blue-500
   'CO2': '#10b981', // emerald-500
   'PH': '#8b5cf6', // violet-500
@@ -80,7 +79,7 @@ const metricColors = {
 }
 
 const metricLabels = {
-  'TEMPERATURE': 'Температура',
+  'TEMP_AIR': 'Температура',
   'HUMIDITY': 'Влажность',
   'CO2': 'CO₂',
   'PH': 'pH',
@@ -99,13 +98,12 @@ const metricLabels = {
 
 2. History Logger
    └─> Слушает MQTT
-   └─> Записывает в PostgreSQL/TimescaleDB
-       ├─> telemetry_samples: sensor_id, ts, zone_id, value, quality, metadata
-       └─> sensors: node_id, zone_id, type, label (канал)
+   └─> Записывает в TimescaleDB (таблица telemetry)
+       └─> Поля: ts, node_id, zone_id, channel, metric_type, value, unit
 
 3. Laravel API
    └─> TelemetryController::nodeHistory()
-   └─> SELECT FROM telemetry_samples JOIN sensors WHERE node_id = ? AND type = ?
+   └─> SELECT FROM telemetry WHERE node_id = ? AND metric_type = ?
    └─> Возвращает JSON с данными
 
 4. Frontend (Vue)
@@ -127,7 +125,7 @@ const metricLabels = {
 ### API запрос для загрузки данных:
 
 ```bash
-curl -X GET "http://your-domain/api/nodes/2/telemetry/history?metric=TEMPERATURE&channel=temperature&from=2025-12-05T12:00:00Z" \
+curl -X GET "http://your-domain/api/nodes/2/telemetry/history?metric=TEMP_AIR&channel=temperature&from=2025-12-05T12:00:00Z" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -178,7 +176,7 @@ http://your-domain/devices/2
 
 ### 3. Откройте DevTools и проверьте Network:
 ```
-GET /api/nodes/2/telemetry/history?metric=TEMPERATURE&channel=temperature&from=...
+GET /api/nodes/2/telemetry/history?metric=TEMP_AIR&channel=temperature&from=...
 Status: 200 OK
 Response: { "status": "ok", "data": [...] }
 ```
@@ -195,12 +193,11 @@ Response: { "status": "ok", "data": [...] }
 
 2. **Проверьте, что есть данные в БД**:
    ```sql
-   SELECT COUNT(*), s.label as channel, s.type as metric_type
-   FROM telemetry_samples ts
-   JOIN sensors s ON s.id = ts.sensor_id
-   WHERE s.node_id = 2
-   GROUP BY s.label, s.type;
-```
+   SELECT COUNT(*), channel, metric_type 
+   FROM telemetry 
+   WHERE node_id = 2 
+   GROUP BY channel, metric_type;
+   ```
 
 3. **Проверьте логи History Logger**:
    ```bash
@@ -222,3 +219,4 @@ Response: { "status": "ok", "data": [...] }
 - [ ] Добавить алерты на графике (критические значения)
 - [ ] Добавить возможность выбора конкретных каналов для отображения
 - [ ] Добавить статистику (min/max/avg) под графиком
+

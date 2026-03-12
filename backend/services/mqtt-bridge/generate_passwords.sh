@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-PASSWORDS_FILE="${1:-passwords.txt}"
+PASSWORDS_FILE="${1:-passwords}"
 
 # Colors
 RED='\033[0;31m'
@@ -23,12 +23,6 @@ error() {
 warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
-
-# Guard against historical wrong path type (directory named "passwords")
-if [ -d "${PASSWORDS_FILE}" ]; then
-    error "${PASSWORDS_FILE} is a directory. Expected a file path (e.g. passwords.txt)."
-    exit 1
-fi
 
 # Check if mosquitto_passwd is available
 if ! command -v mosquitto_passwd &> /dev/null; then
@@ -51,6 +45,7 @@ fi
 PYTHON_SERVICE_PASS="${MQTT_PYTHON_SERVICE_PASS:-python_service_pass}"
 AUTOMATION_ENGINE_PASS="${MQTT_AUTOMATION_ENGINE_PASS:-automation_pass}"
 HISTORY_LOGGER_PASS="${MQTT_HISTORY_LOGGER_PASS:-logger_pass}"
+SCHEDULER_PASS="${MQTT_SCHEDULER_PASS:-scheduler_pass}"
 MQTT_BRIDGE_PASS="${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}"
 ESP32_NODE_PASS="${MQTT_ESP32_NODE_PASS:-esp32_pass}"
 
@@ -59,6 +54,7 @@ log "Creating password file..."
 mosquitto_passwd -c "${PASSWORDS_FILE}" python_service <<< "${PYTHON_SERVICE_PASS}" || true
 mosquitto_passwd "${PASSWORDS_FILE}" automation_engine <<< "${AUTOMATION_ENGINE_PASS}" || true
 mosquitto_passwd "${PASSWORDS_FILE}" history_logger <<< "${HISTORY_LOGGER_PASS}" || true
+mosquitto_passwd "${PASSWORDS_FILE}" scheduler <<< "${SCHEDULER_PASS}" || true
 mosquitto_passwd "${PASSWORDS_FILE}" mqtt_bridge <<< "${MQTT_BRIDGE_PASS}" || true
 mosquitto_passwd "${PASSWORDS_FILE}" esp32_node <<< "${ESP32_NODE_PASS}" || true
 
@@ -67,6 +63,7 @@ log "Users added:"
 log "  - python_service"
 log "  - automation_engine"
 log "  - history_logger"
+log "  - scheduler"
 log "  - mqtt_bridge"
 log "  - esp32_node"
 
@@ -75,5 +72,7 @@ warning "Set environment variables:"
 warning "  MQTT_PYTHON_SERVICE_PASS"
 warning "  MQTT_AUTOMATION_ENGINE_PASS"
 warning "  MQTT_HISTORY_LOGGER_PASS"
+warning "  MQTT_SCHEDULER_PASS"
 warning "  MQTT_MQTT_BRIDGE_PASS"
 warning "  MQTT_ESP32_NODE_PASS"
+

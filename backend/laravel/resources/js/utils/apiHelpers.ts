@@ -2,18 +2,6 @@
  * Утилиты для работы с API ответами
  */
 
-type ApiResponseLike<T> = {
-  data?: T | ApiResponseLike<T>
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function hasDataKey(value: unknown): value is ApiResponseLike<unknown> {
-  return isRecord(value) && 'data' in value
-}
-
 /**
  * Извлекает данные из API ответа
  * Поддерживает разные форматы ответов:
@@ -24,20 +12,20 @@ function hasDataKey(value: unknown): value is ApiResponseLike<unknown> {
  * @param response - Ответ от API
  * @returns Извлеченные данные или null
  */
-export function extractData<T = unknown>(response: unknown): T | null {
+export function extractData<T = any>(response: any): T | null {
   if (!response) {
     return null
   }
   
   // Если response уже является нужным типом
-  if (isRecord(response) && !hasDataKey(response)) {
+  if (response && typeof response === 'object' && !('data' in response)) {
     return response as T
   }
   
   // Стандартный формат: { data: T }
-  if (hasDataKey(response) && typeof response.data !== 'undefined') {
+  if (response?.data !== undefined) {
     // Проверяем, не является ли data тоже обернутым объектом
-    if (hasDataKey(response.data)) {
+    if (response.data && typeof response.data === 'object' && 'data' in response.data) {
       return response.data.data as T
     }
     return response.data as T
@@ -53,8 +41,8 @@ export function extractData<T = unknown>(response: unknown): T | null {
  * @param expectedType - Ожидаемый тип (для валидации)
  * @returns Нормализованные данные
  */
-export function normalizeResponse<T = unknown>(
-  response: unknown,
+export function normalizeResponse<T = any>(
+  response: any,
   expectedType?: 'array' | 'object' | 'primitive'
 ): T {
   const data = extractData<T>(response)
@@ -81,7 +69,8 @@ export function normalizeResponse<T = unknown>(
  * @param fallback - Значение по умолчанию
  * @returns Извлеченные данные или fallback
  */
-export function extractDataWithFallback<T = unknown>(response: unknown, fallback: T): T {
+export function extractDataWithFallback<T = any>(response: any, fallback: T): T {
   const data = extractData<T>(response)
   return data !== null && data !== undefined ? data : fallback
 }
+

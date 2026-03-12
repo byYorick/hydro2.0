@@ -5,10 +5,6 @@
 
 **Целевая аудитория:** Разработчики, реализующие функциональность создания теплиц, зон, рецептов и привязку узлов.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## Содержание
@@ -16,7 +12,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. [Обзор workflow](#1-обзор-workflow)
 2. [Шаг 1: Создание теплицы (Greenhouse)](#2-шаг-1-создание-теплицы-greenhouse)
 3. [Шаг 2: Создание рецепта выращивания (Recipe)](#3-шаг-2-создание-рецепта-выращивания-recipe)
-4. [Шаг 3: Добавление фаз ревизии рецепта (Recipe Revision Phases)](#4-шаг-3-добавление-фаз-ревизии-рецепта-recipe-revision-phases)
+4. [Шаг 3: Добавление фаз рецепта (Recipe Phases)](#4-шаг-3-добавление-фаз-рецепта-recipe-phases)
 5. [Шаг 4: Создание зоны (Zone)](#5-шаг-4-создание-зоны-zone)
 6. [Шаг 5: Привязка рецепта к зоне](#6-шаг-5-привязка-рецепта-к-зоне)
 7. [Шаг 6: Регистрация и привязка узлов (Nodes)](#7-шаг-6-регистрация-и-привязка-узлов-nodes)
@@ -232,16 +228,14 @@ POST /api/recipes
 
 ---
 
-## 4. Шаг 3: Добавление фаз ревизии рецепта (Recipe Revision Phases)
+## 4. Шаг 3: Добавление фаз рецепта (Recipe Phases)
 
-Для каждого этапа роста нужно создать фазу ревизии рецепта.
-Сначала создается DRAFT-ревизия рецепта через `POST /api/recipes/{recipe_id}/revisions`,
-после чего фазы добавляются в эту ревизию.
+Для каждого этапа роста нужно создать фазу рецепта.
 
 ### API Endpoint
 
 ```
-POST /api/recipe-revisions/{recipe_revision_id}/phases
+POST /api/recipes/{recipe_id}/phases
 ```
 
 ### Request Payload для фазы "Vegetative"
@@ -594,15 +588,11 @@ POST /api/nodes/register
 {
   "uid": "node-001",
   "hardware_id": "ESP32-ABC123",
-  "type": "ph",
+  "type": "sensor",
   "fw_version": "2.0.1",
   "hardware_revision": "rev2"
 }
 ```
-
-> `type` для узла принимает только канонические значения `nodes.type`:
-> `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-> Значения `sensor/actuator/controller` относятся только к `node_channels.type` в составе NodeConfig.
 
 #### Response (201 Created)
 
@@ -613,7 +603,7 @@ POST /api/nodes/register
     "id": 1,
     "uid": "node-001",
     "zone_id": null,
-    "type": "ph",
+    "type": "sensor",
     "status": "offline",
     "lifecycle_state": "registered_backend",
     "created_at": "2025-11-21T10:25:00.000000Z"
@@ -648,7 +638,7 @@ PATCH /api/nodes/{node_id}
     "uid": "node-001",
     "zone_id": 1,
     "name": "pH/EC Sensor Zone A",
-    "type": "ph",
+    "type": "sensor",
     "status": "online",
     "lifecycle_state": "provisioned",
     "updated_at": "2025-11-21T10:30:00.000000Z"
@@ -675,7 +665,7 @@ GET /api/nodes?unassigned=true
         "id": 1,
         "uid": "node-001",
         "zone_id": null,
-        "type": "ph",
+        "type": "sensor",
         "status": "online",
         "channels": []
       }
@@ -686,17 +676,60 @@ GET /api/nodes?unassigned=true
 
 ---
 
-## 8. Шаг 7: NodeConfig (read-only)
+## 8. Шаг 7: Настройка каналов узлов (Node Channels)
 
-Конфиг узла формируется в прошивке и отправляется на сервер через `config_report`.
-Сервер **не генерирует и не редактирует** NodeConfig, а только хранит и использует для команд/телеметрии.
+Каналы узлов определяют, какие сенсоры и актуаторы доступны на узле.
 
-### Как происходит синхронизация:
+### API Endpoint (публикация конфигурации узла)
 
-1. Нода подключается к MQTT
-2. Нода отправляет `config_report` в `hydro/{gh}/{zone}/{node}/config_report`
-3. history-logger сохраняет конфиг в `nodes.config` и синхронизирует `node_channels`
-4. Узел считается привязанным к зоне после получения `config_report`
+```
+POST /api/nodes/{node_id}/config/publish
+```
+
+### Request Payload
+
+```json
+{
+  "config": {
+    "channels": [
+      {
+        "channel": "ph_sensor",
+        "type": "sensor",
+        "unit": "pH",
+        "min": 0,
+        "max": 14
+      },
+      {
+        "channel": "ec_sensor",
+        "type": "sensor",
+        "unit": "mS/cm",
+        "min": 0,
+        "max": 10
+      },
+      {
+        "channel": "pump_A",
+        "type": "actuator",
+        "unit": "bool"
+      }
+    ]
+  }
+}
+```
+
+### Response (200 OK)
+
+```json
+{
+  "status": "ok",
+  "message": "Configuration published to node via MQTT"
+}
+```
+
+### Что происходит:
+
+1. Конфигурация сохраняется в таблицу `node_channels`
+2. Конфигурация отправляется узлу через MQTT: `hydro/{gh_uid}/config/{node_uid}`
+3. Узел получает конфигурацию и настраивает каналы
 
 ### Получение конфигурации узла
 
@@ -712,19 +745,32 @@ GET /api/nodes/{node_id}/config
 {
   "status": "ok",
   "data": {
-    "node_id": "nd-ph-1",
-    "version": 3,
+    "node_id": 1,
     "channels": [
       {
+        "id": 1,
+        "node_id": 1,
         "channel": "ph_sensor",
         "type": "sensor",
-        "metric": "PH",
-        "unit": "pH"
+        "unit": "pH",
+        "min": 0,
+        "max": 14
       },
       {
+        "id": 2,
+        "node_id": 1,
+        "channel": "ec_sensor",
+        "type": "sensor",
+        "unit": "mS/cm",
+        "min": 0,
+        "max": 10
+      },
+      {
+        "id": 3,
+        "node_id": 1,
         "channel": "pump_A",
         "type": "actuator",
-        "actuator_type": "PERISTALTIC_PUMP"
+        "unit": "bool"
       }
     ]
   }
@@ -1145,7 +1191,7 @@ POST /api/nodes/register
 {
   "uid": "node-001",
   "hardware_id": "ESP32-ABC123",
-  "type": "ph",
+  "type": "sensor",
   "fw_version": "2.0.1"
 }
 
@@ -1156,8 +1202,16 @@ PATCH /api/nodes/1
   "name": "pH/EC Sensor Zone A"
 }
 
-# Конфиг узла публикуется самой нодой (config_report)
-GET /api/nodes/1/config
+# Настройка каналов
+POST /api/nodes/1/config/publish
+{
+  "config": {
+    "channels": [
+      {"channel": "ph_sensor", "type": "sensor", "unit": "pH"},
+      {"channel": "ec_sensor", "type": "sensor", "unit": "mS/cm"}
+    ]
+  }
+}
 ```
 
 #### 7. Проверить состояние
@@ -1179,7 +1233,7 @@ GET /api/zones/1/telemetry/last
 1. **Порядок операций важен:** Сначала создайте теплицу и рецепт, затем зону, затем привязывайте рецепт и узлы
 2. **Рецепт должен иметь фазы:** Без фаз рецепт не может быть применен к зоне
 3. **Узлы регистрируются автоматически:** ESP32 узлы регистрируются через MQTT при первом подключении
-4. **Конфигурация узлов приходит от нод:** Сервер хранит `config_report`, редактирование отключено
+4. **Конфигурация узлов публикуется через MQTT:** Используйте `/api/nodes/{id}/config/publish` для отправки конфигурации узлу
 5. **automation-engine работает автоматически:** После привязки рецепта automation-engine начинает управление зоной
 
 **Следующие шаги для реализации:**
@@ -1189,3 +1243,4 @@ GET /api/zones/1/telemetry/last
 3. Добавьте обработку ошибок
 4. Реализуйте realtime обновления через WebSocket (Laravel Reverb)
 5. Добавьте визуализацию телеметрии и состояния зон
+

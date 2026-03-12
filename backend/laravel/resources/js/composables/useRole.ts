@@ -7,12 +7,8 @@ import type { UserRole } from '@/types/User'
  * Централизованная логика проверки прав доступа
  */
 export function useRole() {
-  const page = usePage<{
-    auth?: {
-      user?: { role?: UserRole }
-    }
-  }>()
-  const user = computed(() => page.props.auth?.user)
+  const page = usePage()
+  const user = computed(() => page.props.auth?.user as { role?: UserRole } | undefined)
   
   const role = computed(() => user.value?.role as UserRole | undefined)
   
@@ -46,21 +42,6 @@ export function useRole() {
     isAdmin.value || isAgronomist.value || isEngineer.value || isOperator.value
   )
   
-  // Конфигурация сущностей и инфраструктуры (CRUD)
-  const canConfigureEntities = computed(() =>
-    isAdmin.value || isAgronomist.value
-  )
-
-  // Операционное управление циклами (старт/стоп/контроль)
-  const canOperateCycles = computed(() =>
-    isAdmin.value || isAgronomist.value || isOperator.value
-  )
-
-  // Управление климатом в рантайме
-  const canOperateClimate = computed(() =>
-    isAdmin.value || isAgronomist.value || isOperator.value
-  )
-
   const canViewOnly = computed(() => isViewer.value)
   
   // Проверка конкретной роли
@@ -96,9 +77,6 @@ export function useRole() {
     canCreateCommands,
     canEditRecipes,
     canResolveAlerts,
-    canConfigureEntities,
-    canOperateCycles,
-    canOperateClimate,
     canViewOnly,
     
     // Утилиты
@@ -106,3 +84,4 @@ export function useRole() {
     hasAnyRole,
   }
 }
+

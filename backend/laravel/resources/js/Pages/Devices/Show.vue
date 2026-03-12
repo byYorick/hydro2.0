@@ -2,15 +2,10 @@
   <AppLayout>
     <div class="flex items-center justify-between mb-3">
       <div>
-        <div class="text-lg font-semibold">
-          {{ device.uid || device.name || device.id }}
-        </div>
-        <div class="text-xs text-[color:var(--text-muted)]">
+        <div class="text-lg font-semibold">{{ device.uid || device.name || device.id }}</div>
+        <div class="text-xs text-neutral-400">
           <span v-if="device.zone">
-            <Link
-              :href="`/zones/${device.zone.id}`"
-              class="text-[color:var(--accent-cyan)] hover:underline"
-            >Zone: {{ device.zone.name }}</Link>
+            <Link :href="`/zones/${device.zone.id}`" class="text-sky-400 hover:underline">Zone: {{ device.zone.name }}</Link>
           </span>
           <span v-else>Zone: -</span>
           · Type: {{ device.type || '-' }}
@@ -21,75 +16,41 @@
         <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
           {{ device.status?.toUpperCase() || 'UNKNOWN' }}
         </Badge>
-        <NodeLifecycleBadge
-          v-if="device.lifecycle_state"
-          :lifecycle-state="device.lifecycle_state"
-        />
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="onRestart"
-        >
-          Перезапустить
-        </Button>
+        <NodeLifecycleBadge v-if="device.lifecycle_state" :lifecycle-state="device.lifecycle_state" />
+        <Button size="sm" variant="secondary" @click="onRestart">Restart</Button>
       </div>
     </div>
 
     <!-- Визуализация связи с зоной -->
-    <Card
-      v-if="device.zone"
-      class="mb-3"
-    >
+    <Card v-if="device.zone" class="mb-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-lg border-2 border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] flex items-center justify-center">
+          <div class="w-12 h-12 rounded-lg border-2 border-sky-500/50 bg-sky-950/20 flex items-center justify-center">
             <span class="text-2xl">🌱</span>
           </div>
           <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Привязано к зоне
-            </div>
-            <Link
-              :href="`/zones/${device.zone.id}`"
-              class="text-[color:var(--accent-cyan)] hover:underline text-sm"
-            >
+            <div class="text-sm font-semibold text-neutral-200">Привязано к зоне</div>
+            <Link :href="`/zones/${device.zone.id}`" class="text-sky-400 hover:text-sky-300 hover:underline text-sm">
               {{ device.zone.name }}
             </Link>
-            <div
-              v-if="device.zone.status"
-              class="text-xs text-[color:var(--text-muted)] mt-1"
-            >
+            <div v-if="device.zone.status" class="text-xs text-neutral-400 mt-1">
               Статус: {{ device.zone.status }}
             </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <Link :href="`/zones/${device.zone.id}`">
-            <Button
-              size="sm"
-              variant="outline"
-            >
+            <Button size="sm" variant="outline">
               Перейти к зоне →
             </Button>
           </Link>
           <button 
-            :disabled="detaching"
-            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--accent-red)]/50 h-8 px-3 text-xs bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)] disabled:opacity-50 disabled:cursor-not-allowed"
             @click="detachNode"
+            :disabled="detaching"
+            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-600/50 h-8 px-3 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-200 border border-red-700/50 hover:border-red-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg
-              v-if="!detaching"
-              class="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
+            <svg v-if="!detaching" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
             <span v-if="detaching">Отвязка...</span>
             <span v-else>Отвязать от зоны</span>
@@ -97,37 +58,18 @@
         </div>
       </div>
     </Card>
-    <Card
-      v-else
-      class="mb-3 border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]"
-    >
-      <div class="flex items-center gap-2 text-[color:var(--badge-warning-text)]">
-        <svg
-          class="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          />
+    <Card v-else class="mb-3 border-amber-500/30 bg-amber-950/10">
+      <div class="flex items-center gap-2 text-amber-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
         <span class="text-sm">Устройство не привязано к зоне</span>
       </div>
     </Card>
 
     <!-- Графики телеметрии для сенсорных каналов (раздельно) -->
-    <div
-      v-if="sensorChannels.length > 0"
-      class="mb-3 space-y-3"
-    >
-      <template
-        v-for="(channel, index) in sensorChannels"
-        :key="channel?.channel || index"
-      >
+    <div v-if="sensorChannels.length > 0" class="mb-3 space-y-3">
+      <template v-for="(channel, index) in sensorChannels" :key="channel?.channel || index">
         <MultiSeriesTelemetryChart
           v-if="channel && getChartSeriesForChannel(channel).length > 0"
           :title="getChartTitleForChannel(channel)"
@@ -136,10 +78,7 @@
           @time-range-change="onChartTimeRangeChange"
         />
       </template>
-      <Card
-        v-if="sensorChannels.length > 0 && !hasChartData"
-        class="text-center text-sm text-[color:var(--text-dim)] py-8"
-      >
+      <Card v-if="sensorChannels.length > 0 && !hasChartData" class="text-center text-sm text-neutral-400 py-8">
         <div>Загрузка данных телеметрии...</div>
       </Card>
     </div>
@@ -148,26 +87,19 @@
       <Card class="xl:col-span-2">
         <div class="flex items-center justify-between gap-2 mb-2">
           <div>
-            <div class="text-sm font-semibold">
-              Channels
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)]">
+            <div class="text-sm font-semibold">Channels</div>
+            <div class="text-xs text-neutral-500">
               <span v-if="configLoading">Обновляем конфиг...</span>
-              <span v-else>Текущий конфиг ноды (read-only)</span>
-              <span
-                v-if="configError"
-                class="text-[color:var(--accent-amber)] ml-2"
-              >{{ configError }}</span>
+              <span v-else>Текущий конфиг ноды</span>
+              <span v-if="configError" class="text-amber-400 ml-2">{{ configError }}</span>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              :disabled="configLoading"
-              @click="loadNodeConfig"
-            >
+            <Button size="sm" variant="outline" :disabled="configLoading" @click="loadNodeConfig">
               {{ configLoading ? 'Обновление...' : 'Обновить' }}
+            </Button>
+            <Button size="sm" @click="showConfigWizard = true">
+              Редактировать конфиг
             </Button>
           </div>
         </div>
@@ -180,32 +112,19 @@
       </Card>
       <Card>
         <div class="flex items-center justify-between mb-2">
-          <div class="text-sm font-semibold">
-            NodeConfig
-          </div>
-          <div
-            v-if="configLoading"
-            class="text-[11px] text-[color:var(--text-dim)]"
-          >
-            Загрузка...
-          </div>
+          <div class="text-sm font-semibold">NodeConfig</div>
+          <div class="text-[11px] text-neutral-500" v-if="configLoading">Загрузка...</div>
         </div>
-        <div class="text-[11px] text-[color:var(--text-dim)] mb-2">
-          Конфиг присылается нодой через config_report и хранится на сервере.
-        </div>
-        <pre class="text-xs text-[color:var(--text-muted)] overflow-auto">{{ nodeConfig }}</pre>
+        <pre class="text-xs text-neutral-300 overflow-auto">{{ nodeConfig }}</pre>
       </Card>
     </div>
 
-    <ConfirmModal
-      :open="detachModalOpen"
-      title="Отвязать ноду"
-      message="Отвязать ноду от зоны? Нода будет сброшена в состояние «Зарегистрирована»."
-      confirm-text="Отвязать"
-      confirm-variant="danger"
-      :loading="detaching"
-      @close="detachModalOpen = false"
-      @confirm="confirmDetachNode"
+    <RelayConfigWizard
+      :show="showConfigWizard"
+      :node-id="device.id"
+      :initial-channels="wizardInitialChannels"
+      @close="showConfigWizard = false"
+      @published="onConfigPublished"
     />
   </AppLayout>
 </template>
@@ -217,50 +136,35 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
-// @ts-ignore
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
+import RelayConfigWizard from '@/Pages/Devices/RelayConfigWizard.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
-import { useTheme } from '@/composables/useTheme'
-import { useDeviceCommandActions } from '@/composables/useDeviceCommandActions'
 import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
   device?: Device
-  [key: string]: any
 }
 
 const page = usePage<PageProps>()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
+const testingChannels = ref<Set<string>>(new Set())
 const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')
+const showConfigWizard = ref(false)
+const detaching = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const devicesStore = useDevicesStore()
-const { theme } = useTheme()
-const {
-  testingChannels,
-  detaching,
-  detachModalOpen,
-  onRestart,
-  detachNode,
-  confirmDetachNode,
-  onTestPump,
-} = useDeviceCommandActions({
-  device,
-  api,
-  showToast,
-  upsertDevice: (updatedDevice) => devicesStore.upsert(updatedDevice),
-})
 
 // Графики телеметрии
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
@@ -269,6 +173,7 @@ const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number 
 // Приоритеты метрик для сортировки (меньше = выше приоритет)
 const METRIC_PRIORITY: Record<string, number> = {
   'TEMPERATURE': 1,
+  'TEMP_AIR': 1,
   'HUMIDITY': 2,
 }
 
@@ -292,13 +197,14 @@ const sensorChannels = computed(() => {
 const configChannels = computed(() => {
   const cfg = nodeConfigData.value
   if (cfg?.channels && Array.isArray(cfg.channels) && cfg.channels.length > 0) {
-    return cfg.channels.map((ch: any) => ({
+    return cfg.channels.map((ch) => ({
       channel: ch.name || ch.channel,
       name: ch.name || ch.channel,
       type: ch.type || ch.channel_type,
       metric: ch.metric || ch.metrics || null,
       unit: ch.unit || null,
       actuator_type: ch.actuator_type || ch.config?.actuator_type,
+      gpio: ch.gpio ?? ch.config?.gpio ?? null,
       description: ch.description || ch.config?.description || null,
       config: ch,
     }))
@@ -313,28 +219,18 @@ const displayChannels = computed(() => {
   return channels.value
 })
 
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
+// Константы для метрик
+const METRIC_COLORS: Record<string, string> = {
+  'TEMP_AIR': '#f59e0b',
+  'TEMPERATURE': '#f59e0b',
+  'HUMIDITY': '#3b82f6',
+  'CO2': '#10b981',
+  'PH': '#8b5cf6',
+  'EC': '#06b6d4',
 }
 
-// Константы для метрик
-const METRIC_COLORS = computed<Record<string, string>>(() => {
-  theme.value
-  return {
-    TEMPERATURE: resolveCssColor('--accent-amber', '#f59e0b'),
-    HUMIDITY: resolveCssColor('--accent-cyan', '#3b82f6'),
-    CO2: resolveCssColor('--accent-green', '#10b981'),
-    PH: resolveCssColor('--accent-lime', '#8b5cf6'),
-    EC: resolveCssColor('--accent-cyan', '#06b6d4'),
-    DEFAULT: resolveCssColor('--accent-cyan', '#3b82f6'),
-  }
-})
-
 const METRIC_LABELS: Record<string, string> = {
+  'TEMP_AIR': 'Температура',
   'TEMPERATURE': 'Температура',
   'HUMIDITY': 'Влажность',
   'CO2': 'CO₂',
@@ -343,6 +239,7 @@ const METRIC_LABELS: Record<string, string> = {
 }
 
 const METRIC_NORMALIZATION: Record<string, string> = {
+  'TEMP_AIR': 'TEMPERATURE',
   'TEMPERATURE': 'TEMPERATURE',
   'HUMIDITY': 'HUMIDITY',
   'CO2': 'CO2',
@@ -352,11 +249,11 @@ const METRIC_NORMALIZATION: Record<string, string> = {
 
 // Утилиты для работы с метриками
 const getMetricFromChannel = (channel: DeviceChannel): string => {
-  return String(channel.metric || channel.channel.toUpperCase())
+  return channel.metric || channel.channel.toUpperCase()
 }
 
-const getMetricColor = (metric: string, fallback?: string): string => {
-  return METRIC_COLORS.value[metric] || fallback || METRIC_COLORS.value.DEFAULT
+const getMetricColor = (metric: string, fallback: string = '#3b82f6'): string => {
+  return METRIC_COLORS[metric] || fallback
 }
 
 const getMetricLabel = (metric: string, fallback?: string): string => {
@@ -456,7 +353,7 @@ const nodeConfig = computed(() => {
     status: device.value.status,
     fw_version: device.value.fw_version,
     config: device.value.config,
-    channels: displayChannels.value.map((c: any) => ({
+    channels: displayChannels.value.map(c => ({
       channel: c.channel,
       type: c.type,
       metric: c.metric,
@@ -464,6 +361,25 @@ const nodeConfig = computed(() => {
     })),
   }
   return JSON.stringify(fallback, null, 2)
+})
+
+const wizardInitialChannels = computed(() => {
+  if (nodeConfigData.value?.channels) {
+    return nodeConfigData.value.channels
+  }
+
+  if (channels.value.length > 0) {
+    return channels.value.map(ch => ({
+      name: ch.channel,
+      channel: ch.channel,
+      type: ch.type,
+      metric: ch.metric,
+      unit: ch.unit,
+      config: ch.config,
+    }))
+  }
+
+  return []
 })
 
 const loadNodeConfig = async (): Promise<void> => {
@@ -475,14 +391,206 @@ const loadNodeConfig = async (): Promise<void> => {
     const response = await api.get<{ status: string; data?: Record<string, unknown> }>(
       `/nodes/${device.value.id}/config`
     )
-    const payload = response.data?.data
-    nodeConfigData.value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null
+    nodeConfigData.value = response.data?.data || null
   } catch (error) {
     configError.value = 'Не удалось загрузить конфиг'
     logger.error('[Devices/Show] Failed to load node config', error)
   } finally {
     configLoading.value = false
   }
+}
+
+const onConfigPublished = async (): Promise<void> => {
+  await loadNodeConfig()
+  showConfigWizard.value = false
+}
+
+const onRestart = async (): Promise<void> => {
+  try {
+    const response = await api.post<{ status: string }>(
+      `/nodes/${device.value.id}/commands`,
+      {
+        type: 'restart',
+        params: {},
+      }
+    )
+    
+    if (response.data?.status === 'ok') {
+      logger.debug('[Devices/Show] Device restart command sent successfully', response.data)
+      showToast('Команда перезапуска отправлена', 'success', TOAST_TIMEOUT.NORMAL)
+    }
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('[Devices/Show] Failed to restart device:', err)
+  }
+}
+
+const detachNode = async (): Promise<void> => {
+  if (!device.value.zone_id) {
+    showToast('Нода уже отвязана от зоны', 'warning', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
+  if (!confirm('Вы уверены, что хотите отвязать ноду от зоны? Нода будет сброшена в состояние "Зарегистрирована" и появится в списке новых нод.')) {
+    return
+  }
+
+  detaching.value = true
+  try {
+    const response = await api.post<{ status: string; data?: Device }>(
+      `/nodes/${device.value.id}/detach`,
+      {}
+    )
+    
+    if (response.data?.status === 'ok') {
+      logger.debug('[Devices/Show] Node detached successfully', response.data)
+      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
+      
+      // Обновляем device локально, убирая zone_id, вместо полного reload
+      const updatedDevice = response.data?.data || {
+        ...device.value,
+        zone_id: null,
+        zone: null,
+      }
+      
+      // Обновляем device в store для мгновенного отображения
+      if (updatedDevice?.id) {
+        devicesStore.upsert(updatedDevice)
+        logger.debug('[Devices/Show] Device updated in store after detach', { deviceId: updatedDevice.id })
+      }
+      
+      // Опционально: можно перенаправить на список устройств, если нужно
+      // router.visit('/devices')
+    }
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('[Devices/Show] Failed to detach node:', err)
+  } finally {
+    detaching.value = false
+  }
+}
+
+// Функция для теста конкретного насоса/клапана
+const onTestPump = async (channelName: string, channelType: string): Promise<void> => {
+  if (testingChannels.value.has(channelName)) return
+  
+  testingChannels.value.add(channelName)
+  const channelLabel = getChannelLabel(channelName, channelType)
+  showToast(`Запуск теста: ${channelLabel}...`, 'info', TOAST_TIMEOUT.SHORT)
+  
+  try {
+    // Для релейной ноды вместо run_pump отправляем set_state
+    let commandType = 'run_pump'
+    let params: Record<string, any> = { duration_ms: 3000 } // 3 секунды по умолчанию
+
+    const nodeTypeLower = (device.value.type || '').toLowerCase()
+    const channelNameLower = (channelName || '').toLowerCase()
+
+    const isRelayNode = nodeTypeLower.includes('relay')
+    const isValve = channelType === 'valve' || channelNameLower.includes('valve')
+    
+    if (isRelayNode) {
+      commandType = 'set_state'
+      params = { state: 1 }
+    } else if (isValve) {
+      commandType = 'set_relay'
+      params = { state: true, duration_ms: 3000 }
+    }
+    
+    const response = await api.post<{ status: string; data?: { command_id: number } }>(
+      `/nodes/${device.value.id}/commands`,
+      {
+        type: commandType,
+        channel: channelName,
+        params: params,
+      }
+    )
+    
+    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
+      const cmdId = response.data.data.command_id
+      // Ожидаем ответа от ноды
+      const result = await checkCommandStatus(cmdId, 30) // Максимум 30 секунд
+      
+      if (result.success) {
+        showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', TOAST_TIMEOUT.LONG)
+      } else {
+        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', TOAST_TIMEOUT.LONG)
+      }
+    } else {
+      showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
+    }
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
+  } finally {
+    testingChannels.value.delete(channelName)
+  }
+}
+
+// Функция для получения читаемого названия канала
+function getChannelLabel(channelName, channelType) {
+  const name = (channelName || '').toLowerCase()
+  const nodeType = (device.value.type || '').toLowerCase()
+  
+  // PH нода
+  if (nodeType.includes('ph')) {
+    if (name.includes('acid') || name.includes('up')) return 'PH UP тест'
+    if (name.includes('base') || name.includes('down')) return 'PH DOWN тест'
+  }
+  
+  // EC нода
+  if (nodeType.includes('ec')) {
+    if (name.includes('nutrient_a') || name.includes('pump_a')) return 'Тест насоса A'
+    if (name.includes('nutrient_b') || name.includes('pump_b')) return 'Тест насоса B'
+    if (name.includes('nutrient_c') || name.includes('pump_c')) return 'Тест насоса C'
+    if (name.includes('nutrient')) return 'Тест насоса питательного раствора'
+  }
+  
+  // Pump нода
+  if (nodeType.includes('pump')) {
+    if (name.includes('main') || name.includes('primary')) return 'Тест главного насоса'
+    if (name.includes('backup') || name.includes('reserve') || name.includes('reserve')) return 'Тест резервного насоса'
+    if (name.includes('transfer') || name.includes('перекач')) return 'Тест перекачивающего насоса'
+    if (name.includes('valve') || channelType === 'valve') return 'Тест клапана'
+  }
+  
+  // Общий случай
+  return channelName || 'Канал'
+}
+
+// Функция для проверки статуса команды
+async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ success: boolean; status: string; error?: string }> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const response = await api.get<{ status: string; data?: { status: string } }>(
+        `/commands/${cmdId}/status`
+      )
+      
+      if (response.data?.status === 'ok' && response.data?.data) {
+        const cmdStatus = response.data.data.status
+        if (cmdStatus === 'ack') {
+          return { success: true, status: 'ack' }
+        } else if (cmdStatus === 'failed') {
+          return { success: false, status: 'failed' }
+        } else if (cmdStatus === 'pending') {
+          // Продолжаем ожидание
+          await new Promise(resolve => setTimeout(resolve, 500))
+          continue
+        }
+      }
+    } catch (err) {
+      logger.error('[Devices/Show] Failed to check command status:', err)
+      // Если команда не найдена, возможно она еще не создана, продолжаем ожидание
+      const errorStatus = (err as { response?: { status?: number } })?.response?.status
+      if (errorStatus === 404 && i < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        continue
+      }
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      return { success: false, status: 'error', error: errorMessage }
+    }
+  }
+  return { success: false, status: 'timeout' }
 }
 
 // Загрузка данных телеметрии для графиков
@@ -531,7 +639,7 @@ async function loadAllCharts(): Promise<void> {
   }
   
   for (const channel of sensorChannels.value) {
-    const metric = String(channel.metric || channel.channel.toUpperCase())
+    const metric = channel.metric || channel.channel.toUpperCase()
     const data = await loadChartData(channel.channel, metric, chartTimeRange.value)
     chartDataByChannel.value[channel.channel] = data
   }
@@ -545,30 +653,23 @@ function onChartTimeRangeChange(newRange: '1H' | '24H' | '7D' | '30D' | 'ALL'): 
 
 // WebSocket подписка на телеметрию
 const nodeId = computed(() => device.value.id)
-const zoneId = computed(() => device.value.zone?.id ?? null)
-const { subscribe: subscribeTelemetry, unsubscribe: unsubscribeTelemetry } = useNodeTelemetry(nodeId, zoneId)
+const { subscribe: subscribeTelemetry, unsubscribe: unsubscribeTelemetry } = useNodeTelemetry(nodeId)
 let unsubscribeTelemetryFn: (() => void) | null = null
 
 // Обработчик обновления телеметрии через WebSocket
-const handleTelemetryUpdate = (data: { node_id: number; channel: string | null; metric_type: string; value: number; ts: number }) => {
+const handleTelemetryUpdate = (data: { node_id: number; channel: string; metric_type: string; value: number; ts: number }) => {
   try {
-    // Пропускаем данные с null channel
-    if (!data.channel) {
-      return
-    }
-
-    const channelName = data.channel
-    const channel = sensorChannels.value.find(ch => ch.channel === channelName)
+    const channel = sensorChannels.value.find(ch => ch.channel === data.channel)
     if (!channel) {
       return
     }
 
     // Получаем или создаем массив данных для канала
-    if (!chartDataByChannel.value[channelName]) {
-      chartDataByChannel.value[channelName] = []
+    if (!chartDataByChannel.value[data.channel]) {
+      chartDataByChannel.value[data.channel] = []
     }
-
-    const existingData = chartDataByChannel.value[channelName]
+    
+    const existingData = chartDataByChannel.value[data.channel]
 
     // Проверяем, не дублируется ли точка (по timestamp)
     const isDuplicate = existingData.length > 0 && 
@@ -589,7 +690,7 @@ const handleTelemetryUpdate = (data: { node_id: number; channel: string | null; 
       }
 
       logger.debug('[Devices/Show] Updated chart data via WebSocket', {
-        channel: channelName,
+        channel: data.channel,
         value: data.value,
         pointsCount: existingData.length,
       })
@@ -641,12 +742,8 @@ onUnmounted(() => {
 
 // Перезагружаем графики и переподписываемся при изменении устройства
 watch(device, (newDevice, oldDevice) => {
-  const oldZoneId = oldDevice?.zone?.id ?? null
-  const newZoneId = newDevice?.zone?.id ?? null
-  const nodeChanged = newDevice?.id !== oldDevice?.id
-  const zoneChanged = newZoneId !== oldZoneId
-
-  if (nodeChanged || zoneChanged) {
+  // Если изменился nodeId, нужно переподписаться
+  if (newDevice?.id !== oldDevice?.id) {
     loadNodeConfig().catch((error) => {
       logger.error('[Devices/Show] Error reloading config on device change:', error)
     })

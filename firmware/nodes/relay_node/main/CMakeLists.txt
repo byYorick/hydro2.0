@@ -6,7 +6,6 @@ idf_component_register(
         "relay_node_init.c"
         "relay_node_init_steps.c"
         "relay_node_framework_integration.c"
-        "relay_node_hw_map.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -32,5 +31,4 @@ idf_component_register(
         mqtt
         esp_timer
         json
-        mbedtls
 )

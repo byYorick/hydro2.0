@@ -123,7 +123,6 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     }
     
     // Инициализация GPIO для каналов без реле
-    bool used_gpio[GPIO_NUM_MAX] = {0};
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_OUTPUT,
@@ -135,23 +134,7 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     // Собираем маску GPIO пинов для прямого управления
     for (size_t i = 0; i < channel_count; i++) {
         if (!channels[i].use_relay) {
-            int gpio_pin = channels[i].gpio_pin;
-            if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX || !GPIO_IS_VALID_OUTPUT_GPIO(gpio_pin)) {
-                ESP_LOGE(TAG, "Invalid GPIO for pump channel '%s': %d",
-                         channels[i].channel_name ? channels[i].channel_name : "unknown",
-                         gpio_pin);
-                vSemaphoreDelete(s_mutex);
-                s_mutex = NULL;
-                return ESP_ERR_INVALID_ARG;
-            }
-            if (used_gpio[gpio_pin]) {
-                ESP_LOGE(TAG, "Duplicate GPIO for pump channels: GPIO=%d", gpio_pin);
-                vSemaphoreDelete(s_mutex);
-                s_mutex = NULL;
-                return ESP_ERR_INVALID_ARG;
-            }
-            used_gpio[gpio_pin] = true;
-            io_conf.pin_bit_mask |= (1ULL << gpio_pin);
+            io_conf.pin_bit_mask |= (1ULL << channels[i].gpio_pin);
         }
     }
     
@@ -278,9 +261,9 @@ esp_err_t pump_driver_init_from_config(void) {
     }
     
     pump_channel_config_t pump_configs[PUMP_DRIVER_MAX_CHANNELS];
-    bool used_gpio[GPIO_NUM_MAX] = {0};
     // Статические буферы для имен каналов (чтобы пережить удаление JSON)
     static char channel_name_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
+    static char relay_channel_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
     size_t pump_count = 0;
 
     int channel_count = cJSON_GetArraySize(channels);
@@ -295,22 +278,16 @@ esp_err_t pump_driver_init_from_config(void) {
             continue;
         }
         
-        // Ищем только актуаторы типа PUMP/PERISTALTIC_PUMP
+        // Ищем только актуаторы типа PUMP
         if (strcmp(type_item->valuestring, "ACTUATOR") == 0) {
             cJSON *actuator_type = cJSON_GetObjectItem(channel, "actuator_type");
             if (actuator_type != NULL && cJSON_IsString(actuator_type)) {
                 const char *act_type = actuator_type->valuestring;
-                if (strcmp(act_type, "PUMP") == 0 || strcmp(act_type, "PERISTALTIC_PUMP") == 0) {
+                if (strcmp(act_type, "PUMP") == 0) {
                     cJSON *name_item = cJSON_GetObjectItem(channel, "name");
                     cJSON *gpio_item = cJSON_GetObjectItem(channel, "gpio");
+                    cJSON *fail_safe_item = cJSON_GetObjectItem(channel, "fail_safe_mode");
                     cJSON *safe_limits = cJSON_GetObjectItem(channel, "safe_limits");
-                    cJSON *fail_safe_item = NULL;
-                    if (safe_limits != NULL && cJSON_IsObject(safe_limits)) {
-                        fail_safe_item = cJSON_GetObjectItem(safe_limits, "fail_safe_mode");
-                    }
-                    if (fail_safe_item == NULL) {
-                        fail_safe_item = cJSON_GetObjectItem(channel, "fail_safe_mode");
-                    }
                     
                     if (name_item != NULL && cJSON_IsString(name_item) &&
                         gpio_item != NULL && cJSON_IsNumber(gpio_item)) {
@@ -319,18 +296,8 @@ esp_err_t pump_driver_init_from_config(void) {
                         strncpy(channel_name_buffers[pump_count], name_item->valuestring, 
                                 sizeof(channel_name_buffers[pump_count]) - 1);
                         channel_name_buffers[pump_count][sizeof(channel_name_buffers[pump_count]) - 1] = '\0';
-                        int gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
-                        if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX || !GPIO_IS_VALID_OUTPUT_GPIO(gpio_pin)) {
-                            ESP_LOGW(TAG, "Skip channel '%s': invalid GPIO=%d", name_item->valuestring, gpio_pin);
-                            continue;
-                        }
-                        if (used_gpio[gpio_pin]) {
-                            ESP_LOGW(TAG, "Skip channel '%s': duplicate GPIO=%d", name_item->valuestring, gpio_pin);
-                            continue;
-                        }
-
                         pump_cfg->channel_name = channel_name_buffers[pump_count];
-                        pump_cfg->gpio_pin = gpio_pin;
+                        pump_cfg->gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
                         pump_cfg->use_relay = false; // По умолчанию прямое управление через GPIO
                         pump_cfg->relay_channel = NULL;
                         pump_cfg->ml_per_second = 2.0f; // Значение по умолчанию
@@ -373,7 +340,6 @@ esp_err_t pump_driver_init_from_config(void) {
                             pump_cfg->max_duration_ms = (uint32_t)cJSON_GetNumberValue(max_duration_override);
                         }
 
-                        used_gpio[gpio_pin] = true;
                         pump_count++;
                     }
                 }
@@ -771,13 +737,6 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         return err;
     }
 
-    // Помечаем как запущенный до проверки INA209, чтобы гарантировать остановку при ошибке
-    uint64_t start_time_ms = esp_timer_get_time() / 1000;
-    channel->current_state = PUMP_STATE_ON;
-    channel->is_running = true;
-    channel->start_time_ms = start_time_ms;
-    channel->stats.last_start_timestamp_ms = start_time_ms;
-
     // Если INA209 настроен, ждем стабилизации и проверяем ток
     if (s_ina209_enabled) {
         xSemaphoreGive(s_mutex);
@@ -1083,39 +1042,6 @@ esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapsho
     return ESP_OK;
 }
 
-esp_err_t pump_driver_get_cooldown_remaining(const char *channel_name, uint32_t *remaining_ms) {
-    if (remaining_ms) {
-        *remaining_ms = 0;
-    }
-
-    if (!s_initialized || channel_name == NULL || remaining_ms == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-
-    pump_channel_t *channel = find_channel(channel_name);
-    if (channel == NULL) {
-        xSemaphoreGive(s_mutex);
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    if (channel->current_state == PUMP_STATE_COOLDOWN) {
-        uint64_t now_ms = esp_timer_get_time() / 1000;
-        uint64_t cooldown_end = channel->last_stop_time_ms + channel->min_off_time_ms;
-        if (now_ms < cooldown_end) {
-            *remaining_ms = (uint32_t)(cooldown_end - now_ms);
-        } else {
-            channel->current_state = PUMP_STATE_OFF;
-        }
-    }
-
-    xSemaphoreGive(s_mutex);
-    return ESP_OK;
-}
-
 esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_channel_health_t *stats) {
     if (channel_name == NULL || stats == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -1140,3 +1066,4 @@ esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_c
     xSemaphoreGive(s_mutex);
     return ESP_OK;
 }
+

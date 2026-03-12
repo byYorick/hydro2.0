@@ -38,14 +38,8 @@ export interface AllowedTransitionsResponse {
   allowed_transitions: AllowedTransition[]
 }
 
-interface TransitionNodeResponse {
-  node: unknown
-  previous_state: string | null
-  current_state: string | null
-}
-
 export function useNodeLifecycle(showToast?: ToastHandler) {
-  const { post, get } = useApi(showToast || null)
+  const { api, post, get } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast || null)
   
   const loading: Ref<boolean> = ref(false)
@@ -58,7 +52,7 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     nodeId: number,
     targetState: NodeLifecycleState,
     reason?: string
-  ): Promise<TransitionNodeResponse | null> {
+  ): Promise<{ node: any; previous_state: string | null; current_state: string | null } | null> {
     loading.value = true
     error.value = null
     
@@ -68,12 +62,8 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
         reason,
       })
       
-      const data = extractData<TransitionNodeResponse>(response.data)
+      const data = extractData(response.data)
       
-      if (!data) {
-        throw new Error('Empty transition response')
-      }
-
       logger.info(`[useNodeLifecycle] Node ${nodeId} transitioned to ${targetState}`, {
         previous_state: data.previous_state,
         current_state: data.current_state,
@@ -113,12 +103,8 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     try {
       const response = await get(`/api/nodes/${nodeId}/lifecycle/allowed-transitions`)
       
-      const data = extractData<AllowedTransitionsResponse>(response.data)
+      const data = extractData(response.data)
       
-      if (!data) {
-        throw new Error('Empty allowed transitions response')
-      }
-
       logger.debug(`[useNodeLifecycle] Allowed transitions for node ${nodeId}:`, data.allowed_transitions.length)
       
       return data
@@ -191,3 +177,4 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     getStateLabel,
   }
 }
+

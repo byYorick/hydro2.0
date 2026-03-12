@@ -1,93 +1,54 @@
 <template>
   <div class="space-y-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-lg font-semibold">
-        Панель инженера
-      </h1>
+      <h1 class="text-lg font-semibold">Панель инженера</h1>
       <div class="flex flex-wrap gap-2">
-        <Link
-          href="/system"
-          class="flex-1 sm:flex-none min-w-[160px]"
-        >
-          <Button
-            size="sm"
-            variant="outline"
-            class="w-full sm:w-auto"
-          >
-            Системные метрики
-          </Button>
+        <Link href="/system" class="flex-1 sm:flex-none min-w-[160px]">
+          <Button size="sm" variant="outline" class="w-full sm:w-auto">Системные метрики</Button>
         </Link>
-        <Link
-          href="/logs"
-          class="flex-1 sm:flex-none min-w-[120px]"
-        >
-          <Button
-            size="sm"
-            variant="outline"
-            class="w-full sm:w-auto"
-          >
-            Логи
-          </Button>
+        <Link href="/logs" class="flex-1 sm:flex-none min-w-[120px]">
+          <Button size="sm" variant="outline" class="w-full sm:w-auto">Логи</Button>
         </Link>
       </div>
     </div>
 
     <!-- Статус устройств -->
     <div class="space-y-4">
-      <h2 class="text-md font-semibold">
-        Статус устройств
-      </h2>
+      <h2 class="text-md font-semibold">Статус устройств</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <Card
           v-for="device in devices"
           :key="device.id"
-          class="hover:border-[color:var(--border-strong)] transition-colors"
+          class="hover:border-neutral-700 transition-colors"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
-              <div class="text-sm font-semibold">
-                {{ device.uid || device.name }}
-              </div>
-              <div class="text-xs text-[color:var(--text-muted)] mt-1">
+              <div class="text-sm font-semibold">{{ device.uid || device.name }}</div>
+              <div class="text-xs text-neutral-400 mt-1">
                 {{ device.type || 'Устройство' }}
               </div>
             </div>
-            <Badge :variant="(device.status as string) === 'ONLINE' || device.status === 'online' ? 'success' : 'danger'">
+            <Badge :variant="device.status === 'ONLINE' ? 'success' : 'danger'">
               {{ translateStatus(device.status) }}
             </Badge>
           </div>
           
           <div class="space-y-2 text-xs">
-            <div
-              v-if="device.rssi !== null && device.rssi !== undefined"
-              class="flex items-center justify-between"
-            >
-              <span class="text-[color:var(--text-muted)]">RSSI:</span>
+            <div v-if="device.rssi !== null && device.rssi !== undefined" class="flex items-center justify-between">
+              <span class="text-neutral-400">RSSI:</span>
               <span :class="getRssiColor(device.rssi)">{{ device.rssi }} dBm</span>
             </div>
-            <div
-              v-if="device.firmwareVersion"
-              class="flex items-center justify-between"
-            >
-              <span class="text-[color:var(--text-muted)]">Прошивка:</span>
-              <span class="text-[color:var(--text-primary)]">{{ device.firmwareVersion }}</span>
+            <div v-if="device.firmwareVersion" class="flex items-center justify-between">
+              <span class="text-neutral-400">Прошивка:</span>
+              <span class="text-neutral-300">{{ device.firmwareVersion }}</span>
             </div>
-            <div
-              v-if="device.lastSeen"
-              class="flex items-center justify-between"
-            >
-              <span class="text-[color:var(--text-muted)]">Обновление:</span>
-              <span class="text-[color:var(--text-primary)]">{{ formatTimeAgo(device.lastSeen) }}</span>
+            <div v-if="device.lastSeen" class="flex items-center justify-between">
+              <span class="text-neutral-400">Обновление:</span>
+              <span class="text-neutral-300">{{ formatTimeAgo(device.lastSeen) }}</span>
             </div>
-            <div
-              v-if="device.issues && device.issues.length > 0"
-              class="mt-2"
-            >
-              <div class="text-[color:var(--accent-amber)] text-xs">
-                <div
-                  v-for="issue in device.issues"
-                  :key="issue"
-                >
+            <div v-if="device.issues && device.issues.length > 0" class="mt-2">
+              <div class="text-amber-400 text-xs">
+                <div v-for="issue in device.issues" :key="issue">
                   ⚠️ {{ issue }}
                 </div>
               </div>
@@ -96,20 +57,14 @@
           
           <div class="mt-3 flex gap-2">
             <Link :href="`/devices/${device.id}`">
-              <Button
-                size="sm"
-                variant="secondary"
-              >
-                Подробнее
-              </Button>
+              <Button size="sm" variant="secondary">Подробнее</Button>
             </Link>
             <Button
               size="sm"
               variant="outline"
-              :disabled="testingDevices.has(device.id)"
               @click="testDevice(device.id)"
             >
-              {{ testingDevices.has(device.id) ? 'Тестирование...' : 'Тест' }}
+              Тест
             </Button>
           </div>
         </Card>
@@ -117,44 +72,31 @@
     </div>
 
     <!-- Проблемные устройства -->
-    <div
-      v-if="problematicDevices.length > 0"
-      class="space-y-4"
-    >
-      <h2 class="text-md font-semibold">
-        Проблемные устройства
-      </h2>
-      <Card class="border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]">
+    <div v-if="problematicDevices.length > 0" class="space-y-4">
+      <h2 class="text-md font-semibold">Проблемные устройства</h2>
+      <Card class="border-red-800 bg-red-950/10">
         <div class="space-y-3">
           <div
             v-for="device in problematicDevices"
             :key="device.id"
-            class="flex items-center justify-between p-3 bg-[color:var(--bg-elevated)] rounded-lg"
+            class="flex items-center justify-between p-3 bg-neutral-900 rounded-lg"
           >
             <div>
-              <div class="text-sm font-semibold">
-                {{ device.uid || device.name }}
-              </div>
-              <div class="text-xs text-[color:var(--text-muted)] mt-1">
+              <div class="text-sm font-semibold">{{ device.uid || device.name }}</div>
+              <div class="text-xs text-neutral-400 mt-1">
                 {{ device.issues?.join(', ') || 'Проблема не указана' }}
               </div>
             </div>
             <div class="flex gap-2">
               <Link :href="`/devices/${device.id}`">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                >
-                  Открыть
-                </Button>
+                <Button size="sm" variant="secondary">Открыть</Button>
               </Link>
               <Button
                 size="sm"
                 variant="outline"
-                :disabled="restartingDevices.has(device.id)"
                 @click="restartDevice(device.id)"
               >
-                {{ restartingDevices.has(device.id) ? 'Перезапуск...' : 'Перезапустить' }}
+                Перезапустить
               </Button>
             </div>
           </div>
@@ -165,81 +107,51 @@
     <!-- Системные метрики -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
       <Card>
-        <div class="text-[color:var(--text-muted)] text-sm mb-1">
-          Нагрузка CPU
-        </div>
-        <div class="text-3xl font-bold">
-          {{ systemMetrics.cpu || '-' }}%
-        </div>
-        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-2 mt-2">
+        <div class="text-neutral-400 text-sm mb-1">Нагрузка CPU</div>
+        <div class="text-3xl font-bold">{{ systemMetrics.cpu || '-' }}%</div>
+        <div class="w-full bg-neutral-800 rounded-full h-2 mt-2">
           <div
-            class="bg-[color:var(--accent-cyan)] h-2 rounded-full transition-all duration-300"
+            class="bg-sky-500 h-2 rounded-full transition-all duration-300"
             :style="{ width: `${systemMetrics.cpu || 0}%` }"
-          ></div>
+          />
         </div>
       </Card>
       <Card>
-        <div class="text-[color:var(--text-muted)] text-sm mb-1">
-          Память
-        </div>
-        <div class="text-3xl font-bold">
-          {{ systemMetrics.memory || '-' }}%
-        </div>
-        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-2 mt-2">
+        <div class="text-neutral-400 text-sm mb-1">Память</div>
+        <div class="text-3xl font-bold">{{ systemMetrics.memory || '-' }}%</div>
+        <div class="w-full bg-neutral-800 rounded-full h-2 mt-2">
           <div
-            class="bg-[color:var(--accent-green)] h-2 rounded-full transition-all duration-300"
+            class="bg-emerald-500 h-2 rounded-full transition-all duration-300"
             :style="{ width: `${systemMetrics.memory || 0}%` }"
-          ></div>
+          />
         </div>
       </Card>
       <Card>
-        <div class="text-[color:var(--text-muted)] text-sm mb-1">
-          База данных
-        </div>
-        <div
-          class="text-3xl font-bold"
-          :class="systemMetrics.dbStatus === 'OK' ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'"
-        >
+        <div class="text-neutral-400 text-sm mb-1">База данных</div>
+        <div class="text-3xl font-bold" :class="systemMetrics.dbStatus === 'OK' ? 'text-emerald-400' : 'text-red-400'">
           {{ systemMetrics.dbStatus === 'OK' ? '✅' : '❌' }}
         </div>
       </Card>
       <Card>
-        <div class="text-[color:var(--text-muted)] text-sm mb-1">
-          MQTT брокер
-        </div>
-        <div
-          class="text-3xl font-bold"
-          :class="systemMetrics.mqttStatus === 'OK' ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'"
-        >
+        <div class="text-neutral-400 text-sm mb-1">MQTT брокер</div>
+        <div class="text-3xl font-bold" :class="systemMetrics.mqttStatus === 'OK' ? 'text-emerald-400' : 'text-red-400'">
           {{ systemMetrics.mqttStatus === 'OK' ? '✅' : '❌' }}
         </div>
       </Card>
     </div>
-
-    <ConfirmModal
-      :open="restartModal.open"
-      title="Перезапустить устройство"
-      message="Перезапустить выбранное устройство сейчас?"
-      confirm-text="Перезапустить"
-      confirm-variant="warning"
-      @close="restartModal = { open: false, deviceId: null }"
-      @confirm="confirmRestart"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateStatus } from '@/utils/i18n'
+import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
 import { useFilteredList } from '@/composables/useFilteredList'
-import { useToast } from '@/composables/useToast'
-import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
 import type { Device } from '@/types'
 
@@ -263,16 +175,11 @@ interface Props {
 const props = defineProps<Props>()
 
 const { api } = useApi()
-const { showToast } = useToast()
-
-const testingDevices = ref<Set<number>>(new Set())
-const restartingDevices = ref<Set<number>>(new Set())
-const restartModal = ref<{ open: boolean; deviceId: number | null }>({ open: false, deviceId: null })
 
 const devices = computed(() => props.dashboard.devices || [])
 
 const problematicDevices = useFilteredList(devices, (d) => 
-  ((d.status as string) !== 'ONLINE' && d.status !== 'online') || 
+  d.status !== 'ONLINE' || 
   (d.issues && d.issues.length > 0) ||
   (d.rssi !== null && d.rssi !== undefined && d.rssi < -80)
 )
@@ -285,9 +192,9 @@ const systemMetrics = computed(() => props.dashboard.systemMetrics || {
 })
 
 function getRssiColor(rssi: number): string {
-  if (rssi >= -50) return 'text-[color:var(--accent-green)]'
-  if (rssi >= -70) return 'text-[color:var(--accent-amber)]'
-  return 'text-[color:var(--accent-red)]'
+  if (rssi >= -50) return 'text-emerald-400'
+  if (rssi >= -70) return 'text-amber-400'
+  return 'text-red-400'
 }
 
 function formatTimeAgo(timestamp: string | Date): string {
@@ -305,146 +212,14 @@ function formatTimeAgo(timestamp: string | Date): string {
   return `${days} дн назад`
 }
 
-async function waitForCommandResult(
-  cmdId: string,
-  maxAttempts = 20,
-  onStatusChange?: (status: string) => void
-): Promise<{
-  success: boolean
-  status: string
-  errorMessage?: string
-  errorCode?: string
-}> {
-  let lastStatus: string | null = null
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await api.get<{
-        status: string
-        data?: {
-          status: string
-          error_message?: string | null
-          error_code?: string | null
-        }
-      }>(
-        `/commands/${cmdId}/status`
-      )
-      
-      if (response.data?.status === 'ok' && response.data?.data?.status) {
-        const cmdStatus = String(response.data.data.status).toUpperCase()
-        if (cmdStatus !== lastStatus) {
-          lastStatus = cmdStatus
-          if (onStatusChange) {
-            onStatusChange(cmdStatus)
-          }
-        }
-        if (['DONE', 'NO_EFFECT'].includes(cmdStatus)) {
-          return { success: true, status: cmdStatus }
-        }
-        if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(cmdStatus)) {
-          return {
-            success: false,
-            status: cmdStatus,
-            errorMessage: response.data.data.error_message || undefined,
-            errorCode: response.data.data.error_code || undefined,
-          }
-        }
-      }
-    } catch (err) {
-      const errorStatus = (err as { response?: { status?: number } })?.response?.status
-      if (errorStatus !== 404 || i >= maxAttempts - 1) {
-        return {
-          success: false,
-          status: 'ERROR',
-          errorMessage: err instanceof Error ? err.message : 'Unknown error',
-        }
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 500))
-  }
-  return { success: false, status: 'TIMEOUT' }
+function testDevice(deviceId: number) {
+  // TODO: Реализовать тестирование устройства
+  logger.debug('[EngineerDashboard] Test device:', deviceId)
 }
 
-async function testDevice(deviceId: number) {
-  if (testingDevices.value.has(deviceId)) {
-    return
-  }
-
-  testingDevices.value.add(deviceId)
-  
-  try {
-    const response = await api.post<{ status: string; data?: { command_id: string } }>(
-      `/nodes/${deviceId}/commands`,
-      {
-        cmd: 'MEASURE_NOW',
-        params: {},
-      }
-    )
-    
-    if (response.data?.status === 'ok') {
-      logger.debug('[EngineerDashboard] Test command sent successfully', response.data)
-      showToast('Команда тестирования отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
-    }
-  } catch (err) {
-    logger.error('[EngineerDashboard] Failed to send test command:', err)
-    showToast('Не удалось отправить команду тестирования', 'error', TOAST_TIMEOUT.LONG)
-  } finally {
-    testingDevices.value.delete(deviceId)
-  }
-}
-
-async function restartDevice(deviceId: number) {
-  if (restartingDevices.value.has(deviceId)) {
-    return
-  }
-
-  restartModal.value = { open: true, deviceId }
-}
-
-async function confirmRestart(): Promise<void> {
-  const deviceId = restartModal.value.deviceId
-  if (!deviceId) {
-    return
-  }
-
-  restartingDevices.value.add(deviceId)
-  
-  try {
-    const response = await api.post<{ status: string; data?: { command_id: string } }>(
-      `/nodes/${deviceId}/commands`,
-      {
-        cmd: 'restart',
-        params: {},
-      }
-    )
-    
-    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
-      const cmdId = response.data.data.command_id
-      logger.debug('[EngineerDashboard] Restart command sent successfully', response.data)
-      showToast('Команда перезапуска отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
-      
-      let executionNotified = false
-      const result = await waitForCommandResult(cmdId, 20, (status) => {
-        if (status === 'ACK' && !executionNotified) {
-          executionNotified = true
-          showToast('Перезапуск устройства...', 'info', TOAST_TIMEOUT.NORMAL)
-        }
-      })
-      
-      if (result.success) {
-        showToast('Устройство перезапущено', 'success', TOAST_TIMEOUT.LONG)
-      } else {
-        const detail = result.errorMessage || result.errorCode || result.status
-        showToast(`Ошибка перезапуска: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
-      }
-      return
-    }
-    showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)
-  } catch (err) {
-    logger.error('[EngineerDashboard] Failed to send restart command:', err)
-    showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)
-  } finally {
-    restartingDevices.value.delete(deviceId)
-    restartModal.value = { open: false, deviceId: null }
-  }
+function restartDevice(deviceId: number) {
+  // TODO: Реализовать перезапуск устройства
+  logger.debug('[EngineerDashboard] Restart device:', deviceId)
 }
 </script>
+

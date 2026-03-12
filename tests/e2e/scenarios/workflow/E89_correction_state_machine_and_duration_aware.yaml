@@ -1,7 +1,0 @@
-# E89: Legacy correction state-machine scenario ported to AE3 execution guard
-
-name: E89_correction_state_machine_and_duration_aware
-description: |
-  Legacy AE2 correction state-machine regression migrated to standalone AE3-Lite.
-  Для real-hardware regression pack используется каноничный AE3 two-tank smoke.
-scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

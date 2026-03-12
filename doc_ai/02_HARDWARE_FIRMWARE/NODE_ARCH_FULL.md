@@ -5,10 +5,6 @@
 структура прошивки, модули, каналы, протоколы, безопасность, обновление, обработка команд,
 генерация телеметрии, хранение конфигурации, подключение по Wi‑Fi и MQTT.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 # 1. Цели и принципы архитектуры узлов
@@ -31,101 +27,55 @@ Backend принимает решения → узлы исполняют.
  - SensorChannel
  - ActuatorChannel
 
-## 1.1. Термины (во избежание путаницы)
-
-- `firmware_module` — имя ESP-IDF проекта/папки прошивки (`ph_node`, `ec_node`, `climate_node`, `storage_irrigation_node`).
-- `node_type` — бизнес-тип узла в payload/БД (`nodes.type`), только канонические значения:
-  `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Имена `*_node` используются только как идентификаторы прошивочных модулей и не должны передаваться в `node_type`.
-
 ---
 
 # 2. Архитектура прошивки узла (Firmware Structure)
 
-Прошивка построена на ESP-IDF framework и использует структуру компонентов.
-
-## 2.1. Структура проекта ESP-IDF
-
-Каждая нода — отдельный ESP-IDF проект:
+Структура модулей:
 
 ```
-firmware/nodes/{firmware_module}/
-├─ main/
-│  ├─ main.c                    # Точка входа приложения
-│  ├─ {firmware_module}_app.c   # Основная логика ноды
-│  ├─ {firmware_module}_app.h
-│  └─ CMakeLists.txt            # Конфигурация компонента main
-├─ components/                  # Специфические компоненты ноды (опционально)
-├─ CMakeLists.txt               # Корневой CMakeLists проекта
-├─ sdkconfig.defaults           # Конфигурация ESP-IDF по умолчанию
-├─ partitions.csv               # Таблица разделов флеш-памяти
-└─ README.md
+src/
+ ├─ main.cpp
+ ├─ wifi/
+ │ ├─ wifi_manager.cpp
+ │ └─ wifi_manager.h
+ ├─ mqtt/
+ │ ├─ mqtt_manager.cpp
+ │ ├─ mqtt_manager.h
+ │ ├─ mqtt_topics.cpp
+ │ └─ mqtt_topics.h
+ ├─ config/
+ │ ├─ node_config.cpp
+ │ ├─ node_config.h
+ │ ├─ nvs_storage.cpp
+ │ └─ nvs_storage.h
+ ├─ channels/
+ │ ├─ sensor_channel.cpp
+ │ ├─ sensor_channel.h
+ │ ├─ actuator_channel.cpp
+ │ ├─ actuator_channel.h
+ │ ├─ ph_sensor.cpp
+ │ ├─ ec_sensor.cpp
+ │ ├─ sht31.cpp
+ │ ├─ ccs811.cpp
+ │ ├─ pump.cpp
+ │ ├─ fan.cpp
+ │ ├─ heater.cpp
+ │ └─ relay.cpp
+ ├─ telemetry/
+ │ ├─ telemetry_manager.cpp
+ │ └─ telemetry_manager.h
+ ├─ commands/
+ │ ├─ command_parser.cpp
+ │ └─ command_parser.h
+ ├─ utils/
+ │ ├─ json.cpp
+ │ ├─ json.h
+ │ ├─ timers.cpp
+ │ ├─ timers.h
+ │ └─ safe_mode.cpp
+ └─ main_loop.cpp
 ```
-
-## 2.2. Общие компоненты
-
-Все общие компоненты находятся в `firmware/nodes/common/components/`:
-
-```
-firmware/nodes/common/components/
-├─ mqtt_manager/                # MQTT менеджер и топик-роутер
-├─ wifi_manager/                # Wi-Fi менеджер
-├─ config_storage/              # Хранение NodeConfig в NVS
-├─ node_framework/              # Унифицированный фреймворк для всех нод
-│  ├─ node_telemetry_engine.c   # Движок публикации телеметрии
-│  ├─ node_command_handler.c    # Обработчик команд
-│  └─ node_state_manager.c      # Управление состоянием (Safe Mode)
-├─ heartbeat_task/              # Задача публикации heartbeat
-├─ sensors/                     # Драйверы сенсоров
-│  ├─ ph_sensor/                # Универсальный драйвер pH
-│  ├─ trema_ph/                 # Trema pH-сенсор (iarduino)
-│  ├─ ec_sensor/                # Универсальный драйвер EC
-│  ├─ trema_ec/                 # Trema EC-сенсор (iarduino)
-│  ├─ sht3x/                    # Температура/влажность
-│  └─ ina209/                   # Датчик тока
-├─ i2c_bus/                     # I²C шина
-├─ oled_ui/                     # OLED дисплей UI
-├─ logging/                     # Система логирования
-└─ ...
-```
-
-## 2.3. Архитектура компонентов
-
-Каждый компонент — это ESP-IDF компонент со структурой:
-
-```
-component_name/
-├─ include/
-│  └─ component_name.h          # Публичный API компонента
-├─ component_name.c             # Реализация компонента
-├─ CMakeLists.txt               # Конфигурация компонента
-└─ README.md                    # Документация компонента
-```
-
-## 2.4. Основные модули
-
-- **node_framework** — унифицированный фреймворк:
-  - Обработка NodeConfig
-  - Обработка команд MQTT
-  - Публикация телеметрии
-  - Управление состоянием (Safe Mode)
-  - Watchdog
-
-- **mqtt_manager** — MQTT клиент и менеджер:
-  - Подключение к брокеру
-  - Публикация сообщений
-  - Подписка на топики
-  - Обработка LWT
-
-- **config_storage** — хранение конфигурации:
-  - Сохранение NodeConfig в NVS
-  - Загрузка при старте
-  - Валидация конфигурации
-
-- **telemetry_engine** — движок телеметрии:
-  - Батчинг сообщений
-  - Форматирование JSON
-  - Публикация в MQTT
 
 ---
 
@@ -149,16 +99,14 @@ component_name/
 
 # 4. NodeConfig
 
-NodeConfig поддерживается на стороне ноды:
-- базовый шаблон задаётся прошивкой;
-- рабочая версия хранится в NVS и может обновляться через MQTT `.../config`.
+NodeConfig полностью формируется на backend.
 
 ## 4.1. Формат
 ```json
 {
  "node_id": "nd-ph-1",
  "version": 3,
- "type": "ph",
+ "type": "ph_node",
  "gh_uid": "gh-1",
  "zone_uid": "zn-3",
  "channels": [
@@ -197,7 +145,7 @@ NodeConfig поддерживается на стороне ноды:
 
 ## 4.2. Применение
 - сохраняется в NVS,
-- подтверждается публикацией `config_report`,
+- подтверждается через `config_response`,
 - вызывает перезапуск сенсорных циклов.
 
 ---
@@ -207,7 +155,7 @@ NodeConfig поддерживается на стороне ноды:
 ## 5.1. SensorChannel
 Содержит:
 - имя
-- тип метрики (PH, EC, TEMPERATURE, HUMIDITY…)
+- тип метрики (PH, EC, TEMP_AIR, HUMIDITY…)
 - период измерения
 - драйвер сенсора
 - фильтрацию (усреднение)
@@ -244,25 +192,14 @@ NodeConfig поддерживается на стороне ноды:
 ## 6.1. Формат
 ```json
 {
+ "node_id": "nd-ph-1",
+ "channel": "ph_sensor",
  "metric_type": "PH",
  "value": 5.82,
+ "raw": 1460,
  "ts": 1710001234
 }
 ```
-
-**Обязательные поля:**
-- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY` и т.д.
-- `value` (number) — значение метрики
-- `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
-
-**Опциональные поля:**
-- `unit` (string) — единица измерения
-- `raw` (integer) — сырое значение сенсора
-- `stub` (boolean) — флаг симулированного значения
-- `stable` (boolean) — флаг стабильности значения
-
-> **Важно:** поля `node_uid` и `channel` не включаются в JSON payload, так как они уже есть в MQTT topic.
-> До синхронизации времени `ts` может быть uptime-секундами; после синхронизации — Unix timestamp.
 
 ## 6.2. Отправка
 Топик:
@@ -284,25 +221,24 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 {
  "cmd_id": "cmd-39494",
  "cmd": "run_pump",
- "params": {
-  "duration_ms": 2000
- },
- "ts": 1737355112,
- "sig": "a1b2c3d4e5f6..."
+ "duration_ms": 2000
 }
 ```
 
 ## 7.2. Поддерживаемые команды
-- Набор команд зависит от типа ноды и зарегистрированных handler'ов.
-- Базовые команды фреймворка: `restart`, `set_time`, `exit_safe_mode`.
-- Типичные node-specific команды: `run_pump`, `set_pwm`, `set_relay`, `calibrate`, `test_sensor`.
+- run_pump 
+- set_pwm 
+- set_relay 
+- calibrate 
+- reboot 
+- measure_now 
 
 ## 7.3. Ответ узла
 ```json
 {
  "cmd_id": "cmd-39494",
  "status": "ACK",
- "ts": 1710001234123
+ "ts": 1710001234
 }
 ```
 
@@ -314,17 +250,9 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```json
 {
  "status": "ONLINE",
- "online": true,
  "ts": 1710001555
 }
 ```
-
-`status` + `ts` — целевой прод-формат; `online` и диагностические поля (`ip`, `rssi`, `fw`) опциональны.
-
-Runtime-оговорка:
-- при подключении `mqtt_manager` публикует канонический `{"status":"ONLINE","ts":...}`;
-- на части real-node поверх этого публикуется node-specific legacy payload (`online/ip/rssi/fw` без `status`/`ts`),
-  что считается техническим долгом для production hardening.
 
 ## 8.2. LWT (offline)
 ```
@@ -388,7 +316,7 @@ payload: "offline"
 - Поддержка управления через relay_driver (для NC-реле)
 - Безопасные лимиты (max_duration_ms, min_off_time_ms)
 - Дозирование по объёму (ml_per_second)
-- Используется в `ec_node` и `storage_irrigation_node`
+- Используется в `ec_node` и `pump_node`
 
 **API:**
 - `pump_driver_init_from_config()` — инициализация из NodeConfig
@@ -434,11 +362,11 @@ payload: "offline"
   - Перезагрузка устройства
   - Подключение к указанной Wi-Fi сети
 
-**Реализовано для всех прошивочных модулей:**
+**Реализовано для всех типов нод:**
 - `ph_node`
 - `ec_node`
 - `climate_node`
-- `storage_irrigation_node`
+- `pump_node`
 
 **Компонент:** `firmware/nodes/common/components/setup_portal/`
 
@@ -485,12 +413,12 @@ payload: "offline"
 
 ✅ **pump_driver** — управление насосами
 - Интеграция INA209 для проверки тока
-- Периодический опрос тока в `storage_irrigation_node`
-- Интеграция в `ec_node` и `storage_irrigation_node`
+- Периодический опрос тока в `pump_node`
+- Интеграция в `ec_node` и `pump_node`
 
 ✅ **Graceful переподключение Wi-Fi/MQTT**
 - Автоматическое переподключение при изменении NodeConfig
-- Реализовано в `storage_irrigation_node`
+- Реализовано в `pump_node`
 
 ## 15.2. Backend компоненты
 

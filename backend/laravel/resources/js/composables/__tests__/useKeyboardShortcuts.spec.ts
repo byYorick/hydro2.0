@@ -66,8 +66,6 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
 
-    window.history.pushState({}, '', '/')
-
     const event = new KeyboardEvent('keydown', {
       key: 'z',
       ctrlKey: true,
@@ -79,7 +77,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveUrl: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveScroll: true })
   })
 
   it('should handle Ctrl+Shift+D shortcut for Dashboard', async () => {
@@ -96,8 +94,6 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
 
-    window.history.pushState({}, '', '/zones')
-
     const event = new KeyboardEvent('keydown', {
       key: 'd',
       ctrlKey: true,
@@ -109,7 +105,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveUrl: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveScroll: true })
   })
 
   it('should handle Alt+R shortcut for Recipes', async () => {
@@ -126,8 +122,6 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
 
-    window.history.pushState({}, '', '/')
-
     const event = new KeyboardEvent('keydown', {
       key: 'r',
       altKey: true
@@ -138,7 +132,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/recipes', { preserveUrl: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/recipes', { preserveScroll: true })
   })
 
   it('should handle Shift+D shortcut for Devices', async () => {
@@ -155,8 +149,6 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
 
-    window.history.pushState({}, '', '/')
-
     const event = new KeyboardEvent('keydown', {
       key: 'd',
       shiftKey: true
@@ -167,7 +159,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/devices', { preserveUrl: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/devices', { preserveScroll: true })
   })
 
   it('should ignore shortcuts when focus is in input', async () => {
@@ -261,3 +253,4 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     expect(wrapper.vm.handler).not.toHaveBeenCalled()
   })
 })
+

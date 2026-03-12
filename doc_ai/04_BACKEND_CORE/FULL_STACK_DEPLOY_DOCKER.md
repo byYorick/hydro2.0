@@ -12,22 +12,11 @@
 - Mosquitto обслуживает MQTT-трафик узлов ESP32,
 - Python-сервис обрабатывает MQTT и управляет контроллерами.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
-
-> Важно (2026-02-20): документ `PARTIALLY_HISTORICAL`.  
-> Блоки, где фигурирует отдельный Python `scheduler` сервис в compose/структуре,
-> относятся к исторической фазе до decommission runtime scheduler.  
-> Актуальный runtime owner planning/dispatch: Laravel scheduler-dispatch.  
-> Источник истины: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` и
-> `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
 
 ## 1. Структура репозитория
 
-Исторический пример структуры проекта (до decommission Python scheduler runtime):
+Актуальная структура проекта:
 
 ```text
 hydro2.0/
@@ -42,7 +31,7 @@ hydro2.0/
   docker-compose.dev.yml
   docker-compose.prod.yml
   configs/              # Конфигурации для dev/prod
- ../                # Документация
+ doc_ai/                # Документация
  firmware/              # Прошивки ESP32
  mobile/                # Android приложение
  infra/                 # Инфраструктура (Terraform, Ansible, K8s)
@@ -103,9 +92,6 @@ hydro2.0/
 ---
 
 ## 3. docker-compose.yml (актуальная структура)
-
-Примечание: пример ниже содержит исторический сервис `scheduler` и показан только для контекста эволюции.
-Для реального запуска использовать текущие `backend/docker-compose*.yml`.
 
 Основные сервисы:
 

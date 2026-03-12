@@ -21,6 +21,13 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 30s
 
+  # Scheduler
+  - job_name: 'scheduler'
+    static_configs:
+      - targets: ['scheduler:9402']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
   # MQTT Bridge
   - job_name: 'mqtt-bridge'
     static_configs:
@@ -45,3 +52,4 @@ alerting:
     - static_configs:
         - targets:
           - 'alertmanager:9093'
+

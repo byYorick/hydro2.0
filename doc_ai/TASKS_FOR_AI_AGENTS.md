@@ -8,10 +8,6 @@
 один и тот же запрос, выполненный разными агентами/в разное время,
 должен приводить к совместимому с архитектурой результату.
 
-
-Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
-
 ---
 
 ## 1. Общие принципы постановки задач
@@ -78,8 +74,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 Пример:
 
 > Эта задача относится к прошивке pH‑ноды (ESP32, C, ESP‑IDF).  
-> Нода описана в `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` и `02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`.  
-> MQTT‑транспорт и топики описаны в `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.  
+> Нода описана в `02_HARDWARE_FIRMWARE/NODE_PH_ARCH.md` и `NODE_CHANNELS_REFERENCE.md`.  
+> MQTT‑транспорт и топики описаны в `03_TRANSPORT_MQTT/MQTT_TOPICS_SPEC.md`.  
 > Требуется реализовать модуль MQTT‑клиента в прошивке.
 
 ### 2.3. Текущая ситуация
@@ -94,7 +90,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 > В каталоге `node_ph/net` уже есть черновик `mqtt_client_node_common.c`,
 > но он пока не реализует автоматический реконнект и обработку всех топиков,
-> описанных в `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
+> описанных в `MQTT_TOPICS_SPEC.md`.
 
 ### 2.4. Цель
 
@@ -240,7 +236,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ## Контекст
 - Компонент: прошивка ноды <название ноды> (ESP32, C, ESP‑IDF).
 - Архитектура: см. `02_HARDWARE_FIRMWARE/NODE_<...>_ARCH.md`.
-- Транспорт и протоколы: см. `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
+- Транспорт и протоколы: см. `03_TRANSPORT_MQTT/MQTT_TOPICS_SPEC.md`.
 
 ## Текущая ситуация
 - В каталоге `<путь>` есть файлы: `<список>`.
