@@ -203,7 +203,7 @@ class Ae3RuntimeWorker:
             return None
         try:
             return get_loop()
-        except Exception:
+        except (RuntimeError, AttributeError):
             return None
 
     def _spawn_drain_task(self) -> Any:

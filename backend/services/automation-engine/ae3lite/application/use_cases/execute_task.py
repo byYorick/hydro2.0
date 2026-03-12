@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timezone
 from datetime import datetime
@@ -291,12 +292,13 @@ class ExecuteTaskUseCase:
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
                 )
+        except asyncio.CancelledError:
+            raise
         except Exception:
-            logger.warning(
+            logger.exception(
                 "AE3 fail-safe shutdown batch failed: task_id=%s zone_id=%s",
                 getattr(task, "id", None),
                 getattr(task, "zone_id", None),
-                exc_info=True,
             )
 
     async def _mark_correction_config_applied_if_needed(

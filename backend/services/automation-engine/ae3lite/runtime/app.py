@@ -48,6 +48,9 @@ async def _drain_background_tasks(background_tasks: set[asyncio.Task], timeout_s
         background_tasks.difference_update(pending)
 
 
+_BACKGROUND_TASKS_SIZE_LIMIT = 256
+
+
 def _spawn_background_task(
     coro: Any,
     *,
@@ -57,6 +60,15 @@ def _spawn_background_task(
     task_id: Optional[str] = None,
     task_type: Optional[str] = None,
 ) -> asyncio.Task:
+    active_count = len(background_tasks)
+    if active_count >= _BACKGROUND_TASKS_SIZE_LIMIT:
+        logger.error(
+            "AE3 background_tasks set reached size limit=%s active=%s task_name=%s; "
+            "possible task leak — spawning anyway",
+            _BACKGROUND_TASKS_SIZE_LIMIT,
+            active_count,
+            task_name,
+        )
     task = asyncio.create_task(coro, name=str(task_name))
     background_tasks.add(task)
 
