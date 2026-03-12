@@ -10,6 +10,22 @@ from ae3lite.domain.errors import PlannerConfigurationError
 from ae3lite.domain.services import CycleStartPlanner
 
 
+def _minimal_zone_correction_config() -> dict:
+    return {
+        "base": {
+            "timing": {},
+            "retry": {},
+            "dosing": {},
+        },
+        "phases": {
+            "solution_fill": {},
+            "tank_recirc": {},
+            "irrigation": {},
+        },
+        "meta": {},
+    }
+
+
 def _task(now: datetime) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 71, "zone_id": 9, "task_type": "cycle_start", "status": "claimed",
@@ -67,6 +83,7 @@ def _snapshot() -> ZoneSnapshot:
                 role="irrigation_pump",
             ),
         ),
+        correction_config=_minimal_zone_correction_config(),
     )
 
 

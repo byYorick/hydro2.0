@@ -1,27 +1,47 @@
 {
-  "title": "Automation Engine Service",
+  "title": "Automation Engine (AE3)",
   "tags": [
     "automation-engine",
+    "ae3",
     "zones",
     "monitoring"
   ],
   "timezone": "browser",
-  "schemaVersion": 16,
-  "version": 1,
+  "schemaVersion": 36,
+  "version": 2,
   "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": []
   },
   "panels": [
     {
+      "id": 100,
+      "title": "— Статус сервиса —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Статус сервиса"
+      }
+    },
+    {
       "id": 1,
-      "title": "Service Status",
+      "title": "Automation Engine",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 4,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
@@ -31,7 +51,7 @@
         {
           "expr": "up{job=\"automation-engine\"}",
           "refId": "A",
-          "legendFormat": "Automation Engine",
+          "legendFormat": "AE3",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
@@ -54,19 +74,45 @@
                 }
               }
             }
-          ]
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
         }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background"
       }
     },
     {
       "id": 2,
-      "title": "Zone Checks Rate",
+      "title": "Активные задачи",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
+        "w": 4,
+        "x": 4,
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
@@ -74,8 +120,9 @@
       },
       "targets": [
         {
-          "expr": "zone_checks_total",
+          "expr": "sum(ae3_active_tasks) or vector(0)",
           "refId": "A",
+          "legendFormat": "Активных",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
@@ -84,24 +131,56 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 5,
+                "color": "yellow"
+              },
+              {
+                "value": 10,
+                "color": "red"
+              }
+            ]
+          }
         }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
       }
     },
     {
       "id": 3,
-      "title": "Commands Sent Rate",
+      "title": "Задачи создано (rate)",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "sum(automation_commands_sent_total)",
+          "expr": "sum(rate(ae3_task_created_total[5m])) or vector(0)",
           "refId": "A",
+          "legendFormat": "Создано/с",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
@@ -110,28 +189,41 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "unit": "ops",
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          }
         }
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
       }
     },
     {
       "id": 4,
-      "title": "Config Fetch Success Rate",
+      "title": "Задачи завершено (rate)",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "config_fetch_success_total",
+          "expr": "sum(rate(ae3_task_completed_total[5m])) or vector(0)",
           "refId": "A",
+          "legendFormat": "Завершено/с",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
@@ -140,27 +232,164 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "unit": "ops",
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          }
         }
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
       }
     },
     {
       "id": 5,
-      "title": "Zone Check Duration",
+      "title": "Задачи упали (rate)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ae3_task_failed_total[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "Ошибок/с",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.01,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Tick ошибки (rate)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ae3_tick_errors_total[5m])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "Tick ошибок/с",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.01,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 101,
+      "title": "— Worker Tick —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Worker Tick"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Tick Latency (p50/p95/p99)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(zone_check_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(ae3_tick_duration_seconds_bucket[5m]))",
           "refId": "A",
           "legendFormat": "p50",
           "datasource": {
@@ -169,7 +398,7 @@
           }
         },
         {
-          "expr": "histogram_quantile(0.95, rate(zone_check_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(ae3_tick_duration_seconds_bucket[5m]))",
           "refId": "B",
           "legendFormat": "p95",
           "datasource": {
@@ -178,7 +407,7 @@
           }
         },
         {
-          "expr": "histogram_quantile(0.99, rate(zone_check_seconds_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(ae3_tick_duration_seconds_bucket[5m]))",
           "refId": "C",
           "legendFormat": "p99",
           "datasource": {
@@ -192,242 +421,82 @@
           "unit": "s"
         }
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 6,
-      "title": "Commands Sent by Zone",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 4
-      },
-      "targets": [
-        {
-          "expr": "rate(automation_commands_sent_total[5m])",
-          "refId": "A",
-          "legendFormat": "Zone {{zone_id}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
+      "options": {
+        "tooltip": {
+          "mode": "multi"
         }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 7,
-      "title": "Commands Sent by Metric Type",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "targets": [
-        {
-          "expr": "sum by (metric) (rate(automation_commands_sent_total[5m]))",
-          "refId": "A",
-          "legendFormat": "{{metric}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 8,
-      "title": "Config Fetch Status",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "targets": [
-        {
-          "expr": "config_fetch_success_total",
-          "refId": "A",
-          "legendFormat": "Success",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 9,
-      "title": "MQTT Publish Errors",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 20
-      },
-      "targets": [
-        {
-          "expr": "rate(mqtt_publish_errors_total[5m])",
-          "refId": "A",
-          "legendFormat": "{{error_type}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 10,
-      "title": "Automation Loop Errors",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "targets": [
-        {
-          "expr": "rate(automation_loop_errors_total[5m])",
-          "refId": "A",
-          "legendFormat": "{{error_type}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
       }
     },
     {
       "id": 11,
-      "title": "Error Handler Errors",
+      "title": "Tick Ошибки по типу",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 28
-      },
-      "targets": [
-        {
-          "expr": "rate(automation_errors_total[5m])",
-          "refId": "A",
-          "legendFormat": "Zone {{zone_id}} - {{error_type}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 12,
-      "title": "Zone Checks Total",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 36
-      },
-      "targets": [
-        {
-          "expr": "zone_checks_total",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 13,
-      "title": "Total Commands Sent",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 36
-      },
-      "targets": [
-        {
-          "expr": "sum(automation_commands_sent_total) or vector(0)",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "0"
-        }
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 14,
-      "title": "Total Errors",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
         "x": 12,
-        "y": 36
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "sum(automation_loop_errors_total) + sum(automation_errors_total) + sum(mqtt_publish_errors_total)",
+          "expr": "rate(ae3_tick_errors_total[5m])",
           "refId": "A",
+          "legendFormat": "{{error_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "— Задачи и Stage —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Задачи и Stage"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Активные задачи по топологии",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "ae3_active_tasks",
+          "refId": "A",
+          "legendFormat": "{{topology}}",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
@@ -437,90 +506,124 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "value": 0,
-                "color": "green"
-              },
-              {
-                "value": 10,
-                "color": "yellow"
-              },
-              {
-                "value": 100,
-                "color": "red"
-              }
-            ]
-          }
+          "min": 0
         }
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     },
     {
-      "id": 15,
-      "title": "Processing Efficiency",
-      "type": "gauge",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 36
-      },
-      "targets": [
-        {
-          "expr": "(sum(automation_commands_sent_total) / sum(zone_checks_total)) * 100",
-          "refId": "A",
-          "legendFormat": "Commands per Check %",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        }
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
-      }
-    },
-    {
-      "id": 16,
-      "title": "Scheduler Task Latency (p95)",
+      "id": 21,
+      "title": "Задачи созданы по топологии",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 40
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, task_type) (rate(scheduler_task_accept_latency_sec_bucket[5m])))",
+          "expr": "rate(ae3_task_created_total[5m])",
           "refId": "A",
-          "legendFormat": "accept p95 {{task_type}}",
+          "legendFormat": "created {{topology}}",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
           }
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, task_type) (rate(scheduler_task_completion_latency_sec_bucket{status=\"completed\"}[5m])))",
+          "expr": "rate(ae3_task_completed_total[5m])",
           "refId": "B",
-          "legendFormat": "complete p95 {{task_type}}",
+          "legendFormat": "completed {{topology}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_task_failed_total[5m])",
+          "refId": "C",
+          "legendFormat": "failed {{topology}}/{{error_code}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "Stage Entries по стадии",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_stage_entered_total[5m])",
+          "refId": "A",
+          "legendFormat": "{{stage}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "title": "Stage Duration p95 (секунды)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, stage) (rate(ae3_stage_duration_seconds_bucket[10m])))",
+          "refId": "A",
+          "legendFormat": "p95 {{stage}}",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
@@ -532,47 +635,591 @@
           "unit": "s"
         }
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     },
     {
-      "id": 17,
-      "title": "Scheduler Active Tasks and Failures",
+      "id": 24,
+      "title": "Stage Retries по стадии",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "scheduler_active_tasks",
+          "expr": "rate(ae3_stage_retry_total[5m])",
           "refId": "A",
-          "legendFormat": "active_tasks",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "Prometheus"
-          }
-        },
-        {
-          "expr": "sum by (task_type, status) (rate(scheduler_task_status_total{status=~\"failed|timeout|submit_failed|not_found\"}[5m]))",
-          "refId": "B",
-          "legendFormat": "fail_rate {{task_type}}/{{status}}",
+          "legendFormat": "retry {{stage}}",
           "datasource": {
             "type": "prometheus",
             "uid": "Prometheus"
           }
         }
       ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 103,
+      "title": "— Команды —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Команды"
+      }
+    },
+    {
+      "id": 30,
+      "title": "Команды отправлены по стадии",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_command_dispatched_total[5m])",
+          "refId": "A",
+          "legendFormat": "{{stage}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "Command Dispatch Duration (p50/p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(ae3_command_dispatch_duration_seconds_bucket[5m]))",
+          "refId": "A",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(ae3_command_dispatch_duration_seconds_bucket[5m]))",
+          "refId": "B",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "title": "Terminal Status команд",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_command_terminal_total[5m])",
+          "refId": "A",
+          "legendFormat": "{{terminal_status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 104,
+      "title": "— Коррекция —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Correction Cycles"
+      }
+    },
+    {
+      "id": 40,
+      "title": "Correction Cycles (started / completed)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_correction_started_total[5m])",
+          "refId": "A",
+          "legendFormat": "started {{topology}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(ae3_correction_completed_total[5m])",
+          "refId": "B",
+          "legendFormat": "{{outcome}} {{topology}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 41,
+      "title": "Correction Attempts по шагу",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_correction_attempt_total[5m])",
+          "refId": "A",
+          "legendFormat": "step {{corr_step}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 105,
+      "title": "— Алерты и инциденты —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Алерты и инциденты"
+      }
+    },
+    {
+      "id": 50,
+      "title": "Zone Lease Lost",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_zone_lease_lost_total[5m])",
+          "refId": "A",
+          "legendFormat": "zone_id={{zone_id}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.001,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 51,
+      "title": "Zone Lease Release Failed",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_zone_lease_release_failed_total[5m])",
+          "refId": "A",
+          "legendFormat": "zone_id={{zone_id}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.001,
+                "color": "orange"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 52,
+      "title": "Stage Deadline Exceeded",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 50
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_stage_deadline_exceeded_total[10m])",
+          "refId": "A",
+          "legendFormat": "{{stage}} [{{topology}}]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.001,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 53,
+      "title": "Correction Exhausted",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 57
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(ae3_correction_exhausted_total[10m])",
+          "refId": "A",
+          "legendFormat": "{{stage}} [{{topology}}]",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.001,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "title": "Суммарные счётчики ошибок",
+      "type": "stat",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 57
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(ae3_tick_errors_total) or vector(0)",
+          "refId": "A",
+          "legendFormat": "Tick errors",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_zone_lease_lost_total) or vector(0)",
+          "refId": "B",
+          "legendFormat": "Lease lost",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_zone_lease_release_failed_total) or vector(0)",
+          "refId": "C",
+          "legendFormat": "Lease release failed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_stage_deadline_exceeded_total) or vector(0)",
+          "refId": "D",
+          "legendFormat": "Stage deadlines",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "sum(ae3_correction_exhausted_total) or vector(0)",
+          "refId": "E",
+          "legendFormat": "Correction exhausted",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "horizontal",
+        "colorMode": "background"
       }
     }
   ],
   "id": null,
-  "uid": null
+  "uid": "ae3-automation-engine"
 }

@@ -15,10 +15,10 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # Automation Engine
+  # Automation Engine (ae3lite — metrics embedded in main API on port 9405)
   - job_name: 'automation-engine'
     static_configs:
-      - targets: ['automation-engine:9401']
+      - targets: ['automation-engine:9405']
     metrics_path: '/metrics'
     scrape_interval: 15s
 
@@ -41,10 +41,8 @@ rule_files:
   - '/etc/prometheus/alerts.yml'
 
 # Alertmanager конфигурация
-# Закомментировано, так как Alertmanager не всегда запущен в dev окружении
-# Раскомментируйте, если Alertmanager запущен
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets:
-#           - 'alertmanager:9093'
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'

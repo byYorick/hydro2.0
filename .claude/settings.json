@@ -15,7 +15,10 @@
       "Bash(make migrate:*)",
       "Bash(make seed:*)",
       "Bash(/usr/bin/env npm:*)",
-      "Bash(npx vue-tsc:*)"
+      "Bash(npx vue-tsc:*)",
+      "Bash(make down:*)",
+      "Bash(make up:*)",
+      "Bash(make logs-core:*)"
     ],
     "additionalDirectories": [
       "/home/georgiy/.claude/projects/-home-georgiy-esp-hydro-hydro2-0/memory"

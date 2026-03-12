@@ -32,6 +32,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.meta.phases.0', 'solution_fill')
             ->assertJsonPath('data.resolved_config.base.controllers.ph.mode', 'cross_coupled_pi_d')
             ->assertJsonPath('data.resolved_config.base.runtime.required_node_type', 'irrig')
+            ->assertJsonPath('data.resolved_config.base.retry.prepare_recirculation_max_correction_attempts', 20)
             ->assertJsonFragment(['slug' => 'balanced']);
     }
 
@@ -106,7 +107,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                     'max_ph_correction_attempts' => 4,
                     'prepare_recirculation_timeout_sec' => 480,
                     'prepare_recirculation_max_attempts' => 3,
-                    'prepare_recirculation_max_correction_attempts' => 32767,
+                    'prepare_recirculation_max_correction_attempts' => 200,
                 ],
                 'adaptive_mix_wait' => [
                     'enabled' => true,
@@ -147,7 +148,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                         'max_ph_correction_attempts' => 4,
                         'prepare_recirculation_timeout_sec' => 540,
                         'prepare_recirculation_max_attempts' => 3,
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 200,
                     ],
                     'dosing' => [
                         'solution_volume_l' => 18.0,

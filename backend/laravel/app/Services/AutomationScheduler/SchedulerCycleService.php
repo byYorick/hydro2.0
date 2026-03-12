@@ -5,6 +5,7 @@ namespace App\Services\AutomationScheduler;
 use App\Models\GrowCycle;
 use App\Models\SchedulerLog;
 use App\Services\EffectiveTargetsService;
+use App\Services\ZoneCorrectionConfigService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -1268,6 +1269,8 @@ class SchedulerCycleService
         CarbonImmutable $triggerTime,
     ): array {
         try {
+            app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
+
             $intentPayload = [
                 'source' => 'laravel_scheduler',
                 'workflow' => 'cycle_start',

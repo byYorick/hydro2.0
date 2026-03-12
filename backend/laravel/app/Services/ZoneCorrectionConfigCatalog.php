@@ -80,7 +80,7 @@ class ZoneCorrectionConfigCatalog
                 'max_ph_correction_attempts' => 5,
                 'prepare_recirculation_timeout_sec' => 1200,
                 'prepare_recirculation_max_attempts' => 3,
-                'prepare_recirculation_max_correction_attempts' => 32767,
+                'prepare_recirculation_max_correction_attempts' => 20,
             ],
             'adaptive_mix_wait' => [
                 'enabled' => true,
@@ -206,7 +206,7 @@ class ZoneCorrectionConfigCatalog
                     self::field('retry.max_ph_correction_attempts', 'Max pH attempts', 'Лимит pH-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 32767]),
                     self::field('retry.prepare_recirculation_timeout_sec', 'Recirculation timeout', 'Длительность одного окна recirculation before retry.', 'integer', ['min' => 30, 'max' => 7200]),
                     self::field('retry.prepare_recirculation_max_attempts', 'Recirculation max windows', 'Сколько timeout-window допускается до alert/stop.', 'integer', ['min' => 1, 'max' => 10]),
-                    self::field('retry.prepare_recirculation_max_correction_attempts', 'Recirculation correction cap', 'Верхний guard для correction loop внутри одного recirculation window.', 'integer', ['min' => 1, 'max' => 32767, 'advanced_only' => true]),
+                    self::field('retry.prepare_recirculation_max_correction_attempts', 'Recirculation correction cap', 'Верхний guard для correction loop внутри одного recirculation window.', 'integer', ['min' => 1, 'max' => 500, 'advanced_only' => true]),
                 ],
             ],
             [

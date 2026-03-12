@@ -8,7 +8,7 @@ import pytest
 from ae3lite.application.dto import ZoneActuatorRef
 from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase
 from ae3lite.domain.entities.automation_task import AutomationTask
-from ae3lite.domain.errors import SnapshotBuildError
+from ae3lite.domain.errors import PlannerConfigurationError, SnapshotBuildError
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
@@ -123,6 +123,14 @@ class _PlannerNoSteps:
 class _PlannerFails:
     def build(self, *, task, snapshot):
         raise AssertionError("planner should not be called when snapshot load fails")
+
+
+class _PlannerMissingZoneCorrectionConfigCritical:
+    def build(self, *, task, snapshot):
+        raise PlannerConfigurationError(
+            "Zone 99 has no correction_config; fail-closed for critical dosing parameters",
+            code="zone_correction_config_missing_critical",
+        )
 
 
 class _GatewayOk:
@@ -291,6 +299,33 @@ async def test_execute_task_fail_closed_alert_write_error_does_not_block_fail_cl
 
     assert len(alerts.calls) == 1
     assert finalize.calls[0]["error_code"] == "unsupported_command_plan_steps"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_critical_missing_zone_config_emits_critical_alert_and_shutdown() -> None:
+    task = _make_task(stage="startup", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerMissingZoneCorrectionConfigCritical(),
+        command_gateway=gateway,
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "zone_correction_config_missing_critical"
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_zone_correction_config_missing"
+    assert alerts.calls[0]["severity"] == "critical"
+    assert alerts.calls[0]["details"]["error_code"] == "zone_correction_config_missing_critical"
+    assert len(gateway.calls) == 1
+    assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
 
 
 @pytest.mark.asyncio

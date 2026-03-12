@@ -564,7 +564,7 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = clamp(
       Math.round(correctionPrepareRecirculationMaxCorrectionAttempts),
       1,
-      100000
+      500
     )
   }
   const correctionEcMixWaitSec = readNumber(correction?.ec_mix_wait_sec)

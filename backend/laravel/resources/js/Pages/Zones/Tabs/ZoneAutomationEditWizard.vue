@@ -642,7 +642,7 @@
                 v-model.number="draftWaterForm.correctionPrepareRecirculationMaxCorrectionAttempts"
                 type="number"
                 min="1"
-                max="100000"
+                max="500"
                 class="input-field mt-1 w-full"
               />
             </label>
@@ -987,7 +987,7 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
     form.correctionPrepareRecirculationMaxCorrectionAttempts === undefined ||
     !Number.isFinite(Number(form.correctionPrepareRecirculationMaxCorrectionAttempts))
   ) {
-    form.correctionPrepareRecirculationMaxCorrectionAttempts = 32767
+    form.correctionPrepareRecirculationMaxCorrectionAttempts = 20
   }
   if (form.correctionEcMixWaitSec === undefined || !Number.isFinite(Number(form.correctionEcMixWaitSec))) {
     form.correctionEcMixWaitSec = 120
@@ -1049,7 +1049,7 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   form.correctionPrepareRecirculationMaxCorrectionAttempts = clamp(
     Math.round(form.correctionPrepareRecirculationMaxCorrectionAttempts),
     1,
-    100000
+    500
   )
   form.correctionEcMixWaitSec = clamp(Math.round(form.correctionEcMixWaitSec), 10, 3600)
   form.correctionPhMixWaitSec = clamp(Math.round(form.correctionPhMixWaitSec), 10, 3600)

@@ -5,75 +5,252 @@
     "monitoring"
   ],
   "timezone": "browser",
-  "schemaVersion": 16,
-  "version": 1,
-  "refresh": "15s",
+  "schemaVersion": 36,
+  "version": 2,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
-      "id": 1,
-      "title": "Active Alerts",
-      "type": "table",
+      "id": 100,
+      "title": "— Активные алерты —",
+      "type": "text",
       "gridPos": {
-        "h": 10,
-        "w": 12,
+        "h": 1,
+        "w": 24,
         "x": 0,
         "y": 0
       },
+      "options": {
+        "mode": "markdown",
+        "content": "## Активные алерты"
+      }
+    },
+    {
+      "id": 1,
+      "title": "Активные алерты (таблица)",
+      "type": "table",
+      "gridPos": {
+        "h": 12,
+        "w": 16,
+        "x": 0,
+        "y": 1
+      },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT id, zone_id, type, status, details, created_at FROM alerts WHERE status = 'ACTIVE' ORDER BY created_at DESC LIMIT 100",
+          "rawSql": "SELECT id, zone_id, source, code, type, severity, category, error_count, created_at, last_seen_at FROM alerts WHERE status = 'ACTIVE' ORDER BY severity DESC, created_at DESC LIMIT 100",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "created_at",
+            "desc": true
+          }
+        ]
+      }
     },
     {
       "id": 2,
-      "title": "Alerts by Type",
+      "title": "Алерты по severity",
       "type": "bargauge",
       "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 0
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 1
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT type, COUNT(*) as count FROM alerts WHERE status = 'ACTIVE' GROUP BY type",
+          "rawSql": "SELECT severity, COUNT(*)::int as count FROM alerts WHERE status = 'ACTIVE' GROUP BY severity ORDER BY count DESC",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true,
+          "fields": "/^count$/"
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
     },
     {
       "id": 3,
-      "title": "Alerts Timeline",
+      "title": "Алерты по type",
+      "type": "bargauge",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 7
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT type, COUNT(*)::int as count FROM alerts WHERE status = 'ACTIVE' GROUP BY type ORDER BY count DESC LIMIT 10",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true,
+          "fields": "/^count$/"
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "id": 101,
+      "title": "— Динамика —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Динамика алертов"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Новые алерты по времени (по severity)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 14
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT DATE_TRUNC('hour', created_at)::timestamp as time, COUNT(*)::float as value, type as metric FROM alerts WHERE created_at >= NOW() - INTERVAL '30 days' AND created_at <= NOW() GROUP BY DATE_TRUNC('hour', created_at), type ORDER BY time",
+          "rawSql": "SELECT DATE_TRUNC('hour', created_at)::timestamp as time, COUNT(*)::float as value, COALESCE(severity, 'unknown') as metric FROM alerts WHERE created_at >= NOW() - INTERVAL '7 days' AND created_at <= NOW() GROUP BY DATE_TRUNC('hour', created_at), severity ORDER BY time",
           "format": "time_series",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "— Последние алерты —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Последние алерты (все статусы)"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Последние 50 алертов",
+      "type": "table",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT id, zone_id, source, code, type, severity, status, error_count, created_at, resolved_at FROM alerts ORDER BY created_at DESC LIMIT 50",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "created_at",
+            "desc": true
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "id": null,
+  "uid": "hydro-alerts-dashboard"
 }

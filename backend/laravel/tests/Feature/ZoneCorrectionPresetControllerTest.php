@@ -114,7 +114,7 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                         'max_ph_correction_attempts' => 4,
                         'prepare_recirculation_timeout_sec' => 600,
                         'prepare_recirculation_max_attempts' => 3,
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 200,
                     ],
                     'adaptive_mix_wait' => [
                         'enabled' => true,
@@ -195,7 +195,7 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                             'max_ph_correction_attempts' => 4,
                             'prepare_recirculation_timeout_sec' => 480,
                             'prepare_recirculation_max_attempts' => 3,
-                            'prepare_recirculation_max_correction_attempts' => 32767,
+                            'prepare_recirculation_max_correction_attempts' => 200,
                         ],
                         'tolerance' => [
                             'prepare_tolerance' => ['ph_pct' => 9.0, 'ec_pct' => 15.0],

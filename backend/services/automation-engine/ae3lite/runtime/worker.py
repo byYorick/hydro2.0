@@ -6,7 +6,8 @@ import asyncio
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from ae3lite.infrastructure.metrics import ACTIVE_TASKS
+from ae3lite.infrastructure.metrics import ACTIVE_TASKS, TICK_DURATION, TICK_ERRORS, ZONE_LEASE_LOST, ZONE_LEASE_RELEASE_FAILED
+from common.infra_alerts import send_infra_alert
 
 
 class Ae3RuntimeWorker:
@@ -111,7 +112,11 @@ class Ae3RuntimeWorker:
             final_task = task
             ACTIVE_TASKS.labels(topology=task.topology).inc()
             try:
-                final_task = await self._execute_task_use_case.run(task=task, now=self._now_fn())
+                with TICK_DURATION.time():
+                    final_task = await self._execute_task_use_case.run(task=task, now=self._now_fn())
+            except Exception as exc:
+                TICK_ERRORS.labels(error_type=type(exc).__name__).inc()
+                raise
             finally:
                 ACTIVE_TASKS.labels(topology=task.topology).dec()
                 cancel = getattr(heartbeat_task, "cancel", None)
@@ -125,6 +130,24 @@ class Ae3RuntimeWorker:
                         self._owner,
                         task.id,
                     )
+                    ZONE_LEASE_RELEASE_FAILED.labels(zone_id=str(task.zone_id)).inc()
+                    try:
+                        await send_infra_alert(
+                            code="ae3_zone_lease_release_failed",
+                            alert_type="AE3 Zone Lease Release Failed",
+                            severity="error",
+                            zone_id=int(task.zone_id),
+                            service="automation-engine",
+                            component="worker:lease",
+                            details={
+                                "task_id": int(task.id),
+                                "owner": self._owner,
+                                "topology": str(getattr(task, "topology", "")),
+                                "message": "Zone lease could not be released after task completion — zone may be locked.",
+                            },
+                        )
+                    except Exception:
+                        self._logger.warning("AE3 failed to send lease_release_failed alert zone_id=%s", task.zone_id)
 
             if intent_id > 0 and final_task is not None and not final_task.is_active:
                 await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
@@ -149,16 +172,38 @@ class Ae3RuntimeWorker:
                         zone_id,
                         self._owner,
                     )
+                    ZONE_LEASE_LOST.labels(zone_id=str(zone_id)).inc()
+                    try:
+                        await send_infra_alert(
+                            code="ae3_zone_lease_lost",
+                            alert_type="AE3 Zone Lease Lost",
+                            severity="critical",
+                            zone_id=int(zone_id),
+                            service="automation-engine",
+                            component="worker:heartbeat",
+                            details={
+                                "owner": self._owner,
+                                "message": "Zone lease heartbeat failed to extend — zone may be hijacked or frozen.",
+                            },
+                        )
+                    except Exception:
+                        self._logger.warning("AE3 failed to send lease_lost alert zone_id=%s", zone_id)
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as exc:
                 self._logger.warning(
-                    "AE3 lease heartbeat error: zone_id=%s owner=%s", zone_id, self._owner, exc_info=True
+                    "AE3 lease heartbeat error: zone_id=%s owner=%s error_type=%s",
+                    zone_id,
+                    self._owner,
+                    type(exc).__name__,
+                    exc_info=True,
                 )
 
     async def _safe_mark_intent_running(self, *, intent_id: int) -> None:
         try:
             await self._mark_intent_running_fn(intent_id=intent_id, now=self._now_fn())
+        except asyncio.CancelledError:
+            raise
         except Exception:
             self._logger.warning("AE3 runtime failed to mark intent running: intent_id=%s", intent_id, exc_info=True)
 
@@ -188,6 +233,8 @@ class Ae3RuntimeWorker:
                 error_code=error_code,
                 error_message=error_message,
             )
+        except asyncio.CancelledError:
+            raise
         except Exception:
             self._logger.warning("AE3 runtime failed to mark intent terminal: intent_id=%s", intent_id, exc_info=True)
 

@@ -65,7 +65,7 @@ function createForms(): ZoneAutomationForms {
       correctionMaxEcCorrectionAttempts: 5,
       correctionMaxPhCorrectionAttempts: 5,
       correctionPrepareRecirculationMaxAttempts: 3,
-      correctionPrepareRecirculationMaxCorrectionAttempts: 32767,
+      correctionPrepareRecirculationMaxCorrectionAttempts: 20,
       correctionEcMixWaitSec: 120,
       correctionPhMixWaitSec: 60,
       correctionStabilizationSec: 60,

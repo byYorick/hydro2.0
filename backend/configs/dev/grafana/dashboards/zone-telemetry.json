@@ -5,97 +5,275 @@
     "telemetry"
   ],
   "timezone": "browser",
-  "schemaVersion": 16,
-  "version": 1,
+  "schemaVersion": 36,
+  "version": 2,
   "refresh": "15s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
-      "id": 1,
-      "title": "pH by Zone",
-      "type": "timeseries",
+      "id": 100,
+      "title": "— Текущие значения —",
+      "type": "text",
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 1,
+        "w": 24,
         "x": 0,
         "y": 0
       },
+      "options": {
+        "mode": "markdown",
+        "content": "## Текущие значения по зонам"
+      }
+    },
+    {
+      "id": 1,
+      "title": "Текущие значения сенсоров",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float, 'Zone ' || ts.zone_id::text || ' - ' || s.type as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'PH' AND ts.ts >= NOW() - INTERVAL '30 days' AND ts.ts <= NOW() ORDER BY ts.ts LIMIT 5000",
-          "format": "time_series",
-          "refId": "A"
+          "rawSql": "SELECT s.zone_id, s.type as sensor_type, s.label, tl.last_value as value, tl.last_quality as quality, tl.updated_at FROM telemetry_last tl JOIN sensors s ON s.id = tl.sensor_id WHERE s.zone_id IS NOT NULL ORDER BY s.zone_id, s.type",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "zone_id"
+          }
+        ]
+      }
+    },
+    {
+      "id": 101,
+      "title": "— pH —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## pH"
+      }
     },
     {
       "id": 2,
-      "title": "EC by Zone",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "PostgreSQL"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float, 'Zone ' || ts.zone_id::text || ' - ' || s.type as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'EC' AND ts.ts >= NOW() - INTERVAL '30 days' AND ts.ts <= NOW() ORDER BY ts.ts LIMIT 5000",
-          "format": "time_series",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "title": "Temperature by Zone",
+      "title": "pH по зонам",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 12
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float, 'Zone ' || ts.zone_id::text || ' - ' || s.type as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'TEMPERATURE' AND ts.ts >= NOW() - INTERVAL '30 days' AND ts.ts <= NOW() ORDER BY ts.ts LIMIT 5000",
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float as value, 'Zone ' || ts.zone_id::text || ' / ' || s.label as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'PH' AND ts.ts >= $__timeFrom()::timestamp AND ts.ts <= $__timeTo()::timestamp ORDER BY ts.ts LIMIT 5000",
           "format": "time_series",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     },
     {
-      "id": 4,
-      "title": "Current Zone Values",
-      "type": "table",
+      "id": 3,
+      "title": "EC по зонам",
+      "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 12
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT s.zone_id, s.type as metric_type, tl.last_value as value, tl.updated_at FROM telemetry_last tl JOIN sensors s ON s.id = tl.sensor_id WHERE s.zone_id IS NOT NULL ORDER BY s.zone_id, s.type",
-          "format": "table",
-          "refId": "A"
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float as value, 'Zone ' || ts.zone_id::text || ' / ' || s.label as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'EC' AND ts.ts >= $__timeFrom()::timestamp AND ts.ts <= $__timeTo()::timestamp ORDER BY ts.ts LIMIT 5000",
+          "format": "time_series",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "— Климат —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Климат"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Температура по зонам",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float as value, 'Zone ' || ts.zone_id::text || ' / ' || s.label as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'TEMPERATURE' AND ts.ts >= $__timeFrom()::timestamp AND ts.ts <= $__timeTo()::timestamp ORDER BY ts.ts LIMIT 5000",
+          "format": "time_series",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Уровень воды (WATER_LEVEL)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float as value, 'Zone ' || ts.zone_id::text || ' / ' || s.label as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'WATER_LEVEL' AND ts.ts >= $__timeFrom()::timestamp AND ts.ts <= $__timeTo()::timestamp ORDER BY ts.ts LIMIT 5000",
+          "format": "time_series",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Влажность (HUMIDITY)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float as value, 'Zone ' || ts.zone_id::text || ' / ' || s.label as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'HUMIDITY' AND ts.ts >= $__timeFrom()::timestamp AND ts.ts <= $__timeTo()::timestamp ORDER BY ts.ts LIMIT 5000",
+          "format": "time_series",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
-  ]
+  ],
+  "id": null,
+  "uid": "hydro-zone-telemetry"
 }

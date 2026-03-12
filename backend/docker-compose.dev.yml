@@ -348,7 +348,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.5.2
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin

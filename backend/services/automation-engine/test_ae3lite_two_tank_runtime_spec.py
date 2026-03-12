@@ -8,6 +8,22 @@ from ae3lite.domain.errors import PlannerConfigurationError
 from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runtime
 
 
+def _minimal_zone_correction_config() -> dict[str, object]:
+    return {
+        "base": {
+            "timing": {},
+            "retry": {},
+            "dosing": {},
+        },
+        "phases": {
+            "solution_fill": {},
+            "tank_recirc": {},
+            "irrigation": {},
+        },
+        "meta": {},
+    }
+
+
 def _snapshot(
     *,
     correction: dict[str, object],
@@ -31,7 +47,7 @@ def _snapshot(
             "correction": correction,
         },
         targets={},
-        correction_config=correction_config,
+        correction_config=correction_config if correction_config is not None else _minimal_zone_correction_config(),
     )
 
 
@@ -55,6 +71,7 @@ def test_resolve_target_bound_handles_zero_value() -> None:
             "correction": {},
         },
         targets={},
+        correction_config=_minimal_zone_correction_config(),
     )
     runtime = resolve_two_tank_runtime(snap)
     # 0.0 is a valid bound and must be preserved (not replaced by fallback=target)
@@ -81,6 +98,18 @@ def test_resolve_two_tank_runtime_uses_split_retry_contract() -> None:
     assert runtime["irr_state_wait_timeout_sec"] == 4.5
 
 
+def test_resolve_two_tank_runtime_normalizes_legacy_prepare_recirculation_attempts_sentinel() -> None:
+    runtime = resolve_two_tank_runtime(
+        _snapshot(
+            correction={
+                "prepare_recirculation_max_correction_attempts": 32767,
+            }
+        )
+    )
+
+    assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 20
+
+
 def test_resolve_two_tank_runtime_accepts_timeout_equal_to_mix_plus_stabilization() -> None:
     """timeout == mix_wait + stabilization is the exact minimum — should pass.
 
@@ -105,6 +134,7 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_mix_plus_stabilizatio
             },
         },
         targets={},
+        correction_config=_minimal_zone_correction_config(),
     )
     runtime = resolve_two_tank_runtime(snap)
     assert runtime["prepare_recirculation_timeout_sec"] == 35
@@ -132,9 +162,31 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_mix_plus_stabili
             },
         },
         targets={},
+        correction_config=_minimal_zone_correction_config(),
     )
     with pytest.raises(PlannerConfigurationError, match="prepare_recirculation_timeout_sec"):
         resolve_two_tank_runtime(snap)
+
+
+def test_resolve_two_tank_runtime_raises_when_zone_correction_config_missing() -> None:
+    snap = SimpleNamespace(
+        zone_id=188,
+        workflow_phase="tank_filling",
+        diagnostics_execution={
+            "workflow": "cycle_start",
+            "topology": "two_tank_drip_substrate_trays",
+            "required_node_types": ["irrig"],
+            "target_ph": 5.8,
+            "target_ec": 2.2,
+            "startup": {},
+            "correction": {},
+        },
+        targets={},
+        correction_config=None,
+    )
+    with pytest.raises(PlannerConfigurationError) as exc_info:
+        resolve_two_tank_runtime(snap)
+    assert getattr(exc_info.value, "code", "") == "zone_correction_config_missing_critical"
 
 
 def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:

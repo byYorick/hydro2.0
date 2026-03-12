@@ -114,7 +114,7 @@ return new class extends Migration
                         'max_ph_correction_attempts' => 5,
                         'prepare_recirculation_timeout_sec' => 1500,
                         'prepare_recirculation_max_attempts' => 3,
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 20,
                     ],
                     'adaptive_mix_wait' => [
                         'enabled' => true,
@@ -190,7 +190,7 @@ return new class extends Migration
                         'max_ph_correction_attempts' => 5,
                         'prepare_recirculation_timeout_sec' => 1200,
                         'prepare_recirculation_max_attempts' => 3,
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 20,
                     ],
                     'adaptive_mix_wait' => [
                         'enabled' => true,
@@ -266,7 +266,7 @@ return new class extends Migration
                         'max_ph_correction_attempts' => 6,
                         'prepare_recirculation_timeout_sec' => 900,
                         'prepare_recirculation_max_attempts' => 3,
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 20,
                     ],
                     'adaptive_mix_wait' => [
                         'enabled' => true,
@@ -342,7 +342,7 @@ return new class extends Migration
                         'max_ph_correction_attempts' => 5,
                         'prepare_recirculation_timeout_sec' => 600,
                         'prepare_recirculation_max_attempts' => 3,
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 20,
                     ],
                     'adaptive_mix_wait' => [
                         'enabled' => true,

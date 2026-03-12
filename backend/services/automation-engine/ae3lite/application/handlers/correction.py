@@ -27,8 +27,9 @@ from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
-from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT
+from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_EXHAUSTED
 from common.db import create_zone_event
+from common.infra_alerts import send_infra_alert
 
 _logger = logging.getLogger(__name__)
 
@@ -460,6 +461,9 @@ class CorrectionHandler(BaseStageHandler):
         task: Any,
         corr: CorrectionState,
     ) -> StageOutcome:
+        stage = str(task.current_stage)
+        topology = str(getattr(task, "topology", "") or "")
+        CORRECTION_EXHAUSTED.labels(topology=topology, stage=stage).inc()
         try:
             await create_zone_event(task.zone_id, "CORRECTION_EXHAUSTED", {
                 "attempt": corr.attempt,
@@ -468,10 +472,31 @@ class CorrectionHandler(BaseStageHandler):
                 "ec_max_attempts": corr.ec_max_attempts,
                 "ph_attempt": corr.ph_attempt,
                 "ph_max_attempts": corr.ph_max_attempts,
-                "stage": str(task.current_stage),
+                "stage": stage,
             })
         except Exception:
             _logger.warning("Failed to log CORRECTION_EXHAUSTED zone event", exc_info=True)
+        try:
+            await send_infra_alert(
+                code="biz_correction_exhausted",
+                alert_type="AE3 Correction Exhausted",
+                severity="error",
+                zone_id=int(task.zone_id),
+                service="automation-engine",
+                component=f"correction:{stage}",
+                details={
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "stage": stage,
+                    "topology": topology,
+                    "attempt": corr.attempt,
+                    "max_attempts": corr.max_attempts,
+                    "ec_attempt": corr.ec_attempt,
+                    "ph_attempt": corr.ph_attempt,
+                    "message": "Correction cycle exhausted all dose attempts — check pH/EC dosing hardware.",
+                },
+            )
+        except Exception:
+            _logger.warning("Failed to send CORRECTION_EXHAUSTED infra alert zone_id=%s", task.zone_id)
         if str(task.current_stage).strip().lower() == "prepare_recirculation_check":
             return StageOutcome(
                 kind="transition",

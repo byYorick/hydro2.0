@@ -27,6 +27,7 @@ class ZoneService
             $data['status'] = 'NEW';
 
             $zone = Zone::create($data);
+            $this->ensureCorrectionConfigBootstrap((int) $zone->id);
             Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
 
             // Dispatch event для уведомления Python-сервиса
@@ -108,12 +109,23 @@ class ZoneService
             $zone->update($data);
             Log::info('Zone updated', ['zone_id' => $zone->id]);
             $zone = $zone->fresh();
+            if ((string) ($zone->automation_runtime ?? '') === 'ae3') {
+                $this->ensureCorrectionConfigBootstrap((int) $zone->id);
+            }
 
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
 
             return $zone;
         });
+    }
+
+    private function ensureCorrectionConfigBootstrap(int $zoneId): void
+    {
+        if ($zoneId <= 0) {
+            return;
+        }
+        app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
     }
 
     private function assertAutomationRuntimeSwitchAllowed(Zone $zone, array $data): void

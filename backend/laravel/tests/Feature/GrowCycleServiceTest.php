@@ -222,5 +222,15 @@ class GrowCycleServiceTest extends TestCase
         $this->assertSame($cycleId, $payload['grow_cycle_id'] ?? null);
         $this->assertArrayNotHasKey('task_payload', $payload);
         $this->assertArrayNotHasKey('schedule_payload', $payload);
+
+        $this->assertDatabaseHas('zone_correction_configs', [
+            'zone_id' => $zone->id,
+            'version' => 1,
+        ]);
+        $this->assertDatabaseHas('zone_correction_config_versions', [
+            'zone_id' => $zone->id,
+            'version' => 1,
+            'change_type' => 'bootstrap',
+        ]);
     }
 }

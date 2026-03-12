@@ -27,6 +27,7 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         lease_ttl_sec=300,
         reconcile_poll_interval_sec=0.5,
         start_cycle_claim_stale_sec=180,
+        start_cycle_running_stale_sec=1800,
         start_cycle_rate_limit_enabled=False,
         start_cycle_rate_limit_max_requests=30,
         start_cycle_rate_limit_window_sec=10,
@@ -98,6 +99,10 @@ class TestAe3RuntimeConfigFromEnvClamps:
     def test_start_cycle_claim_stale_minimum_30(self) -> None:
         capped = max(30, int(0))
         assert capped == 30
+
+    def test_start_cycle_running_stale_minimum_300(self) -> None:
+        capped = max(300, int(0))
+        assert capped == 300
 
     def test_rate_limit_max_requests_minimum_0(self) -> None:
         capped = max(0, int(-5))

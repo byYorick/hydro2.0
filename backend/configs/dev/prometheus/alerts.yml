@@ -282,3 +282,60 @@ groups:
         annotations:
           summary: "Task recovery success rate is low"
           description: "task_recovery_success_rate is {{ $value }} (threshold: 0.9). Check restart recovery behavior."
+
+  - name: ae3_zone_health_alerts
+    interval: 30s
+    rules:
+      - alert: AE3ZoneLeaseLost
+        expr: rate(ae3_zone_lease_lost_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 zone lease lost (zone {{ $labels.zone_id }})"
+          description: "Zone {{ $labels.zone_id }} lease heartbeat failed to extend. Zone may be frozen or hijacked by another worker."
+
+      - alert: AE3ZoneLeaseReleaseFailed
+        expr: rate(ae3_zone_lease_release_failed_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: error
+        annotations:
+          summary: "AE3 zone lease release failed (zone {{ $labels.zone_id }})"
+          description: "Zone {{ $labels.zone_id }} lease could not be released after task completion. Zone may remain locked."
+
+      - alert: AE3StuckTask
+        expr: ae3_active_tasks > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AE3 task stuck for >15 minutes (topology {{ $labels.topology }})"
+          description: "{{ $value }} active task(s) with topology={{ $labels.topology }} have been running for over 15 minutes. Check worker logs and zone lease state."
+
+      - alert: AE3CorrectionExhausted
+        expr: rate(ae3_correction_exhausted_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: error
+        annotations:
+          summary: "AE3 correction exhausted all attempts (zone={{ $labels.stage }})"
+          description: "Correction cycle at stage={{ $labels.stage }} topology={{ $labels.topology }} ran out of dose attempts. Check pH/EC dosing pumps."
+
+      - alert: AE3StageDeadlineExceeded
+        expr: rate(ae3_stage_deadline_exceeded_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 stage deadline exceeded (stage {{ $labels.stage }})"
+          description: "Stage {{ $labels.stage }} (topology={{ $labels.topology }}) hit its hard deadline. Check filling hardware and sensors."
+
+      - alert: AE3TickErrors
+        expr: rate(ae3_tick_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: error
+        annotations:
+          summary: "AE3 worker tick errors above threshold"
+          description: "Worker tick error rate is {{ $value }} errors/sec (error_type={{ $labels.error_type }}). Check automation-engine logs."

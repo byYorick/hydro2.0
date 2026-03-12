@@ -9,6 +9,8 @@ from typing import Any
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState
+from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
+from common.infra_alerts import send_infra_alert
 
 _logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
 
     Outcomes:
     1. Tank full + targets reached → ``solution_fill_stop_to_ready``
-    2. Tank full + targets not reached → enter correction cycle
+    2. Tank full + targets not reached → ``solution_fill_stop_to_prepare``
     3. Deadline exceeded → ``solution_fill_timeout_stop``
     4. Still filling → poll
     """
@@ -69,24 +71,41 @@ class SolutionFillCheckHandler(BaseStageHandler):
                     next_stage="solution_fill_stop_to_ready",
                 )
 
-            # Targets not met — enter correction.
-            _logger.info("solution_fill_check: tank full but targets not met, entering correction zone_id=%s", task.zone_id)
-            # Sensors already active (activated by solution_fill_start → sensor_mode_activate).
-            # on_corr_success → stop fill → ready
-            # on_corr_fail → stop fill → prepare_recirculation
-            corr = self._build_correction_state(
-                task=task,
-                runtime=runtime,
-                sensors_already_active=True,
-                return_stage_success=stage_def.on_corr_success or "solution_fill_stop_to_ready",
-                return_stage_fail=stage_def.on_corr_fail or "solution_fill_stop_to_prepare",
+            # Tank is already full: first stop fill hardware, correction is allowed only
+            # after transition to prepare_recirculation stages.
+            _logger.info(
+                "solution_fill_check: tank full but targets not met, stopping fill before recirculation zone_id=%s",
+                task.zone_id,
             )
-            return StageOutcome(kind="enter_correction", correction=corr)
+            return StageOutcome(
+                kind="transition",
+                next_stage=stage_def.on_corr_fail or "solution_fill_stop_to_prepare",
+            )
 
         # Check deadline
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             _logger.warning("solution_fill_check: deadline exceeded, stopping zone_id=%s", task.zone_id)
+            STAGE_DEADLINE_EXCEEDED.labels(
+                topology=str(getattr(task, "topology", "") or ""),
+                stage="solution_fill_check",
+            ).inc()
+            try:
+                await send_infra_alert(
+                    code="biz_solution_fill_timeout",
+                    alert_type="AE3 Solution Fill Timeout",
+                    severity="warning",
+                    zone_id=int(task.zone_id),
+                    service="automation-engine",
+                    component="handler:solution_fill_check",
+                    details={
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        "message": "Solution tank fill deadline exceeded — check solution supply valve and pump.",
+                    },
+                )
+            except Exception:
+                _logger.warning("Failed to send solution_fill_timeout alert zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
         # Still filling — poll

@@ -167,3 +167,42 @@ def test_build_process_calibrations_prefers_first_active_profile_per_mode() -> N
     assert result["tank_recirc"]["source"] == "hil_manual"
     assert result["tank_recirc"]["transport_delay_sec"] == 20
     assert result["generic"]["settle_sec"] == 30
+
+
+def test_build_correction_config_preserves_runtime_contract_fields() -> None:
+    read_model = PgZoneSnapshotReadModel()
+    row = {
+        "version": 9,
+        "resolved_config": {
+            "base": {
+                "runtime": {"clean_fill_timeout_sec": 777, "solution_max_sensor_label": "level_solution_max"},
+                "timing": {"telemetry_max_age_sec": 123},
+                "retry": {"max_ec_correction_attempts": 6},
+                "dosing": {"solution_volume_l": 88.0},
+            },
+            "phases": {
+                "solution_fill": {"timing": {"ec_mix_wait_sec": 31}},
+                "tank_recirc": {"retry": {"prepare_recirculation_timeout_sec": 620}},
+                "irrigation": {"tolerance": {"prepare_tolerance": {"ph_pct": 10.5}}},
+            },
+            "meta": {"preset_slug": "balanced"},
+        },
+        "phase_overrides": {
+            "solution_fill": {"timing": {"ec_mix_wait_sec": 31}},
+            "tank_recirc": {"retry": {"prepare_recirculation_timeout_sec": 620}},
+        },
+    }
+
+    result = read_model._build_correction_config(row)
+
+    assert result is not None
+    assert result["base"]["runtime"]["clean_fill_timeout_sec"] == 777
+    assert result["base"]["timing"]["telemetry_max_age_sec"] == 123
+    assert result["base"]["retry"]["max_ec_correction_attempts"] == 6
+    assert result["base"]["dosing"]["solution_volume_l"] == 88.0
+    assert result["phases"]["solution_fill"]["timing"]["ec_mix_wait_sec"] == 31
+    assert result["phases"]["tank_recirc"]["retry"]["prepare_recirculation_timeout_sec"] == 620
+    assert result["phases"]["irrigation"]["tolerance"]["prepare_tolerance"]["ph_pct"] == 10.5
+    assert result["meta"]["preset_slug"] == "balanced"
+    assert result["meta"]["version"] == 9
+    assert result["meta"]["phase_overrides"]["solution_fill"]["timing"]["ec_mix_wait_sec"] == 31

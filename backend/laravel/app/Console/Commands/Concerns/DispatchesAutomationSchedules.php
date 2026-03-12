@@ -6,6 +6,7 @@ use App\Models\LaravelSchedulerActiveTask;
 use App\Models\SchedulerLog;
 use App\Services\AutomationScheduler\ScheduleItem;
 use App\Services\AutomationScheduler\SchedulerConstants;
+use App\Services\ZoneCorrectionConfigService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -613,6 +614,8 @@ trait DispatchesAutomationSchedules
         CarbonImmutable $triggerTime,
     ): array {
         try {
+            app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
+
             $intentPayload = [
                 'source' => 'laravel_scheduler',
                 'workflow' => 'cycle_start',

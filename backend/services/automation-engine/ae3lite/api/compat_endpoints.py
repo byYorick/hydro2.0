@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime
 from typing import Any, Awaitable, Callable, Mapping
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
 from ae3lite.api.contracts import StartCycleRequest
-
-
-def _utcnow() -> datetime:
-    """Return current UTC time as naive datetime (no tzinfo)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+from common.utils.time import utcnow_naive as _utcnow
 
 
 def bind_start_cycle_route(
@@ -53,6 +50,8 @@ def bind_start_cycle_route(
                 error_code=error_code,
                 error_message=error_message,
             )
+        except asyncio.CancelledError:
+            raise
         except Exception:
             logger.warning(
                 "AE3 compat start-cycle failed to mark current intent terminal: intent_id=%s",
@@ -75,6 +74,8 @@ def bind_start_cycle_route(
                 error_code="start_cycle_zone_busy",
                 error_message=f"Intent skipped: zone busy (zone_id={zone_id})",
             )
+        except asyncio.CancelledError:
+            raise
         except Exception:
             logger.warning(
                 "AE3 compat start-cycle failed to mark requested intent terminal: zone_id=%s intent_id=%s",

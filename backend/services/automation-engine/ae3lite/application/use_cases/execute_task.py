@@ -218,13 +218,19 @@ class ExecuteTaskUseCase:
             if corr is not None:
                 details["corr_step"] = str(getattr(corr, "corr_step", "") or "").strip()
 
+            alert_code = "biz_ae3_task_failed"
+            alert_severity = "error"
+            if str(error_code).strip().lower() == "zone_correction_config_missing_critical":
+                alert_code = "biz_zone_correction_config_missing"
+                alert_severity = "critical"
+
             await repository.create_or_update_active(
                 zone_id=zone_id,
-                code="biz_ae3_task_failed",
+                code=alert_code,
                 details=details,
                 now=now,
                 category="operations",
-                severity="error",
+                severity=alert_severity,
             )
         except Exception:
             logger.warning(

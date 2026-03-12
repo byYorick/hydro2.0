@@ -147,43 +147,22 @@ class ActiveTaskPoller
             return false;
         }
 
+        $isExpired = false;
         $persistedExpiresAt = $task->expires_at;
         if ($persistedExpiresAt !== null) {
             $expiresAt = CarbonImmutable::instance($persistedExpiresAt)->utc()->setMicroseconds(0);
-            if ($expiresAt->lt($now)) {
-                $terminalStatus = 'timeout';
-                $this->activeTaskStore->markTerminal(
-                    taskId: $taskId,
-                    status: $terminalStatus,
-                    terminalAt: $now,
-                    detailsPatch: [
-                        'terminal_source' => 'laravel_dispatcher_local_expiry',
-                    ],
-                    lastPolledAt: $now,
-                );
-                $writeLog(SchedulerRuntimeHelper::scheduleTaskLogName((int) $task->zone_id, (string) $task->task_type), 'failed', [
-                    'zone_id' => (int) $task->zone_id,
-                    'task_type' => (string) $task->task_type,
-                    'task_id' => $taskId,
-                    'status' => $terminalStatus,
-                    'schedule_key' => (string) $task->schedule_key,
-                    'correlation_id' => (string) $task->correlation_id,
-                    'terminal_source' => 'laravel_dispatcher_local_expiry',
-                    'terminal_at' => SchedulerRuntimeHelper::toIso($now),
-                ]);
-
-                return false;
-            }
+            $isExpired = $expiresAt->lt($now);
         }
 
         $status = $this->fetchTaskStatus($task, $taskId, $cfg);
-        if ($status === null) {
-            $this->activeTaskStore->touchPolledAt($taskId, $now, null);
+        // 404 before expiry can be transient read-model lag. Keep task busy until deadline.
+        if ($status === 'not_found' && ! $isExpired) {
+            $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
 
             return true;
         }
 
-        if ($this->isTerminalStatus($status)) {
+        if ($status !== null && $this->isTerminalStatus($status)) {
             $this->activeTaskStore->markTerminal(
                 taskId: $taskId,
                 status: $status,
@@ -192,6 +171,12 @@ class ActiveTaskPoller
                     'terminal_source' => 'automation_engine_status_poll',
                 ],
                 lastPolledAt: $now,
+            );
+            $this->syncIntentTerminalStatus(
+                task: $task,
+                terminalStatus: $status,
+                terminalSource: 'automation_engine_status_poll',
+                now: $now,
             );
             $writeLog(SchedulerRuntimeHelper::scheduleTaskLogName((int) $task->zone_id, (string) $task->task_type), $status === 'completed' ? 'completed' : 'failed', [
                 'zone_id' => (int) $task->zone_id,
@@ -205,6 +190,52 @@ class ActiveTaskPoller
             ]);
 
             return false;
+        }
+
+        if ($isExpired) {
+            $taskAgeSec = $this->taskAgeSec($task, $now);
+            $hardStaleAfterSec = $this->hardStaleAfterSec($cfg);
+            if ($taskAgeSec === null || $taskAgeSec < $hardStaleAfterSec) {
+                $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
+
+                return true;
+            }
+
+            $terminalStatus = 'timeout';
+            $terminalSource = 'laravel_dispatcher_hard_stale_expiry';
+            $this->activeTaskStore->markTerminal(
+                taskId: $taskId,
+                status: $terminalStatus,
+                terminalAt: $now,
+                detailsPatch: [
+                    'terminal_source' => $terminalSource,
+                ],
+                lastPolledAt: $now,
+            );
+            $this->syncIntentTerminalStatus(
+                task: $task,
+                terminalStatus: $terminalStatus,
+                terminalSource: $terminalSource,
+                now: $now,
+            );
+            $writeLog(SchedulerRuntimeHelper::scheduleTaskLogName((int) $task->zone_id, (string) $task->task_type), 'failed', [
+                'zone_id' => (int) $task->zone_id,
+                'task_type' => (string) $task->task_type,
+                'task_id' => $taskId,
+                'status' => $terminalStatus,
+                'schedule_key' => (string) $task->schedule_key,
+                'correlation_id' => (string) $task->correlation_id,
+                'terminal_source' => $terminalSource,
+                'terminal_at' => SchedulerRuntimeHelper::toIso($now),
+            ]);
+
+            return false;
+        }
+
+        if ($status === null) {
+            $this->activeTaskStore->touchPolledAt($taskId, $now, null);
+
+            return true;
         }
 
         $this->activeTaskStore->touchPolledAt($taskId, $now, $status);
@@ -383,6 +414,102 @@ class ActiveTaskPoller
         }
 
         return $headers;
+    }
+
+    private function resolveIntentIdForTask(LaravelSchedulerActiveTask $task): int
+    {
+        $details = is_array($task->details) ? $task->details : [];
+        $intentId = (int) ($details['intent_id'] ?? 0);
+        if ($intentId > 0) {
+            return $intentId;
+        }
+
+        $taskId = trim((string) $task->task_id);
+        if (preg_match('/^intent-(\d+)$/', $taskId, $matches) === 1) {
+            return (int) ($matches[1] ?? 0);
+        }
+
+        return 0;
+    }
+
+    private function syncIntentTerminalStatus(
+        LaravelSchedulerActiveTask $task,
+        string $terminalStatus,
+        string $terminalSource,
+        CarbonImmutable $now,
+    ): void {
+        $intentId = $this->resolveIntentIdForTask($task);
+        if ($intentId <= 0) {
+            return;
+        }
+
+        $intentStatus = match ($terminalStatus) {
+            'completed' => 'completed',
+            'cancelled' => 'cancelled',
+            default => 'failed',
+        };
+        $errorCode = $intentStatus === 'failed' ? 'scheduler_task_'.$terminalStatus : null;
+        $errorMessage = $intentStatus === 'failed'
+            ? sprintf(
+                'Scheduler task %s finished with status %s (%s)',
+                trim((string) $task->task_id),
+                $terminalStatus,
+                $terminalSource,
+            )
+            : null;
+
+        try {
+            DB::table('zone_automation_intents')
+                ->where('id', $intentId)
+                ->where('zone_id', (int) $task->zone_id)
+                ->whereIn('status', ['pending', 'claimed', 'running'])
+                ->update([
+                    'status' => $intentStatus,
+                    'completed_at' => $now,
+                    'updated_at' => $now,
+                    'error_code' => $errorCode,
+                    'error_message' => $errorMessage,
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to sync zone_automation_intents terminal status from laravel scheduler task', [
+                'task_id' => trim((string) $task->task_id),
+                'zone_id' => (int) $task->zone_id,
+                'intent_id' => $intentId,
+                'terminal_status' => $terminalStatus,
+                'terminal_source' => $terminalSource,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function taskAgeSec(LaravelSchedulerActiveTask $task, CarbonImmutable $now): ?int
+    {
+        $acceptedAt = $task->accepted_at;
+        if ($acceptedAt !== null) {
+            $startedAt = CarbonImmutable::instance($acceptedAt)->utc()->setMicroseconds(0);
+
+            return max(0, $startedAt->diffInSeconds($now, false));
+        }
+
+        $createdAt = $task->created_at;
+        if ($createdAt !== null) {
+            $startedAt = CarbonImmutable::instance($createdAt)->utc()->setMicroseconds(0);
+
+            return max(0, $startedAt->diffInSeconds($now, false));
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
+    private function hardStaleAfterSec(array $cfg): int
+    {
+        $expiresAfterSec = max(1, (int) ($cfg['expires_after_sec'] ?? 120));
+        $default = max(1800, $expiresAfterSec * 3);
+
+        return max($expiresAfterSec + 1, (int) ($cfg['hard_stale_after_sec'] ?? $default));
     }
 
     private function isTerminalStatus(string $status): bool

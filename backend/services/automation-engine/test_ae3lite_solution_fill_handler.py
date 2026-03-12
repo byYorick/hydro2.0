@@ -2,7 +2,7 @@
 
 Outcomes:
  1. Tank full + targets reached → solution_fill_stop_to_ready
- 2. Tank full + targets not reached → enter_correction
+ 2. Tank full + targets not reached → solution_fill_stop_to_prepare
  3. Deadline exceeded → solution_fill_timeout_stop
  4. Not full, no deadline → poll
  5. Tank full but min=0 → TaskExecutionError (sensor_state_inconsistent)
@@ -134,8 +134,8 @@ async def test_solution_fill_full_targets_reached():
     assert outcome.next_stage == "solution_fill_stop_to_ready"
 
 
-async def test_solution_fill_full_targets_not_reached_enter_correction():
-    """Solution tank full + targets far off → enter correction cycle."""
+async def test_solution_fill_full_targets_not_reached_stop_to_prepare():
+    """Solution tank full + targets far off → stop fill and go to prepare."""
     monitor = _MockRuntimeMonitor(
         sol_max_triggered=True, sol_min_triggered=True,
         ph=4.0, ec=0.5,  # way off target
@@ -144,14 +144,8 @@ async def test_solution_fill_full_targets_not_reached_enter_correction():
     task = _make_task()
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=STAGE_DEF, now=NOW)
 
-    assert outcome.kind == "enter_correction"
-    assert outcome.correction is not None
-    # Sensors were already activated by solution_fill_start, so we skip activate step
-    assert outcome.correction.corr_step == "corr_check"
-    assert outcome.correction.return_stage_success == "solution_fill_stop_to_ready"
-    assert outcome.correction.return_stage_fail == "solution_fill_stop_to_prepare"
-    assert outcome.correction.ec_max_attempts == 5
-    assert outcome.correction.ph_max_attempts == 5
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
 
 
 async def test_solution_fill_deadline_timeout_stop():

@@ -1,79 +1,94 @@
 {
   "title": "Node Status",
-  "tags": [
-    "nodes",
-    "status"
-  ],
+  "tags": ["nodes", "status"],
   "timezone": "browser",
-  "schemaVersion": 16,
-  "version": 1,
+  "schemaVersion": 36,
+  "version": 3,
   "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
   "panels": [
+
+    { "id": 100, "title": "— Статус узлов —", "type": "text",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "options": { "mode": "markdown", "content": "## Статус узлов" } },
+
     {
-      "id": 1,
-      "title": "Node Online Status",
-      "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "PostgreSQL"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT uid, name, type, status, last_seen_at, CASE WHEN last_seen_at > NOW() - INTERVAL '5 minutes' THEN 'online' ELSE 'offline' END as current_status FROM nodes ORDER BY last_seen_at DESC",
-          "format": "table",
-          "refId": "A"
-        }
-      ]
+      "id": 1, "title": "Node Online Status", "type": "table",
+      "gridPos": { "h": 12, "w": 14, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+      "targets": [{
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+        "rawSql": "SELECT uid, COALESCE(name, uid) as name, type, zone_id, status, lifecycle_state, last_seen_at FROM nodes ORDER BY last_seen_at DESC NULLS LAST",
+        "format": "table", "refId": "A"
+      }]
     },
+
     {
-      "id": 2,
-      "title": "Nodes by Type",
-      "type": "piechart",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "PostgreSQL"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT type, COUNT(*) as count FROM nodes GROUP BY type",
-          "format": "table",
-          "refId": "A"
-        }
-      ]
+      "id": 2, "title": "Nodes by Type", "type": "piechart",
+      "gridPos": { "h": 6, "w": 5, "x": 14, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+      "targets": [{
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+        "rawSql": "SELECT type, COUNT(*)::int as count FROM nodes GROUP BY type ORDER BY count DESC",
+        "format": "table", "refId": "A"
+      }],
+      "options": {
+        "pieType": "pie",
+        "displayLabels": ["name", "percent"],
+        "reduceOptions": { "values": true, "calcs": ["lastNotNull"], "fields": "/^count$/" }
+      }
     },
+
     {
-      "id": 3,
-      "title": "Node Last Seen Timeline",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
-      "datasource": {
-        "type": "postgres",
-        "uid": "PostgreSQL"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT DATE_TRUNC('hour', last_seen_at) as time, COUNT(*)::float as value, type as metric FROM nodes WHERE last_seen_at >= NOW() - INTERVAL '7 days' AND last_seen_at <= NOW() GROUP BY time, type ORDER BY time",
-          "format": "time_series",
-          "refId": "A"
-        }
-      ]
+      "id": 3, "title": "Nodes by Status", "type": "piechart",
+      "gridPos": { "h": 6, "w": 5, "x": 19, "y": 1 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+      "targets": [{
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+        "rawSql": "SELECT status, COUNT(*)::int as count FROM nodes GROUP BY status ORDER BY count DESC",
+        "format": "table", "refId": "A"
+      }],
+      "options": {
+        "pieType": "pie",
+        "displayLabels": ["name", "percent"],
+        "reduceOptions": { "values": true, "calcs": ["lastNotNull"], "fields": "/^count$/" }
+      }
+    },
+
+    {
+      "id": 4, "title": "Lifecycle State", "type": "bargauge",
+      "gridPos": { "h": 6, "w": 10, "x": 14, "y": 7 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+      "targets": [{
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+        "rawSql": "SELECT lifecycle_state, COUNT(*)::int as count FROM nodes GROUP BY lifecycle_state ORDER BY count DESC",
+        "format": "table", "refId": "A"
+      }],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": { "values": true, "calcs": ["lastNotNull"], "fields": "/^count$/" }
+      }
+    },
+
+    { "id": 101, "title": "— Последние heartbeat'ы —", "type": "text",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "options": { "mode": "markdown", "content": "## Последние heartbeat'ы" } },
+
+    {
+      "id": 5, "title": "Node Last Heartbeat Timeline", "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+      "targets": [{
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "PostgreSQL" },
+        "rawSql": "SELECT DATE_TRUNC('hour', last_seen_at)::timestamp as time, COUNT(*)::float as value, type as metric FROM nodes WHERE last_seen_at IS NOT NULL AND last_seen_at >= NOW() - INTERVAL '7 days' AND last_seen_at <= NOW() GROUP BY DATE_TRUNC('hour', last_seen_at), type ORDER BY time",
+        "format": "time_series", "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "tooltip": { "mode": "multi" } }
     }
-  ]
+
+  ],
+  "id": null,
+  "uid": "hydro-node-status"
 }

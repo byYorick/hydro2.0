@@ -131,6 +131,18 @@ class ZonesTest extends TestCase
             'greenhouse_id' => $greenhouse->id,
         ]);
         $resp->assertCreated()->assertJsonPath('data.name', 'Zone A');
+
+        $zoneId = (int) $resp->json('data.id');
+        $this->assertGreaterThan(0, $zoneId);
+        $this->assertDatabaseHas('zone_correction_configs', [
+            'zone_id' => $zoneId,
+            'version' => 1,
+        ]);
+        $this->assertDatabaseHas('zone_correction_config_versions', [
+            'zone_id' => $zoneId,
+            'version' => 1,
+            'change_type' => 'bootstrap',
+        ]);
     }
 
     public function test_get_zones_list(): void

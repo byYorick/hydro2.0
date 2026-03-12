@@ -142,6 +142,20 @@ class AutomationRuntimeConfigService
             'min' => 2,
             'unit' => 'sec',
         ],
+        'automation_engine.scheduler_hard_stale_after_sec' => [
+            'section_key' => 'scheduler_runtime',
+            'section_title' => 'Laravel scheduler runtime',
+            'item_key' => 'scheduler_hard_stale_after_sec',
+            'label' => 'hard_stale_after_sec',
+            'description' => 'Жёсткий stale-порог: после него scheduler может закрыть task локально.',
+            'config_path' => 'services.automation_engine.scheduler_hard_stale_after_sec',
+            'default' => 1800,
+            'type' => 'int',
+            'input_type' => 'number',
+            'editable' => true,
+            'min' => 2,
+            'unit' => 'sec',
+        ],
         'automation_engine.scheduler_catchup_policy' => [
             'section_key' => 'scheduler_catchup_and_lock',
             'section_title' => 'Catchup, lock и cursor',
@@ -357,6 +371,10 @@ class AutomationRuntimeConfigService
     {
         $dueGraceSec = max(1, $this->intValue('automation_engine.scheduler_due_grace_sec', 15));
         $expiresAfterSec = max($dueGraceSec + 1, $this->intValue('automation_engine.scheduler_expires_after_sec', 120));
+        $hardStaleAfterSec = max(
+            $expiresAfterSec + 1,
+            $this->intValue('automation_engine.scheduler_hard_stale_after_sec', 1800)
+        );
 
         $catchupPolicy = strtolower($this->stringValue('automation_engine.scheduler_catchup_policy', 'replay_limited'));
         if (! in_array($catchupPolicy, self::KNOWN_CATCHUP_POLICIES, true)) {
@@ -372,6 +390,7 @@ class AutomationRuntimeConfigService
             'token' => trim($this->stringValue('automation_engine.scheduler_api_token', '')),
             'due_grace_sec' => $dueGraceSec,
             'expires_after_sec' => $expiresAfterSec,
+            'hard_stale_after_sec' => $hardStaleAfterSec,
             'catchup_policy' => $catchupPolicy,
             'catchup_max_windows' => max(1, $this->intValue('automation_engine.scheduler_catchup_max_windows', 3)),
             'catchup_rate_limit_per_cycle' => max(1, $this->intValue('automation_engine.scheduler_catchup_rate_limit_per_cycle', 20)),
@@ -582,6 +601,7 @@ class AutomationRuntimeConfigService
         return match ($key) {
             'automation_engine.scheduler_due_grace_sec' => $schedulerConfig['due_grace_sec'],
             'automation_engine.scheduler_expires_after_sec' => $schedulerConfig['expires_after_sec'],
+            'automation_engine.scheduler_hard_stale_after_sec' => $schedulerConfig['hard_stale_after_sec'],
             'automation_engine.scheduler_catchup_policy' => $schedulerConfig['catchup_policy'],
             'automation_engine.scheduler_catchup_max_windows' => $schedulerConfig['catchup_max_windows'],
             'automation_engine.scheduler_catchup_rate_limit_per_cycle' => $schedulerConfig['catchup_rate_limit_per_cycle'],
@@ -703,4 +723,3 @@ class AutomationRuntimeConfigService
         };
     }
 }
-

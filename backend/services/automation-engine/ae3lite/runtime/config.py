@@ -24,6 +24,7 @@ class Ae3RuntimeConfig:
     lease_ttl_sec: int
     reconcile_poll_interval_sec: float
     start_cycle_claim_stale_sec: int
+    start_cycle_running_stale_sec: int
     start_cycle_rate_limit_enabled: bool
     start_cycle_rate_limit_max_requests: int
     start_cycle_rate_limit_window_sec: int
@@ -63,6 +64,15 @@ class Ae3RuntimeConfig:
             lease_ttl_sec=max(30, min(3600, int(os.getenv("AE_LEASE_TTL_SEC", "300")))),
             reconcile_poll_interval_sec=max(0.1, float(os.getenv("AE_RECONCILE_POLL_INTERVAL_SEC", "0.5"))),
             start_cycle_claim_stale_sec=max(30, int(os.getenv("AE_START_CYCLE_CLAIM_STALE_SEC", "180"))),
+            start_cycle_running_stale_sec=max(
+                300,
+                int(
+                    os.getenv(
+                        "AE_START_CYCLE_RUNNING_STALE_SEC",
+                        os.getenv("AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC", "1800"),
+                    )
+                ),
+            ),
             start_cycle_rate_limit_enabled=_env_true("AE_START_CYCLE_RATE_LIMIT_ENABLED", "1"),
             start_cycle_rate_limit_max_requests=max(0, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS", "30"))),
             start_cycle_rate_limit_window_sec=max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10"))),

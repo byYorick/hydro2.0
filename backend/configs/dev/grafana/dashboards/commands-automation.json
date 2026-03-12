@@ -5,102 +5,513 @@
     "automation"
   ],
   "timezone": "browser",
-  "schemaVersion": 16,
-  "version": 1,
+  "schemaVersion": 36,
+  "version": 2,
   "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
-      "id": 1,
-      "title": "Commands Status",
-      "type": "stat",
+      "id": 100,
+      "title": "— Статистика команд —",
+      "type": "text",
       "gridPos": {
-        "h": 4,
-        "w": 6,
+        "h": 1,
+        "w": 24,
         "x": 0,
         "y": 0
       },
+      "options": {
+        "mode": "markdown",
+        "content": "## Статистика команд"
+      }
+    },
+    {
+      "id": 1,
+      "title": "В очереди (QUEUED)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) as value FROM commands WHERE status = 'QUEUED'",
+          "rawSql": "SELECT COUNT(*)::int as value FROM commands WHERE status = 'QUEUED'",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "displayName": "Pending"
+          "displayName": "QUEUED",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 100,
+                "color": "yellow"
+              },
+              {
+                "value": 500,
+                "color": "red"
+              }
+            ]
+          }
         }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
       }
     },
     {
       "id": 2,
-      "title": "Commands Success Rate",
-      "type": "graph",
+      "title": "Выполнено (DONE, 24h)",
+      "type": "stat",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 6,
-        "y": 0
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT DATE_TRUNC('hour', created_at) as time, (COUNT(*) FILTER (WHERE status = 'DONE') * 100.0 / NULLIF(COUNT(*), 0))::float as value FROM commands WHERE created_at >= NOW() - INTERVAL '7 days' AND created_at <= NOW() GROUP BY time ORDER BY time",
-          "format": "time_series",
-          "refId": "A"
+          "rawSql": "SELECT COUNT(*)::int as value FROM commands WHERE status = 'DONE' AND created_at >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "DONE",
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
     },
     {
       "id": 3,
-      "title": "Commands by Type",
-      "type": "table",
+      "title": "Таймаут (TIMEOUT, 24h)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int as value FROM commands WHERE status = 'TIMEOUT' AND created_at >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "TIMEOUT",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "yellow"
+              },
+              {
+                "value": 10,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Ошибка (ERROR, 24h)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int as value FROM commands WHERE status = 'ERROR' AND created_at >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "ERROR",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 1,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Success Rate % (24h)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT (COUNT(*) FILTER (WHERE status = 'DONE') * 100.0 / NULLIF(COUNT(*), 0))::float as value FROM commands WHERE created_at >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "Success %",
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 80,
+                "color": "yellow"
+              },
+              {
+                "value": 95,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 6,
+      "title": "NO_EFFECT (24h)",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::int as value FROM commands WHERE status = 'NO_EFFECT' AND created_at >= NOW() - INTERVAL '24 hours'",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "displayName": "NO_EFFECT",
+          "color": {
+            "fixedColor": "blue",
+            "mode": "fixed"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 101,
+      "title": "— Динамика —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Динамика"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Команды по статусу (час)",
+      "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 6
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT cmd, status, COUNT(*) as count FROM commands WHERE created_at >= NOW() - INTERVAL '24 hours' GROUP BY cmd, status ORDER BY count DESC",
-          "format": "table",
-          "refId": "A"
+          "rawSql": "SELECT DATE_TRUNC('hour', created_at)::timestamp as time, COUNT(*)::float as value, status as metric FROM commands WHERE created_at >= $__timeFrom()::timestamp AND created_at <= $__timeTo()::timestamp GROUP BY DATE_TRUNC('hour', created_at), status ORDER BY time",
+          "format": "time_series",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     },
     {
-      "id": 4,
-      "title": "Recent Commands",
-      "type": "table",
+      "id": 11,
+      "title": "Success Rate по часам",
+      "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 6
       },
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "rawSql": "SELECT cmd_id, zone_id, cmd, status, created_at, sent_at, ack_at FROM commands ORDER BY created_at DESC LIMIT 50",
+          "rawSql": "SELECT DATE_TRUNC('hour', created_at)::timestamp as time, (COUNT(*) FILTER (WHERE status = 'DONE') * 100.0 / NULLIF(COUNT(*), 0))::float as value FROM commands WHERE created_at >= $__timeFrom()::timestamp AND created_at <= $__timeTo()::timestamp GROUP BY DATE_TRUNC('hour', created_at) ORDER BY time",
+          "format": "time_series",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "— Детали —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Детали"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Команды по типу (24h)",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 0,
+        "y": 15
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT cmd, status, COUNT(*)::int as count FROM commands WHERE created_at >= NOW() - INTERVAL '24 hours' GROUP BY cmd, status ORDER BY count DESC LIMIT 30",
           "format": "table",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
         }
       ]
+    },
+    {
+      "id": 21,
+      "title": "Последние 50 команд",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 10,
+        "y": 15
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT cmd_id, zone_id, cmd, status, error_code, created_at, sent_at, ack_at FROM commands ORDER BY created_at DESC LIMIT 50",
+          "format": "table",
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PostgreSQL"
+          }
+        }
+      ],
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "created_at",
+            "desc": true
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "id": null,
+  "uid": "hydro-commands-automation"
 }

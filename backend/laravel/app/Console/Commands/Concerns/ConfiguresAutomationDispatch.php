@@ -49,6 +49,10 @@ trait ConfiguresAutomationDispatch
     {
         $dueGraceSec = max(1, (int) config('services.automation_engine.scheduler_due_grace_sec', 15));
         $expiresAfterSec = max($dueGraceSec + 1, (int) config('services.automation_engine.scheduler_expires_after_sec', 120));
+        $hardStaleAfterSec = max(
+            $expiresAfterSec + 1,
+            (int) config('services.automation_engine.scheduler_hard_stale_after_sec', 1800)
+        );
 
         $catchupPolicy = strtolower((string) config('services.automation_engine.scheduler_catchup_policy', 'replay_limited'));
         if (! in_array($catchupPolicy, self::CATCHUP_POLICIES, true)) {
@@ -64,6 +68,7 @@ trait ConfiguresAutomationDispatch
             'token' => trim((string) config('services.automation_engine.scheduler_api_token', '')),
             'due_grace_sec' => $dueGraceSec,
             'expires_after_sec' => $expiresAfterSec,
+            'hard_stale_after_sec' => $hardStaleAfterSec,
             'catchup_policy' => $catchupPolicy,
             'catchup_max_windows' => max(1, (int) config('services.automation_engine.scheduler_catchup_max_windows', 3)),
             'catchup_rate_limit_per_cycle' => max(1, (int) config('services.automation_engine.scheduler_catchup_rate_limit_per_cycle', 20)),

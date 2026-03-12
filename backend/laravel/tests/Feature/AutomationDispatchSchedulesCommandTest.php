@@ -81,6 +81,15 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'zone_id' => $zone->id,
             'status' => 'pending',
         ]);
+        $this->assertDatabaseHas('zone_correction_configs', [
+            'zone_id' => $zone->id,
+            'version' => 1,
+        ]);
+        $this->assertDatabaseHas('zone_correction_config_versions', [
+            'zone_id' => $zone->id,
+            'version' => 1,
+            'change_type' => 'bootstrap',
+        ]);
         $intentRow = DB::table('zone_automation_intents')
             ->where('zone_id', $zone->id)
             ->orderByDesc('id')
@@ -122,6 +131,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
     public function test_command_recovery_reconciles_persisted_active_task_before_next_dispatch(): void
     {
         $this->enableSchedulerConfig();
+        Config::set('services.automation_engine.scheduler_hard_stale_after_sec', 121);
         [$zone, $cycle] = $this->createZoneAndCycle();
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 2);
 
@@ -169,7 +179,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertNotNull($oldTask);
         $this->assertSame('timeout', $oldTask->status);
         $this->assertNotNull($oldTask->terminal_at);
-        $this->assertSame('laravel_dispatcher_local_expiry', $oldTask->details['terminal_source'] ?? null);
+        $this->assertSame('laravel_dispatcher_hard_stale_expiry', $oldTask->details['terminal_source'] ?? null);
 
         $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
             'task_id' => '2002',

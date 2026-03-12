@@ -113,3 +113,31 @@ ACTIVE_TASKS = Gauge(
     "Currently active (running/waiting_command) tasks",
     ["topology"],
 )
+
+# ─── Zone lease health ───────────────────────────────────────────────
+
+ZONE_LEASE_LOST = Counter(
+    "ae3_zone_lease_lost_total",
+    "Total zone lease heartbeat losses (lease could not be extended)",
+    ["zone_id"],
+)
+
+ZONE_LEASE_RELEASE_FAILED = Counter(
+    "ae3_zone_lease_release_failed_total",
+    "Total failures to release zone lease after task completion",
+    ["zone_id"],
+)
+
+# ─── Stage deadline and correction exhaustion ────────────────────────
+
+STAGE_DEADLINE_EXCEEDED = Counter(
+    "ae3_stage_deadline_exceeded_total",
+    "Total hard deadline exceedances per stage (no retries left)",
+    ["topology", "stage"],
+)
+
+CORRECTION_EXHAUSTED = Counter(
+    "ae3_correction_exhausted_total",
+    "Total correction cycles that exhausted all dose attempts",
+    ["topology", "stage"],
+)

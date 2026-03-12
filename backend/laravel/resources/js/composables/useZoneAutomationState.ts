@@ -239,10 +239,10 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
         raw?.correctionPrepareRecirculationMaxCorrectionAttempts,
         typeof fallback.correctionPrepareRecirculationMaxCorrectionAttempts === 'number'
           ? fallback.correctionPrepareRecirculationMaxCorrectionAttempts
-          : 32767
+          : 20
       ),
       1,
-      100000
+      500
     ),
     correctionEcMixWaitSec: clamp(
       toRoundedNumber(
@@ -426,7 +426,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
     correctionMaxEcCorrectionAttempts: 5,
     correctionMaxPhCorrectionAttempts: 5,
     correctionPrepareRecirculationMaxAttempts: 3,
-    correctionPrepareRecirculationMaxCorrectionAttempts: 32767,
+    correctionPrepareRecirculationMaxCorrectionAttempts: 20,
     correctionEcMixWaitSec: 120,
     correctionPhMixWaitSec: 60,
     correctionStabilizationSec: 60,

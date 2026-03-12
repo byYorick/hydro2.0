@@ -70,6 +70,15 @@ class SchedulerCycleServiceTest extends TestCase
             'task_name' => 'laravel_scheduler_metrics',
             'status' => 'metric',
         ]);
+        $this->assertDatabaseHas('zone_correction_configs', [
+            'zone_id' => $zone->id,
+            'version' => 1,
+        ]);
+        $this->assertDatabaseHas('zone_correction_config_versions', [
+            'zone_id' => $zone->id,
+            'version' => 1,
+            'change_type' => 'bootstrap',
+        ]);
 
         $metricsLogs = SchedulerLog::query()
             ->where('task_name', 'laravel_scheduler_metrics')

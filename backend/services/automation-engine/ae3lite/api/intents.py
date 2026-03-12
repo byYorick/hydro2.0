@@ -17,9 +17,11 @@ async def claim_start_cycle_intent(
     req: StartCycleRequest,
     now: datetime,
     claimed_stale_after_sec: int = 180,
+    running_stale_after_sec: int = 1800,
     fetch_fn: Callable[..., Awaitable[Any]],
 ) -> Dict[str, Any]:
     stale_claimed_before = now - timedelta(seconds=max(1, int(claimed_stale_after_sec)))
+    stale_running_before = now - timedelta(seconds=max(1, int(running_stale_after_sec)))
     rows = await fetch_fn(
         """
         WITH candidate AS (
@@ -37,7 +39,10 @@ async def claim_start_cycle_intent(
                     WHERE active_intent.zone_id = $1
                       AND active_intent.idempotency_key <> $2
                       AND (
-                            active_intent.status = 'running'
+                            (
+                                active_intent.status = 'running'
+                                AND (active_intent.updated_at IS NULL OR active_intent.updated_at > $5)
+                            )
                             OR (active_intent.status = 'claimed' AND (active_intent.claimed_at IS NULL OR active_intent.claimed_at > $4))
                       )
               )
@@ -69,6 +74,7 @@ async def claim_start_cycle_intent(
         req.idempotency_key,
         now,
         stale_claimed_before,
+        stale_running_before,
     )
     if rows:
         return {"decision": "claimed", "intent": dict(rows[0])}
@@ -103,7 +109,10 @@ async def claim_start_cycle_intent(
         WHERE zone_id = $1
           AND idempotency_key <> $2
           AND (
-                status = 'running'
+                (
+                    status = 'running'
+                    AND (updated_at IS NULL OR updated_at > $4)
+                )
                 OR (status = 'claimed' AND (claimed_at IS NULL OR claimed_at > $3))
           )
         ORDER BY id DESC
@@ -112,6 +121,7 @@ async def claim_start_cycle_intent(
         zone_id,
         req.idempotency_key,
         stale_claimed_before,
+        stale_running_before,
     )
     if active_zone_rows:
         return {

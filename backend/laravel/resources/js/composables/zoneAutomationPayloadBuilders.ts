@@ -202,9 +202,9 @@ export function buildGrowthCycleConfigPayload(
     50
   )
   const correctionPrepareRecirculationMaxCorrectionAttempts = clamp(
-    Math.round(normalizeNumber(waterForm.correctionPrepareRecirculationMaxCorrectionAttempts, 32767)),
+    Math.round(normalizeNumber(waterForm.correctionPrepareRecirculationMaxCorrectionAttempts, 20)),
     1,
-    100000
+    500
   )
   const correctionEcMixWaitSec = clamp(
     Math.round(normalizeNumber(waterForm.correctionEcMixWaitSec, 120)),
@@ -531,7 +531,7 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   waterForm.correctionMaxEcCorrectionAttempts = 5
   waterForm.correctionMaxPhCorrectionAttempts = 5
   waterForm.correctionPrepareRecirculationMaxAttempts = 3
-  waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = 32767
+  waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = 20
   waterForm.correctionEcMixWaitSec = 120
   waterForm.correctionPhMixWaitSec = 60
   waterForm.correctionStabilizationSec = 60

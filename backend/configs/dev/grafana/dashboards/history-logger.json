@@ -6,25 +6,52 @@
     "monitoring"
   ],
   "timezone": "browser",
-  "schemaVersion": 16,
-  "version": 1,
+  "schemaVersion": 36,
+  "version": 2,
   "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "panels": [
     {
+      "id": 100,
+      "title": "— Статус сервиса —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Статус сервиса"
+      }
+    },
+    {
       "id": 1,
-      "title": "Service Status",
+      "title": "History Logger",
       "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 4,
         "x": 0,
-        "y": 0
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
           "expr": "up{job=\"history-logger\"}",
           "refId": "A",
-          "legendFormat": "History Logger"
+          "legendFormat": "History Logger",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         }
       ],
       "fieldConfig": {
@@ -43,28 +70,271 @@
                 }
               }
             }
-          ]
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
         }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
       }
     },
     {
       "id": 2,
-      "title": "Queue Size",
-      "type": "gauge",
+      "title": "DB Connected",
+      "type": "stat",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "telemetry_queue_size",
-          "refId": "A"
+          "expr": "pipeline_db_connected{job=\"history-logger\"}",
+          "refId": "A",
+          "legendFormat": "DB",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DISCONNECTED",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "CONNECTED",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 3,
+      "title": "MQTT Connected",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "pipeline_mqtt_connected{job=\"history-logger\"}",
+          "refId": "A",
+          "legendFormat": "MQTT",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DISCONNECTED",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "CONNECTED",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Queue Healthy",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "pipeline_queue_healthy{job=\"history-logger\"}",
+          "refId": "A",
+          "legendFormat": "Queue",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "UNHEALTHY",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "HEALTHY",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "red"
+              },
+              {
+                "value": 1,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Queue Size",
+      "type": "gauge",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "telemetry_queue_size{job=\"history-logger\"}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -83,26 +353,45 @@
             ]
           }
         }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
       }
     },
     {
-      "id": 3,
-      "title": "Queue Age (seconds)",
+      "id": 6,
+      "title": "Queue Age (сек)",
       "type": "gauge",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "telemetry_queue_age_seconds",
-          "refId": "A"
+          "expr": "telemetry_queue_age_seconds{job=\"history-logger\"}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -121,297 +410,647 @@
             ]
           }
         }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
       }
     },
     {
-      "id": 4,
-      "title": "Processing Rate (msg/sec)",
-      "type": "gauge",
+      "id": 101,
+      "title": "— Телеметрия —",
+      "type": "text",
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
       },
-      "targets": [
-        {
-          "expr": "rate(telemetry_processed_total[1m])",
-          "refId": "A"
-        }
-      ]
+      "options": {
+        "mode": "markdown",
+        "content": "## Телеметрия"
+      }
     },
     {
-      "id": 5,
-      "title": "Telemetry Flow",
+      "id": 10,
+      "title": "Telemetry Flow (recv / processed)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "rate(telemetry_received_total[1m])",
+          "expr": "rate(telemetry_received_total{job=\"history-logger\"}[1m])",
           "refId": "A",
-          "legendFormat": "Received"
+          "legendFormat": "received/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         },
         {
-          "expr": "rate(telemetry_processed_total[1m])",
+          "expr": "rate(telemetry_processed_total{job=\"history-logger\"}[1m])",
           "refId": "B",
-          "legendFormat": "Processed"
+          "legendFormat": "processed/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "ops"
         }
-      }
-    },
-    {
-      "id": 6,
-      "title": "Batch Size Distribution",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 4
       },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(telemetry_batch_size_bucket[5m]))",
-          "refId": "A",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(telemetry_batch_size_bucket[5m]))",
-          "refId": "B",
-          "legendFormat": "p95"
-        },
-        {
-          "expr": "histogram_quantile(0.99, rate(telemetry_batch_size_bucket[5m]))",
-          "refId": "C",
-          "legendFormat": "p99"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "title": "Processing Duration",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(telemetry_processing_duration_seconds_bucket[5m]))",
-          "refId": "A",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(telemetry_processing_duration_seconds_bucket[5m]))",
-          "refId": "B",
-          "legendFormat": "p95"
-        },
-        {
-          "expr": "histogram_quantile(0.99, rate(telemetry_processing_duration_seconds_bucket[5m]))",
-          "refId": "C",
-          "legendFormat": "p99"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
+      "options": {
+        "tooltip": {
+          "mode": "multi"
         }
       }
-    },
-    {
-      "id": 8,
-      "title": "Redis Operations Duration",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(redis_operation_duration_seconds_bucket[5m]))",
-          "refId": "A",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(redis_operation_duration_seconds_bucket[5m]))",
-          "refId": "B",
-          "legendFormat": "p95"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        }
-      }
-    },
-    {
-      "id": 9,
-      "title": "Dropped Messages",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 20
-      },
-      "targets": [
-        {
-          "expr": "rate(telemetry_dropped_total[5m])",
-          "refId": "A",
-          "legendFormat": "{{reason}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          }
-        }
-      }
-    },
-    {
-      "id": 10,
-      "title": "Database Errors",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "targets": [
-        {
-          "expr": "rate(database_errors_total[5m])",
-          "refId": "A",
-          "legendFormat": "{{error_type}}"
-        }
-      ]
     },
     {
       "id": 11,
+      "title": "Telemetry Dropped по причине",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(telemetry_dropped_total{job=\"history-logger\"}[5m])",
+          "refId": "A",
+          "legendFormat": "{{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 0.01,
+                "color": "yellow"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Batch Size Distribution (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(telemetry_batch_size_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(telemetry_batch_size_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(telemetry_batch_size_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "C",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Processing Duration (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(telemetry_processing_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(telemetry_processing_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(telemetry_processing_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "C",
+          "legendFormat": "p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "— Команды и Pipeline —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Команды и Pipeline"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Commands Sent Rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(commands_sent_total{job=\"history-logger\"}[5m])",
+          "refId": "A",
+          "legendFormat": "sent/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Command E2E Latency (sent→done)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(pipeline_command_e2e_latency_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "e2e p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(pipeline_command_e2e_latency_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "e2e p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(pipeline_command_sent_to_ack_latency_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "C",
+          "legendFormat": "sent→ack p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(pipeline_command_ack_to_done_latency_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "D",
+          "legendFormat": "ack→done p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "Pending Queues",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 23
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "pipeline_pending_alerts_size{job=\"history-logger\"}",
+          "refId": "A",
+          "legendFormat": "pending alerts",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "pipeline_pending_status_updates_size{job=\"history-logger\"}",
+          "refId": "B",
+          "legendFormat": "pending status updates",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 103,
+      "title": "— MQTT сообщения —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## MQTT сообщения"
+      }
+    },
+    {
+      "id": 30,
       "title": "Node Registration",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "rate(node_hello_received_total[5m])",
+          "expr": "rate(node_hello_received_total{job=\"history-logger\"}[5m])",
           "refId": "A",
-          "legendFormat": "Received"
+          "legendFormat": "hello received",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         },
         {
-          "expr": "rate(node_hello_registered_total[5m])",
+          "expr": "rate(node_hello_registered_total{job=\"history-logger\"}[5m])",
           "refId": "B",
-          "legendFormat": "Registered"
+          "legendFormat": "registered",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         },
         {
-          "expr": "rate(node_hello_errors_total[5m])",
+          "expr": "rate(node_hello_errors_total{job=\"history-logger\"}[5m])",
           "refId": "C",
-          "legendFormat": "Errors"
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "title": "Node Hello Errors by Type",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 28
-      },
-      "targets": [
-        {
-          "expr": "rate(node_hello_errors_total[5m])",
-          "refId": "A",
-          "legendFormat": "{{error_type}}"
-        }
-      ]
-    },
-    {
-      "id": 13,
-      "title": "Heartbeat Messages",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 36
-      },
-      "targets": [
-        {
-          "expr": "rate(heartbeat_received_total[5m])",
-          "refId": "A",
-          "legendFormat": "{{node_uid}}"
-        }
-      ]
-    },
-    {
-      "id": 14,
-      "title": "Laravel API Duration",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 36
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(laravel_api_request_duration_seconds_bucket[5m]))",
-          "refId": "A",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(laravel_api_request_duration_seconds_bucket[5m]))",
-          "refId": "B",
-          "legendFormat": "p95"
+          "legendFormat": "errors {{error_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
         }
       }
     },
     {
-      "id": 15,
-      "title": "Unknown Node Events Rate",
+      "id": 31,
+      "title": "MQTT Message Types Rate",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 44
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "rate(node_event_unknown_total[5m])",
+          "expr": "rate(heartbeat_received_total{job=\"history-logger\"}[5m])",
           "refId": "A",
-          "legendFormat": "unknown event rate"
+          "legendFormat": "heartbeat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(node_event_received_total{job=\"history-logger\"}[5m])",
+          "refId": "B",
+          "legendFormat": "node_event",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(command_response_received_total{job=\"history-logger\"}[5m])",
+          "refId": "C",
+          "legendFormat": "command_response",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(status_received_total{job=\"history-logger\"}[5m])",
+          "refId": "D",
+          "legendFormat": "status",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(config_report_received_total{job=\"history-logger\"}[5m])",
+          "refId": "E",
+          "legendFormat": "config_report",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "title": "Command Response Errors",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(command_response_error_total{job=\"history-logger\"}[5m])",
+          "refId": "A",
+          "legendFormat": "cmd response errors",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "rate(node_event_error_total{job=\"history-logger\"}[5m])",
+          "refId": "B",
+          "legendFormat": "node event errors",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "title": "Database Errors",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(database_errors_total{job=\"history-logger\"}[5m])",
+          "refId": "A",
+          "legendFormat": "{{error_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "title": "Unknown Node Events",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(node_event_unknown_total{job=\"history-logger\"}[5m])",
+          "refId": "A",
+          "legendFormat": "unknown event rate",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -426,7 +1065,119 @@
             ]
           }
         }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 104,
+      "title": "— Redis и Laravel API —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Redis и Laravel API"
+      }
+    },
+    {
+      "id": 40,
+      "title": "Redis Operations Duration",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(redis_operation_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(redis_operation_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 41,
+      "title": "Laravel API Request Duration",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(laravel_api_request_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(laravel_api_request_duration_seconds_bucket{job=\"history-logger\"}[5m]))",
+          "refId": "B",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     }
-  ]
+  ],
+  "id": null,
+  "uid": "hydro-history-logger"
 }

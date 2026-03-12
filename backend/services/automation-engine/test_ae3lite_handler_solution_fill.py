@@ -2,7 +2,7 @@
 
 Outcomes:
 1. Tank full + targets reached → solution_fill_stop_to_ready
-2. Tank full + targets not reached → enter_correction
+2. Tank full + targets not reached → solution_fill_stop_to_prepare
 3. Deadline exceeded → solution_fill_timeout_stop
 4. Still filling → poll
 5. Level unavailable/stale → TaskExecutionError
@@ -141,40 +141,26 @@ async def test_tank_full_targets_within_tolerance() -> None:
     assert outcome.next_stage == "solution_fill_stop_to_ready"
 
 
-# ── 2. Tank full + targets not reached → enter_correction ────────────────────
+# ── 2. Tank full + targets not reached → stop_to_prepare ─────────────────────
 
 @pytest.mark.asyncio
-async def test_tank_full_targets_not_reached_enters_correction() -> None:
+async def test_tank_full_targets_not_reached_transitions_to_stop_prepare() -> None:
     m = _Monitor(max_triggered=True, min_triggered=True, ph=4.0, ec=0.5)
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
-    assert outcome.kind == "enter_correction"
-    assert outcome.correction is not None
-    assert outcome.correction.corr_step == "corr_check"  # sensors already active
-    assert outcome.correction.return_stage_success == "solution_fill_stop_to_ready"
-    assert outcome.correction.return_stage_fail == "solution_fill_stop_to_prepare"
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
 
 
 @pytest.mark.asyncio
-async def test_correction_state_uses_correction_config() -> None:
-    m = _Monitor(max_triggered=True, min_triggered=True, ph=4.0)
-    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
-    corr = outcome.correction
-    assert corr.ec_max_attempts == 4
-    assert corr.ph_max_attempts == 3
-    assert corr.max_attempts == 4  # max(4, 3)
-    assert corr.stabilization_sec == 90
-
-
-@pytest.mark.asyncio
-async def test_correction_uses_stage_def_on_corr_fail() -> None:
+async def test_tank_full_targets_not_reached_uses_stage_def_on_corr_fail() -> None:
     class _CustomStageDef:
         on_corr_success = "custom_success"
-        on_corr_fail = "custom_fail"
+        on_corr_fail = "custom_stop"
 
-    m = _Monitor(max_triggered=True, min_triggered=True, ph=4.0)
+    m = _Monitor(max_triggered=True, min_triggered=True, ph=4.0, ec=0.5)
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_CustomStageDef(), now=NOW)
-    assert outcome.correction.return_stage_success == "custom_success"
-    assert outcome.correction.return_stage_fail == "custom_fail"
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "custom_stop"
 
 
 # ── 3. Deadline exceeded → timeout_stop ──────────────────────────────────────

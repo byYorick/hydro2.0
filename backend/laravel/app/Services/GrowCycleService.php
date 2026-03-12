@@ -263,6 +263,8 @@ class GrowCycleService
 
     private function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
     {
+        app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
+
         $now = Carbon::now('UTC')->setMicroseconds(0);
         $intentPayload = [
             'source' => 'laravel_grow_cycle_start',

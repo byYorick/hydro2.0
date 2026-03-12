@@ -127,6 +127,9 @@ class ErrorCodes:
     AE3_API_HTTP_5XX = "ae3_api_http_5xx"
     AE3_BACKGROUND_TASK_CRASHED = "ae3_background_task_crashed"
 
+    # Critical configuration guards
+    ZONE_CORRECTION_CONFIG_MISSING_CRITICAL = "zone_correction_config_missing_critical"
+
 
 class Ae3LiteError(Exception):
     """Base AE3-Lite domain error."""
@@ -138,6 +141,12 @@ class SnapshotBuildError(Ae3LiteError):
 
 class PlannerConfigurationError(Ae3LiteError):
     """Raised when CycleStartPlanner receives unsupported or invalid config."""
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        normalized = str(code or "").strip()
+        if normalized:
+            self.code = normalized
 
 
 class CommandPublishError(Ae3LiteError):

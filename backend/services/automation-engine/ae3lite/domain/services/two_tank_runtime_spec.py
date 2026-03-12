@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Sequence
 
-from ae3lite.domain.errors import PlannerConfigurationError
+from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
+
+# ── Defaults for retry/attempt limits ────────────────────────────────────────
+
+#: Maximum correction attempts during prepare_recirculation before escalating.
+#: Replaces the former magic number 32767 (effectively infinite).
+_DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
+_LEGACY_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS_SENTINEL: int = 32767
 
 
 def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
@@ -45,10 +52,20 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     execution_correction_cfg = (
         execution.get("correction") if isinstance(execution.get("correction"), Mapping) else {}
     )
+    zone_id = int(getattr(snapshot, "zone_id", 0) or 0)
     resolved_cfg = getattr(snapshot, "correction_config", None)
-    resolved_cfg = resolved_cfg if isinstance(resolved_cfg, Mapping) else {}
+    if not isinstance(resolved_cfg, Mapping) or not resolved_cfg:
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} has no correction_config; fail-closed for critical dosing parameters",
+            code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+        )
     resolved_base_cfg = _to_mapping(resolved_cfg.get("base"))
     resolved_phases_cfg = _to_mapping(resolved_cfg.get("phases"))
+    if not resolved_base_cfg and not resolved_phases_cfg:
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} has empty correction_config(base/phases); fail-closed for critical dosing parameters",
+            code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+        )
     resolved_meta_cfg = _to_mapping(resolved_cfg.get("meta"))
     phase_overrides_cfg = _to_mapping(resolved_meta_cfg.get("phase_overrides"))
     solution_fill_overrides = _to_mapping(phase_overrides_cfg.get("solution_fill"))
@@ -368,6 +385,13 @@ def _resolve_float(raw_value: Any, default: float, minimum: float, maximum: floa
     return max(float(minimum), min(float(maximum), value))
 
 
+def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> int:
+    value = _resolve_int(raw_value, _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS, 1)
+    if value >= _LEGACY_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS_SENTINEL:
+        return _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS
+    return value
+
+
 def _resolve_target(targets: Mapping[str, Any], execution: Mapping[str, Any], key: str) -> float:
     upper = 20.0 if key == "ec" else 14.0
     direct = execution.get(f"target_{key}")
@@ -656,16 +680,14 @@ def _build_correction_cfg(
             3,
             1,
         ),
-        "prepare_recirculation_max_correction_attempts": _resolve_int(
+        "prepare_recirculation_max_correction_attempts": _resolve_prepare_recirculation_max_correction_attempts(
             _choose_phase_or_execution(
                 phase_value=retry_cfg.get("prepare_recirculation_max_correction_attempts"),
                 execution_value=execution_correction_cfg.get("prepare_recirculation_max_correction_attempts"),
                 prefer_phase=_has_nested_override(
                     phase_override_cfg, "retry", "prepare_recirculation_max_correction_attempts"
                 ),
-            ),
-            32767,
-            1,
+            )
         ),
         "solution_volume_l": _resolve_float(
             _choose_phase_or_execution(

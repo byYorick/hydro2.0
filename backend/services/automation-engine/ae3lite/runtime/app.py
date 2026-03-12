@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, AsyncIterator, Optional
 
 from fastapi import FastAPI, Request
@@ -24,12 +24,9 @@ from common.db import execute, fetch, get_pool
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.service_logs import send_service_log
 from common.trace_context import clear_trace_id, extract_trace_id_from_headers, set_trace_id
+from common.utils.time import utcnow_naive as _utcnow
 
 logger = logging.getLogger(__name__)
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 async def _drain_background_tasks(background_tasks: set[asyncio.Task], timeout_sec: float = 5.0) -> None:
@@ -296,6 +293,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             req=req,
             now=now,
             claimed_stale_after_sec=runtime_config.start_cycle_claim_stale_sec,
+            running_stale_after_sec=runtime_config.start_cycle_running_stale_sec,
             fetch_fn=fetch,
         ),
         create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now: bundle.create_task_from_intent_use_case.run(
