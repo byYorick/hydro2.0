@@ -1,0 +1,6 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="8.666789999999999">
+<testsuite name="../playwright/.auth/setup.ts" timestamp="2026-02-13T22:59:02.579Z" hostname="setup" tests="1" failures="0" skipped="0" time="7.682" errors="0">
+<testcase name="authenticate" classname="../playwright/.auth/setup.ts" time="7.682">
+</testcase>
+</testsuite>
+</testsuites>
