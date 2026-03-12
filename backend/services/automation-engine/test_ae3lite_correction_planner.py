@@ -177,7 +177,8 @@ def test_build_dose_plan_ignores_stale_feedforward_bias_after_hold_window() -> N
         ph_up_actuator={
             "node_uid": "ph-node",
             "channel": "ph_up_pump",
-            "calibration": {"ml_per_sec": 8.0},
+            # ml_per_sec=1.0 → 0.3ml / 1.0 * 1000 = 300ms > _MIN_DOSE_MS (50ms)
+            "calibration": {"ml_per_sec": 1.0},
         },
         ph_down_actuator=None,
     )
@@ -663,7 +664,8 @@ def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:
             "ec_npk": {
                 "node_uid": "ec-node",
                 "channel": "ec_npk_pump",
-                "calibration": {"ml_per_sec": 10.0},
+                # ml_per_sec=1.0 so even small derivative doses exceed _MIN_DOSE_MS (50ms)
+                "calibration": {"ml_per_sec": 1.0},
             },
         },
         ph_up_actuator=None,

@@ -9,6 +9,35 @@ from typing import Any, Mapping, Optional
 
 from ae3lite.domain.errors import PlannerConfigurationError
 
+# ── Defaults for dose computation (5.1: named constants replacing magic numbers) ──
+
+#: Default solution tank volume when not provided in correction_config.
+_DEFAULT_SOLUTION_VOLUME_L: float = 100.0
+
+#: Default dosing sensitivity for EC: ml of solution per (mS * L of tank volume).
+_DEFAULT_EC_SENSITIVITY: float = 1.0
+
+#: Default dosing sensitivity for pH: ml of solution per (pH unit * L of tank volume).
+_DEFAULT_PH_SENSITIVITY: float = 0.5
+
+#: Hard upper limit for a single EC dose when correction_config.max_ec_dose_ml is absent.
+_DEFAULT_MAX_EC_DOSE_ML: float = 50.0
+
+#: Hard upper limit for a single pH dose when correction_config.max_ph_dose_ml is absent.
+_DEFAULT_MAX_PH_DOSE_ML: float = 20.0
+
+# ── Minimum effective dose duration (5.2) ────────────────────────────────────
+
+#: Pulses shorter than this are below the minimum reliable activation time for
+#: dosing pumps and are discarded (treated as 0ms / no dose).
+_MIN_DOSE_MS: int = 50
+
+# ── EC component selection fallback order (5.3) ──────────────────────────────
+
+#: Preferred order for EC components when no ec_component_policy is configured.
+#: Components not in this list are appended alphabetically after the listed ones.
+_EC_COMPONENT_DEFAULT_ORDER: tuple[str, ...] = ("npk", "a", "b", "ca", "mg", "micro", "trace")
+
 
 @dataclass(frozen=True)
 class DosePlan:
@@ -143,7 +172,7 @@ class CorrectionPlanner:
 
         controller_ec = _controller_cfg(correction_config, "ec")
         controller_ph = _controller_cfg(correction_config, "ph")
-        solution_volume_l = _positive_float(correction_config.get("solution_volume_l"), 100.0)
+        solution_volume_l = _positive_float(correction_config.get("solution_volume_l"), _DEFAULT_SOLUTION_VOLUME_L)
 
         ec_gap = max(0.0, (ec_lo - current_ec) if ec_has_explicit_window else (target_ec - current_ec))
         ph_up_gap = max(0.0, (ph_lo - predicted_ph) if ph_has_explicit_window else (target_ph - predicted_ph))
@@ -338,21 +367,31 @@ def _resolve_ec_actuator(
 
     phase_policy = ec_component_policy.get(phase_key) if isinstance(ec_component_policy, Mapping) else None
     phase_policy = phase_policy if isinstance(phase_policy, Mapping) else {}
-    ranked: list[tuple[float, str, Mapping[str, Any]]] = []
+    has_explicit_policy = bool(phase_policy)
+    ranked: list[tuple[float, int, str, Mapping[str, Any]]] = []
     for name, actuator in ec_actuators.items():
         if not isinstance(actuator, Mapping):
             continue
         component = str(name).strip().lower()
         component = component[3:] if component.startswith("ec_") else component
-        weight = float(phase_policy.get(component) or phase_policy.get(name) or 0.0)
-        ranked.append((weight, component, actuator))
-    ranked.sort(key=lambda item: (-item[0], item[1]))
+        if has_explicit_policy:
+            weight = float(phase_policy.get(component) or phase_policy.get(name) or 0.0)
+            order_idx = 0  # explicit policy overrides default ordering
+        else:
+            weight = 0.0
+            # Use _EC_COMPONENT_DEFAULT_ORDER for deterministic, agronomically sensible selection.
+            try:
+                order_idx = _EC_COMPONENT_DEFAULT_ORDER.index(component)
+            except ValueError:
+                order_idx = len(_EC_COMPONENT_DEFAULT_ORDER)
+        ranked.append((weight, order_idx, component, actuator))
+    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
     chosen = ranked[0] if ranked else None
     if chosen is None:
         raise PlannerConfigurationError(
             f"EC correction needed but no actuator resolved for channel={default_channel}"
         )
-    return chosen[1], chosen[2]
+    return chosen[2], chosen[3]
 
 
 def _retry_after(
@@ -421,7 +460,7 @@ def _compute_amount_ml(
         dose_ml = output_units / gain if gain > 0 else 0.0
     else:
         sensitivity_key = "ec_dose_ml_per_mS_L" if kind == "ec" else "ph_dose_ml_per_unit_L"
-        sensitivity_default = 1.0 if kind == "ec" else 0.5
+        sensitivity_default = _DEFAULT_EC_SENSITIVITY if kind == "ec" else _DEFAULT_PH_SENSITIVITY
         sensitivity = _positive_float(correction_config.get(sensitivity_key), sensitivity_default)
         dose_ml = gap * solution_volume_l * sensitivity
 
@@ -431,9 +470,9 @@ def _compute_amount_ml(
 
     controller_max = _positive_float(controller_cfg.get("max_dose_ml"), 0.0)
     if kind == "ec":
-        contract_max = _positive_float(correction_config.get("max_ec_dose_ml"), 50.0)
+        contract_max = _positive_float(correction_config.get("max_ec_dose_ml"), _DEFAULT_MAX_EC_DOSE_ML)
     else:
-        contract_max = _positive_float(correction_config.get("max_ph_dose_ml"), 20.0)
+        contract_max = _positive_float(correction_config.get("max_ph_dose_ml"), _DEFAULT_MAX_PH_DOSE_ML)
     max_ml = min(value for value in (controller_max, contract_max) if value > 0) if controller_max > 0 else contract_max
     dose_ml = min(dose_ml, max_ml)
     dose_ml = round(max(0.0, dose_ml), 4)
@@ -538,7 +577,11 @@ def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
         raise PlannerConfigurationError(
             f"Pump calibration ml_per_sec must be positive, got {ml_per_sec}"
         )
-    return max(0, int(dose_ml / ml_per_sec * 1000))
+    duration_ms = int(dose_ml / ml_per_sec * 1000)
+    if duration_ms <= 0:
+        return 0
+    # Discard pulses shorter than _MIN_DOSE_MS — below reliable pump activation time.
+    return duration_ms if duration_ms >= _MIN_DOSE_MS else 0
 
 
 def _to_utc_naive(value: datetime) -> datetime:
