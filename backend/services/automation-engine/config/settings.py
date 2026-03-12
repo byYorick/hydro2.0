@@ -21,42 +21,6 @@ class AutomationSettings:
     MAX_CONCURRENT_ZONES: int = int(os.getenv("MAX_CONCURRENT_ZONES", "50"))  # Максимум для масштабирования
     TARGET_CYCLE_TIME_SEC: int = int(os.getenv("TARGET_CYCLE_TIME_SEC", "15"))  # Целевое время цикла
     ADAPTIVE_CONCURRENCY: bool = os.getenv("ADAPTIVE_CONCURRENCY", "true").lower() == "true"  # Включить адаптивную конкурентность
-    
-    # Пороги для корректировки pH/EC
-    PH_CORRECTION_THRESHOLD: float = 0.2  # Минимальная разница для корректировки
-    EC_CORRECTION_THRESHOLD: float = 0.2
-    PH_DOSING_MULTIPLIER: float = 10.0  # diff * 10 для pH
-    EC_DOSING_MULTIPLIER: float = 100.0  # diff * 100 для EC
-
-    # PID настройки pH
-    PH_PID_DEAD_ZONE: float = 0.05
-    PH_PID_CLOSE_ZONE: float = 0.30
-    PH_PID_FAR_ZONE: float = 1.0
-    PH_PID_KP_CLOSE: float = 5.0
-    PH_PID_KI_CLOSE: float = 0.05
-    PH_PID_KD_CLOSE: float = 0.0
-    PH_PID_KP_FAR: float = 8.0
-    PH_PID_KI_FAR: float = 0.02
-    PH_PID_KD_FAR: float = 0.0
-    PH_PID_MAX_OUTPUT: float = 20.0
-    PH_PID_MIN_INTERVAL_MS: int = 90_000
-    PH_PID_MAX_INTEGRAL: float = 20.0
-    PH_PID_DERIVATIVE_FILTER_ALPHA: float = 0.35
-
-    # PID настройки EC
-    EC_PID_DEAD_ZONE: float = float(os.getenv("EC_PID_DEAD_ZONE", "0.10"))
-    EC_PID_CLOSE_ZONE: float = 0.5
-    EC_PID_FAR_ZONE: float = 1.5
-    EC_PID_KP_CLOSE: float = 30.0
-    EC_PID_KI_CLOSE: float = 0.30
-    EC_PID_KD_CLOSE: float = 0.0
-    EC_PID_KP_FAR: float = 50.0
-    EC_PID_KI_FAR: float = 0.10
-    EC_PID_KD_FAR: float = 0.0
-    EC_PID_MAX_OUTPUT: float = 50.0
-    EC_PID_MIN_INTERVAL_MS: int = 120_000
-    EC_PID_MAX_INTEGRAL: float = 100.0
-    EC_PID_DERIVATIVE_FILTER_ALPHA: float = 0.35
     # Поэтапное дозирование 4-компонентного питания (NPK/Ca/Mg/Micro)
     EC_COMPONENT_DOSE_DELAY_SEC: float = float(os.getenv("EC_COMPONENT_DOSE_DELAY_SEC", "8"))
     EC_COMPONENT_RECHECK_TOLERANCE: float = float(os.getenv("EC_COMPONENT_RECHECK_TOLERANCE", "0.05"))
@@ -69,20 +33,6 @@ class AutomationSettings:
     PID_DT_MAX_SECONDS: float = float(os.getenv("PID_DT_MAX_SECONDS", "300.0"))
     PID_DT_MIN_SECONDS: float = float(os.getenv("PID_DT_MIN_SECONDS", "5.0"))
 
-    # PID расширенные guards/стабилизация
-    PID_ANTI_WINDUP_MODE: str = os.getenv("PID_ANTI_WINDUP_MODE", "conditional")
-    PID_BACK_CALCULATION_GAIN: float = 0.2
-    # Relay autotune параметры pH
-    PH_RELAY_AUTOTUNE_AMPLITUDE_ML: float = 3.0
-    PH_RELAY_AUTOTUNE_MIN_CYCLES: int = 3
-    PH_RELAY_AUTOTUNE_MAX_DURATION_SEC: float = 7200.0
-    PH_RELAY_AUTOTUNE_MIN_OSCILLATION: float = 0.02
-    # Relay autotune параметры EC
-    EC_RELAY_AUTOTUNE_AMPLITUDE_ML: float = 10.0
-    EC_RELAY_AUTOTUNE_MIN_CYCLES: int = 3
-    EC_RELAY_AUTOTUNE_MAX_DURATION_SEC: float = 7200.0
-    EC_RELAY_AUTOTUNE_MIN_OSCILLATION: float = 0.10
-    
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
     TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут
     # Максимальный возраст correction flags для fail-closed gating (секунды)

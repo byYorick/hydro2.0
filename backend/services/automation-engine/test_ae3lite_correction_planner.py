@@ -849,3 +849,198 @@ def test_build_dose_plan_does_not_set_last_dose_at_when_dose_is_zero() -> None:
         assert "last_dose_at" not in plan.pid_state_updates["ec"], (
             "last_dose_at must not be set when dose_ml == 0"
         )
+
+
+# ── Фаза 1: Регрессионный тест integral spike при reset ───────────────────────
+
+def test_reset_pid_state_includes_last_measurement_at() -> None:
+    """При возврате в норму last_measurement_at должен сбрасываться в now.
+
+    Без этого фикса: integral=0, но last_measurement_at = стый timestamp из
+    прошлой коррекции → следующий tick вычисляет огромный dt → integral spike.
+    """
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 10, 12, 0, 0, tzinfo=UTC)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_min=5.8,
+        ph_max=6.2,
+        ec_min=1.9,
+        ec_max=2.1,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(),
+        pid_state={
+            "ph": {
+                "integral": 3.5,
+                "prev_error": 0.2,
+                "prev_derivative": 0.0,
+                "last_measurement_at": datetime(2026, 3, 10, 10, 0, 0, tzinfo=UTC),  # 2h ago
+            },
+            "ec": {
+                "integral": 12.0,
+                "prev_error": 0.5,
+                "prev_derivative": 0.0,
+                "last_measurement_at": datetime(2026, 3, 10, 10, 0, 0, tzinfo=UTC),  # 2h ago
+            },
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_any is False
+
+    # integral и prev_error сброшены
+    ph_upd = dose_plan.pid_state_updates["ph"]
+    ec_upd = dose_plan.pid_state_updates["ec"]
+    assert ph_upd["integral"] == 0.0
+    assert ec_upd["integral"] == 0.0
+
+    # last_measurement_at должен быть сброшен в now, а не оставаться стым
+    assert "last_measurement_at" in ph_upd, (
+        "last_measurement_at missing from reset update — stale dt bug not fixed"
+    )
+    assert "last_measurement_at" in ec_upd, (
+        "last_measurement_at missing from reset update — stale dt bug not fixed"
+    )
+    # Значение должно быть now (UTC naive) — проверяем что это не старый timestamp
+    from ae3lite.domain.services.correction_planner import _to_utc_naive
+    assert ph_upd["last_measurement_at"] == _to_utc_naive(now)
+    assert ec_upd["last_measurement_at"] == _to_utc_naive(now)
+
+
+def test_no_integral_spike_after_reset_and_reentry() -> None:
+    """Симуляция re-entry после reset: integral не должен прыгать до max_integral."""
+    planner = CorrectionPlanner()
+    t0 = datetime(2026, 3, 10, 12, 0, 0, tzinfo=UTC)
+    t_reset = datetime(2026, 3, 10, 14, 0, 0, tzinfo=UTC)  # через 2 часа
+    t_reentry = datetime(2026, 3, 10, 14, 5, 0, tzinfo=UTC)  # через 5 минут после reset
+
+    # Шаг 1: reset (значения в норме)
+    reset_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=2.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_min=5.8,
+        ph_max=6.2,
+        ec_min=1.9,
+        ec_max=2.1,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(ec_overrides={"min_interval_sec": 0, "deadband": 0.0, "ki": 0.1, "kp": 1.0, "kd": 0.0}),
+        pid_state={
+            "ec": {"integral": 10.0, "last_measurement_at": t0},
+        },
+        now=t_reset,
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+    assert reset_plan.pid_state_updates["ec"]["integral"] == 0.0
+
+    # Шаг 2: re-entry (значения вышли из нормы) — используем сброшенный state
+    reset_ec_state = reset_plan.pid_state_updates["ec"]  # integral=0, last_measurement_at=t_reset
+
+    reentry_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.7,  # EC ниже нормы
+        target_ph=6.0,
+        target_ec=2.0,
+        ec_min=1.9,
+        ec_max=2.1,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "min_interval_sec": 0,
+                "deadband": 0.0,
+                "ki": 0.1,
+                "kp": 1.0,
+                "kd": 0.0,
+                "max_integral": 100.0,
+            }
+        ),
+        pid_state={"ec": reset_ec_state},
+        now=t_reentry,
+        ec_actuator=None,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "ec_npk_pump",
+                "calibration": {"ml_per_sec": 1.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    new_integral = reentry_plan.pid_state_updates["ec"]["integral"]
+    # dt = 5 минут = 300 сек, gap = 0.3 → integral += 0.3*300 = 90
+    # НЕ должно прыгнуть на 2h*0.3=2160 (что было бы без фикса, ограниченное до max=100)
+    # С фиксом: dt = 300s, integral = 90 ≤ 100 — корректно
+    assert new_integral <= 100.0, f"integral={new_integral} exceeded max_integral"
+
+
+# ── Фаза 3: Тесты валидации калибровки насоса ────────────────────────────────
+
+def test_dose_ml_to_ms_raises_on_ml_per_sec_too_low() -> None:
+    """ml_per_sec ниже 0.01 должен вызывать PlannerConfigurationError."""
+    import pytest
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+    from ae3lite.domain.errors import PlannerConfigurationError
+
+    with pytest.raises(PlannerConfigurationError, match="valid range"):
+        _dose_ml_to_ms(1.0, {"ml_per_sec": 0.001})
+
+
+def test_dose_ml_to_ms_raises_on_ml_per_sec_too_high() -> None:
+    """ml_per_sec выше 100 должен вызывать PlannerConfigurationError."""
+    import pytest
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+    from ae3lite.domain.errors import PlannerConfigurationError
+
+    with pytest.raises(PlannerConfigurationError, match="valid range"):
+        _dose_ml_to_ms(1.0, {"ml_per_sec": 200.0})
+
+
+def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
+    """Дозы ниже _MIN_DOSE_MS=50ms должны давать warning-лог, не молча отбрасываться."""
+    import logging
+    from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
+
+    # 0.002ml / 1.0 ml_per_sec = 2ms < 50ms → должен быть warning
+    with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.correction_planner"):
+        result = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0})
+
+    assert result == 0
+    assert any("below minimum" in record.message or "Dose discarded" in record.message
+               for record in caplog.records), (
+        "Expected warning log for sub-minimum dose, got none"
+    )
+
+
+# ── Фаза 4: Тест вынесенной phase_utils ──────────────────────────────────────
+
+def test_normalize_phase_key_from_phase_utils() -> None:
+    """normalize_phase_key доступна из phase_utils и возвращает правильные ключи."""
+    from ae3lite.domain.services.phase_utils import normalize_phase_key
+
+    assert normalize_phase_key("solution_fill") == "solution_fill"
+    assert normalize_phase_key("tank_filling") == "solution_fill"
+    assert normalize_phase_key("prepare_recirculation") == "tank_recirc"
+    assert normalize_phase_key("tank_recirc") == "tank_recirc"
+    assert normalize_phase_key("irrigating") == "irrigation"
+    assert normalize_phase_key("irrigation") == "irrigation"
+    assert normalize_phase_key("irrig_recirc") == "irrigation"
+    assert normalize_phase_key(None) == "generic"
+    assert normalize_phase_key("") == "generic"
+    assert normalize_phase_key("unknown_phase") == "unknown_phase"

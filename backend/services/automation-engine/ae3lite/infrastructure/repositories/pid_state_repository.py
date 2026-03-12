@@ -22,8 +22,6 @@ _SQL_UPSERT = """
         feedforward_bias,
         no_effect_count,
         last_correction_kind,
-        stats,
-        current_zone,
         created_at,
         updated_at
     )
@@ -41,8 +39,6 @@ _SQL_UPSERT = """
         COALESCE($11, 0.0),
         COALESCE($12, 0),
         $13,
-        NULL,
-        NULL,
         $14,
         $14
     )

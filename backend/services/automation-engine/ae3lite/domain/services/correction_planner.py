@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import math
 from typing import Any, Mapping, Optional
 
 from ae3lite.domain.errors import PlannerConfigurationError
+from ae3lite.domain.services.phase_utils import normalize_phase_key
+
+_logger = logging.getLogger(__name__)
 
 # ── Defaults for dose computation (5.1: named constants replacing magic numbers) ──
 
@@ -132,7 +136,7 @@ class CorrectionPlanner:
         ph_up_actuator: Optional[Mapping[str, Any]] = None,
         ph_down_actuator: Optional[Mapping[str, Any]] = None,
     ) -> DosePlan:
-        phase_key = _normalize_phase_key(workflow_phase)
+        phase_key = normalize_phase_key(workflow_phase)
         process_cfg = _phase_mapping(process_calibrations).get(phase_key, {})
         process_cfg = process_cfg if isinstance(process_cfg, Mapping) else {}
         pid_state = pid_state if isinstance(pid_state, Mapping) else {}
@@ -162,6 +166,7 @@ class CorrectionPlanner:
             ec_lo=ec_lo,
             ec_hi=ec_hi,
             pid_state=pid_state,
+            now=now,
         )
 
         predicted_ph = _apply_feedforward_bias(
@@ -321,17 +326,6 @@ def _resolve_bounds(
     return float(target) - tol, float(target) + tol
 
 
-def _normalize_phase_key(raw: str | None) -> str:
-    phase = str(raw or "").strip().lower()
-    if phase in {"tank_filling", "solution_fill"}:
-        return "solution_fill"
-    if phase in {"tank_recirc", "prepare_recirculation"}:
-        return "tank_recirc"
-    if phase in {"irrigating", "irrigation", "irrig_recirc"}:
-        return "irrigation"
-    return phase or "generic"
-
-
 def _phase_mapping(raw: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:
     return raw if isinstance(raw, Mapping) else {}
 
@@ -473,7 +467,7 @@ def _compute_amount_ml(
         contract_max = _positive_float(correction_config.get("max_ec_dose_ml"), _DEFAULT_MAX_EC_DOSE_ML)
     else:
         contract_max = _positive_float(correction_config.get("max_ph_dose_ml"), _DEFAULT_MAX_PH_DOSE_ML)
-    max_ml = min(value for value in (controller_max, contract_max) if value > 0) if controller_max > 0 else contract_max
+    max_ml = min(controller_max, contract_max) if controller_max > 0 else contract_max
     dose_ml = min(dose_ml, max_ml)
     dose_ml = round(max(0.0, dose_ml), 4)
     if dose_ml > 0:
@@ -544,6 +538,7 @@ def _reset_pid_state_if_inside_bounds(
     ec_lo: float,
     ec_hi: float,
     pid_state: Mapping[str, Any],
+    now: datetime,
 ) -> dict[str, Any]:
     updates: dict[str, Any] = {}
     if ph_lo <= current_ph <= ph_hi and "ph" in pid_state:
@@ -551,12 +546,17 @@ def _reset_pid_state_if_inside_bounds(
             "integral": 0.0,
             "prev_error": 0.0,
             "prev_derivative": 0.0,
+            # Reset last_measurement_at so the next out-of-bounds tick computes
+            # dt from now — not from a stale pre-reset timestamp, which would
+            # cause an integral spike on re-entry.
+            "last_measurement_at": now,
         }
     if ec_lo <= current_ec <= ec_hi and "ec" in pid_state:
         updates["ec"] = {
             "integral": 0.0,
             "prev_error": 0.0,
             "prev_derivative": 0.0,
+            "last_measurement_at": now,
         }
     return updates
 
@@ -577,11 +577,29 @@ def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
         raise PlannerConfigurationError(
             f"Pump calibration ml_per_sec must be positive, got {ml_per_sec}"
         )
+    # Guard against obviously wrong calibration values (typos, unit errors).
+    # 0.01 ml/s ≈ 36 ml/h (very slow drip); 100 ml/s = 6 L/min (very fast).
+    if not (0.01 <= ml_per_sec <= 100.0):
+        raise PlannerConfigurationError(
+            f"Pump calibration ml_per_sec={ml_per_sec} is outside the valid range "
+            f"[0.01, 100.0]; check pump calibration data"
+        )
     duration_ms = int(dose_ml / ml_per_sec * 1000)
     if duration_ms <= 0:
         return 0
     # Discard pulses shorter than _MIN_DOSE_MS — below reliable pump activation time.
-    return duration_ms if duration_ms >= _MIN_DOSE_MS else 0
+    if duration_ms < _MIN_DOSE_MS:
+        _logger.warning(
+            "Dose discarded: computed duration %dms is below minimum %dms "
+            "(dose_ml=%.4f, ml_per_sec=%.4f). "
+            "Check pump calibration or min_effective_ml setting.",
+            duration_ms,
+            _MIN_DOSE_MS,
+            dose_ml,
+            ml_per_sec,
+        )
+        return 0
+    return duration_ms
 
 
 def _to_utc_naive(value: datetime) -> datetime:

@@ -1,9 +1,27 @@
 """
 Adaptive PID controller with zones, safety limits and basic statistics.
 
-Примечание: Это легковесная реализация для дозирования pH/EC. Она рассчитана
-на вызов с фиксированным шагом (dt в секундах) в автоматизации, не хранит
-состояние на диск и живет в памяти процесса automation-engine.
+.. note::
+    **NOT USED in production correction flow.**
+
+    The active correction logic lives in
+    ``ae3lite.domain.services.correction_planner`` which maintains PID state
+    (integral, prev_error, prev_derivative) persistently in PostgreSQL and
+    computes doses inline using zone-specific parameters from
+    ``correction_config``.
+
+    This module provides ``AdaptivePid`` (in-memory, zone-aware PID) and
+    ``RelayAutotuner`` (Astrom-Hagglund autotune) as **standalone utilities**
+    intended for:
+
+    * Future integration with relay autotune workflows
+    * Offline tuning simulations / notebooks
+    * Unit-testing PID behaviour in isolation
+
+    Do NOT wire ``AdaptivePid.compute()`` into the correction handler without
+    first solving the state-persistence gap (the in-memory ``self.integral``
+    is lost on process restart; persistence is owned by
+    ``PgPidStateRepository``).
 """
 from __future__ import annotations
 

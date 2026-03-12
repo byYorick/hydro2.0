@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Sequence
 
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
+from ae3lite.domain.services.phase_utils import normalize_phase_key as _normalize_phase_key
 
 # ── Defaults for retry/attempt limits ────────────────────────────────────────
 
@@ -741,12 +742,3 @@ def _build_prepare_tolerance_cfg(
     }
 
 
-def _normalize_phase_key(raw_phase: Any) -> str:
-    phase = str(raw_phase or "").strip().lower()
-    if phase in {"tank_filling", "solution_fill"}:
-        return "solution_fill"
-    if phase in {"tank_recirc", "prepare_recirculation"}:
-        return "tank_recirc"
-    if phase in {"irrigating", "irrigation", "irrig_recirc"}:
-        return "irrigation"
-    return phase or "generic"
