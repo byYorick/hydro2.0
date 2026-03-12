@@ -1,0 +1,9 @@
+{
+  "cmd_id": "cmd-12345",
+  "status": "TIMEOUT",
+  "ts": 1737979200000,
+  "details": {
+    "error_code": "TIMEOUT",
+    "error_message": "Command execution timeout"
+  }
+}

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Alert;
 use App\Models\ChannelBinding;
 use App\Models\Zone;
+use App\Models\ZoneAutomationLogicProfile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -52,10 +53,14 @@ class ZoneReadinessService
             $configured = ['main_pump', 'drain'];
         }
 
-        return array_values(array_unique(array_merge(
-            $configured,
-            $this->getCapabilityRequiredBindings($zone)
-        )));
+        if (! $this->shouldRequireDrainBinding($zone)) {
+            $configured = array_values(array_filter(
+                $configured,
+                static fn (mixed $binding): bool => is_string($binding) && trim($binding) !== 'drain'
+            ));
+        }
+
+        return array_values(array_unique(array_merge($configured, $this->getCapabilityRequiredBindings($zone))));
     }
 
     /**
@@ -75,6 +80,62 @@ class ZoneReadinessService
         }
 
         return $required;
+    }
+
+    /**
+     * Для 2-баковой схемы дренаж не обязателен.
+     */
+    private function shouldRequireDrainBinding(Zone $zone): bool
+    {
+        $profile = $this->resolveActiveAutomationProfile($zone);
+        if (! $profile) {
+            return true;
+        }
+
+        $subsystems = is_array($profile->subsystems) ? $profile->subsystems : [];
+        if (empty($subsystems)) {
+            return true;
+        }
+
+        $tanksCount = $this->extractIrrigationTanksCount($subsystems);
+        if ($tanksCount === 2) {
+            return false;
+        }
+
+        $topology = data_get($subsystems, 'diagnostics.execution.topology');
+        if (is_string($topology) && str_contains(strtolower($topology), 'two_tank')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function resolveActiveAutomationProfile(Zone $zone): ?ZoneAutomationLogicProfile
+    {
+        if ($zone->relationLoaded('activeAutomationLogicProfile')) {
+            $loaded = $zone->getRelation('activeAutomationLogicProfile');
+            return $loaded instanceof ZoneAutomationLogicProfile ? $loaded : null;
+        }
+
+        return $zone->activeAutomationLogicProfile()->first();
+    }
+
+    private function extractIrrigationTanksCount(array $subsystems): ?int
+    {
+        $raw = data_get($subsystems, 'irrigation.execution.tanks_count');
+        if (is_int($raw)) {
+            return in_array($raw, [2, 3], true) ? $raw : null;
+        }
+        if (is_string($raw) && trim($raw) !== '') {
+            $parsed = (int) trim($raw);
+            return in_array($parsed, [2, 3], true) ? $parsed : null;
+        }
+        if (is_float($raw)) {
+            $parsed = (int) round($raw);
+            return in_array($parsed, [2, 3], true) ? $parsed : null;
+        }
+
+        return null;
     }
 
     /**
@@ -296,35 +357,38 @@ class ZoneReadinessService
      */
     private function checkOnlineNodes(Zone $zone): array
     {
-        if (! DB::getSchemaBuilder()->hasTable('channel_bindings')) {
-            Log::error('channel_bindings table does not exist; readiness node check is fail-closed', [
+        $nodes = collect();
+        $bindingsAvailable = DB::getSchemaBuilder()->hasTable('channel_bindings');
+
+        if ($bindingsAvailable) {
+            $nodes = ChannelBinding::query()
+                ->join('node_channels', 'channel_bindings.node_channel_id', '=', 'node_channels.id')
+                ->join('nodes', 'node_channels.node_id', '=', 'nodes.id')
+                ->join('infrastructure_instances', 'channel_bindings.infrastructure_instance_id', '=', 'infrastructure_instances.id')
+                ->where(function ($query) use ($zone) {
+                    $query->where(function ($zoneOwner) use ($zone) {
+                        $zoneOwner->where('infrastructure_instances.owner_type', 'zone')
+                            ->where('infrastructure_instances.owner_id', $zone->id);
+                    })->orWhere(function ($greenhouseOwner) use ($zone) {
+                        $greenhouseOwner->where('infrastructure_instances.owner_type', 'greenhouse')
+                            ->where('infrastructure_instances.owner_id', $zone->greenhouse_id);
+                    });
+                })
+                ->select('nodes.id', 'nodes.uid', 'nodes.name', 'nodes.status')
+                ->distinct()
+                ->get();
+        } else {
+            Log::error('channel_bindings table does not exist; readiness node check will fallback to zone nodes', [
                 'zone_id' => $zone->id,
             ]);
-
-            return [
-                'online_count' => 0,
-                'offline_count' => 0,
-                'total_count' => 0,
-                'nodes' => [],
-            ];
         }
 
-        $nodes = ChannelBinding::query()
-            ->join('node_channels', 'channel_bindings.node_channel_id', '=', 'node_channels.id')
-            ->join('nodes', 'node_channels.node_id', '=', 'nodes.id')
-            ->join('infrastructure_instances', 'channel_bindings.infrastructure_instance_id', '=', 'infrastructure_instances.id')
-            ->where(function ($query) use ($zone) {
-                $query->where(function ($zoneOwner) use ($zone) {
-                    $zoneOwner->where('infrastructure_instances.owner_type', 'zone')
-                        ->where('infrastructure_instances.owner_id', $zone->id);
-                })->orWhere(function ($greenhouseOwner) use ($zone) {
-                    $greenhouseOwner->where('infrastructure_instances.owner_type', 'greenhouse')
-                        ->where('infrastructure_instances.owner_id', $zone->greenhouse_id);
-                });
-            })
-            ->select('nodes.id', 'nodes.uid', 'nodes.name', 'nodes.status')
-            ->distinct()
-            ->get();
+        // Если bind-ы ещё не созданы (типичный onboarding), считаем ноды напрямую по zone_id.
+        if ($nodes->isEmpty()) {
+            $nodes = $zone->nodes()
+                ->select('id', 'uid', 'name', 'status')
+                ->get();
+        }
 
         $onlineNodes = $nodes->filter(function ($node) {
             return is_string($node->status) && strtolower($node->status) === 'online';

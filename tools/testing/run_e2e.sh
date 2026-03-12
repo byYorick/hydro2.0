@@ -378,11 +378,13 @@ main() {
                 "grow_cycle/E54_pause_resume_harvest"
                 
                 # AUTOMATION ENGINE
-                "automation_engine/E60_climate_control_happy"
                 "automation_engine/E61_fail_closed_corrections"
-                "automation_engine/E62_controller_fault_isolation"
-                "automation_engine/E63_backoff_on_errors"
+                "automation_engine/E64_effective_targets_only"
+                "automation_engine/E65_phase_transition_api"
                 "automation_engine/E74_node_zone_mismatch_guard"
+
+                # SCHEDULER
+                "scheduler/E93_start_cycle_intent_executor_path"
             )
             
             log_info "Запуск полного набора E2E сценариев (${#SCENARIOS[@]} сценариев, без CHAOS)..."
@@ -568,9 +570,9 @@ main() {
             ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml logs -f "${2:-}"
             ;;
         "clean")
-            log_info "Очистка данных E2E..."
-            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down -v
-            log_info "Данные очищены."
+            log_info "Остановка E2E инфраструктуры без удаления volume..."
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down
+            log_info "Инфраструктура остановлена, данные БД сохранены."
             ;;
         *)
             echo "Использование: $0 {up|down|restart|smoke|test|all|logs|clean}"

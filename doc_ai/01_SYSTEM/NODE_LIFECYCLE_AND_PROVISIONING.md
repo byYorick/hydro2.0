@@ -13,7 +13,7 @@
 
 ## Термины (для единообразия)
 
-- `firmware_module` — имя прошивочного ESP-IDF проекта (`ph_node`, `ec_node`, `climate_node`, `pump_node`).
+- `firmware_module` — имя прошивочного ESP-IDF проекта (`ph_node`, `ec_node`, `climate_node`, `storage_irrigation_node`).
 - `node_type` — тип узла в MQTT/API/БД (`nodes.type`) с каноническими значениями:
   `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
 - Имена `*_node` не используются как `node_type` в payload и базе данных.

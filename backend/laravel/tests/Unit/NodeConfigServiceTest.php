@@ -94,4 +94,53 @@ class NodeConfigServiceTest extends TestCase
         $this->assertSame('mqtt', $config['mqtt']['host']);
         $this->assertArrayNotHasKey('gpio', $config['channels'][0]);
     }
+
+    public function test_generate_node_config_sets_default_relay_type_for_relay_actuator(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'config' => [
+                'node_id' => 'nd-irrig-1',
+                'version' => 1,
+                'type' => 'irrig',
+                'channels' => [
+                    [
+                        'name' => 'main_pump',
+                        'type' => 'ACTUATOR',
+                        'actuator_type' => 'RELAY',
+                    ],
+                ],
+            ],
+        ]);
+
+        /** @var NodeConfigService $service */
+        $service = $this->app->make(NodeConfigService::class);
+        $config = $service->generateNodeConfig($node, null, true, false);
+
+        $this->assertSame('NO', $config['channels'][0]['relay_type']);
+    }
+
+    public function test_generate_node_config_keeps_valid_relay_type(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'config' => [
+                'node_id' => 'nd-irrig-1',
+                'version' => 1,
+                'type' => 'irrig',
+                'channels' => [
+                    [
+                        'name' => 'main_pump',
+                        'type' => 'ACTUATOR',
+                        'actuator_type' => 'VALVE',
+                        'relay_type' => 'NC',
+                    ],
+                ],
+            ],
+        ]);
+
+        /** @var NodeConfigService $service */
+        $service = $this->app->make(NodeConfigService::class);
+        $config = $service->generateNodeConfig($node, null, true, false);
+
+        $this->assertSame('NC', $config['channels'][0]['relay_type']);
+    }
 }

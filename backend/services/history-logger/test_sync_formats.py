@@ -18,7 +18,9 @@ class TestTelemetryPayloadFormat:
             "node_id": "nd-ph-1",
             "raw": 1465,
             "stub": False,
-            "stable": True
+            "stable": True,
+            "flow_active": True,
+            "corrections_allowed": True,
         }
         
         model = TelemetryPayloadModel(**payload)
@@ -30,6 +32,8 @@ class TestTelemetryPayloadFormat:
         assert model.raw == 1465
         assert model.stub is False
         assert model.stable is True
+        assert model.flow_active is True
+        assert model.corrections_allowed is True
     
     def test_telemetry_payload_with_ts_only(self):
         """Тест payload только с полем ts (формат от прошивок)."""

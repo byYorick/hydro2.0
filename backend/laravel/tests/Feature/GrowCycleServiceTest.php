@@ -11,6 +11,7 @@ use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -190,5 +191,36 @@ class GrowCycleServiceTest extends TestCase
         $advancedCycle = $this->service->advanceStage($cycle, 'FLOWER');
 
         $this->assertEquals('FLOWER', $advancedCycle->current_stage_code);
+    }
+
+    #[Test]
+    public function it_stores_grow_cycle_start_intent_as_wakeup_only_payload(): void
+    {
+        $zone = Zone::factory()->create();
+        $cycleId = 345;
+        $idempotencyKey = sprintf('gcs:z%d:c%d:test', $zone->id, $cycleId);
+
+        $method = new \ReflectionMethod($this->service, 'upsertGrowCycleStartIntent');
+        $method->setAccessible(true);
+        $method->invoke($this->service, $zone->id, $cycleId, $idempotencyKey);
+
+        $intentRow = DB::table('zone_automation_intents')
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
+        $this->assertNotNull($intentRow);
+        $payloadRaw = $intentRow->payload ?? null;
+        $payload = is_string($payloadRaw)
+            ? json_decode($payloadRaw, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($payloadRaw) ? $payloadRaw : []);
+
+        $this->assertIsArray($payload);
+        $this->assertSame('laravel_grow_cycle_start', $payload['source'] ?? null);
+        $this->assertSame('diagnostics', $payload['task_type'] ?? null);
+        $this->assertSame('cycle_start', $payload['workflow'] ?? null);
+        $this->assertSame('two_tank_drip_substrate_trays', $payload['topology'] ?? null);
+        $this->assertSame($cycleId, $payload['grow_cycle_id'] ?? null);
+        $this->assertArrayNotHasKey('task_payload', $payload);
+        $this->assertArrayNotHasKey('schedule_payload', $payload);
     }
 }

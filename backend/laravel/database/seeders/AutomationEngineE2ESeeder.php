@@ -121,20 +121,22 @@ class AutomationEngineE2ESeeder extends Seeder
             ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%', 'type' => 'sensor', 'data_type' => 'float'],
         ];
 
-        foreach ($channels as $channelData) {
-            NodeChannel::firstOrCreate(
-                [
-                    'node_id' => $node->id,
-                    'channel' => $channelData['channel'],
-                ],
-                [
-                    'type' => $channelData['type'],
-                    'metric' => $channelData['metric'],
-                    'unit' => $channelData['unit'],
-                    'config' => ['data_type' => $channelData['data_type']],
-                ]
-            );
-        }
+        NodeChannel::withoutEvents(function () use ($channels, $node): void {
+            foreach ($channels as $channelData) {
+                NodeChannel::firstOrCreate(
+                    [
+                        'node_id' => $node->id,
+                        'channel' => $channelData['channel'],
+                    ],
+                    [
+                        'type' => $channelData['type'],
+                        'metric' => $channelData['metric'],
+                        'unit' => $channelData['unit'],
+                        'config' => ['data_type' => $channelData['data_type']],
+                    ]
+                );
+            }
+        });
 
         $this->command->info('✓ Channels created for node');
 
@@ -156,23 +158,25 @@ class AutomationEngineE2ESeeder extends Seeder
             'mister' => 'mist',
         ];
 
-        foreach ($actuators as $actuatorData) {
-            NodeChannel::updateOrCreate(
-                [
-                    'node_id' => $node->id,
-                    'channel' => $actuatorData['channel'],
-                ],
-                [
-                    'type' => $actuatorData['type'],
-                    'metric' => $actuatorData['metric'],
-                    'unit' => $actuatorData['unit'],
-                    'config' => [
-                        'data_type' => $actuatorData['data_type'],
-                        'zone_role' => $zoneRoles[$actuatorData['channel']] ?? $actuatorData['channel'],
+        NodeChannel::withoutEvents(function () use ($actuators, $node, $zoneRoles): void {
+            foreach ($actuators as $actuatorData) {
+                NodeChannel::updateOrCreate(
+                    [
+                        'node_id' => $node->id,
+                        'channel' => $actuatorData['channel'],
                     ],
-                ]
-            );
-        }
+                    [
+                        'type' => $actuatorData['type'],
+                        'metric' => $actuatorData['metric'],
+                        'unit' => $actuatorData['unit'],
+                        'config' => [
+                            'data_type' => $actuatorData['data_type'],
+                            'zone_role' => $zoneRoles[$actuatorData['channel']] ?? $actuatorData['channel'],
+                        ],
+                    ]
+                );
+            }
+        });
 
         $this->command->info('✓ Actuators created for node');
 

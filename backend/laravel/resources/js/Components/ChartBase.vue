@@ -42,15 +42,22 @@ const containerStyle = computed(() => {
 
 const el = ref()
 let chart: ECharts | undefined
+let resizeObserver: ResizeObserver | undefined
+
+const onResize = () => {
+  if (chart && el.value) {
+    chart.resize()
+  }
+}
 
 onMounted(() => {
   if (!el.value) return
-  
+
   chart = echarts.init(el.value, props.dark ? 'dark' : undefined, {
     renderer: 'canvas',
     useDirtyRect: false, // Отключаем для стабильности
   })
-  
+
   // Настраиваем глобальные стили для tooltip (только один раз)
   if (!window.__echartsTooltipStyleAdded) {
     const tooltipStyle = document.createElement('style')
@@ -68,7 +75,7 @@ onMounted(() => {
     document.head.appendChild(tooltipStyle)
     window.__echartsTooltipStyleAdded = true
   }
-  
+
   // Улучшаем опции для предотвращения выхода за границы
   const gridOption = Array.isArray(props.option.grid) ? props.option.grid[0] : props.option.grid
   const safeOption = {
@@ -82,29 +89,15 @@ onMounted(() => {
       ...(gridOption || {}), // Сохраняем все настройки grid из опций
     },
   }
-  
+
   chart.setOption(safeOption)
-  
-  const onResize = () => {
-    if (chart && el.value) {
-      chart.resize()
-    }
-  }
-  
+
   window.addEventListener('resize', onResize)
-  
+
   // Используем ResizeObserver для более точного отслеживания изменений размера
   if (window.ResizeObserver && el.value) {
-    const resizeObserver = new ResizeObserver(() => {
-      onResize()
-    })
+    resizeObserver = new ResizeObserver(onResize)
     resizeObserver.observe(el.value)
-    onBeforeUnmount(() => {
-      resizeObserver.disconnect()
-      window.removeEventListener('resize', onResize)
-    })
-  } else {
-    onBeforeUnmount(() => window.removeEventListener('resize', onResize))
   }
 })
 
@@ -134,6 +127,11 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = undefined
+  }
   if (chart) {
     chart.dispose()
     chart = undefined

@@ -1,0 +1,38 @@
+E2E Real Hardware Audit Postfix Summary
+Дата: 2026-02-26
+
+1) Чистый full-прогон (после фиксов)
+- Команда: tests/e2e/run_automation_engine_real_hardware.sh --set=full
+- Лог: tests/e2e/reports/realhw_audit_postfix/full_run_clean_postfix_20260226_162708.log
+- Окно прогона: 2026-02-26 16:28:37 -> 2026-02-26 16:49:49
+- Результат: 60/60 сценариев PASS, 0 сценариев FAIL
+- Финальный маркер: "Все сценарии для real hardware завершены успешно (set=full)"
+
+2) Покрытые разделы (из clean full-run)
+- alerts: 6
+- automation_engine: 7
+- chaos: 3
+- commands: 9
+- core: 6
+- grow_cycle: 10
+- infrastructure: 3
+- scheduler: 3
+- simulation: 3
+- snapshot: 3
+- workflow: 7
+
+3) Ключевые фиксы, обеспечившие GREEN в clean-run
+- E10_command_happy:
+  переход на TEST_NODE_* переменные, динамический actuator channel из БД, non-initial status check, DONE-проверки сделаны optional.
+- E42_bindings_role_resolution:
+  исправлен SQL выбор node/channel по TEST_NODE_UID/TEST_NODE_ZONE_UID, добавлен приоритет pump_main/main_pump, уникальный infra label.
+- E68_full_prod_path_strict_ec_ph_corrections:
+  добавлен в automation set как real-hardware gate полного пути с жесткими EC/pH проверками.
+
+4) Статус строгих EC/pH проверок
+- PASS: E68_full_prod_path_strict_ec_ph_corrections
+- PASS: E86_ec_ph_correction
+- PASS: E87_ec_ph_correction_during_fill
+- PASS: E89_correction_state_machine_and_duration_aware
+
+DONE

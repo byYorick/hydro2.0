@@ -54,6 +54,28 @@ return [
     'automation_engine' => [
         'api_url' => env('AUTOMATION_ENGINE_API_URL', 'http://automation-engine:9405'),
         'timeout' => env('AUTOMATION_ENGINE_API_TIMEOUT_SEC', 2.0),
+        'laravel_scheduler_enabled' => env('AUTOMATION_LARAVEL_SCHEDULER_ENABLED', false),
+        'scheduler_id' => env('AUTOMATION_LARAVEL_SCHEDULER_ID', 'laravel-scheduler'),
+        'scheduler_version' => env('AUTOMATION_LARAVEL_SCHEDULER_VERSION', '3.0.0'),
+        'scheduler_protocol_version' => env('AUTOMATION_LARAVEL_SCHEDULER_PROTOCOL_VERSION', '2.0'),
+        'scheduler_api_token' => env(
+            'AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN',
+            env('SCHEDULER_API_TOKEN', env('PY_INGEST_TOKEN', env('PY_API_TOKEN')))
+        ),
+        'grow_cycle_start_dispatch_enabled' => env('AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED', false),
+        'scheduler_due_grace_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_DUE_GRACE_SEC', 15),
+        'scheduler_expires_after_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_EXPIRES_AFTER_SEC', 120),
+        'scheduler_catchup_policy' => env('AUTOMATION_LARAVEL_SCHEDULER_CATCHUP_POLICY', 'replay_limited'),
+        'scheduler_catchup_max_windows' => env('AUTOMATION_LARAVEL_SCHEDULER_CATCHUP_MAX_WINDOWS', 3),
+        'scheduler_catchup_rate_limit_per_cycle' => env('AUTOMATION_LARAVEL_SCHEDULER_CATCHUP_RATE_LIMIT_PER_CYCLE', 20),
+        'scheduler_dispatch_interval_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_DISPATCH_INTERVAL_SEC', 60),
+        'scheduler_lock_key' => env('AUTOMATION_LARAVEL_SCHEDULER_LOCK_KEY', 'automation:dispatch-schedules'),
+        'scheduler_lock_ttl_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_LOCK_TTL_SEC', 55),
+        'scheduler_active_task_ttl_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_TTL_SEC', 180),
+        'scheduler_active_task_retention_days' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS', 60),
+        'scheduler_active_task_cleanup_batch' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH', 500),
+        'scheduler_active_task_poll_batch' => env('AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_POLL_BATCH', 500),
+        'scheduler_cursor_persist_enabled' => env('AUTOMATION_LARAVEL_SCHEDULER_CURSOR_PERSIST_ENABLED', true),
     ],
 
     'digital_twin' => [

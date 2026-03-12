@@ -154,18 +154,22 @@ class VerifyPythonServiceTokenTest extends TestCase
         Config::set('services.python_bridge.token', 'test-token');
         // Не создаем пользователей - middleware должен разрешить запрос для публичных эндпоинтов
         $this->truncateUsers();
+        $serviceAuthFlag = null;
 
         $request = Request::create('/api/system/config/full', 'GET');
         $request->headers->set('Authorization', 'Bearer test-token');
         $request->headers->set('Accept', 'application/json');
 
-        $response = $this->middleware->handle($request, function ($req) {
+        $response = $this->middleware->handle($request, function ($req) use (&$serviceAuthFlag) {
+            $serviceAuthFlag = $req->attributes->get('python_service_authenticated');
+
             return response()->json(['status' => 'ok']);
         });
 
         $this->assertEquals(200, $response->getStatusCode());
         // Пользователь не установлен, но запрос разрешен
         $this->assertFalse(Auth::guard('sanctum')->check());
+        $this->assertTrue((bool) $serviceAuthFlag);
     }
 
     public function test_rejects_when_no_tokens_configured(): void

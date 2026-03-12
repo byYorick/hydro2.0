@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
+use App\Services\AutomationRuntimeConfigService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -179,27 +180,32 @@ class SystemController extends Controller
             $historyLoggerOk = 'fail';
         }
 
-        // Проверка статуса automation-engine сервиса (через Prometheus metrics) с измерением времени отклика
+        // Проверка статуса automation-engine сервиса через canonical AE3 runtime endpoint.
         $automationEngineOk = 'unknown';
         $automationEngineLatencyMs = null;
         try {
-            $automationEngineUrl = env('AUTOMATION_ENGINE_URL', 'http://automation-engine:9401');
+            $runtimeConfig = app(AutomationRuntimeConfigService::class);
+            $automationEngineUrl = rtrim((string) (
+                env('AUTOMATION_ENGINE_URL')
+                ?: $runtimeConfig->automationEngineValue('api_url', 'http://automation-engine:9405')
+            ), '/');
 
             // Измеряем время отклика automation-engine
             $startTime = microtime(true);
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(2)
-                ->get($automationEngineUrl.'/metrics');
+                ->get($automationEngineUrl.'/health/live');
             $automationEngineLatencyMs = round((microtime(true) - $startTime) * 1000, 2);
 
-            if ($response->successful() && $response->body()) {
-                $automationEngineOk = 'ok';
+            if ($response->successful()) {
+                $healthData = $response->json();
+                $healthStatus = is_array($healthData) ? ($healthData['status'] ?? 'ok') : 'ok';
+                $automationEngineOk = $healthStatus === 'ok' ? 'ok' : 'fail';
             } else {
                 $automationEngineOk = 'fail';
                 Log::warning('Automation engine health check failed', [
-                    'url' => $automationEngineUrl.'/metrics',
+                    'url' => $automationEngineUrl.'/health/live',
                     'status' => $response->status(),
-                    'has_body' => ! empty($response->body()),
                     'latency_ms' => $automationEngineLatencyMs,
                 ]);
             }
@@ -293,14 +299,13 @@ class SystemController extends Controller
     public function configFull()
     {
         try {
-            // Проверяем авторизацию через Sanctum или сессию
-            // Middleware verify.python.service уже проверил токен или Sanctum
-            // Здесь просто получаем пользователя, если он авторизован
+            // Middleware verify.python.service уже проверил сервисный токен или Sanctum.
+            // В режиме сервисного токена (без user в БД) разрешаем доступ без привязки к пользователю.
+            $isServiceTokenRequest = (bool) request()->attributes->get('python_service_authenticated', false);
             $user = Auth::guard('sanctum')->user() ?? Auth::user();
 
-            // Если пользователь не авторизован (ни через Sanctum, ни через сессию),
-            // значит middleware должен был отклонить запрос, но на всякий случай проверяем
-            if (! $user) {
+            // Если нет пользователя и это не сервисный запрос, доступ запрещаем.
+            if (! $user && ! $isServiceTokenRequest) {
                 return response()->json([
                     'status' => 'error',
                     'code' => 'UNAUTHENTICATED',
@@ -308,8 +313,9 @@ class SystemController extends Controller
                 ], 401);
             }
 
-            // Получаем доступные зоны для пользователя
-            $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+            // Для сервисного запроса без user отдаем полную конфигурацию без user-based фильтра.
+            // Для пользовательских запросов сохраняем прежнюю user/role фильтрацию.
+            $accessibleZoneIds = $user ? ZoneAccessHelper::getAccessibleZoneIds($user) : null;
 
             // Строим список колонок зон с учетом наличия миграций (чтобы не падать на неподнятой схеме)
             $zoneColumns = [
@@ -337,8 +343,11 @@ class SystemController extends Controller
             // Загружаем теплицы с зонами, фильтруя по доступным зонам
             $greenhouses = Greenhouse::with([
                 'zones' => function ($query) use ($accessibleZoneIds, $zoneColumns) {
-                    $query->whereIn('id', $accessibleZoneIds)
-                        ->select($zoneColumns)
+                    if (is_array($accessibleZoneIds)) {
+                        $query->whereIn('id', $accessibleZoneIds);
+                    }
+
+                    $query->select($zoneColumns)
                         ->with(['nodes' => function ($nodeQuery) {
                             // Загружаем ноды без чувствительных данных конфига (Wi-Fi пароли, MQTT креды)
                             // Поле config исключаем для предотвращения утечки креденшалов
@@ -368,7 +377,7 @@ class SystemController extends Controller
 
             // Фильтруем теплицы, оставляя только те, у которых есть доступные зоны
             // (или если пользователь админ - оставляем все)
-            if (! $user->isAdmin()) {
+            if ($user !== null && ! $user->isAdmin()) {
                 $greenhouses = $greenhouses->filter(function ($greenhouse) {
                     return $greenhouse->zones->isNotEmpty();
                 })->values();

@@ -173,7 +173,7 @@ static esp_err_t handle_run_pump(
     if (!cJSON_IsNumber(duration_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "Missing or invalid duration_ms",
             NULL
@@ -185,7 +185,7 @@ static esp_err_t handle_run_pump(
     if (duration_ms <= 0 || duration_ms > 60000) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "duration_ms must be between 1 and 60000",
             NULL
@@ -207,7 +207,7 @@ static esp_err_t handle_run_pump(
     if (!ec_node_pump_queue_push(&queued_cmd)) {
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             "pump_queue_full",
             "Pump queue is full",
             NULL
@@ -225,7 +225,7 @@ static esp_err_t handle_run_pump(
     }
     *response = node_command_handler_create_response(
         cmd_id,
-        "ACCEPTED",
+        "ACK",
         NULL,
         NULL,
         extra
@@ -263,7 +263,7 @@ static esp_err_t handle_calibrate(
     if (!cJSON_IsNumber(stage_item) || !cJSON_IsNumber(tds_value_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_format",
             "Missing stage or tds_value",
             NULL
@@ -277,7 +277,7 @@ static esp_err_t handle_calibrate(
     if (stage != 1 && stage != 2) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_stage",
             "Stage must be 1 or 2",
             NULL
@@ -288,7 +288,7 @@ static esp_err_t handle_calibrate(
     if (known_tds > 10000) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_tds",
             "TDS value must be <= 10000",
             NULL
@@ -311,7 +311,7 @@ static esp_err_t handle_calibrate(
 
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "calibration_failed",
             error_msg,
             NULL
@@ -348,7 +348,7 @@ static esp_err_t handle_test_sensor(
     if (strcmp(channel, "ec_sensor") != 0) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "invalid_channel",
             "Unknown sensor channel",
             NULL
@@ -359,7 +359,7 @@ static esp_err_t handle_test_sensor(
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "i2c_not_initialized",
             "I2C bus is not initialized",
             NULL
@@ -373,7 +373,7 @@ static esp_err_t handle_test_sensor(
         if (!trema_ec_init()) {
             *response = node_command_handler_create_response(
                 NULL,
-                "FAILED",
+                "ERROR",
                 "sensor_init_failed",
                 "Failed to initialize EC sensor",
                 NULL
@@ -391,7 +391,7 @@ static esp_err_t handle_test_sensor(
     if (!read_success || isnan(ec_value) || !isfinite(ec_value) || read_error != TREMA_EC_ERROR_NONE) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "read_failed",
             "Failed to read EC sensor",
             NULL
@@ -402,7 +402,7 @@ static esp_err_t handle_test_sensor(
     if (using_stub) {
         *response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "sensor_stub",
             "EC sensor returned stub values",
             NULL
@@ -752,7 +752,7 @@ static void ec_node_test_done_task(void *pvParameters) {
         if (!event.current_valid) {
             cJSON *failed_response = node_command_handler_create_response(
                 event.cmd_id,
-                "FAILED",
+                "ERROR",
                 "current_unavailable",
                 "Pump current is unavailable",
                 NULL
@@ -765,7 +765,7 @@ static void ec_node_test_done_task(void *pvParameters) {
                 }
                 cJSON_Delete(failed_response);
             }
-            node_command_handler_cache_final_status(event.cmd_id, event.channel_name, "FAILED");
+            node_command_handler_cache_final_status(event.cmd_id, event.channel_name, "ERROR");
             ec_node_process_pump_queue();
             continue;
         }
@@ -997,7 +997,7 @@ static void ec_node_process_pump_queue(void) {
             if (!ec_node_pump_queue_push(&cmd)) {
                 cJSON *failed_response = node_command_handler_create_response(
                     cmd.cmd_id[0] ? cmd.cmd_id : NULL,
-                    "FAILED",
+                    "ERROR",
                     "pump_queue_full",
                     "Pump queue is full",
                     NULL
@@ -1011,7 +1011,7 @@ static void ec_node_process_pump_queue(void) {
                     cJSON_Delete(failed_response);
                 }
                 if (cmd.cmd_id[0]) {
-                    node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "FAILED");
+                    node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "ERROR");
                 }
             }
             if (cooldown_remaining_ms > 0) {
@@ -1036,7 +1036,7 @@ static void ec_node_process_pump_queue(void) {
 
         cJSON *failed_response = node_command_handler_create_response(
             NULL,
-            "FAILED",
+            "ERROR",
             "pump_error",
             "Failed to run pump",
             NULL
@@ -1061,7 +1061,7 @@ static void ec_node_process_pump_queue(void) {
             cJSON_Delete(failed_response);
         }
         if (cmd.cmd_id[0]) {
-            node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "FAILED");
+            node_command_handler_cache_final_status(cmd.cmd_id, cmd.channel_name, "ERROR");
         }
     }
     if (min_cooldown_ms > 0) {
@@ -1164,7 +1164,7 @@ static cJSON *ec_node_create_pump_failed_response(const char *cmd_id, const char
 
     return node_command_handler_create_response(
         cmd_id,
-        "FAILED",
+        "ERROR",
         error_code,
         error_message,
         NULL

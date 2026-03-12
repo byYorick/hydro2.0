@@ -1,0 +1,7 @@
+# E84: Legacy solution preparation stage ported to canonical AE3 two-tank smoke
+
+name: E84_solution_preparation
+description: |
+  Legacy AE2 solution preparation workflow stage migrated to standalone AE3-Lite.
+  Каноничная проверка: AE3 two-tank real-hardware smoke.
+scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

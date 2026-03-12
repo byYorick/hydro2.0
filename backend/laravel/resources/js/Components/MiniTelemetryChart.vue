@@ -75,10 +75,10 @@ import { useTheme } from '@/composables/useTheme'
 
 interface TelemetryDataPoint {
   ts: number
-  value?: number
-  min?: number
-  max?: number
-  avg?: number
+  value?: number | null
+  min?: number | null
+  max?: number | null
+  avg?: number | null
 }
 
 interface Props {

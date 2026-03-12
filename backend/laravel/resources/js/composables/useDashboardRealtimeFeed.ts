@@ -37,7 +37,7 @@ interface RealtimeDashboardEvent {
 }
 
 function normalizeEventKind(kind: string): EventKind {
-  if (kind === 'ALERT' || kind === 'WARNING' || kind === 'INFO' || kind === 'SUCCESS') {
+  if (kind === 'ALERT' || kind === 'WARNING' || kind === 'INFO' || kind === 'ACTION' || kind === 'SUCCESS') {
     return kind
   }
 

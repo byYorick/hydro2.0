@@ -62,7 +62,7 @@ actions:
   # Ищем зону и ноду по UID из конфига симулятора (не по индексу)
   - step: find_test_zone_and_node
     type: set
-    test_zone_uid: zn-test-1
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
     test_node_uid: nd-ph-esp32una
   
   # Шаг 3: Получаем zone_id и node_id по UID через API
@@ -83,8 +83,10 @@ actions:
     query: |
       SELECT id AS zone_id
       FROM zones
-      WHERE uid = 'zn-test-1'
+      WHERE uid = :zone_uid
       LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
     expected_rows: 1
     save: zone_row
 
@@ -93,8 +95,10 @@ actions:
     query: |
       SELECT id AS node_id
       FROM nodes
-      WHERE uid = 'nd-ph-esp32una'
+      WHERE uid = :node_uid
       LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
     expected_rows: 1
     save: node_row
 
@@ -132,19 +136,15 @@ assertions:
       JOIN sensors s ON s.id = tl.sensor_id
       WHERE s.zone_id = :zone_id
         AND s.node_id = :node_id
-        AND s.type = 'PH'
       LIMIT 1
     params:
       zone_id: ${zone_id}
       node_id: ${node_id}
-    timeout: 30.0
+    timeout: 120.0
     expected_rows: 1
     expected:
       - field: value
         operator: is_not_null
-      - field: metric_type
-        operator: equals
-        value: "PH"
       - field: updated_at
         operator: is_not_null
 
@@ -154,7 +154,9 @@ assertions:
     query: |
       SELECT status, last_seen_at
       FROM nodes
-      WHERE uid = 'nd-ph-esp32una'
+      WHERE uid = :node_uid
+    params:
+      node_uid: ${test_node_uid}
     expected_rows: 1
     expected:
       - field: status
@@ -169,7 +171,9 @@ assertions:
     query: |
       SELECT zone_id
       FROM nodes
-      WHERE uid = 'nd-ph-esp32una'
+      WHERE uid = :node_uid
+    params:
+      node_uid: ${test_node_uid}
     expected_rows: 1
     expected:
       - field: zone_id

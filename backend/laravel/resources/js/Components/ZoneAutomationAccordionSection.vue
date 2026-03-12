@@ -1,0 +1,47 @@
+<template>
+  <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl overflow-hidden">
+    <button
+      type="button"
+      class="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-[color:var(--bg-elevated)] transition-colors"
+      @click="isOpen = !isOpen"
+    >
+      <div class="flex items-center gap-2 min-w-0">
+        <h3 class="text-base font-semibold text-[color:var(--text-primary)] truncate">
+          {{ title }}
+        </h3>
+        <slot name="badge" />
+      </div>
+      <svg
+        class="shrink-0 w-4 h-4 text-[color:var(--text-dim)] transition-transform duration-200"
+        :class="isOpen ? 'rotate-180' : ''"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+      >
+        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+      </svg>
+    </button>
+
+    <div
+      v-if="isOpen"
+      class="px-4 pb-4 space-y-4 border-t border-[color:var(--border-muted)]"
+    >
+      <div class="pt-4">
+        <slot />
+      </div>
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+
+const props = withDefaults(defineProps<{
+  title: string
+  defaultOpen?: boolean
+}>(), {
+  defaultOpen: false,
+})
+
+const isOpen = ref(props.defaultOpen)
+</script>

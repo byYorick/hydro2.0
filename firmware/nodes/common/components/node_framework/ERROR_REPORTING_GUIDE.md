@@ -79,7 +79,7 @@ if (err != ESP_OK) {
 ### Пример 2: Критическая ошибка инициализации
 
 ```c
-// В pump_node_init.c
+// В storage_irrigation_node_init.c
 esp_err_t err = pump_driver_init();
 if (err != ESP_OK) {
     // Критическая ошибка - нода перейдет в safe_mode
@@ -170,17 +170,17 @@ node_state_manager_report_error(
 
 ### Регистрация callback для safe_mode
 
-Для нод с актуаторами (pump_node, relay_node, light_node) необходимо зарегистрировать callback для отключения актуаторов в safe_mode:
+Для нод с актуаторами (storage_irrigation_node, relay_node, light_node) необходимо зарегистрировать callback для отключения актуаторов в safe_mode:
 
 ```c
-// В pump_node_app.c или relay_node_app.c
+// В storage_irrigation_node_app.c или relay_node_app.c
 static esp_err_t disable_actuators_in_safe_mode(void *user_ctx) {
     // Отключаем все насосы/реле
     pump_driver_stop_all();
     return ESP_OK;
 }
 
-// В pump_node_app_init()
+// В storage_irrigation_node_app_init()
 node_state_manager_register_safe_mode_callback(
     disable_actuators_in_safe_mode,
     NULL

@@ -7,6 +7,7 @@ use App\Models\DeviceNode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Response;
@@ -56,6 +57,20 @@ class PythonIngestController extends Controller
         Log::info('[COMMAND_ACK_AUTH] Token validated successfully');
     }
 
+    /**
+     * Принять single telemetry sample и немедленно транслировать в WebSocket.
+     *
+     * DUAL DISPATCH: Этот endpoint немедленно диспатчит TelemetryBatchUpdated
+     * (для мгновенного обновления UI), и одновременно пересылает данные в history-logger.
+     * History-logger накапливает телеметрию и независимо вызывает
+     * POST /api/internal/realtime/telemetry-batch каждые ~100ms.
+     *
+     * Это означает, что один telemetry sample может прийти на фронт ДВАЖДЫ
+     * с разными event_id. Frontend обрабатывает это корректно (значения идемпотентны,
+     * последнее значение побеждает), но важно учитывать при отладке.
+     *
+     * Вызывается: mqtt-bridge (или другие Python сервисы) через Bearer token.
+     */
     public function telemetry(Request $request)
     {
         $this->ensureToken($request);
@@ -228,13 +243,13 @@ class PythonIngestController extends Controller
         
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY'],
+            'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY,TIMEOUT,SEND_FAILED'],
             'details' => ['nullable', 'array'],
         ]);
         
         Log::info('[COMMAND_ACK] STEP 3: Request validated', ['data' => $data]);
 
-        // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY
+        // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
         $normalizedStatus = match (strtoupper($data['status'])) {
             'SENT' => \App\Models\Command::STATUS_SENT,
             'ACK' => \App\Models\Command::STATUS_ACK,
@@ -243,6 +258,8 @@ class PythonIngestController extends Controller
             'ERROR' => \App\Models\Command::STATUS_ERROR,
             'INVALID' => \App\Models\Command::STATUS_INVALID,
             'BUSY' => \App\Models\Command::STATUS_BUSY,
+            'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
+            'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']),
         };
         
@@ -253,44 +270,41 @@ class PythonIngestController extends Controller
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
         Log::info('[COMMAND_ACK] STEP 5: Looking up command in database', ['cmd_id' => $data['cmd_id']]);
-        $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
-        if ($command) {
+        $details = $data['details'] ?? [];
+        $skipMessage = null;
+        $command = null;
+        $eventStatus = $normalizedStatus;
+
+        DB::transaction(function () use (&$command, &$eventStatus, &$skipMessage, $data, $normalizedStatus, $details): void {
+            $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $command) {
+                return;
+            }
+
             Log::info('[COMMAND_ACK] STEP 5.1: Command found', [
                 'cmd_id' => $data['cmd_id'],
                 'command_id' => $command->id,
                 'current_status' => $command->status,
             ]);
-            // State machine guard: проверяем валидность перехода статуса
+
             $currentStatus = $command->status;
             $newStatus = $normalizedStatus;
-            
-            // Определяем конечные статусы (нельзя изменять)
-            $finalStatuses = [
-                \App\Models\Command::STATUS_DONE,
-                \App\Models\Command::STATUS_NO_EFFECT,
-                \App\Models\Command::STATUS_ERROR,
-                \App\Models\Command::STATUS_INVALID,
-                \App\Models\Command::STATUS_BUSY,
-            ];
-            
-            // Если команда уже в конечном статусе, не обновляем (запрет отката)
-            if (in_array($currentStatus, $finalStatuses)) {
+
+            $finalStatuses = \App\Models\Command::FINAL_STATUSES;
+            if (in_array($currentStatus, $finalStatuses, true)) {
                 Log::info('commandAck: Command already in final status, skipping update', [
                     'cmd_id' => $data['cmd_id'],
                     'current_status' => $currentStatus,
                     'attempted_status' => $newStatus,
                 ]);
-                
-                return Response::json([
-                    'status' => 'ok',
-                    'message' => 'Command already in final status',
-                ]);
+                $skipMessage = 'Command already in final status';
+                return;
             }
-            
-            // Проверяем переходы: запрещаем откат (например, DONE нельзя заменить на SENT)
-            $isRollback = false;
-            
-            // Запрет перехода назад: если текущий статус более продвинутый, чем новый
+
             $statusOrder = [
                 \App\Models\Command::STATUS_QUEUED => 0,
                 \App\Models\Command::STATUS_SENT => 2,
@@ -300,33 +314,24 @@ class PythonIngestController extends Controller
                 \App\Models\Command::STATUS_ERROR => 4,
                 \App\Models\Command::STATUS_INVALID => 4,
                 \App\Models\Command::STATUS_BUSY => 4,
+                \App\Models\Command::STATUS_TIMEOUT => 4,
+                \App\Models\Command::STATUS_SEND_FAILED => 4,
             ];
-            
+
             $currentOrder = $statusOrder[$currentStatus] ?? 0;
             $newOrder = $statusOrder[$newStatus] ?? 0;
-            
-            // Запрещаем откат
             if ($newOrder < $currentOrder) {
-                $isRollback = true;
-            }
-            
-            if ($isRollback) {
                 Log::warning('commandAck: Status rollback prevented by state machine guard', [
                     'cmd_id' => $data['cmd_id'],
                     'current_status' => $currentStatus,
                     'attempted_status' => $newStatus,
                 ]);
-                
-                return Response::json([
-                    'status' => 'ok',
-                    'message' => 'Status rollback prevented',
-                ]);
+                $skipMessage = 'Status rollback prevented';
+                return;
             }
-            
+
             $updates = ['status' => $normalizedStatus];
-            
-            // Добавляем детали из details если есть
-            $details = $data['details'] ?? [];
+
             if (isset($details['error_code'])) {
                 $updates['error_code'] = $details['error_code'];
             }
@@ -340,29 +345,27 @@ class PythonIngestController extends Controller
                 $updates['duration_ms'] = $details['duration_ms'];
             }
 
-            // SENT - команда отправлена в MQTT (подтверждение корреляции)
             if ($normalizedStatus === \App\Models\Command::STATUS_SENT && ! $command->sent_at) {
                 $updates['sent_at'] = now();
             }
-            
-            // ACK - команда принята к выполнению
+
             if ($normalizedStatus === \App\Models\Command::STATUS_ACK && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            
-            // DONE/NO_EFFECT - команда завершена
+
             if (in_array($normalizedStatus, [
                 \App\Models\Command::STATUS_DONE,
                 \App\Models\Command::STATUS_NO_EFFECT,
             ], true) && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            
-            // ERROR/INVALID/BUSY - команда завершилась с ошибкой
+
             if (in_array($normalizedStatus, [
                 \App\Models\Command::STATUS_ERROR,
                 \App\Models\Command::STATUS_INVALID,
                 \App\Models\Command::STATUS_BUSY,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED,
             ], true) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
@@ -371,51 +374,16 @@ class PythonIngestController extends Controller
                 'cmd_id' => $data['cmd_id'],
                 'updates' => $updates,
             ]);
-            
-            $command->update($updates);
-            
-            Log::info('[COMMAND_ACK] STEP 8.1: Command updated successfully', [
-                'cmd_id' => $data['cmd_id'],
-                'new_status' => $command->fresh()->status,
-            ]);
 
-            // Дополнительно сразу шлем событие с деталями ошибки/статуса, чтобы фронт получил уведомление
-            $zoneId = $command->zone_id;
-            $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
-            $message = $details['message'] ?? null;
-
-            Log::info('[COMMAND_ACK] STEP 9: Dispatching WebSocket event', [
-                'cmd_id' => $data['cmd_id'],
-                'normalized_status' => $normalizedStatus,
-                'zone_id' => $zoneId,
-            ]);
-
-            if (in_array($normalizedStatus, [
-                \App\Models\Command::STATUS_ERROR,
-                \App\Models\Command::STATUS_INVALID,
-                \App\Models\Command::STATUS_BUSY,
-            ], true)) {
-                Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
-                event(new \App\Events\CommandFailed(
-                    commandId: $command->cmd_id,
-                    message: $message ?? 'Command failed',
-                    error: $errorMessage,
-                    status: $normalizedStatus,
-                    zoneId: $zoneId
-                ));
-            } else {
-                Log::info('[COMMAND_ACK] STEP 9.2: Dispatching CommandStatusUpdated event');
-                event(new \App\Events\CommandStatusUpdated(
-                    commandId: $command->cmd_id,
-                    status: $normalizedStatus,
-                    message: $message ?? 'Command status updated',
-                    error: $errorMessage,
-                    zoneId: $zoneId
-                ));
+            $command->fill($updates);
+            if ($command->isDirty()) {
+                $command->save();
             }
-            
-            Log::info('[COMMAND_ACK] STEP 10: Event dispatched, returning success');
-        } else {
+            $command = $command->fresh();
+            $eventStatus = (string) $command->status;
+        }, 3);
+
+        if (! $command) {
             Log::warning('[COMMAND_ACK] STEP 5.2: Command not found for cmd_id', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
@@ -428,6 +396,56 @@ class PythonIngestController extends Controller
                 'message' => 'Command not found',
             ], 404);
         }
+
+        if ($skipMessage !== null) {
+            return Response::json([
+                'status' => 'ok',
+                'message' => $skipMessage,
+            ]);
+        }
+
+        Log::info('[COMMAND_ACK] STEP 8.1: Command updated successfully', [
+            'cmd_id' => $data['cmd_id'],
+            'new_status' => $command->status,
+        ]);
+
+        $zoneId = $command->zone_id;
+        $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
+        $message = $details['message'] ?? null;
+
+        Log::info('[COMMAND_ACK] STEP 9: Dispatching WebSocket event', [
+            'cmd_id' => $data['cmd_id'],
+            'normalized_status' => $eventStatus,
+            'zone_id' => $zoneId,
+        ]);
+
+        if (in_array($eventStatus, [
+            \App\Models\Command::STATUS_ERROR,
+            \App\Models\Command::STATUS_INVALID,
+            \App\Models\Command::STATUS_BUSY,
+            \App\Models\Command::STATUS_TIMEOUT,
+            \App\Models\Command::STATUS_SEND_FAILED,
+        ], true)) {
+            Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
+            event(new \App\Events\CommandFailed(
+                commandId: $command->cmd_id,
+                message: $message ?? 'Command failed',
+                error: $errorMessage,
+                status: $eventStatus,
+                zoneId: $zoneId
+            ));
+        } else {
+            Log::info('[COMMAND_ACK] STEP 9.2: Dispatching CommandStatusUpdated event');
+            event(new \App\Events\CommandStatusUpdated(
+                commandId: $command->cmd_id,
+                status: $eventStatus,
+                message: $message ?? 'Command status updated',
+                error: $errorMessage,
+                zoneId: $zoneId
+            ));
+        }
+
+        Log::info('[COMMAND_ACK] STEP 10: Event dispatched, returning success');
 
         Log::info('[COMMAND_ACK] STEP 11: Returning response');
         return Response::json(['status' => 'ok']);
@@ -552,6 +570,9 @@ class PythonIngestController extends Controller
                     code: $data['code'],
                     context: [
                         'details' => $details,
+                        'resolved_by' => 'python_ingest',
+                        'resolved_via' => 'auto',
+                        'resolved_source' => $source,
                     ],
                 );
 

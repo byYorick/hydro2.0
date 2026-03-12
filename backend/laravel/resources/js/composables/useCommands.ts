@@ -18,6 +18,22 @@ interface PendingCommandInternal {
   message?: string
 }
 
+/** Нормализованный ответ API команды (может быть в разных форматах) */
+interface CommandRawResponse {
+  data?: {
+    id?: number | string
+    type?: CommandType
+    command_id?: string
+    status?: CommandStatus
+    created_at?: string
+    [key: string]: unknown
+  }
+  id?: number | string
+  type?: CommandType
+  status?: CommandStatus
+  created_at?: string
+}
+
 function extractCommandErrorMessage(err: unknown): string {
   const fallback = 'Неизвестная ошибка'
   if (!err || typeof err !== 'object') {
@@ -105,7 +121,7 @@ export function useCommands(showToast?: ToastHandler) {
         }
       )
 
-      const raw = response.data as any
+      const raw = response.data as CommandRawResponse
 
       // Пытаемся извлечь идентификатор команды из разных форматов ответа:
       // 1) { data: { id, type, ... } } - полный объект команды
@@ -179,15 +195,24 @@ export function useCommands(showToast?: ToastHandler) {
     error.value = null
 
     try {
+      const commandTypeLower = String(type || '').toLowerCase()
+      const isSensorModeCommand =
+        commandTypeLower === 'activate_sensor_mode' ||
+        commandTypeLower === 'deactivate_sensor_mode'
+      const requestPayload: { type: CommandType; params: CommandParams; channel?: string } = {
+        type,
+        params,
+      }
+      if (isSensorModeCommand) {
+        requestPayload.channel = 'system'
+      }
+
       const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
         `/api/nodes/${nodeId}/commands`,
-        {
-          type,
-          params
-        }
+        requestPayload
       )
 
-      const raw = response.data as any
+      const raw = response.data as CommandRawResponse
 
       let command: Command | null = null
       let commandId: number | string | null = null

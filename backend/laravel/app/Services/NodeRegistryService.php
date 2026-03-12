@@ -6,7 +6,6 @@ use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\Zone;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -31,68 +30,108 @@ class NodeRegistryService
         ?string $zoneUid = null,
         array $attributes = []
     ): DeviceNode {
-        return DB::transaction(function () use ($nodeUid, $zoneUid, $attributes) {
-            // Находим или создаём узел
-            $node = DeviceNode::firstOrNew(['uid' => $nodeUid]);
-            
-            // КРИТИЧНО: Автопривязка к зоне при регистрации УДАЛЕНА
-            // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
-            // Если указан zoneUid, игнорируем его и логируем предупреждение
-            if ($zoneUid) {
-                Log::warning('Node registration: zoneUid provided but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+        $maxRetries = 5;
+        $attempt = 0;
+
+        while (true) {
+            try {
+                return DB::transaction(function () use ($nodeUid, $zoneUid, $attributes) {
+                    // Находим узел под row-lock, чтобы избежать гонок update/insert.
+                    $node = DeviceNode::where('uid', $nodeUid)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$node) {
+                        $node = new DeviceNode();
+                        $node->uid = $nodeUid;
+                    }
+
+                    // КРИТИЧНО: Автопривязка к зоне при регистрации УДАЛЕНА
+                    // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
+                    // Если указан zoneUid, игнорируем его и логируем предупреждение
+                    if ($zoneUid) {
+                        Log::warning('Node registration: zoneUid provided but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+                            'node_uid' => $nodeUid,
+                            'requested_zone_uid' => $zoneUid,
+                            'ip' => request()->ip(),
+                        ]);
+                    }
+
+                    // Обновляем атрибуты
+                    if (isset($attributes['firmware_version'])) {
+                        $node->fw_version = $attributes['firmware_version'];
+                    }
+
+                    if (isset($attributes['hardware_revision'])) {
+                        $node->hardware_revision = $attributes['hardware_revision'];
+                    }
+
+                    if (isset($attributes['name'])) {
+                        $node->name = $attributes['name'];
+                    }
+
+                    $incomingType = $attributes['type'] ?? $node->type;
+                    $node->type = $this->normalizeNodeType((string) $incomingType);
+
+                    // Обновляем hardware_id, если указан
+                    if (isset($attributes['hardware_id'])) {
+                        $node->hardware_id = $attributes['hardware_id'];
+                    }
+
+                    // Устанавливаем first_seen_at при первом появлении
+                    if (!$node->id || !$node->first_seen_at) {
+                        $node->first_seen_at = now();
+                    }
+
+                    // Отмечаем как validated
+                    $node->validated = true;
+
+                    // Устанавливаем lifecycle_state в REGISTERED_BACKEND при регистрации
+                    if (!$node->id || !$node->lifecycle_state) {
+                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    }
+
+                    $node->save();
+
+                    Log::info('Node registered', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                        'zone_id' => $node->zone_id,
+                        'validated' => $node->validated,
+                        'lifecycle_state' => $node->lifecycle_state?->value,
+                    ]);
+
+                    return $node;
+                });
+            } catch (\Throwable $e) {
+                if (!($this->isRetryableDatabaseFailure($e) || $this->isUidCollision($e))) {
+                    throw $e;
+                }
+
+                $attempt++;
+                if ($attempt >= $maxRetries) {
+                    $fallbackNode = $this->findExistingNodeByUidOrHardware($nodeUid, $attributes['hardware_id'] ?? null);
+                    if ($fallbackNode) {
+                        Log::warning('Node registration recovered by fallback lookup after transient DB failures', [
+                            'node_uid' => $nodeUid,
+                            'hardware_id' => $attributes['hardware_id'] ?? null,
+                            'attempts' => $attempt,
+                            'max_retries' => $maxRetries,
+                        ]);
+                        return $fallbackNode;
+                    }
+                    throw $e;
+                }
+
+                Log::warning('Node registration retry after transient DB failure', [
                     'node_uid' => $nodeUid,
-                    'requested_zone_uid' => $zoneUid,
-                    'ip' => request()->ip(),
+                    'attempt' => $attempt,
+                    'max_retries' => $maxRetries,
+                    'error' => $e->getMessage(),
                 ]);
+                usleep(50000 * $attempt);
             }
-            
-            // Обновляем атрибуты
-            if (isset($attributes['firmware_version'])) {
-                $node->fw_version = $attributes['firmware_version'];
-            }
-            
-            if (isset($attributes['hardware_revision'])) {
-                $node->hardware_revision = $attributes['hardware_revision'];
-            }
-            
-            if (isset($attributes['name'])) {
-                $node->name = $attributes['name'];
-            }
-            
-            $incomingType = $attributes['type'] ?? $node->type;
-            $node->type = $this->normalizeNodeType((string) $incomingType);
-            
-            // Обновляем hardware_id, если указан
-            if (isset($attributes['hardware_id'])) {
-                $node->hardware_id = $attributes['hardware_id'];
-            }
-            
-            // Устанавливаем first_seen_at при первом появлении
-            // Проверяем через id, так как firstOrNew создаёт модель, но не сохраняет её
-            if (!$node->id || !$node->first_seen_at) {
-                $node->first_seen_at = now();
-            }
-            
-            // Отмечаем как validated
-            $node->validated = true;
-            
-            // Устанавливаем lifecycle_state в REGISTERED_BACKEND при регистрации
-            if (!$node->id || !$node->lifecycle_state) {
-                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            }
-            
-            $node->save();
-            
-            Log::info('Node registered', [
-                'node_id' => $node->id,
-                'uid' => $node->uid,
-                'zone_id' => $node->zone_id,
-                'validated' => $node->validated,
-                'lifecycle_state' => $node->lifecycle_state?->value,
-            ]);
-            
-            return $node;
-        });
+        }
     }
     
     /**
@@ -121,14 +160,9 @@ class NodeRegistryService
         $useRequestedNodeUid = !empty($requestedNodeUid);
         
         while ($attempt < $maxRetries) {
-            $transactionLevelBefore = DB::transactionLevel();
             DB::beginTransaction();
 
             try {
-                if (DB::getDriverName() === 'pgsql' && $transactionLevelBefore === 0) {
-                    DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
-                }
-
                 $hardwareId = $helloData['hardware_id'] ?? null;
                 if (!$hardwareId) {
                     throw new \InvalidArgumentException('hardware_id is required');
@@ -238,10 +272,10 @@ class NodeRegistryService
 
                 DB::commit();
                 return $node;
-            } catch (\Illuminate\Database\QueryException $e) {
+            } catch (\Throwable $e) {
                 DB::rollBack();
 
-                if ($e->getCode() === '23505' || str_contains($e->getMessage(), 'duplicate key value')) {
+                if ($this->isUidCollision($e)) {
                     if ($useRequestedNodeUid) {
                         Log::warning('Requested node_uid caused unique collision, switching to generated uid', [
                             'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
@@ -256,6 +290,19 @@ class NodeRegistryService
                     $uidAttempt++;
 
                     if ($uidAttempt >= $maxUidAttempts) {
+                        $fallbackNode = $this->findExistingNodeByUidOrHardware(
+                            $requestedNodeUid,
+                            $helloData['hardware_id'] ?? null
+                        );
+                        if ($fallbackNode) {
+                            Log::warning('Node registration recovered by fallback lookup after UID collision storm', [
+                                'hardware_id' => $helloData['hardware_id'] ?? null,
+                                'requested_uid' => $requestedNodeUid,
+                                'attempts' => $uidAttempt,
+                                'max_attempts' => $maxUidAttempts,
+                            ]);
+                            return $fallbackNode;
+                        }
                         Log::error('Failed to generate unique UID after max attempts', [
                             'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
                             'max_attempts' => $maxUidAttempts,
@@ -272,10 +319,23 @@ class NodeRegistryService
                     continue;
                 }
 
-                if ($e->getCode() === '40001' || str_contains($e->getMessage(), 'serialization failure')) {
+                if ($this->isRetryableDatabaseFailure($e)) {
                     $attempt++;
 
                     if ($attempt >= $maxRetries) {
+                        $fallbackNode = $this->findExistingNodeByUidOrHardware(
+                            $requestedNodeUid,
+                            $helloData['hardware_id'] ?? null
+                        );
+                        if ($fallbackNode) {
+                            Log::warning('Node registration recovered by fallback lookup after serialization retries exhausted', [
+                                'hardware_id' => $helloData['hardware_id'] ?? null,
+                                'requested_uid' => $requestedNodeUid,
+                                'attempts' => $attempt,
+                                'max_retries' => $maxRetries,
+                            ]);
+                            return $fallbackNode;
+                        }
                         Log::error('Failed to register node after max retries due to serialization failure', [
                             'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
                             'max_retries' => $maxRetries,
@@ -293,13 +353,61 @@ class NodeRegistryService
                 }
 
                 throw $e;
-            } catch (\Throwable $e) {
-                DB::rollBack();
-                throw $e;
             }
         }
-        
+
+        $fallbackNode = $this->findExistingNodeByUidOrHardware(
+            $requestedNodeUid,
+            $helloData['hardware_id'] ?? null
+        );
+        if ($fallbackNode) {
+            Log::warning('Node registration recovered by fallback lookup after retry loop exhaustion', [
+                'hardware_id' => $helloData['hardware_id'] ?? null,
+                'requested_uid' => $requestedNodeUid,
+            ]);
+            return $fallbackNode;
+        }
+
         throw new \RuntimeException('Failed to register node: max retries exceeded');
+    }
+
+    private function findExistingNodeByUidOrHardware(?string $nodeUid, ?string $hardwareId): ?DeviceNode
+    {
+        if ($nodeUid) {
+            $node = DeviceNode::where('uid', $nodeUid)->first();
+            if ($node) {
+                return $node;
+            }
+        }
+
+        if ($hardwareId) {
+            $node = DeviceNode::where('hardware_id', $hardwareId)->first();
+            if ($node) {
+                return $node;
+            }
+        }
+
+        return null;
+    }
+
+    private function isRetryableDatabaseFailure(\Throwable $e): bool
+    {
+        $errorInfo = property_exists($e, 'errorInfo') ? ($e->errorInfo ?? []) : [];
+        $sqlState = (string) ($errorInfo[0] ?? $e->getCode() ?? '');
+        $message = strtolower((string) $e->getMessage());
+
+        return in_array($sqlState, ['40001', '40P01'], true)
+            || str_contains($message, 'serialization failure')
+            || str_contains($message, 'deadlock detected');
+    }
+
+    private function isUidCollision(\Throwable $e): bool
+    {
+        $errorInfo = property_exists($e, 'errorInfo') ? ($e->errorInfo ?? []) : [];
+        $sqlState = (string) ($errorInfo[0] ?? $e->getCode() ?? '');
+        $message = strtolower((string) $e->getMessage());
+
+        return $sqlState === '23505' || str_contains($message, 'duplicate key value');
     }
     
     /**

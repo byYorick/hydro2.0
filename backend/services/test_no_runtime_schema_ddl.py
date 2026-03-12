@@ -18,7 +18,6 @@ SERVICE_DIRS = (
     "common",
     "history-logger",
     "automation-engine",
-    "scheduler",
     "mqtt-bridge",
     "telemetry-aggregator",
     "digital-twin",

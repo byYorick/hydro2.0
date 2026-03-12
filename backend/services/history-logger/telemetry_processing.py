@@ -53,7 +53,10 @@ REDIS_PUSH_RETRY_BACKOFF_BASE = 2
 
 # Глобальный кеш для резолва zone_id и node_id (с TTL refresh)
 _zone_cache: dict[tuple[str, Optional[str]], int] = {}
-_node_cache: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
+_node_cache: dict[
+    tuple[str, Optional[str]],
+    tuple[int, Optional[int], Optional[int]] | tuple[int, Optional[int]],
+] = {}
 _zone_greenhouse_cache: dict[int, int] = {}
 _sensor_cache: "OrderedDict[tuple[int, Optional[int], str, str], int]" = OrderedDict()
 _sensor_cache_max_size = int(os.getenv("SENSOR_CACHE_MAX_SIZE", "5000"))
@@ -234,6 +237,26 @@ def _build_anomaly_throttle_key(
             channel or "-",
         ]
     )
+
+
+def _parse_node_info(
+    node_info: object,
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    if not isinstance(node_info, tuple) or len(node_info) < 2:
+        return None, None, None
+    node_id_raw = node_info[0]
+    node_zone_id_raw = node_info[1]
+    pending_zone_id_raw = node_info[2] if len(node_info) >= 3 else None
+    node_id = int(node_id_raw) if isinstance(node_id_raw, int) else None
+    node_zone_id = (
+        int(node_zone_id_raw) if isinstance(node_zone_id_raw, int) else None
+    )
+    pending_zone_id = (
+        int(pending_zone_id_raw)
+        if isinstance(pending_zone_id_raw, int)
+        else None
+    )
+    return node_id, node_zone_id, pending_zone_id
 
 
 async def _emit_telemetry_anomaly_alert(
@@ -928,30 +951,40 @@ async def refresh_caches() -> None:
             JOIN greenhouses g ON g.id = z.greenhouse_id
             """
         )
-        _zone_cache.clear()
-        _zone_greenhouse_cache.clear()
-        for zone in zones:
-            zone_uid = zone.get("uid")
-            zone_id = zone.get("id")
-            if not zone_uid or zone_id is None:
-                continue
-            gh_uid = zone.get("gh_uid")
-            key = (zone_uid, gh_uid)
-            _zone_cache[key] = zone_id
-            if (zone_uid, None) not in _zone_cache:
-                _zone_cache[(zone_uid, None)] = zone_id
-            greenhouse_id = zone.get("greenhouse_id")
-            if greenhouse_id is not None:
-                _zone_greenhouse_cache[zone_id] = greenhouse_id
+        if zones:
+            _zone_cache.clear()
+            _zone_greenhouse_cache.clear()
+            for zone in zones:
+                zone_uid = zone.get("uid")
+                zone_id = zone.get("id")
+                if not zone_uid or zone_id is None:
+                    continue
+                gh_uid = zone.get("gh_uid")
+                key = (zone_uid, gh_uid)
+                _zone_cache[key] = zone_id
+                if (zone_uid, None) not in _zone_cache:
+                    _zone_cache[(zone_uid, None)] = zone_id
+                greenhouse_id = zone.get("greenhouse_id")
+                if greenhouse_id is not None:
+                    _zone_greenhouse_cache[zone_id] = greenhouse_id
+        else:
+            logger.warning("refresh_caches: zones query returned 0 rows, keeping existing cache to avoid data loss")
 
         nodes = await fetch(
             """
-            SELECT n.id, n.uid, n.zone_id, g.uid as gh_uid
+            SELECT n.id, n.uid, n.zone_id, n.pending_zone_id, g.uid as gh_uid
             FROM nodes n
             LEFT JOIN zones z ON z.id = n.zone_id
             LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
             """
         )
+        if not nodes:
+            logger.warning("refresh_caches: nodes query returned 0 rows, keeping existing cache to avoid data loss")
+            _cache_last_update = time.time()
+            logger.info(
+                f"Cache refreshed: {len(_zone_cache)} zone entries, {len(_node_cache)} node entries"
+            )
+            return
         _node_cache.clear()
         for node in nodes:
             node_uid = node.get("uid")
@@ -960,10 +993,11 @@ async def refresh_caches() -> None:
                 continue
             gh_uid = node.get("gh_uid")
             zone_id = node.get("zone_id")
+            pending_zone_id = node.get("pending_zone_id")
             key = (node_uid, gh_uid)
-            _node_cache[key] = (node_id, zone_id)
+            _node_cache[key] = (node_id, zone_id, pending_zone_id)
             if (node_uid, None) not in _node_cache:
-                _node_cache[(node_uid, None)] = (node_id, zone_id)
+                _node_cache[(node_uid, None)] = (node_id, zone_id, pending_zone_id)
 
         _cache_last_update = time.time()
         logger.info(
@@ -1074,7 +1108,11 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         details={"missing_entity": "zone"},
                     )
 
-    node_uid_to_info: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
+    node_uid_to_info: dict[
+        tuple[str, Optional[str]],
+        tuple[int, Optional[int], Optional[int]] | tuple[int, Optional[int]],
+    ] = {}
+    node_info_source: dict[tuple[str, Optional[str]], str] = {}
 
     node_gh_pairs = list(
         set((s.node_uid, s.gh_uid) for s in samples if s.node_uid)
@@ -1086,10 +1124,12 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             key = (node_uid, gh_uid)
             if key in _node_cache:
                 node_uid_to_info[key] = _node_cache[key]
+                node_info_source[key] = "cache"
             else:
                 fallback_key = (node_uid, None)
                 if fallback_key in _node_cache:
                     node_uid_to_info[key] = _node_cache[fallback_key]
+                    node_info_source[key] = "cache"
                 else:
                     missing_nodes.append((node_uid, gh_uid))
 
@@ -1102,7 +1142,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 gh_uids = [g for _, g in nodes_with_gh]
                 node_rows = await fetch(
                     """
-                    SELECT n.id, n.uid, n.zone_id, g.uid as gh_uid
+                    SELECT n.id, n.uid, n.zone_id, n.pending_zone_id, g.uid as gh_uid
                     FROM nodes n
                     LEFT JOIN zones z ON z.id = n.zone_id
                     LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
@@ -1121,9 +1161,11 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         continue
                     gh_uid = node.get("gh_uid")
                     zone_id = node.get("zone_id")
+                    pending_zone_id = node.get("pending_zone_id")
                     key = (node_uid, gh_uid)
-                    node_uid_to_info[key] = (node_id, zone_id)
-                    _node_cache[key] = (node_id, zone_id)
+                    node_uid_to_info[key] = (node_id, zone_id, pending_zone_id)
+                    _node_cache[key] = (node_id, zone_id, pending_zone_id)
+                    node_info_source[key] = "db"
 
                 unresolved_nodes_with_gh = [
                     (node_uid, gh_uid)
@@ -1136,7 +1178,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     )
                     fallback_rows = await fetch(
                         """
-                        SELECT id, uid, zone_id
+                        SELECT id, uid, zone_id, pending_zone_id
                         FROM nodes
                         WHERE uid = ANY($1)
                         """,
@@ -1149,9 +1191,11 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         if not node_uid or node_id is None:
                             continue
                         zone_id = node.get("zone_id")
+                        pending_zone_id = node.get("pending_zone_id")
                         key = (node_uid, None)
-                        node_uid_to_info[key] = (node_id, zone_id)
-                        _node_cache[key] = (node_id, zone_id)
+                        node_uid_to_info[key] = (node_id, zone_id, pending_zone_id)
+                        _node_cache[key] = (node_id, zone_id, pending_zone_id)
+                        node_info_source[key] = "db"
 
                     for node_uid, gh_uid in unresolved_nodes_with_gh:
                         fallback_key = (node_uid, None)
@@ -1159,12 +1203,16 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         if fallback_info is not None:
                             node_uid_to_info[(node_uid, gh_uid)] = fallback_info
                             _node_cache[(node_uid, gh_uid)] = fallback_info
+                            node_info_source[(node_uid, gh_uid)] = node_info_source.get(
+                                fallback_key,
+                                "db",
+                            )
 
             if nodes_without_gh:
                 node_uids = [n for n, _ in nodes_without_gh]
                 node_rows = await fetch(
                     """
-                    SELECT id, uid, zone_id
+                    SELECT id, uid, zone_id, pending_zone_id
                     FROM nodes
                     WHERE uid = ANY($1)
                     """,
@@ -1177,9 +1225,11 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     if not node_uid or node_id is None:
                         continue
                     zone_id = node.get("zone_id")
+                    pending_zone_id = node.get("pending_zone_id")
                     key = (node_uid, None)
-                    node_uid_to_info[key] = (node_id, zone_id)
-                    _node_cache[key] = (node_id, zone_id)
+                    node_uid_to_info[key] = (node_id, zone_id, pending_zone_id)
+                    _node_cache[key] = (node_id, zone_id, pending_zone_id)
+                    node_info_source[key] = "db"
 
         for node_uid, gh_uid in node_gh_pairs:
             if (node_uid, gh_uid) not in node_uid_to_info:
@@ -1210,6 +1260,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
         tuple[int, str], TelemetrySampleModel
     ] = {}
     node_unassigned_detected_in_batch: set[tuple[int, str]] = set()
+    node_assignment_refresh_attempted: set[tuple[str, Optional[str]]] = set()
     zone_ids_for_greenhouse: set[int] = set()
 
     for sample in samples:
@@ -1221,13 +1272,24 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
 
         node_id = None
         node_zone_id = None
+        node_pending_zone_id = None
+        node_info_key: Optional[tuple[str, Optional[str]]] = None
+        node_info_origin: Optional[str] = None
         if sample.node_uid:
-            node_info = node_uid_to_info.get((sample.node_uid, sample.gh_uid))
+            primary_key = (sample.node_uid, sample.gh_uid)
+            node_info = node_uid_to_info.get(primary_key)
+            if node_info is not None:
+                node_info_key = primary_key
             if node_info is None and sample.gh_uid:
-                node_info = node_uid_to_info.get((sample.node_uid, None))
+                fallback_key = (sample.node_uid, None)
+                node_info = node_uid_to_info.get(fallback_key)
+                if node_info is not None:
+                    node_info_key = fallback_key
 
             if node_info:
-                node_id, node_zone_id = node_info
+                node_id, node_zone_id, node_pending_zone_id = _parse_node_info(node_info)
+                if node_info_key is not None:
+                    node_info_origin = node_info_source.get(node_info_key)
 
         if zone_id is None:
             if not sample.zone_uid:
@@ -1277,7 +1339,68 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             )
             continue
 
+        if (
+            sample.node_uid
+            and zone_id is not None
+            and node_zone_id is None
+            and node_pending_zone_id is None
+            and node_info_origin == "cache"
+        ):
+            refresh_key = (sample.node_uid, sample.gh_uid)
+            if refresh_key not in node_assignment_refresh_attempted:
+                node_assignment_refresh_attempted.add(refresh_key)
+                try:
+                    refreshed_rows = await fetch(
+                        """
+                        SELECT id, zone_id, pending_zone_id
+                        FROM nodes
+                        WHERE uid = $1
+                        LIMIT 1
+                        """,
+                        sample.node_uid,
+                    )
+                except Exception:
+                    refreshed_rows = []
+                    logger.warning(
+                        "Failed to refresh node assignment from DB, using cached node info",
+                        extra={
+                            "node_uid": sample.node_uid,
+                            "gh_uid": sample.gh_uid,
+                            "zone_id": zone_id,
+                        },
+                        exc_info=True,
+                    )
+
+                if refreshed_rows:
+                    refreshed_node = refreshed_rows[0]
+                    refreshed_info = (
+                        refreshed_node.get("id"),
+                        refreshed_node.get("zone_id"),
+                        refreshed_node.get("pending_zone_id"),
+                    )
+                    for cache_key in ((sample.node_uid, sample.gh_uid), (sample.node_uid, None)):
+                        node_uid_to_info[cache_key] = refreshed_info
+                        _node_cache[cache_key] = refreshed_info
+                        node_info_source[cache_key] = "db_refresh"
+
+                    node_id, node_zone_id, node_pending_zone_id = _parse_node_info(refreshed_info)
+
         if node_zone_id is None:
+            if node_pending_zone_id is not None and node_pending_zone_id == zone_id:
+                logger.info(
+                    "Skipping sample: node assignment pending, telemetry ignored until zone binding is confirmed",
+                    extra={
+                        "node_uid": sample.node_uid,
+                        "node_id": node_id,
+                        "pending_zone_id": node_pending_zone_id,
+                        "requested_zone_id": zone_id,
+                        "zone_uid": sample.zone_uid,
+                        "gh_uid": sample.gh_uid,
+                        "metric_type": sample.metric_type,
+                    },
+                )
+                TELEMETRY_DROPPED.labels(reason="node_assignment_pending").inc()
+                continue
             if sample.node_uid:
                 key = (zone_id, sample.node_uid)
                 node_unassigned_detected_in_batch.add(key)
@@ -1290,6 +1413,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     "zone_uid": sample.zone_uid,
                     "gh_uid": sample.gh_uid,
                     "metric_type": sample.metric_type,
+                    "pending_zone_id": node_pending_zone_id,
                 },
             )
             TELEMETRY_DROPPED.labels(reason="node_unassigned").inc()
@@ -1300,9 +1424,14 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 gh_uid=sample.gh_uid,
                 zone_uid=sample.zone_uid,
                 node_uid=sample.node_uid,
-                channel=sample.channel,
-                metric_type=sample.metric_type,
-                details={"node_id": node_id},
+                channel=None,
+                metric_type=None,
+                details={
+                    "node_id": node_id,
+                    "pending_zone_id": node_pending_zone_id,
+                    "sample_channel": sample.channel,
+                    "sample_metric_type": sample.metric_type,
+                },
             )
             continue
 
@@ -1595,31 +1724,40 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
 
     if telemetry_last_updates:
         try:
-            values_list = []
-            params_list = []
-            param_index = 1
+            sensor_ids: list[int] = []
+            last_values: list[float] = []
+            last_ts_values: list[datetime] = []
+            last_quality_values: list[str] = []
+            updated_at_values: list[datetime] = []
             for sensor_id, update_data in telemetry_last_updates.items():
-                values_list.append(
-                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, "
-                    f"${param_index + 3}, ${param_index + 4})"
-                )
-                params_list.extend(
-                    [
-                        sensor_id,
-                        update_data["value"],
-                        update_data["ts"],
-                        update_data["quality"],
-                        update_data["updated_at"],
-                    ]
-                )
-                param_index += 5
+                sensor_ids.append(sensor_id)
+                last_values.append(update_data["value"])
+                last_ts_values.append(update_data["ts"])
+                last_quality_values.append(update_data["quality"])
+                updated_at_values.append(update_data["updated_at"])
 
-            if values_list:
-                query = f"""
+            if sensor_ids:
+                query = """
+                    WITH incoming AS (
+                        SELECT *
+                        FROM UNNEST(
+                            $1::integer[],
+                            $2::double precision[],
+                            $3::timestamp[],
+                            $4::text[],
+                            $5::timestamp[]
+                        ) AS t(sensor_id, last_value, last_ts, last_quality, updated_at)
+                    ),
+                    existing AS (
+                        SELECT i.sensor_id, i.last_value, i.last_ts, i.last_quality, i.updated_at
+                        FROM incoming i
+                        JOIN sensors s ON s.id = i.sensor_id
+                    )
                     INSERT INTO telemetry_last (
                         sensor_id, last_value, last_ts, last_quality, updated_at
                     )
-                    VALUES {', '.join(values_list)}
+                    SELECT sensor_id, last_value, last_ts, last_quality, updated_at
+                    FROM existing
                     ON CONFLICT (sensor_id)
                     DO UPDATE SET
                         last_value = EXCLUDED.last_value,
@@ -1627,7 +1765,14 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         last_quality = EXCLUDED.last_quality,
                         updated_at = EXCLUDED.updated_at
                 """
-                await execute(query, *params_list)
+                await execute(
+                    query,
+                    sensor_ids,
+                    last_values,
+                    last_ts_values,
+                    last_quality_values,
+                    updated_at_values,
+                )
                 logger.debug(
                     "Batch upserted %s telemetry_last records",
                     len(telemetry_last_updates),

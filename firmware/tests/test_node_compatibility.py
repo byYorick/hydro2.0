@@ -14,7 +14,10 @@
 """
 
 import argparse
+import hashlib
+import hmac
 import json
+import os
 import time
 import paho.mqtt.client as mqtt
 import jsonschema
@@ -80,6 +83,21 @@ class NodeCompatibilityTester:
             return False, f"Schema validation error: {e.message}"
         except Exception as e:
             return False, f"Error: {str(e)}"
+
+    def build_signed_command(self, *, cmd_id: str, cmd: str, params: Dict) -> Dict:
+        """Собрать strict payload команды с ts/sig по canonical-json."""
+        ts = int(time.time())
+        base_payload = {
+            "cmd_id": cmd_id,
+            "cmd": cmd,
+            "params": params,
+            "ts": ts,
+        }
+        canonical = json.dumps(base_payload, sort_keys=True, separators=(',', ':'))
+        secret = os.getenv("NODE_DEFAULT_SECRET", "hydro-default-secret-key-2025")
+        sig = hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+        base_payload["sig"] = sig
+        return base_payload
     
     def on_connect(self, client, userdata, flags, rc):
         """Callback при подключении к MQTT."""
@@ -218,13 +236,11 @@ class NodeCompatibilityTester:
         # Отправляем тестовую команду
         cmd_id = f"test-cmd-{int(time.time())}"
         command_topic = f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/ph_sensor/command"
-        command = {
-            "cmd_id": cmd_id,
-            "cmd": "set_relay",
-            "params": {
-                "state": True
-            }
-        }
+        command = self.build_signed_command(
+            cmd_id=cmd_id,
+            cmd="set_relay",
+            params={"state": True},
+        )
         
         self.client.publish(command_topic, json.dumps(command), qos=1)
         print(f"  Отправлена команда: {cmd_id}")

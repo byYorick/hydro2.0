@@ -4,7 +4,13 @@
 import { ref, type Ref } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
-import type { PidConfig, PidConfigWithMeta, PidLog } from '@/types/PidConfig'
+import type {
+  PidConfig,
+  PidConfigWithMeta,
+  PidLog,
+  PumpCalibration,
+  RelayAutotuneStatus,
+} from '@/types/PidConfig'
 
 /**
  * Composable для работы с PID конфигами
@@ -149,6 +155,119 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
+  /**
+   * Получить калибровки насосов зоны
+   */
+  async function getPumpCalibrations(zoneId: number): Promise<PumpCalibration[]> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await api.get<{ status: string; data: PumpCalibration[] }>(
+        `/zones/${zoneId}/pump-calibrations`
+      )
+
+      if (response.data.status === 'ok') {
+        return Array.isArray(response.data.data) ? response.data.data : []
+      }
+      throw new Error('Failed to fetch pump calibrations')
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Обновить калибровку одного насоса
+   */
+  async function updatePumpCalibration(
+    zoneId: number,
+    channelId: number,
+    payload: {
+      ml_per_sec: number
+      k_ms_per_ml_l?: number | null
+    }
+  ): Promise<void> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await api.put<{ status: string }>(
+        `/zones/${zoneId}/pump-calibrations/${channelId}`,
+        payload
+      )
+
+      if (response.data.status !== 'ok') {
+        throw new Error('Failed to update pump calibration')
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Запустить relay-autotune
+   */
+  async function startRelayAutotune(zoneId: number, pidType: 'ph' | 'ec'): Promise<void> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await api.post<{ status: string }>(
+        `/zones/${zoneId}/relay-autotune`,
+        { pid_type: pidType }
+      )
+
+      if (response.data.status !== 'ok') {
+        throw new Error('Failed to start relay autotune')
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Получить статус relay-autotune
+   */
+  async function getRelayAutotuneStatus(zoneId: number, pidType: 'ph' | 'ec'): Promise<RelayAutotuneStatus> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await api.get<{ status: string; data?: RelayAutotuneStatus }>(
+        `/zones/${zoneId}/relay-autotune/status`,
+        { params: { pid_type: pidType } }
+      )
+
+      if (response.data.status === 'ok' && response.data.data) {
+        return response.data.data
+      }
+
+      return {
+        zone_id: zoneId,
+        pid_type: pidType,
+        status: 'idle',
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     loading,
     error,
@@ -156,6 +275,9 @@ export function usePidConfig(showToast?: ToastHandler) {
     getAllPidConfigs,
     updatePidConfig,
     getPidLogs,
+    getPumpCalibrations,
+    updatePumpCalibration,
+    startRelayAutotune,
+    getRelayAutotuneStatus,
   }
 }
-

@@ -149,6 +149,8 @@ export function useSetupWizard() {
     fillWindowEnd: '07:00',
     targetPh: 5.8,
     targetEc: 1.6,
+    phPct: 5,
+    ecPct: 10,
     valveSwitching: true,
     correctionDuringIrrigation: true,
     enableDrainControl: false,
@@ -185,7 +187,7 @@ export function useSetupWizard() {
   const stepZoneDone = computed(() => selectedZone.value !== null)
   const stepPlantDone = computed(() => selectedPlant.value !== null)
   const stepRecipeDone = computed(() => selectedRecipe.value !== null)
-  const stepDevicesDone = computed(() => attachedNodesCount.value >= 4)
+  const stepDevicesDone = computed(() => attachedNodesCount.value >= 3)
   const stepAutomationDone = computed(() => automationAppliedAt.value !== null)
   const selectedZoneActiveCycleStatus = computed(() => extractZoneActiveCycleStatus(selectedZone.value))
   const selectedZoneHasActiveCycle = computed(() => isZoneCycleBlocking(selectedZoneActiveCycleStatus.value))
@@ -211,15 +213,14 @@ export function useSetupWizard() {
     return [
       stepGreenhouseDone.value,
       stepZoneDone.value,
-      stepPlantDone.value,
-      stepRecipeDone.value,
+      stepPlantDone.value && stepRecipeDone.value,
       stepDevicesDone.value,
       stepAutomationDone.value,
       canLaunch.value,
     ].filter(Boolean).length
   })
 
-  const progressPercent = computed(() => Math.round((completedSteps.value / 6) * 100))
+  const progressPercent = computed(() => Math.min(100, Math.round((completedSteps.value / 6) * 100)))
 
   const launchChecklist = computed(() => [
     { id: 'greenhouse', label: 'Теплица', done: stepGreenhouseDone.value },

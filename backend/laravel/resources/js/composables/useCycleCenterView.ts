@@ -105,6 +105,9 @@ export function useCycleCenterView({ zones }: UseCycleCenterViewOptions) {
   function toggleDense(): void {
     denseView.value = !denseView.value
     perPage.value = denseView.value ? 12 : 8
+    // Сбрасываем страницу: иначе пользователь может остаться на несуществующей
+    // странице после изменения perPage (например, страница 3 при perPage=8 → perPage=12)
+    currentPage.value = 1
   }
 
   function formatMetric(value: number | null, digits: number): string {
@@ -114,13 +117,17 @@ export function useCycleCenterView({ zones }: UseCycleCenterViewOptions) {
     return Number(value).toFixed(digits)
   }
 
-  function formatDate(value: string): string {
+  function formatDate(value: string | null | undefined): string {
+    if (!value) return '—'
     const date = new Date(value)
+    if (isNaN(date.getTime())) return '—'
     return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' }).format(date)
   }
 
-  function formatTime(value: string): string {
+  function formatTime(value: string | null | undefined): string {
+    if (!value) return '—'
     const date = new Date(value)
+    if (isNaN(date.getTime())) return '—'
     return new Intl.DateTimeFormat('ru-RU', {
       day: '2-digit',
       month: 'short',

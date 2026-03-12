@@ -37,6 +37,8 @@ def _filter_raw_data(raw_data: Optional[dict]) -> Optional[dict]:
         "raw",
         "stub",
         "stable",
+        "flow_active",
+        "corrections_allowed",
         "tds",
         "error_code",
         "temperature",

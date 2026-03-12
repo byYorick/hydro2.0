@@ -31,7 +31,8 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             ->assertJsonPath('data.active_mode', 'setup')
             ->assertJsonPath('data.profiles.setup.mode', 'setup')
             ->assertJsonPath('data.profiles.setup.is_active', true)
-            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.system_type', 'nft');
+            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.system_type', 'nft')
+            ->assertJsonPath('data.profiles.setup.subsystems.diagnostics.execution.workflow', 'cycle_start');
 
         $this->assertDatabaseHas('zone_automation_logic_profiles', [
             'zone_id' => $zone->id,
@@ -39,6 +40,14 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             'is_active' => true,
             'updated_by' => $user->id,
         ]);
+
+        $profile = ZoneAutomationLogicProfile::query()
+            ->where('zone_id', $zone->id)
+            ->where('mode', 'setup')
+            ->first();
+        $this->assertNotNull($profile);
+        $this->assertSame(1, data_get($profile?->command_plans, 'schema_version'));
+        $this->assertNotEmpty(data_get($profile?->command_plans, 'plans.diagnostics.steps'));
 
         $showResponse = $this->actingAs($user)
             ->getJson("/api/zones/{$zone->id}/automation-logic-profile");
@@ -114,7 +123,7 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_it_normalizes_legacy_targets_to_execution_and_drops_targets_from_storage(): void
+    public function test_it_rejects_legacy_targets_in_subsystems_payload(): void
     {
         $zone = Zone::factory()->create();
         $user = User::factory()->create(['role' => 'agronomist']);
@@ -148,11 +157,12 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
         $response = $this->actingAs($user)
             ->postJson("/api/zones/{$zone->id}/automation-logic-profile", $payload);
 
-        $response->assertOk()
-            ->assertJsonMissingPath('data.profiles.setup.subsystems.ph.targets')
-            ->assertJsonMissingPath('data.profiles.setup.subsystems.ec.targets')
-            ->assertJsonMissingPath('data.profiles.setup.subsystems.irrigation.targets')
-            ->assertJsonPath('data.profiles.setup.subsystems.irrigation.execution.interval_minutes', 20);
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'subsystems.ph.targets',
+                'subsystems.ec.targets',
+                'subsystems.irrigation.targets',
+            ]);
     }
 
     private function validSubsystemsPayload(): array
@@ -172,6 +182,22 @@ class ZoneAutomationLogicProfileControllerTest extends TestCase
                     'interval_minutes' => 20,
                     'duration_seconds' => 30,
                     'system_type' => 'nft',
+                ],
+            ],
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'startup',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'two_tank_commands' => [
+                        'clean_fill_start' => [
+                            [
+                                'channel' => 'valve_clean_fill',
+                                'cmd' => 'set_relay',
+                                'params' => ['state' => true],
+                            ],
+                        ],
+                    ],
                 ],
             ],
         ];

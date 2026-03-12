@@ -15,7 +15,7 @@
     "status": {
       "type": "string",
       "description": "Статус выполнения команды",
-      "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
+      "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT"]
     },
     "ts": {
       "type": "integer",
@@ -26,6 +26,16 @@
       "type": "object",
       "description": "Дополнительные детали ответа",
       "additionalProperties": true
+    },
+    "error_code": {
+      "type": "string",
+      "description": "Код ошибки при status=ERROR",
+      "maxLength": 100
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Текст ошибки при status=ERROR",
+      "maxLength": 512
     }
   },
   "additionalProperties": false

@@ -1,0 +1,7 @@
+# E87: Legacy correction-during-fill scenario ported to AE3 restart recovery
+
+name: E87_ec_ph_correction_during_fill
+description: |
+  Legacy AE2 correction-during-fill scenario migrated to standalone AE3-Lite.
+  Для real-hardware regression pack используется каноничный AE3 two-tank smoke.
+scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

@@ -6,7 +6,7 @@
  * - Парсинг JSON команд
  * - Валидация параметров
  * - Роутинг команд по обработчикам
- * - Формирование ACCEPTED/DONE/FAILED ответов
+ * - Формирование ACK/DONE/ERROR ответов
  */
 
 #ifndef NODE_COMMAND_HANDLER_H
@@ -94,7 +94,7 @@ void node_command_handler_process(
 const char *node_command_handler_get_cmd_id(const cJSON *params);
 
 /**
- * @brief Опубликовать промежуточный статус ACCEPTED.
+ * @brief Опубликовать промежуточный статус ACK.
  *
  * @param cmd_id ID команды
  * @param channel Имя канала
@@ -106,9 +106,9 @@ esp_err_t node_command_handler_publish_accepted(const char *cmd_id, const char *
  * @brief Создание ответа на команду
  * 
  * @param cmd_id ID команды
- * @param status Статус: "ACCEPTED", "DONE" или "FAILED"
- * @param error_code Код ошибки (если status == "FAILED")
- * @param error_message Сообщение об ошибке (если status == "FAILED")
+ * @param status Статус: "ACK", "DONE" или "ERROR"
+ * @param error_code Код ошибки (если status == "ERROR")
+ * @param error_message Сообщение об ошибке (если status == "ERROR")
  * @param extra_data Дополнительные данные для ответа (может быть NULL)
  * @return JSON объект ответа (нужно удалить через cJSON_Delete)
  */
@@ -134,7 +134,7 @@ bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel);
 /**
  * @brief Получить сохраненный финальный статус команды из кеша
  * 
- * Используется для идемпотентности: при повторной команде возвращается сохраненный статус (DONE/FAILED).
+ * Используется для идемпотентности: при повторной команде возвращается сохраненный статус (DONE/ERROR).
  * 
  * @param cmd_id ID команды
  * @param channel Имя канала (может быть NULL для "default")
@@ -145,11 +145,11 @@ const char *node_command_handler_get_cached_status(const char *cmd_id, const cha
 /**
  * @brief Сохранить финальный статус команды в кеш
  * 
- * Сохраняет терминальный статус (DONE/FAILED) для последующей идемпотентности.
+ * Сохраняет терминальный статус (DONE/ERROR) для последующей идемпотентности.
  * 
  * @param cmd_id ID команды
  * @param channel Имя канала (может быть NULL для "default")
- * @param final_status Финальный статус (DONE/FAILED)
+ * @param final_status Финальный статус (DONE/ERROR)
  */
 void node_command_handler_cache_final_status(const char *cmd_id, const char *channel, const char *final_status);
 

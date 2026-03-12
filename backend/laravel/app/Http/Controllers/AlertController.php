@@ -194,7 +194,14 @@ class AlertController extends Controller
         }
 
         try {
-            $alert = $this->alertService->acknowledge($alert);
+            $alert = $this->alertService->acknowledge($alert, [
+                'resolved_by' => 'user_ack_api',
+                'resolved_via' => 'manual',
+                'resolved_by_user_id' => $user->id ?? null,
+                'resolved_by_user_name' => $user->name ?? null,
+                'resolved_by_user_email' => $user->email ?? null,
+                'resolved_ip' => $request->ip(),
+            ]);
 
             return response()->json(['status' => 'ok', 'data' => $alert], Response::HTTP_OK);
         } catch (\DomainException $e) {

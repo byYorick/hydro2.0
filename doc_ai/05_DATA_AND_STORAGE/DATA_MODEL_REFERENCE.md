@@ -73,6 +73,7 @@ health_status VARCHAR(16)
 hardware_profile JSONB
 capabilities JSONB
 settings JSONB
+automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae2' CHECK (automation_runtime IN ('ae2','ae3'))
 created_at
 updated_at
 ```
@@ -81,6 +82,7 @@ updated_at
 ```
 zones_status_idx
 zones_uid_unique
+zones_automation_runtime_idx
 ```
 
 ---
@@ -231,6 +233,12 @@ last_quality ENUM
 updated_at
 ```
 
+Индексы:
+```
+telemetry_last_ts_idx (last_ts)
+telemetry_last_sensor_updated_at_idx (sensor_id, updated_at) -- AE2-Lite freshness/polling
+```
+
 ---
 
 # 5. Таблицы рецептов (новая модель после рефакторинга)
@@ -344,7 +352,7 @@ INDEX: recipe_revision_phase_idx (recipe_revision_id)
 
 Правила валидации для топологии `2 бака`:
 - область применения: только при активной runtime-топологии
-  `zone_automation_logic_profiles.subsystems.solution_prepare.topology = "two_tank_drip_substrate_trays"`.
+  `zone_automation_logic_profiles.subsystems.diagnostics.execution.topology = "two_tank_drip_substrate_trays"`.
 - для фаз со статусом ревизии `PUBLISHED` обязательны поля:
   - `nutrient_npk_ratio_pct`
   - `nutrient_calcium_ratio_pct`
@@ -574,6 +582,7 @@ commands_zone_status_idx (zone_id, status) -- уже существует
 commands_node_status_idx (node_id, status) -- уже существует
 commands_created_at_idx (created_at) -- уже существует
 commands_sent_at_idx (sent_at) -- уже существует
+commands_status_updated_at_idx (status, updated_at DESC) -- AE2-Lite reconcile polling
 commands_zone_node_status_idx (zone_id, node_id, status) WHERE zone_id IS NOT NULL AND node_id IS NOT NULL
 commands_ack_at_idx (ack_at) WHERE ack_at IS NOT NULL
 commands_node_channel_idx (node_id, channel) WHERE node_id IS NOT NULL AND channel IS NOT NULL
@@ -630,7 +639,9 @@ zone_id FK → zones
 pid_type VARCHAR (ph/ec)
 integral FLOAT DEFAULT 0
 prev_error FLOAT NULL
+prev_derivative FLOAT DEFAULT 0
 last_output_ms BIGINT DEFAULT 0
+last_dose_at TIMESTAMPTZ NULL
 stats JSONB NULL
 current_zone VARCHAR NULL
 created_at TIMESTAMP
@@ -654,13 +665,48 @@ updated_at TIMESTAMP
 PK (zone_id)
 ```
 
-## 6.6. zone_automation_logic_profiles
+## 6.6. zone_workflow_state
+
+```
+zone_id FK → zones
+workflow_phase VARCHAR(50) NOT NULL DEFAULT 'idle'
+scheduler_task_id VARCHAR(100) NULL
+started_at TIMESTAMPTZ NULL
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+version BIGINT NOT NULL DEFAULT 0
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+PK (zone_id)
+```
+
+Индексы:
+```
+zone_workflow_state_workflow_phase_idx (workflow_phase)
+zone_workflow_state_updated_at_idx (updated_at)
+zone_workflow_state_scheduler_task_id_idx (scheduler_task_id)
+```
+
+Назначение:
+- персистентное хранение доменной `workflow_phase` для зоны;
+- восстановление in-flight workflow после рестарта `automation-engine`;
+- связь continuation payload с текущим intent (`payload.intent_id`).
+- `AE3-Lite v1` использует `version` для последующего CAS-update workflow state.
+
+Допустимые значения `workflow_phase`:
+- `idle`
+- `tank_filling`
+- `tank_recirc`
+- `ready`
+- `irrigating`
+- `irrig_recirc`
+
+## 6.7. zone_automation_logic_profiles
 
 ```
 id PK
 zone_id FK → zones
 mode VARCHAR(16) -- setup|working
 subsystems JSONB -- runtime-конфиг подсистем
+command_plans JSONB NOT NULL DEFAULT '{}'::jsonb -- планы команд two-tank
 is_active BOOLEAN DEFAULT false
 created_by FK → users NULL
 updated_by FK → users NULL
@@ -673,6 +719,137 @@ UNIQUE (zone_id, mode)
 ```
 zone_automation_logic_profiles_zone_id_is_active_index
 ```
+
+Требования к `command_plans`:
+- содержит `schema_version` и `plan_version`;
+- каждый plan содержит `steps[]` с `channel`, `cmd`, `params`;
+- приоритет runtime-резолва: `command_plans` (колонка) -> legacy fallback только на период миграции.
+
+Минимальная JSON-схема `command_plans` (AE2-Lite):
+
+```json
+{
+  "schema_version": 1,
+  "plan_version": 1,
+  "source": "subsystems_backfill|manual",
+  "plans": {
+    "diagnostics": {
+      "execution": {
+        "topology": "two_tank_drip_substrate_trays",
+        "workflow": "cycle_start"
+      },
+      "steps": [
+        {
+          "name": "clean_fill_start",
+          "channel": "irrigation",
+          "cmd": "set_valve",
+          "params": {
+            "valve": "valve_clean_fill",
+            "state": true
+          },
+          "timeout_sec": 30
+        }
+      ]
+    }
+  }
+}
+```
+
+Правила валидации:
+- `schema_version` и `plan_version` обязательны;
+- `plans.<plan>.steps[]` обязательный массив;
+- каждый шаг обязан иметь `channel`, `cmd`, `params` (JSON object);
+- неподдерживаемый `schema_version` блокирует runtime-выполнение (fail-closed).
+
+## 6.8. zone_automation_intents
+
+```
+id BIGSERIAL PK
+zone_id BIGINT NOT NULL FK -> zones
+intent_type VARCHAR(64) NOT NULL
+payload JSONB NULL
+idempotency_key VARCHAR(191) NOT NULL
+status VARCHAR(32) NOT NULL -- pending|claimed|running|completed|failed|cancelled
+not_before TIMESTAMPTZ NULL
+claimed_at TIMESTAMPTZ NULL
+completed_at TIMESTAMPTZ NULL
+error_code VARCHAR(128) NULL
+error_message TEXT NULL
+retry_count INT NOT NULL DEFAULT 0
+max_retries INT NOT NULL DEFAULT 3
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+```
+
+Индексы:
+```
+zone_automation_intents_idempotency_key_unique (idempotency_key) UNIQUE
+zone_automation_intents_zone_status_idx (zone_id, status)
+zone_automation_intents_status_not_before_idx (status, not_before)
+```
+
+Constraints:
+```
+zone_automation_intents_status_check:
+status IN ('pending','claimed','running','completed','failed','cancelled')
+```
+
+Назначение:
+- durable contract между Laravel scheduler-dispatch и AE2-Lite;
+- идемпотентный запуск циклов через `POST /zones/{id}/start-cycle`;
+- арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
+
+Payload-contract (`payload` JSONB, wake-up only):
+```json
+{
+  "source": "laravel_scheduler",
+  "task_type": "diagnostics",
+  "workflow": "cycle_start",
+  "topology": "two_tank_drip_substrate_trays",
+  "grow_cycle_id": 123
+}
+```
+
+Ограничения:
+- `task_payload` запрещен;
+- `schedule_payload` запрещен;
+- любые device-level команды/steps в payload запрещены.
+
+Lifecycle:
+- `pending` -> `claimed` -> `running` -> `completed|failed|cancelled`
+- повторный `idempotency_key` возвращает deduplicated wake-up без повторного исполнения;
+- `failed` intent может быть re-claimed только при `retry_count < max_retries`;
+- stale `claimed` intent может быть re-claimed при
+  `claimed_at <= now - AE_START_CYCLE_CLAIM_STALE_SEC` (default: 180 sec),
+  при re-claim увеличивается `retry_count`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+## 6.9. PostgreSQL NOTIFY triggers (AE2-Lite)
+
+Источник событий для fast-path listener в `automation-engine`:
+
+1) `ae_command_status`:
+- trigger: `trg_ae_command_status_notify` на `commands` (`AFTER INSERT OR UPDATE OF status, updated_at`);
+- payload:
+```json
+{"cmd_id":"...", "zone_id":12, "status":"DONE", "updated_at":"..."}
+```
+
+2) `ae_signal_update`:
+- trigger: `trg_ae_signal_update_zone_events` на `zone_events` (`AFTER INSERT OR UPDATE`);
+- trigger: `trg_ae_signal_update_telemetry_last` на `telemetry_last`
+  (`AFTER INSERT OR UPDATE OF last_value, last_ts, updated_at`);
+- payload:
+```json
+{"zone_id":12, "kind":"zone_event|telemetry_last", "updated_at":"..."}
+```
+
+Правило runtime:
+- `NOTIFY` используется как fast-path;
+- reconcile polling обязателен как fallback на случай пропуска notify-событий.
+- изменение runtime profile (`zone_automation_logic_profiles`) должно порождать `zone_events`
+  типа `AUTOMATION_LOGIC_PROFILE_UPDATED`, чтобы инициировать `ae_signal_update` по `kind=zone_event`.
 
 Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
 
@@ -710,6 +887,124 @@ zone_automation_logic_profiles_zone_id_is_active_index
   }
 }
 ```
+
+## 6.10. AE3-Lite runtime tables (staged rollout)
+
+Ниже таблицы вводятся migration-пакетом AE3-Lite и используются runtime-слоем
+`backend/services/automation-engine/ae3lite/` (см. `04_BACKEND_CORE/ae3lite.md`).
+
+### 6.10.1. ae_tasks
+
+```
+id BIGSERIAL PK
+zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
+task_type VARCHAR(64) NOT NULL         -- в v1 допустимо только cycle_start
+status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
+idempotency_key VARCHAR(191) UNIQUE NOT NULL
+intent_source VARCHAR(64) NULL
+intent_trigger VARCHAR(64) NULL
+intent_id BIGINT NULL
+intent_meta JSONB NOT NULL DEFAULT '{}'
+topology VARCHAR(64) NOT NULL DEFAULT 'two_tank'
+current_stage VARCHAR(64) NOT NULL DEFAULT 'startup'
+workflow_phase VARCHAR(32) NOT NULL DEFAULT 'idle'
+scheduled_for TIMESTAMPTZ NOT NULL
+due_at TIMESTAMPTZ NOT NULL
+claimed_by VARCHAR(191) NULL
+claimed_at TIMESTAMPTZ NULL
+error_code VARCHAR(128) NULL
+error_message TEXT NULL
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+completed_at TIMESTAMPTZ NULL
+stage_deadline_at TIMESTAMPTZ NULL
+stage_retry_count SMALLINT NOT NULL DEFAULT 0
+stage_entered_at TIMESTAMPTZ NULL
+clean_fill_cycle SMALLINT NOT NULL DEFAULT 0
+corr_step VARCHAR(32) NULL
+corr_attempt SMALLINT NULL
+corr_max_attempts SMALLINT NULL
+corr_activated_here BOOLEAN NULL
+corr_stabilization_sec SMALLINT NULL
+corr_return_stage_success VARCHAR(64) NULL
+corr_return_stage_fail VARCHAR(64) NULL
+corr_outcome_success BOOLEAN NULL
+corr_needs_ec BOOLEAN NULL
+corr_ec_node_uid VARCHAR(128) NULL
+corr_ec_channel VARCHAR(64) NULL
+corr_ec_duration_ms INTEGER NULL
+corr_needs_ph_up BOOLEAN NULL
+corr_needs_ph_down BOOLEAN NULL
+corr_ph_node_uid VARCHAR(128) NULL
+corr_ph_channel VARCHAR(64) NULL
+corr_ph_duration_ms INTEGER NULL
+corr_wait_until TIMESTAMPTZ NULL
+corr_ec_attempt SMALLINT NULL
+corr_ec_max_attempts SMALLINT NULL
+corr_ph_attempt SMALLINT NULL
+corr_ph_max_attempts SMALLINT NULL
+pending_manual_step VARCHAR(64) NULL
+control_mode_snapshot VARCHAR(16) NULL
+```
+
+Ключевые индексы:
+```
+ae_tasks_zone_status_idx (zone_id, status)
+ae_tasks_pending_idx (due_at, created_at) WHERE status='pending'
+ae_tasks_active_zone_unique (zone_id) UNIQUE WHERE status IN ('pending','claimed','running','waiting_command')
+ae_tasks_deadline_idx (stage_deadline_at) WHERE stage_deadline_at IS NOT NULL AND status IN ('running','waiting_command')
+ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running','waiting_command')
+```
+
+Инварианты v1:
+- не более одной active task на зону;
+- `idempotency_key` уникален;
+- `task_type='cycle_start'` фиксируется DB check constraint.
+- canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из legacy `payload`.
+
+### 6.10.2. ae_commands
+
+```
+id BIGSERIAL PK
+task_id BIGINT NOT NULL FK -> ae_tasks ON DELETE CASCADE
+step_no INT NOT NULL
+node_uid VARCHAR(128) NOT NULL
+channel VARCHAR(64) NOT NULL
+payload JSONB NOT NULL DEFAULT '{}'
+external_id VARCHAR(191) NULL          -- связь с commands.cmd_id
+publish_status VARCHAR(16) NOT NULL    -- pending|accepted|failed
+ack_received_at TIMESTAMPTZ NULL
+terminal_status VARCHAR(32) NULL       -- DONE|NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED
+terminal_at TIMESTAMPTZ NULL
+last_error TEXT NULL
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+UNIQUE (task_id, step_no)
+```
+
+Ключевые индексы/ограничения:
+```
+ae_commands_external_id_idx (external_id) WHERE external_id IS NOT NULL
+```
+
+Примечание по статусам:
+- `publish_status` хранится в lowercase;
+- `terminal_status` синхронизирован по значениям с `commands.status`;
+- трекинг делается через mapping `external_id -> commands.cmd_id`.
+
+### 6.10.3. ae_zone_leases
+
+```
+zone_id BIGINT PK FK -> zones ON DELETE CASCADE
+owner VARCHAR(191) NOT NULL
+leased_until TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+```
+
+Retention (операционный минимум для AE3-Lite):
+- `ae_tasks`, `ae_commands`: hot retention 30 дней для terminal-данных;
+- `ae_zone_leases`: только operational текущего runtime состояния;
+- purge выполняется batched job в off-peak окнах.
 
 ---
 
@@ -777,6 +1072,8 @@ zone_events_zone_id_id_idx
 - `details` используется как совместимый read-layer и в актуальной схеме генерируется из `payload_json`.
 - Для событий от MQTT (`hydro/{gh}/{zone}/{node}/storage_state/event`) поле `type` получает нормализованный `event_code`;
   при длине >255 значение детерминированно усекается до 255 символов.
+- Для runtime invalidation effective targets используется событие
+  `AUTOMATION_LOGIC_PROFILE_UPDATED` (source: upsert active automation profile).
 
 ---
 
@@ -832,7 +1129,7 @@ simulation_reports_status_index (status)
 
 ---
 
-## 8.4. scheduler_logs
+## 8.4. scheduler_logs (LEGACY / DIAGNOSTICS)
 
 ```
 id PK
@@ -843,8 +1140,8 @@ created_at TIMESTAMP
 ```
 
 Назначение:
-- lifecycle/snapshot записи scheduler и automation-engine;
-- хранение статусов task-level исполнения (`accepted/running/completed/failed` и служебные статусы scheduler).
+- исторический журнал старого scheduler-task транспорта;
+- может использоваться как diagnostics source до полного cleanup.
 
 Индексы:
 ```
@@ -855,7 +1152,7 @@ scheduler_logs_task_zone_created_idx -- expression index по details->>'zone_id
 scheduler_logs_zone_created_idx -- expression partial index по details->>'zone_id'
 ```
 
-### 8.4.1. Контракт `scheduler_logs.details` (Protocol 2.0)
+### 8.4.1. Контракт `scheduler_logs.details` (LEGACY)
 
 Обязательные ключи task snapshot:
 - `task_id: string`
@@ -878,9 +1175,103 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 - `result.commands_effect_confirmed: int|null`
 - `result.commands_failed: int|null`
 
-Owner-модель статусов:
-- business (automation-engine): `accepted|running|completed|failed|rejected|expired`;
-- transport (scheduler reconcile): `timeout|not_found` (не являются business outcome decision-layer).
+Статус:
+- в AE2-Lite canonical runtime вместо scheduler-task используется `zone_automation_intents`.
+
+---
+
+## 8.5. laravel_scheduler_active_tasks (ACTIVE: Laravel scheduler owner)
+
+Durable state Laravel dispatcher для reconcile/anti-overlap в цепочке
+`Scheduler -> /start-cycle -> intent -> executor`.
+
+Примечание:
+- `zone_automation_intents` — canonical lifecycle намерений;
+- `laravel_scheduler_active_tasks` — operational state external dispatcher-а
+  (busy arbitration, polling, recovery после рестартов Laravel).
+
+```
+id BIGSERIAL PK
+task_id VARCHAR(128) UNIQUE NOT NULL
+zone_id BIGINT FK -> zones
+task_type VARCHAR(64) NOT NULL
+schedule_key VARCHAR(255) NOT NULL
+correlation_id VARCHAR(255) NOT NULL
+status VARCHAR(32) NOT NULL
+accepted_at TIMESTAMPTZ NOT NULL
+due_at TIMESTAMPTZ NULL
+expires_at TIMESTAMPTZ NULL
+last_polled_at TIMESTAMPTZ NULL
+terminal_at TIMESTAMPTZ NULL
+details JSONB NOT NULL DEFAULT '{}'
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+lsat_zone_status_updated_idx (zone_id, status, updated_at)
+lsat_sched_key_updated_idx (schedule_key, updated_at)
+lsat_expires_at_idx (expires_at)
+lsat_terminal_at_idx (terminal_at)
+lsat_corr_idx (correlation_id)
+```
+
+Назначение:
+- восстановление reconcile после рестарта Laravel/worker;
+- арбитраж `isScheduleBusy` через БД;
+- cleanup terminal записей по retention policy.
+
+---
+
+## 8.6. laravel_scheduler_zone_cursors (LEGACY / OPTIONAL)
+
+Исторический курсор legacy scheduler-reconcile.
+
+```
+zone_id BIGINT PK FK -> zones
+cursor_at TIMESTAMPTZ NOT NULL
+catchup_policy VARCHAR(32) NOT NULL
+metadata JSONB NOT NULL DEFAULT '{}'
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+lszc_cursor_at_idx (cursor_at)
+```
+
+Назначение:
+- источник истины для `resolveZoneLastCheck`;
+- сохранение catchup-контекста между циклами и рестартами.
+
+---
+
+## 8.7. automation_runtime_overrides (ACTIVE: runtime overrides for Laravel scheduler/AE bridge)
+
+Хранилище runtime-переопределений для глобальных параметров автоматики
+(`services.automation_engine.*`, `services.python_bridge.*`) с приоритетом над env/config.
+Используется UI `/settings` и сервисом `AutomationRuntimeConfigService`.
+
+```
+id BIGSERIAL PK
+key VARCHAR(128) UNIQUE NOT NULL
+value TEXT NULL
+updated_by BIGINT FK -> users NULL ON DELETE SET NULL
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+automation_runtime_overrides_key_unique (key) UNIQUE
+```
+
+Назначение:
+- безопасное runtime-редактирование timeout/retry/dispatch-параметров без `config:clear`;
+- мгновенный подхват параметров scheduler/контроллерами через чтение из БД;
+- аудит автора последнего изменения (`updated_by`).
 
 ---
 
@@ -959,6 +1350,7 @@ created_at
 greenhouse 1—N zones
 users N—N greenhouses (user_greenhouses)
 users N—N zones (user_zones)
+users 1—N automation_runtime_overrides (updated_by)
 zone 1—1 grow_cycle (активный: PLANNED/RUNNING/PAUSED)
 grow_cycle 1—1 recipe_revision (зафиксированная версия)
 recipe 1—N recipe_revisions
@@ -983,7 +1375,10 @@ sensor 1—1 telemetry_last
 zone 1—N alerts
 zone 1—N zone_events
 zone 1—N scheduler_logs (логическая связь через `scheduler_logs.details.zone_id`, без FK)
+zone 1—N laravel_scheduler_active_tasks
+zone 1—1 laravel_scheduler_zone_cursors
 zone 1—N commands
+zone 1—1 zone_workflow_state
 zone 1—N zone_simulations
 zone_simulation 1—N simulation_events
 zone_simulation 1—1 simulation_reports
@@ -994,6 +1389,13 @@ zone_simulation 1—1 simulation_reports
 infrastructure_instance (polymorphic: owner_type='zone'|'greenhouse')
 infrastructure_instance 1—N channel_bindings
 channel_binding 1—1 node_channel
+```
+
+**AE3-Lite runtime (staged):**
+```
+zone 1—N ae_tasks
+ae_tasks 1—N ae_commands
+zone 1—1 ae_zone_leases
 ```
 
 ---
@@ -1029,13 +1431,15 @@ channel_binding 1—1 node_channel
 
 ---
 
-# 13. Использование данных в Python сервисах (обновлено)
+# 13. Использование данных в Python сервисах (AE2-Lite)
 
-**Python сервисы теперь используют Laravel API вместо прямых SQL запросов:**
+**Automation-engine (AE2-Lite) использует direct SQL read-model в runtime path.**
 
-**Основной контракт:**
-- `GET /api/internal/effective-targets/batch` — batch получение effective targets для зон
-- Возвращает цели из активного цикла с учётом overrides
+**Основной контракт runtime:**
+- чтение таблиц `grow_cycles`, `grow_cycle_phases`, `zone_automation_logic_profiles`,
+  `telemetry_last`, `zone_workflow_state`, `zone_events`, `commands`;
+- приоритет резолва: `phase snapshot -> grow_cycle_overrides -> active logic profile`;
+- отсутствие runtime-зависимости от `/api/internal/effective-targets/*`.
 
 **Структура ответа:**
 ```json
@@ -1068,9 +1472,9 @@ channel_binding 1—1 node_channel
 }
 ```
 
-### 13.1. Контракт `targets.*.execution` для scheduler-task
+### 13.1. Контракт `targets.*.execution` для AE2-Lite workflow
 
-Для task-level исполнения scheduler/automation-engine поддерживаются execution-конфиги
+Для workflow-исполнения поддерживаются execution-конфиги
 в секциях `targets.irrigation|lighting|ventilation|solution_change|mist|diagnostics`.
 
 Поля:
@@ -1082,22 +1486,22 @@ channel_binding 1—1 node_channel
 - `default_state: bool`
 - `params: object`
 - `duration_sec: number`
-- `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"`
+- `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"` (optional)
 
-### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> effective targets)
+### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> runtime DTO)
 
 Источник runtime-настроек фронтового конфигуратора: `zone_automation_logic_profiles.subsystems`.
 
-При формировании `effective_targets.targets` применяется приоритет:
+При формировании runtime DTO применяется приоритет:
 
 `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode runtime)`.
 
-Применение runtime-профиля в pipeline:
+Применение runtime-профиля:
 - фронтенд сохраняет профиль через `POST /api/zones/{zone}/automation-logic-profile`
-- затем отправляет `GROWTH_CYCLE_CONFIG` только с `params.profile_mode`
-- Laravel резолвит `subsystems` по `profile_mode` и инжектит их в команду перед отправкой в Python слой
+- scheduler/оператор формирует intent;
+- AE2-Lite читает профиль напрямую из БД и применяет в зоне.
 
-Нормализация runtime-полей в scheduler/automation контракт:
+Нормализация runtime-полей в automation контракт:
 
 - `subsystems.irrigation.execution.interval_minutes` -> `targets.irrigation.interval_sec`
 - `subsystems.irrigation.execution.duration_seconds` -> `targets.irrigation.duration_sec`
@@ -1111,17 +1515,17 @@ channel_binding 1—1 node_channel
 - `subsystems.solution_change.execution.duration_sec` -> `targets.solution_change.duration_sec`
 - `subsystems.solution_change.execution.*` -> `targets.solution_change.execution.*`
 - `subsystems.diagnostics.execution.*` -> `targets.diagnostics.*` и `targets.diagnostics.execution.*`
-- `subsystems.solution_prepare.startup.clean_fill_timeout_sec` -> `targets.diagnostics.execution.clean_fill_timeout_sec`
-- `subsystems.solution_prepare.startup.solution_fill_timeout_sec` -> `targets.diagnostics.execution.solution_fill_timeout_sec`
-- `subsystems.solution_prepare.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
-- `subsystems.solution_prepare.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
-- `subsystems.solution_prepare.topology` -> `targets.diagnostics.execution.topology`
+- `subsystems.diagnostics.execution.startup.clean_fill_timeout_sec` -> `targets.diagnostics.execution.clean_fill_timeout_sec`
+- `subsystems.diagnostics.execution.startup.solution_fill_timeout_sec` -> `targets.diagnostics.execution.solution_fill_timeout_sec`
+- `subsystems.diagnostics.execution.startup.level_poll_interval_sec` -> `targets.diagnostics.execution.level_poll_interval_sec`
+- `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` -> `targets.diagnostics.execution.prepare_recirculation_timeout_sec`
+- `subsystems.diagnostics.execution.topology` -> `targets.diagnostics.execution.topology`
 - `subsystems.irrigation.recovery.max_continue_attempts` -> `targets.irrigation.execution.max_continue_attempts`
 - `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` -> `targets.irrigation.execution.degraded_tolerance.ec_pct`
 - `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` -> `targets.irrigation.execution.degraded_tolerance.ph_pct`
 
 Совместимость rollout:
-- legacy `subsystems.*.targets` временно принимается backend-слоем и нормализуется в `execution`;
+- legacy `subsystems.*.targets` отклоняется backend-слоем (`422`);
 - канонический формат для новых payload/документации: `subsystems.*.execution`.
 
 Политика enable/disable подсистем:
@@ -1129,15 +1533,13 @@ channel_binding 1—1 node_channel
 - при `enabled=false` выставляется `targets.<task>.execution.force_skip=true`
 - при `enabled=true` выставляется `targets.<task>.execution.force_skip=false`
 
-Runtime-снимок подсистем также отражается в `targets.extensions.subsystems` для UI/диагностики.
-Метаданные источника runtime отражаются в `targets.extensions.automation_logic` (`source`, `mode`, `updated_at`).
+Runtime-снимок подсистем отражается в `zone_automation_state` для UI/диагностики.
 
 Ручные override-действия (`fill_clean_tank`, `prepare_solution`, `recirculate_solution`, `resume_irrigation`)
-обязаны фиксироваться в `zone_events` и lifecycle-снимках `scheduler_logs`.
+обязаны фиксироваться в `zone_events` и lifecycle `zone_automation_intents`.
 
-**Устаревший подход (до рефакторинга):**
-- ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`
-- ✅ Заменён на Laravel API для consistency и версионирования
+Legacy примечание:
+- старый scheduler-task транспорт и его таблицы считаются историческими.
 
 ---
 
@@ -1198,6 +1600,44 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
     // Операция под блокировкой
 });
 ```
+
+---
+
+# 16. Pump Calibration Domain Model (2026-02-25)
+
+Добавлена выделенная доменная сущность калибровки насосов.  
+`node_channels.config.pump_calibration` сохранён как **legacy read-through fallback** на переходный период.
+
+### 16.1. Таблица `pump_calibrations`
+
+- Назначение: версионируемое хранение калибровок дозирующих каналов.
+- Ключевые поля:
+  - `node_channel_id` (FK -> `node_channels.id`)
+  - `ml_per_sec` (обязательный)
+  - `k_ms_per_ml_l` (опциональный)
+  - `valid_from`, `valid_to`, `is_active`
+  - `source`, `quality_score`, `sample_count`
+  - `component`, `meta`
+- Политика версии:
+  - новая калибровка деактивирует предыдущую (`is_active=false`, `valid_to=NOW()`),
+  - актуальная калибровка выбирается по `is_active=true` и `valid_from DESC`.
+
+### 16.2. Таблица `node_channels` (activity sync)
+
+Добавлены поля:
+- `last_seen_at` — последнее подтверждённое присутствие канала в `config_report`.
+- `is_active` — soft-state активности канала.
+
+Политика sync `config_report`:
+- destructive-delete заменён на soft-deactivate (`is_active=false`) при explicit full-snapshot prune;
+- по умолчанию prune отключён для transport-safe поведения.
+
+### 16.3. Совместимость чтения
+
+- Automation-Engine сначала читает активную запись из `pump_calibrations`.
+- При отсутствии записи используется fallback из `node_channels.config.pump_calibration`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ---
 

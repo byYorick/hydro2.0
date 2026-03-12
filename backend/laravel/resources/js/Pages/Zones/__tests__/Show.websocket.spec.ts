@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { nextTick, reactive } from 'vue'
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
@@ -176,12 +176,13 @@ vi.mock('@/utils/logger', () => ({
 describe('Zones/Show.vue - WebSocket Integration', () => {
   let ShowComponent: any
 
-  beforeEach(async () => {
-    vi.clearAllMocks()
-    
-    // Dynamic import to get fresh module
+  beforeAll(async () => {
     const module = await import('../Show.vue')
     ShowComponent = module.default
+  }, 30000)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
   afterEach(() => {

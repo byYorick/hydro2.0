@@ -57,6 +57,19 @@ async def test_check_water_level_no_data():
 
 
 @pytest.mark.asyncio
+async def test_check_water_level_prefers_clean_tank_labels_in_query():
+    """Regression: dry-run check must prioritize clean/fresh sensors."""
+    with patch("common.water_flow.fetch") as mock_fetch:
+        mock_fetch.return_value = [{"value": 0.5}]
+        await check_water_level(2)
+        sql = mock_fetch.call_args.args[0]
+        assert "LIKE '%clean%'" in sql
+        assert "LIKE '%fresh%'" in sql
+        assert "LIKE '%solution%'" in sql
+        assert "LIKE '%min%'" in sql
+
+
+@pytest.mark.asyncio
 async def test_check_flow_normal():
     """Test flow check when flow is normal."""
     with patch("common.water_flow.fetch") as mock_fetch:
@@ -658,6 +671,7 @@ async def test_calibrate_pump_success():
 
     with patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
@@ -700,6 +714,7 @@ async def test_calibrate_pump_calculates_k_from_ec_profile():
 
     with patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
@@ -745,6 +760,7 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
 
     with patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
@@ -778,6 +794,7 @@ async def test_calibrate_pump_accepts_ph_component_alias():
 
     with patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):

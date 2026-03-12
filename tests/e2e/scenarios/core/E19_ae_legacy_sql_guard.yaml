@@ -72,7 +72,7 @@ actions:
     payload:
       recipe_revision_id: ${revision_response.data.id}
       plant_id: ${plant_response.data.id}
-      start_immediately: true
+      start_immediately: false
     save: cycle_response
 
   - step: set_cycle_id

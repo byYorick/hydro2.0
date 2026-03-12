@@ -21,7 +21,7 @@
       },
       "targets": [
         {
-          "expr": "up{job=~\"automation-engine|scheduler|mqtt-bridge\"}",
+          "expr": "up{job=~\"automation-engine|mqtt-bridge\"}",
           "refId": "A"
         }
       ]

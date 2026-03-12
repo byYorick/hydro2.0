@@ -277,57 +277,61 @@ function formatTime(timeString: string): string {
 async function fetchPrediction(): Promise<void> {
   if (loading.value) return
 
+  // Захватываем ID зоны до await: если зона сменится пока запрос в-полёте,
+  // ответ старой зоны будет проигнорирован
+  const requestedZoneId = props.zoneId
+
   loading.value = true
   error.value = null
 
   try {
     const response = await api.post<PredictionResponse>('/api/ai/predict', {
-      zone_id: props.zoneId,
+      zone_id: requestedZoneId,
       metric_type: props.metricType,
       horizon_minutes: props.horizonMinutes,
     })
 
+    if (props.zoneId !== requestedZoneId) return
+
     if (response.data?.status === 'ok' && response.data?.data) {
       prediction.value = response.data.data
-      error.value = null // Очищаем ошибку при успешной загрузке
+      error.value = null
       logger.debug('[AIPredictionCard] Prediction fetched', {
-        zoneId: props.zoneId,
+        zoneId: requestedZoneId,
         metricType: props.metricType,
         predictedValue: response.data.data.predicted_value,
       })
     } else {
-      // Если статус не "ok", выбрасываем ошибку для обработки в catch
       const message = response.data?.message || 'Не удалось получить прогноз'
       throw new Error(message)
     }
   } catch (err: any) {
+    if (props.zoneId !== requestedZoneId) return
+
     const errorMessage = err?.response?.data?.message || err?.message || 'Ошибка при загрузке прогноза'
     const statusCode = err?.response?.status
-    
+
     // Специальная обработка ошибки "Not enough data" (422) - это не ошибка, а нормальное состояние
     if (
       (errorMessage.includes('Not enough data') || errorMessage.includes('недостаточно данных')) ||
       (statusCode === 422 && errorMessage.includes('Failed to generate prediction'))
     ) {
-      // Устанавливаем null для показа состояния "нет данных" вместо ошибки
       prediction.value = null
       error.value = null
       logger.debug('[AIPredictionCard] Not enough data for prediction', {
-        zoneId: props.zoneId,
+        zoneId: requestedZoneId,
         metricType: props.metricType,
         statusCode,
       })
     } else {
-      // Реальная ошибка
       error.value = errorMessage
       logger.error('[AIPredictionCard] Failed to fetch prediction', {
-        zoneId: props.zoneId,
+        zoneId: requestedZoneId,
         metricType: props.metricType,
         error: err,
         statusCode,
       })
-      
-      // Показываем toast только для критичных ошибок (не для "недостаточно данных")
+
       if (prediction.value || statusCode >= 500) {
         showToast(errorMessage, 'error', 5000)
       }
@@ -353,6 +357,11 @@ function stopAutoRefresh(): void {
 }
 
 watch(() => [props.zoneId, props.metricType, props.horizonMinutes], () => {
+  // Сбрасываем loading, чтобы in-flight запрос старых параметров не блокировал новый фетч
+  // (fetchPrediction возвращается сразу при loading=true)
+  loading.value = false
+  prediction.value = null
+  error.value = null
   fetchPrediction()
 }, { immediate: false })
 

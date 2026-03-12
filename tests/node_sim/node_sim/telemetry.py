@@ -147,13 +147,24 @@ class TelemetryPublisher:
             value = self._generate_simulated_value(channel)
             self.node.set_sensor_value(channel, value)
         
-        # Формируем payload в формате, который ожидает history-logger:
-        # metric_type (обязательное), value (обязательное), ts (seconds) (опционально)
+        # Формируем payload строго по runtime-схеме:
+        # metric_type (обязательное), value (обязательное), ts (seconds, обязательное)
         payload = {
             "metric_type": metric_type,
             "value": value,
             "ts": int(time.time()),
         }
+
+        if channel.lower() in ("ph_sensor", "ph"):
+            sensor_mode_active = bool(getattr(self.node, "ph_sensor_mode_active", False))
+            payload["flow_active"] = sensor_mode_active
+            payload["stable"] = sensor_mode_active
+            payload["corrections_allowed"] = sensor_mode_active
+        elif channel.lower() in ("ec_sensor", "ec"):
+            sensor_mode_active = bool(getattr(self.node, "ec_sensor_mode_active", False))
+            payload["flow_active"] = sensor_mode_active
+            payload["stable"] = sensor_mode_active
+            payload["corrections_allowed"] = sensor_mode_active
         
         # Определяем топик используя единую библиотеку topics
         if self.node.mode == "preconfig":

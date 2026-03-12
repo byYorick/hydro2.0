@@ -17,6 +17,135 @@
 4. Генерирует отчёты
 5. Выводит summary с результатами
 
+### AE2 S12 staging gate (one-command)
+
+Для S12 acceptance gate (cutover SLO baseline + release decision):
+
+```bash
+AE2_SLO_PROBE_BASE_URL=http://<staging-ae-host>:<port> \
+AE2_SLO_PROBE_AUTHORIZATION='Bearer <token>' \
+./tools/testing/run_ae2_s12_staging_gate.sh
+```
+Этот wrapper автоматически выполняет bundle-check (`check_ae2_s12_release_bundle.sh`).
+Также wrapper автоматически формирует summary markdown (по умолчанию в `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_SUMMARY.md`).
+Также wrapper автоматически формирует metadata json (по умолчанию в `doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_METADATA.json`).
+
+Local dry-run без стенда:
+
+```bash
+AE2_SLO_PROBE_MODE=local \
+AE2_S12_BASELINE_CSV=artifacts/ae2_s12_local_baseline.csv \
+AE2_S12_DECISION_TXT=artifacts/ae2_s12_local_decision.txt \
+./tools/testing/run_ae2_s12_staging_gate.sh
+```
+
+### AE2 invariants (machine guard rails)
+
+```bash
+./tools/testing/check_ae2_invariants.sh
+```
+
+Проверки:
+1. publish path на history-logger только через `infrastructure/command_bus.py`;
+2. отсутствие прямого MQTT publish в runtime-коде `automation-engine`;
+3. централизация executor feature flags в `application/executor_constants.py`;
+4. отсутствие SQL DDL (`CREATE/ALTER/DROP TABLE`) в Python-сервисах.
+
+Отключить auto-check wrapper (debug-only):
+
+```bash
+AE2_S12_RUN_BUNDLE_CHECK=false ./tools/testing/run_ae2_s12_staging_gate.sh
+```
+
+Отключить auto-summary wrapper (debug-only):
+
+```bash
+AE2_S12_WRITE_SUMMARY=false ./tools/testing/run_ae2_s12_staging_gate.sh
+```
+
+Отключить auto-metadata wrapper (debug-only):
+
+```bash
+AE2_S12_WRITE_METADATA=false ./tools/testing/run_ae2_s12_staging_gate.sh
+```
+
+Ручная сборка summary:
+
+```bash
+python3 tools/testing/build_ae2_s12_gate_summary.py \
+  --baseline-csv doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_BASELINE.csv \
+  --decision-txt doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_RELEASE_DECISION.txt \
+  --output-md doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_SUMMARY.md \
+  --mode remote
+```
+
+Ручная сборка metadata:
+
+```bash
+python3 tools/testing/build_ae2_s12_gate_metadata.py \
+  --mode remote \
+  --baseline-csv doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_SLO_BASELINE.csv \
+  --decision-txt doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_RELEASE_DECISION.txt \
+  --summary-md doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_SUMMARY.md \
+  --output-json doc_ai/10_AI_DEV_GUIDES/AE2_S12_STAGING_GATE_METADATA.json \
+  --base-url http://<staging-ae-host>:<port> \
+  --requests 240 \
+  --concurrency 40 \
+  --bootstrap-wait-sec 60 \
+  --run-bundle-check true \
+  --expect-decision ALLOW_FULL_ROLLOUT
+```
+
+Проверка целостности release bundle (baseline + decision):
+
+```bash
+./tools/testing/check_ae2_s12_release_bundle.sh
+```
+
+По умолчанию checker strict и требует `decision=ALLOW_FULL_ROLLOUT`.
+Диагностический режим (без strict expected-decision):
+
+```bash
+AE2_S12_EXPECT_DECISION=ANY ./tools/testing/check_ae2_s12_release_bundle.sh
+```
+`AE2_S12_EXPECT_DECISION` обрабатывается case-insensitive и принимает оба формата:
+- `ALLOW_FULL_ROLLOUT`
+- `decision=allow_full_rollout`
+
+Финальная строгая проверка для стендового прогона:
+
+```bash
+AE2_S12_REQUIRE_REMOTE_METADATA=true ./tools/testing/check_ae2_s12_release_bundle.sh
+```
+
+Полный one-command flow (staging gate + auto finalize документов):
+
+```bash
+AE2_SLO_PROBE_BASE_URL=http://<staging-ae-host>:<port> \
+AE2_SLO_PROBE_AUTHORIZATION='Bearer <token>' \
+AE2_S12_AUTO_FINALIZE_DOCS=true \
+./tools/testing/run_ae2_s12_staging_gate.sh
+```
+Этот режим рассчитан на `remote` прогон и требует включенного bundle-check (`AE2_S12_RUN_BUNDLE_CHECK=true`, default).
+Также для auto-finalize должен быть включен metadata artifact (`AE2_S12_WRITE_METADATA=true`, default).
+Для auto-finalize нельзя использовать `AE2_S12_EXPECT_DECISION=ANY` (требуется strict expected decision, default `ALLOW_FULL_ROLLOUT`).
+Для auto-finalize требуется `AE2_S12_EXPECT_DECISION=ALLOW_FULL_ROLLOUT`.
+При `AE2_S12_AUTO_FINALIZE_DOCS=true` wrapper автоматически включает strict remote metadata check на шаге bundle-check (`AE2_S12_REQUIRE_REMOTE_METADATA=true`).
+
+Автофинализация S12-документов (использовать только после strict gate PASS):
+
+```bash
+python3 tools/testing/finalize_ae2_s12_docs.py
+python3 tools/testing/finalize_ae2_s12_docs.py --apply
+```
+
+Небезопасный override (только аварийный сценарий, не использовать для обычного stage-gate):
+
+```bash
+AE2_S12_ALLOW_UNSAFE_FINALIZE=true \
+python3 tools/testing/finalize_ae2_s12_docs.py --apply --skip-gate-check
+```
+
 ### Результат
 
 При успешном выполнении:

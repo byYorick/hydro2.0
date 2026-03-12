@@ -21,6 +21,22 @@
 
 Тест формата ответов на команды (может использоваться отдельно).
 
+### 4. test_command_ack_terminal_timing.py
+
+HIL/интеграционный тест таймингов command lifecycle:
+- ✅ Подтверждает, что приходит `ACK`, затем terminal (`DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT`)
+- ✅ Проверяет окно задержки `ACK -> terminal` относительно `sim_delay_ms`
+- ✅ Поддерживает форс terminal-статуса через `sim_status`
+
+## Граница ответственности набора firmware/tests
+
+Текущий набор `firmware/tests/*` проверяет совместимость протокола и таймингов command lifecycle
+(`telemetry/command_response/heartbeat/status`, а также `ACK -> terminal`), но не валидирует
+бизнес-процессы 2-бакового цикла (`startup/clean_fill/solution_fill/prepare_recirculation`).
+
+Проверка согласованности автоматики и `test_node` выполняется в e2e-наборе
+`tests/e2e/scenarios/automation_engine/` (актуальный AE2-Lite subset: `E61`, `E64`, `E65`, `E74`).
+
 ## Быстрый старт
 
 ```bash
@@ -29,6 +45,10 @@
 
 # С параметрами
 MQTT_HOST=192.168.1.100 MQTT_PORT=1883 \
+./firmware/tests/run_compatibility_tests.sh
+
+# С включённым HIL тайминг-тестом ACK -> terminal
+RUN_HIL_TIMING=1 HIL_SIM_DELAY_MS=1500 HIL_SIM_STATUS=DONE \
 ./firmware/tests/run_compatibility_tests.sh
 
 # Прямой запуск Python скрипта
@@ -78,6 +98,25 @@ python3 firmware/tests/test_node_compatibility.py \
 
 ## Использование отдельных тестов
 
+### HIL тест ACK -> terminal таймингов
+
+```bash
+python3 firmware/tests/test_command_ack_terminal_timing.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-test-001 \
+    --channel ph_sensor \
+    --cmd set_relay \
+    --sim-delay-ms 1200 \
+    --sim-status DONE
+```
+
+Опциональные параметры допуска:
+- `--lower-jitter-ms` (по умолчанию `200`)
+- `--upper-jitter-ms` (по умолчанию `1500`)
+
 ### Тест формата телеметрии
 
 ```bash
@@ -116,12 +155,14 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 {
   "cmd_id": "cmd-12345",
   "status": "DONE",
-  "details": "OK",
+  "details": {
+    "result": "ok"
+  },
   "ts": 1704067200123
 }
 ```
 
-`details` может быть как строкой, так и объектом с деталями выполнения:
+`details` передается объектом с деталями выполнения:
 
 ```json
 {

@@ -40,6 +40,7 @@ class DatabaseSeeder extends Seeder
                 ExtendedGrowStagesSeeder::class,
                 ExtendedZonePidConfigsSeeder::class,
                 ExtendedPlantsSeeder::class,
+                ExtendedAutomationProfilesSeeder::class,
             ],
         ],
         'operational_data' => [
@@ -169,7 +170,7 @@ class DatabaseSeeder extends Seeder
         $this->command->info('⚡ Запуск облегченного набора сидеров');
 
         $seeders = [
-            LiteAutomationSeeder::class,
+            SingleZoneServiceSeeder::class,
         ];
 
         foreach ($seeders as $seederClass) {

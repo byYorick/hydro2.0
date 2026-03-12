@@ -1,0 +1,7 @@
+# E68: Legacy strict EC/pH correction flow ported to canonical AE3 real-hardware smoke
+
+name: E68_full_prod_path_strict_ec_ph_corrections
+description: |
+  Legacy AE2 EC/pH correction real-hardware scenario migrated to standalone AE3-Lite.
+  Каноничная проверка: two-tank start-cycle smoke on a real test node.
+scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

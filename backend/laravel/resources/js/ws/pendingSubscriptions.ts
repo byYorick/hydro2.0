@@ -1,12 +1,14 @@
 import { logger } from '@/utils/logger'
 import type {
   ActiveSubscription,
+  AlertCreatedHandler,
   ChannelControl,
   ChannelKind,
   EchoLike,
   GlobalChannelRegistry,
   GlobalEventHandler,
   PendingSubscription,
+  ZoneUpdateHandler,
   ZoneCommandHandler,
 } from '@/ws/subscriptionTypes'
 import type { ToastHandler } from '@/composables/useApi'
@@ -28,7 +30,7 @@ interface PendingSubscriptionsManagerDeps {
   createActiveSubscription: (
     channelName: string,
     kind: ChannelKind,
-    handler: ZoneCommandHandler | GlobalEventHandler,
+    handler: ZoneCommandHandler | GlobalEventHandler | ZoneUpdateHandler | AlertCreatedHandler,
     componentTag: string,
     instanceId: number,
     showToast?: ToastHandler
@@ -151,7 +153,7 @@ export function createPendingSubscriptionsManager(deps: PendingSubscriptionsMana
     channelName: string,
     kind: ChannelKind,
     channelType: 'private' | 'public',
-    handler: ZoneCommandHandler | GlobalEventHandler,
+    handler: ZoneCommandHandler | GlobalEventHandler | ZoneUpdateHandler | AlertCreatedHandler,
     componentTag: string,
     instanceId: number,
     showToast?: ToastHandler

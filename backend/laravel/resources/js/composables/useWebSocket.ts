@@ -14,6 +14,8 @@ import type {
   ChannelKind,
   GlobalChannelRegistry,
   GlobalEventHandler,
+  ZoneUpdateHandler,
+  AlertCreatedHandler,
   PendingSubscription,
   ZoneCommandHandler,
 } from '@/ws/subscriptionTypes'
@@ -63,7 +65,7 @@ function createSubscriptionId(): string {
 function createActiveSubscription(
   channelName: string,
   kind: ChannelKind,
-  handler: ZoneCommandHandler | GlobalEventHandler,
+  handler: ZoneCommandHandler | GlobalEventHandler | ZoneUpdateHandler | AlertCreatedHandler,
   componentTag: string,
   instanceId: number,
   showToast?: ToastHandler
@@ -82,6 +84,8 @@ function createActiveSubscription(
 const {
   handleCommandEvent,
   handleGlobalEvent,
+  handleZoneUpdateEvent,
+  handleAlertEvent,
 } = createWebSocketEventDispatchers({
   activeSubscriptions,
   channelSubscribers,
@@ -100,6 +104,8 @@ const channelControlManager = createChannelControlManager({
   globalChannelRegistry,
   onCommandEvent: handleCommandEvent,
   onGlobalEvent: handleGlobalEvent,
+  onZoneUpdateEvent: handleZoneUpdateEvent,
+  onAlertEvent: handleAlertEvent,
 })
 
 const {
@@ -252,7 +258,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    const channelName = `commands.${zoneId}`
+    const channelName = `hydro.commands.${zoneId}`
     const echo = ensureEchoAvailable(showToast)
     
     // Если Echo не доступен, сохраняем подписку в очередь
@@ -416,6 +422,107 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     }
   }
 
+  const subscribeToZoneUpdates = (zoneId: number, handler: ZoneUpdateHandler): (() => void) => {
+    if (typeof handler !== 'function') {
+      logger.warn('[useWebSocket] Missing zone update handler', { zoneId })
+      return () => undefined
+    }
+
+    if (typeof zoneId !== 'number' || Number.isNaN(zoneId)) {
+      logger.warn('[useWebSocket] Invalid zoneId provided for zone updates subscription', { zoneId })
+      return () => undefined
+    }
+
+    if (!isWsEnabled()) {
+      ensureEchoAvailable(showToast)
+      return () => undefined
+    }
+
+    const channelName = `hydro.zones.${zoneId}`
+    const echo = ensureEchoAvailable(showToast)
+
+    if (!echo) {
+      return pendingSubscriptionsManager.createPendingSubscription(
+        channelName,
+        'zoneUpdates',
+        'private',
+        handler,
+        resolvedComponentTag,
+        instanceId,
+        showToast
+      )
+    }
+
+    const control = channelControlManager.ensureChannelControl(channelName, 'zoneUpdates', 'private')
+    if (!control) {
+      logger.warn('[useWebSocket] Unable to create zone updates channel', { channel: channelName })
+      return () => undefined
+    }
+
+    const subscription = createActiveSubscription(
+      channelName,
+      'zoneUpdates',
+      handler,
+      resolvedComponentTag,
+      instanceId,
+      showToast
+    )
+
+    addSubscription(control, subscription)
+
+    return () => {
+      removeSubscription(subscription.id)
+    }
+  }
+
+  const subscribeToAlerts = (handler: AlertCreatedHandler): (() => void) => {
+    if (typeof handler !== 'function') {
+      logger.warn('[useWebSocket] Missing alerts handler', {})
+      return () => undefined
+    }
+
+    if (!isWsEnabled()) {
+      ensureEchoAvailable(showToast)
+      return () => undefined
+    }
+
+    const channelName = 'hydro.alerts'
+    const echo = ensureEchoAvailable(showToast)
+
+    if (!echo) {
+      return pendingSubscriptionsManager.createPendingSubscription(
+        channelName,
+        'alerts',
+        'private',
+        handler,
+        resolvedComponentTag,
+        instanceId,
+        showToast
+      )
+    }
+
+    const control = channelControlManager.ensureChannelControl(channelName, 'alerts', 'private')
+    if (!control) {
+      logger.warn('[useWebSocket] Unable to create alerts channel', { channel: channelName })
+      return () => undefined
+    }
+
+    const subscription = createActiveSubscription(
+      channelName,
+      'alerts',
+      handler,
+      resolvedComponentTag,
+      instanceId,
+      showToast
+    )
+
+    addSubscription(control, subscription)
+
+    return () => {
+      removeSubscription(subscription.id)
+    }
+  }
+
   const unsubscribeAll = (): void => {
     // Удаляем также отложенные подписки этого компонента
     const pendingToRemove: string[] = []
@@ -442,6 +549,8 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
   return {
     subscribeToZoneCommands,
     subscribeToGlobalEvents,
+    subscribeToZoneUpdates,
+    subscribeToAlerts,
     unsubscribeAll,
     subscriptions,
     fetchSnapshot: snapshotSync.fetchAndApplySnapshot,

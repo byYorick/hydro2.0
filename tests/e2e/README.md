@@ -124,6 +124,38 @@ QUEUED → SENT → ACK → DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT
 ./tools/testing/run_e2e.sh clean
 ```
 
+## Запуск на реальной ноде
+
+Для прогона на реальной ESP32-ноде используйте:
+
+```bash
+# Показать, какие сценарии будут запущены
+tests/e2e/run_automation_engine_real_hardware.sh --set=full --list
+
+# Каноничный AE3-Lite two-tank smoke на реальной test-node
+tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
+
+# Полный real-hardware набор
+tests/e2e/run_automation_engine_real_hardware.sh --set=full
+```
+
+По умолчанию `SCENARIO_SET=full`. Wrapper прогоняет все real-hardware entrypoints
+из `automation_engine/`, `workflow/` и `ae3lite/`. Legacy AE2 names при этом
+остаются отдельными YAML-файлами, но могут быть явно портированы на каноничные
+AE3 сценарии через `scenario_ref` внутри самих файлов.
+
+Опциональные фильтры:
+
+```bash
+# Включать только сценарии по regex
+E2E_SCENARIO_INCLUDE_REGEX='scenarios/(workflow|automation_engine)/' \
+  tests/e2e/run_automation_engine_real_hardware.sh --set=full
+
+# Исключать сценарии по regex
+E2E_SCENARIO_EXCLUDE_REGEX='scenarios/chaos/' \
+  tests/e2e/run_automation_engine_real_hardware.sh --set=full
+```
+
 ## Отчеты
 
 После выполнения тестов генерируются отчеты:

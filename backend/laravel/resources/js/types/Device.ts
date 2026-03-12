@@ -41,6 +41,7 @@ export interface PumpCalibrationConfig {
  */
 export interface DeviceChannel {
   id?: number
+  node_channel_id?: number
   node_id?: number
   channel: string
   type: 'SENSOR' | 'ACTUATOR' | string
@@ -49,6 +50,8 @@ export interface DeviceChannel {
   config?: Record<string, unknown>
   pump_calibration?: PumpCalibrationConfig | null
   actuator_type?: string | null
+  pump_component?: string | null
+  binding_role?: string | null
   description?: string | null
 }
 
@@ -85,6 +88,7 @@ export interface Device {
   config?: DeviceConfig
   zone?: Zone
   zone_id?: number
+  pending_zone_id?: number | null
   channels?: DeviceChannel[]
   last_seen_at?: string
   created_at?: string

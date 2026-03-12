@@ -4,6 +4,7 @@
 
 import asyncio
 import json
+import re
 from typing import Dict, Any, Optional, Callable
 from functools import lru_cache
 from collections import OrderedDict
@@ -19,6 +20,7 @@ from .utils_time import current_timestamp_ms
 from .logging import get_logger
 
 logger = get_logger(__name__)
+_SIG_HEX64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 @dataclass
@@ -128,7 +130,12 @@ class CommandHandler:
             "set_relay": self._handle_set_relay,
             "run_pump": self._handle_run,
             "dose": self._handle_dose,
+            "state": self._handle_state,
             "set_pwm": self._handle_set_pwm,
+            "light_on": self._handle_light_on,
+            "light_off": self._handle_light_off,
+            "activate_sensor_mode": self._handle_activate_sensor_mode,
+            "deactivate_sensor_mode": self._handle_deactivate_sensor_mode,
             "FORCE_IRRIGATION": self._handle_force_irrigation,
             "hil_set_sensor": self._handle_hil_set_sensor,
             "hil_raise_error": self._handle_hil_raise_error,
@@ -248,18 +255,28 @@ class CommandHandler:
                 data = json.loads(payload.decode('utf-8'))
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.error(f"Failed to parse command JSON: {e}")
-                self._schedule_async(self._send_error_response(channel, None, "INVALID", "Invalid JSON"))
+                self._schedule_async(
+                    self._send_error_response(
+                        channel,
+                        None,
+                        "INVALID",
+                        "Invalid JSON",
+                        error_code="invalid_json",
+                    )
+                )
                 return
             
             validation_error = self._validate_command_payload(data)
             if validation_error:
-                logger.error(f"Command validation failed: {validation_error}")
+                error_code, error_message = validation_error
+                logger.error(f"Command validation failed: {error_code}: {error_message}")
                 self._schedule_async(
                     self._send_error_response(
                         channel,
                         data.get("cmd_id"),
-                        "INVALID",
-                        validation_error,
+                        "ERROR",
+                        error_message,
+                        error_code=error_code,
                     )
                 )
                 return
@@ -299,27 +316,55 @@ class CommandHandler:
             except:
                 pass
     
-    def _validate_command_payload(self, payload: Dict[str, Any]) -> Optional[str]:
+    def _validate_command_payload(self, payload: Dict[str, Any]) -> Optional[tuple[str, str]]:
         required_keys = {"cmd_id", "cmd", "params", "ts", "sig"}
         allowed_keys = set(required_keys)
         if not isinstance(payload, dict):
-            return "Command payload must be an object"
+            return ("invalid_command_format", "Command payload must be an object")
         missing = required_keys - set(payload.keys())
         if missing:
-            return f"Missing fields: {', '.join(sorted(missing))}"
+            return ("invalid_command_format", f"Missing fields: {', '.join(sorted(missing))}")
         extra = set(payload.keys()) - allowed_keys
         if extra:
-            return f"Unknown fields: {', '.join(sorted(extra))}"
+            return ("invalid_command_format", f"Unknown fields: {', '.join(sorted(extra))}")
         if not isinstance(payload.get("cmd_id"), str) or not payload.get("cmd_id"):
-            return "Invalid cmd_id"
+            return ("invalid_command_format", "Invalid cmd_id")
         if not isinstance(payload.get("cmd"), str) or not payload.get("cmd"):
-            return "Invalid cmd"
+            return ("invalid_command_format", "Invalid cmd")
         if not isinstance(payload.get("params"), dict):
-            return "Invalid params (must be object)"
-        if not isinstance(payload.get("ts"), int) or payload.get("ts", -1) < 0:
-            return "Invalid ts"
-        if not isinstance(payload.get("sig"), str) or not payload.get("sig"):
-            return "Invalid sig"
+            return ("invalid_command_format", "Invalid params (must be object)")
+        ts = payload.get("ts")
+        if type(ts) is not int or ts < 0:
+            return ("invalid_hmac_format", "Invalid ts")
+        sig = payload.get("sig")
+        if not isinstance(sig, str) or not _SIG_HEX64_RE.fullmatch(sig):
+            return ("invalid_hmac_format", "Invalid sig")
+        return None
+
+    def _node_type_name(self) -> str:
+        node_type = getattr(self.node, "node_type", "")
+        return str(getattr(node_type, "value", node_type)).lower()
+
+    def _validate_command_channel_compatibility(self, channel: str, cmd: str) -> Optional[str]:
+        if cmd.startswith("hil_") or cmd == "FORCE_IRRIGATION":
+            return None
+
+        if cmd in {"activate_sensor_mode", "deactivate_sensor_mode"}:
+            if channel != "system":
+                return f"Command {cmd} is only supported on channel 'system', got '{channel}'"
+            if self._node_type_name() not in {"ph", "ec"}:
+                return f"Command {cmd} is only supported for ph/ec nodes, got '{self._node_type_name()}'"
+            return None
+
+        if cmd == "state":
+            if channel != "storage_state":
+                return f"Command {cmd} is only supported on channel 'storage_state', got '{channel}'"
+            return None
+
+        if cmd in {"set_relay", "run_pump", "dose", "set_pwm", "light_on", "light_off"}:
+            if channel not in set(getattr(self.node, "actuators", []) or []):
+                return f"Command {cmd} is not supported on channel '{channel}'"
+
         return None
 
     async def _handle_command(
@@ -352,6 +397,18 @@ class CommandHandler:
         if cmd not in self.command_map:
             logger.warning(f"Unknown command: {cmd}")
             await self._send_error_response(channel, cmd_id, "INVALID", f"Unknown command: {cmd}")
+            return
+
+        compatibility_error = self._validate_command_channel_compatibility(channel, cmd)
+        if compatibility_error:
+            logger.warning(f"Unsupported channel/cmd combination: {compatibility_error}")
+            await self._send_error_response(
+                channel,
+                cmd_id,
+                "INVALID",
+                compatibility_error,
+                error_code="unsupported_channel_cmd",
+            )
             return
         
         # Принимаем команду в state machine
@@ -523,14 +580,19 @@ class CommandHandler:
         channel: str,
         cmd_id: Optional[str],
         status: str,
-        error: str
+        error: str,
+        error_code: Optional[str] = None,
     ):
         """Отправить ответ об ошибке."""
-        if cmd_id is None:
-            logger.warning("Cannot send error response: cmd_id is None")
-            return
-        
-        await self._send_response(channel, cmd_id, status, {"error_message": error})
+        if not cmd_id:
+            cmd_id = "unknown"
+            logger.warning("Error response uses fallback cmd_id=unknown")
+
+        details: Dict[str, Any] = {"error_message": error}
+        if error_code:
+            details["error_code"] = error_code
+
+        await self._send_response(channel, cmd_id, status, details)
     
     async def _send_cached_response(
         self,
@@ -705,6 +767,48 @@ class CommandHandler:
         if applied:
             return CommandStatus.DONE, {"details": "Dose applied", **dose_details}
         return CommandStatus.NO_EFFECT, {"details": "Dose had no effect", **dose_details}
+
+    def _build_state_snapshot(self) -> Dict[str, Any]:
+        """Собрать snapshot состояния для channel=storage_state."""
+        snapshot: Dict[str, Any] = {}
+
+        for channel, act_state in sorted(self.node.actuator_states.items()):
+            snapshot[channel] = bool(getattr(act_state, "state", False))
+
+        # Алиасы для совместимости с обработкой IRR_STATE_SNAPSHOT в history-logger.
+        if "main_pump" in snapshot and "pump_main" not in snapshot:
+            snapshot["pump_main"] = bool(snapshot["main_pump"])
+        if "pump_main" in snapshot and "main_pump" not in snapshot:
+            snapshot["main_pump"] = bool(snapshot["pump_main"])
+
+        level_aliases = (
+            ("clean_level_max", "level_clean_max"),
+            ("clean_level_min", "level_clean_min"),
+            ("solution_level_max", "level_solution_max"),
+            ("solution_level_min", "level_solution_min"),
+        )
+        for canonical, legacy in level_aliases:
+            value: Optional[float] = None
+            if canonical in self.node.sensor_states:
+                value = self.node.sensor_states[canonical].value
+            elif legacy in self.node.sensor_states:
+                value = self.node.sensor_states[legacy].value
+            if value is None:
+                continue
+            is_triggered = bool(value >= 0.5)
+            snapshot[canonical] = is_triggered
+            snapshot[legacy] = is_triggered
+
+        return snapshot
+
+    def _handle_state(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать команду state для получения snapshot состояния контура."""
+        snapshot = self._build_state_snapshot()
+        return CommandStatus.DONE, {
+            "details": "State snapshot generated",
+            "snapshot": snapshot,
+            "state": snapshot,
+        }
     
     async def _stop_pump_after(self, channel: str, duration_ms: int):
         """Остановить насос через указанное время."""
@@ -757,6 +861,49 @@ class CommandHandler:
             self.pwm_values[channel] = value
             logger.info(f"Set PWM {channel} to {value}")
             return CommandStatus.DONE, {"details": f"PWM {channel} set to {value}", "value": value}
+
+    def _handle_light_on(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать light_on как set_relay(state=true)."""
+        payload = dict(params or {})
+        payload["state"] = True
+        return self._handle_set_relay("set_relay", payload)
+
+    def _handle_light_off(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Обработать light_off как set_relay(state=false)."""
+        payload = dict(params or {})
+        payload["state"] = False
+        return self._handle_set_relay("set_relay", payload)
+
+    def _handle_activate_sensor_mode(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Активировать sensor mode для pH/EC ноды."""
+        return self._handle_sensor_mode_change(activate=True, params=params)
+
+    def _handle_deactivate_sensor_mode(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        """Деактивировать sensor mode для pH/EC ноды."""
+        return self._handle_sensor_mode_change(activate=False, params=params)
+
+    def _handle_sensor_mode_change(
+        self,
+        activate: bool,
+        params: Dict[str, Any],
+    ) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
+        channel = params.get("channel", "system")
+        if channel != "system":
+            return CommandStatus.INVALID, {"error": "unsupported_channel_cmd"}
+
+        node_type = self._node_type_name()
+        if node_type not in {"ph", "ec"}:
+            return CommandStatus.INVALID, {"error": "unsupported_channel_cmd"}
+
+        flag_name = "ph_sensor_mode_active" if node_type == "ph" else "ec_sensor_mode_active"
+        is_active = bool(getattr(self.node, flag_name, False))
+        if activate == is_active:
+            note = "sensor_mode_already_active" if activate else "sensor_mode_already_inactive"
+            return CommandStatus.NO_EFFECT, {"note": note}
+
+        setattr(self.node, flag_name, activate)
+        note = "sensor_mode_activated" if activate else "sensor_mode_deactivated"
+        return CommandStatus.DONE, {"details": note}
     
     def _handle_hil_set_sensor(self, cmd: str, params: Dict[str, Any]) -> tuple[CommandStatus, Optional[Dict[str, Any]]]:
         """Обработать команду hil_set_sensor (HIL инжект телеметрии)."""

@@ -28,25 +28,21 @@ def _create_command_payload(
     cmd_id = cmd_id or str(uuid.uuid4())
     if not cmd:
         raise ValueError("'cmd' is required")
+    secret = get_settings().node_default_secret
+    if not secret:
+        raise ValueError("node_default_secret is not configured")
+
     payload = {"cmd": cmd, "cmd_id": cmd_id, "params": params or {}}
 
-    secret = get_settings().node_default_secret
     if ts is None:
-        if secret:
-            ts = int(time.time())
-        elif sig:
-            raise ValueError("sig requires node_default_secret")
-    elif not secret:
-        raise ValueError("sig requires node_default_secret")
+        ts = int(time.time())
 
-    if ts is not None:
-        payload["ts"] = ts
-    if secret:
-        payload_str = canonical_json_payload(payload)
-        computed_sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
-        if sig and sig != computed_sig:
-            logger.warning("Overriding provided command signature with server-generated HMAC")
-        payload["sig"] = computed_sig
+    payload["ts"] = ts
+    payload_str = canonical_json_payload(payload)
+    computed_sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
+    if sig and sig != computed_sig:
+        logger.warning("Overriding provided command signature with server-generated HMAC")
+    payload["sig"] = computed_sig
     return payload
 
 
@@ -126,15 +122,7 @@ async def publish_command_mqtt(
             if not mqtt_client.is_connected():
                 raise ConnectionError("MQTT client is not connected and reconnection failed")
 
-        s = get_settings()
-        zone_segment = f"zn-{zone_id}"
-        if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
-            zone_segment = zone_uid
-        elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-            logger.warning(
-                "mqtt_zone_format=uid but zone_uid not provided, using zn-%s (may cause mismatch with node subscription)",
-                zone_id,
-            )
+        zone_segment = zone_uid or f"zn-{zone_id}"
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command"
         logger.info(
@@ -192,15 +180,7 @@ async def publish_config_mqtt(
             if not mqtt_client.is_connected():
                 raise ConnectionError("MQTT client is not connected and reconnection failed")
 
-        s = get_settings()
-        zone_segment = f"zn-{zone_id}"
-        if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid" and zone_uid:
-            zone_segment = zone_uid
-        elif hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-            logger.warning(
-                "mqtt_zone_format=uid but zone_uid not provided, using zn-%s (may cause mismatch with node subscription)",
-                zone_id,
-            )
+        zone_segment = zone_uid or f"zn-{zone_id}"
 
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
         import json as json_lib

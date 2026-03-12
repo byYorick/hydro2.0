@@ -20,6 +20,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - единицами измерения (для сенсоров);
 - допустимым диапазоном значений.
 
+### 1.1. Важно: два уровня имён каналов
+
+В системе одновременно используются два уровня именования:
+
+- **Domain logical key** (уровень backend/рецептов/UI), например `ph_main`, `ec_main`, `temp_air`.
+- **Firmware channel id** (уровень NodeConfig/MQTT topic), например `ph_sensor`, `ec_sensor`, `temperature`.
+
+Этот документ фиксирует оба уровня. Для runtime-команд и telemetry по MQTT ориентироваться нужно
+на **firmware channel id**.
+
 Все каналы используют MQTT-паттерн:
 
 ```text
@@ -32,7 +42,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ### 2.1. pH
 
-- Ключ: `ph_main`
+- Domain key: `ph_main`
+- Firmware channel id: `ph_sensor`
 - Тип: `SENSOR`
 - Единицы: pH
 - Диапазон: 3.0–9.0
@@ -41,14 +52,15 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 ```json
 {
  "value": 5.78,
- "metric": "PH",
- "ts": 1737355600456
+ "metric_type": "PH",
+ "ts": 1737355600
 }
 ```
 
 ### 2.2. EC (электропроводность)
 
-- Ключ: `ec_main`
+- Domain key: `ec_main`
+- Firmware channel id: `ec_sensor`
 - Тип: `SENSOR`
 - Единицы: mS/cm или µS/cm (фиксируется в конфиге зоны)
 - Telemetry payload:
@@ -56,32 +68,36 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 ```json
 {
  "value": 1.6,
- "metric": "EC",
- "ts": 1737355600456
+ "metric_type": "EC",
+ "ts": 1737355600
 }
 ```
 
 ### 2.3. Температура воздуха
 
-- Ключ: `temp_air`
+- Domain key: `temp_air`
+- Firmware channel id: `temperature` (real climate-node), `air_temp_c` (test_node)
 - Тип: `SENSOR`
 - Единицы: °C
 
 ### 2.4. Температура раствора
 
-- Ключ: `temp_water`
+- Domain key: `temp_water`
+- Firmware channel id: `solution_temp_c`
 - Тип: `SENSOR`
 - Единицы: °C
 
 ### 2.5. Влажность воздуха
 
-- Ключ: `humidity_air`
+- Domain key: `humidity_air`
+- Firmware channel id: `humidity` (real climate-node), `air_rh` (test_node)
 - Тип: `SENSOR`
 - Единицы: %
 
 ### 2.6. Освещённость
 
-- Ключ: `lux_main`
+- Domain key: `lux_main`
+- Firmware channel id: `light` (real light-node), `light_level` (test_node)
 - Тип: `SENSOR`
 - Единицы: lux или PPFD (фиксируется в конфиге).
 
@@ -119,7 +135,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "WATER_LEVEL_SWITCH",
   "value": 1,
-  "ts": 1737355600456
+  "ts": 1737355600
 }
 ```
 
@@ -143,7 +159,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "SOIL_MOISTURE",
   "value": 41.2,
-  "ts": 1737355600456
+  "ts": 1737355600
 }
 ```
 
@@ -167,7 +183,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "metric_type": "OUTSIDE_TEMP",
   "value": 7.8,
-  "ts": 1737355600456
+  "ts": 1737355600
 }
 ```
 
@@ -182,27 +198,28 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ### 3.1. Насосы pH
 
-- `pump_acid` — насос дозирования кислоты;
-- `pump_base` — насос дозирования щёлочи.
+- Domain keys: `pump_acid`, `pump_base`.
+- Firmware channel id:
+  - `ph_doser_down` / `ph_doser_up` (real `ph_node`);
+  - `pump_acid` / `pump_base` (test_node и часть orchestration-контрактов).
 
 Тип: `ACTUATOR`.
 
-Базовые команды (JSON-payload):
-
-1. Дозирование по объёму:
+Базовая команда для real-node:
 
 ```json
 {
   "cmd_id": "cmd-19292",
-  "cmd": "dose",
+  "cmd": "run_pump",
   "params": {
-    "ml": 1.0,
-    "ttl_ms": 5000
+    "duration_ms": 800
   }
 }
 ```
 
-2. Прямое управление состоянием (например, сервисные режимы):
+Примечание: `dose` может использоваться как orchestration alias и требует adapter/firmware support.
+
+Сервисные команды (если поддерживаются конкретной нодой):
 
 ```json
 {
@@ -225,20 +242,21 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Тип: `ACTUATOR`.
 
-Команды аналогичны:
+Базовая команда для real-node:
 
 ```json
 {
   "cmd_id": "cmd-20101",
-  "cmd": "dose",
+  "cmd": "run_pump",
   "params": {
-    "ml": 5.0,
-    "ttl_ms": 10000
+    "duration_ms": 1500
   }
 }
 ```
 
-или
+Alias-команды (`dose` и т.д.) допускаются только при явной поддержке в прошивке/adapter.
+
+Для релейных/клапанных каналов используется:
 
 ```json
 {
@@ -259,7 +277,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 - `valve_solution_supply` — клапан забора из бака раствора;
 - `pump_main` — главный насос контура подготовки/полива;
 - `fan_air` — вентилятор;
-- `heater_air` — нагреватель воздуха;
+- `heater_air` / `heater` — нагреватель воздуха (имя зависит от прошивки);
 - `white_light` — основное освещение;
 - `uv_light` — УФ-лампы.
 
@@ -322,11 +340,9 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ```json
 {
-  "node_id": "nd-pump-1",
-  "channel": "pump_bus_current",
   "metric_type": "PUMP_CURRENT",
   "value": 220.5,
-  "timestamp": 1710005555
+  "ts": 1710005555
 }
 ```
 
@@ -340,7 +356,171 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
   узел формирует `command_response` со статусом `ERROR` и соответствующим `error_code`,
   а также может публиковать дополнительную диагностическую telemetry.
 
-## 4. Виртуальные каналы (VIRTUAL)
+## 4. Системные каналы и команды (SYSTEM)
+
+### 4.1. Системный канал
+
+Системный канал используется для управления жизненным циклом ноды и не привязан к конкретному физическому каналу.
+
+**Ключ канала:** `system`
+
+**Тип:** SYSTEM (специальный тип для управляющих команд)
+
+**MQTT топик:**
+```
+hydro/{gh}/{zone}/{node}/system/command
+```
+
+**Отличия от канальных команд:**
+- Используется service-channel `system` между `{node}` и `command`
+- Команды влияют на поведение всей ноды, а не отдельного канала
+- Используется для управления режимами работы сенсорных нод
+
+Runtime-оговорка:
+- `test_node` в текущей реализации распознаёт `activate_sensor_mode`/`deactivate_sensor_mode`
+  по `cmd` + `node_uid` и не требует жёсткой привязки к `system` channel.
+
+### 4.2. Команда activate_sensor_mode
+
+**Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
+
+**Применимость (целевой контракт orchestration):** pH/EC ноды, зависящие от потока раствора.
+Фактическая реализация:
+- `test_node`: поддерживается;
+- production `ph_node/ec_node`: на текущий момент не зарегистрировано (см. матрицу соответствия).
+
+**Payload:**
+```json
+{
+  "cmd": "activate_sensor_mode",
+  "params": {
+    "stabilization_time_sec": 60
+  },
+  "cmd_id": "cmd-activate-123",
+  "ts": 1710001234,
+  "sig": "a1b2c3d4e5f6..."
+}
+```
+
+**Параметры (целевой контракт):**
+- `stabilization_time_sec` (integer, рекомендуется) — время стабилизации сенсора в секундах
+
+Текущий runtime `test_node` не требует этот параметр как обязательный.
+
+**Поведение ноды (целевой контракт orchestration):**
+1. Переход из режима IDLE в режим ACTIVE
+2. Запуск таймера стабилизации
+3. До завершения стабилизации: `stable=false`, `corrections_allowed=false`
+4. После стабилизации: `stable=true`, `corrections_allowed=true`
+
+**Текущий runtime `test_node`:**
+- команда активирует sensor mode сразу;
+- `stabilization_time_sec` принимается как параметр протокола, но отдельно не отрабатывается таймером;
+- telemetry-флаги переключаются immediately вместе с sensor mode.
+
+**Command Response (пример целевого ответа):**
+```json
+{
+  "cmd_id": "cmd-activate-123",
+  "status": "DONE",
+  "details": {
+    "mode": "ACTIVE",
+    "stabilization_time_sec": 60
+  },
+  "ts": 1710001235000
+}
+```
+
+Текущий runtime `test_node` обычно возвращает `DONE` с базовыми runtime-`details`
+(`virtual`, `node_uid`, `channel`, `cmd`, `exec_delay_ms`) без отдельного поля `mode`.
+
+### 4.3. Команда deactivate_sensor_mode
+
+**Назначение:** Деактивация сенсорной ноды после завершения цикла (при остановке потока).
+
+**Применимость (целевой контракт orchestration):** pH/EC ноды.
+Фактическая реализация:
+- `test_node`: поддерживается;
+- production `ph_node/ec_node`: на текущий момент не зарегистрировано.
+
+**Payload:**
+```json
+{
+  "cmd": "deactivate_sensor_mode",
+  "params": {},
+  "cmd_id": "cmd-deactivate-456",
+  "ts": 1710002234,
+  "sig": "b2c3d4e5f6a1..."
+}
+```
+
+**Параметры:** Пустой объект (команда не требует параметров).
+
+**Поведение ноды:**
+1. Переход из режима ACTIVE в режим IDLE
+2. Остановка измерений
+3. Прекращение публикации телеметрии
+4. Продолжение heartbeat/status; LWT публикуется только брокером при disconnect MQTT-сессии
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-deactivate-456",
+  "status": "DONE",
+  "details": {
+    "mode": "IDLE"
+  },
+  "ts": 1710002235000
+}
+```
+
+### 4.4. Расширенная телеметрия в ACTIVE режиме
+
+В ACTIVE режиме telemetry может содержать дополнительные флаги:
+- `flow_active` (boolean)
+- `stable` (boolean)
+- `corrections_allowed` (boolean)
+
+**Текущий runtime `test_node`:**
+- для `ph_sensor`/`ec_sensor` эти флаги публикуются;
+- `stable` и `corrections_allowed` равны состоянию sensor mode (без промежуточного этапа стабилизации);
+- `stabilization_progress_sec` сейчас не публикуется.
+
+Пример runtime-payload:
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001300,
+  "stub": true,
+  "flow_active": true,
+  "stable": true,
+  "corrections_allowed": true
+}
+```
+
+### 4.5. Применение в Correction Cycle
+
+Системные команды используются automation-engine для управления state machine коррекции
+(целевой сценарий):
+
+| Переход состояний | Команда | Применимость |
+|------------------|---------|-------------|
+| IDLE → TANK_FILLING | `activate_sensor_mode` | pH, EC ноды |
+| READY → IDLE | `deactivate_sensor_mode` | pH, EC ноды |
+| READY → IRRIGATING | `activate_sensor_mode` | pH, EC ноды (если не активны) |
+| IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` | pH, EC ноды |
+
+Текущий статус реализации по прошивкам см. в:
+- `TEST_NODE_TO_REAL_NODES_MAPPING_MATRIX.md`
+
+**См. также:**
+- `../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` (секция 7.5) — полная спецификация системных команд
+
+---
+
+## 5. Виртуальные каналы (VIRTUAL)
 
 Примеры:
 
@@ -357,7 +537,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 ---
 
-## 5. Правила расширения справочника
+## 6. Правила расширения справочника
 
 1. Любой новый канал должен быть добавлен:
  - сюда;

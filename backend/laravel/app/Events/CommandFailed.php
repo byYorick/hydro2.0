@@ -4,6 +4,7 @@ namespace App\Events;
 
 use App\Services\EventSequenceService;
 use App\Traits\RecordsZoneEvent;
+use App\Traits\RecordsWsBroadcastMetric;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class CommandFailed implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent, RecordsWsBroadcastMetric;
 
     public string $queue = 'broadcasts';
 
@@ -57,11 +58,11 @@ class CommandFailed implements ShouldBroadcast
     {
         // Если указана зона, отправляем в приватный канал зоны
         if ($this->zoneId) {
-            return new PrivateChannel("commands.{$this->zoneId}");
+            return new PrivateChannel("hydro.commands.{$this->zoneId}");
         }
 
         // Иначе отправляем в глобальный канал команд
-        return new PrivateChannel('commands.global');
+        return new PrivateChannel('hydro.commands.global');
     }
 
     /**
@@ -93,6 +94,8 @@ class CommandFailed implements ShouldBroadcast
      */
     public function broadcasted(): void
     {
+        $this->recordWsBroadcastMetric('CommandFailed');
+
         if ($this->zoneId) {
             $this->recordZoneEvent(
                 zoneId: $this->zoneId,

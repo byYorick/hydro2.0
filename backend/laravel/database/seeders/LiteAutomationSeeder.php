@@ -22,10 +22,12 @@ use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneAutomationLogicProfile;
 use App\Models\ZoneEvent;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -44,12 +46,15 @@ class LiteAutomationSeeder extends Seeder
         $this->cleanupStaleLiteNodes($zoneNodes);
 
         $this->createInfrastructure($zones, $zoneNodes);
+        $this->seedPumpCalibrations($zoneNodes);
 
         [$plant, $revision] = $this->createRecipe();
         $cycles = $this->createCycles($zones, $revision, $plant->id);
 
         $this->seedTelemetry($zones, $zoneNodes, $cycles);
         $this->seedAutomationSignals($zones, $zoneNodes, $cycles);
+        $this->seedAutomationProfiles($zones);
+        $this->seedIrrStateEvents($zones, $zoneNodes);
 
         $this->command->info('=== Lite Automation Engine seeding complete ===');
     }
@@ -483,6 +488,86 @@ class LiteAutomationSeeder extends Seeder
     }
 
     /**
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
+     */
+    private function seedPumpCalibrations(array $zoneNodes): void
+    {
+        if (! Schema::hasTable('pump_calibrations') || ! Schema::hasTable('channel_bindings')) {
+            $this->command->warn('pump_calibrations/channel_bindings tables are missing, skipping pump calibration seed');
+
+            return;
+        }
+
+        $defaults = [
+            'ph_acid_pump' => ['ml_per_sec' => 0.5, 'component' => 'ph_down'],
+            'ph_base_pump' => ['ml_per_sec' => 0.5, 'component' => 'ph_up'],
+            'ec_npk_pump' => ['ml_per_sec' => 1.0, 'component' => 'npk'],
+            'ec_calcium_pump' => ['ml_per_sec' => 1.0, 'component' => 'calcium'],
+            'ec_magnesium_pump' => ['ml_per_sec' => 1.0, 'component' => 'magnesium'],
+            'ec_micro_pump' => ['ml_per_sec' => 0.8, 'component' => 'micro'],
+        ];
+
+        $now = now();
+
+        foreach ($zoneNodes as $nodesByRole) {
+            foreach ($nodesByRole as $node) {
+                $channels = NodeChannel::query()
+                    ->where('node_id', $node->id)
+                    ->where('type', 'actuator')
+                    ->get(['id']);
+                if ($channels->isEmpty()) {
+                    continue;
+                }
+
+                $rolesByChannelId = ChannelBinding::query()
+                    ->whereIn('node_channel_id', $channels->pluck('id'))
+                    ->pluck('role', 'node_channel_id');
+
+                foreach ($channels as $channel) {
+                    $role = $rolesByChannelId->get($channel->id);
+                    if (! is_string($role) || ! array_key_exists($role, $defaults)) {
+                        continue;
+                    }
+
+                    $defaultConfig = $defaults[$role];
+                    $component = $defaultConfig['component'];
+
+                    $baseQuery = DB::table('pump_calibrations')
+                        ->where('node_channel_id', $channel->id)
+                        ->where('source', 'default_seed')
+                        ->whereNull('valid_to');
+
+                    $payload = [
+                        'component' => $component,
+                        'ml_per_sec' => $defaultConfig['ml_per_sec'],
+                        'is_active' => true,
+                        'valid_from' => $now,
+                        'updated_at' => $now,
+                    ];
+
+                    if ($baseQuery->exists()) {
+                        $baseQuery->update($payload);
+                    } else {
+                        DB::table('pump_calibrations')->insert([
+                            'node_channel_id' => $channel->id,
+                            'component' => $component,
+                            'ml_per_sec' => $defaultConfig['ml_per_sec'],
+                            'source' => 'default_seed',
+                            'is_active' => true,
+                            'valid_from' => $now,
+                            'valid_to' => null,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    }
+                }
+            }
+        }
+
+        $this->command->info('Pump calibrations seeded with defaults');
+    }
+
+    /**
      * @return array{Plant, RecipeRevision}
      */
     private function createRecipe(): array
@@ -862,6 +947,117 @@ class LiteAutomationSeeder extends Seeder
                 'created_at' => $ackAt->copy()->subSeconds(6),
             ]
         );
+    }
+
+    /**
+     * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
+     */
+    private function seedAutomationProfiles(array $zones): void
+    {
+        $adminId = User::query()->where('role', 'admin')->value('id') ?? User::query()->value('id');
+
+        $commandPlans = $this->defaultCommandPlans();
+
+        $subsystems = [
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                ],
+            ],
+        ];
+
+        foreach ($zones as $zoneKey => $zone) {
+            ZoneAutomationLogicProfile::updateOrCreate(
+                ['zone_id' => $zone->id, 'mode' => ZoneAutomationLogicProfile::MODE_WORKING],
+                [
+                    'is_active' => true,
+                    'subsystems' => $subsystems,
+                    'command_plans' => $commandPlans,
+                    'created_by' => $adminId,
+                    'updated_by' => $adminId,
+                ]
+            );
+        }
+
+        $this->command->info('Automation logic profiles seeded for '.count($zones).' zones');
+    }
+
+    /**
+     * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
+     * @param  array<string, array<string, DeviceNode>>  $zoneNodes
+     */
+    private function seedIrrStateEvents(array $zones, array $zoneNodes): void
+    {
+        $now = now();
+
+        foreach ($zones as $zoneKey => $zone) {
+            ZoneEvent::updateOrCreate(
+                [
+                    'zone_id' => $zone->id,
+                    'type' => 'IRR_STATE_SNAPSHOT',
+                ],
+                [
+                    'payload_json' => [
+                        'pump_main' => false,
+                        'valve_clean_fill' => false,
+                        'valve_clean_supply' => false,
+                        'valve_solution_fill' => false,
+                        'valve_solution_supply' => false,
+                        'valve_irrigation' => false,
+                        'clean_level_max' => false,
+                        'clean_level_min' => false,
+                        'solution_level_max' => false,
+                        'solution_level_min' => false,
+                        'source' => 'seed',
+                    ],
+                    'server_ts' => $now->timestamp * 1000,
+                    'entity_type' => 'zone',
+                    'entity_id' => (string) $zone->id,
+                ]
+            );
+        }
+
+        $this->command->info('IRR_STATE_SNAPSHOT events seeded for '.count($zones).' zones');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultCommandPlans(): array
+    {
+        return [
+            'schema_version' => 1,
+            'plan_version' => 1,
+            'source' => 'seed',
+            'plans' => [
+                'diagnostics' => [
+                    'execution' => [
+                        'workflow' => 'cycle_start',
+                        'topology' => 'two_tank_drip_substrate_trays',
+                        'required_node_types' => ['irrig'],
+                        'startup' => [
+                            'telemetry_max_age_sec' => 60,
+                            'irr_state_max_age_sec' => 30,
+                            'irr_state_wait_timeout_sec' => 5.0,
+                            'sensor_mode_stabilization_time_sec' => 10,
+                            'level_poll_interval_sec' => 10,
+                            'clean_fill_timeout_sec' => 300,
+                            'solution_fill_timeout_sec' => 600,
+                            'prepare_recirculation_timeout_sec' => 300,
+                            'clean_max_sensor_labels' => ['level_clean_max'],
+                            'clean_min_sensor_labels' => ['level_clean_min'],
+                            'solution_max_sensor_labels' => ['level_solution_max'],
+                            'solution_min_sensor_labels' => ['level_solution_min'],
+                        ],
+                    ],
+                    'steps' => [
+                        ['channel' => 'storage_state', 'cmd' => 'state', 'params' => []],
+                    ],
+                ],
+            ],
+        ];
     }
 
     private function sensorTypeFromMetric(string $metric): ?string

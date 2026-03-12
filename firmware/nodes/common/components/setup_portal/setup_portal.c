@@ -44,6 +44,9 @@ static const char *map_node_type_from_prefix(const char *prefix) {
     if (strcmp(prefix, "PUMP") == 0) {
         return "pump";
     }
+    if (strcmp(prefix, "IRRIG") == 0) {
+        return "irrig";
+    }
     if (strcmp(prefix, "RELAY") == 0) {
         return "relay";
     }
@@ -635,6 +638,12 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
                 node_type = OLED_UI_NODE_TYPE_CLIMATE;
             } else if (strcmp(config->node_type_prefix, "PUMP") == 0) {
                 node_type = OLED_UI_NODE_TYPE_PUMP;
+            } else if (strcmp(config->node_type_prefix, "LIGHT") == 0) {
+                node_type = OLED_UI_NODE_TYPE_LIGHTING;
+            } else if (strcmp(config->node_type_prefix, "RELAY") == 0) {
+                node_type = OLED_UI_NODE_TYPE_UNKNOWN;
+            } else if (strcmp(config->node_type_prefix, "IRRIG") == 0) {
+                node_type = OLED_UI_NODE_TYPE_UNKNOWN;
             }
             
             err = oled_ui_init(node_type, ap_ssid, &oled_config);

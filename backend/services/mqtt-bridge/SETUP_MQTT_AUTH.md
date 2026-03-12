@@ -18,7 +18,7 @@ brew install mosquitto
 
 # Сгенерируйте файл паролей
 chmod +x generate_passwords.sh
-./generate_passwords.sh passwords
+./generate_passwords.sh passwords.txt
 ```
 
 ### Вариант B: Ручная генерация
@@ -27,22 +27,19 @@ chmod +x generate_passwords.sh
 cd backend/services/mqtt-bridge
 
 # Создайте файл паролей
-mosquitto_passwd -c passwords python_service
+mosquitto_passwd -c passwords.txt python_service
 # Введите пароль: python_service_pass
 
-mosquitto_passwd passwords automation_engine
+mosquitto_passwd passwords.txt automation_engine
 # Введите пароль: automation_pass
 
-mosquitto_passwd passwords history_logger
+mosquitto_passwd passwords.txt history_logger
 # Введите пароль: logger_pass
 
-mosquitto_passwd passwords scheduler
-# Введите пароль: scheduler_pass
-
-mosquitto_passwd passwords mqtt_bridge
+mosquitto_passwd passwords.txt mqtt_bridge
 # Введите пароль: bridge_pass
 
-mosquitto_passwd passwords esp32_node
+mosquitto_passwd passwords.txt esp32_node
 # Введите пароль: esp32_pass
 ```
 
@@ -51,7 +48,7 @@ mosquitto_passwd passwords esp32_node
 Убедитесь, что файлы существуют:
 
 ```bash
-ls -la backend/services/mqtt-bridge/passwords
+ls -la backend/services/mqtt-bridge/passwords.txt
 ls -la backend/services/mqtt-bridge/acl
 ```
 
@@ -88,4 +85,3 @@ docker exec backend-mqtt-1 mosquitto_sub -h localhost -p 1883 -u automation_engi
    docker logs backend-automation-engine-1 | grep -i mqtt
    docker logs backend-history-logger-1 | grep -i mqtt
    ```
-

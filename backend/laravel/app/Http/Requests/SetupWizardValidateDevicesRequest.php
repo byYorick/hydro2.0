@@ -19,7 +19,7 @@ class SetupWizardValidateDevicesRequest extends FormRequest
             'assignments.irrigation' => ['required', 'integer', 'exists:nodes,id'],
             'assignments.ph_correction' => ['required', 'integer', 'exists:nodes,id'],
             'assignments.ec_correction' => ['required', 'integer', 'exists:nodes,id'],
-            'assignments.accumulation' => ['required', 'integer', 'exists:nodes,id'],
+            'assignments.accumulation' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.climate' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.light' => ['nullable', 'integer', 'exists:nodes,id'],
             'selected_node_ids' => ['nullable', 'array'],
@@ -33,7 +33,6 @@ class SetupWizardValidateDevicesRequest extends FormRequest
             'assignments.irrigation.required' => 'Нужно выбрать узел полива.',
             'assignments.ph_correction.required' => 'Нужно выбрать узел коррекции pH.',
             'assignments.ec_correction.required' => 'Нужно выбрать узел коррекции EC.',
-            'assignments.accumulation.required' => 'Нужно выбрать накопительный узел.',
         ];
     }
 }

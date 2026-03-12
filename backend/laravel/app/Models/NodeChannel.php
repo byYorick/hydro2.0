@@ -18,10 +18,14 @@ class NodeChannel extends Model
         'metric',
         'unit',
         'config',
+        'last_seen_at',
+        'is_active',
     ];
 
     protected $casts = [
         'config' => 'array',
+        'last_seen_at' => 'datetime',
+        'is_active' => 'boolean',
     ];
 
     /**
@@ -68,5 +72,4 @@ class NodeChannel extends Model
         });
     }
 }
-
 

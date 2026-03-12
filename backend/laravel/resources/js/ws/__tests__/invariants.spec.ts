@@ -32,18 +32,18 @@ describe('ws/invariants', () => {
 
   describe('registerSubscription', () => {
     it('регистрирует новую подписку', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       const stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(1)
       expect(stats.channels).toHaveLength(1)
-      expect(stats.channels[0].channel).toBe('commands.1')
+      expect(stats.channels[0].channel).toBe('hydro.commands.1')
       expect(stats.channels[0].count).toBe(1)
     })
 
     it('регистрирует несколько подписок на один канал', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.1', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
       
       const stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(2)
@@ -54,8 +54,8 @@ describe('ws/invariants', () => {
     it('обнаруживает дублирование подписки с тем же handlerId', () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       // Должно быть предупреждение о дубле
       expect(consoleWarnSpy).toHaveBeenCalled()
@@ -68,8 +68,8 @@ describe('ws/invariants', () => {
     })
 
     it('различает подписки на разные события одного канала', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.1', 'handler-2', '.App\\Events\\CommandFailed', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-2', '.App\\Events\\CommandFailed', 'component-1')
       
       const stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(2)
@@ -79,9 +79,9 @@ describe('ws/invariants', () => {
 
   describe('unregisterSubscription', () => {
     it('удаляет подписку из реестра', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
-      unregisterSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
+      unregisterSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
       
       const stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(0)
@@ -89,10 +89,10 @@ describe('ws/invariants', () => {
     })
 
     it('удаляет только указанную подписку, оставляя остальные', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.1', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
       
-      unregisterSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
+      unregisterSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
       
       const stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(1)
@@ -103,7 +103,7 @@ describe('ws/invariants', () => {
     it('предупреждает при попытке удалить несуществующую подписку', () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       
-      unregisterSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
+      unregisterSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
       
       // Должно быть предупреждение
       expect(consoleWarnSpy).toHaveBeenCalled()
@@ -114,8 +114,8 @@ describe('ws/invariants', () => {
 
   describe('checkInvariants', () => {
     it('возвращает isValid=true для корректного состояния', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.2', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.2', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
       
       const result = checkInvariants()
       expect(result.isValid).toBe(true)
@@ -124,9 +124,9 @@ describe('ws/invariants', () => {
 
     it('обнаруживает дублирование подписок', () => {
       // Симулируем дублирование через прямое добавление в реестр
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       // Добавляем дубликат вручную (имитируем баг)
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       const result = checkInvariants()
       // Должна быть обнаружена проблема (хотя registerSubscription уже предупредила)
@@ -137,7 +137,7 @@ describe('ws/invariants', () => {
     it('предупреждает о подозрительно большом количестве подписок', () => {
       // Создаем много подписок на один канал
       for (let i = 0; i < 15; i++) {
-        registerSubscription('commands.1', `handler-${i}`, '.App\\Events\\CommandStatusUpdated', `component-${i}`)
+        registerSubscription('hydro.commands.1', `handler-${i}`, '.App\\Events\\CommandStatusUpdated', `component-${i}`)
       }
       
       const result = checkInvariants()
@@ -150,19 +150,19 @@ describe('ws/invariants', () => {
   describe('resubscribe scenario', () => {
     it('корректно обрабатывает цикл register → unregister → register', () => {
       // Регистрируем подписку
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       let stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(1)
       
       // Отписываемся (reconnect scenario)
-      unregisterSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
+      unregisterSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated')
       
       stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(0)
       
       // Resubscribe после reconnect
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       stats = getSubscriptionStats()
       expect(stats.totalSubscriptions).toBe(1)
@@ -174,10 +174,10 @@ describe('ws/invariants', () => {
     it('не создает дублей при resubscribe', () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       // Симулируем resubscribe (не отписываясь сначала - это баг)
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       const stats = getSubscriptionStats()
       // Дубликат не должен быть добавлен
@@ -189,9 +189,9 @@ describe('ws/invariants', () => {
 
   describe('getSubscriptionStats', () => {
     it('возвращает корректную статистику', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.2', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
-      registerSubscription('events.global', 'handler-3', '.App\\Events\\EventCreated', 'component-3')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.2', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
+      registerSubscription('hydro.events.global', 'handler-3', '.App\\Events\\EventCreated', 'component-3')
       
       const stats = getSubscriptionStats()
       expect(stats.totalChannels).toBe(3)
@@ -212,8 +212,8 @@ describe('ws/invariants', () => {
 
   describe('clearRegistry', () => {
     it('очищает весь реестр', () => {
-      registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
-      registerSubscription('commands.2', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
+      registerSubscription('hydro.commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
+      registerSubscription('hydro.commands.2', 'handler-2', '.App\\Events\\CommandStatusUpdated', 'component-2')
       
       clearRegistry()
       

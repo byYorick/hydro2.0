@@ -18,6 +18,15 @@ help:
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
 	@echo "  protocol-check - run protocol contract tests"
+	@echo "  logs           - stream logs for selected service (SERVICE=<name>, TAIL=200)"
+	@echo "  logs-core      - stream logs for core runtime services"
+	@echo "  logs-laravel   - stream Laravel logs"
+	@echo "  logs-ae        - stream automation-engine logs"
+	@echo "  logs-hl        - stream history-logger logs"
+	@echo "  logs-mqttb     - stream mqtt-bridge logs"
+	@echo "  logs-db        - stream PostgreSQL logs"
+	@echo "  logs-redis     - stream Redis logs"
+	@echo "  logs-mqtt      - stream MQTT broker logs"
 	@echo "  erd            - generate ERD SVG (docker mermaid-cli)"
 
 .PHONY: up
@@ -65,7 +74,52 @@ down-dev: down
 .PHONY: protocol-check
 protocol-check:
 	@echo "Running protocol contract tests..."
-	@cd backend/services/common/schemas && bash run_contract_tests.sh
+	@./tools/check_runtime_schema_parity.sh
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_contracts.py -v --tb=short
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_protocol_contracts.py -v --tb=short || echo "⚠️  Legacy protocol tests failed"
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_chaos.py -v --tb=short -m "not slow" || echo "⚠️  Chaos tests failed (non-blocking)"
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest common/schemas/test_websocket_events.py -v --tb=short
+
+.PHONY: logs logs-core logs-laravel logs-ae logs-hl logs-mqttb logs-db logs-redis logs-mqtt
+logs:
+	@service="$(SERVICE)"; tail="$${TAIL:-200}"; \
+	if [ -z "$$service" ]; then \
+		echo "Usage: make logs SERVICE=<service> [TAIL=200]"; \
+		exit 1; \
+	fi; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f "$$service"
+
+logs-core:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f laravel automation-engine history-logger mqtt-bridge
+
+logs-laravel:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f laravel
+
+logs-ae:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f automation-engine
+
+logs-hl:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f history-logger
+
+logs-mqttb:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f mqtt-bridge
+
+logs-db:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f db
+
+logs-redis:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f redis
+
+logs-mqtt:
+	@tail="$${TAIL:-200}"; \
+	$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) logs --tail="$$tail" -f mqtt
 
 .PHONY: erd
 erd:

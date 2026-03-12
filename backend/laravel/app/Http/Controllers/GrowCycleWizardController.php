@@ -357,11 +357,13 @@ class GrowCycleWizardController extends Controller
     {
         $errors = [];
         $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
+        $hasNodes = (bool) ($checks['has_nodes'] ?? false);
+        $hasOnlineNodes = (bool) ($checks['online_nodes'] ?? false);
 
-        if (! ($checks['has_nodes'] ?? false)) {
+        if (! $hasNodes) {
             $errors[] = 'Нет привязанных нод в зоне';
         }
-        if (! ($checks['online_nodes'] ?? false)) {
+        if ($hasNodes && ! $hasOnlineNodes) {
             $errors[] = 'Нет онлайн нод в зоне';
         }
 
@@ -381,11 +383,28 @@ class GrowCycleWizardController extends Controller
             }
         }
 
-        foreach ($readiness['errors'] ?? [] as $issue) {
-            if (is_array($issue) && isset($issue['message']) && is_string($issue['message'])) {
-                $errors[] = $issue['message'];
-            } elseif (is_string($issue)) {
-                $errors[] = $issue;
+        $errorDetails = is_array($readiness['error_details'] ?? null) ? $readiness['error_details'] : [];
+        foreach ($errorDetails as $issue) {
+            if (! is_array($issue)) {
+                continue;
+            }
+
+            $type = (string) ($issue['type'] ?? '');
+            if ($type !== 'missing_bindings') {
+                continue;
+            }
+
+            $bindings = is_array($issue['bindings'] ?? null) ? $issue['bindings'] : [];
+            foreach ($bindings as $binding) {
+                if (! is_string($binding) || $binding === '') {
+                    continue;
+                }
+
+                if (isset($roleMessages[$binding])) {
+                    $errors[] = $roleMessages[$binding];
+                } else {
+                    $errors[] = "Не привязан обязательный канал: {$binding}";
+                }
             }
         }
 

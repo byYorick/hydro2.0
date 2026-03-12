@@ -23,6 +23,12 @@ class TelemetryPayloadModel(BaseModel):
     stable: Optional[bool] = Field(
         None, description="Stability flag for sensor readings (from firmware)"
     )
+    flow_active: Optional[bool] = Field(
+        None, description="Flow activity flag for correction gating (from firmware)"
+    )
+    corrections_allowed: Optional[bool] = Field(
+        None, description="Correction permission flag for correction gating (from firmware)"
+    )
     tds: Optional[Union[int, float]] = Field(None, description="TDS value (from node type ec)")
     error_code: Optional[Union[int, str]] = Field(None, description="Error code (from firmware)")
     temperature: Optional[float] = Field(None, description="Temperature value (from firmware)")
@@ -68,7 +74,7 @@ class CommandRequest(BaseModel):
     greenhouse_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
-    cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
+    cmd_id: Optional[str] = Field(None, max_length=128, description="Command ID from Laravel")
     ts: Optional[int] = Field(None, description="Command timestamp (seconds)")
     sig: Optional[str] = Field(None, max_length=128, description="Command HMAC signature (hex)")
     trace_id: Optional[str] = Field(None, max_length=64, description="Trace ID for logging")

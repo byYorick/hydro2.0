@@ -4,7 +4,10 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: несовместимые изменения в защищенном pipeline запрещены; миграции AE3 выполняются через compatibility bridge (`start-cycle`, `intent-*`, legacy task_type) до cutover.
+
+Канонический документ по AE3:
+- `ae3lite.md`
 
 ---
 
@@ -24,7 +27,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Архитектура Python-сервисов**
 - Общая архитектура
 - Общая библиотека (`common/`)
-- Сервисы: mqtt-bridge, history-logger, automation-engine, scheduler
+- Сервисы: mqtt-bridge, history-logger, automation-engine
+- Laravel scheduler-dispatch как runtime owner planning/dispatch
 - Взаимодействие между сервисами
 
 #### [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
@@ -49,11 +53,23 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ### Специализированные документы
 
+#### [ae3lite.md](ae3lite.md)
+Канонический план реализации AE3-Lite (DDD/OOP/Clean, polling-first, DB-first runtime, canary/rollback).
+
+#### [AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md](AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md)
+Ручной rollout/rollback runbook для `zones.automation_runtime` и AE3 handoff guards.
+
+#### [archive/ae3full.md](archive/ae3full.md)
+Архивный план AE3FULL (исторический reference, не канон).
+
+#### [archive/AE3_ARCHITECTURE.md](archive/AE3_ARCHITECTURE.md)
+Архивная детальная архитектура AE3 (исторический reference, не канон).
+
 #### [REALTIME_UPDATES_ARCH.md](REALTIME_UPDATES_ARCH.md)
 Архитектура real-time обновлений
 
 #### [FULL_STACK_DEPLOY_DOCKER.md](FULL_STACK_DEPLOY_DOCKER.md)
-Деплой полного стека через Docker
+Деплой полного стека через Docker (`PARTIALLY_HISTORICAL` для legacy Python scheduler секций)
 
 ---
 
@@ -72,6 +88,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 2. **Python-сервисы?** → См. [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
 3. **API разработка?** → Прочитайте [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
 4. **REST API?** → См. [REST_API_REFERENCE.md](REST_API_REFERENCE.md)
+
+Важно: при вопросах ownership scheduler runtime использовать
+`PYTHON_SERVICES_ARCH.md` и
+`doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
+как приоритетные источники.
+
+Для AE3 приоритет документов:
+1. `ae3lite.md` (канонический план и контракты)
+2. `archive/ae3full.md` (исторический контекст)
+3. `archive/AE3_ARCHITECTURE.md` (историческая детализация)
 
 ---
 

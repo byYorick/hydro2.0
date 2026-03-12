@@ -386,6 +386,7 @@ import { useSimulationInitialTelemetry } from "@/composables/useSimulationInitia
 import { useSimulationLifecycle } from "@/composables/useSimulationLifecycle";
 import { useSimulationRuntimeState } from "@/composables/useSimulationRuntimeState";
 import { useSimulationSubmit, type SimulationSubmitForm, type SimulationSubmitDrift } from "@/composables/useSimulationSubmit";
+import type { SimulationAction, SimulationPidStatus, SimulationReport } from "@/types/Simulation";
 import { useSimulationRecipes } from "@/composables/useSimulationRecipes";
 import { useSimulationPolling } from "@/composables/useSimulationPolling";
 import { formatDateTime, formatPidValue, formatReportKey, formatReportValue, formatSimulationPayload, formatTimestamp, simulationLevelClass } from "@/utils/simulationFormatters";
@@ -434,35 +435,6 @@ const panelClass = computed(() => {
     return "w-full rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6";
 });
 type SimulationForm = SimulationSubmitForm;
-interface SimulationAction {
-    kind: "command" | "event";
-    id: number;
-    summary?: string | null;
-    cmd?: string | null;
-    event_type?: string | null;
-    created_at?: string | null;
-}
-interface SimulationPidStatus {
-    type: string;
-    current?: number | null;
-    target?: number | null;
-    output?: number | null;
-    zone_state?: string | null;
-    error?: string | null;
-    updated_at?: string | null;
-}
-interface SimulationReport {
-    id: number;
-    simulation_id: number;
-    zone_id: number;
-    status: string;
-    started_at?: string | null;
-    finished_at?: string | null;
-    summary_json?: Record<string, unknown> | null;
-    phases_json?: SimulationReportPhase[] | null;
-    metrics_json?: Record<string, unknown> | null;
-    errors_json?: unknown;
-}
 const form = reactive<SimulationForm>({
     duration_hours: 72,
     step_minutes: 10,

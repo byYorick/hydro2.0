@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from typing import Any, Optional
 
@@ -18,7 +19,7 @@ from command_service import (
 )
 from common.command_status_queue import send_status_to_laravel
 from common.commands import mark_command_send_failed, mark_command_sent
-from common.db import execute, fetch
+from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.mqtt import get_mqtt_client
@@ -38,8 +39,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_TERMINAL_COMMAND_STATUSES = {"ACK", "DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
+_FINAL_COMMAND_STATUSES = {"DONE", "NO_EFFECT", "ERROR", "INVALID", "BUSY", "TIMEOUT"}
+_NON_REPUBLISHABLE_COMMAND_STATUSES = _FINAL_COMMAND_STATUSES | {"ACK"}
 _REPUBLISH_ALLOWED_STATUSES = {"QUEUED", "SEND_FAILED"}
+_POST_PUBLISH_ALLOWED_STATUSES = _NON_REPUBLISHABLE_COMMAND_STATUSES | _REPUBLISH_ALLOWED_STATUSES | {"SENT"}
 
 
 def _validate_command_request_contract(req: CommandRequest) -> None:
@@ -120,6 +123,56 @@ async def _emit_command_send_failed_alert(
     )
 
 
+async def _emit_command_node_zone_mismatch_observability(
+    *,
+    zone_id: int,
+    node_uid: str,
+    node_zone_id: Any,
+    pending_zone_id: Any,
+) -> None:
+    """Emit zone_event + infra alert for fail-closed node/zone guard rejections."""
+    details = {
+        "reason": "zone_mismatch",
+        "node_uid": node_uid,
+        "requested_zone_id": zone_id,
+        "actual_zone_id": node_zone_id,
+        "pending_zone_id": pending_zone_id,
+    }
+
+    try:
+        await create_zone_event(zone_id, "COMMAND_ZONE_NODE_MISMATCH", details)
+    except Exception as exc:
+        logger.warning(
+            "[COMMAND_PUBLISH] Failed to create COMMAND_ZONE_NODE_MISMATCH event: zone_id=%s node_uid=%s error=%s",
+            zone_id,
+            node_uid,
+            exc,
+        )
+
+    try:
+        await send_infra_alert(
+            code="infra_command_node_zone_mismatch",
+            alert_type="Command Node/Zone Mismatch",
+            message=(
+                f"Command publish blocked: node '{node_uid}' is assigned to zone "
+                f"{node_zone_id}, requested zone is {zone_id}"
+            ),
+            severity="warning",
+            zone_id=zone_id,
+            service="history-logger",
+            component="command_publish_guard",
+            node_uid=node_uid,
+            details=details,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[COMMAND_PUBLISH] Failed to send infra_command_node_zone_mismatch alert: zone_id=%s node_uid=%s error=%s",
+            zone_id,
+            node_uid,
+            exc,
+        )
+
+
 async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str]) -> str:
     """
     Резолвить канонический gh_uid по zone_id.
@@ -147,6 +200,29 @@ async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str
         )
 
     return resolved_gh_uid
+
+
+async def _resolve_zone_uid_for_command_publish(zone_id: int) -> Optional[str]:
+    """
+    Единая точка резолва zone segment для publish команд.
+    При MQTT_ZONE_FORMAT=uid работаем fail-closed: без zone_uid публиковать нельзя.
+    """
+    s = get_settings()
+    zone_format = getattr(s, "mqtt_zone_format", "id")
+    if zone_format != "uid":
+        return None
+
+    zone_uid = await _get_zone_uid_from_id(zone_id)
+    if zone_uid:
+        return zone_uid
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"zone_uid could not be resolved for zone_id={zone_id} while "
+            "MQTT_ZONE_FORMAT=uid"
+        ),
+    )
 
 
 async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
@@ -192,6 +268,12 @@ async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
                     "(pending assignment confirmation)"
                 ),
             )
+        await _emit_command_node_zone_mismatch_observability(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            node_zone_id=node_zone_id,
+            pending_zone_id=pending_zone_id,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
@@ -205,6 +287,35 @@ async def _require_node_assigned_to_zone(node_uid: str, zone_id: int) -> int:
 
 def _normalize_command_status(status: Any) -> str:
     return str(status or "").strip().upper()
+
+
+async def _ensure_post_publish_status_persisted(cmd_id: str) -> None:
+    rows = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+    if not rows:
+        raise RuntimeError(f"command_not_found_after_publish:{cmd_id}")
+    status = _normalize_command_status(rows[0].get("status"))
+    if status not in _POST_PUBLISH_ALLOWED_STATUSES:
+        raise RuntimeError(f"invalid_post_publish_status:{status}")
+    if status == "QUEUED":
+        raise RuntimeError("post_publish_status_not_transitioned")
+
+
+def _normalize_params_for_idempotency(params: Any) -> str:
+    """Канонизация params для проверки коллизий cmd_id."""
+    candidate = {} if params is None else params
+    if isinstance(candidate, str):
+        try:
+            candidate = json.loads(candidate)
+        except Exception:
+            candidate = candidate.strip()
+    # Laravel historically persisted empty params both as [] and {},
+    # treat them as equivalent for cmd_id idempotency checks.
+    if isinstance(candidate, list) and len(candidate) == 0:
+        candidate = {}
+    try:
+        return json.dumps(candidate, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except Exception:
+        return str(candidate)
 
 
 async def _ensure_command_for_publish(
@@ -222,7 +333,7 @@ async def _ensure_command_for_publish(
     """Гарантирует fail-closed подготовку команды в БД перед MQTT publish."""
     try:
         existing_rows = await fetch(
-            "SELECT status, source, zone_id, node_id, channel, cmd FROM commands WHERE cmd_id = $1",
+            "SELECT status, source, zone_id, node_id, channel, cmd, params FROM commands WHERE cmd_id = $1",
             cmd_id,
         )
     except Exception as exc:
@@ -284,6 +395,11 @@ async def _ensure_command_for_publish(
         ):
             collisions.append(f"cmd={existing_cmd}")
 
+        existing_params = _normalize_params_for_idempotency(existing.get("params"))
+        requested_params = _normalize_params_for_idempotency(params)
+        if existing_params != requested_params:
+            collisions.append("params")
+
         if collisions:
             collision_text = ", ".join(collisions)
             logger.warning(
@@ -301,17 +417,19 @@ async def _ensure_command_for_publish(
             )
 
         cmd_status = _normalize_command_status(existing.get("status"))
-        if cmd_status in _TERMINAL_COMMAND_STATUSES:
+        if cmd_status in _NON_REPUBLISHABLE_COMMAND_STATUSES:
+            status_kind = "final" if cmd_status in _FINAL_COMMAND_STATUSES else "in_progress"
             logger.info(
-                "[IDEMPOTENCY] Command %s already in terminal status '%s', skipping republish",
+                "[IDEMPOTENCY] Command %s already in non-republishable status '%s' (%s), skipping republish",
                 cmd_id,
                 cmd_status.lower(),
+                status_kind,
             )
             return {
                 "status": "ok",
                 "data": {
                     "command_id": cmd_id,
-                    "message": f"Command already in terminal status: {cmd_status.lower()}",
+                    "message": f"Command already in non-republishable status: {cmd_status.lower()} ({status_kind})",
                     "skipped": True,
                 },
             }
@@ -565,10 +683,7 @@ async def publish_zone_command(
 
     node_id = await _require_node_assigned_to_zone(req.node_uid, zone_id)
 
-    zone_uid = None
-    s = get_settings()
-    if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-        zone_uid = await _get_zone_uid_from_id(zone_id)
+    zone_uid = await _resolve_zone_uid_for_command_publish(zone_id)
     command_source = req.source or "api"
     effective_gh_uid = await _resolve_effective_gh_uid(zone_id, req.greenhouse_uid)
 
@@ -651,31 +766,36 @@ async def publish_zone_command(
     if publish_success:
         try:
             await mark_command_sent(cmd_id, allow_resend=True)
+            await _ensure_post_publish_status_persisted(cmd_id)
             logger.info(f"Command {cmd_id} status updated to SENT")
-
-            try:
-                await send_status_to_laravel(
-                    cmd_id=cmd_id,
-                    status="SENT",
-                    details={
-                        "zone_id": zone_id,
-                        "node_uid": req.node_uid,
-                        "channel": req.channel,
-                        "command": req.get_command_name(),
-                        "published_at": utcnow().isoformat(),
-                    },
-                )
-                logger.debug(
-                    f"Correlation ACK sent for command {cmd_id} (status: SENT)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
         except Exception as e:
             logger.error(
                 f"Failed to update command status to SENT: {e}",
                 exc_info=True,
                 extra={"cmd_id": cmd_id},
             )
+            raise HTTPException(
+                status_code=500,
+                detail="published_but_status_not_persisted",
+            ) from e
+
+        try:
+            await send_status_to_laravel(
+                cmd_id=cmd_id,
+                status="SENT",
+                details={
+                    "zone_id": zone_id,
+                    "node_uid": req.node_uid,
+                    "channel": req.channel,
+                    "command": req.get_command_name(),
+                    "published_at": utcnow().isoformat(),
+                },
+            )
+            logger.debug(
+                f"Correlation ACK sent for command {cmd_id} (status: SENT)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
 
         COMMANDS_SENT.labels(zone_id=str(zone_id), metric=req.get_command_name()).inc()
 
@@ -734,10 +854,7 @@ async def publish_node_command(
 
     node_id = await _require_node_assigned_to_zone(node_uid, req.zone_id)
 
-    zone_uid = None
-    s = get_settings()
-    if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-        zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    zone_uid = await _resolve_zone_uid_for_command_publish(req.zone_id)
     command_source = req.source or "api"
     effective_gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
@@ -820,31 +937,36 @@ async def publish_node_command(
     if publish_success:
         try:
             await mark_command_sent(cmd_id, allow_resend=True)
+            await _ensure_post_publish_status_persisted(cmd_id)
             logger.info(f"Command {cmd_id} status updated to SENT")
-
-            try:
-                await send_status_to_laravel(
-                    cmd_id=cmd_id,
-                    status="SENT",
-                    details={
-                        "zone_id": req.zone_id,
-                        "node_uid": node_uid,
-                        "channel": req.channel,
-                        "command": req.get_command_name(),
-                        "published_at": utcnow().isoformat(),
-                    },
-                )
-                logger.debug(
-                    f"Correlation ACK sent for command {cmd_id} (status: SENT)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
         except Exception as e:
             logger.error(
                 f"Failed to update command status to SENT: {e}",
                 exc_info=True,
                 extra={"cmd_id": cmd_id},
             )
+            raise HTTPException(
+                status_code=500,
+                detail="published_but_status_not_persisted",
+            ) from e
+
+        try:
+            await send_status_to_laravel(
+                cmd_id=cmd_id,
+                status="SENT",
+                details={
+                    "zone_id": req.zone_id,
+                    "node_uid": node_uid,
+                    "channel": req.channel,
+                    "command": req.get_command_name(),
+                    "published_at": utcnow().isoformat(),
+                },
+            )
+            logger.debug(
+                f"Correlation ACK sent for command {cmd_id} (status: SENT)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
 
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
 
@@ -901,10 +1023,7 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
 
     node_id = await _require_node_assigned_to_zone(req.node_uid, req.zone_id)
 
-    zone_uid = None
-    s = get_settings()
-    if hasattr(s, "mqtt_zone_format") and s.mqtt_zone_format == "uid":
-        zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    zone_uid = await _resolve_zone_uid_for_command_publish(req.zone_id)
     command_source = req.source or "api"
     effective_gh_uid = await _resolve_effective_gh_uid(req.zone_id, req.greenhouse_uid)
 
@@ -1004,31 +1123,36 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
     if publish_success:
         try:
             await mark_command_sent(cmd_id, allow_resend=True)
+            await _ensure_post_publish_status_persisted(cmd_id)
             logger.info(f"Command {cmd_id} status updated to SENT")
-
-            try:
-                await send_status_to_laravel(
-                    cmd_id=cmd_id,
-                    status="SENT",
-                    details={
-                        "zone_id": req.zone_id,
-                        "node_uid": req.node_uid,
-                        "channel": req.channel,
-                        "command": req.get_command_name(),
-                        "published_at": utcnow().isoformat(),
-                    },
-                )
-                logger.debug(
-                    f"Correlation ACK sent for command {cmd_id} (status: SENT)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
         except Exception as e:
             logger.error(
                 f"Failed to update command status to SENT: {e}",
                 exc_info=True,
                 extra=log_context,
             )
+            raise HTTPException(
+                status_code=500,
+                detail="published_but_status_not_persisted",
+            ) from e
+
+        try:
+            await send_status_to_laravel(
+                cmd_id=cmd_id,
+                status="SENT",
+                details={
+                    "zone_id": req.zone_id,
+                    "node_uid": req.node_uid,
+                    "channel": req.channel,
+                    "command": req.get_command_name(),
+                    "published_at": utcnow().isoformat(),
+                },
+            )
+            logger.debug(
+                f"Correlation ACK sent for command {cmd_id} (status: SENT)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
 
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
 

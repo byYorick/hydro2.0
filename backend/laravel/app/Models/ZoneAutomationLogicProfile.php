@@ -18,6 +18,7 @@ class ZoneAutomationLogicProfile extends Model
         'zone_id',
         'mode',
         'subsystems',
+        'command_plans',
         'is_active',
         'created_by',
         'updated_by',
@@ -25,6 +26,7 @@ class ZoneAutomationLogicProfile extends Model
 
     protected $casts = [
         'subsystems' => 'array',
+        'command_plans' => 'array',
         'is_active' => 'boolean',
     ];
 

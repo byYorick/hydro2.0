@@ -3,12 +3,12 @@
   "title": "ErrorAlertPayload",
   "description": "Payload ошибки/алерта от узлов через MQTT или от backend сервисов",
   "type": "object",
-  "required": ["level", "component"],
+  "required": ["level", "component", "error_code", "message"],
   "properties": {
     "level": {
       "type": "string",
       "description": "Уровень ошибки",
-      "enum": ["ERROR", "WARNING", "INFO", "DEBUG", "CRITICAL", "FATAL"]
+      "enum": ["ERROR", "WARNING", "INFO"]
     },
     "component": {
       "type": "string",
@@ -30,8 +30,8 @@
       "maxLength": 512
     },
     "ts": {
-      "type": "number",
-      "description": "Unix timestamp в секундах",
+      "type": "integer",
+      "description": "Unix timestamp в миллисекундах",
       "minimum": 0
     },
     "hardware_id": {
@@ -82,4 +82,3 @@
   },
   "additionalProperties": true
 }
-

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Jobs\ZoneOperationJob;
 use App\Models\ChannelBinding;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
@@ -16,6 +17,7 @@ use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
+use Illuminate\Support\Facades\Bus;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -474,6 +476,75 @@ class ZonesTest extends TestCase
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('message', 'Calibrate pump operation queued');
+    }
+
+    public function test_calibrate_pump_skip_run_allows_offline_zone(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'offline']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 1,
+                'actual_ml' => 1.0,
+                'component' => 'npk',
+                'skip_run' => true,
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Calibrate pump operation queued');
+    }
+
+    public function test_calibrate_pump_rejects_node_channel_from_other_zone(): void
+    {
+        $token = $this->token();
+        Bus::fake();
+
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $otherZone = Zone::factory()->create(['status' => 'online']);
+
+        $otherNode = DeviceNode::factory()->create([
+            'zone_id' => $otherZone->id,
+            'status' => 'online',
+        ]);
+        $foreignChannel = NodeChannel::create([
+            'node_id' => $otherNode->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $foreignChannel->id,
+                'duration_sec' => 1,
+                'actual_ml' => 1.0,
+                'component' => 'npk',
+                'skip_run' => true,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'node_channel_id must belong to the selected zone');
+
+        Bus::assertNotDispatched(ZoneOperationJob::class);
     }
 
     public function test_next_phase_success(): void

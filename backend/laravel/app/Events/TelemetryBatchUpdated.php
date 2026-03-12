@@ -5,6 +5,7 @@ namespace App\Events;
 use App\Services\EventSequenceService;
 use App\Services\TelemetryLedgerFilter;
 use App\Traits\RecordsZoneEvent;
+use App\Traits\RecordsWsBroadcastMetric;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class TelemetryBatchUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
+    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent, RecordsWsBroadcastMetric;
 
     public string $queue = 'broadcasts';
 
@@ -55,6 +56,8 @@ class TelemetryBatchUpdated implements ShouldBroadcast
 
     public function broadcasted(): void
     {
+        $this->recordWsBroadcastMetric('telemetry.batch.updated');
+
         $filter = app(TelemetryLedgerFilter::class);
 
         foreach ($this->updates as $update) {

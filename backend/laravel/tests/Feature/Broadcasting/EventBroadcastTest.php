@@ -121,7 +121,7 @@ class EventBroadcastTest extends TestCase
             zoneId: 7,
         );
 
-        $this->assertSame('private-commands.7', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.commands.7', $event->broadcastOn()->name);
         $payload = $event->broadcastWith();
         $this->assertSame(501, $payload['commandId']);
         $this->assertSame('queued', $payload['status']);
@@ -140,7 +140,7 @@ class EventBroadcastTest extends TestCase
             message: 'Команда завершена',
         );
 
-        $this->assertSame('private-commands.global', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.commands.global', $event->broadcastOn()->name);
         $this->assertNull($event->broadcastWith()['zoneId']);
     }
 
@@ -154,7 +154,7 @@ class EventBroadcastTest extends TestCase
             zoneId: 12,
         );
 
-        $this->assertSame('private-commands.12', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.commands.12', $event->broadcastOn()->name);
         $payload = $event->broadcastWith();
         $this->assertSame(321, $payload['commandId']);
         $this->assertSame(Command::STATUS_ERROR, $payload['status']);
@@ -173,7 +173,7 @@ class EventBroadcastTest extends TestCase
             status: Command::STATUS_ERROR,
         );
 
-        $this->assertSame('private-commands.global', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.commands.global', $event->broadcastOn()->name);
         $this->assertNull($event->broadcastWith()['zoneId']);
     }
 
@@ -187,7 +187,7 @@ class EventBroadcastTest extends TestCase
             message: 'Событие создано',
         );
 
-        $this->assertSame('private-events.global', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.events.global', $event->broadcastOn()->name);
         $this->assertSame('EventCreated', $event->broadcastAs());
 
         $payload = $event->broadcastWith();

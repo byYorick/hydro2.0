@@ -53,7 +53,7 @@ class EventCreated implements ShouldBroadcast
      */
     public function broadcastOn(): PrivateChannel
     {
-        return new PrivateChannel('events.global');
+        return new PrivateChannel('hydro.events.global');
     }
 
     /**

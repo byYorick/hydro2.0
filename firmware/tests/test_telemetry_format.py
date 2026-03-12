@@ -35,39 +35,7 @@ def validate_telemetry(message_str):
     # Валидация
     try:
         jsonschema.validate(instance=message, schema=schema)
-        
-        # Дополнительные проверки
-        errors = []
-        
-        # Проверка обязательных полей
-        required_fields = ["metric_type", "value", "ts"]
-        for field in required_fields:
-            if field not in message:
-                errors.append(f"Missing required field: {field}")
-        
-        # Проверка запрещенных полей
-        forbidden_fields = ["node_id", "channel"]
-        for field in forbidden_fields:
-            if field in message:
-                errors.append(f"Forbidden field present: {field}")
-        
-        # Проверка формата metric_type (UPPERCASE)
-        if "metric_type" in message:
-            mt = message["metric_type"]
-            if mt != mt.upper():
-                errors.append(f"metric_type must be UPPERCASE, got: {mt}")
-        
-        # Проверка типа ts (должен быть int, не float)
-        if "ts" in message:
-            ts = message["ts"]
-            if isinstance(ts, float):
-                errors.append(f"ts must be integer, got float: {ts}")
-        
-        if errors:
-            return False, "; ".join(errors)
-        
         return True, "OK"
-        
     except jsonschema.ValidationError as e:
         return False, f"Schema validation error: {e.message}"
 

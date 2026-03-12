@@ -1,0 +1,5 @@
+commands_total|14
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|1
+alerts_open|1

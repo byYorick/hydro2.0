@@ -30,6 +30,7 @@ class ZoneEventMessageFormatter
             'ALERT_CREATED' => $this->formatAlertCreated($payload),
             'ALERT_UPDATED' => $this->formatAlertUpdated($payload),
             'ALERT_RESOLVED' => $this->formatAlertResolved($payload),
+            'WATER_LEVEL_LOW' => $this->formatWaterLevelLow($payload),
             'CYCLE_CREATED' => $this->formatCycleCreated($payload),
             'CYCLE_STARTED' => $this->formatCycleStarted($payload),
             'CYCLE_PAUSED' => $this->formatCyclePaused($payload),
@@ -44,6 +45,45 @@ class ZoneEventMessageFormatter
             'PHASE_TRANSITION' => $this->formatPhaseTransition($payload),
             'RECIPE_PHASE_CHANGED' => $this->formatPhaseTransition($payload),
             'ZONE_COMMAND' => $this->formatZoneCommand($payload),
+            'SCHEDULE_TASK_FAILED' => $this->formatScheduleTaskFailed($payload),
+            'SELF_TASK_DISPATCH_RETRY_SCHEDULED' => $this->formatSelfTaskDispatchRetryScheduled($payload),
+            'PH_CORRECTED' => $this->formatPhCorrected($payload),
+            'EC_DOSING' => $this->formatEcDosing($payload),
+            'PID_OUTPUT' => $this->formatPidOutput($payload),
+            'PID_CONFIG_UPDATED' => $this->formatPidConfigUpdated($payload),
+            'CORRECTION_STATE_TRANSITION' => $this->formatCorrectionStateTransition($payload),
+            'CORRECTION_COMPLETE' => $this->formatCorrectionComplete($payload),
+            'CORRECTION_EXHAUSTED' => $this->formatCorrectionExhausted($payload),
+            'CORRECTION_SKIPPED_DEAD_ZONE' => $this->formatCorrectionSkippedDeadZone($payload),
+            'CORRECTION_SKIPPED_COOLDOWN' => $this->formatCorrectionSkippedCooldown($payload),
+            'RELAY_AUTOTUNE_COMPLETE', 'RELAY_AUTOTUNE_COMPLETED' => $this->formatRelayAutotuneComplete($payload),
+            'PUMP_CALIBRATION_SAVED' => $this->formatPumpCalibrationSaved($payload),
+            'PUMP_CALIBRATION_FINISHED' => $this->formatPumpCalibrationFinished($payload),
+            'PUMP_CALIBRATION_RUN_SKIPPED' => $this->formatPumpCalibrationRunSkipped($payload),
+            'IRR_STATE_SNAPSHOT' => $this->formatIrrStateSnapshot($payload),
+            'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
+            'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
+            'SOLUTION_FILL_COMPLETED' => 'Наполнение раствором завершено',
+            'AE_TASK_STARTED' => $this->formatAeTaskStarted($payload),
+            'AE_TASK_COMPLETED' => $this->formatAeTaskCompleted($payload),
+            'AE_TASK_FAILED' => $this->formatAeTaskFailed($payload),
+            'ALERT_TRIGGERED' => $this->formatAlertTriggered($payload),
+            'NODE_CONNECTED' => $this->formatNodeEvent($payload, 'подключился'),
+            'NODE_DISCONNECTED' => $this->formatNodeEvent($payload, 'отключился'),
+            'AUTO_MODE_ENABLED' => 'Авторежим включён',
+            'AUTO_MODE_DISABLED' => 'Авторежим выключен',
+            'MANUAL_INTERVENTION' => $this->formatManualIntervention($payload),
+            'SETTINGS_CHANGED' => 'Настройки изменены',
+            'AUTOMATION_LOGIC_PROFILE_UPDATED' => 'Профиль автоматики обновлён',
+            'IRRIGATION_START' => 'Полив запущен',
+            'IRRIGATION_STOP' => 'Полив остановлен',
+            'CALIBRATION_STARTED' => $this->formatCalibrationEvent($payload, 'Калибровка запущена'),
+            'CALIBRATION_COMPLETED' => $this->formatCalibrationEvent($payload, 'Калибровка завершена'),
+            'RECIPE_STARTED' => $this->formatRecipeEvent($payload, 'Рецепт запущен'),
+            'RECIPE_COMPLETED' => $this->formatRecipeEvent($payload, 'Рецепт завершён'),
+            'HARVEST_STARTED' => 'Сбор урожая начат',
+            'HARVEST_COMPLETED' => 'Сбор урожая завершён',
+            'PHASE_CHANGE' => $this->formatPhaseChange($payload),
             default => $type ?: '',
         };
     }
@@ -59,6 +99,7 @@ class ZoneEventMessageFormatter
 
         if (is_string($details) && $details !== '') {
             $decoded = json_decode($details, true);
+
             return is_array($decoded) ? $decoded : [];
         }
 
@@ -103,6 +144,11 @@ class ZoneEventMessageFormatter
         $source = $this->toStringOrNull($details['source'] ?? null);
         if ($source !== null) {
             $parts[] = "источник {$source}";
+        }
+
+        $waterLevelContext = $this->formatWaterLevelContext($details);
+        if ($waterLevelContext !== null) {
+            $parts[] = $waterLevelContext;
         }
 
         $suffix = $parts !== [] ? ' ('.implode(', ', $parts).')' : '';
@@ -361,6 +407,441 @@ class ZoneEventMessageFormatter
         return "Команда зоны: {$command} (".implode(', ', $parts).')';
     }
 
+    private function formatWaterLevelLow(array $details): string
+    {
+        $context = $this->formatWaterLevelContext($details);
+        if ($context !== null) {
+            return "Низкий уровень воды ({$context})";
+        }
+
+        return 'Низкий уровень воды';
+    }
+
+    private function formatScheduleTaskFailed(array $details): string
+    {
+        $taskTypeRaw = $this->toStringOrNull($details['task_type'] ?? null);
+        $taskType = $this->formatTaskTypeLabel($taskTypeRaw);
+        $parts = [];
+
+        $reasonRaw = $this->toStringOrNull($details['reason_code'] ?? null)
+            ?? $this->toStringOrNull($details['reason'] ?? null);
+        $reason = $this->formatKnownErrorCode($reasonRaw);
+        if ($reason !== null) {
+            $parts[] = "причина: {$reason}";
+        }
+
+        $statusRaw = $this->toStringOrNull($details['status'] ?? null);
+        $status = $this->formatKnownStatus($statusRaw);
+        if ($status !== null) {
+            $parts[] = "статус: {$status}";
+        }
+
+        $errorCodeRaw = $this->toStringOrNull($details['error_code'] ?? null);
+        $errorCode = $this->formatKnownErrorCode($errorCodeRaw);
+        if ($errorCode !== null && $errorCodeRaw !== $reasonRaw) {
+            $parts[] = "код ошибки: {$errorCode}";
+        }
+
+        $errorRaw = $this->toStringOrNull($details['error'] ?? null);
+        $error = $this->formatKnownErrorCode($errorRaw);
+        if ($error !== null && $errorRaw !== $reasonRaw) {
+            $parts[] = "ошибка: {$error}";
+        }
+
+        $taskId = $this->toStringOrNull($details['task_id'] ?? null);
+        if ($taskId !== null) {
+            $parts[] = "ID задачи: {$taskId}";
+        }
+
+        $correlationId = $this->toStringOrNull($details['correlation_id'] ?? null);
+        if ($correlationId !== null) {
+            $parts[] = "корреляция: {$correlationId}";
+        }
+
+        if ($parts === []) {
+            return "Scheduler: задача {$taskType} завершилась с ошибкой";
+        }
+
+        return "Scheduler: задача {$taskType} завершилась с ошибкой (".implode(', ', $parts).')';
+    }
+
+    private function formatSelfTaskDispatchRetryScheduled(array $details): string
+    {
+        $taskTypeRaw = $this->toStringOrNull($details['task_type'] ?? null);
+        $taskType = $this->formatTaskTypeLabel($taskTypeRaw);
+        $parts = [];
+
+        $enqueueId = $this->toStringOrNull($details['enqueue_id'] ?? null);
+        if ($enqueueId !== null) {
+            $parts[] = "enqueue_id: {$enqueueId}";
+        }
+
+        $retryCount = isset($details['retry_count']) && is_numeric($details['retry_count'])
+            ? (int) $details['retry_count']
+            : null;
+        $maxAttempts = isset($details['max_attempts']) && is_numeric($details['max_attempts'])
+            ? (int) $details['max_attempts']
+            : null;
+        if ($retryCount !== null && $maxAttempts !== null) {
+            $parts[] = "попытка {$retryCount}/{$maxAttempts}";
+        } elseif ($retryCount !== null) {
+            $parts[] = "попытка {$retryCount}";
+        }
+
+        $nextRetryAt = $this->toStringOrNull($details['next_retry_at'] ?? null);
+        if ($nextRetryAt !== null) {
+            $parts[] = "следующая попытка: {$nextRetryAt}";
+        }
+
+        if ($parts === []) {
+            return "Scheduler запланировал повторную отправку для внутренней задачи {$taskType}";
+        }
+
+        return "Scheduler запланировал повторную отправку для внутренней задачи {$taskType} (".implode(', ', $parts).')';
+    }
+
+    private function formatPhCorrected(array $details): string
+    {
+        $current = $this->toFloatOrNull($details['current_ph'] ?? $details['current'] ?? null);
+        $targetMin = $this->toFloatOrNull($details['target_ph_min'] ?? null);
+        $targetMax = $this->toFloatOrNull($details['target_ph_max'] ?? null);
+        $target = $this->toFloatOrNull($details['target_ph'] ?? $details['target'] ?? null);
+        $durationMs = $this->toFloatOrNull($details['duration_ms'] ?? null);
+        $dose = $this->toFloatOrNull($details['output'] ?? $details['ml'] ?? null);
+        $direction = $this->toStringOrNull($details['direction'] ?? $details['correction_type'] ?? null);
+        $channel = $this->toStringOrNull($details['channel'] ?? null);
+        $attempt = isset($details['attempt']) ? (int) $details['attempt'] : null;
+
+        $dirLabel = match ($direction) {
+            'up' => 'вверх',
+            'down' => 'вниз',
+            default => $direction,
+        };
+
+        $parts = [];
+
+        if ($current !== null) {
+            $parts[] = sprintf('текущий pH %.2f', $current);
+        }
+
+        if ($targetMin !== null && $targetMax !== null) {
+            $parts[] = sprintf('цель %.2f–%.2f', $targetMin, $targetMax);
+        } elseif ($target !== null) {
+            $parts[] = sprintf('цель %.2f', $target);
+        }
+
+        if ($durationMs !== null) {
+            $parts[] = sprintf('импульс %d мс', (int) $durationMs);
+        } elseif ($dose !== null) {
+            $parts[] = sprintf('доза %.1f мл', $dose);
+        }
+
+        if ($channel !== null) {
+            $parts[] = "канал {$channel}";
+        }
+
+        if ($attempt !== null && $attempt > 1) {
+            $parts[] = "попытка {$attempt}";
+        }
+
+        $dirSuffix = $dirLabel !== null ? " ({$dirLabel})" : '';
+        $detail = $parts !== [] ? ': '.implode(', ', $parts) : '';
+
+        return "Коррекция pH{$dirSuffix}{$detail}";
+    }
+
+    private function formatEcDosing(array $details): string
+    {
+        $current = $this->toFloatOrNull($details['current_ec'] ?? $details['current'] ?? null);
+        $targetMin = $this->toFloatOrNull($details['target_ec_min'] ?? null);
+        $targetMax = $this->toFloatOrNull($details['target_ec_max'] ?? null);
+        $target = $this->toFloatOrNull($details['target_ec'] ?? $details['target'] ?? null);
+        $durationMs = $this->toFloatOrNull($details['duration_ms'] ?? null);
+        $dose = $this->toFloatOrNull($details['output'] ?? $details['ml'] ?? null);
+        $channel = $this->toStringOrNull($details['channel'] ?? null);
+        $attempt = isset($details['attempt']) ? (int) $details['attempt'] : null;
+
+        $parts = [];
+
+        if ($current !== null) {
+            $parts[] = sprintf('текущий EC %.2f мС/см', $current);
+        }
+
+        if ($targetMin !== null && $targetMax !== null) {
+            $parts[] = sprintf('цель %.2f–%.2f мС/см', $targetMin, $targetMax);
+        } elseif ($target !== null) {
+            $parts[] = sprintf('цель %.2f мС/см', $target);
+        }
+
+        if ($durationMs !== null) {
+            $parts[] = sprintf('импульс %d мс', (int) $durationMs);
+        } elseif ($dose !== null) {
+            $parts[] = sprintf('доза %.1f мл', $dose);
+        }
+
+        if ($channel !== null) {
+            $parts[] = "канал {$channel}";
+        }
+
+        if ($attempt !== null && $attempt > 1) {
+            $parts[] = "попытка {$attempt}";
+        }
+
+        $detail = $parts !== [] ? ': '.implode(', ', $parts) : '';
+
+        return "Дозирование EC{$detail}";
+    }
+
+    private function formatPidOutput(array $details): string
+    {
+        $output = $this->toFloatOrNull($details['output'] ?? $details['ml'] ?? null);
+        $error = $this->toFloatOrNull($details['error'] ?? $details['diff'] ?? null);
+        $zoneState = $this->toStringOrNull($details['zone_state'] ?? $details['pid_zone'] ?? null);
+
+        if ($output !== null && $error !== null) {
+            $zonePart = $zoneState !== null ? " ({$zoneState})" : '';
+
+            return sprintf('PID output: %.3f мл, ошибка %.4f%s', $output, $error, $zonePart);
+        }
+
+        return 'PID: расчёт выхода';
+    }
+
+    private function formatPidConfigUpdated(array $details): string
+    {
+        $pidType = $this->toStringOrNull($details['type'] ?? $details['pid_type'] ?? null);
+        if ($pidType !== null) {
+            return "Конфиг PID обновлён ({$pidType})";
+        }
+
+        return 'Конфиг PID обновлён';
+    }
+
+    private function formatCorrectionStateTransition(array $details): string
+    {
+        $from = $this->toStringOrNull($details['from_state'] ?? null);
+        $to = $this->toStringOrNull($details['to_state'] ?? null);
+        $reason = $this->toStringOrNull($details['reason_code'] ?? null);
+
+        if ($from !== null && $to !== null && $reason !== null) {
+            return "Коррекция: {$from} -> {$to} ({$reason})";
+        }
+        if ($from !== null && $to !== null) {
+            return "Коррекция: {$from} -> {$to}";
+        }
+
+        return 'Коррекция: переход состояния';
+    }
+
+    private function formatCorrectionComplete(array $details): string
+    {
+        $currentPh = $this->toFloatOrNull($details['current_ph'] ?? null);
+        $currentEc = $this->toFloatOrNull($details['current_ec'] ?? null);
+        $attempt = isset($details['attempt']) && is_numeric($details['attempt']) ? (int) $details['attempt'] : null;
+
+        $parts = [];
+        if ($currentPh !== null) {
+            $parts[] = sprintf('pH %.2f', $currentPh);
+        }
+        if ($currentEc !== null) {
+            $parts[] = sprintf('EC %.2f мС/см', $currentEc);
+        }
+        if ($attempt !== null && $attempt > 1) {
+            $parts[] = "попытка {$attempt}";
+        }
+
+        return 'Коррекция завершена успешно'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionExhausted(array $details): string
+    {
+        $attempt = isset($details['attempt']) && is_numeric($details['attempt']) ? (int) $details['attempt'] : null;
+        $maxAttempts = isset($details['max_attempts']) && is_numeric($details['max_attempts']) ? (int) $details['max_attempts'] : null;
+
+        if ($attempt !== null && $maxAttempts !== null) {
+            return "Коррекция: исчерпаны попытки ({$attempt}/{$maxAttempts})";
+        }
+
+        return 'Коррекция: все попытки исчерпаны';
+    }
+
+    private function formatCorrectionSkippedDeadZone(array $details): string
+    {
+        $currentPh = $this->toFloatOrNull($details['current_ph'] ?? null);
+        $currentEc = $this->toFloatOrNull($details['current_ec'] ?? null);
+
+        $parts = [];
+        if ($currentPh !== null) {
+            $parts[] = sprintf('pH %.2f', $currentPh);
+        }
+        if ($currentEc !== null) {
+            $parts[] = sprintf('EC %.2f мС/см', $currentEc);
+        }
+
+        return 'Коррекция: мёртвая зона PID'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionSkippedCooldown(array $details): string
+    {
+        $retryAfterSec = $this->toFloatOrNull($details['retry_after_sec'] ?? null);
+        $currentPh = $this->toFloatOrNull($details['current_ph'] ?? null);
+        $currentEc = $this->toFloatOrNull($details['current_ec'] ?? null);
+
+        $parts = [];
+        if ($currentPh !== null) {
+            $parts[] = sprintf('pH %.2f', $currentPh);
+        }
+        if ($currentEc !== null) {
+            $parts[] = sprintf('EC %.2f мС/см', $currentEc);
+        }
+        if ($retryAfterSec !== null) {
+            $parts[] = sprintf('повтор через %d с', (int) $retryAfterSec);
+        }
+
+        return 'Коррекция: кулдаун PID'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatRelayAutotuneComplete(array $details): string
+    {
+        $kp = $this->toFloatOrNull($details['kp'] ?? null);
+        $ki = $this->toFloatOrNull($details['ki'] ?? null);
+        $cycles = $details['cycles_detected'] ?? null;
+        if ($kp !== null && $ki !== null && is_numeric($cycles)) {
+            return sprintf('Автотюнинг завершён: Kp=%.3f, Ki=%.4f (%d циклов)', $kp, $ki, (int) $cycles);
+        }
+
+        return 'Relay-автотюнинг завершён';
+    }
+
+    private function formatPumpCalibrationSaved(array $details): string
+    {
+        $role = $this->toStringOrNull($details['role'] ?? null);
+        $mlPerSec = $this->toFloatOrNull($details['ml_per_sec'] ?? null);
+
+        if ($role !== null && $mlPerSec !== null) {
+            return sprintf('Калибровка насоса [%s]: %.2f мл/с', $role, $mlPerSec);
+        }
+
+        return 'Калибровка насоса сохранена';
+    }
+
+    private function formatIrrStateSnapshot(array $details): string
+    {
+        $nodeUid = $this->toStringOrNull($details['node_uid'] ?? null);
+        $snapshot = isset($details['snapshot']) && is_array($details['snapshot']) ? $details['snapshot'] : [];
+        $pumpMain = array_key_exists('pump_main', $snapshot) ? ($snapshot['pump_main'] ? 'вкл' : 'выкл') : null;
+        $cmdId = $this->toStringOrNull($details['cmd_id'] ?? null);
+
+        $parts = [];
+        if ($nodeUid !== null) {
+            $parts[] = "нода {$nodeUid}";
+        }
+        if ($pumpMain !== null) {
+            $parts[] = "насос {$pumpMain}";
+        }
+        if ($cmdId !== null) {
+            $parts[] = "команда {$cmdId}";
+        }
+
+        return 'Снимок состояния ирригационного узла'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCommandTimeout(array $details): string
+    {
+        $cmdId = $this->toStringOrNull($details['cmd_id'] ?? null);
+        $timeoutMinutes = isset($details['timeout_minutes']) && is_numeric($details['timeout_minutes'])
+            ? (int) $details['timeout_minutes']
+            : null;
+
+        $parts = [];
+        if ($cmdId !== null) {
+            $parts[] = "команда {$cmdId}";
+        }
+        if ($timeoutMinutes !== null) {
+            $parts[] = "таймаут {$timeoutMinutes} мин";
+        }
+
+        return 'Таймаут команды'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatPumpCalibrationFinished(array $details): string
+    {
+        $component = $this->toStringOrNull($details['component'] ?? null);
+        $actualMl = $this->toFloatOrNull($details['actual_ml'] ?? null);
+        $mlPerSec = $this->toFloatOrNull($details['ml_per_sec'] ?? null);
+
+        if ($component !== null && $actualMl !== null && $mlPerSec !== null) {
+            return sprintf('Калибровка насоса [%s]: %.2f мл, скорость %.2f мл/с', $component, $actualMl, $mlPerSec);
+        }
+        if ($component !== null) {
+            return "Калибровка насоса [{$component}] завершена";
+        }
+
+        return 'Калибровка насоса завершена';
+    }
+
+    private function formatPumpCalibrationRunSkipped(array $details): string
+    {
+        $component = $this->toStringOrNull($details['component'] ?? null);
+        $nodeUid = $this->toStringOrNull($details['node_uid'] ?? null);
+        $reason = $this->toStringOrNull($details['reason'] ?? $details['reason_code'] ?? null);
+
+        $parts = [];
+        if ($nodeUid !== null) {
+            $parts[] = "нода {$nodeUid}";
+        }
+        if ($reason !== null) {
+            $parts[] = $reason;
+        }
+
+        if ($component !== null) {
+            return 'Калибровка насоса ['.$component.'] пропущена'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+        }
+
+        return 'Калибровка насоса пропущена';
+    }
+
+    private function formatAeTaskStarted(array $details): string
+    {
+        $taskId = $this->toStringOrNull($details['task_id'] ?? null);
+        $zoneId = $this->toStringOrNull($details['zone_id'] ?? null);
+
+        if ($taskId !== null) {
+            return "Задача автоматизации запущена (ID: {$taskId})";
+        }
+        if ($zoneId !== null) {
+            return "Задача автоматизации запущена для зоны {$zoneId}";
+        }
+
+        return 'Задача автоматизации запущена';
+    }
+
+    private function formatAeTaskCompleted(array $details): string
+    {
+        $taskId = $this->toStringOrNull($details['task_id'] ?? null);
+        if ($taskId !== null) {
+            return "Задача автоматизации завершена (ID: {$taskId})";
+        }
+
+        return 'Задача автоматизации завершена';
+    }
+
+    private function formatAeTaskFailed(array $details): string
+    {
+        $errorCode = $this->toStringOrNull($details['error_code'] ?? null);
+        $taskId = $this->toStringOrNull($details['task_id'] ?? null);
+
+        $parts = [];
+        if ($taskId !== null) {
+            $parts[] = "ID: {$taskId}";
+        }
+        if ($errorCode !== null) {
+            $parts[] = "ошибка: {$errorCode}";
+        }
+
+        return 'Ошибка задачи автоматизации'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
     private function formatSubsystemsSummary(array $subsystems): ?string
     {
         $parts = [];
@@ -452,6 +933,7 @@ class ZoneEventMessageFormatter
     {
         if (is_string($value)) {
             $trimmed = trim($value);
+
             return $trimmed !== '' ? $trimmed : null;
         }
 
@@ -460,5 +942,179 @@ class ZoneEventMessageFormatter
         }
 
         return null;
+    }
+
+    private function toFloatOrNull(mixed $value): ?float
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    private function formatWaterLevelContext(array $details): ?string
+    {
+        $level = $this->normalizeWaterLevelValue($details['level'] ?? null);
+        $threshold = $this->normalizeWaterLevelValue($details['threshold'] ?? null);
+
+        if ($level === null && $threshold === null) {
+            return null;
+        }
+
+        $parts = [];
+        if ($level !== null) {
+            $parts[] = "уровень {$level}";
+        }
+        if ($threshold !== null) {
+            $parts[] = "порог {$threshold}";
+        }
+
+        return implode(', ', $parts);
+    }
+
+    private function normalizeWaterLevelValue(mixed $value): ?string
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $numeric = (float) $value;
+        if ($numeric <= 1.0) {
+            $numeric *= 100.0;
+        }
+
+        return sprintf('%.1f%%', $numeric);
+    }
+
+    private function formatKnownErrorCode(?string $code): ?string
+    {
+        if ($code === null) {
+            return null;
+        }
+
+        return match ($code) {
+            'submit_failed' => 'не удалось отправить задачу',
+            'task_due_deadline_exceeded' => 'превышен дедлайн выполнения задачи',
+            'zone_not_found' => 'зона не найдена',
+            default => $code,
+        };
+    }
+
+    private function formatKnownStatus(?string $status): ?string
+    {
+        if ($status === null) {
+            return null;
+        }
+
+        return match ($status) {
+            'rejected' => 'отклонена',
+            'failed' => 'ошибка',
+            'expired' => 'просрочена',
+            'completed' => 'выполнена',
+            'accepted' => 'принята',
+            'running' => 'выполняется',
+            default => $status,
+        };
+    }
+
+    private function formatTaskTypeLabel(?string $taskType): string
+    {
+        if ($taskType === null) {
+            return 'неизвестного типа';
+        }
+
+        return match ($taskType) {
+            'diagnostics' => 'диагностики',
+            'lighting' => 'освещения',
+            'ventilation' => 'вентиляции',
+            'irrigation' => 'полива',
+            'solution_change' => 'смены раствора',
+            'mist' => 'тумана',
+            default => $taskType,
+        };
+    }
+
+    private function formatAlertTriggered(array $details): string
+    {
+        $alertType = $this->toStringOrNull($details['alert_type'] ?? $details['type'] ?? null);
+        $message = $this->toStringOrNull($details['message'] ?? null);
+
+        if ($message !== null) {
+            return "Тревога: {$message}";
+        }
+        if ($alertType !== null) {
+            return "Тревога сработала: {$alertType}";
+        }
+
+        return 'Тревога сработала';
+    }
+
+    private function formatNodeEvent(array $details, string $verb): string
+    {
+        $nodeUid = $this->toStringOrNull($details['node_uid'] ?? $details['node_id'] ?? null);
+        if ($nodeUid !== null) {
+            return "Узел {$nodeUid} {$verb}";
+        }
+
+        return "Узел {$verb}";
+    }
+
+    private function formatManualIntervention(array $details): string
+    {
+        $user = $this->toStringOrNull($details['user'] ?? $details['user_id'] ?? null);
+        $action = $this->toStringOrNull($details['action'] ?? null);
+
+        if ($user !== null && $action !== null) {
+            return "Ручное вмешательство: {$action} (пользователь {$user})";
+        }
+        if ($action !== null) {
+            return "Ручное вмешательство: {$action}";
+        }
+        if ($user !== null) {
+            return "Ручное вмешательство (пользователь {$user})";
+        }
+
+        return 'Ручное вмешательство';
+    }
+
+    private function formatCalibrationEvent(array $details, string $base): string
+    {
+        $component = $this->toStringOrNull($details['component'] ?? null);
+        if ($component !== null) {
+            return "{$base} [{$component}]";
+        }
+
+        return $base;
+    }
+
+    private function formatRecipeEvent(array $details, string $base): string
+    {
+        $recipeName = $this->toStringOrNull($details['recipe_name'] ?? null);
+        $recipeId = $this->toStringOrNull($details['recipe_id'] ?? null);
+
+        if ($recipeName !== null) {
+            return "{$base}: {$recipeName}";
+        }
+        if ($recipeId !== null) {
+            return "{$base} (ID: {$recipeId})";
+        }
+
+        return $base;
+    }
+
+    private function formatPhaseChange(array $details): string
+    {
+        $from = $this->toStringOrNull($details['from_phase'] ?? $details['from'] ?? null);
+        $to = $this->toStringOrNull($details['to_phase'] ?? $details['to'] ?? null);
+
+        if ($from !== null && $to !== null) {
+            return "Смена фазы: {$from} → {$to}";
+        }
+        if ($to !== null) {
+            return "Смена фазы: {$to}";
+        }
+
+        return 'Смена фазы';
     }
 }

@@ -38,7 +38,7 @@ class BroadcastAuthTest extends TestCase
         $zone = \App\Models\Zone::factory()->create();
         
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
-            'channel_name' => "private-commands.{$zone->id}",
+            'channel_name' => "private-hydro.commands.{$zone->id}",
             'socket_id' => '654.321',
         ]);
 

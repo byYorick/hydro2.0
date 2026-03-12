@@ -15,6 +15,7 @@ export interface GrowCycle {
     name: string
     phases?: Array<{
       id: number
+      phase_index?: number
       name: string
       duration_hours: number
       targets?: Record<string, any>
@@ -30,10 +31,28 @@ export interface GrowCycle {
   current_stage_code?: string
   current_phase_index?: number | null
   current_phase_name?: string | null
+  phase_started_at?: string | null
+  recipeRevision?: {
+    recipe?: { id?: number; name?: string }
+    recipe_id?: number
+  } | null
+  phases?: Array<{
+    id?: number
+    phase_index?: number
+    name?: string
+    duration_hours?: number
+    targets?: Record<string, any>
+  }>
+  currentPhase?: {
+    id?: number
+    phase_index?: number
+    name?: string
+    duration_hours?: number
+    targets?: Record<string, any>
+  } | null
   batch_label?: string | null
   planting_at?: string | null
   created_at: string
   updated_at: string
 }
-
 

@@ -33,7 +33,7 @@ Backend принимает решения → узлы исполняют.
 
 ## 1.1. Термины (во избежание путаницы)
 
-- `firmware_module` — имя ESP-IDF проекта/папки прошивки (`ph_node`, `ec_node`, `climate_node`, `pump_node`).
+- `firmware_module` — имя ESP-IDF проекта/папки прошивки (`ph_node`, `ec_node`, `climate_node`, `storage_irrigation_node`).
 - `node_type` — бизнес-тип узла в payload/БД (`nodes.type`), только канонические значения:
   `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
 - Имена `*_node` используются только как идентификаторы прошивочных модулей и не должны передаваться в `node_type`.
@@ -149,7 +149,9 @@ component_name/
 
 # 4. NodeConfig
 
-NodeConfig полностью формируется на backend.
+NodeConfig поддерживается на стороне ноды:
+- базовый шаблон задаётся прошивкой;
+- рабочая версия хранится в NVS и может обновляться через MQTT `.../config`.
 
 ## 4.1. Формат
 ```json
@@ -259,7 +261,8 @@ NodeConfig полностью формируется на backend.
 - `stub` (boolean) — флаг симулированного значения
 - `stable` (boolean) — флаг стабильности значения
 
-> **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim.
+> **Важно:** поля `node_uid` и `channel` не включаются в JSON payload, так как они уже есть в MQTT topic.
+> До синхронизации времени `ts` может быть uptime-секундами; после синхронизации — Unix timestamp.
 
 ## 6.2. Отправка
 Топик:
@@ -290,12 +293,9 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```
 
 ## 7.2. Поддерживаемые команды
-- run_pump 
-- set_pwm 
-- set_relay 
-- calibrate 
-- reboot 
-- measure_now 
+- Набор команд зависит от типа ноды и зарегистрированных handler'ов.
+- Базовые команды фреймворка: `restart`, `set_time`, `exit_safe_mode`.
+- Типичные node-specific команды: `run_pump`, `set_pwm`, `set_relay`, `calibrate`, `test_sensor`.
 
 ## 7.3. Ответ узла
 ```json
@@ -314,9 +314,17 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ```json
 {
  "status": "ONLINE",
+ "online": true,
  "ts": 1710001555
 }
 ```
+
+`status` + `ts` — целевой прод-формат; `online` и диагностические поля (`ip`, `rssi`, `fw`) опциональны.
+
+Runtime-оговорка:
+- при подключении `mqtt_manager` публикует канонический `{"status":"ONLINE","ts":...}`;
+- на части real-node поверх этого публикуется node-specific legacy payload (`online/ip/rssi/fw` без `status`/`ts`),
+  что считается техническим долгом для production hardening.
 
 ## 8.2. LWT (offline)
 ```
@@ -380,7 +388,7 @@ payload: "offline"
 - Поддержка управления через relay_driver (для NC-реле)
 - Безопасные лимиты (max_duration_ms, min_off_time_ms)
 - Дозирование по объёму (ml_per_second)
-- Используется в `ec_node` и `pump_node`
+- Используется в `ec_node` и `storage_irrigation_node`
 
 **API:**
 - `pump_driver_init_from_config()` — инициализация из NodeConfig
@@ -430,7 +438,7 @@ payload: "offline"
 - `ph_node`
 - `ec_node`
 - `climate_node`
-- `pump_node`
+- `storage_irrigation_node`
 
 **Компонент:** `firmware/nodes/common/components/setup_portal/`
 
@@ -477,12 +485,12 @@ payload: "offline"
 
 ✅ **pump_driver** — управление насосами
 - Интеграция INA209 для проверки тока
-- Периодический опрос тока в `pump_node`
-- Интеграция в `ec_node` и `pump_node`
+- Периодический опрос тока в `storage_irrigation_node`
+- Интеграция в `ec_node` и `storage_irrigation_node`
 
 ✅ **Graceful переподключение Wi-Fi/MQTT**
 - Автоматическое переподключение при изменении NodeConfig
-- Реализовано в `pump_node`
+- Реализовано в `storage_irrigation_node`
 
 ## 15.2. Backend компоненты
 

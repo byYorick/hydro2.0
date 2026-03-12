@@ -9,6 +9,8 @@
 import asyncio
 import json
 import logging
+import os
+import time
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 import asyncpg
@@ -114,12 +116,31 @@ def _unpack_queue_details(details: Optional[Dict[str, Any]]) -> tuple[Optional[D
     return details_copy or None, meta_out
 
 
+def _normalize_delivery_status(status: Optional[str]) -> str:
+    """
+    Привести статус очереди к доменному контракту /api/python/alerts.
+
+    Laravel ingest принимает только ACTIVE|RESOLVED.
+    В queue-state возможны pending/failed/dlq, они должны доставляться как ACTIVE.
+    """
+    normalized = str(status or "").strip().upper()
+    if normalized == "RESOLVED":
+        return "RESOLVED"
+    return "ACTIVE"
+
+
 class AlertQueue:
     """Персистентная очередь для алертов."""
     
     def __init__(self):
         self._initialized = False
         self._schema_error: Optional[str] = None
+        # Если сервис стартовал раньше миграций, периодически пере-проверяем схему
+        # без необходимости ручного рестарта контейнера.
+        self._schema_retry_interval_sec = float(
+            os.getenv("QUEUE_SCHEMA_RETRY_INTERVAL_SEC", "10")
+        )
+        self._schema_retry_not_before: float = 0.0
 
     async def _load_columns(self, conn: asyncpg.Connection, table_name: str) -> set[str]:
         rows = await conn.fetch(
@@ -153,7 +174,8 @@ class AlertQueue:
         """Проверяет, что schema очереди подготовлена Laravel-миграциями."""
         if self._initialized:
             return
-        if self._schema_error:
+        now_monotonic = time.monotonic()
+        if self._schema_error and now_monotonic < self._schema_retry_not_before:
             raise RuntimeError(self._schema_error)
         
         try:
@@ -165,8 +187,13 @@ class AlertQueue:
                 await self._validate_table_schema(
                     conn, "pending_alerts_dlq", _PENDING_ALERTS_DLQ_REQUIRED_COLUMNS
                 )
+            self._schema_error = None
+            self._schema_retry_not_before = 0.0
         except _SchemaValidationError as exc:
             self._schema_error = str(exc)
+            self._schema_retry_not_before = (
+                time.monotonic() + self._schema_retry_interval_sec
+            )
             logger.critical(
                 "[ALERT_QUEUE_SCHEMA_INVALID] %s",
                 self._schema_error,
@@ -660,12 +687,22 @@ async def send_alert_to_laravel(
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
     
+    delivery_status = _normalize_delivery_status(status)
+    if delivery_status != str(status or "").strip().upper():
+        logger.info(
+            "[ALERT_DELIVERY] Normalized queue status for delivery: original=%s normalized=%s code=%s zone_id=%s",
+            status,
+            delivery_status,
+            code,
+            zone_id,
+        )
+
     payload = {
         "zone_id": zone_id,
         "source": source,
         "code": code,
         "type": type,
-        "status": status,
+        "status": delivery_status,
         "details": details or None,
     }
     

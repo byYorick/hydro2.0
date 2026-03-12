@@ -7,6 +7,7 @@ use App\Models\DeviceNode;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Zone;
+use App\Models\ZoneAutomationLogicProfile;
 use App\Services\ZoneReadinessService;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -179,6 +180,91 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertTrue($readiness['checks']['main_pump']);
         $this->assertTrue($readiness['checks']['drain']);
         $this->assertTrue($readiness['checks']['online_nodes']);
+    }
+
+    public function test_check_zone_readiness_counts_zone_nodes_when_bindings_absent(): void
+    {
+        $zone = Zone::factory()->create();
+
+        DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertSame(1, $readiness['nodes']['total']);
+        $this->assertSame(1, $readiness['nodes']['online']);
+        $this->assertTrue($readiness['checks']['has_nodes']);
+        $this->assertTrue($readiness['checks']['online_nodes']);
+        $this->assertContains('main_pump', $readiness['missing_bindings']);
+        $this->assertContains('drain', $readiness['missing_bindings']);
+        $this->assertNotContains('Zone has no bound nodes', $readiness['errors']);
+    }
+
+    public function test_check_zone_readiness_does_not_require_drain_for_two_tank_topology(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+
+        ZoneAutomationLogicProfile::query()->create([
+            'zone_id' => $zone->id,
+            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
+            'is_active' => true,
+            'subsystems' => [
+                'irrigation' => [
+                    'enabled' => true,
+                    'execution' => [
+                        'tanks_count' => 2,
+                    ],
+                ],
+            ],
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertTrue($readiness['ready']);
+        $this->assertSame(['main_pump'], $readiness['required_bindings']);
+        $this->assertArrayNotHasKey('drain', $readiness['checks']);
+        $this->assertEmpty($readiness['missing_bindings']);
+    }
+
+    public function test_check_zone_readiness_requires_drain_for_three_tank_topology(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+
+        ZoneAutomationLogicProfile::query()->create([
+            'zone_id' => $zone->id,
+            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
+            'is_active' => true,
+            'subsystems' => [
+                'irrigation' => [
+                    'enabled' => true,
+                    'execution' => [
+                        'tanks_count' => 3,
+                    ],
+                ],
+            ],
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertContains('drain', $readiness['required_bindings']);
+        $this->assertContains('drain', $readiness['missing_bindings']);
+        $this->assertFalse($readiness['checks']['drain']);
     }
 
     private function createActuatorBinding(

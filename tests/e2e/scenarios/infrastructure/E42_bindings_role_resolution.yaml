@@ -19,14 +19,14 @@ setup:
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
-        node_uid: nd-ph-esp32una
+        node_uid: ${TEST_NODE_UID}
         hardware_id: esp32-test-001
-        node_type: ph
+        node_type: irrigation
         mode: configured
         channels:
-          - ph_sensor
+          - level_clean_min
         actuators:
-          - main_pump
+          - pump_main
       telemetry:
         interval_seconds: 2.0
         heartbeat_interval_seconds: 15.0
@@ -34,18 +34,24 @@ setup:
 actions:
   - step: set_test_uids
     type: set
-    test_node_uid: ${setup.node_sim.config.node.node_uid}
+    test_node_uid: ${TEST_NODE_UID}
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
 
   - step: fetch_node_id
     type: database_query
     query: |
-      SELECT id AS node_id, zone_id
-      FROM nodes
-      WHERE uid = :node_uid
+      SELECT
+        n.id AS node_id,
+        COALESCE(n.zone_id, z.id) AS zone_id
+      FROM nodes n
+      LEFT JOIN zones z ON z.uid = :zone_uid
+      WHERE n.uid = :node_uid
       LIMIT 1
     params:
       node_uid: ${test_node_uid}
+      zone_uid: ${test_zone_uid}
     save: node_row
+    expected_rows: 1
 
   - step: get_zones
     type: api_get
@@ -61,6 +67,17 @@ actions:
     type: set
     zone_id: ${node_row.0.zone_id}
     node_id: ${node_row.0.node_id}
+
+  - step: ensure_main_pump_actuator_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES (:node_id, 'main_pump', 'ACTUATOR', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = 'ACTUATOR',
+          updated_at = NOW()
+    params:
+      node_id: ${node_id}
 
   # Создаем binding (role → node_channel)
   # Используем правильный endpoint и таблицу согласно контракту
@@ -80,14 +97,16 @@ actions:
   - step: fetch_node_channel_id
     type: database_query
     query: |
-      SELECT id as node_channel_id
+      SELECT id as node_channel_id, channel
       FROM node_channels
       WHERE node_id = :node_id
-        AND channel = 'main_pump'
+        AND type = 'ACTUATOR'
+      ORDER BY CASE WHEN channel IN ('main_pump', 'pump_main') THEN 0 ELSE 1 END, id
       LIMIT 1
     params:
       node_id: ${node_id}
     save: node_channel_row
+    expected_rows: 1
 
   - step: create_infrastructure_instance
     type: api_post
@@ -96,7 +115,7 @@ actions:
       owner_type: zone
       owner_id: ${zone_id}
       asset_type: PUMP
-      label: Main pump
+      label: E42 Main pump ${TIMESTAMP_S}
       required: true
     save: infra_response
 
@@ -119,7 +138,7 @@ actions:
     endpoint: /api/nodes/${node_id}/commands
     payload:
       cmd: set_relay
-      channel: main_pump
+      channel: ${node_channel_row.0.channel}
       params:
         state: true
     save: command_response

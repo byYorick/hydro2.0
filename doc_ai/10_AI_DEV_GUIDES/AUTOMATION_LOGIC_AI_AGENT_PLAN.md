@@ -2,12 +2,16 @@
 # План выполнения для ИИ-агента: рефактор логики автоматики (scheduler + automation-engine)
 
 **Дата:** 2026-02-13  
-**Статус:** Draft/Active (Refined v1.1)  
+**Статус:** LEGACY / SUPERSEDED  
 **Владелец:** AI Agent (cross-layer)  
 **Приоритет:** высокий
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.  
 Breaking-change: контракт runtime-логики автоматики обновляется; дублирование recipe-targets в logic-конфиге удаляется.
+
+> Внимание: для текущего runtime использовать
+> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Упоминания scheduler-task transport (`/scheduler/task`) в этом файле исторические.
 
 ---
 
@@ -28,7 +32,30 @@ Breaking-change: контракт runtime-логики автоматики об
 - automation-engine принимает решение и исполняет;
 - успех только при `DONE` и/или измеряемом подтверждении эффекта.
 
-## 1.1) Границы MVP и вне scope
+## 1.1) Статус реализации на 2026-02-13 (факт по коду)
+
+Выполнено:
+1. Граница `Recipe` vs `Automation Logic` усилена в runtime/API:
+   - `subsystems.*.targets` запрещены в request (`422`);
+   - legacy перенос `targets -> execution` удалён из `ZoneAutomationLogicProfileService`;
+   - runtime merge в `EffectiveTargetsService` больше не читает `targets` и не накладывает `ph/ec` цели из logic-profile.
+2. Decision-layer `irrigation` расширен до `run/skip/retry/fail`:
+   - добавлены ветки `low_water`/`nodes_unavailable` -> `retry/fail` + alert + internal enqueue retry;
+   - добавлены правила по `soil_moisture` и `ambient_temp` (`run_full/run_reduced/skip`);
+   - введены feature-flags `AUTO_LOGIC_*_V1`.
+3. Extended outcome контракт реализован как first-class:
+   - `executed_steps`, `safety_flags`, `next_due_at`, `measurements_before_after`,
+     `run_mode`, `retry_*` проходят через `automation-engine -> scheduler -> laravel API`.
+4. Climate fallback уточнён:
+   - при недоступных внешних метриках решение не блокируется, но выставляется marker
+     `climate_external_nodes_unavailable` как `reason_code` + `decision_details.climate_fallback`.
+
+Остаточные ограничения (не закрыто полностью):
+1. `soil_temp` пока сохраняется в snapshot/decision details, но не участвует как отдельная decision-ветка.
+2. Химическая оркестрация (`prepare NPK+pH`, `irrigation Ca/Mg/Micro+pH`, порядок `EC->pH`) зафиксирована в outcome-summary,
+   но не выделена как отдельный command/state шаг с отдельным executor.
+
+## 1.2) Границы MVP и вне scope
 
 В scope MVP:
 - перенос decision/state-machine логики в `automation-engine`;
@@ -223,6 +250,7 @@ Breaking-change: контракт runtime-логики автоматики об
 - `tank_to_tank_correction_started`
 - `wind_blocked`
 - `outside_temp_blocked`
+- `climate_external_nodes_unavailable`
 
 Правило:
 - любые новые `reason_code` добавлять одновременно в backend словарь, frontend labels и тесты API/UI.

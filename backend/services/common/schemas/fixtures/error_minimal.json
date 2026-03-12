@@ -1,6 +1,6 @@
 {
   "level": "ERROR",
   "component": "sensor",
+  "error_code": "SENSOR_READ_FAILED",
   "message": "Sensor reading failed"
 }
-

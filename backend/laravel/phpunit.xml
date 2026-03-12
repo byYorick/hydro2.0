@@ -19,7 +19,7 @@
         </include>
     </source>
     <php>
-        <env name="APP_ENV" value="testing"/>
+        <env name="APP_ENV" value="testing" force="true"/>
         <env name="APP_CONFIG_CACHE" value="/tmp/laravel-config-testing.php"/>
         <env name="APP_ROUTES_CACHE" value="/tmp/laravel-routes-testing.php"/>
         <env name="APP_EVENTS_CACHE" value="/tmp/laravel-events-testing.php"/>
@@ -28,12 +28,12 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="pgsql"/>
-        <env name="DB_HOST" value="db"/>
-        <env name="DB_PORT" value="5432"/>
-        <env name="DB_DATABASE" value="hydro_test"/>
-        <env name="DB_USERNAME" value="hydro"/>
-        <env name="DB_PASSWORD" value="hydro"/>
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
+        <env name="DB_HOST" value="db" force="true"/>
+        <env name="DB_PORT" value="5432" force="true"/>
+        <env name="DB_DATABASE" value="hydro_test" force="true"/>
+        <env name="DB_USERNAME" value="hydro" force="true"/>
+        <env name="DB_PASSWORD" value="hydro" force="true"/>
         <env name="LARAVEL_API_TOKEN" value="test-python-service-token"/>
         <env name="PY_API_TOKEN" value="test-python-service-token"/>
         <env name="PY_INGEST_TOKEN" value="test-python-service-token"/>

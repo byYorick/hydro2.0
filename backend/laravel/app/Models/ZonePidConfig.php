@@ -113,19 +113,4 @@ class ZonePidConfig extends Model
         return $this->config['min_interval_ms'] ?? null;
     }
 
-    /**
-     * Accessor для удобного доступа к enable_autotune
-     */
-    public function getEnableAutotuneAttribute(): ?bool
-    {
-        return $this->config['enable_autotune'] ?? null;
-    }
-
-    /**
-     * Accessor для удобного доступа к adaptation_rate
-     */
-    public function getAdaptationRateAttribute(): ?float
-    {
-        return $this->config['adaptation_rate'] ?? null;
-    }
 }

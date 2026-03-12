@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 import state
-from common.command_status_queue import normalize_status, send_status_to_laravel
+from common.command_status_queue import CommandStatus, normalize_status, send_status_to_laravel
 from common.db import create_zone_event, execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
@@ -48,8 +48,20 @@ logger = logging.getLogger(__name__)
 
 _PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
 _PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
+_CONFIG_REPORT_DEFAULT_ALLOW_PRUNE = os.getenv(
+    "CONFIG_REPORT_PRUNE_MISSING_CHANNELS", "false"
+).strip().lower() in {"1", "true", "yes", "on"}
 _ZONE_EVENT_TYPE_MAX_LEN = 255
 _ZONE_EVENT_TYPE_HASH_LEN = 10
+_PROTECTED_NODE_CHANNEL_CONFIG_KEYS = frozenset(
+    {
+        "pump_calibration",
+        "flow_calibration",
+        "pid",
+        "pid_config",
+        "pid_state",
+    }
+)
 _NODE_EVENT_METRIC_FALLBACK = "OTHER"
 _NODE_EVENT_METRIC_ALLOWED_CODES = {
     "NODE_EVENT",
@@ -71,10 +83,42 @@ _NODE_EVENT_METRIC_ALLOWED_CODES = {
     "IRRIGATION_RECOVERY_COMPLETED",
     "IRRIGATION_RECOVERY_FAILED",
 }
+_IRR_STATE_SNAPSHOT_EVENT_TYPE = "IRR_STATE_SNAPSHOT"
+_IRR_STATE_ALIASES = {
+    "clean_level_max": ("clean_level_max", "level_clean_max"),
+    "clean_level_min": ("clean_level_min", "level_clean_min"),
+    "solution_level_max": ("solution_level_max", "level_solution_max"),
+    "solution_level_min": ("solution_level_min", "level_solution_min"),
+    "valve_clean_fill": ("valve_clean_fill",),
+    "valve_clean_supply": ("valve_clean_supply",),
+    "valve_solution_fill": ("valve_solution_fill",),
+    "valve_solution_supply": ("valve_solution_supply",),
+    "valve_irrigation": ("valve_irrigation",),
+    "pump_main": ("pump_main", "main_pump"),
+}
 _PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
 _BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
 _BINDING_COMPLETION_LOCKS_GUARD = asyncio.Lock()
+
+
+def _resolve_stub_insert_status(normalized_status: CommandStatus) -> str:
+    """
+    Для unknown cmd_id вставляем pre-terminal статус, чтобы terminal side-effects
+    формировались в Laravel через commandAck, а не терялись на early-return.
+    """
+    terminal_statuses = {
+        CommandStatus.DONE,
+        CommandStatus.ERROR,
+        CommandStatus.INVALID,
+        CommandStatus.BUSY,
+        CommandStatus.NO_EFFECT,
+        CommandStatus.TIMEOUT,
+        CommandStatus.SEND_FAILED,
+    }
+    if normalized_status in terminal_statuses:
+        return CommandStatus.ACK.value
+    return normalized_status.value
 
 
 def _prune_pending_config_reports_locked(now_ts: float) -> None:
@@ -163,10 +207,43 @@ def _normalize_command_response_details(raw_details: Any) -> Dict[str, Any]:
         return {}
     if isinstance(raw_details, dict):
         return dict(raw_details)
-    if isinstance(raw_details, str):
-        message = raw_details.strip()
-        return {"message": message} if message else {}
-    return {"raw_details": raw_details}
+    raise ValueError("'details' must be object when present")
+
+
+def _to_optional_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _normalize_irr_state_snapshot(raw_snapshot: Any) -> Optional[Dict[str, bool]]:
+    if not isinstance(raw_snapshot, dict):
+        return None
+
+    snapshot: Dict[str, bool] = {}
+    for field, aliases in _IRR_STATE_ALIASES.items():
+        for alias in aliases:
+            if alias not in raw_snapshot:
+                continue
+            value = _to_optional_bool(raw_snapshot.get(alias))
+            if value is not None:
+                snapshot[field] = value
+            break
+
+    if not snapshot:
+        return None
+    return snapshot
 
 
 def _normalize_node_event_type(raw_event_code: Any) -> str:
@@ -998,6 +1075,29 @@ async def handle_node_event(topic: str, payload: bytes) -> None:
             "payload": data,
         }
         await create_zone_event(zone_id, event_type, details)
+
+        channel_normalized = str(channel or "").strip().lower()
+        if channel_normalized == "storage_state":
+            snapshot_source = data.get("snapshot")
+            if not isinstance(snapshot_source, dict):
+                snapshot_source = data.get("state")
+            snapshot = _normalize_irr_state_snapshot(snapshot_source)
+            if snapshot is not None:
+                snapshot_payload = {
+                    "source": "node_event_storage_state",
+                    "topic": topic,
+                    "gh_uid": gh_uid,
+                    "zone_uid": zone_uid,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "event_code": event_code,
+                    "cmd_id": str(data.get("cmd_id") or "").strip() or None,
+                    "response_ts": data.get("ts"),
+                    "snapshot": snapshot,
+                }
+                snapshot_payload = {k: v for k, v in snapshot_payload.items() if v is not None}
+                await create_zone_event(zone_id, _IRR_STATE_SNAPSHOT_EVENT_TYPE, snapshot_payload)
+
         metric_event_code = _metric_event_code_label(event_type)
         NODE_EVENT_RECEIVED.labels(event_code=metric_event_code).inc()
         if metric_event_code == _NODE_EVENT_METRIC_FALLBACK:
@@ -1106,6 +1206,7 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             node_id = node.get("id")
 
         CONFIG_REPORT_RECEIVED.inc()
+        data = _normalize_config_report_channels_for_storage(data)
 
         await execute(
             """
@@ -1121,8 +1222,14 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
         channels_payload = data.get("channels")
         if channels_payload is not None:
             try:
+                allow_prune = _CONFIG_REPORT_DEFAULT_ALLOW_PRUNE
+                for key in ("channels_replace", "channels_full_snapshot", "full_snapshot"):
+                    parsed = _to_optional_bool(data.get(key))
+                    if parsed is not None:
+                        allow_prune = parsed
+                        break
                 await sync_node_channels_from_payload(
-                    node_id, node_uid, channels_payload
+                    node_id, node_uid, channels_payload, allow_prune=allow_prune
                 )
             except Exception as sync_err:
                 logger.warning(
@@ -1132,7 +1239,13 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                     exc_info=True,
                 )
 
-        await _complete_binding_after_config_report(node, node_uid)
+        await _complete_binding_after_config_report(
+            node,
+            node_uid,
+            is_temp_topic=is_temp_topic,
+            topic_gh_uid=gh_uid,
+            topic_zone_uid=zone_uid,
+        )
 
         CONFIG_REPORT_PROCESSED.inc()
         logger.info(f"[CONFIG_REPORT] Config stored for node {node_uid}")
@@ -1146,8 +1259,47 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
         clear_trace_id()
 
 
+def _normalize_config_report_channels_for_storage(config: Dict[str, Any]) -> Dict[str, Any]:
+    channels = config.get("channels")
+    if not isinstance(channels, list):
+        return config
+
+    normalized_channels: list[Any] = []
+    mutated = False
+    relay_required_types = {"RELAY", "VALVE", "FAN", "HEATER"}
+
+    for channel in channels:
+        if not isinstance(channel, dict):
+            normalized_channels.append(channel)
+            continue
+
+        normalized_channel = dict(channel)
+        channel_type = str(normalized_channel.get("type") or "").strip().upper()
+        actuator_type = str(normalized_channel.get("actuator_type") or "").strip().upper()
+
+        if channel_type == "ACTUATOR" and actuator_type in relay_required_types:
+            relay_type = str(normalized_channel.get("relay_type") or "").strip().upper()
+            if relay_type not in {"NC", "NO"}:
+                normalized_channel["relay_type"] = "NO"
+                mutated = True
+
+        normalized_channels.append(normalized_channel)
+
+    if not mutated:
+        return config
+
+    normalized_config = dict(config)
+    normalized_config["channels"] = normalized_channels
+    return normalized_config
+
+
 async def _complete_binding_after_config_report(
-    node: Dict[str, Any], node_uid: str
+    node: Dict[str, Any],
+    node_uid: str,
+    *,
+    is_temp_topic: bool = False,
+    topic_gh_uid: Optional[str] = None,
+    topic_zone_uid: Optional[str] = None,
 ) -> None:
     node_id = node.get("id")
     if not node_id:
@@ -1172,10 +1324,26 @@ async def _complete_binding_after_config_report(
         pending_zone_id = current_state.get("pending_zone_id")
         target_zone_id = zone_id or pending_zone_id
 
+        if is_temp_topic:
+            logger.info(
+                "[CONFIG_REPORT] Binding completion deferred for node %s (id=%s): temp namespace requires confirmation from target namespace",
+                node_uid,
+                node_id,
+            )
+            return
+
         if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
             return
 
-        zone_check = await fetch("SELECT id FROM zones WHERE id = $1", target_zone_id)
+        zone_check = await fetch(
+            """
+            SELECT z.id, z.uid AS zone_uid, g.uid AS greenhouse_uid
+            FROM zones z
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE z.id = $1
+            """,
+            target_zone_id,
+        )
         if not zone_check:
             logger.warning(
                 "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
@@ -1183,6 +1351,30 @@ async def _complete_binding_after_config_report(
                 node_uid,
             )
             return
+        target_zone_uid = str(zone_check[0].get("zone_uid") or "").strip()
+        target_gh_uid = str(zone_check[0].get("greenhouse_uid") or "").strip()
+
+        # Fail-closed: подтверждаем binding только config_report-ом из целевого namespace.
+        # Это защищает от ложной финализации при периодическом config_report из старой зоны.
+        if pending_zone_id and not zone_id:
+            report_zone_uid = str(topic_zone_uid or "").strip()
+            report_gh_uid = str(topic_gh_uid or "").strip()
+            if (
+                not report_zone_uid
+                or not report_gh_uid
+                or report_zone_uid != target_zone_uid
+                or report_gh_uid != target_gh_uid
+            ):
+                logger.info(
+                    "[CONFIG_REPORT] Binding completion deferred for node %s (id=%s): namespace mismatch report=%s/%s target=%s/%s",
+                    node_uid,
+                    node_id,
+                    report_gh_uid or "-",
+                    report_zone_uid or "-",
+                    target_gh_uid or "-",
+                    target_zone_uid or "-",
+                )
+                return
 
         s = get_settings()
         laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
@@ -1259,7 +1451,7 @@ async def _complete_binding_after_config_report(
 
 
 async def sync_node_channels_from_payload(
-    node_id: int, node_uid: str, channels_payload: Any
+    node_id: int, node_uid: str, channels_payload: Any, *, allow_prune: bool = False
 ) -> None:
     if not node_id:
         logger.warning("[CONFIG_REPORT] Cannot sync channels: node_id missing")
@@ -1281,6 +1473,7 @@ async def sync_node_channels_from_payload(
 
     updated = 0
     skipped = 0
+    stripped_protected_keys = 0
     channel_names: list[str] = []
     for channel in channels_payload:
         if not isinstance(channel, dict):
@@ -1317,24 +1510,47 @@ async def sync_node_channels_from_payload(
             if not unit_value:
                 unit_value = None
 
-        config = {
+        raw_config = {
             key: value
             for key, value in channel.items()
             if key not in {"name", "channel", "type", "channel_type", "metric", "metrics", "unit"}
+        }
+        protected_keys_in_payload = [
+            key for key in raw_config.keys() if key in _PROTECTED_NODE_CHANNEL_CONFIG_KEYS
+        ]
+        if protected_keys_in_payload:
+            stripped_protected_keys += len(protected_keys_in_payload)
+            logger.warning(
+                "[CONFIG_REPORT] Ignoring protected channel config keys from node payload: node_uid=%s channel=%s keys=%s",
+                node_uid,
+                channel_name,
+                protected_keys_in_payload,
+            )
+        config = {
+            key: value
+            for key, value in raw_config.items()
+            if key not in _PROTECTED_NODE_CHANNEL_CONFIG_KEYS
         }
         if not config:
             config = None
 
         await execute(
             """
-            INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            INSERT INTO node_channels (node_id, channel, type, metric, unit, config, last_seen_at, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), TRUE, NOW(), NOW())
             ON CONFLICT (node_id, channel)
             DO UPDATE SET
                 type = COALESCE(EXCLUDED.type, node_channels.type),
                 metric = COALESCE(EXCLUDED.metric, node_channels.metric),
                 unit = COALESCE(EXCLUDED.unit, node_channels.unit),
-                config = COALESCE(EXCLUDED.config, node_channels.config),
+                -- Preserve local/runtime keys (e.g. pump_calibration) while applying fresh node config.
+                config = CASE
+                    WHEN EXCLUDED.config IS NULL THEN node_channels.config
+                    WHEN node_channels.config IS NULL THEN EXCLUDED.config
+                    ELSE node_channels.config || EXCLUDED.config
+                END,
+                last_seen_at = NOW(),
+                is_active = TRUE,
                 updated_at = NOW()
             """,
             node_id,
@@ -1347,28 +1563,46 @@ async def sync_node_channels_from_payload(
         channel_names.append(channel_name)
         updated += 1
 
-    if channel_names:
+    if allow_prune and channel_names:
         await execute(
             """
-            DELETE FROM node_channels
+            UPDATE node_channels
+            SET is_active = FALSE,
+                updated_at = NOW()
             WHERE node_id = $1
               AND NOT (channel = ANY($2))
+              AND COALESCE(is_active, TRUE) = TRUE
             """,
             node_id,
             list(set(channel_names)),
         )
+        logger.info(
+            "[CONFIG_REPORT] Soft-deactivated missing channels from config_report full-snapshot: node_uid=%s kept=%s",
+            node_uid,
+            sorted(list(set(channel_names))),
+        )
+    elif allow_prune and not channel_names:
+        logger.warning(
+            "[CONFIG_REPORT] Refused destructive prune: allow_prune=true but no valid channels were parsed for node_uid=%s",
+            node_uid,
+        )
     else:
-        await execute(
-            "DELETE FROM node_channels WHERE node_id = $1",
-            node_id,
+        logger.info(
+            "[CONFIG_REPORT] Channel prune disabled for node_uid=%s (transport-safe mode)",
+            node_uid,
         )
 
     logger.info(
-        "[CONFIG_REPORT] Synced %s channel(s) for node %s, skipped %s",
+        "[CONFIG_REPORT] Synced %s channel(s) for node %s, skipped %s, stripped_protected_keys=%s, allow_prune=%s",
         updated,
         node_uid,
         skipped,
+        stripped_protected_keys,
+        allow_prune,
     )
+
+    # Не удаляем все каналы даже при allow_prune=true, если payload пустой/невалидный.
+    # Это защищает от случайного разрушения конфигурации при частичном config_report.
 
 
 async def handle_command_response(topic: str, payload: bytes) -> None:
@@ -1392,20 +1626,31 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 
         cmd_id = data.get("cmd_id")
         raw_status = data.get("status", "")
+        response_ts = data.get("ts")
 
         logger.info(
-            "[COMMAND_RESPONSE] STEP 0.2: Parsed command_response: cmd_id=%s, status=%s, topic=%s",
+            "[COMMAND_RESPONSE] STEP 0.2: Parsed command_response: cmd_id=%s, status=%s, ts=%s, topic=%s",
             cmd_id,
             raw_status,
+            response_ts,
             topic,
         )
         node_uid = _extract_node_uid(topic)
         channel = _extract_channel_from_topic(topic)
         gh_uid = _extract_gh_uid(topic)
 
-        if not cmd_id or not raw_status:
+        if (
+            not cmd_id
+            or not raw_status
+            or not isinstance(response_ts, int)
+            or response_ts < 0
+        ):
             logger.warning(
-                f"[COMMAND_RESPONSE] Missing cmd_id or status in payload: {data}"
+                "[COMMAND_RESPONSE] Missing or invalid required fields in payload: cmd_id=%s status=%s ts=%s payload=%s",
+                cmd_id,
+                raw_status,
+                response_ts,
+                data,
             )
             COMMAND_RESPONSE_ERROR.inc()
             return
@@ -1440,11 +1685,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                         node_id = node_rows[0]["id"]
                         zone_id = node_rows[0]["zone_id"]
 
-                status_value = (
-                    normalized_status.value
-                    if hasattr(normalized_status, "value")
-                    else str(normalized_status)
-                )
+                status_value = _resolve_stub_insert_status(normalized_status)
                 cmd_name = "unknown"
 
                 await execute(
@@ -1471,6 +1712,19 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             else:
                 zone_id = existing_cmd[0].get("zone_id")
                 cmd_name = existing_cmd[0].get("cmd")
+                existing_status = str(existing_cmd[0].get("status") or "").strip().upper()
+                # Дедупликация: если статус уже терминальный и совпадает — пропускаем
+                _terminal = ("DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED")
+                if (
+                    existing_status == normalized_status.value.upper()
+                    and existing_status in _terminal
+                ):
+                    logger.debug(
+                        "[COMMAND_RESPONSE] Duplicate response for cmd_id=%s (status=%s already set), skipping",
+                        cmd_id,
+                        existing_status,
+                    )
+                    return
         except Exception as e:
             logger.warning(
                 "[COMMAND_RESPONSE] Failed to ensure stub record for cmd_id=%s: %s",
@@ -1479,13 +1733,23 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 exc_info=True,
             )
 
-        details = _normalize_command_response_details(data.get("details"))
+        try:
+            details = _normalize_command_response_details(data.get("details"))
+        except ValueError:
+            logger.warning(
+                "[COMMAND_RESPONSE] Invalid details type for cmd_id=%s: %s",
+                cmd_id,
+                type(data.get("details")).__name__,
+            )
+            COMMAND_RESPONSE_ERROR.inc()
+            return
         if "error_code" in data and data.get("error_code") is not None:
             details["error_code"] = data.get("error_code")
         if "error_message" in data and data.get("error_message") is not None:
             details["error_message"] = data.get("error_message")
         details.update({
             "raw_status": str(raw_status),
+            "response_ts": response_ts,
             "node_uid": node_uid,
             "channel": channel,
             "gh_uid": gh_uid,
@@ -1510,6 +1774,36 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                 node_uid,
                 channel,
             )
+
+        cmd_name_normalized = str(cmd_name or "").strip().lower()
+        channel_normalized = str(channel or "").strip().lower()
+        should_persist_irr_snapshot = cmd_name_normalized == "state" or channel_normalized == "storage_state"
+        if zone_id and should_persist_irr_snapshot:
+            snapshot_source = details.get("snapshot")
+            if not isinstance(snapshot_source, dict):
+                snapshot_source = details.get("state")
+            snapshot = _normalize_irr_state_snapshot(snapshot_source)
+            if snapshot is not None:
+                try:
+                    await create_zone_event(
+                        int(zone_id),
+                        _IRR_STATE_SNAPSHOT_EVENT_TYPE,
+                        {
+                            "source": "command_response_state",
+                            "cmd_id": cmd_id,
+                            "node_uid": node_uid,
+                            "channel": channel,
+                            "response_ts": response_ts,
+                            "snapshot": snapshot,
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "[COMMAND_RESPONSE] Failed to persist IRR_STATE_SNAPSHOT for zone_id=%s cmd_id=%s",
+                        zone_id,
+                        cmd_id,
+                        exc_info=True,
+                    )
 
         if zone_id:
             status_value = (

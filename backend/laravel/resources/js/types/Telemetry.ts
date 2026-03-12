@@ -16,6 +16,9 @@ export interface ZoneTelemetry {
 export interface TelemetrySample {
   ts: number
   value: number
+  avg?: number | null
+  min?: number | null
+  max?: number | null
 }
 
 /**

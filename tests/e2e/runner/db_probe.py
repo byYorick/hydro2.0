@@ -92,15 +92,15 @@ class DBProbe:
         if not params:
             return query, []
 
-        # Keep deterministic ordering based on first appearance in query.
+        # Preserve every occurrence order because psycopg expects one value
+        # per generated placeholder, even when the same named param repeats.
         order: List[str] = []
         def repl(m: re.Match) -> str:
             name = m.group(1)
             if name not in params:
                 # leave untouched; will fail later at execute
                 return m.group(0)
-            if name not in order:
-                order.append(name)
+            order.append(name)
             return "%s"
 
         converted = re.sub(r":([A-Za-z_][A-Za-z0-9_]*)", repl, query)

@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\DeviceNode;
+use App\Models\ChannelBinding;
+use App\Models\InfrastructureInstance;
+use App\Models\NodeChannel;
 use App\Models\User;
 use App\Models\Zone;
 use App\Jobs\PublishNodeConfigJob;
@@ -77,6 +80,73 @@ class NodeControllerTest extends TestCase
         $response->assertStatus(200);
         $data = $response->json('data');
         $this->assertArrayNotHasKey('config', $data);
+    }
+
+    public function test_nodes_index_exposes_safe_pump_component_for_channel_calibration_mapping(): void
+    {
+        $user = User::factory()->create();
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'ACTUATOR',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [
+                'pump_calibration' => [
+                    'component' => 'npk',
+                ],
+            ],
+        ]);
+
+        $response = $this->actingAs($user)->getJson("/api/nodes?zone_id={$zone->id}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.data.0.channels.0.pump_component', 'npk');
+
+        $channel = $response->json('data.data.0.channels.0');
+        $this->assertArrayNotHasKey('config', $channel);
+    }
+
+    public function test_nodes_index_exposes_safe_binding_role_for_channel_calibration_mapping(): void
+    {
+        $user = User::factory()->create();
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $channel = NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'ch_relay_1',
+            'type' => 'ACTUATOR',
+            'metric' => 'RELAY',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $instance = InfrastructureInstance::query()->create([
+            'owner_type' => 'zone',
+            'owner_id' => $zone->id,
+            'asset_type' => 'PUMP',
+            'label' => 'EC NPK Pump',
+            'required' => true,
+        ]);
+
+        ChannelBinding::query()->create([
+            'infrastructure_instance_id' => $instance->id,
+            'node_channel_id' => $channel->id,
+            'direction' => 'actuator',
+            'role' => 'ec_npk_pump',
+        ]);
+
+        $response = $this->actingAs($user)->getJson("/api/nodes?zone_id={$zone->id}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.data.0.channels.0.binding_role', 'ec_npk_pump');
+
+        $channelPayload = $response->json('data.data.0.channels.0');
+        $this->assertArrayNotHasKey('config', $channelPayload);
     }
 
     public function test_nodes_search_escapes_special_characters(): void

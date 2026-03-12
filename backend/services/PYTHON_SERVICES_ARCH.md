@@ -168,18 +168,19 @@ history-logger/
 
 ### 3.3. automation-engine
 
-**Назначение:** Контроллер зон, проверка targets, публикация команд корректировки.
+**Назначение:** AE2-Lite рантайм автоматизации зон и scheduler wake-up оркестрация.
 
 **Порты:** 
 - 9401 (Prometheus metrics)
-- 9405 (REST API для scheduler)
+- 9405 (REST API для Laravel scheduler-dispatch)
 
 **Функционал:**
 - Периодическая загрузка конфигурации из Laravel
 - Проверка активных зон с рецептами
 - Сравнение текущих значений с targets (pH, EC)
 - Публикация команд корректировки через history-logger REST API
-- REST API endpoint для scheduler (`/scheduler/command`)
+- Каноничный wake-up endpoint `POST /zones/{id}/start-cycle`
+- Runtime API для UI: `GET /zones/{id}/state`, `GET/POST /zones/{id}/control-mode`, `POST /zones/{id}/manual-step`
 - Мониторинг через Prometheus
 - **Адаптивная конкурентность:**
   - Автоматический расчет оптимального количества параллельных зон
@@ -226,54 +227,17 @@ automation-engine/
 5. Повтор каждые 15 секунд
 
 **REST API:**
-- `POST /scheduler/command` - прием команд от scheduler
-- `GET /health` - health check
+- `POST /zones/{id}/start-cycle` - каноничный запуск цикла из Laravel scheduler-dispatch
+- `GET /zones/{id}/state` - runtime state зоны
+- `GET /zones/{id}/control-mode` - активный режим и доступные ручные шаги
+- `POST /zones/{id}/control-mode` - смена режима (`auto|semi|manual`)
+- `POST /zones/{id}/manual-step` - ручной шаг в `semi|manual`
+- `GET /health/live` - liveness
+- `GET /health/ready` - readiness
 
 ---
 
-### 3.4. scheduler
-
-**Назначение:** Расписания поливов/света из recipe phases, публикация команд через automation-engine REST API.
-
-**Порт:** 9402 (Prometheus metrics)
-
-**Функционал:**
-- Загрузка активных расписаний из БД
-- Парсинг time spec из recipe phases
-- Публикация команд через automation-engine REST API
-- Отслеживание выполненных команд
-- Мониторинг безопасности насосов (защита от сухого хода)
-
-**Зависимости:**
-- PostgreSQL
-- Automation-Engine (REST API для публикации команд)
-
-**Структура:**
-```
-scheduler/
-├── main.py          # Основной цикл проверки расписаний
-├── test_main.py     # Тесты
-├── requirements.txt
-├── Dockerfile
-└── README.md
-```
-
-**Алгоритм:**
-1. Загрузка активных расписаний из БД
-2. Парсинг time spec (например, "08:00", "12:00,18:00")
-3. Проверка текущего времени
-4. Публикация команд через automation-engine REST API при наступлении времени
-5. Мониторинг безопасности насосов (проверка потока после запуска)
-6. Повтор каждые 60 секунд
-
-**Команды:**
-- Все команды отправляются через `send_command_via_automation_engine()` → automation-engine REST API
-- Automation-engine проксирует команды в history-logger REST API
-- History-logger публикует команды в MQTT
-
----
-
-### 3.5. device-registry (PLANNED)
+### 3.4. device-registry (PLANNED)
 
 **Назначение:** Реестр устройств, хранение и выдача NodeConfig.
 
@@ -314,7 +278,7 @@ scheduler/
 - `mqtt-bridge`: `hydro/{gh}/{zone}/{node}/{channel}/command` (legacy, для внешних систем)
 
 **Важно:** 
-- `automation-engine` и `scheduler` **не публикуют команды напрямую в MQTT**
+- `automation-engine` **не публикует команды напрямую в MQTT**
 - Все команды проходят через `history-logger` REST API
 - Это обеспечивает единую точку логирования и мониторинга команд
 
@@ -322,13 +286,18 @@ scheduler/
 
 **Архитектура команд:**
 ```
-Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
+Laravel Scheduler → POST /zones/{id}/start-cycle → Automation-Engine → REST (9300) → History-Logger → MQTT → Ноды
 ```
 
 **Endpoints:**
 - **Automation-Engine** (`http://automation-engine:9405`):
-  - `POST /scheduler/command` - прием команд от scheduler
-  - `GET /health` - health check
+  - `POST /zones/{id}/start-cycle` - каноничный wake-up
+  - `GET /zones/{id}/state` - runtime state
+  - `GET /zones/{id}/control-mode` - режим/доступные шаги
+  - `POST /zones/{id}/control-mode` - смена режима
+  - `POST /zones/{id}/manual-step` - ручной шаг
+  - `GET /health/live` - liveness
+  - `GET /health/ready` - readiness
   
 - **History-Logger** (`http://history-logger:9300`):
   - `POST /commands` - универсальный endpoint для команд
@@ -349,7 +318,7 @@ Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logg
 - `sensors` — справочник сенсоров (type/label/scope, связь с zone/node)
 - `telemetry_samples` — история телеметрии (запись через `history-logger`, `sensor_id`)
 - `telemetry_last` — последние значения (обновление через `history-logger`, `sensor_id`)
-- `zones`, `grow_cycles`, `effective_targets` — чтение через `automation-engine` и `scheduler` (через Laravel API)
+- `zones`, `grow_cycles`, `effective_targets` — чтение через `automation-engine` и Laravel scheduler-dispatch (через Laravel API)
 - `commands` — логирование команд (опционально)
 
 ---
@@ -378,12 +347,6 @@ backend/services/
 │   ├── Dockerfile
 │   └── README.md
 ├── automation-engine/    # Контроллер зон
-│   ├── main.py
-│   ├── test_main.py     # Тесты
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── README.md
-├── scheduler/           # Расписания
 │   ├── main.py
 │   ├── test_main.py     # Тесты
 │   ├── requirements.txt
@@ -449,7 +412,6 @@ backend/services/
 
 - `mqtt-bridge`: порт 9000 (`/metrics`)
 - `automation-engine`: порт 9401 (`/metrics`)
-- `scheduler`: порт 9402 (`/metrics`)
 
 **Метрики:**
 
@@ -473,11 +435,6 @@ backend/services/
 - `automation_commands_sent_total{zone_id, metric}` - отправлено команд
 - `rest_command_errors_total{error_type}` - ошибки REST запросов к history-logger
 - `command_rest_latency_seconds` - задержка REST запросов
-
-**scheduler:**
-- `schedule_executions_total{zone_id, task_type}` - выполненные расписания
-- `active_schedules` - количество активных расписаний
-- `scheduler_command_rest_errors_total{error_type}` - ошибки REST запросов к automation-engine
 
 **history-logger:**
 - `commands_received_total` - получено команд через REST API
@@ -527,17 +484,15 @@ pytest backend/services/
 # Конкретный сервис
 pytest backend/services/history-logger/
 pytest backend/services/automation-engine/
-pytest backend/services/scheduler/
 
 # С покрытием
 pytest --cov=backend/services/history-logger backend/services/history-logger/
 ```
 
 **Покрытие тестами (после рефакторинга на REST API):**
-- **Automation-Engine:** 20 тестов (CommandBus + REST API)
-- **Scheduler:** 9 тестов (REST интеграция)
-- **History-Logger:** 13 тестов (REST API endpoints)
-- **Всего:** 42 теста, 100% успешность
+- **Automation-Engine:** профильные unit/integration тесты (CommandBus + REST API)
+- **History-Logger:** профильные REST API и ingestion тесты
+- **Laravel scheduler-dispatch:** feature/unit тесты в Laravel слое
 
 ---
 
@@ -560,7 +515,6 @@ pytest --cov=backend/services/history-logger backend/services/history-logger/
 - `mqtt-bridge`: 9000 (REST API + metrics)
 - `history-logger`: 9300 (REST API), 9301 (metrics)
 - `automation-engine`: 9401 (metrics), 9405 (REST API)
-- `scheduler`: 9402 (metrics)
 
 ---
 

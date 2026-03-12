@@ -4,7 +4,7 @@
 
 ## Описание
 
-Фреймворк устраняет дублирование кода между разными нодами (ph_node, ec_node, climate_node, pump_node) и предоставляет единый API для:
+Фреймворк устраняет дублирование кода между разными нодами (ph_node, ec_node, climate_node, storage_irrigation_node) и предоставляет единый API для:
 
 - Обработки NodeConfig
 - Обработки команд
@@ -132,7 +132,7 @@ void task_sensors(void *pvParameters) {
 - ✅ `node_telemetry_engine.c` - батчинг телеметрии с оптимизацией памяти
 - ✅ `node_watchdog.c` - унифицированный watchdog для всех задач
 - ✅ Интеграция с memory_pool для оптимизации использования памяти
-- ✅ Интеграция со всеми нодами (ph_node, ec_node, climate_node, pump_node)
+- ✅ Интеграция со всеми нодами (ph_node, ec_node, climate_node, storage_irrigation_node)
   - Обработка NodeConfig через node_config_handler
   - Обработка команд через node_command_handler
   - Публикация телеметрии через node_telemetry_engine
@@ -140,7 +140,7 @@ void task_sensors(void *pvParameters) {
   - Регистрация callback для safe_mode
 
 **Завершено:**
-- ✅ Все четыре ноды (ph_node, ec_node, climate_node, pump_node) успешно скомпилированы с интеграцией node_framework
+- ✅ Все четыре ноды (ph_node, ec_node, climate_node, storage_irrigation_node) успешно скомпилированы с интеграцией node_framework
 - ✅ Все компоненты протестированы на компиляцию
 - ✅ Watchdog интегрирован во все задачи всех нод
 - ✅ Memory pool интегрирован для оптимизации JSON строк

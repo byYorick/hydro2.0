@@ -126,13 +126,13 @@ actions:
     expected_rows: 1
     save: report_row
 
-  - step: wait_for_cycle_harvested
+  - step: wait_for_cycle_running
     type: db_wait
     query: |
       SELECT status
       FROM grow_cycles
       WHERE id = :sim_grow_cycle_id
-        AND status = 'HARVESTED'
+        AND status = 'RUNNING'
       LIMIT 1
     params:
       sim_grow_cycle_id: ${sim_grow_cycle_id}

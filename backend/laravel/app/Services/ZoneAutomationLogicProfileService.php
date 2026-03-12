@@ -15,9 +15,10 @@ class ZoneAutomationLogicProfileService
     public function getProfilesPayload(Zone $zone): array
     {
         $profiles = $this->getProfilesForZone($zone->id);
+        $activeProfile = $this->resolveActiveProfileForZone($zone->id);
 
         return [
-            'active_mode' => $this->resolveActiveModeFromCollection($profiles),
+            'active_mode' => $activeProfile?->mode,
             'profiles' => $this->mapProfilesForResponse($profiles),
         ];
     }
@@ -28,8 +29,9 @@ class ZoneAutomationLogicProfileService
     public function upsertProfile(Zone $zone, string $mode, array $subsystems, bool $activate, ?int $userId): ZoneAutomationLogicProfile
     {
         $normalizedSubsystems = $this->normalizeSubsystemsForStorage($subsystems);
+        $commandPlans = $this->buildCommandPlans($normalizedSubsystems);
 
-        return DB::transaction(function () use ($zone, $mode, $normalizedSubsystems, $activate, $userId): ZoneAutomationLogicProfile {
+        return DB::transaction(function () use ($zone, $mode, $normalizedSubsystems, $commandPlans, $activate, $userId): ZoneAutomationLogicProfile {
             if ($activate) {
                 ZoneAutomationLogicProfile::query()
                     ->where('zone_id', $zone->id)
@@ -48,9 +50,18 @@ class ZoneAutomationLogicProfileService
             }
 
             $profile->subsystems = $normalizedSubsystems;
+            $profile->command_plans = $commandPlans;
             $profile->is_active = $activate || (bool) $profile->is_active;
             $profile->updated_by = $userId;
             $profile->save();
+
+            $this->emitProfileUpdatedZoneEvent(
+                zoneId: (int) $zone->id,
+                profileId: (int) ($profile->id ?? 0),
+                mode: $mode,
+                subsystems: $normalizedSubsystems,
+                userId: $userId,
+            );
 
             return $profile->fresh() ?? $profile;
         });
@@ -61,9 +72,31 @@ class ZoneAutomationLogicProfileService
      */
     public function resolveActiveProfileForZone(int $zoneId): ?ZoneAutomationLogicProfile
     {
-        return ZoneAutomationLogicProfile::query()
+        $allowedModes = ZoneAutomationLogicProfile::allowedModes();
+
+        $activeAllowedProfile = ZoneAutomationLogicProfile::query()
             ->where('zone_id', $zoneId)
             ->where('is_active', true)
+            ->whereIn('mode', $allowedModes)
+            ->orderByDesc('updated_at')
+            ->first();
+        if ($activeAllowedProfile instanceof ZoneAutomationLogicProfile) {
+            return $activeAllowedProfile;
+        }
+
+        $hasUnsupportedActiveProfile = ZoneAutomationLogicProfile::query()
+            ->where('zone_id', $zoneId)
+            ->where('is_active', true)
+            ->whereNotIn('mode', $allowedModes)
+            ->exists();
+        if (! $hasUnsupportedActiveProfile) {
+            return null;
+        }
+
+        return ZoneAutomationLogicProfile::query()
+            ->where('zone_id', $zoneId)
+            ->whereIn('mode', $allowedModes)
+            ->orderByRaw("CASE mode WHEN 'working' THEN 0 WHEN 'setup' THEN 1 ELSE 2 END")
             ->orderByDesc('updated_at')
             ->first();
     }
@@ -87,16 +120,6 @@ class ZoneAutomationLogicProfileService
             ->orderByRaw("CASE mode WHEN 'working' THEN 0 WHEN 'setup' THEN 1 ELSE 2 END")
             ->orderByDesc('updated_at')
             ->get();
-    }
-
-    protected function resolveActiveModeFromCollection(Collection $profiles): ?string
-    {
-        $active = $profiles->firstWhere('is_active', true);
-        if ($active instanceof ZoneAutomationLogicProfile) {
-            return $active->mode;
-        }
-
-        return null;
     }
 
     protected function mapProfilesForResponse(Collection $profiles): array
@@ -139,11 +162,9 @@ class ZoneAutomationLogicProfileService
             $execution = [];
             if (isset($subsystem['execution']) && is_array($subsystem['execution'])) {
                 $execution = $subsystem['execution'];
-            }
-
-            $legacyTargets = is_array($subsystem['targets'] ?? null) ? $subsystem['targets'] : [];
-            if (!empty($legacyTargets)) {
-                $execution = array_replace_recursive($this->extractLegacyExecutionPatch($name, $legacyTargets), $execution);
+                if ($name === 'diagnostics') {
+                    $execution = $this->normalizeDiagnosticsExecution($execution);
+                }
             }
 
             if (!empty($execution)) {
@@ -158,17 +179,172 @@ class ZoneAutomationLogicProfileService
         return $normalized;
     }
 
-    protected function extractLegacyExecutionPatch(string $subsystemName, array $legacyTargets): array
+    /**
+     * @param  array<string, mixed>  $execution
+     * @return array<string, mixed>
+     */
+    protected function normalizeDiagnosticsExecution(array $execution): array
     {
-        $nestedExecution = is_array($legacyTargets['execution'] ?? null) ? $legacyTargets['execution'] : [];
-
-        if (in_array($subsystemName, ['ph', 'ec'], true)) {
-            return $nestedExecution;
+        $workflow = $execution['workflow'] ?? null;
+        if (is_string($workflow) && strtolower(trim($workflow)) === 'startup') {
+            $execution['workflow'] = 'cycle_start';
         }
 
-        $flatPatch = $legacyTargets;
-        unset($flatPatch['execution']);
+        return $execution;
+    }
 
-        return array_replace_recursive($flatPatch, $nestedExecution);
+    /**
+     * @param  array<string, mixed>  $subsystems
+     * @return array<string, mixed>
+     */
+    protected function buildCommandPlans(array $subsystems): array
+    {
+        $execution = data_get($subsystems, 'diagnostics.execution');
+        $execution = is_array($execution) && ! array_is_list($execution) ? $execution : [];
+
+        $twoTankCommands = data_get($execution, 'two_tank_commands');
+        $twoTankCommands = is_array($twoTankCommands) && ! array_is_list($twoTankCommands) ? $twoTankCommands : [];
+
+        $steps = $this->resolveCommandPlanSteps($execution, $twoTankCommands);
+
+        return [
+            'schema_version' => 1,
+            'plan_version' => 1,
+            'source' => 'automation_logic_profile_upsert',
+            'plans' => [
+                'diagnostics' => [
+                    'execution' => $execution,
+                    'two_tank_commands' => $twoTankCommands,
+                    'steps' => $steps,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $execution
+     * @param  array<string, mixed>  $twoTankCommands
+     * @return array<int, array<string, mixed>>
+     */
+    protected function resolveCommandPlanSteps(array $execution, array $twoTankCommands): array
+    {
+        $fromTwoTankSteps = data_get($twoTankCommands, 'steps');
+        if (is_array($fromTwoTankSteps) && ! empty($fromTwoTankSteps)) {
+            $normalized = $this->normalizeCommandPlanSteps($fromTwoTankSteps);
+            if (! empty($normalized)) {
+                return $normalized;
+            }
+        }
+
+        $rawExecutionSteps = data_get($execution, 'steps');
+        if (is_array($rawExecutionSteps) && ! empty($rawExecutionSteps)) {
+            $normalized = $this->normalizeCommandPlanSteps($rawExecutionSteps);
+            if (! empty($normalized)) {
+                return $normalized;
+            }
+        }
+
+        return $this->buildFallbackStepsFromTwoTankCommands($twoTankCommands);
+    }
+
+    /**
+     * @param  array<int, mixed>  $rawSteps
+     * @return array<int, array<string, mixed>>
+     */
+    protected function normalizeCommandPlanSteps(array $rawSteps): array
+    {
+        $steps = [];
+
+        foreach ($rawSteps as $index => $rawStep) {
+            if (! is_array($rawStep) || array_is_list($rawStep)) {
+                continue;
+            }
+
+            $channel = trim((string) ($rawStep['channel'] ?? ''));
+            $cmd = trim((string) ($rawStep['cmd'] ?? ''));
+            $params = $rawStep['params'] ?? [];
+            if ($channel === '' || $cmd === '' || ! is_array($params)) {
+                continue;
+            }
+
+            $steps[] = [
+                'name' => isset($rawStep['name']) ? (string) $rawStep['name'] : 'step_'.((int) $index + 1),
+                'channel' => $channel,
+                'cmd' => $cmd,
+                'params' => $params,
+                'timeout_sec' => isset($rawStep['timeout_sec']) ? (int) $rawStep['timeout_sec'] : null,
+                'allow_no_effect' => (bool) ($rawStep['allow_no_effect'] ?? false),
+                'dedupe_bypass' => (bool) ($rawStep['dedupe_bypass'] ?? false),
+            ];
+        }
+
+        return $steps;
+    }
+
+    /**
+     * @param  array<string, mixed>  $twoTankCommands
+     * @return array<int, array<string, mixed>>
+     */
+    protected function buildFallbackStepsFromTwoTankCommands(array $twoTankCommands): array
+    {
+        $steps = [];
+
+        foreach ($twoTankCommands as $planName => $planCommands) {
+            if (! is_string($planName) || ! is_array($planCommands) || ! array_is_list($planCommands)) {
+                continue;
+            }
+
+            foreach ($planCommands as $position => $rawStep) {
+                if (! is_array($rawStep) || array_is_list($rawStep)) {
+                    continue;
+                }
+
+                $channel = trim((string) ($rawStep['channel'] ?? ''));
+                $cmd = trim((string) ($rawStep['cmd'] ?? ''));
+                $params = $rawStep['params'] ?? [];
+                if ($channel === '' || $cmd === '' || ! is_array($params)) {
+                    continue;
+                }
+
+                $steps[] = [
+                    'name' => $planName.'_'.((int) $position + 1),
+                    'channel' => $channel,
+                    'cmd' => $cmd,
+                    'params' => $params,
+                    'allow_no_effect' => (bool) ($rawStep['allow_no_effect'] ?? false),
+                    'dedupe_bypass' => (bool) ($rawStep['dedupe_bypass'] ?? false),
+                ];
+            }
+        }
+
+        return $steps;
+    }
+
+    /**
+     * @param  array<string, mixed>  $subsystems
+     */
+    protected function emitProfileUpdatedZoneEvent(
+        int $zoneId,
+        int $profileId,
+        string $mode,
+        array $subsystems,
+        ?int $userId,
+    ): void {
+        $payload = [
+            'profile_id' => $profileId > 0 ? $profileId : null,
+            'mode' => $mode,
+            'subsystems' => $subsystems,
+            'user_id' => $userId,
+        ];
+
+        DB::table('zone_events')->insert([
+            'zone_id' => $zoneId,
+            'type' => 'AUTOMATION_LOGIC_PROFILE_UPDATED',
+            'entity_type' => 'automation_logic_profile',
+            'entity_id' => $profileId > 0 ? (string) $profileId : null,
+            'server_ts' => (int) floor(microtime(true) * 1000),
+            'payload_json' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now('UTC'),
+        ]);
     }
 }

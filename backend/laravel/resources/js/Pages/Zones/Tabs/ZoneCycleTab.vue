@@ -209,7 +209,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
@@ -218,6 +218,7 @@ import { translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatInterval, formatTimeShort } from '@/utils/formatTime'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Cycle } from '@/types'
+import type { GrowCycle } from '@/types/GrowCycle'
 
 interface LoadingStateProps {
   cyclePause: boolean
@@ -227,12 +228,24 @@ interface LoadingStateProps {
   nextPhase: boolean
 }
 
+interface RecipeTargets {
+  min?: number
+  max?: number
+  temperature?: number
+  humidity?: number
+  hours_on?: number
+  hours_off?: number
+  interval_minutes?: number
+  duration_seconds?: number
+  [key: string]: unknown
+}
+
 interface Props {
-  activeGrowCycle?: any
-  activeCycle?: any
+  activeGrowCycle?: GrowCycle | null
+  activeCycle?: GrowCycle | null
   zoneStatus?: string
-  currentPhase?: any
-  cyclesList: Array<Cycle & { required?: boolean; recipeTargets?: any; last_run?: string | null; next_run?: string | null; interval?: number | null }>
+  currentPhase?: GrowCycle['currentPhase']
+  cyclesList: Array<Cycle & { required?: boolean; recipeTargets?: RecipeTargets | null; last_run?: string | null; next_run?: string | null; interval?: number | null }>
   computedPhaseProgress: number | null
   computedPhaseDaysElapsed: number | null
   computedPhaseDaysTotal: number | null
@@ -256,6 +269,10 @@ const emit = defineEmits<{
 }>()
 
 const props = defineProps<Props>()
+
+const now = ref(Date.now())
+const nowTimer = setInterval(() => { now.value = Date.now() }, 30_000)
+onUnmounted(() => clearInterval(nowTimer))
 
 const displayCycle = computed(() => {
   if (props.activeGrowCycle || props.activeCycle) {
@@ -293,16 +310,15 @@ function getProgressToNextRun(cycle: Cycle & { last_run?: string | null; next_ru
   const total = nextRun - lastRun
   if (total <= 0) return 0
 
-  const elapsed = Date.now() - lastRun
+  const elapsed = now.value - lastRun
   return Math.min(100, Math.max(0, (elapsed / total) * 100))
 }
 
 function getTimeUntilNextRun(cycle: Cycle & { next_run?: string | null }): string {
   if (!cycle.next_run) return ''
 
-  const now = Date.now()
   const nextRun = new Date(cycle.next_run).getTime()
-  const diff = nextRun - now
+  const diff = nextRun - now.value
 
   if (diff <= 0) return 'Просрочено'
 

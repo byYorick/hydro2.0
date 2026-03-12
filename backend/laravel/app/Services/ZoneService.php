@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Events\ZoneUpdated;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -93,6 +95,16 @@ class ZoneService
     public function update(Zone $zone, array $data): Zone
     {
         return DB::transaction(function () use ($zone, $data) {
+            if (
+                array_key_exists('automation_runtime', $data)
+                && (string) $data['automation_runtime'] !== (string) $zone->automation_runtime
+                && DB::getDriverName() === 'pgsql'
+            ) {
+                DB::statement('SELECT pg_advisory_xact_lock(?)', [(int) $zone->id]);
+                $zone->refresh();
+            }
+
+            $this->assertAutomationRuntimeSwitchAllowed($zone, $data);
             $zone->update($data);
             Log::info('Zone updated', ['zone_id' => $zone->id]);
             $zone = $zone->fresh();
@@ -102,6 +114,90 @@ class ZoneService
 
             return $zone;
         });
+    }
+
+    private function assertAutomationRuntimeSwitchAllowed(Zone $zone, array $data): void
+    {
+        if (! array_key_exists('automation_runtime', $data)) {
+            return;
+        }
+
+        $targetRuntime = (string) $data['automation_runtime'];
+        if ($targetRuntime === (string) $zone->automation_runtime) {
+            return;
+        }
+
+        if (! Schema::hasTable('ae_tasks') || ! Schema::hasTable('ae_zone_leases') || ! Schema::hasTable('ae_commands')) {
+            return;
+        }
+
+        $activeTask = DB::table('ae_tasks')
+            ->select('id', 'status', 'claimed_by', 'updated_at')
+            ->where('zone_id', $zone->id)
+            ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($activeTask) {
+            throw new ZoneRuntimeSwitchDeniedException([
+                'zone_id' => $zone->id,
+                'from_runtime' => (string) $zone->automation_runtime,
+                'to_runtime' => $targetRuntime,
+                'blocker' => 'active_task',
+                'task_id' => (int) $activeTask->id,
+                'task_status' => (string) $activeTask->status,
+                'claimed_by' => $activeTask->claimed_by ? (string) $activeTask->claimed_by : null,
+            ]);
+        }
+
+        $activeLease = DB::table('ae_zone_leases')
+            ->select('owner', 'leased_until')
+            ->where('zone_id', $zone->id)
+            ->where('leased_until', '>', now())
+            ->orderByDesc('leased_until')
+            ->first();
+
+        if ($activeLease) {
+            throw new ZoneRuntimeSwitchDeniedException([
+                'zone_id' => $zone->id,
+                'from_runtime' => (string) $zone->automation_runtime,
+                'to_runtime' => $targetRuntime,
+                'blocker' => 'active_lease',
+                'owner' => (string) $activeLease->owner,
+                'leased_until' => $activeLease->leased_until,
+            ]);
+        }
+
+        $indeterminateCommand = DB::table('ae_commands as commands')
+            ->join('ae_tasks as tasks', 'tasks.id', '=', 'commands.task_id')
+            ->select(
+                'commands.id as ae_command_id',
+                'commands.publish_status',
+                'commands.external_id',
+                'tasks.id as task_id',
+                'tasks.status as task_status'
+            )
+            ->where('tasks.zone_id', $zone->id)
+            ->whereIn('commands.publish_status', ['pending', 'accepted'])
+            ->whereNull('commands.terminal_status')
+            ->orderByDesc('commands.updated_at')
+            ->orderByDesc('commands.id')
+            ->first();
+
+        if ($indeterminateCommand) {
+            throw new ZoneRuntimeSwitchDeniedException([
+                'zone_id' => $zone->id,
+                'from_runtime' => (string) $zone->automation_runtime,
+                'to_runtime' => $targetRuntime,
+                'blocker' => 'indeterminate_command_state',
+                'task_id' => (int) $indeterminateCommand->task_id,
+                'task_status' => (string) $indeterminateCommand->task_status,
+                'ae_command_id' => (int) $indeterminateCommand->ae_command_id,
+                'publish_status' => (string) $indeterminateCommand->publish_status,
+                'external_id' => $indeterminateCommand->external_id ? (string) $indeterminateCommand->external_id : null,
+            ]);
+        }
     }
 
     /**
@@ -462,6 +558,18 @@ class ZoneService
      */
     public function calibratePump(Zone $zone, array $data): array
     {
+        $channelBelongsToZone = NodeChannel::query()
+            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
+            ->where('node_channels.id', (int) ($data['node_channel_id'] ?? 0))
+            ->where('nodes.zone_id', $zone->id)
+            ->exists();
+        if (! $channelBelongsToZone) {
+            $invalidChannelId = (int) ($data['node_channel_id'] ?? 0);
+            throw new \DomainException(
+                "node_channel_id={$invalidChannelId} does not belong to zone {$zone->id}"
+            );
+        }
+
         $baseUrl = config('services.history_logger.url');
         if (! $baseUrl) {
             throw new \DomainException('History Logger URL not configured');

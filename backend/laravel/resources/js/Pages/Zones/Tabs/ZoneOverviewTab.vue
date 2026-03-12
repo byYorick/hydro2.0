@@ -244,7 +244,7 @@
             </Badge>
             <div class="flex-1 min-w-0">
               <div class="text-xs text-[color:var(--text-dim)]">
-                {{ new Date(e.occurred_at).toLocaleString('ru-RU') }}
+                {{ e.occurred_at ? new Date(e.occurred_at).toLocaleString('ru-RU') : '—' }}
               </div>
               <div class="text-sm">
                 {{ e.message }}
@@ -272,7 +272,7 @@ import LoadingState from '@/Components/LoadingState.vue'
 import StageProgress from '@/Components/StageProgress.vue'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
 import { Link } from '@inertiajs/vue3'
-import { translateEventKind, translateStatus } from '@/utils/i18n'
+import { translateEventKind, translateStatus, classifyEventKind } from '@/utils/i18n'
 import { formatTimeShort } from '@/utils/formatTime'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
@@ -305,7 +305,11 @@ const props = defineProps<Props>()
 const displayCycle = computed(() => props.activeGrowCycle ?? props.activeCycle ?? null)
 
 const hasTargets = computed(() => {
-  return Boolean(props.targets && (props.targets.ph || props.targets.ec || props.targets.temp || props.targets.humidity))
+  // Бэкенд присылает вложенный формат: { ph: {...}, ec: {...}, climate_request: {...} }
+  // Плоских полей ph_min / ec_min в runtime нет — проверяем вложенные ключи
+  if (!props.targets) return false
+  const t = props.targets as Record<string, unknown>
+  return Boolean(t.ph !== undefined || t.ec !== undefined || t.climate_request !== undefined)
 })
 
 const recentEvents = computed(() => {
@@ -313,9 +317,10 @@ const recentEvents = computed(() => {
 })
 
 function getEventVariant(kind: string): 'danger' | 'warning' | 'info' | 'neutral' {
-  if (kind === 'ALERT') return 'danger'
-  if (kind === 'WARNING') return 'warning'
-  if (kind === 'INFO') return 'info'
+  const category = classifyEventKind(kind)
+  if (category === 'ALERT') return 'danger'
+  if (category === 'WARNING') return 'warning'
+  if (category === 'INFO') return 'info'
   return 'neutral'
 }
 

@@ -10,8 +10,8 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Admin user
-        User::query()->firstOrCreate(
+        // Детерминированные dev-учетки: повторный сидинг исправляет уже существующие записи.
+        User::query()->updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Admin',
@@ -21,7 +21,7 @@ class AdminUserSeeder extends Seeder
         );
 
         // Agronomist user (основной профиль для агронома)
-        User::query()->firstOrCreate(
+        User::query()->updateOrCreate(
             ['email' => 'agronomist@example.com'],
             [
                 'name' => 'Agronomist',
@@ -31,7 +31,7 @@ class AdminUserSeeder extends Seeder
         );
 
         // Operator user
-        User::query()->firstOrCreate(
+        User::query()->updateOrCreate(
             ['email' => 'operator@example.com'],
             [
                 'name' => 'Operator',
@@ -41,7 +41,7 @@ class AdminUserSeeder extends Seeder
         );
 
         // Viewer user
-        User::query()->firstOrCreate(
+        User::query()->updateOrCreate(
             ['email' => 'viewer@example.com'],
             [
                 'name' => 'Viewer',
@@ -51,4 +51,3 @@ class AdminUserSeeder extends Seeder
         );
     }
 }
-

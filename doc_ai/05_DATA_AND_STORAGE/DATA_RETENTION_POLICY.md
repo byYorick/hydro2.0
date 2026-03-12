@@ -54,8 +54,16 @@ Telemetry хранится в двух формах:
 Срок хранения:
 
 ```
-7–30 дней
+30 дней (фактический)
 ```
+
+> **Реализация (двойной механизм):**
+> - Laravel `telemetry:cleanup-raw --days=30` — ежедневно в 02:00, удаляет `telemetry_samples` старше 30 дней
+> - Python `telemetry-aggregator` (env `RETENTION_SAMPLES_DAYS=90`) — настроен на 90 дней
+>
+> Фактический retention = **30 дней** (более агрессивная политика Laravel побеждает).
+> Python-сервис также выполняет cleanup, но Laravel успевает раньше (настроен на меньший срок).
+> При изменении срока хранения — обновлять **оба** места: `routes/console.php` и `.env` сервиса.
 
 Частота данных:
 
@@ -67,7 +75,7 @@ Telemetry хранится в двух формах:
 
 ```
 telemetry_last
-telemetry_raw
+telemetry_raw   (= telemetry_samples — актуальное имя таблицы)
 ```
 
 ## 3.2. Warm Telemetry (L2)
@@ -84,12 +92,19 @@ telemetry_raw
 6–12 месяцев
 ```
 
+> **Реализация (двойной механизм агрегации):**
+> - Laravel `telemetry:aggregate` — каждые 15 минут, использует `ON CONFLICT DO NOTHING`
+> - Python `telemetry-aggregator` — непрерывно в фоне, использует `ON CONFLICT DO UPDATE SET`
+>
+> Данные не дублируются: Python-сервис перезаписывает агрегаты при конфликте, Laravel пропускает.
+> При наличии Python-сервиса Laravel-команда избыточна, но безопасна.
+
 Таблицы:
 
 ```
 telemetry_agg_1m
 telemetry_agg_1h
-telemetry_daily
+telemetry_daily  (= telemetry_agg_daily — зависит от схемы)
 ```
 
 ## 3.3. Cold Telemetry (архив)

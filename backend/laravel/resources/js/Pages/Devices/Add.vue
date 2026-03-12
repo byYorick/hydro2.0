@@ -507,7 +507,7 @@ async function assignNode(node: any) {
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
         delete pendingAssignments[node.id]
-      } else if ((updatedNode as any)?.pending_zone_id && !updatedNode?.zone_id) {
+      } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
         // Ожидаем config_report от ноды (через history-logger)
         showToast(
           `Нода "${node.uid}" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...`,
@@ -516,22 +516,22 @@ async function assignNode(node: any) {
         )
 
         pendingAssignments[node.id] = node.uid || node.name || `Node #${node.id}`
-        
+
         // Обновляем данные ноды, но оставляем в списке
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
         if (nodeIndex >= 0) {
           newNodes.value[nodeIndex] = { ...newNodes.value[nodeIndex], ...updatedNode }
         }
-        
+
         // Автоматически обновим список через 3 секунды для проверки завершения
         setTimeout(() => {
           loadNewNodes()
         }, 3000)
-      } else if (updatedNode?.zone_id && !(updatedNode as any)?.pending_zone_id) {
+      } else if (updatedNode?.zone_id && !updatedNode?.pending_zone_id) {
         // zone_id установлен, pending_zone_id сброшен → привязка успешно завершена
         // (lifecycle может еще быть REGISTERED_BACKEND, но это не важно - привязка завершена)
         showToast(`Нода "${node.uid}" успешно привязана к зоне!`, 'success', TOAST_TIMEOUT.NORMAL)
-        
+
         // Удалить ноду из списка новых
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
@@ -541,7 +541,7 @@ async function assignNode(node: any) {
         logger.warn('[Devices/Add] Unexpected node state after assignment:', {
           node_id: node.id,
           zone_id: updatedNode?.zone_id,
-          pending_zone_id: (updatedNode as any)?.pending_zone_id,
+          pending_zone_id: updatedNode?.pending_zone_id,
           lifecycle_state: updatedNode?.lifecycle_state,
         })
         showToast(
@@ -553,7 +553,7 @@ async function assignNode(node: any) {
     }
   } catch (err) {
     logger.error('[Devices/Add] Failed to assign node:', err)
-    
+
     // Используем централизованный обработчик ошибок
     handleError(err, {
       component: 'Devices/Add',
@@ -561,12 +561,13 @@ async function assignNode(node: any) {
       nodeId: node.id,
       zoneId: form.zone_id,
     })
-    
+
     // Дополнительная обработка lifecycle ошибок
-    if ((err as any)?.response?.data?.message?.includes('lifecycle') || 
-        (err as any)?.response?.data?.message?.includes('state')) {
+    const apiErr = err as { response?: { data?: { message?: string } } }
+    const errMsg = apiErr?.response?.data?.message
+    if (errMsg?.includes('lifecycle') || errMsg?.includes('state')) {
       showToast(
-        `Ошибка lifecycle: ${(err as any).response.data.message}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
+        `Ошибка lifecycle: ${errMsg}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
         'error',
         7000
       )

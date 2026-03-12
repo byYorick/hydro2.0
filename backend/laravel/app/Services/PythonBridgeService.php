@@ -50,23 +50,29 @@ class PythonBridgeService
 
         // GROWTH_CYCLE_CONFIG - агрегированная команда на уровне зоны, не требует node_uid/channel
         if ($commandType === 'GROWTH_CYCLE_CONFIG') {
-            // Для агрегированного цикла используем виртуальный узел или первый доступный узел зоны
-            // Python-сервис должен обработать эту команду на уровне зоны, а не конкретного узла
+            // Для агрегированного цикла выбираем реальный узел зоны:
+            // сначала online (регистронезависимо), затем любой закреплённый за зоной.
             $firstNode = DeviceNode::where('zone_id', $zone->id)
-                ->where('status', 'online')
+                ->orderByRaw(
+                    "CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'online' THEN 0 ELSE 1 END"
+                )
+                ->orderBy('id')
                 ->first();
 
             if ($firstNode) {
                 $node = $firstNode;
                 $nodeUid = $firstNode->uid;
-                // Используем первый доступный канал или null, если Python-сервис не требует его
+                // Используем первый доступный канал, fallback на default.
                 $firstChannel = $firstNode->channels()->first();
                 $channel = $firstChannel?->channel ?? 'default';
             } else {
-                // Если нет узлов, используем виртуальные значения
-                // Python-сервис должен обработать это как команду уровня зоны
-                $nodeUid = 'zone-'.$zone->id;
-                $channel = 'zone-control';
+                $this->markCommandFailed(
+                    $command,
+                    "No nodes are assigned to zone {$zone->id}. GROWTH_CYCLE_CONFIG cannot be published."
+                );
+                throw new \InvalidArgumentException(
+                    "No nodes are assigned to zone {$zone->id}. Attach at least one node before applying GROWTH_CYCLE_CONFIG."
+                );
             }
 
             Log::info('PythonBridgeService: Using zone-level node/channel for GROWTH_CYCLE_CONFIG', [

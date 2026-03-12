@@ -33,7 +33,7 @@ else
 fi
 
 # Список узлов для проверки
-NODES=("ph_node" "ec_node" "climate_node" "pump_node")
+NODES=("ph_node" "ec_node" "climate_node" "storage_irrigation_node")
 
 SUCCESS_COUNT=0
 FAIL_COUNT=0
@@ -114,4 +114,3 @@ if [ $FAIL_COUNT -eq 0 ]; then
 else
     exit 1
 fi
-

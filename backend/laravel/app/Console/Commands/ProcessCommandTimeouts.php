@@ -21,7 +21,7 @@ class ProcessCommandTimeouts extends Command
      *
      * @var string
      */
-    protected $description = 'Process commands that have timed out (status SENT older than configured timeout)';
+    protected $description = 'Process commands that have timed out (status SENT/ACK older than configured timeout)';
 
     /**
      * Execute the console command.
@@ -29,13 +29,14 @@ class ProcessCommandTimeouts extends Command
     public function handle(): int
     {
         $timeoutMinutes = config('commands.timeout_minutes', 5);
+        $cutoff = now()->subMinutes($timeoutMinutes);
         $this->info("Processing command timeouts (timeout: {$timeoutMinutes} minutes)");
 
-        // Ищем команды в статусе SENT, которые старше timeout
+        // Ищем команды в статусах SENT/ACK, которые старше timeout
         $timeoutCommands = DB::table('commands')
-            ->where('status', 'SENT')
+            ->whereIn('status', ['SENT', 'ACK'])
             ->whereNotNull('sent_at')
-            ->where('sent_at', '<', now()->subMinutes($timeoutMinutes))
+            ->where('sent_at', '<', $cutoff)
             ->get();
 
         if ($timeoutCommands->isEmpty()) {
@@ -48,14 +49,28 @@ class ProcessCommandTimeouts extends Command
         $processed = 0;
         foreach ($timeoutCommands as $command) {
             try {
-                DB::transaction(function () use ($command, $timeoutMinutes) {
+                $wasTimedOut = DB::transaction(function () use ($command, $timeoutMinutes, $cutoff) {
                     // Обновляем статус на TIMEOUT
-                    DB::table('commands')
+                    $updated = DB::table('commands')
                         ->where('id', $command->id)
+                        ->whereIn('status', ['SENT', 'ACK'])
+                        ->whereNotNull('sent_at')
+                        ->where('sent_at', '<', $cutoff)
                         ->update([
                             'status' => 'TIMEOUT',
+                            'failed_at' => now(),
+                            'error_code' => 'TIMEOUT',
+                            'result_code' => 1,
                             'updated_at' => now(),
                         ]);
+
+                    if ($updated === 0) {
+                        Log::info('Skip timeout update due to concurrent status transition', [
+                            'command_id' => $command->id,
+                            'cmd_id' => $command->cmd_id ?? null,
+                        ]);
+                        return false;
+                    }
 
                     // Создаем событие в zone_events
                     if ($command->zone_id) {
@@ -89,9 +104,13 @@ class ProcessCommandTimeouts extends Command
                         'timeout_minutes' => $timeoutMinutes,
                         'sent_at' => $command->sent_at,
                     ]);
+
+                    return true;
                 });
 
-                $processed++;
+                if ($wasTimedOut) {
+                    $processed++;
+                }
             } catch (\Exception $e) {
                 Log::error('Failed to process command timeout', [
                     'command_id' => $command->id,
@@ -106,4 +125,3 @@ class ProcessCommandTimeouts extends Command
         return Command::SUCCESS;
     }
 }
-

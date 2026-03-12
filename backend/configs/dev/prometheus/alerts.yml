@@ -16,7 +16,7 @@ groups:
     interval: 30s
     rules:
       - alert: ServiceDown
-        expr: up{job=~"automation-engine|scheduler|mqtt-bridge|history-logger"} == 0
+        expr: up{job=~"automation-engine|mqtt-bridge|history-logger"} == 0
         for: 2m
         labels:
           severity: critical
@@ -214,7 +214,7 @@ groups:
       - alert: SchedulerTaskFailureRateHigh
         expr: |
           sum(
-            rate(scheduler_task_status_total{status=~"failed|timeout|submit_failed|not_found"}[5m])
+            rate(scheduler_task_status_total{status=~"failed|timeout|submit_failed|not_found|rejected|expired|error|cancelled"}[5m])
           ) > 1
         for: 10m
         labels:
@@ -239,23 +239,31 @@ groups:
         expr: |
           histogram_quantile(
             0.95,
-            sum by (le) (rate(task_accept_to_terminal_latency_bucket[5m]))
+            sum by (le) (
+              rate(
+                scheduler_task_completion_latency_sec_bucket{
+                  status=~"completed|failed|timeout|rejected|expired|error|cancelled|not_found"
+                }[5m]
+              )
+            )
           ) > 90
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: "Task accept->terminal latency SLO degraded"
-          description: "P95 task_accept_to_terminal_latency is {{ $value }}s (threshold: 90s)."
+          description: "P95 scheduler_task_completion_latency_sec is {{ $value }}s (threshold: 90s)."
 
       - alert: SchedulerTaskDeadlineViolationRateHigh
-        expr: task_deadline_violation_rate > 0.05
+        expr: |
+          sum(rate(scheduler_task_status_total{status=~"timeout|expired"}[5m])) /
+          clamp_min(sum(rate(scheduler_task_status_total[5m])), 0.001) > 0.05
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: "Scheduler deadline violation rate is high"
-          description: "task_deadline_violation_rate is {{ $value }} (threshold: 0.05)."
+          description: "Share of timeout/expired terminal statuses is {{ $value }} (threshold: 0.05)."
 
       - alert: AutomationCommandEffectConfirmRateLow
         expr: command_effect_confirm_rate < 0.95

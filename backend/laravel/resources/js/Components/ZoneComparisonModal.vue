@@ -256,17 +256,18 @@ function getZoneName(zoneId: number): string {
   return zone?.name || `Зона ${zoneId}`
 }
 
-function formatMetricValue(zoneId: number, metricKey: string): string {
+function getMetricValue(zoneId: number, metricKey: string): number | null {
   const zone = props.zones.find(z => z.id === zoneId)
-  if (!zone?.telemetry) return '-'
-  
-  const value = (zone.telemetry as any)[metricKey]
-  if (value === null || value === undefined) return '-'
-  
-  if (metricKey === 'ph') {
-    return value.toFixed(2)
-  }
-  return value.toFixed(1)
+  if (!zone?.telemetry) return null
+  const telemetry = zone.telemetry as Record<string, number | null | undefined>
+  const value = telemetry[metricKey]
+  return value !== null && value !== undefined ? value : null
+}
+
+function formatMetricValue(zoneId: number, metricKey: string): string {
+  const value = getMetricValue(zoneId, metricKey)
+  if (value === null) return '-'
+  return metricKey === 'ph' ? value.toFixed(2) : value.toFixed(1)
 }
 
 function getChartSeries(metricKey: string) {
@@ -279,11 +280,11 @@ function getChartSeries(metricKey: string) {
       color: chartPalette.value[index % chartPalette.value.length],
       data: data.map(d => ({
         ts: d.ts,
-        value: d.value !== undefined ? d.value : (d as any).avg || 0,
+        value: d.value !== undefined ? d.value : (d.avg ?? 0),
       })),
-      currentValue: formatMetricValue(zoneId, metricKey),
+      currentValue: getMetricValue(zoneId, metricKey),
     }
-  }) as any
+  })
 }
 
 async function loadTelemetryData(): Promise<void> {
@@ -355,7 +356,7 @@ function exportComparison(): void {
     selectedZoneIds.value.forEach(zoneId => {
       const data = telemetryData.value.get(zoneId)?.get('ph') || []
       const point = data.find(d => d.ts === ts)
-      const value = point?.value !== undefined ? point.value : (point as any)?.avg
+      const value = point?.value !== undefined ? point.value : point?.avg
       row.push(value !== undefined ? value.toFixed(2) : '')
     })
     
@@ -363,7 +364,7 @@ function exportComparison(): void {
     selectedZoneIds.value.forEach(zoneId => {
       const data = telemetryData.value.get(zoneId)?.get('ec') || []
       const point = data.find(d => d.ts === ts)
-      const value = point?.value !== undefined ? point.value : (point as any)?.avg
+      const value = point?.value !== undefined ? point.value : point?.avg
       row.push(value !== undefined ? value.toFixed(1) : '')
     })
     
@@ -395,7 +396,7 @@ watch(
       return
     }
 
-    if ((zoneIds as any[]).length < 2) {
+    if ((zoneIds as number[]).length < 2) {
       telemetryData.value.clear()
       return
     }

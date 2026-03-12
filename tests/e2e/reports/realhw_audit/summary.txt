@@ -1,0 +1,100 @@
+=== scenarios/workflow/E83_clean_water_fill.yaml ===
+run_status=PASS
+container_error_lines=78
+db_metrics:
+commands_total|8
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|2
+
+=== scenarios/workflow/E84_solution_preparation.yaml ===
+run_status=PASS
+container_error_lines=14
+db_metrics:
+commands_total|7
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|0
+
+=== scenarios/workflow/E85_recirculation_targets.yaml ===
+run_status=FAIL
+container_error_lines=34
+db_metrics:
+commands_total|2
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|2
+alerts_open|1
+
+=== scenarios/workflow/E86_ec_ph_correction.yaml ===
+run_status=PASS
+container_error_lines=35
+db_metrics:
+commands_total|14
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|1
+alerts_open|1
+
+=== scenarios/workflow/E87_ec_ph_correction_during_fill.yaml ===
+run_status=PASS
+container_error_lines=21
+db_metrics:
+commands_total|16
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|0
+
+=== scenarios/workflow/E88_config_report_soft_deactivate_channels.yaml ===
+run_status=PASS
+container_error_lines=10
+db_metrics:
+commands_total|1
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|0
+
+=== scenarios/workflow/E89_correction_state_machine_and_duration_aware.yaml ===
+run_status=PASS
+container_error_lines=18
+db_metrics:
+commands_total|1
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|1
+
+=== scenarios/automation_engine/E61_fail_closed_corrections.yaml ===
+run_status=PASS
+container_error_lines=14
+db_metrics:
+commands_total|1
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|2
+
+=== scenarios/automation_engine/E64_effective_targets_only.yaml ===
+run_status=PASS
+container_error_lines=26
+db_metrics:
+commands_total|1
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|1
+
+=== scenarios/automation_engine/E65_phase_transition_api.yaml ===
+run_status=PASS
+container_error_lines=5
+db_metrics:
+commands_total|1
+commands_error_like|0
+commands_non_terminal|0
+zone_events_error_like|0
+alerts_open|0
+

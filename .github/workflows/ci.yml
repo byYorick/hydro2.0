@@ -5,6 +5,23 @@ on:
   pull_request:
 
 jobs:
+  automation-engine-smoke-all:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/services/automation-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+      - name: Run AE2 smoke tests
+        env:
+          PYTHONPATH: backend/services
+        run: pytest -q test_*.py
+
   build-and-test:
     runs-on: ubuntu-latest
     services:
@@ -28,6 +45,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: AE2 invariants
+        run: ../../tools/testing/check_ae2_invariants.sh
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -286,59 +305,120 @@ jobs:
           path: backend/laravel/playwright-report
           retention-days: 7
 
-  scheduler-chaos:
+  automation-engine-smoke:
     runs-on: ubuntu-latest
-    needs: build-and-test
-    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Docker info
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install automation-engine deps
         run: |
-          docker --version
-          docker compose version
-      - name: Run scheduler chaos scripts
+          python -m pip install --upgrade pip
+          pip install -r backend/services/automation-engine/requirements.txt
+      - name: Automation-engine smoke tests
+        env:
+          PYTHONPATH: backend/services
         run: |
-          mkdir -p test-results/scheduler-chaos
-          export CHAOS_LOG_DIR="test-results/scheduler-chaos"
-
-          set +e
-          failures=0
-
-          run_chaos() {
-            local script="$1"
-            echo "[ci][chaos] running ${script}"
-            bash "${script}"
-            local rc=$?
-            if [ "${rc}" -ne 0 ]; then
-              echo "[ci][chaos][FAIL] ${script} (exit=${rc})"
-              failures=1
-            else
-              echo "[ci][chaos][PASS] ${script}"
-            fi
-          }
-
-          run_chaos tests/e2e/scheduler/scheduler_leader_failover_chaos.sh
-          run_chaos tests/e2e/scheduler/scheduler_restart_recovery_chaos.sh
-          run_chaos tests/e2e/scheduler/automation_engine_restart_recovery_chaos.sh
-
-          exit "${failures}"
-      - name: Collect scheduler chaos logs
-        if: always()
-        run: |
-          mkdir -p test-results/scheduler-chaos
-          for c in backend-db-1 backend-redis-1 backend-mqtt-1 backend-laravel-1 backend-automation-engine-1 backend-scheduler-1; do
-            docker logs "${c}" > "test-results/scheduler-chaos/${c}.log" 2>&1 || true
-          done
-          docker compose -f backend/docker-compose.dev.yml ps > test-results/scheduler-chaos/compose-ps.log 2>&1 || true
-      - name: Upload scheduler chaos logs
+          mkdir -p test-results
+          pytest -q \
+            backend/services/automation-engine/test_actuator_registry.py \
+            backend/services/automation-engine/test_alerts_manager_phase2.py \
+            backend/services/automation-engine/test_scheduler_task_executor.py \
+            backend/services/automation-engine/test_scheduler_idempotency_replay.py \
+            backend/services/automation-engine/test_start_cycle_contract.py \
+            backend/services/automation-engine/test_api_intents.py \
+            backend/services/automation-engine/test_api_start_cycle.py \
+            backend/services/automation-engine/test_api_scheduler_security.py \
+            backend/services/automation-engine/test_api_scheduler_store_metrics.py \
+            backend/services/automation-engine/test_command_tracker_notify.py \
+            backend/services/automation-engine/test_start_cycle_rate_limit.py \
+            backend/services/automation-engine/test_start_cycle_security_integration.py \
+            backend/services/automation-engine/test_start_cycle_intent_flow_integration.py \
+            backend/services/automation-engine/test_workflow_phase_policy.py \
+            backend/services/automation-engine/test_two_tank_runtime_config.py \
+            backend/services/automation-engine/test_zone_correction_gating.py \
+            backend/services/automation-engine/test_workflow_state_recovery_integration.py \
+            backend/services/automation-engine/test_notify_partition_smoke.py \
+            backend/services/automation-engine/test_laravel_api_repository_sql_read_model.py \
+            --junitxml=test-results/automation-engine-smoke.xml
+      - name: Upload automation-engine smoke JUnit
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scheduler-chaos-logs
-          path: test-results/scheduler-chaos
+          name: automation-engine-smoke-junit
+          path: test-results/automation-engine-smoke.xml
           retention-days: 7
-      - name: Cleanup scheduler chaos environment
+
+  laravel-scheduler-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:2.13.0-pg15
+        env:
+          POSTGRES_DB: hydro_test
+          POSTGRES_USER: hydro
+          POSTGRES_PASSWORD: hydro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U hydro -d hydro_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    defaults:
+      run:
+        working-directory: backend/laravel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ runner.os }}-${{ hashFiles('backend/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - name: Install PHP deps
+        run: composer install --no-interaction --prefer-dist
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Laravel scheduler smoke tests
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: pgsql
+          DB_DATABASE: hydro_test
+          DB_USERNAME: hydro
+          DB_PASSWORD: hydro
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          BROADCAST_CONNECTION: log
+          BROADCAST_DRIVER: log
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: |
+          mkdir -p test-results
+          php artisan test \
+            tests/Unit/Console/AutomationDispatchSchedulesInternalsTest.php \
+            tests/Feature/AutomationDispatchSchedulesCommandTest.php \
+            tests/Feature/ZoneAutomationStateControllerTest.php \
+            tests/Feature/ZoneAutomationControlModeControllerTest.php \
+            tests/Feature/ZoneAutomationManualStepControllerTest.php \
+            --no-coverage \
+            --log-junit test-results/laravel-scheduler-smoke.xml
+      - name: Upload Laravel scheduler smoke JUnit
         if: always()
-        run: docker compose -f backend/docker-compose.dev.yml down -v || true
+        uses: actions/upload-artifact@v4
+        with:
+          name: laravel-scheduler-smoke-junit
+          path: backend/laravel/test-results/laravel-scheduler-smoke.xml
+          retention-days: 7

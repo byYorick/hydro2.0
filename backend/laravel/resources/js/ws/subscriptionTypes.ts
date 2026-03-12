@@ -1,5 +1,7 @@
 import type { ToastHandler } from '@/composables/useApi'
 import type { CommandStatus } from '@/types'
+import type { Zone } from '@/types/Zone'
+import type { Alert } from '@/types/Alert'
 
 export type WsEventPayload = Record<string, unknown>
 
@@ -50,13 +52,17 @@ export type GlobalEventHandler = (event: {
   occurredAt: string
 }) => void
 
-export type ChannelKind = 'zoneCommands' | 'globalEvents'
+export type ZoneUpdateHandler = (zone: Zone) => void
+
+export type AlertCreatedHandler = (alert: Alert) => void
+
+export type ChannelKind = 'zoneCommands' | 'globalEvents' | 'zoneUpdates' | 'alerts'
 
 export interface ActiveSubscription {
   id: string
   channelName: string
   kind: ChannelKind
-  handler: ZoneCommandHandler | GlobalEventHandler
+  handler: ZoneCommandHandler | GlobalEventHandler | ZoneUpdateHandler | AlertCreatedHandler
   componentTag: string
   showToast?: ToastHandler
   instanceId: number
@@ -82,7 +88,7 @@ export interface PendingSubscription {
   channelName: string
   kind: ChannelKind
   channelType: 'private' | 'public'
-  handler: ZoneCommandHandler | GlobalEventHandler
+  handler: ZoneCommandHandler | GlobalEventHandler | ZoneUpdateHandler | AlertCreatedHandler
   componentTag: string
   instanceId: number
   showToast?: ToastHandler

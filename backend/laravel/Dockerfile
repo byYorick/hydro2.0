@@ -98,6 +98,7 @@ COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
 COPY vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
 COPY queue-supervisor.conf /opt/docker/etc/supervisor.d/queue.conf
+COPY schedule-supervisor.conf /opt/docker/etc/supervisor.d/scheduler.conf
 RUN mkdir -p /var/log/supervisor /var/log/reverb /var/run /opt/docker/etc/supervisor.d && \
     chmod 755 /var/log/supervisor /var/log/reverb /var/run /opt/docker/etc/supervisor.d && \
     chown -R application:application /var/log/supervisor /var/log/reverb /var/run 2>/dev/null || \

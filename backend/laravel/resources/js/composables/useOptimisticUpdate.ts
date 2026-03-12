@@ -161,13 +161,13 @@ export function useOptimisticUpdate() {
       const err = error instanceof Error ? error : new Error(String(error))
 
       if (!timeoutError) {
-      rollback()
-      pendingUpdates.value.delete(updateId)
-      if (showLoading) {
-        isUpdating.value = false
-      }
-      if (onError) {
-        onError(err)
+        rollback()
+        pendingUpdates.value.delete(updateId)
+        if (showLoading) {
+          isUpdating.value = false
+        }
+        if (onError) {
+          onError(err)
         }
       }
       

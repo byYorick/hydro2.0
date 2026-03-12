@@ -29,48 +29,125 @@ class AutomationSettings:
     EC_DOSING_MULTIPLIER: float = 100.0  # diff * 100 для EC
 
     # PID настройки pH
-    PH_PID_DEAD_ZONE: float = 0.2
-    PH_PID_CLOSE_ZONE: float = 0.5
+    PH_PID_DEAD_ZONE: float = 0.05
+    PH_PID_CLOSE_ZONE: float = 0.30
     PH_PID_FAR_ZONE: float = 1.0
-    PH_PID_KP_CLOSE: float = 10.0
-    PH_PID_KI_CLOSE: float = 0.0
+    PH_PID_KP_CLOSE: float = 5.0
+    PH_PID_KI_CLOSE: float = 0.05
     PH_PID_KD_CLOSE: float = 0.0
-    PH_PID_KP_FAR: float = 12.0
-    PH_PID_KI_FAR: float = 0.0
+    PH_PID_KP_FAR: float = 8.0
+    PH_PID_KI_FAR: float = 0.02
     PH_PID_KD_FAR: float = 0.0
-    PH_PID_MAX_OUTPUT: float = 50.0
-    PH_PID_MIN_INTERVAL_MS: int = 60000
-    PH_PID_ENABLE_AUTOTUNE: bool = False
-    PH_PID_ADAPTATION_RATE: float = 0.05
+    PH_PID_MAX_OUTPUT: float = 20.0
+    PH_PID_MIN_INTERVAL_MS: int = 90_000
+    PH_PID_MAX_INTEGRAL: float = 20.0
+    PH_PID_DERIVATIVE_FILTER_ALPHA: float = 0.35
 
     # PID настройки EC
-    EC_PID_DEAD_ZONE: float = 0.2
+    EC_PID_DEAD_ZONE: float = float(os.getenv("EC_PID_DEAD_ZONE", "0.10"))
     EC_PID_CLOSE_ZONE: float = 0.5
-    EC_PID_FAR_ZONE: float = 1.0
-    EC_PID_KP_CLOSE: float = 100.0
-    EC_PID_KI_CLOSE: float = 0.0
+    EC_PID_FAR_ZONE: float = 1.5
+    EC_PID_KP_CLOSE: float = 30.0
+    EC_PID_KI_CLOSE: float = 0.30
     EC_PID_KD_CLOSE: float = 0.0
-    EC_PID_KP_FAR: float = 120.0
-    EC_PID_KI_FAR: float = 0.0
+    EC_PID_KP_FAR: float = 50.0
+    EC_PID_KI_FAR: float = 0.10
     EC_PID_KD_FAR: float = 0.0
-    EC_PID_MAX_OUTPUT: float = 200.0
-    EC_PID_MIN_INTERVAL_MS: int = 60000
-    EC_PID_ENABLE_AUTOTUNE: bool = False
-    EC_PID_ADAPTATION_RATE: float = 0.05
+    EC_PID_MAX_OUTPUT: float = 50.0
+    EC_PID_MIN_INTERVAL_MS: int = 120_000
+    EC_PID_MAX_INTEGRAL: float = 100.0
+    EC_PID_DERIVATIVE_FILTER_ALPHA: float = 0.35
     # Поэтапное дозирование 4-компонентного питания (NPK/Ca/Mg/Micro)
     EC_COMPONENT_DOSE_DELAY_SEC: float = float(os.getenv("EC_COMPONENT_DOSE_DELAY_SEC", "8"))
     EC_COMPONENT_RECHECK_TOLERANCE: float = float(os.getenv("EC_COMPONENT_RECHECK_TOLERANCE", "0.05"))
     # Подтверждение команд дозирования (ACK/DONE) и повторы
     CORRECTION_COMMAND_TIMEOUT_SEC: float = float(os.getenv("CORRECTION_COMMAND_TIMEOUT_SEC", "5"))
+    CORRECTION_COMMAND_TIMEOUT_BUFFER_SEC: float = float(os.getenv("CORRECTION_COMMAND_TIMEOUT_BUFFER_SEC", "2.5"))
+    CORRECTION_COMMAND_MIN_TIMEOUT_SEC: float = float(os.getenv("CORRECTION_COMMAND_MIN_TIMEOUT_SEC", "3"))
     CORRECTION_COMMAND_MAX_ATTEMPTS: int = int(os.getenv("CORRECTION_COMMAND_MAX_ATTEMPTS", "2"))
     CORRECTION_COMMAND_RETRY_DELAY_SEC: float = float(os.getenv("CORRECTION_COMMAND_RETRY_DELAY_SEC", "0.5"))
+    PID_DT_MAX_SECONDS: float = float(os.getenv("PID_DT_MAX_SECONDS", "300.0"))
+    PID_DT_MIN_SECONDS: float = float(os.getenv("PID_DT_MIN_SECONDS", "5.0"))
+
+    # PID расширенные guards/стабилизация
+    PID_ANTI_WINDUP_MODE: str = os.getenv("PID_ANTI_WINDUP_MODE", "conditional")
+    PID_BACK_CALCULATION_GAIN: float = 0.2
+    # Relay autotune параметры pH
+    PH_RELAY_AUTOTUNE_AMPLITUDE_ML: float = 3.0
+    PH_RELAY_AUTOTUNE_MIN_CYCLES: int = 3
+    PH_RELAY_AUTOTUNE_MAX_DURATION_SEC: float = 7200.0
+    PH_RELAY_AUTOTUNE_MIN_OSCILLATION: float = 0.02
+    # Relay autotune параметры EC
+    EC_RELAY_AUTOTUNE_AMPLITUDE_ML: float = 10.0
+    EC_RELAY_AUTOTUNE_MIN_CYCLES: int = 3
+    EC_RELAY_AUTOTUNE_MAX_DURATION_SEC: float = 7200.0
+    EC_RELAY_AUTOTUNE_MIN_OSCILLATION: float = 0.10
     
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
     TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут
+    # Максимальный возраст correction flags для fail-closed gating (секунды)
+    AE_CORRECTION_FLAGS_MAX_AGE_SEC: int = int(os.getenv("AE_CORRECTION_FLAGS_MAX_AGE_SEC", "300"))
+    # Троттлинг zone-events при пропуске коррекций (секунды)
+    AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC: int = int(os.getenv("AE_CORRECTION_SKIP_EVENT_THROTTLE_SEC", "120"))
+    # Троттлинг infra-alerts для stale correction flags (секунды)
+    AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC: int = int(os.getenv("AE_CORRECTION_FLAGS_STALE_ALERT_THROTTLE_SEC", "120"))
+    # Требовать timestamps для correction flags (1/0)
+    AE_CORRECTION_FLAGS_REQUIRE_TS: bool = os.getenv("AE_CORRECTION_FLAGS_REQUIRE_TS", "1").strip().lower() in {"1", "true", "yes", "on"}
+    # Safety bounds guard (S3): enabled by default, with emergency kill-switch
+    AE_SAFETY_BOUNDS_ENABLED: bool = os.getenv("AE_SAFETY_BOUNDS_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_SAFETY_BOUNDS_KILL_SWITCH: bool = os.getenv("AE_SAFETY_BOUNDS_KILL_SWITCH", "0").strip().lower() in {"1", "true", "yes", "on"}
+    # pH safety defaults
+    AE_SAFETY_PH_HARD_PCT: float = float(os.getenv("AE_SAFETY_PH_HARD_PCT", "20"))
+    AE_SAFETY_PH_ABS_MIN: float = float(os.getenv("AE_SAFETY_PH_ABS_MIN", "5.2"))
+    AE_SAFETY_PH_ABS_MAX: float = float(os.getenv("AE_SAFETY_PH_ABS_MAX", "6.8"))
+    AE_SAFETY_PH_MAX_DELTA_PER_MIN: float = float(os.getenv("AE_SAFETY_PH_MAX_DELTA_PER_MIN", "0.15"))
+    # EC safety defaults
+    AE_SAFETY_EC_HARD_PCT: float = float(os.getenv("AE_SAFETY_EC_HARD_PCT", "20"))
+    AE_SAFETY_EC_ABS_MIN: float = float(os.getenv("AE_SAFETY_EC_ABS_MIN", "0.6"))
+    AE_SAFETY_EC_ABS_MAX: float = float(os.getenv("AE_SAFETY_EC_ABS_MAX", "2.8"))
+    AE_SAFETY_EC_MAX_DELTA_PER_MIN: float = float(os.getenv("AE_SAFETY_EC_MAX_DELTA_PER_MIN", "0.2"))
+    # S9 proactive correction (EWMA/slope)
+    AE_PROACTIVE_CORRECTION_ENABLED: bool = os.getenv("AE_PROACTIVE_CORRECTION_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_PROACTIVE_EWMA_ALPHA: float = float(os.getenv("AE_PROACTIVE_EWMA_ALPHA", "0.35"))
+    AE_PROACTIVE_WINDOW_MINUTES: int = int(os.getenv("AE_PROACTIVE_WINDOW_MINUTES", "45"))
+    AE_PROACTIVE_HORIZON_MINUTES: int = int(os.getenv("AE_PROACTIVE_HORIZON_MINUTES", "20"))
+    AE_PROACTIVE_MIN_POINTS: int = int(os.getenv("AE_PROACTIVE_MIN_POINTS", "4"))
+    AE_PROACTIVE_PH_MIN_SLOPE_PER_MIN: float = float(os.getenv("AE_PROACTIVE_PH_MIN_SLOPE_PER_MIN", "0.003"))
+    AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN: float = float(os.getenv("AE_PROACTIVE_EC_MIN_SLOPE_PER_MIN", "0.005"))
+    # S9 equipment anomaly guard: dose -> no_effect xN windows
+    AE_EQUIPMENT_ANOMALY_GUARD_ENABLED: bool = os.getenv("AE_EQUIPMENT_ANOMALY_GUARD_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_NO_EFFECT_WINDOW_SEC", "300"))
+    AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_STREAK_THRESHOLD", "5"))
+    AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES: int = int(os.getenv("AE_EQUIPMENT_ANOMALY_BLOCK_MINUTES", "30"))
+    AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_PH_MIN_DELTA", "0.03"))
+    AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA: float = float(os.getenv("AE_EQUIPMENT_ANOMALY_EC_MIN_DELTA", "0.02"))
+    AE_EQUIPMENT_ANOMALY_CRITICAL_OVERRIDE_ENABLED: bool = os.getenv(
+        "AE_EQUIPMENT_ANOMALY_CRITICAL_OVERRIDE_ENABLED",
+        "1",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    AE_EQUIPMENT_ANOMALY_PH_OVERRIDE_DIFF: float = float(
+        os.getenv("AE_EQUIPMENT_ANOMALY_PH_OVERRIDE_DIFF", "0.45")
+    )
+    AE_EQUIPMENT_ANOMALY_EC_OVERRIDE_DIFF: float = float(
+        os.getenv("AE_EQUIPMENT_ANOMALY_EC_OVERRIDE_DIFF", "0.4")
+    )
+    # S10 runtime-state snapshot persistence (crash-recovery)
+    AE_RUNTIME_STATE_PERSIST_ENABLED: bool = os.getenv("AE_RUNTIME_STATE_PERSIST_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    AE_RUNTIME_STATE_SNAPSHOT_PATH: str = os.getenv(
+        "AE_RUNTIME_STATE_SNAPSHOT_PATH",
+        "/tmp/ae_runtime_state_snapshot.json",
+    )
     
     # Порог для алерта о подряд пропусках проверки свежести
     FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert
     
+    # Пороги bypass cooldown при критическом отклонении (должны быть выше dead_zone)
+    AE_EC_CRITICAL_DIFF_THRESHOLD: float = float(os.getenv("AE_EC_CRITICAL_DIFF_THRESHOLD", "0.30"))
+    AE_PH_CRITICAL_DIFF_THRESHOLD: float = float(os.getenv("AE_PH_CRITICAL_DIFF_THRESHOLD", "0.50"))
+    # Минимальное отклонение (вне dead_zone) для применения коррекции
+    AE_CORRECTION_MIN_DIFF_PH: float = float(os.getenv("AE_CORRECTION_MIN_DIFF_PH", "0.15"))
+    AE_CORRECTION_MIN_DIFF_EC: float = float(os.getenv("AE_CORRECTION_MIN_DIFF_EC", "0.10"))
+
     # Пороги для критических отклонений
     PH_TOO_HIGH_THRESHOLD: float = 0.3
     PH_TOO_LOW_THRESHOLD: float = -0.3

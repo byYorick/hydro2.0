@@ -261,6 +261,7 @@ class AlertService
 
             $details['resolved_at'] = $nowIso;
             $details['status'] = 'RESOLVED';
+            $details = $this->applyResolutionAuditDetails($details, $nowIso, $context);
 
             $alert->update([
                 'status' => 'RESOLVED',
@@ -304,9 +305,9 @@ class AlertService
     /**
      * Подтвердить/принять алерт.
      */
-    public function acknowledge(Alert $alert): Alert
+    public function acknowledge(Alert $alert, array $context = []): Alert
     {
-        return DB::transaction(function () use ($alert) {
+        return DB::transaction(function () use ($alert, $context) {
             if ($this->normalizeStatus((string) $alert->status) === 'RESOLVED') {
                 throw new \DomainException('Alert is already resolved');
             }
@@ -314,6 +315,7 @@ class AlertService
             $now = now();
             $details = $this->normalizeDetails($alert->details);
             $details['resolved_at'] = $now->toIso8601String();
+            $details = $this->applyResolutionAuditDetails($details, $now->toIso8601String(), $context);
 
             $alert->update([
                 'status' => 'RESOLVED',
@@ -338,6 +340,60 @@ class AlertService
             Log::info('Alert acknowledged', ['alert_id' => $fresh->id]);
             return $fresh;
         });
+    }
+
+    /**
+     * Добавить в details audit-метаданные закрытия алерта.
+     *
+     * @param array<string, mixed> $details
+     * @param array<string, mixed> $context
+     * @return array<string, mixed>
+     */
+    private function applyResolutionAuditDetails(array $details, string $resolvedAtIso, array $context = []): array
+    {
+        $resolvedBy = isset($context['resolved_by']) ? trim((string) $context['resolved_by']) : '';
+        $resolvedVia = isset($context['resolved_via']) ? trim((string) $context['resolved_via']) : '';
+
+        $details['resolved_at'] = $resolvedAtIso;
+        $details['resolved_by'] = $resolvedBy !== '' ? $resolvedBy : 'system';
+        $details['resolved_via'] = $resolvedVia !== '' ? $resolvedVia : 'auto';
+
+        if (array_key_exists('resolved_by_user_id', $context) && $context['resolved_by_user_id'] !== null) {
+            $details['resolved_by_user_id'] = (int) $context['resolved_by_user_id'];
+        }
+        if (array_key_exists('resolved_by_user_name', $context) && $context['resolved_by_user_name'] !== null) {
+            $name = trim((string) $context['resolved_by_user_name']);
+            if ($name !== '') {
+                $details['resolved_by_user_name'] = $name;
+            }
+        }
+        if (array_key_exists('resolved_by_user_email', $context) && $context['resolved_by_user_email'] !== null) {
+            $email = trim((string) $context['resolved_by_user_email']);
+            if ($email !== '') {
+                $details['resolved_by_user_email'] = $email;
+            }
+        }
+        if (array_key_exists('resolved_ip', $context) && $context['resolved_ip'] !== null) {
+            $ip = trim((string) $context['resolved_ip']);
+            if ($ip !== '') {
+                $details['resolved_ip'] = $ip;
+            }
+        }
+
+        foreach ($context as $key => $value) {
+            if (! is_string($key) || ! str_starts_with($key, 'resolved_')) {
+                continue;
+            }
+            if (in_array($key, ['resolved_at', 'resolved_by', 'resolved_via', 'resolved_by_user_id', 'resolved_by_user_name', 'resolved_by_user_email', 'resolved_ip'], true)) {
+                continue;
+            }
+            if ($value === null) {
+                continue;
+            }
+            $details[$key] = is_string($value) ? trim($value) : $value;
+        }
+
+        return $details;
     }
 
     /**

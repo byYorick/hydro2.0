@@ -7,6 +7,7 @@ enum GrowCycleStatus: string
     case PLANNED = 'PLANNED';
     case RUNNING = 'RUNNING';
     case PAUSED = 'PAUSED';
+    case COMPLETED = 'COMPLETED';
     case HARVESTED = 'HARVESTED';
     case ABORTED = 'ABORTED';
     case AWAITING_CONFIRM = 'AWAITING_CONFIRM';
@@ -37,6 +38,7 @@ enum GrowCycleStatus: string
     public function isCompleted(): bool
     {
         return in_array($this, [
+            self::COMPLETED,
             self::HARVESTED,
             self::ABORTED,
         ]);
@@ -51,10 +53,10 @@ enum GrowCycleStatus: string
             self::PLANNED => 'Запланирован',
             self::RUNNING => 'Запущен',
             self::PAUSED => 'Приостановлен',
+            self::COMPLETED => 'Завершен',
             self::HARVESTED => 'Собран',
             self::ABORTED => 'Прерван',
             self::AWAITING_CONFIRM => 'Ожидает подтверждения',
         };
     }
 }
-

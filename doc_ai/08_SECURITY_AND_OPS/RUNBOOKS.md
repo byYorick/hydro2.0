@@ -18,6 +18,66 @@
 - Убедиться, что фронтенд использует правильные VITE_WS_HOST/PORT/TLS.
 - Проверить авторизацию приватных каналов (`routes/channels.php`) и токен сессии.
 
+## 3.1. Cutover scheduler -> Laravel
+
+Цель: включить Laravel как единственный planner/dispatch owner (legacy Python `scheduler` выведен из runtime).
+
+### 3.1.1. Включение cutover (dev/prod)
+- Laravel env: `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1`.
+- Обязательная синхронизация токенов ingress:
+  - `AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=<token>`
+  - `SCHEDULER_API_TOKEN=<тот_же_token>`
+  - `PY_INGEST_TOKEN=<тот_же_token>`
+- В production запрещено оставлять разные значения для этих трех переменных:
+  рассинхронизация приводит к `401 unauthorized` на `POST /zones/{id}/start-cycle`.
+- Перезапуск: `docker compose up -d laravel`.
+
+### 3.1.2. Проверки после включения
+- Проверить регистрацию команды: `docker compose exec laravel php artisan list | rg automation:dispatch-schedules`.
+- Ручной прогон цикла: `docker compose exec -e AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1 laravel php artisan automation:dispatch-schedules --zone-id=1`.
+- Проверить отсутствие legacy scheduler в runtime: `docker compose ps | rg scheduler` (ожидается пусто).
+- Security smoke ingress (`/start-cycle`):
+  - без токена должен быть `401`:
+    `curl -s -o /dev/null -w "%{http_code}\n" -X POST http://automation-engine:9405/zones/1/start-cycle -H 'Content-Type: application/json' -d '{"source":"laravel_scheduler","idempotency_key":"smoke-no-token-1"}'`
+  - c токеном, но без `X-Trace-Id`, должен быть `422`:
+    `curl -s -o /dev/null -w "%{http_code}\n" -X POST http://automation-engine:9405/zones/1/start-cycle -H "Authorization: Bearer $SCHEDULER_API_TOKEN" -H 'Content-Type: application/json' -d '{"source":"laravel_scheduler","idempotency_key":"smoke-no-trace-1"}'`
+
+### 3.1.3. Rollback
+- Минимальный safe-stop: вернуть `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=0` и перезапустить `laravel`.
+- Важно: это останавливает dispatch, но не включает legacy Python scheduler автоматически.
+- Для полного rollback на legacy scheduler нужен отдельный rollback artifact
+  (compose overlay или откат на release, где сервис `scheduler` присутствует в runtime).
+- После включения legacy scheduler убедиться, что в один момент активен только один dispatcher owner.
+
+### 3.1.4. Инциденты `start-cycle` / intents / active tasks
+
+Симптомы:
+- повторяющиеся `accepted`, но нет terminal статусов;
+- в `zone_automation_intents` долго висят `claimed|running`;
+- в `laravel_scheduler_active_tasks` растет backlog.
+
+Проверки:
+```sql
+-- Застрявшие intents (старше 5 минут)
+SELECT id, zone_id, idempotency_key, status, claimed_at, updated_at, retry_count, max_retries
+FROM zone_automation_intents
+WHERE status IN ('claimed','running')
+  AND updated_at < now() - interval '5 minutes'
+ORDER BY updated_at ASC;
+
+-- Активные задачи scheduler, которые не терминировались
+SELECT task_id, zone_id, task_type, status, accepted_at, due_at, expires_at, last_polled_at
+FROM laravel_scheduler_active_tasks
+WHERE terminal_at IS NULL
+ORDER BY accepted_at ASC;
+```
+
+Восстановление:
+1. Проверить readiness AE: `curl -fsS http://automation-engine:9405/health/ready`.
+2. Перезапустить `automation-engine` (startup recovery должен финализировать in-flight).
+3. Прогнать reconcile: `php artisan automation:dispatch-schedules --zone-id=<id>`.
+4. Если задача уже просрочена, убедиться что в `laravel_scheduler_active_tasks` выставлен terminal status (`timeout|failed`) и выполнен повторный dispatch.
+
 ## 4. Playwright E2E падает (webServer)
 - Освободить порт 8000, проверить `php artisan serve` локально.
 - Запустить `php artisan migrate:fresh --seed` перед прогоном.
@@ -228,7 +288,7 @@ docker-compose exec laravel php artisan schedule:test
 **Быстрое восстановление:**
 ```bash
 # Остановить сервисы, использующие БД
-docker-compose stop laravel automation-engine scheduler history-logger
+docker-compose stop laravel automation-engine history-logger
 
 # Восстановить БД
 ./scripts/restore/postgres_restore.sh /backups/postgres/.../postgres_*.dump

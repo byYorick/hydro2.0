@@ -203,4 +203,68 @@ class PythonBridgeServiceTest extends TestCase
             'channel' => 'pump_main',
         ]);
     }
+
+    public function test_send_growth_cycle_config_uses_real_zone_node_with_case_insensitive_online_status(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $offlineNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-offline-1',
+            'status' => 'OFFLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $offlineNode->id,
+            'channel' => 'default',
+            'type' => 'ACTUATOR',
+            'metric' => null,
+        ]);
+
+        $onlineNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-online-1',
+            'status' => 'ONLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $onlineNode->id,
+            'channel' => 'default',
+            'type' => 'ACTUATOR',
+            'metric' => null,
+        ]);
+
+        $cmdId = $this->service->sendZoneCommand($zone, [
+            'type' => 'GROWTH_CYCLE_CONFIG',
+            'params' => [
+                'mode' => 'adjust',
+                'profile_mode' => 'setup',
+            ],
+        ]);
+
+        $this->assertNotEmpty($cmdId);
+
+        Http::assertSent(function ($request) use ($zone, $onlineNode) {
+            $data = $request->data();
+            $url = $request->url();
+
+            return str_contains($url, "zones/{$zone->id}/commands")
+                && ($data['node_uid'] ?? null) === $onlineNode->uid
+                && ($data['channel'] ?? null) === 'default';
+        });
+    }
+
+    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_nodes(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/No nodes are assigned to zone/');
+
+        $this->service->sendZoneCommand($zone, [
+            'type' => 'GROWTH_CYCLE_CONFIG',
+            'params' => [
+                'mode' => 'adjust',
+                'profile_mode' => 'setup',
+            ],
+        ]);
+    }
 }

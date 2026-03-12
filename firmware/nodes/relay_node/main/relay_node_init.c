@@ -13,6 +13,7 @@
 #include "relay_node_defaults.h"
 #include "relay_node_init_steps.h"
 #include "relay_node_framework_integration.h"
+#include "relay_node_hw_map.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
@@ -125,6 +126,30 @@ static void update_oled_connections(void) {
         strncpy(model.zone_name, zone_uid, sizeof(model.zone_name) - 1);
         model.zone_name[sizeof(model.zone_name) - 1] = '\0';
     }
+
+    size_t max_channels = RELAY_NODE_HW_CHANNELS_COUNT;
+    if (max_channels > 8) {
+        max_channels = 8;
+    }
+    size_t channel_count = 0;
+    for (size_t i = 0; i < max_channels; i++) {
+        const relay_node_hw_channel_t *hw = &RELAY_NODE_HW_CHANNELS[i];
+        if (!hw->channel_name) {
+            continue;
+        }
+        strncpy(model.channels[channel_count].name, hw->channel_name, sizeof(model.channels[channel_count].name) - 1);
+        model.channels[channel_count].name[sizeof(model.channels[channel_count].name) - 1] = '\0';
+        relay_state_t relay_state = RELAY_STATE_OPEN;
+        if (relay_driver_get_state(hw->channel_name, &relay_state) == ESP_OK) {
+            model.channels[channel_count].value = (relay_state == RELAY_STATE_CLOSED) ? 1.0f : 0.0f;
+            model.channels[channel_count].active = (relay_state == RELAY_STATE_CLOSED);
+        } else {
+            model.channels[channel_count].value = 0.0f;
+            model.channels[channel_count].active = false;
+        }
+        channel_count++;
+    }
+    model.channel_count = channel_count;
     
     oled_ui_update_model(&model);
 }

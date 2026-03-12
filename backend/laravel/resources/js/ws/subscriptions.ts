@@ -9,18 +9,9 @@ import { logger } from '@/utils/logger'
 import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
 import { registerSubscription, unregisterSubscription } from '@/ws/invariants'
 import type { EchoChannelLike, EchoLike, WsEventPayload } from '@/ws/subscriptionTypes'
+import type { ZoneUpdateHandler, AlertCreatedHandler } from '@/ws/subscriptionTypes'
 import type { Zone } from '@/types/Zone'
 import type { Alert } from '@/types/Alert'
-
-/**
- * Обработчик событий обновления зоны
- */
-export type ZoneUpdateHandler = (zone: Zone) => void
-
-/**
- * Обработчик событий создания алерта
- */
-export type AlertCreatedHandler = (alert: Alert) => void
 
 function toRecord(payload: unknown): WsEventPayload {
   if (payload && typeof payload === 'object') {
@@ -31,8 +22,10 @@ function toRecord(payload: unknown): WsEventPayload {
 
 /**
  * Подписаться на обновления зоны
- * Использует единую инфраструктуру useWebSocket для управления lifecycle
- * 
+ *
+ * @deprecated Используй `useWebSocket().subscribeToZoneUpdates()` вместо этой функции.
+ *             Эта функция сохранена только для обратной совместимости legacy-кода.
+ *
  * @param zoneId - ID зоны
  * @param handler - Обработчик события обновления зоны
  * @returns Функция для отписки
@@ -171,8 +164,10 @@ export function subscribeZone(zoneId: number, handler: ZoneUpdateHandler): () =>
 
 /**
  * Подписаться на создание алертов
- * Использует единую инфраструктуру useWebSocket для управления lifecycle
- * 
+ *
+ * @deprecated Используй `useWebSocket().subscribeToAlerts()` вместо этой функции.
+ *             Эта функция сохранена только для обратной совместимости legacy-кода.
+ *
  * @param handler - Обработчик события создания алерта
  * @returns Функция для отписки
  */

@@ -144,6 +144,65 @@ class GrowCycleWizardControllerTest extends TestCase
             ->assertJsonStructure(['errors' => ['channel_bindings.0.role']]);
     }
 
+    public function test_it_returns_localized_readiness_errors_without_english_duplicates_when_required_roles_are_missing(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $zone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => true,
+                'ph_control' => false,
+            ],
+        ]);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $mainPumpChannel = $this->createChannel($node, 'pump_main', 'pump');
+        $drainChannel = $this->createChannel($node, 'drain_main', 'valve');
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/api/grow-cycle-wizard/create', [
+            'zone_id' => $zone->id,
+            'plant_id' => $plant->id,
+            'recipe_revision_id' => $revision->id,
+            'planting_date' => now()->toDateString(),
+            'automation_start_date' => now()->toDateString(),
+            'batch' => ['quantity' => 10],
+            'channel_bindings' => [
+                [
+                    'node_id' => $node->id,
+                    'channel_id' => $mainPumpChannel->id,
+                    'role' => 'main_pump',
+                ],
+                [
+                    'node_id' => $node->id,
+                    'channel_id' => $drainChannel->id,
+                    'role' => 'drain',
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start');
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Насос EC NPK не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Calcium не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Magnesium не привязан к каналу', $errors);
+        $this->assertContains('Насос EC Micro не привязан к каналу', $errors);
+        $this->assertNotContains('Required bindings are missing: ec_npk_pump, ec_calcium_pump, ec_magnesium_pump, ec_micro_pump', $errors);
+    }
+
     /**
      * @return array<string, NodeChannel>
      */

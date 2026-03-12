@@ -155,7 +155,7 @@ test.describe('Zone Detail', () => {
 
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Scheduler / Intent Lifecycle')).toBeVisible({ timeout: 15000 });
 
       await expect(page.getByText(taskId)).toBeVisible({ timeout: 15000 });
       await page.getByRole('button', { name: 'Открыть' }).first().click();
@@ -164,7 +164,7 @@ test.describe('Zone Detail', () => {
       await expect(page.getByText('SLA-контроль')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('SLA нарушен: expires_at')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Задача получена')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Automation-engine: execution started')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Automation-engine: запуск выполнения')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Превышен срок expires_at (task_expired)').first()).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
@@ -265,13 +265,18 @@ test.describe('Zone Detail', () => {
 
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler Task Lifecycle')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Scheduler / Intent Lifecycle')).toBeVisible({ timeout: 15000 });
 
-      await page.locator('select').first().selectOption('done_unconfirmed');
+      const schedulerPresetSelect = page
+        .locator('select')
+        .filter({ has: page.locator('option[value="done_unconfirmed"]') })
+        .first();
+      await expect(schedulerPresetSelect).toBeVisible({ timeout: 15000 });
+      await schedulerPresetSelect.selectOption('done_unconfirmed');
       await expect(page.getByText('st-e2e-done-unconfirmed')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText(doneTaskId)).not.toBeVisible();
 
-      await page.locator('select').first().selectOption('all');
+      await schedulerPresetSelect.selectOption('all');
       await page.getByPlaceholder('Поиск: task_id/status/error_code/reason_code').fill('st-e2e-failed');
       await expect(page.getByText('st-e2e-failed')).toBeVisible({ timeout: 15000 });
 

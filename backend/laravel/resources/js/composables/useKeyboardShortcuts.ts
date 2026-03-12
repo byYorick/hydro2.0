@@ -218,5 +218,8 @@ if (typeof import.meta !== 'undefined' && import.meta.hot) {
     globalListenerCount = 0
     // Очищаем шорткаты (они будут переинициализированы при следующем вызове)
     globalShortcuts.clear()
+    // Отменяем все pending debounce-таймеры навигации
+    visitTimers.forEach((timer) => clearTimeout(timer))
+    visitTimers.clear()
   })
 }

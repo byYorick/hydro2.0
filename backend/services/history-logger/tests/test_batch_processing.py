@@ -115,6 +115,49 @@ async def test_batch_upsert_telemetry_last():
 
 
 @pytest.mark.asyncio
+async def test_batch_upsert_telemetry_last_joins_sensors_to_avoid_fk_errors():
+    """Проверяем SQL-контракт: upsert telemetry_last фильтрует только существующие sensor_id."""
+    with patch('telemetry_processing.fetch') as mock_fetch, \
+         patch('telemetry_processing.execute') as mock_execute:
+
+        mock_fetch.return_value = [
+            {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
+        ]
+
+        _zone_cache.clear()
+        _node_cache.clear()
+        tp._cache_last_update = time.time()
+        _zone_cache[('zn-1', 'gh-1')] = 1
+        _node_cache[('nd-1', 'gh-1')] = (10, 1)
+
+        samples = [
+            TelemetrySampleModel(
+                zone_uid='zn-1',
+                gh_uid='gh-1',
+                node_uid='nd-1',
+                metric_type='TEMPERATURE',
+                value=25.0,
+                ts=utcnow()
+            ),
+        ]
+
+        _sensor_cache.clear()
+        _sensor_cache[(1, 10, "TEMPERATURE", "TEMPERATURE")] = 101
+
+        await process_telemetry_batch(samples)
+
+        telemetry_last_queries = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+            if call.args and 'telemetry_last' in str(call.args[0])
+        ]
+        assert telemetry_last_queries
+        query = telemetry_last_queries[0]
+        assert "JOIN sensors s ON s.id = i.sensor_id" in query
+        assert "UNNEST(" in query
+
+
+@pytest.mark.asyncio
 async def test_sensor_insert_uses_on_conflict_and_caches_id():
     with patch('telemetry_processing.fetch') as mock_fetch, \
          patch('telemetry_processing.execute') as mock_execute:

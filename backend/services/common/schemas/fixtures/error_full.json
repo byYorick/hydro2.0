@@ -4,7 +4,7 @@
   "error_code": "ESP_ERR_NO_MEM",
   "error_code_num": 101,
   "message": "Out of memory",
-  "ts": 1737979200.5,
+  "ts": 1737979200000,
   "hardware_id": "AA:BB:CC:DD:EE:FF",
   "node_uid": "nd-ph-1",
   "zone_id": 1,
@@ -13,4 +13,3 @@
     "allocated": 50000
   }
 }
-

@@ -2,6 +2,7 @@
 Zone Prioritizer - приоритизация зон для обработки.
 Критические зоны обрабатываются первыми.
 """
+# NOTE: This module is currently unused by the codebase.
 from typing import List, Dict, Any
 import logging
 

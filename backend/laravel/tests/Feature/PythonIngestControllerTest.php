@@ -275,6 +275,116 @@ class PythonIngestControllerTest extends TestCase
             ]);
     }
 
+    public function test_command_ack_endpoint_accepts_timeout_as_terminal_status(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-timeout-001',
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-timeout-001',
+                'status' => 'TIMEOUT',
+                'details' => [
+                    'error_code' => 'TIMEOUT',
+                    'result_code' => 1,
+                ],
+            ])
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_TIMEOUT, $command->status);
+        $this->assertNotNull($command->failed_at);
+        $this->assertEquals('TIMEOUT', $command->error_code);
+        $this->assertEquals(1, $command->result_code);
+    }
+
+    public function test_command_ack_endpoint_accepts_send_failed_as_terminal_status(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-sendfailed-001',
+            'status' => Command::STATUS_QUEUED,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-sendfailed-001',
+                'status' => 'SEND_FAILED',
+                'details' => [
+                    'error_code' => 'SEND_FAILED',
+                    'error_message' => 'publish_failed',
+                    'result_code' => 1,
+                ],
+            ])
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_SEND_FAILED, $command->status);
+        $this->assertNotNull($command->failed_at);
+        $this->assertEquals('SEND_FAILED', $command->error_code);
+        $this->assertEquals('publish_failed', $command->error_message);
+        $this->assertEquals(1, $command->result_code);
+    }
+
+    public function test_command_ack_endpoint_prevents_terminal_timeout_to_ack_rollback(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-timeout-rollback-001',
+            'status' => Command::STATUS_TIMEOUT,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-timeout-rollback-001',
+                'status' => 'ACK',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'status' => 'ok',
+                'message' => 'Command already in final status',
+            ]);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_TIMEOUT, $command->status);
+    }
+
+    public function test_command_ack_endpoint_prevents_done_to_ack_rollback(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-done-rollback-001',
+            'status' => Command::STATUS_DONE,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-done-rollback-001',
+                'status' => 'ACK',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'status' => 'ok',
+                'message' => 'Command already in final status',
+            ]);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_DONE, $command->status);
+    }
+
     public function test_command_ack_endpoint_requires_auth(): void
     {
         // Убеждаемся, что токен не настроен для этого теста
@@ -349,6 +459,11 @@ class PythonIngestControllerTest extends TestCase
             'id' => $alert->id,
             'status' => 'RESOLVED',
         ]);
+
+        $alert->refresh();
+        $this->assertSame('python_ingest', $alert->details['resolved_by'] ?? null);
+        $this->assertSame('auto', $alert->details['resolved_via'] ?? null);
+        $this->assertSame('infra', $alert->details['resolved_source'] ?? null);
     }
 
     public function test_alerts_endpoint_accepts_node_source_and_normalizes_severity(): void

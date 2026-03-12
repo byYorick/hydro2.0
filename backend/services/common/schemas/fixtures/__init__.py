@@ -6,6 +6,8 @@
 import time
 from typing import Dict, Any, Optional
 
+TEST_SIG_HEX64 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 
 def create_command_fixture(
     cmd: str = "dose",
@@ -39,7 +41,7 @@ def create_command_fixture(
         "cmd": cmd,
         "params": params,
         "ts": ts,
-        "sig": sig or "test-signature"
+        "sig": sig or TEST_SIG_HEX64
     }
 
 
@@ -53,7 +55,7 @@ def create_command_response_fixture(
     
     Args:
         cmd_id: Идентификатор команды
-        status: Статус (ACK|DONE|ERROR|INVALID|BUSY|NO_EFFECT)
+        status: Статус (ACK|DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT)
         details: Дополнительные детали
     
     Returns:
@@ -127,6 +129,12 @@ FIXTURE_RESPONSE_BUSY = create_command_response_fixture(
     details={"retry_after_ms": 2000}
 )
 
+FIXTURE_RESPONSE_TIMEOUT = create_command_response_fixture(
+    cmd_id="cmd-abc123",
+    status="TIMEOUT",
+    details={"error_code": "TIMEOUT", "error_message": "Command execution timeout"}
+)
+
 
 def get_all_command_fixtures() -> Dict[str, Dict[str, Any]]:
     """Возвращает все fixtures команд."""
@@ -147,6 +155,7 @@ def get_all_response_fixtures() -> Dict[str, Dict[str, Any]]:
         "error": FIXTURE_RESPONSE_ERROR,
         "invalid": FIXTURE_RESPONSE_INVALID,
         "busy": FIXTURE_RESPONSE_BUSY,
+        "timeout": FIXTURE_RESPONSE_TIMEOUT,
     }
 
 

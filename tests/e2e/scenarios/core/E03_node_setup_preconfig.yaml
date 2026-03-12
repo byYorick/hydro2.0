@@ -156,14 +156,14 @@ actions:
 
   - step: node_sends_config_report
     type: mqtt_publish
-    topic: hydro/gh-temp/zn-temp/${test_hardware_id}/config_report
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${node_uid}/config_report
     qos: 1
     payload:
-      node_id: ${test_hardware_id}
+      node_id: ${node_uid}
       version: 3
       type: ph_node
-      gh_uid: gh-temp
-      zone_uid: zn-temp
+      gh_uid: ${test_gh_uid}
+      zone_uid: ${test_zone_uid}
       channels:
         - name: ph_sensor
           type: SENSOR

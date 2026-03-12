@@ -14,12 +14,21 @@ use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use Carbon\Carbon;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class GrowCycleService
 {
+    public function __construct(
+        private readonly AutomationRuntimeConfigService $runtimeConfig,
+    ) {
+    }
+
     /**
      * Создать новый цикл выращивания (новая модель с recipe_revision_id)
      */
@@ -65,6 +74,9 @@ class GrowCycleService
                     'clean_tank_fill_l' => (int) ($irrigation['clean_tank_fill_l'] ?? 300),
                     'nutrient_tank_target_l' => (int) ($irrigation['nutrient_tank_target_l'] ?? 280),
                 ];
+                if (array_key_exists('irrigation_batch_l', $irrigation) && $irrigation['irrigation_batch_l'] !== null) {
+                    $settings['irrigation']['irrigation_batch_l'] = (float) $irrigation['irrigation_batch_l'];
+                }
             }
 
             // Сначала создаем цикл без current_phase_id (временно null)
@@ -141,7 +153,7 @@ class GrowCycleService
             throw new \DomainException('Cycle must be in PLANNED status to start');
         }
 
-        return DB::transaction(function () use ($cycle, $plantingAt) {
+        $startedCycle = DB::transaction(function () use ($cycle, $plantingAt) {
             $plantingAt = $plantingAt ?? now();
             $plantingAt->setMicrosecond(0);
 
@@ -173,6 +185,173 @@ class GrowCycleService
 
             return $cycle->fresh();
         });
+
+        $this->dispatchAutomationStartCycle($startedCycle);
+
+        return $startedCycle->fresh();
+    }
+
+    private function dispatchAutomationStartCycle(GrowCycle $cycle): void
+    {
+        if (! $this->isGrowCycleStartDispatchEnabled()) {
+            return;
+        }
+
+        $zoneId = (int) $cycle->zone_id;
+        $cycleId = (int) $cycle->id;
+        if ($zoneId <= 0 || $cycleId <= 0) {
+            return;
+        }
+
+        $cfg = $this->automationStartCycleConfig();
+        $idempotencyKey = $this->buildGrowCycleStartIdempotencyKey($zoneId, $cycleId);
+
+        $this->upsertGrowCycleStartIntent(
+            zoneId: $zoneId,
+            cycleId: $cycleId,
+            idempotencyKey: $idempotencyKey
+        );
+
+        $response = $this->postAutomationStartCycle(
+            zoneId: $zoneId,
+            idempotencyKey: $idempotencyKey,
+            cfg: $cfg
+        );
+
+        $taskId = trim((string) data_get($response, 'data.task_id', ''));
+        Log::info('Grow cycle start-cycle dispatched to automation-engine', [
+            'zone_id' => $zoneId,
+            'cycle_id' => $cycleId,
+            'idempotency_key' => $idempotencyKey,
+            'task_id' => $taskId !== '' ? $taskId : null,
+            'accepted' => (bool) data_get($response, 'data.accepted', false),
+            'deduplicated' => (bool) data_get($response, 'data.deduplicated', false),
+        ]);
+    }
+
+    private function isGrowCycleStartDispatchEnabled(): bool
+    {
+        if (app()->runningInConsole()) {
+            return false;
+        }
+
+        return (bool) $this->runtimeConfig->automationEngineValue('grow_cycle_start_dispatch_enabled', false);
+    }
+
+    /**
+     * @return array{api_url: string, timeout_sec: float, scheduler_id: string, token: string}
+     */
+    private function automationStartCycleConfig(): array
+    {
+        $schedulerCfg = $this->runtimeConfig->schedulerConfig();
+
+        return [
+            'api_url' => (string) ($schedulerCfg['api_url'] ?? 'http://automation-engine:9405'),
+            'timeout_sec' => (float) ($schedulerCfg['timeout_sec'] ?? 2.0),
+            'scheduler_id' => (string) ($schedulerCfg['scheduler_id'] ?? 'laravel-scheduler'),
+            'token' => trim((string) ($schedulerCfg['token'] ?? '')),
+        ];
+    }
+
+    private function buildGrowCycleStartIdempotencyKey(int $zoneId, int $cycleId): string
+    {
+        $base = sprintf('grow-cycle-start|zone:%d|cycle:%d', $zoneId, $cycleId);
+        $digest = substr(hash('sha256', $base), 0, 24);
+
+        return sprintf('gcs:z%d:c%d:%s', $zoneId, $cycleId, $digest);
+    }
+
+    private function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
+    {
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+        $intentPayload = [
+            'source' => 'laravel_grow_cycle_start',
+            'task_type' => 'diagnostics',
+            'workflow' => 'cycle_start',
+            'topology' => 'two_tank_drip_substrate_trays',
+            'grow_cycle_id' => $cycleId,
+        ];
+
+        DB::table('zone_automation_intents')->upsert(
+            [[
+                'zone_id' => $zoneId,
+                'intent_type' => 'DIAGNOSTICS_TICK',
+                'payload' => json_encode($intentPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'idempotency_key' => $idempotencyKey,
+                'status' => 'pending',
+                'not_before' => $now,
+                'retry_count' => 0,
+                'max_retries' => 3,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]],
+            ['idempotency_key'],
+            [
+                'zone_id',
+                'intent_type',
+                'payload',
+                'status',
+                'not_before',
+                'updated_at',
+            ]
+        );
+
+        $intentExists = DB::table('zone_automation_intents')
+            ->where('idempotency_key', $idempotencyKey)
+            ->exists();
+
+        Log::info('Grow cycle start intent upserted', [
+            'zone_id' => $zoneId,
+            'cycle_id' => $cycleId,
+            'idempotency_key' => $idempotencyKey,
+            'intent_exists' => $intentExists,
+        ]);
+    }
+
+    /**
+     * @param  array{api_url: string, timeout_sec: float, scheduler_id: string, token: string}  $cfg
+     * @return array<string, mixed>
+     */
+    private function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+    {
+        if ($cfg['token'] === '') {
+            throw new \RuntimeException('automation_engine_scheduler_token_missing');
+        }
+
+        $headers = [
+            'Accept' => 'application/json',
+            'X-Trace-Id' => Str::lower((string) Str::uuid()),
+            'X-Scheduler-Id' => $cfg['scheduler_id'],
+            'Authorization' => 'Bearer '.$cfg['token'],
+        ];
+
+        try {
+            /** @var Response $response */
+            $response = Http::acceptJson()
+                ->timeout($cfg['timeout_sec'])
+                ->withHeaders($headers)
+                ->post($cfg['api_url'].'/zones/'.$zoneId.'/start-cycle', [
+                    'source' => 'laravel_grow_cycle_start',
+                    'idempotency_key' => $idempotencyKey,
+                ]);
+        } catch (ConnectionException $e) {
+            throw new \RuntimeException('automation_engine_start_cycle_connection_error: '.$e->getMessage(), 0, $e);
+        }
+
+        if (! $response->successful()) {
+            throw new \RuntimeException(sprintf(
+                'automation_engine_start_cycle_http_error_v2:%d:%s',
+                $response->status(),
+                (string) $response->body()
+            ));
+        }
+
+        $decoded = $response->json();
+        if (! is_array($decoded)) {
+            throw new \RuntimeException('automation_engine_start_cycle_invalid_payload');
+        }
+
+        return $decoded;
     }
 
     /**

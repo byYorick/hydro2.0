@@ -352,6 +352,19 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 **Правило (для всех нод):** команда `restart` доступна для любых узлов. Узел обязан отправить
 `command_response` со статусом `DONE`, а затем выполнить перезагрузку устройства.
 
+### 8) Снимок состояния IRR-ноды (`state`)
+```json
+{
+ "cmd": "state",
+ "params": {},
+ "cmd_id": "cmd-598",
+ "ts": 1737355119,
+ "sig": "b7c8d9e0f1a2..."
+}
+```
+**Правило (для нод типа `irrig`):** команда `state` возвращает `command_response` со статусом `DONE`
+и `details.snapshot`, где все дискретные поля представлены как `bool`.
+
 ## 7.3. Формат команды с HMAC подписью
 
 Все команды должны содержать следующие обязательные поля:
@@ -393,6 +406,342 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
+## 7.4. Архитектура публикации команд (AE2-Lite)
+
+**Важно:** Laravel scheduler и automation-engine **НЕ публикуют команды напрямую в MQTT**.  
+Единственный publisher команд в MQTT: `history-logger`.
+
+### 7.4.1. Поток команд
+
+```
+┌──────────────────────┐   DB write (intent)   ┌────────────────┐  REST API (9300)   ┌───────────────┐
+│ Laravel scheduler    │ ─────────────────────> │ Automation-    │ ──────────────────> │ History-      │
+│ (dispatch)           │   + POST /start-cycle  │ Engine         │  POST /commands     │ Logger        │
+└──────────────────────┘                         └────────────────┘                     └───────────────┘
+                                                                                                 │
+                                                                                                 │ MQTT Publish
+                                                                                                 ▼
+                                                                                         ┌──────────────┐
+                                                                                         │ MQTT Broker  │
+                                                                                         └──────────────┘
+                                                                                                 │
+                                                                                                 ▼
+                                                                                         ┌──────────────┐
+                                                                                         │ ESP32 Nodes  │
+                                                                                         └──────────────┘
+```
+
+### 7.4.2. Laravel scheduler → Automation-Engine
+
+Laravel scheduler передает intent двумя шагами:
+1. пишет `pending` в `zone_automation_intents`;
+2. вызывает `POST http://automation-engine:9405/zones/{id}/start-cycle`.
+
+`POST /zones/{id}/start-cycle` является wake-up endpoint и не несет device-level команд.
+
+### 7.4.3. Automation-Engine → History-Logger
+
+**Endpoint:** `POST http://history-logger:9300/commands`
+
+Automation-engine:
+- claim-ит pending intent;
+- строит шаги workflow зоны;
+- отправляет device-level команды в history-logger;
+- ждет terminal status (`DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`).
+
+Контракт history-logger strict:
+- поле `cmd` обязательно;
+- legacy `type` в `/commands` не допускается.
+
+### 7.4.4. History-Logger → MQTT
+
+History-logger:
+1. принимает команду через REST;
+2. валидирует payload;
+3. подписывает (если включен HMAC policy);
+4. публикует в MQTT топик `hydro/{gh}/{zone}/{node}/{channel}/command`;
+5. фиксирует lifecycle команды в БД.
+
+### 7.4.5. Пример полного потока
+
+**1. Scheduler создает intent и будит зону**
+```bash
+POST http://automation-engine:9405/zones/1/start-cycle
+{
+  "source": "laravel_scheduler",
+  "idempotency_key": "sch:z1:irrigation:2026-02-21T10:00:00Z"
+}
+```
+
+**2. Automation-engine отправляет команду в history-logger**
+```bash
+POST http://history-logger:9300/commands
+{
+  "greenhouse_uid": "gh-1",
+  "zone_id": 1,
+  "node_uid": "nd-pump-1",
+  "channel": "pump_in",
+  "cmd": "run_pump",
+  "params": {"duration_ms": 30000},
+  "source": "automation-engine"
+}
+```
+
+**3. Нода возвращает `command_response`**
+- `history-logger` сохраняет статус команды;
+- AE2-Lite получает обновление через `LISTEN/NOTIFY` и reconcile polling.
+
+### 7.4.6. Преимущества архитектуры
+
+1. Единый командный publisher (`history-logger`) и единый audit trail.
+2. Детерминированный wake-up контракт (`POST /zones/{id}/start-cycle`).
+3. Отделение scheduling (Laravel) от device execution (AE2-Lite).
+4. Устойчивость через `NOTIFY + polling` для feedback-команд.
+
+2. **Централизованное логирование:**
+   - Все команды проходят через history-logger
+   - Единая точка для аудита и отладки
+   - Упрощенный мониторинг через Prometheus
+
+3. **Гибкость:**
+   - Scheduler работает с абстрактными задачами
+   - Automation-engine может менять логику преобразования без изменения scheduler
+   - History-logger может менять MQTT брокер без изменения вышестоящих сервисов
+
+4. **Безопасность:**
+   - HMAC подпись добавляется в одном месте (history-logger)
+   - Централизованная валидация команд
+   - Единая точка для rate limiting
+
+### 7.4.7. См. также
+
+- `../04_BACKEND_CORE/HISTORY_LOGGER_API.md` — REST API спецификация history-logger
+- `../04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` — архитектура Python сервисов
+- `BACKEND_NODE_CONTRACT_FULL.md` — контракт между backend и нодами
+
+## 7.5. Системные команды активации/деактивации нод (Correction Cycle)
+
+**ВАЖНО:** pH/EC измерения валидны только при потоке через сенсор. Automation-Engine управляет жизненным циклом сенсорных нод через системные команды активации/деактивации.
+
+### 7.5.1. Топик системных команд
+
+В отличие от канальных команд, системные команды публикуются в топик **без указания канала**:
+
+```
+hydro/{gh}/{zone}/{node}/system/command
+```
+
+**Примеры:**
+```
+hydro/gh-1/zn-1/nd-ph-1/system/command
+hydro/gh-1/zn-1/nd-ec-1/system/command
+```
+
+### 7.5.2. Команда activate_sensor_mode
+
+**Назначение:** Активация сенсорной ноды перед началом измерений (при старте потока через сенсор).
+
+**Топик:** `hydro/{gh}/{zone}/{node}/system/command`
+
+**Payload:**
+```json
+{
+  "cmd": "activate_sensor_mode",
+  "params": {
+    "stabilization_time_sec": 60
+  },
+  "cmd_id": "cmd-activate-123",
+  "ts": 1710001234,
+  "sig": "a1b2c3d4e5f6..."
+}
+```
+
+**Параметры:**
+- `stabilization_time_sec` (integer, обязательно) — время стабилизации сенсора в секундах. После активации нода ждет это время перед разрешением коррекций.
+
+**Поведение ноды при получении activate_sensor_mode:**
+1. Переход из режима IDLE в режим ACTIVE
+2. Запуск таймера стабилизации (`stabilization_time_sec`)
+3. Начало измерений и публикации телеметрии
+4. Установка флагов в телеметрии:
+   - `flow_active: true` (есть поток)
+   - `stable: false` (пока идет стабилизация)
+   - `corrections_allowed: false` (коррекции запрещены до окончания стабилизации)
+5. По истечении `stabilization_time_sec`:
+   - `stable: true`
+   - `corrections_allowed: true` (коррекции разрешены)
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-activate-123",
+  "status": "DONE",
+  "details": {
+    "mode": "ACTIVE",
+    "stabilization_time_sec": 60
+  },
+  "ts": 1710001235000
+}
+```
+
+### 7.5.3. Команда deactivate_sensor_mode
+
+**Назначение:** Деактивация сенсорной ноды после завершения цикла (при остановке потока).
+
+**Топик:** `hydro/{gh}/{zone}/{node}/system/command`
+
+**Payload:**
+```json
+{
+  "cmd": "deactivate_sensor_mode",
+  "params": {},
+  "cmd_id": "cmd-deactivate-456",
+  "ts": 1710002234,
+  "sig": "b2c3d4e5f6a1..."
+}
+```
+
+**Параметры:** Пустой объект (команда не требует параметров).
+
+**Поведение ноды при получении deactivate_sensor_mode:**
+1. Переход из режима ACTIVE в режим IDLE
+2. Остановка измерений
+3. Прекращение публикации телеметрии
+4. Публикация только heartbeat и LWT (status)
+
+**Command Response:**
+```json
+{
+  "cmd_id": "cmd-deactivate-456",
+  "status": "DONE",
+  "details": {
+    "mode": "IDLE"
+  },
+  "ts": 1710002235000
+}
+```
+
+### 7.5.4. Расширенная телеметрия при активации
+
+При активированном режиме ACTIVE, pH/EC ноды публикуют расширенную телеметрию с дополнительными флагами:
+
+**Топик:** `hydro/{gh}/{zone}/{node}/{channel}/telemetry`
+
+**Payload (во время стабилизации):**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001250,
+  "flow_active": true,
+  "stable": false,
+  "stabilization_progress_sec": 15,
+  "corrections_allowed": false
+}
+```
+
+**Payload (после стабилизации):**
+```json
+{
+  "metric_type": "PH",
+  "value": 5.86,
+  "ts": 1710001300,
+  "flow_active": true,
+  "stable": true,
+  "stabilization_progress_sec": 60,
+  "corrections_allowed": true
+}
+```
+
+**Новые поля телеметрии:**
+- `flow_active` (boolean) — индикатор наличия потока через сенсор
+- `stable` (boolean) — true после истечения `stabilization_time_sec`
+- `stabilization_progress_sec` (integer) — прогресс стабилизации (секунды с момента активации)
+- `corrections_allowed` (boolean) — разрешение на коррекции (true после стабилизации + min_interval_sec)
+
+### 7.5.5. Применение в Correction Cycle State Machine
+
+Системные команды активации/деактивации используются automation-engine для управления state machine коррекции:
+
+| Переход состояний | Команда | Ноды |
+|------------------|---------|------|
+| IDLE → TANK_FILLING | `activate_sensor_mode` | pH, EC |
+| READY → IDLE | `deactivate_sensor_mode` | pH, EC |
+| READY → IRRIGATING | `activate_sensor_mode` | pH, EC (если требуется) |
+| IRRIG_RECIRC → IDLE | `deactivate_sensor_mode` | pH, EC |
+
+**Режимы активации:**
+
+**TANK_FILLING / TANK_RECIRC:**
+- Активируются pH + EC ноды
+- Коррекции: NPK (через EC ноду) + pH
+- Deactivation при переходе в READY
+
+**IRRIGATING / IRRIG_RECIRC:**
+- Активируются pH + EC ноды (если не были активны)
+- Коррекции: Ca/Mg/micro (через EC ноду) + pH
+- Deactivation при переходе в IDLE
+
+### 7.5.6. Требования к реализации на прошивке
+
+**pH/EC ноды должны:**
+1. Подписаться на топик `hydro/{gh}/{zone}/{node}/system/command` при подключении
+2. Поддерживать два режима работы:
+   - **IDLE:** Нет измерений, только heartbeat и LWT
+   - **ACTIVE:** Активные измерения и публикация телеметрии
+3. Реализовать таймер стабилизации для постепенного перехода к разрешению коррекций
+4. Публиковать расширенную телеметрию с флагами `flow_active`, `stable`, `corrections_allowed`
+5. Обрабатывать команды `activate_sensor_mode` и `deactivate_sensor_mode` с отправкой `command_response`
+
+**ВАЖНО про подписку на топики:**
+
+Узлы должны подписаться на системный топик **отдельно** от канальных команд:
+
+```c
+// Подписка на канальные команды (wildcard для всех каналов)
+mqtt_subscribe("hydro/gh-1/zn-1/nd-ph-1/+/command");
+
+// Подписка на системные команды (отдельная подписка!)
+mqtt_subscribe("hydro/gh-1/zn-1/nd-ph-1/system/command");
+```
+
+**Почему нужна отдельная подписка:**
+
+Wildcard `+/command` **НЕ захватывает** топик без канала между `{node}` и `command`.
+
+- `hydro/.../nd-ph-1/+/command` — подписывается на `ph_main/command`, `pump_ph_up/command` и т.д.
+- `hydro/.../nd-ph-1/system/command` — **НЕ** соответствует wildcard `+/command`, так как `system` находится на месте канала, но топик заканчивается на `system/command` без дополнительного уровня
+
+**Правильная инициализация подписок при подключении:**
+
+```c
+void mqtt_on_connected(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    // 1. Подписка на канальные команды
+    char topic_channels[128];
+    snprintf(topic_channels, sizeof(topic_channels),
+             "hydro/%s/%s/%s/+/command",
+             config->greenhouse_uid, config->zone_uid, config->node_uid);
+    esp_mqtt_client_subscribe(mqtt_client, topic_channels, 1);
+
+    // 2. Подписка на системные команды (отдельно!)
+    char topic_system[128];
+    snprintf(topic_system, sizeof(topic_system),
+             "hydro/%s/%s/%s/system/command",
+             config->greenhouse_uid, config->zone_uid, config->node_uid);
+    esp_mqtt_client_subscribe(mqtt_client, topic_system, 1);
+
+    ESP_LOGI(TAG, "Subscribed to channel commands: %s", topic_channels);
+    ESP_LOGI(TAG, "Subscribed to system commands: %s", topic_system);
+}
+```
+
+### 7.5.7. См. также
+
+- `../06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` — спецификация correction cycle state machine
+- `../06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — конфигурация параметров стабилизации
+- `ARCHITECTURE_FLOWS.md` — диаграммы потоков с state machine
+
 ---
 
 # 8. Command Response (узлы → backend)
@@ -419,17 +768,22 @@ Backend никогда не остаётся "в неизвестности": п
 **Обязательные поля:**
 - `cmd_id` (string) — идентификатор команды, точно соответствующий `cmd_id` из команды
 - `status` (string) — статус выполнения: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`
+  (допустим также `TIMEOUT` для device-level timeout сценариев)
 - `ts` (integer) — UTC timestamp в миллисекундах
 
 **Опциональные поля:**
-- `details` (string|object) — детали выполнения команды
+- `details` (object) — детали выполнения команды
+- `error_code` (string) — машинночитаемый код ошибки для `status=ERROR`
+- `error_message` (string) — человекочитаемое пояснение для `status=ERROR`
 
 **Пример успешного ответа:**
 ```json
 {
   "cmd_id": "cmd-591",
   "status": "DONE",
-  "details": "OK",
+  "details": {
+    "result": "ok"
+  },
   "ts": 1710003399123
 }
 ```
@@ -442,8 +796,9 @@ Backend никогда не остаётся "в неизвестности": п
 {
   "cmd_id": "cmd-591",
   "status": "ERROR",
-  "details": "Command HMAC signature verification failed",
-  "ts": 1710003399123
+  "ts": 1710003399123,
+  "error_code": "invalid_signature",
+  "error_message": "Command HMAC signature verification failed"
 }
 ```
 
@@ -458,6 +813,38 @@ Backend никогда не остаётся "в неизвестности": п
   "error_message": "Command timestamp is outside acceptable range"
 }
 ```
+
+## 8.2.2. Формат `command_response` для `cmd=state` (IRR)
+
+Для `cmd=state` узел типа `irrig` возвращает snapshot:
+
+```json
+{
+  "cmd_id": "cmd-598",
+  "status": "DONE",
+  "details": {
+    "snapshot": {
+      "clean_level_max": true,
+      "clean_level_min": true,
+      "solution_level_max": false,
+      "solution_level_min": true,
+      "valve_clean_fill": false,
+      "valve_clean_supply": true,
+      "valve_solution_fill": true,
+      "valve_solution_supply": false,
+      "valve_irrigation": false,
+      "pump_main": true
+    },
+    "sample_ts": 1710003399
+  },
+  "ts": 1710003399123
+}
+```
+
+Требования:
+- поля `snapshot.*` — `bool`;
+- отсутствие поля в snapshot трактуется как `unknown` на стороне backend;
+- `sample_ts` используется для freshness-check в automation-engine.
 
 ## 8.3. Базовый payload
 
@@ -478,6 +865,10 @@ Backend никогда не остаётся "в неизвестности": п
 - `INVALID` — команда невалидна (неверные параметры);
 - `BUSY` — узел занят, команда не может быть выполнена сейчас;
 - `NO_EFFECT` — команда не оказала эффекта (например, реле уже в нужном состоянии).
+- `TIMEOUT` — команда/операция прервана по таймауту на стороне ноды.
+
+Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+`SEND_FAILED` — backend-layer статус (ошибка публикации), в `command_response` от ноды не используется.
 
 ## 8.4. Расширенный payload для ошибок
 
@@ -558,6 +949,13 @@ Payload:
 {
   "event_code": "clean_fill_completed",
   "ts": 1710003399,
+  "snapshot": {
+    "clean_level_min": true,
+    "clean_level_max": true,
+    "solution_level_min": false,
+    "solution_level_max": false,
+    "pump_main": false
+  },
   "state": {
     "level_clean_min": 1,
     "level_clean_max": 1,
@@ -582,6 +980,7 @@ Payload:
 Назначение:
 - automation-engine использует это событие как fast-path подтверждение;
 - scheduler/automation сохраняют периодический poll как резервный канал контроля.
+- history-logger извлекает snapshot состояния из `snapshot` (предпочтительно) или `state` (legacy fallback).
 
 ---
 # 9. Дополнительные системные топики

@@ -397,6 +397,14 @@ class GrowCycleController extends Controller
             'irrigation.duration_seconds' => ['nullable', 'integer', 'min:1', 'max:3600'],
             'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
             'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
+            'irrigation.irrigation_batch_l' => ['nullable', 'numeric', 'min:0.1', 'max:100'],
+            'phase_overrides' => ['nullable', 'array'],
+            'phase_overrides.ph_target' => ['nullable', 'numeric', 'between:0,14'],
+            'phase_overrides.ph_min' => ['nullable', 'numeric', 'between:0,14'],
+            'phase_overrides.ph_max' => ['nullable', 'numeric', 'between:0,14'],
+            'phase_overrides.ec_target' => ['nullable', 'numeric', 'between:0,30'],
+            'phase_overrides.ec_min' => ['nullable', 'numeric', 'between:0,30'],
+            'phase_overrides.ec_max' => ['nullable', 'numeric', 'between:0,30'],
         ]);
 
         $startImmediately = (bool) ($data['start_immediately'] ?? false);
@@ -423,6 +431,8 @@ class GrowCycleController extends Controller
                 $data,
                 $user->id
             );
+            $this->applyPhaseOverrides($cycle, $data);
+            $cycle->refresh()->load('recipeRevision', 'currentPhase', 'plant');
 
             return response()->json([
                 'status' => 'ok',
@@ -444,6 +454,30 @@ class GrowCycleController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * Применить overrides к первой фазе цикла после штатного копирования фаз из рецепта.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function applyPhaseOverrides(GrowCycle $cycle, array $data): void
+    {
+        $rawOverrides = $data['phase_overrides'] ?? null;
+        if (! is_array($rawOverrides)) {
+            return;
+        }
+
+        $overrides = array_filter(
+            $rawOverrides,
+            static fn ($value): bool => $value !== null
+        );
+        if ($overrides === []) {
+            return;
+        }
+
+        $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
+        $firstPhase?->update($overrides);
     }
 
     /**
@@ -474,11 +508,13 @@ class GrowCycleController extends Controller
     {
         $errors = [];
         $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
+        $hasNodes = (bool) ($checks['has_nodes'] ?? false);
+        $hasOnlineNodes = (bool) ($checks['online_nodes'] ?? false);
 
-        if (! ($checks['has_nodes'] ?? false)) {
+        if (! $hasNodes) {
             $errors[] = 'Нет привязанных нод в зоне';
         }
-        if (! ($checks['online_nodes'] ?? false)) {
+        if ($hasNodes && ! $hasOnlineNodes) {
             $errors[] = 'Нет онлайн нод в зоне';
         }
 
@@ -498,11 +534,28 @@ class GrowCycleController extends Controller
             }
         }
 
-        foreach ($readiness['errors'] ?? [] as $issue) {
-            if (is_array($issue) && isset($issue['message']) && is_string($issue['message'])) {
-                $errors[] = $issue['message'];
-            } elseif (is_string($issue)) {
-                $errors[] = $issue;
+        $errorDetails = is_array($readiness['error_details'] ?? null) ? $readiness['error_details'] : [];
+        foreach ($errorDetails as $issue) {
+            if (! is_array($issue)) {
+                continue;
+            }
+
+            $type = (string) ($issue['type'] ?? '');
+            if ($type !== 'missing_bindings') {
+                continue;
+            }
+
+            $bindings = is_array($issue['bindings'] ?? null) ? $issue['bindings'] : [];
+            foreach ($bindings as $binding) {
+                if (! is_string($binding) || $binding === '') {
+                    continue;
+                }
+
+                if (isset($roleMessages[$binding])) {
+                    $errors[] = $roleMessages[$binding];
+                } else {
+                    $errors[] = "Не привязан обязательный канал: {$binding}";
+                }
             }
         }
 

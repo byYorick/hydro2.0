@@ -16,22 +16,19 @@ docker run --rm -it -v ${PWD}:/data eclipse-mosquitto:2 sh
 
 # Внутри контейнера:
 cd /data
-mosquitto_passwd -c passwords python_service
+mosquitto_passwd -c passwords.txt python_service
 # Введите пароль: python_service_pass
 
-mosquitto_passwd passwords automation_engine
+mosquitto_passwd passwords.txt automation_engine
 # Введите пароль: automation_pass
 
-mosquitto_passwd passwords history_logger
+mosquitto_passwd passwords.txt history_logger
 # Введите пароль: logger_pass
 
-mosquitto_passwd passwords scheduler
-# Введите пароль: scheduler_pass
-
-mosquitto_passwd passwords mqtt_bridge
+mosquitto_passwd passwords.txt mqtt_bridge
 # Введите пароль: bridge_pass
 
-mosquitto_passwd passwords esp32_node
+mosquitto_passwd passwords.txt esp32_node
 # Введите пароль: esp32_pass
 
 exit
@@ -42,12 +39,12 @@ exit
 ```bash
 cd backend/services/mqtt-bridge
 chmod +x generate_passwords.sh
-./generate_passwords.sh passwords
+./generate_passwords.sh passwords.txt
 ```
 
 ### Шаг 2: Включение аутентификации
 
-После создания файла `passwords`, обновите `mosquitto.dev.conf`:
+После создания файла `passwords.txt`, обновите `mosquitto.dev.conf`:
 
 ```conf
 listener 1883
@@ -73,7 +70,6 @@ docker exec backend-mqtt-1 mosquitto_sub -h localhost -p 1883 -u automation_engi
 ## Важно для Production
 
 1. **Используйте сильные пароли** через переменные окружения
-2. **Не коммитьте файл `passwords`** в git (добавлен в .gitignore)
+2. **Не коммитьте файл `passwords.txt`** в git (добавлен в .gitignore)
 3. **Регулярно меняйте пароли**
 4. **Используйте TLS** для production (порт 8883)
-

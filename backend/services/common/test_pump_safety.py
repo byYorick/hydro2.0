@@ -243,8 +243,12 @@ async def test_can_run_pump_with_active_critical_alert():
     ]
     
     with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.check_dry_run") as mock_dry_run, \
+         patch("common.pump_safety.resolve_active_critical_alerts_by_code") as mock_resolve_dry_run, \
          patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts:
         mock_mcu.return_value = (True, None)  # MCU онлайн
+        mock_dry_run.return_value = (True, None)
+        mock_resolve_dry_run.return_value = None
         mock_get_alerts.return_value = mock_alerts
         
         can_run, error_msg = await can_run_pump(1, "pump_recirc")
@@ -257,10 +261,8 @@ async def test_can_run_pump_with_active_critical_alert():
 async def test_can_run_pump_dry_run():
     """Test can_run_pump when dry run detected."""
     with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
-         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run:
         mock_mcu.return_value = (True, None)  # MCU онлайн
-        mock_get_alerts.return_value = []  # Нет активных алертов
         mock_dry_run.return_value = (False, "Water level too low")
         
         can_run, error_msg = await can_run_pump(1, "pump_recirc")
@@ -273,10 +275,12 @@ async def test_can_run_pump_dry_run():
 async def test_can_run_pump_too_many_failures():
     """Test can_run_pump when too many recent failures."""
     with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.resolve_active_critical_alerts_by_code") as mock_resolve_dry_run, \
          patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run, \
          patch("common.pump_safety.too_many_recent_failures") as mock_failures:
         mock_mcu.return_value = (True, None)  # MCU онлайн
+        mock_resolve_dry_run.return_value = None
         mock_get_alerts.return_value = []
         mock_dry_run.return_value = (True, None)
         mock_failures.return_value = True
@@ -290,10 +294,12 @@ async def test_can_run_pump_too_many_failures():
 @pytest.mark.asyncio
 async def test_can_run_pump_ok():
     """Test can_run_pump when all checks pass."""
-    with patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+    with patch("common.pump_safety.resolve_active_critical_alerts_by_code") as mock_resolve_dry_run, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run, \
          patch("common.pump_safety.too_many_recent_failures") as mock_failures, \
          patch("common.pump_safety.check_mcu_offline") as mock_mcu:
+        mock_resolve_dry_run.return_value = None
         mock_get_alerts.return_value = []
         mock_dry_run.return_value = (True, None)
         mock_failures.return_value = False
@@ -303,6 +309,54 @@ async def test_can_run_pump_ok():
         
         assert can_run is True
         assert error_msg is None
+
+
+@pytest.mark.asyncio
+async def test_can_run_pump_scopes_mcu_check_to_pump_channel_nodes():
+    with patch("common.pump_safety.fetch") as mock_fetch, \
+         patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.check_dry_run") as mock_dry_run, \
+         patch("common.pump_safety.resolve_active_critical_alerts_by_code") as mock_resolve_dry_run, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+         patch("common.pump_safety.too_many_recent_failures") as mock_failures:
+        mock_fetch.return_value = [{"id": 7}]
+        mock_mcu.return_value = (True, None)
+        mock_dry_run.return_value = (True, None)
+        mock_resolve_dry_run.return_value = None
+        mock_get_alerts.return_value = []
+        mock_failures.return_value = False
+
+        can_run, error_msg = await can_run_pump(12, "pump_main")
+
+        assert can_run is True
+        assert error_msg is None
+        mock_mcu.assert_awaited_once_with(
+            12,
+            7,
+            telemetry_grace_sec=0,
+            grace_node_types=None,
+        )
+        mock_fetch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_can_run_pump_resolves_dry_run_alert_when_water_is_safe():
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.check_dry_run") as mock_dry_run, \
+         patch("common.pump_safety.resolve_active_critical_alerts_by_code") as mock_resolve_dry_run, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+         patch("common.pump_safety.too_many_recent_failures") as mock_failures:
+        mock_mcu.return_value = (True, None)
+        mock_dry_run.return_value = (True, None)
+        mock_resolve_dry_run.return_value = None
+        mock_get_alerts.return_value = []
+        mock_failures.return_value = False
+
+        can_run, error_msg = await can_run_pump(1, "pump_recirc")
+
+        assert can_run is True
+        assert error_msg is None
+        mock_resolve_dry_run.assert_awaited_once_with(1, [AlertCode.BIZ_DRY_RUN.value])
 
 
 @pytest.mark.asyncio
@@ -364,6 +418,69 @@ async def test_check_mcu_offline_no_telemetry():
         
         is_online, error_msg = await check_mcu_offline(1)
         
+        assert is_online is False
+        assert error_msg is not None
+        assert "no telemetry" in error_msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_mcu_offline_no_telemetry_allows_recent_ph_ec_grace():
+    now = utcnow()
+    mock_nodes = [
+        {
+            "id": 285,
+            "type": "ph",
+            "status": "online",
+            "last_telemetry": None,
+            "last_seen_at": now - timedelta(seconds=5),
+            "last_heartbeat_at": now - timedelta(seconds=5),
+        },
+        {
+            "id": 286,
+            "type": "ec",
+            "status": "online",
+            "last_telemetry": None,
+            "last_seen_at": now - timedelta(seconds=4),
+            "last_heartbeat_at": now - timedelta(seconds=4),
+        },
+    ]
+
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = mock_nodes
+
+        is_online, error_msg = await check_mcu_offline(
+            1,
+            telemetry_grace_sec=90,
+            grace_node_types=["ph", "ec"],
+        )
+
+        assert is_online is True
+        assert error_msg is None
+
+
+@pytest.mark.asyncio
+async def test_check_mcu_offline_no_telemetry_grace_expired():
+    now = utcnow()
+    mock_nodes = [
+        {
+            "id": 285,
+            "type": "ph",
+            "status": "online",
+            "last_telemetry": None,
+            "last_seen_at": now - timedelta(seconds=300),
+            "last_heartbeat_at": now - timedelta(seconds=300),
+        }
+    ]
+
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = mock_nodes
+
+        is_online, error_msg = await check_mcu_offline(
+            1,
+            telemetry_grace_sec=90,
+            grace_node_types=["ph", "ec"],
+        )
+
         assert is_online is False
         assert error_msg is not None
         assert "no telemetry" in error_msg.lower()
@@ -465,3 +582,29 @@ async def test_can_run_pump_mcu_offline():
         
         assert can_run is False
         assert "MCU offline" in error_msg
+
+
+@pytest.mark.asyncio
+async def test_can_run_pump_passes_telemetry_grace_params():
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+         patch("common.pump_safety.check_dry_run") as mock_dry_run, \
+         patch("common.pump_safety.too_many_recent_failures") as mock_failures:
+        mock_mcu.return_value = (True, None)
+        mock_get_alerts.return_value = []
+        mock_dry_run.return_value = (True, None)
+        mock_failures.return_value = False
+
+        can_run, error_msg = await can_run_pump(
+            1,
+            "pump_recirc",
+            telemetry_grace_sec=120,
+            grace_node_types=["ph", "ec"],
+        )
+
+        assert can_run is True
+        assert error_msg is None
+        args, kwargs = mock_mcu.call_args
+        assert args == (1, None)
+        assert kwargs["telemetry_grace_sec"] == 120
+        assert kwargs["grace_node_types"] == ["ph", "ec"]

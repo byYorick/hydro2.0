@@ -10,6 +10,21 @@ use Illuminate\Support\Facades\Log;
 
 class InternalRealtimeController extends Controller
 {
+    /**
+     * Принять batch telemetry updates от history-logger и транслировать в WebSocket.
+     *
+     * DUAL DISPATCH: History-logger накапливает телеметрию, сохраняет в PostgreSQL,
+     * и каждые ~100ms вызывает этот endpoint с пакетом обновлений.
+     *
+     * Тот же sample телеметрии может также прийти через
+     * POST /api/python/ingest/telemetry (PythonIngestController::telemetry),
+     * который диспатчит TelemetryBatchUpdated немедленно для минимальной задержки UI.
+     *
+     * Таким образом, один telemetry sample может прийти на фронт ДВАЖДЫ с разными event_id.
+     * Это не баг: frontend обрабатывает идемпотентно (последнее значение побеждает).
+     *
+     * Вызывается: history-logger через Bearer token (PY_API_TOKEN или LARAVEL_API_TOKEN).
+     */
     public function telemetryBatch(TelemetryBatchRequest $request): JsonResponse
     {
         $maxBytes = (int) config('realtime.telemetry_batch_max_bytes');

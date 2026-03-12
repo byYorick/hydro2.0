@@ -8,6 +8,61 @@ use Illuminate\Support\Facades\Http;
 
 class PipelineMetricsService
 {
+    private static function historyLoggerUrl(): string
+    {
+        return config('services.history_logger.url', 'http://history-logger:9300');
+    }
+
+    private static function postInternalMetric(string $path, array $payload, float $timeoutSeconds = 1.0): void
+    {
+        Http::timeout($timeoutSeconds)->post(self::historyLoggerUrl().$path, $payload);
+    }
+
+    private static function postInternalMetricAsync(string $path, array $payload, float $timeoutSeconds = 1.0): void
+    {
+        Http::async()->timeout($timeoutSeconds)->post(self::historyLoggerUrl().$path, $payload);
+    }
+
+    public static function trackWsBroadcast(string $eventType): void
+    {
+        if ($eventType === '') {
+            return;
+        }
+
+        try {
+            self::postInternalMetricAsync('/internal/metrics/ws-event', [
+                'event_type' => $eventType,
+                'count' => 1,
+            ], 0.2);
+        } catch (\Throwable $e) {
+            Log::debug('Failed to record ws broadcast metric', [
+                'event_type' => $eventType,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public static function trackWsAuth(string $channelType, string $result): void
+    {
+        if ($channelType === '' || $result === '') {
+            return;
+        }
+
+        try {
+            self::postInternalMetricAsync('/internal/metrics/ws-event', [
+                'channel_type' => $channelType,
+                'result' => $result,
+                'count' => 1,
+            ], 0.2);
+        } catch (\Throwable $e) {
+            Log::debug('Failed to record ws auth metric', [
+                'channel_type' => $channelType,
+                'result' => $result,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * Записывает метрики latency команды.
      * 
@@ -38,9 +93,6 @@ class PipelineMetricsService
                 $doneAt = $command->failed_at ?? now();
             }
             
-            // Отправляем метрики в history-logger
-            $historyLoggerUrl = config('services.history_logger.url', 'http://history-logger:9300');
-            
             $metrics = [];
             
             if ($acceptedAt) {
@@ -59,7 +111,7 @@ class PipelineMetricsService
             }
             
             if (!empty($metrics)) {
-                Http::timeout(1)->post("{$historyLoggerUrl}/internal/metrics/command-latency", [
+                self::postInternalMetric('/internal/metrics/command-latency', [
                     'cmd_id' => $command->cmd_id,
                     'metrics' => $metrics,
                 ]);
@@ -82,8 +134,6 @@ class PipelineMetricsService
         ?\DateTime $wsSentAt = null
     ): void {
         try {
-            $historyLoggerUrl = config('services.history_logger.url', 'http://history-logger:9300');
-            
             $metrics = [];
             
             if ($laravelReceivedAt) {
@@ -102,7 +152,7 @@ class PipelineMetricsService
             }
             
             if (!empty($metrics)) {
-                Http::timeout(1)->post("{$historyLoggerUrl}/internal/metrics/error-delivery-latency", [
+                self::postInternalMetric('/internal/metrics/error-delivery-latency', [
                     'metrics' => $metrics,
                 ]);
             }

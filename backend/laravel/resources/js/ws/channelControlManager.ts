@@ -11,6 +11,8 @@ import type {
 const COMMAND_STATUS_EVENT = '.App\\Events\\CommandStatusUpdated'
 const COMMAND_FAILED_EVENT = '.App\\Events\\CommandFailed'
 const GLOBAL_EVENT_CREATED = '.App\\Events\\EventCreated'
+const ZONE_UPDATED_EVENT = '.App\\Events\\ZoneUpdated'
+const ALERT_CREATED_EVENT = '.App\\Events\\AlertCreated'
 
 interface ChannelControlManagerDeps {
   isBrowser: () => boolean
@@ -20,6 +22,8 @@ interface ChannelControlManagerDeps {
   globalChannelRegistry: Map<string, GlobalChannelRegistry>
   onCommandEvent: (channelName: string, payload: WsEventPayload, isFailure: boolean) => void
   onGlobalEvent: (channelName: string, payload: WsEventPayload) => void
+  onZoneUpdateEvent: (channelName: string, payload: WsEventPayload) => void
+  onAlertEvent: (channelName: string, payload: WsEventPayload) => void
 }
 
 export function createChannelControlManager(deps: ChannelControlManagerDeps) {
@@ -108,10 +112,28 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
       return
     }
 
-    const eventHandler = (payload: WsEventPayload) => deps.onGlobalEvent(control.channelName, payload)
-    channel.listen(GLOBAL_EVENT_CREATED, eventHandler)
+    if (control.kind === 'globalEvents') {
+      const eventHandler = (payload: WsEventPayload) => deps.onGlobalEvent(control.channelName, payload)
+      channel.listen(GLOBAL_EVENT_CREATED, eventHandler)
+      control.listenerRefs = {
+        [GLOBAL_EVENT_CREATED]: eventHandler,
+      }
+      return
+    }
+
+    if (control.kind === 'zoneUpdates') {
+      const zoneUpdatedHandler = (payload: WsEventPayload) => deps.onZoneUpdateEvent(control.channelName, payload)
+      channel.listen(ZONE_UPDATED_EVENT, zoneUpdatedHandler)
+      control.listenerRefs = {
+        [ZONE_UPDATED_EVENT]: zoneUpdatedHandler,
+      }
+      return
+    }
+
+    const alertCreatedHandler = (payload: WsEventPayload) => deps.onAlertEvent(control.channelName, payload)
+    channel.listen(ALERT_CREATED_EVENT, alertCreatedHandler)
     control.listenerRefs = {
-      [GLOBAL_EVENT_CREATED]: eventHandler,
+      [ALERT_CREATED_EVENT]: alertCreatedHandler,
     }
   }
 

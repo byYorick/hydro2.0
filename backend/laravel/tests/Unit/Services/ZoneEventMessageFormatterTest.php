@@ -137,4 +137,177 @@ class ZoneEventMessageFormatterTest extends TestCase
             $message
         );
     }
+
+    public function test_format_water_level_low_contains_level_and_threshold(): void
+    {
+        $message = $this->formatter->format('WATER_LEVEL_LOW', [
+            'level' => 0.0,
+            'threshold' => 0.2,
+        ]);
+
+        $this->assertSame('Низкий уровень воды (уровень 0.0%, порог 20.0%)', $message);
+    }
+
+    public function test_format_alert_created_for_water_level_contains_context(): void
+    {
+        $message = $this->formatter->format('ALERT_CREATED', [
+            'alert_type' => 'WATER_LEVEL_LOW',
+            'level' => 0.1,
+            'threshold' => 0.2,
+        ]);
+
+        $this->assertSame('Создан алерт WATER_LEVEL_LOW (уровень 10.0%, порог 20.0%)', $message);
+    }
+
+    public function test_format_schedule_task_failed_contains_reason_and_identifiers(): void
+    {
+        $message = $this->formatter->format('SCHEDULE_TASK_FAILED', [
+            'task_type' => 'diagnostics',
+            'reason' => 'submit_failed',
+            'correlation_id' => 'ae:self:5:diagnostics:enq-123',
+        ]);
+
+        $this->assertSame(
+            'Scheduler: задача диагностики завершилась с ошибкой (причина: не удалось отправить задачу, корреляция: ae:self:5:diagnostics:enq-123)',
+            $message
+        );
+    }
+
+    public function test_format_self_task_dispatch_retry_scheduled_contains_retry_progress(): void
+    {
+        $message = $this->formatter->format('SELF_TASK_DISPATCH_RETRY_SCHEDULED', [
+            'task_type' => 'diagnostics',
+            'enqueue_id' => 'enq-e43ee29f9e59409299df78f65e8f9b1e',
+            'retry_count' => 2,
+            'max_attempts' => 3,
+            'next_retry_at' => '2026-02-17T07:59:06.869294',
+        ]);
+
+        $this->assertSame(
+            'Scheduler запланировал повторную отправку для внутренней задачи диагностики (enqueue_id: enq-e43ee29f9e59409299df78f65e8f9b1e, попытка 2/3, следующая попытка: 2026-02-17T07:59:06.869294)',
+            $message
+        );
+    }
+
+    public function test_format_relay_autotune_completed_alias_is_supported(): void
+    {
+        $message = $this->formatter->format('RELAY_AUTOTUNE_COMPLETED', [
+            'kp' => 6.7,
+            'ki' => 0.11,
+            'cycles_detected' => 3,
+        ]);
+
+        $this->assertSame('Автотюнинг завершён: Kp=6.700, Ki=0.1100 (3 циклов)', $message);
+    }
+
+    public function test_format_ec_dosing_with_full_payload(): void
+    {
+        $message = $this->formatter->format('EC_DOSING', [
+            'current_ec' => 1.2,
+            'target_ec' => 1.5,
+            'target_ec_min' => 1.4,
+            'target_ec_max' => 1.6,
+            'duration_ms' => 2500,
+            'channel' => 'ec_npk_pump',
+            'attempt' => 1,
+        ]);
+
+        $this->assertStringContainsString('EC', $message);
+        $this->assertStringContainsString('1.20 мС/см', $message);
+        $this->assertStringContainsString('1.40–1.60 мС/см', $message);
+        $this->assertStringContainsString('2500 мс', $message);
+        $this->assertStringContainsString('ec_npk_pump', $message);
+    }
+
+    public function test_format_ec_dosing_shows_target_range_over_single_target(): void
+    {
+        $message = $this->formatter->format('EC_DOSING', [
+            'target_ec' => 1.5,
+            'target_ec_min' => 1.4,
+            'target_ec_max' => 1.6,
+            'duration_ms' => 1000,
+        ]);
+
+        $this->assertStringContainsString('1.40–1.60 мС/см', $message);
+        $this->assertStringNotContainsString('цель 1.50', $message);
+    }
+
+    public function test_format_ec_dosing_fallback_single_target(): void
+    {
+        $message = $this->formatter->format('EC_DOSING', [
+            'target_ec' => 1.5,
+            'duration_ms' => 800,
+        ]);
+
+        $this->assertStringContainsString('1.50 мС/см', $message);
+    }
+
+    public function test_format_ec_dosing_minimal_payload(): void
+    {
+        $message = $this->formatter->format('EC_DOSING', []);
+
+        $this->assertStringContainsString('EC', $message);
+    }
+
+    public function test_format_ph_corrected_direction_up(): void
+    {
+        $message = $this->formatter->format('PH_CORRECTED', [
+            'current_ph' => 5.8,
+            'target_ph' => 6.2,
+            'target_ph_min' => 6.0,
+            'target_ph_max' => 6.5,
+            'duration_ms' => 1200,
+            'direction' => 'up',
+            'channel' => 'ph_base_pump',
+        ]);
+
+        $this->assertStringContainsString('вверх', $message);
+        $this->assertStringContainsString('5.80', $message);
+        $this->assertStringContainsString('6.00–6.50', $message);
+        $this->assertStringContainsString('1200 мс', $message);
+        $this->assertStringContainsString('ph_base_pump', $message);
+    }
+
+    public function test_format_ph_corrected_direction_down(): void
+    {
+        $message = $this->formatter->format('PH_CORRECTED', [
+            'current_ph' => 7.1,
+            'target_ph' => 6.2,
+            'duration_ms' => 900,
+            'direction' => 'down',
+        ]);
+
+        $this->assertStringContainsString('вниз', $message);
+        $this->assertStringContainsString('7.10', $message);
+        $this->assertStringContainsString('6.20', $message);
+    }
+
+    public function test_format_ph_corrected_shows_attempt_when_greater_than_one(): void
+    {
+        $message = $this->formatter->format('PH_CORRECTED', [
+            'direction' => 'up',
+            'duration_ms' => 500,
+            'attempt' => 3,
+        ]);
+
+        $this->assertStringContainsString('попытка 3', $message);
+    }
+
+    public function test_format_ph_corrected_hides_attempt_one(): void
+    {
+        $message = $this->formatter->format('PH_CORRECTED', [
+            'direction' => 'up',
+            'duration_ms' => 500,
+            'attempt' => 1,
+        ]);
+
+        $this->assertStringNotContainsString('попытка', $message);
+    }
+
+    public function test_format_ph_corrected_minimal_payload(): void
+    {
+        $message = $this->formatter->format('PH_CORRECTED', []);
+
+        $this->assertStringContainsString('pH', $message);
+    }
 }

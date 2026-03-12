@@ -3,17 +3,25 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use App\Services\AutomationRuntimeConfigService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote')->hourly();
 
 // Retention политики: очистка старых raw данных (ежедневно в 2:00)
+// ВНИМАНИЕ: Python telemetry-aggregator (сервис) также выполняет cleanup согласно
+// RETENTION_SAMPLES_DAYS=90. Текущий дефолт --days=30 здесь означает, что реальная
+// retention для telemetry_samples — 30 дней (более агрессивная политика побеждает).
+// Если нужно изменить, синхронизировать с RETENTION_SAMPLES_DAYS в docker-compose.
 Schedule::command('telemetry:cleanup-raw --days=30')
     ->dailyAt('02:00')
     ->description('Очистка старых raw данных телеметрии');
 
 // Агрегация данных: каждые 15 минут
+// ВНИМАНИЕ: Python telemetry-aggregator (сервис) выполняет ту же агрегацию в фоне.
+// Оба используют ON CONFLICT (1m - DO UPDATE SET, Laravel - DO NOTHING), данные не дублируются.
+// При наличии Python-сервиса эта команда избыточна, но безопасна.
 Schedule::command('telemetry:aggregate')
     ->everyFifteenMinutes()
     ->description('Агрегация телеметрии в таблицы 1m, 1h, daily');
@@ -67,3 +75,13 @@ Schedule::command('commands:process-timeouts')
 Schedule::command('alerts:dlq-replay --older-than-hours=24')
     ->dailyAt('04:00')
     ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');
+
+// MVP cutover: перенос внешнего scheduler-dispatch в Laravel.
+// Команда будит зону в automation-engine через /zones/{id}/start-cycle.
+// Включается feature-flag: AUTOMATION_LARAVEL_SCHEDULER_ENABLED=true.
+Schedule::command('automation:dispatch-schedules')
+    ->everyMinute()
+    ->withoutOverlapping(1)
+    ->onOneServer()
+    ->when(fn (): bool => app(AutomationRuntimeConfigService::class)->schedulerEnabled())
+    ->description('Laravel scheduler dispatcher: планирование и dispatch abstract задач в automation-engine');

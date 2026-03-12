@@ -36,8 +36,7 @@ class ZonePidConfigValidationTest extends TestCase
                 ],
                 'max_output' => 50.0,
                 'min_interval_ms' => 60000,
-                'enable_autotune' => false,
-                'adaptation_rate' => 0.05,
+                'max_integral' => 20.0,
             ],
         ]);
 
@@ -61,8 +60,7 @@ class ZonePidConfigValidationTest extends TestCase
                 ],
                 'max_output' => 50.0,
                 'min_interval_ms' => 60000,
-                'enable_autotune' => false,
-                'adaptation_rate' => 0.05,
+                'max_integral' => 20.0,
             ],
         ]);
 
@@ -70,7 +68,7 @@ class ZonePidConfigValidationTest extends TestCase
             ->assertJsonValidationErrors(['config.far_zone']);
     }
 
-    public function test_validates_enable_autotune_is_required(): void
+    public function test_validates_max_integral_is_required(): void
     {
         $zone = Zone::factory()->create();
 
@@ -86,38 +84,12 @@ class ZonePidConfigValidationTest extends TestCase
                 ],
                 'max_output' => 50.0,
                 'min_interval_ms' => 60000,
-                // enable_autotune отсутствует
-                'adaptation_rate' => 0.05,
+                // max_integral отсутствует
             ],
         ]);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['config.enable_autotune']);
-    }
-
-    public function test_validates_adaptation_rate_is_required(): void
-    {
-        $zone = Zone::factory()->create();
-
-        $response = $this->putJson("/api/zones/{$zone->id}/pid-configs/ph", [
-            'config' => [
-                'target' => 6.0,
-                'dead_zone' => 0.2,
-                'close_zone' => 0.5,
-                'far_zone' => 1.0,
-                'zone_coeffs' => [
-                    'close' => ['kp' => 10.0, 'ki' => 0.0, 'kd' => 0.0],
-                    'far' => ['kp' => 12.0, 'ki' => 0.0, 'kd' => 0.0],
-                ],
-                'max_output' => 50.0,
-                'min_interval_ms' => 60000,
-                'enable_autotune' => false,
-                // adaptation_rate отсутствует
-            ],
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['config.adaptation_rate']);
+            ->assertJsonValidationErrors(['config.max_integral']);
     }
 
     public function test_accepts_valid_zone_order(): void
@@ -136,8 +108,7 @@ class ZonePidConfigValidationTest extends TestCase
                 ],
                 'max_output' => 50.0,
                 'min_interval_ms' => 60000,
-                'enable_autotune' => false,
-                'adaptation_rate' => 0.05,
+                'max_integral' => 20.0,
             ],
         ]);
 

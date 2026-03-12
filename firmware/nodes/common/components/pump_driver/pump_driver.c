@@ -123,6 +123,7 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     }
     
     // Инициализация GPIO для каналов без реле
+    bool used_gpio[GPIO_NUM_MAX] = {0};
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_OUTPUT,
@@ -134,7 +135,23 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     // Собираем маску GPIO пинов для прямого управления
     for (size_t i = 0; i < channel_count; i++) {
         if (!channels[i].use_relay) {
-            io_conf.pin_bit_mask |= (1ULL << channels[i].gpio_pin);
+            int gpio_pin = channels[i].gpio_pin;
+            if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX || !GPIO_IS_VALID_OUTPUT_GPIO(gpio_pin)) {
+                ESP_LOGE(TAG, "Invalid GPIO for pump channel '%s': %d",
+                         channels[i].channel_name ? channels[i].channel_name : "unknown",
+                         gpio_pin);
+                vSemaphoreDelete(s_mutex);
+                s_mutex = NULL;
+                return ESP_ERR_INVALID_ARG;
+            }
+            if (used_gpio[gpio_pin]) {
+                ESP_LOGE(TAG, "Duplicate GPIO for pump channels: GPIO=%d", gpio_pin);
+                vSemaphoreDelete(s_mutex);
+                s_mutex = NULL;
+                return ESP_ERR_INVALID_ARG;
+            }
+            used_gpio[gpio_pin] = true;
+            io_conf.pin_bit_mask |= (1ULL << gpio_pin);
         }
     }
     
@@ -261,6 +278,7 @@ esp_err_t pump_driver_init_from_config(void) {
     }
     
     pump_channel_config_t pump_configs[PUMP_DRIVER_MAX_CHANNELS];
+    bool used_gpio[GPIO_NUM_MAX] = {0};
     // Статические буферы для имен каналов (чтобы пережить удаление JSON)
     static char channel_name_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
     size_t pump_count = 0;
@@ -301,8 +319,18 @@ esp_err_t pump_driver_init_from_config(void) {
                         strncpy(channel_name_buffers[pump_count], name_item->valuestring, 
                                 sizeof(channel_name_buffers[pump_count]) - 1);
                         channel_name_buffers[pump_count][sizeof(channel_name_buffers[pump_count]) - 1] = '\0';
+                        int gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
+                        if (gpio_pin < 0 || gpio_pin >= GPIO_NUM_MAX || !GPIO_IS_VALID_OUTPUT_GPIO(gpio_pin)) {
+                            ESP_LOGW(TAG, "Skip channel '%s': invalid GPIO=%d", name_item->valuestring, gpio_pin);
+                            continue;
+                        }
+                        if (used_gpio[gpio_pin]) {
+                            ESP_LOGW(TAG, "Skip channel '%s': duplicate GPIO=%d", name_item->valuestring, gpio_pin);
+                            continue;
+                        }
+
                         pump_cfg->channel_name = channel_name_buffers[pump_count];
-                        pump_cfg->gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
+                        pump_cfg->gpio_pin = gpio_pin;
                         pump_cfg->use_relay = false; // По умолчанию прямое управление через GPIO
                         pump_cfg->relay_channel = NULL;
                         pump_cfg->ml_per_second = 2.0f; // Значение по умолчанию
@@ -345,6 +373,7 @@ esp_err_t pump_driver_init_from_config(void) {
                             pump_cfg->max_duration_ms = (uint32_t)cJSON_GetNumberValue(max_duration_override);
                         }
 
+                        used_gpio[gpio_pin] = true;
                         pump_count++;
                     }
                 }

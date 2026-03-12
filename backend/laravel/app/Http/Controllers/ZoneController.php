@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Helpers\ZoneAccessHelper;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
 use App\Services\ZoneDataService;
@@ -181,9 +183,24 @@ class ZoneController extends Controller
             'preset_id' => ['nullable', 'integer', 'exists:presets,id'],
             'settings' => ['nullable', 'array'],
             'status' => ['sometimes', 'string', 'in:online,offline,warning'],
+            'automation_runtime' => ['sometimes', 'string', 'in:ae3'],
         ]);
 
-        $zone = $this->zoneService->update($zone, $data);
+        try {
+            $zone = $this->zoneService->update($zone, $data);
+        } catch (ZoneRuntimeSwitchDeniedException $e) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'runtime_switch_denied_zone_busy',
+                'message' => $e->getMessage(),
+                'details' => $e->details(),
+            ], Response::HTTP_CONFLICT);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         return response()->json([
             'status' => 'ok',
@@ -355,6 +372,21 @@ class ZoneController extends Controller
             'ec_after_ms' => ['nullable', 'numeric', 'min:0', 'max:20'],
             'temperature_c' => ['nullable', 'numeric', 'min:0', 'max:50'],
         ]);
+
+        $channelBelongsToZone = NodeChannel::query()
+            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
+            ->where('node_channels.id', (int) $data['node_channel_id'])
+            ->where('nodes.zone_id', $zone->id)
+            ->exists();
+        if (! $channelBelongsToZone) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'node_channel_id must belong to the selected zone',
+                'errors' => [
+                    'node_channel_id' => ['node_channel_id must belong to the selected zone'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         if (
             isset($data['ec_before_ms'], $data['ec_after_ms'])

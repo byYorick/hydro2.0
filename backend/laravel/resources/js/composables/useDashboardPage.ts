@@ -4,7 +4,8 @@ import { useDashboardRealtimeFeed } from "@/composables/useDashboardRealtimeFeed
 import { useTheme } from "@/composables/useTheme";
 import { useToast } from "@/composables/useToast";
 import { logger } from "@/utils/logger";
-import type { Alert, Greenhouse, Zone } from "@/types";
+import type { Alert, Device, Greenhouse, Zone } from "@/types";
+import type { Recipe } from "@/types/Recipe";
 
 export type QuickAction = "PAUSE" | "RESUME" | "FORCE_IRRIGATION";
 export type TelemetryPeriod = "1h" | "24h" | "7d";
@@ -14,16 +15,43 @@ export type TelemetryZone = Pick<Zone, "id" | "name" | "status"> & {
 };
 
 export interface DashboardData {
+  // Счётчики (общие)
   greenhousesCount: number;
   zonesCount: number;
   devicesCount: number;
   alertsCount: number;
+  // Статусы
   zonesByStatus?: Record<string, number>;
   nodesByStatus?: Record<string, number>;
+  // Объекты (общие)
   greenhouses?: Greenhouse[];
   problematicZones?: Zone[];
-  zones?: TelemetryZone[];
+  zones?: Zone[];
   latestAlerts?: Alert[];
+  activeAlerts?: Alert[];
+  // AgronomistDashboard
+  recipes?: Recipe[];
+  // AdminDashboard
+  activeUsersCount?: number;
+  recentUserActions?: Array<{
+    id: number;
+    userName: string;
+    description: string;
+    timestamp: string;
+  }>;
+  // EngineerDashboard
+  devices?: Array<Device & {
+    rssi?: number | null;
+    firmwareVersion?: string;
+    lastSeen?: string;
+    issues?: string[];
+  }>;
+  systemMetrics?: {
+    cpu?: number;
+    memory?: number;
+    dbStatus?: 'OK' | 'FAIL';
+    mqttStatus?: 'OK' | 'FAIL';
+  };
 }
 
 const TELEMETRY_ZONE_STORAGE_KEY = "dashboard.telemetry.zone";
@@ -52,7 +80,7 @@ export function useDashboardPage({ dashboard }: UseDashboardPageOptions): {
   telemetryPeriodLabel: ComputedRef<string>;
   hasZonesForTelemetry: ComputedRef<boolean>;
   isQuickActionLoading: (zoneId: number, action?: QuickAction) => boolean;
-  eventFilter: Ref<"ALL" | "ALERT" | "WARNING" | "INFO" | "SUCCESS">;
+  eventFilter: Ref<"ALL" | "ALERT" | "WARNING" | "INFO" | "ACTION" | "SUCCESS">;
   filteredEvents: Ref<Array<{ id: number; kind: string; message: string; occurred_at?: string; created_at?: string; zone_id?: number }>>;
   telemetryMetrics: Ref<Array<{ key: string; label: string; data: Array<{ ts: number; value?: number | null; avg?: number | null; min?: number | null; max?: number | null }>; currentValue?: number; unit: string; loading: boolean; color: string }>>;
   handleOpenDetail: (zoneId: number, metric: string) => void;

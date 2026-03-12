@@ -5,6 +5,7 @@ namespace Tests;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase as BaseRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Throwable;
 
 trait RefreshDatabase
@@ -17,6 +18,8 @@ trait RefreshDatabase
 
     protected function migrateDatabases(): void
     {
+        $this->assertSafeTestingDatabase();
+
         $attempt = 0;
 
         while (true) {
@@ -36,6 +39,24 @@ trait RefreshDatabase
                 DB::reconnect();
                 usleep($attempt * 250_000);
             }
+        }
+    }
+
+    protected function assertSafeTestingDatabase(): void
+    {
+        $connection = DB::connection();
+        $databaseName = (string) ($connection->getDatabaseName() ?? '');
+        $environment = (string) app()->environment();
+
+        $dangerousDatabases = ['hydro_dev', 'hydro', 'postgres'];
+        $safeEnvironments = ['testing', 'e2e'];
+
+        if (! in_array($environment, $safeEnvironments, true) || in_array($databaseName, $dangerousDatabases, true)) {
+            throw new RuntimeException(sprintf(
+                'Unsafe test database detected. APP_ENV=%s, DB=%s. Tests must run with APP_ENV=testing/e2e and isolated test DB.',
+                $environment !== '' ? $environment : 'unknown',
+                $databaseName !== '' ? $databaseName : 'unknown'
+            ));
         }
     }
 

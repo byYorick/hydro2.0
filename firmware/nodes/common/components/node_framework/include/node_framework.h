@@ -8,7 +8,7 @@
  * - Публикации телеметрии
  * - Управления состоянием ноды
  * 
- * Это устраняет дублирование кода между разными нодами (ph_node, ec_node, climate_node, pump_node).
+ * Это устраняет дублирование кода между разными нодами (ph_node, ec_node, climate_node, storage_irrigation_node).
  */
 
 #ifndef NODE_FRAMEWORK_H

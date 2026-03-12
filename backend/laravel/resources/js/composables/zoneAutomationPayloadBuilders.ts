@@ -1,6 +1,12 @@
 import { clamp, syncSystemToTankLayout } from './zoneAutomationTargetsParser'
 import type { ZoneAutomationForms } from './zoneAutomationTypes'
 
+function isValidTimeHHMM(value: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false
+  const [h, m] = value.split(':').map(Number)
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59
+}
+
 function normalizeNumber(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value
@@ -12,6 +18,77 @@ function normalizeNumber(value: unknown, fallback: number): number {
 function round(value: number, digits: number): number {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
+}
+
+type RelayCommand = {
+  channel: string
+  cmd: 'set_relay'
+  params: { state: boolean }
+}
+
+const TWO_TANK_COMMAND_TEMPLATES: Record<string, RelayCommand[]> = {
+  clean_fill_start: [{ channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: true } }],
+  clean_fill_stop: [{ channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: false } }],
+  solution_fill_start: [
+    { channel: 'valve_clean_supply', cmd: 'set_relay', params: { state: true } },
+    { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: true } },
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
+  ],
+  solution_fill_stop: [
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_clean_supply', cmd: 'set_relay', params: { state: false } },
+  ],
+  prepare_recirculation_start: [
+    { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: true } },
+    { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: true } },
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
+  ],
+  prepare_recirculation_stop: [
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: false } },
+  ],
+  irrigation_recovery_start: [
+    { channel: 'valve_irrigation', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: true } },
+    { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: true } },
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
+  ],
+  irrigation_recovery_stop: [
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: false } },
+  ],
+}
+
+function normalizeStepCount(value: unknown, fallback: number): number {
+  return clamp(Math.round(normalizeNumber(value, fallback)), 1, 12)
+}
+
+function cloneRelayCommand(command: RelayCommand): RelayCommand {
+  return {
+    channel: command.channel,
+    cmd: command.cmd,
+    params: {
+      state: command.params.state,
+    },
+  }
+}
+
+function resizeCommandSteps(steps: RelayCommand[], requestedCount: number): RelayCommand[] {
+  const normalizedCount = clamp(requestedCount, 1, 12)
+  const base = steps.map(cloneRelayCommand)
+  if (normalizedCount <= base.length) {
+    return base.slice(0, normalizedCount)
+  }
+
+  const tail = base[base.length - 1]
+  while (base.length < normalizedCount) {
+    base.push(cloneRelayCommand(tail))
+  }
+
+  return base
 }
 
 export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | 'waterForm'>): string | null {
@@ -30,6 +107,10 @@ export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | '
 
   if (waterForm.cleanTankFullThreshold <= 0 || waterForm.cleanTankFullThreshold > 1) {
     return 'Порог полного бака должен быть в диапазоне (0;1].'
+  }
+
+  if (!isValidTimeHHMM(waterForm.fillWindowStart) || !isValidTimeHHMM(waterForm.fillWindowEnd)) {
+    return 'Укажите корректное время окна заполнения (формат HH:MM, 00:00–23:59).'
   }
 
   return null
@@ -53,11 +134,127 @@ export function buildGrowthCycleConfigPayload(
   const solutionChangeDurationSec = clamp(Math.round(waterForm.solutionChangeDurationSeconds), 1, 86400)
   const cleanTankFullThreshold = round(clamp(waterForm.cleanTankFullThreshold, 0.05, 1), 3)
   const isTwoTankTopology = waterForm.tanksCount === 2
-  const diagnosticsWorkflow = waterForm.cycleStartWorkflowEnabled
+  const derivedDiagnosticsWorkflow = waterForm.cycleStartWorkflowEnabled
     ? (isTwoTankTopology ? 'startup' : 'cycle_start')
     : 'diagnostics'
+  const diagnosticsWorkflowCandidate = typeof waterForm.diagnosticsWorkflow === 'string'
+    ? waterForm.diagnosticsWorkflow
+    : derivedDiagnosticsWorkflow
+  const diagnosticsWorkflow =
+    diagnosticsWorkflowCandidate === 'startup' ||
+    diagnosticsWorkflowCandidate === 'cycle_start' ||
+    diagnosticsWorkflowCandidate === 'diagnostics'
+      ? diagnosticsWorkflowCandidate
+      : derivedDiagnosticsWorkflow
+  const normalizedDiagnosticsWorkflow =
+    isTwoTankTopology && diagnosticsWorkflow === 'cycle_start'
+      ? 'startup'
+      : !isTwoTankTopology && diagnosticsWorkflow === 'startup'
+        ? 'cycle_start'
+        : diagnosticsWorkflow
   const refillDurationSec = clamp(Math.round(waterForm.refillDurationSeconds), 1, 3600)
   const refillTimeoutSec = clamp(Math.round(waterForm.refillTimeoutSeconds), 30, 86400)
+  const startupCleanFillTimeoutSec = clamp(
+    Math.round(normalizeNumber(waterForm.startupCleanFillTimeoutSeconds, refillTimeoutSec)),
+    30,
+    86400
+  )
+  const startupSolutionFillTimeoutSec = clamp(
+    Math.round(normalizeNumber(waterForm.startupSolutionFillTimeoutSeconds, startupCleanFillTimeoutSec * 1.5)),
+    30,
+    86400
+  )
+  const startupPrepareRecirculationTimeoutSec = clamp(
+    Math.round(normalizeNumber(waterForm.startupPrepareRecirculationTimeoutSeconds, refillTimeoutSec)),
+    30,
+    86400
+  )
+  const startupCleanFillRetryCycles = clamp(
+    Math.round(normalizeNumber(waterForm.startupCleanFillRetryCycles, 1)),
+    0,
+    20
+  )
+  const prepareToleranceEcPct = round(clamp(normalizeNumber(waterForm.prepareToleranceEcPct, 25), 0.1, 100), 1)
+  const prepareTolerancePhPct = round(clamp(normalizeNumber(waterForm.prepareTolerancePhPct, 15), 0.1, 100), 1)
+  const irrigationRecoveryMaxContinueAttempts = clamp(
+    Math.round(normalizeNumber(waterForm.irrigationRecoveryMaxContinueAttempts, 5)),
+    1,
+    30
+  )
+  const irrigationRecoveryTimeoutSec = clamp(
+    Math.round(normalizeNumber(waterForm.irrigationRecoveryTimeoutSeconds, 600)),
+    30,
+    86400
+  )
+  const correctionMaxEcCorrectionAttempts = clamp(
+    Math.round(normalizeNumber(waterForm.correctionMaxEcCorrectionAttempts, 5)),
+    1,
+    50
+  )
+  const correctionMaxPhCorrectionAttempts = clamp(
+    Math.round(normalizeNumber(waterForm.correctionMaxPhCorrectionAttempts, 5)),
+    1,
+    50
+  )
+  const correctionPrepareRecirculationMaxAttempts = clamp(
+    Math.round(normalizeNumber(waterForm.correctionPrepareRecirculationMaxAttempts, 3)),
+    1,
+    50
+  )
+  const correctionPrepareRecirculationMaxCorrectionAttempts = clamp(
+    Math.round(normalizeNumber(waterForm.correctionPrepareRecirculationMaxCorrectionAttempts, 32767)),
+    1,
+    100000
+  )
+  const correctionEcMixWaitSec = clamp(
+    Math.round(normalizeNumber(waterForm.correctionEcMixWaitSec, 120)),
+    10,
+    3600
+  )
+  const correctionPhMixWaitSec = clamp(
+    Math.round(normalizeNumber(waterForm.correctionPhMixWaitSec, 60)),
+    10,
+    3600
+  )
+  const correctionStabilizationSec = clamp(
+    Math.round(normalizeNumber(waterForm.correctionStabilizationSec, 60)),
+    0,
+    3600
+  )
+  const twoTankCommandSteps = {
+    clean_fill_start: normalizeStepCount(
+      waterForm.twoTankCleanFillStartSteps,
+      TWO_TANK_COMMAND_TEMPLATES.clean_fill_start.length
+    ),
+    clean_fill_stop: normalizeStepCount(
+      waterForm.twoTankCleanFillStopSteps,
+      TWO_TANK_COMMAND_TEMPLATES.clean_fill_stop.length
+    ),
+    solution_fill_start: normalizeStepCount(
+      waterForm.twoTankSolutionFillStartSteps,
+      TWO_TANK_COMMAND_TEMPLATES.solution_fill_start.length
+    ),
+    solution_fill_stop: normalizeStepCount(
+      waterForm.twoTankSolutionFillStopSteps,
+      TWO_TANK_COMMAND_TEMPLATES.solution_fill_stop.length
+    ),
+    prepare_recirculation_start: normalizeStepCount(
+      waterForm.twoTankPrepareRecirculationStartSteps,
+      TWO_TANK_COMMAND_TEMPLATES.prepare_recirculation_start.length
+    ),
+    prepare_recirculation_stop: normalizeStepCount(
+      waterForm.twoTankPrepareRecirculationStopSteps,
+      TWO_TANK_COMMAND_TEMPLATES.prepare_recirculation_stop.length
+    ),
+    irrigation_recovery_start: normalizeStepCount(
+      waterForm.twoTankIrrigationRecoveryStartSteps,
+      TWO_TANK_COMMAND_TEMPLATES.irrigation_recovery_start.length
+    ),
+    irrigation_recovery_stop: normalizeStepCount(
+      waterForm.twoTankIrrigationRecoveryStopSteps,
+      TWO_TANK_COMMAND_TEMPLATES.irrigation_recovery_stop.length
+    ),
+  }
 
   const requiredNodeTypes = waterForm.refillRequiredNodeTypes
     .split(',')
@@ -66,7 +263,7 @@ export function buildGrowthCycleConfigPayload(
   const refillPreferredChannel = waterForm.refillPreferredChannel.trim()
 
   const diagnosticsExecution: Record<string, unknown> = {
-    workflow: diagnosticsWorkflow,
+    workflow: normalizedDiagnosticsWorkflow,
     clean_tank_full_threshold: cleanTankFullThreshold,
     required_node_types: requiredNodeTypes,
     refill_duration_sec: refillDurationSec,
@@ -81,11 +278,11 @@ export function buildGrowthCycleConfigPayload(
     diagnosticsExecution.topology = 'two_tank_drip_substrate_trays'
     diagnosticsExecution.startup = {
       required_node_types: requiredNodeTypes.length > 0 ? requiredNodeTypes : ['irrig'],
-      clean_fill_timeout_sec: refillTimeoutSec,
-      solution_fill_timeout_sec: clamp(Math.round(refillTimeoutSec * 1.5), 30, 86400),
-      prepare_recirculation_timeout_sec: refillTimeoutSec,
+      clean_fill_timeout_sec: startupCleanFillTimeoutSec,
+      solution_fill_timeout_sec: startupSolutionFillTimeoutSec,
+      prepare_recirculation_timeout_sec: startupPrepareRecirculationTimeoutSec,
       level_poll_interval_sec: 60,
-      clean_fill_retry_cycles: 1,
+      clean_fill_retry_cycles: startupCleanFillRetryCycles,
       level_switch_on_threshold: 0.5,
       clean_max_sensor_labels: ['level_clean_max'],
       solution_max_sensor_labels: ['level_solution_max'],
@@ -93,12 +290,21 @@ export function buildGrowthCycleConfigPayload(
     diagnosticsExecution.target_ph = round(phTarget, 2)
     diagnosticsExecution.target_ec = round(ecTarget, 2)
     diagnosticsExecution.prepare_tolerance = {
-      ec_pct: 25,
-      ph_pct: 15,
+      ec_pct: prepareToleranceEcPct,
+      ph_pct: prepareTolerancePhPct,
+    }
+    diagnosticsExecution.correction = {
+      max_ec_correction_attempts: correctionMaxEcCorrectionAttempts,
+      max_ph_correction_attempts: correctionMaxPhCorrectionAttempts,
+      prepare_recirculation_max_attempts: correctionPrepareRecirculationMaxAttempts,
+      prepare_recirculation_max_correction_attempts: correctionPrepareRecirculationMaxCorrectionAttempts,
+      ec_mix_wait_sec: correctionEcMixWaitSec,
+      ph_mix_wait_sec: correctionPhMixWaitSec,
+      stabilization_sec: correctionStabilizationSec,
     }
     diagnosticsExecution.irrigation_recovery = {
-      max_continue_attempts: 5,
-      timeout_sec: 600,
+      max_continue_attempts: irrigationRecoveryMaxContinueAttempts,
+      timeout_sec: irrigationRecoveryTimeoutSec,
       target_tolerance: {
         ec_pct: 10,
         ph_pct: 5,
@@ -109,39 +315,26 @@ export function buildGrowthCycleConfigPayload(
       },
     }
     diagnosticsExecution.two_tank_commands = {
-      clean_fill_start: [{ channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: true } }],
-      clean_fill_stop: [{ channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: false } }],
-      solution_fill_start: [
-        { channel: 'valve_clean_supply', cmd: 'set_relay', params: { state: true } },
-        { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: true } },
-        { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
-      ],
-      solution_fill_stop: [
-        { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_clean_supply', cmd: 'set_relay', params: { state: false } },
-      ],
-      prepare_recirculation_start: [
-        { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: true } },
-        { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: true } },
-        { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
-      ],
-      prepare_recirculation_stop: [
-        { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: false } },
-      ],
-      irrigation_recovery_start: [
-        { channel: 'valve_irrigation', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: true } },
-        { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: true } },
-        { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
-      ],
-      irrigation_recovery_stop: [
-        { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
-        { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: false } },
-      ],
+      clean_fill_start: resizeCommandSteps(TWO_TANK_COMMAND_TEMPLATES.clean_fill_start, twoTankCommandSteps.clean_fill_start),
+      clean_fill_stop: resizeCommandSteps(TWO_TANK_COMMAND_TEMPLATES.clean_fill_stop, twoTankCommandSteps.clean_fill_stop),
+      solution_fill_start: resizeCommandSteps(TWO_TANK_COMMAND_TEMPLATES.solution_fill_start, twoTankCommandSteps.solution_fill_start),
+      solution_fill_stop: resizeCommandSteps(TWO_TANK_COMMAND_TEMPLATES.solution_fill_stop, twoTankCommandSteps.solution_fill_stop),
+      prepare_recirculation_start: resizeCommandSteps(
+        TWO_TANK_COMMAND_TEMPLATES.prepare_recirculation_start,
+        twoTankCommandSteps.prepare_recirculation_start
+      ),
+      prepare_recirculation_stop: resizeCommandSteps(
+        TWO_TANK_COMMAND_TEMPLATES.prepare_recirculation_stop,
+        twoTankCommandSteps.prepare_recirculation_stop
+      ),
+      irrigation_recovery_start: resizeCommandSteps(
+        TWO_TANK_COMMAND_TEMPLATES.irrigation_recovery_start,
+        twoTankCommandSteps.irrigation_recovery_start
+      ),
+      irrigation_recovery_stop: resizeCommandSteps(
+        TWO_TANK_COMMAND_TEMPLATES.irrigation_recovery_stop,
+        twoTankCommandSteps.irrigation_recovery_stop
+      ),
     }
   } else if (waterForm.tanksCount === 3) {
     diagnosticsExecution.topology = 'three_tank_drip_substrate_trays'
@@ -267,16 +460,8 @@ export function buildGrowthCycleConfigPayload(
         enabled: waterForm.diagnosticsEnabled,
         execution: {
           interval_sec: diagnosticsIntervalSec,
-          workflow: diagnosticsWorkflow,
-          clean_tank_full_threshold: cleanTankFullThreshold,
-          required_node_types: requiredNodeTypes,
-          refill_duration_sec: refillDurationSec,
-          refill_timeout_sec: refillTimeoutSec,
-          refill: {
-            duration_sec: refillDurationSec,
-            timeout_sec: refillTimeoutSec,
-            ...(refillPreferredChannel ? { channel: refillPreferredChannel } : {}),
-          },
+          // Все остальные поля берутся из diagnosticsExecution: workflow, clean_tank_full_threshold,
+          // required_node_types, refill_*, topology, startup, two_tank_commands (для 2-tank)
           ...diagnosticsExecution,
         },
       },
@@ -322,6 +507,8 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   waterForm.fillWindowEnd = '07:00'
   waterForm.targetPh = 5.8
   waterForm.targetEc = 1.6
+  waterForm.phPct = 5
+  waterForm.ecPct = 10
   waterForm.valveSwitching = true
   waterForm.correctionDuringIrrigation = true
   waterForm.enableDrainControl = false
@@ -329,9 +516,33 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   waterForm.diagnosticsEnabled = true
   waterForm.diagnosticsIntervalMinutes = 15
   waterForm.cycleStartWorkflowEnabled = true
+  waterForm.diagnosticsWorkflow = 'startup'
   waterForm.cleanTankFullThreshold = 0.95
   waterForm.refillDurationSeconds = 30
   waterForm.refillTimeoutSeconds = 600
+  waterForm.startupCleanFillTimeoutSeconds = 900
+  waterForm.startupSolutionFillTimeoutSeconds = 1350
+  waterForm.startupPrepareRecirculationTimeoutSeconds = 900
+  waterForm.startupCleanFillRetryCycles = 1
+  waterForm.irrigationRecoveryMaxContinueAttempts = 5
+  waterForm.irrigationRecoveryTimeoutSeconds = 600
+  waterForm.prepareToleranceEcPct = 25
+  waterForm.prepareTolerancePhPct = 15
+  waterForm.correctionMaxEcCorrectionAttempts = 5
+  waterForm.correctionMaxPhCorrectionAttempts = 5
+  waterForm.correctionPrepareRecirculationMaxAttempts = 3
+  waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = 32767
+  waterForm.correctionEcMixWaitSec = 120
+  waterForm.correctionPhMixWaitSec = 60
+  waterForm.correctionStabilizationSec = 60
+  waterForm.twoTankCleanFillStartSteps = 1
+  waterForm.twoTankCleanFillStopSteps = 1
+  waterForm.twoTankSolutionFillStartSteps = 3
+  waterForm.twoTankSolutionFillStopSteps = 3
+  waterForm.twoTankPrepareRecirculationStartSteps = 3
+  waterForm.twoTankPrepareRecirculationStopSteps = 3
+  waterForm.twoTankIrrigationRecoveryStartSteps = 4
+  waterForm.twoTankIrrigationRecoveryStopSteps = 3
   waterForm.refillRequiredNodeTypes = 'irrig'
   waterForm.refillPreferredChannel = 'fill_valve'
   waterForm.solutionChangeEnabled = false

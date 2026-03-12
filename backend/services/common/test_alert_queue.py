@@ -139,6 +139,28 @@ async def test_send_alert_to_laravel_retry_mode_does_not_enqueue_on_failure():
 
 
 @pytest.mark.asyncio
+async def test_send_alert_to_laravel_normalizes_pending_status_to_active():
+    """Queue-only statuses must be normalized to Laravel ingest contract."""
+    settings = type("S", (), {"laravel_api_url": "http://laravel", "history_logger_api_token": None, "ingest_token": None})()
+
+    with patch("common.alert_queue.get_settings", return_value=settings), \
+         patch("common.alert_queue.make_request", new=AsyncMock(return_value=_ResponseStub(200, "ok"))) as mock_request:
+        ok = await send_alert_to_laravel(
+            zone_id=1,
+            source="infra",
+            code="infra_test",
+            type="Infrastructure Error",
+            status="pending",
+            details={"message": "test"},
+            enqueue_on_failure=False,
+        )
+
+    assert ok is True
+    assert mock_request.await_count == 1
+    assert mock_request.await_args.kwargs["json"]["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
 async def test_retry_worker_passes_enqueue_on_failure_false():
     shutdown_event = asyncio.Event()
     queue = AsyncMock()
@@ -228,6 +250,42 @@ async def test_ensure_table_fails_when_required_columns_missing():
             await queue.ensure_table()
 
     assert queue._schema_error is not None
+
+
+@pytest.mark.asyncio
+async def test_ensure_table_revalidates_after_schema_error_backoff():
+    queue = AlertQueue()
+    queue._schema_retry_interval_sec = 5.0
+
+    bad_schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS - {"next_retry_at"}),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+    good_schema_conn = _SchemaConnStub(
+        {
+            "pending_alerts": sorted(_PENDING_ALERTS_REQUIRED_COLUMNS),
+            "pending_alerts_dlq": sorted(_PENDING_ALERTS_DLQ_REQUIRED_COLUMNS),
+        }
+    )
+    pool_mock = AsyncMock(
+        side_effect=[_PoolStub(bad_schema_conn), _PoolStub(good_schema_conn)]
+    )
+
+    with patch("common.alert_queue.get_pool", new=pool_mock), patch(
+        "common.alert_queue.time.monotonic",
+        side_effect=[100.0, 105.0, 106.0, 111.0],
+    ):
+        with pytest.raises(RuntimeError, match="pending_alerts"):
+            await queue.ensure_table()
+        with pytest.raises(RuntimeError, match="pending_alerts"):
+            await queue.ensure_table()
+        await queue.ensure_table()
+
+    assert pool_mock.await_count == 2
+    assert queue._initialized is True
+    assert queue._schema_error is None
 
 
 @pytest.mark.asyncio

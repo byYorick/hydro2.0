@@ -62,6 +62,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class _DotDict(dict):
+    """Dictionary wrapper with attribute access used in condition eval."""
+
+    def __getattr__(self, key):
+        return self.get(key)
+
+
+class _ConditionEvalContext(dict):
+    """Eval context that returns None for unknown variables."""
+
+    def __missing__(self, key):
+        return None
+
+
 class E2ERunner:
     """Раннер для выполнения E2E тестов из YAML сценариев."""
     
@@ -76,6 +90,22 @@ class E2ERunner:
         
         # Конфигурация из переменных окружения или значений по умолчанию
         self.api_url = config.get("api_url") or os.getenv("LARAVEL_URL", "http://localhost:8081")
+        self.automation_engine_url = (
+            config.get("automation_engine_url")
+            or os.getenv("AUTOMATION_ENGINE_URL", "http://localhost:9505")
+        )
+        parsed_automation_engine = urlparse(self.automation_engine_url)
+        self.automation_engine_host = (
+            config.get("automation_engine_host")
+            or os.getenv("AUTOMATION_ENGINE_HOST")
+            or parsed_automation_engine.hostname
+            or "localhost"
+        )
+        self.automation_engine_port = (
+            config.get("automation_engine_api_port")
+            or os.getenv("AUTOMATION_ENGINE_API_PORT")
+            or str(parsed_automation_engine.port or 9505)
+        )
         
         # Инициализируем AuthClient (singleton)
         auth_email = config.get("auth_email", "e2e@test.local")
@@ -121,8 +151,25 @@ class E2ERunner:
         self.mqtt_executor: Optional[MQTTStepExecutor] = None
         self.waiting_executor: Optional[WaitingStepExecutor] = None
 
-        # Контекст для хранения переменных между шагами
-        self.context: Dict[str, Any] = {}
+        # Контекст для хранения переменных между шагами.
+        # TEST_NODE_* задаются сразу, чтобы сценарии могли подхватывать real-hardware UID.
+        default_test_node_uid = os.getenv("TEST_NODE_UID", "auto")
+        real_hw_flag = "1" if os.getenv("E2E_REAL_HARDWARE", "0") == "1" else "0"
+        self.context: Dict[str, Any] = {
+            "TEST_NODE_GH_UID": os.getenv("TEST_NODE_GH_UID", "gh-test-1"),
+            "TEST_NODE_ZONE_UID": os.getenv("TEST_NODE_ZONE_UID", "zn-test-1"),
+            "TEST_NODE_UID": default_test_node_uid,
+            "TEST_PH_NODE_UID": os.getenv("TEST_PH_NODE_UID", default_test_node_uid),
+            "TEST_EC_NODE_UID": os.getenv("TEST_EC_NODE_UID", default_test_node_uid),
+            "TEST_WORKFLOW_NODE_UID": os.getenv("TEST_WORKFLOW_NODE_UID", "auto"),
+            "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "auto"),
+            "E2E_REAL_HARDWARE": real_hw_flag,
+            "LARAVEL_URL": self.api_url,
+            "WS_URL": self.ws_url,
+            "AUTOMATION_ENGINE_URL": self.automation_engine_url,
+            "AUTOMATION_ENGINE_HOST": self.automation_engine_host,
+            "AUTOMATION_ENGINE_API_PORT": str(self.automation_engine_port),
+        }
         
         # Путь к docker-compose файлу для fault injection
         self.compose_file = config.get("compose_file") or os.getenv(
@@ -134,6 +181,140 @@ class E2ERunner:
         self._stopped_services: List[str] = []
         # Отмечаем, запускали ли инфраструктуру сами, чтобы корректно чистить
         self._infra_started_by_runner = False
+        # Режим реального железа: не управлять node-sim контейнером из сценариев.
+        self.real_hardware_mode = real_hw_flag == "1"
+
+    def _resolve_scenario_definition(
+        self,
+        scenario_path: Path,
+        *,
+        visited: Optional[set[Path]] = None,
+    ) -> Dict[str, Any]:
+        """Load a scenario file and resolve optional scenario_ref indirection."""
+        normalized_path = scenario_path.resolve()
+        visited = set(visited or set())
+        if normalized_path in visited:
+            raise ValueError(f"Cyclic scenario_ref detected at {scenario_path}")
+        visited.add(normalized_path)
+
+        with normalized_path.open("r", encoding="utf-8") as handle:
+            scenario = yaml.safe_load(handle) or {}
+        if not isinstance(scenario, dict):
+            raise ValueError(f"Scenario root must be a mapping: {scenario_path}")
+
+        scenario_ref = scenario.get("scenario_ref")
+        if not scenario_ref:
+            return scenario
+
+        ref_path = Path(str(scenario_ref))
+        if not ref_path.is_absolute():
+            ref_path = (normalized_path.parent / ref_path).resolve()
+        referenced = self._resolve_scenario_definition(ref_path, visited=visited)
+
+        merged = dict(referenced)
+        for key, value in scenario.items():
+            if key == "scenario_ref":
+                continue
+            merged[key] = value
+        return merged
+
+    def _refresh_test_node_context(self) -> None:
+        """Resolve TEST_NODE_* from DB when env still contains legacy placeholders."""
+        if not self.db:
+            return
+
+        zone_uid = str(self.context.get("TEST_NODE_ZONE_UID") or "").strip()
+        if not zone_uid:
+            return
+
+        def _needs_resolution(key: str) -> bool:
+            value = str(self.context.get(key) or "").strip().lower()
+            if not value or value == "auto":
+                return True
+            return value in {"nd-ph-esp32una", "nd-irrig-e2e", "nd-dosing-e2e"}
+
+        if not any(
+            _needs_resolution(key)
+            for key in ("TEST_NODE_UID", "TEST_WORKFLOW_NODE_UID", "TEST_PH_NODE_UID", "TEST_EC_NODE_UID")
+        ):
+            return
+
+        rows = self.db.query(
+            """
+            SELECT
+              n.uid,
+              COALESCE(LOWER(n.type), '') AS node_type,
+              COALESCE(n.hardware_id, '') AS hardware_id
+            FROM nodes n
+            JOIN zones z ON z.id = n.zone_id
+            WHERE z.uid = :zone_uid
+            ORDER BY
+              CASE
+                WHEN LOWER(COALESCE(n.type, '')) = 'irrig' THEN 0
+                WHEN LOWER(COALESCE(n.type, '')) = 'ph' THEN 1
+                WHEN LOWER(COALESCE(n.type, '')) = 'ec' THEN 2
+                ELSE 9
+              END,
+              n.uid
+            """,
+            {"zone_uid": zone_uid},
+        )
+        if not rows:
+            return
+
+        def _pick(node_type: str) -> Optional[Dict[str, Any]]:
+            for row in rows:
+                if str(row.get("node_type") or "").strip().lower() == node_type:
+                    return row
+            return None
+
+        irrig = _pick("irrig") or rows[0]
+        ph = _pick("ph") or irrig
+        ec = _pick("ec") or (ph if ph is not irrig else irrig)
+
+        if _needs_resolution("TEST_NODE_UID"):
+            self.context["TEST_NODE_UID"] = irrig["uid"]
+        if _needs_resolution("TEST_WORKFLOW_NODE_UID"):
+            self.context["TEST_WORKFLOW_NODE_UID"] = irrig["uid"]
+        if _needs_resolution("TEST_PH_NODE_UID"):
+            self.context["TEST_PH_NODE_UID"] = ph["uid"]
+        if _needs_resolution("TEST_EC_NODE_UID"):
+            self.context["TEST_EC_NODE_UID"] = ec["uid"]
+        if str(self.context.get("TEST_NODE_HW_ID") or "").strip().lower() in {"", "auto", "esp32-test-001"}:
+            self.context["TEST_NODE_HW_ID"] = str(irrig.get("hardware_id") or "")
+
+    def _apply_real_hardware_setup_overrides(self, setup: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        В real-hardware режиме принудительно переопределяет setup.node_sim.config.node.*
+        значениями TEST_NODE_* из контекста/env.
+
+        Это позволяет запускать legacy e2e-сценарии (которые опираются на setup.node_sim)
+        на реальной тест-ноде без ручной правки каждого YAML.
+        """
+        if not self.real_hardware_mode:
+            return setup
+        if not isinstance(setup, dict):
+            return setup
+
+        node_sim = setup.setdefault("node_sim", {})
+        config = node_sim.setdefault("config", {})
+        node = config.setdefault("node", {})
+
+        test_gh_uid = self.context.get("TEST_NODE_GH_UID")
+        test_zone_uid = self.context.get("TEST_NODE_ZONE_UID")
+        test_node_uid = self.context.get("TEST_NODE_UID")
+        test_hw_id = self.context.get("TEST_NODE_HW_ID")
+
+        if test_gh_uid:
+            node["gh_uid"] = test_gh_uid
+        if test_zone_uid:
+            node["zone_uid"] = test_zone_uid
+        if test_node_uid:
+            node["node_uid"] = test_node_uid
+        if test_hw_id and str(test_hw_id).lower() != "auto":
+            node["hardware_id"] = test_hw_id
+
+        return setup
 
     def _use_docker_cli(self) -> bool:
         """Use docker CLI instead of docker-compose (e.g., in container mode)."""
@@ -216,6 +397,10 @@ class E2ERunner:
         else:
             token = self.api_token
             logger.info(f"Using provided api_token from config (length: {len(token)})")
+
+        # Expose the current Sanctum token to scenarios that need raw HTTP calls
+        # against Laravel endpoints without going through APIClient shortcuts.
+        self.context["E2E_AUTH_TOKEN"] = token or ""
         
         # Создаем APIClient с AuthClient для автоматического управления токенами
         self.api = APIClient(
@@ -257,6 +442,7 @@ class E2ERunner:
         try:
             self.db.connect()
             logger.info("✓ Database connected")
+            self._refresh_test_node_context()
         except Exception as e:
             logger.warning(f"⚠ Database connection failed: {e}")
 
@@ -396,6 +582,12 @@ class E2ERunner:
                         timeout=30
                     )
                 if result.returncode != 0:
+                    stderr_text = (result.stderr or "").strip()
+                    if "is not paused" in stderr_text.lower():
+                        logger.info(
+                            f"[FAULT_INJECT] Service {compose_service} already unpaused; skipping duplicate unpause"
+                        )
+                        return
                     logger.error(f"[FAULT_INJECT] Failed to unpause {compose_service}: {result.stderr}")
                     raise RuntimeError(f"Failed to unpause service {compose_service}: {result.stderr}")
                 logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} unpaused")
@@ -618,7 +810,9 @@ class E2ERunner:
     
     def _run_migrations(self):
         """
-        Выполнить php artisan migrate:fresh --seed если база пуста.
+        Выполнить миграции и сидирование, если база пуста.
+        Важно: без destructive-операций (`migrate:fresh`), чтобы
+        не сносить данные при повторных прогонах/рестартах.
         """
         compose_file = self.compose_file
         compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
@@ -642,27 +836,50 @@ class E2ERunner:
             # Если не удалось подключиться или таблицы нет — пробуем миграции
             pass
 
-        logger.info("Running migrations in laravel container (migrate:fresh --seed)...")
+        logger.info("Running migrations in laravel container (migrate + db:seed)...")
         if self._use_docker_cli():
             container = self._resolve_container_name("laravel")
-            result = subprocess.run(
-                ["docker", "exec", "-T", container, "php", "artisan", "migrate:fresh", "--seed"],
+            migrate_result = subprocess.run(
+                ["docker", "exec", "-T", container, "php", "artisan", "migrate", "--force"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if migrate_result.returncode != 0:
+                logger.error(f"Migrations failed: {migrate_result.stderr}")
+                raise RuntimeError(f"Migrations failed: {migrate_result.stderr}")
+
+            seed_result = subprocess.run(
+                ["docker", "exec", "-T", container, "php", "artisan", "db:seed", "--force"],
                 capture_output=True,
                 text=True,
                 timeout=180,
             )
         else:
-            result = subprocess.run(
-                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate:fresh", "--seed"],
+            migrate_result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate", "--force"],
                 cwd=compose_dir,
                 capture_output=True,
                 text=True,
                 timeout=180,
             )
-        if result.returncode != 0:
-            logger.error(f"Migrations failed: {result.stderr}")
-            raise RuntimeError(f"Migrations failed: {result.stderr}")
-        logger.info("✓ Migrations completed")
+            if migrate_result.returncode != 0:
+                logger.error(f"Migrations failed: {migrate_result.stderr}")
+                raise RuntimeError(f"Migrations failed: {migrate_result.stderr}")
+
+            seed_result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "db:seed", "--force"],
+                cwd=compose_dir,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+
+        if seed_result.returncode != 0:
+            logger.error(f"Seeding failed: {seed_result.stderr}")
+            raise RuntimeError(f"Seeding failed: {seed_result.stderr}")
+
+        logger.info("✓ Migrations and seeders completed")
 
     def _api_items(self, response: Any) -> List[Dict[str, Any]]:
         """
@@ -763,6 +980,82 @@ class E2ERunner:
                 return None
         
         return value
+
+    def _wrap_condition_value(self, value: Any) -> Any:
+        """Wrap nested dict/list values for JS-like dot access in conditions."""
+        if isinstance(value, dict):
+            return _DotDict({k: self._wrap_condition_value(v) for k, v in value.items()})
+        if isinstance(value, list):
+            return [self._wrap_condition_value(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self._wrap_condition_value(v) for v in value)
+        return value
+
+    @staticmethod
+    def _safe_len(value: Any) -> int:
+        try:
+            return len(value)
+        except Exception:
+            return 0
+
+    def _normalize_condition_expression(self, condition_expr: str) -> str:
+        """Normalize JS-like expressions from YAML into Python expressions."""
+        expr = condition_expr.strip()
+
+        if expr.startswith("${") and expr.endswith("}"):
+            expr = expr[2:-1].strip()
+
+        expr = re.sub(r"([A-Za-z_][A-Za-z0-9_.\[\]]*)\.length\b", r"safe_len(\1)", expr)
+        expr = expr.replace("&&", " and ").replace("||", " or ")
+        expr = re.sub(r"(?<![=!<>])!(?!=)", " not ", expr)
+        expr = re.sub(r"\bnull\b", "None", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\btrue\b", "True", expr, flags=re.IGNORECASE)
+        expr = re.sub(r"\bfalse\b", "False", expr, flags=re.IGNORECASE)
+
+        return expr
+
+    def _evaluate_action_condition(self, condition: Any) -> bool:
+        """Evaluate action-level condition."""
+        if condition is None:
+            return True
+        if isinstance(condition, bool):
+            return condition
+        if isinstance(condition, (int, float)):
+            return bool(condition)
+
+        expr = self._normalize_condition_expression(str(condition))
+        if not expr:
+            return False
+
+        eval_context = _ConditionEvalContext(
+            {
+                "context": self.context,
+                "len": self._safe_len,
+                "safe_len": self._safe_len,
+                "str": str,
+                "int": int,
+                "float": float,
+                "bool": bool,
+                "any": any,
+                "all": all,
+                "sum": sum,
+                "max": max,
+                "min": min,
+                "abs": abs,
+                "True": True,
+                "False": False,
+                "None": None,
+            }
+        )
+
+        for key, value in self.context.items():
+            if isinstance(key, str) and key.isidentifier():
+                eval_context[key] = self._wrap_condition_value(value)
+
+        try:
+            return bool(eval(expr, {"__builtins__": {}}, eval_context))
+        except Exception as e:
+            raise ValueError(f"Failed to evaluate action condition '{condition}': {e}") from e
     
     async def _ensure_test_zone_and_node(self):
         """
@@ -1303,8 +1596,7 @@ class E2ERunner:
         
         logger.info(f"Loading scenario: {scenario_path}")
         
-        with open(scenario_path, "r", encoding="utf-8") as f:
-            scenario = yaml.safe_load(f)
+        scenario = self._resolve_scenario_definition(scenario_path)
         
         scenario_name = scenario.get("name", scenario_path.stem)
         self.reporter.test_suite_name = scenario_name
@@ -1394,6 +1686,7 @@ class E2ERunner:
 
         # setup (пока только сохраняем конфиг в контекст)
         setup = scenario.get("setup", {})
+        setup = self._apply_real_hardware_setup_overrides(setup)
         if setup:
             self.context["setup"] = setup
             # Попробуем вывести zone_id/node_id из API по uid (если доступно)
@@ -1435,12 +1728,26 @@ class E2ERunner:
             step_type = action.get("type")
             wait_seconds = float(action.get("wait_seconds", 0) or 0)
             optional = bool(action.get("optional", False))
+            condition = action.get("condition")
 
-            action_cfg = {k: v for k, v in action.items() if k not in ("step", "name", "type", "wait_seconds", "config_ref")}
+            action_cfg = {k: v for k, v in action.items() if k not in ("step", "name", "type", "wait_seconds", "config_ref", "condition")}
             action_cfg = self._resolve_variables(action_cfg)
 
             step_start_time = time.time()
             try:
+                if condition is not None:
+                    should_run = self._evaluate_action_condition(condition)
+                    if not should_run:
+                        duration = time.time() - step_start_time
+                        self.reporter.add_test_case(
+                            name=step_name,
+                            status="skipped",
+                            duration=duration,
+                            error_message=f"Condition is false: {condition}",
+                            steps=[{"name": step_name, "status": "skipped"}]
+                        )
+                        continue
+
                 await self._execute_action_step(step_type, action_cfg, action)
 
                 if wait_seconds > 0:
@@ -1535,16 +1842,30 @@ class E2ERunner:
         # cleanup (best-effort)
         cleanup = scenario.get("cleanup", [])
         for c in cleanup:
+            step_name = c.get("step", c.get("name", "cleanup"))
+            optional = bool(c.get("optional", False))
+            condition = c.get("condition")
             try:
+                if condition is not None and not self._evaluate_action_condition(condition):
+                    logger.info(f"Skipping cleanup step '{step_name}': condition is false ({condition})")
+                    continue
+
                 c_type = c.get("type")
                 wait_seconds = float(c.get("wait_seconds", 0) or 0)
-                c_cfg = {k: v for k, v in c.items() if k not in ("step", "name", "type", "wait_seconds")}
+                c_cfg = {
+                    k: v
+                    for k, v in c.items()
+                    if k not in ("step", "name", "type", "wait_seconds", "optional", "condition")
+                }
                 c_cfg = self._resolve_variables(c_cfg)
                 await self._execute_action_step(c_type, c_cfg, c)
                 if wait_seconds > 0:
                     await asyncio.sleep(wait_seconds)
-            except Exception:
-                pass
+            except Exception as e:
+                if optional:
+                    logger.warning(f"Optional cleanup step '{step_name}' failed: {e}")
+                else:
+                    logger.warning(f"Cleanup step '{step_name}' failed: {e}")
 
         # artifacts + reports
         ws_messages = self.ws.get_messages(50) if self.ws else []
@@ -1595,6 +1916,9 @@ class E2ERunner:
             return
         # Simulator control (delegate to docker-compose node-sim service)
         if step_type == "start_simulator":
+            if self.real_hardware_mode:
+                logger.info("[REAL_HARDWARE] Skipping start_simulator (node-sim control disabled)")
+                return
             # При необходимости создаем временный конфиг node-sim и монтируем через NODE_SIM_CONFIG
             cfg_ref = raw.get("config_ref")
             if cfg_ref:
@@ -1613,6 +1937,9 @@ class E2ERunner:
             await self._fault_restore("node-sim")
             return
         if step_type == "stop_simulator":
+            if self.real_hardware_mode:
+                logger.info("[REAL_HARDWARE] Skipping stop_simulator (node-sim control disabled)")
+                return
             await self._fault_inject("node-sim", "stop", None)
             return
         
@@ -1621,9 +1948,12 @@ class E2ERunner:
             service = cfg.get("service")
             action = cfg.get("action", "stop")
             duration_s = cfg.get("duration_s", None)
-            
+
             if not service:
                 raise ValueError("fault.inject requires 'service' parameter")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping fault.inject for node-sim")
+                return
             
             await self._fault_inject(service, action, duration_s)
             return
@@ -1632,16 +1962,25 @@ class E2ERunner:
             service = cfg.get("service")
             if not service:
                 raise ValueError("fault.restore requires 'service' parameter")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping fault.restore for node-sim")
+                return
             await self._fault_restore(service)
             return
         
         # Legacy system control (deprecated, use fault.inject instead)
         if step_type == "system_stop":
             service = cfg.get("service")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping system_stop for node-sim")
+                return
             await self._fault_inject(service, "stop", None)
             return
         if step_type == "system_start":
             service = cfg.get("service")
+            if self.real_hardware_mode and service == "node-sim":
+                logger.info("[REAL_HARDWARE] Skipping system_start for node-sim")
+                return
             await self._fault_restore(service)
             return
         
@@ -1694,13 +2033,46 @@ class E2ERunner:
         if step_type == "http_request":
             import httpx
             method = (cfg.get("method") or "GET").upper()
-            url = cfg.get("url")
+            url = cfg.get("url") or cfg.get("endpoint") or cfg.get("path")
             if not url:
                 raise ValueError("http_request requires url")
-            headers = cfg.get("headers") or {}
-            body = cfg.get("body")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.request(method, url, headers=headers, json=body)
+            url = self._resolve_variables(url)
+            if not urlparse(str(url)).scheme:
+                rel_url = str(url).strip()
+                if not rel_url.startswith("/"):
+                    rel_url = f"/{rel_url}"
+                url = f"{self.api_url.rstrip('/')}{rel_url}"
+            headers = self._resolve_variables(cfg.get("headers") or {})
+            body = self._resolve_variables(cfg.get("body"))
+            retries = max(0, int(cfg.get("retries", 0) or 0))
+            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+
+            last_error = None
+            resp = None
+            for attempt in range(retries + 1):
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        resp = await client.request(method, url, headers=headers, json=body)
+                    break
+                except Exception as e:
+                    last_error = e
+                    if attempt >= retries:
+                        raise
+                    logger.warning(
+                        "http_request failed for %s %s (attempt %d/%d): %s; retrying in %.1fs",
+                        method,
+                        url,
+                        attempt + 1,
+                        retries + 1,
+                        str(e),
+                        retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+
+            if resp is None:
+                if last_error:
+                    raise last_error
+                raise RuntimeError(f"http_request failed for {method} {url}")
             self.context[cfg.get("capture_response", "last_http")] = {
                 "status_code": resp.status_code,
                 "text": resp.text,
@@ -1716,49 +2088,85 @@ class E2ERunner:
             # Разрешаем переменные в endpoint
             endpoint = self._resolve_variables(endpoint)
             payload = cfg.get("payload") or cfg.get("json") or cfg.get("data")
+            retries = max(0, int(cfg.get("retries", 0) or 0))
+            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+
+            async def _with_retries(call, call_name: str):
+                last_error = None
+                for attempt in range(retries + 1):
+                    try:
+                        return await call()
+                    except Exception as e:
+                        last_error = e
+                        if attempt >= retries:
+                            raise
+                        logger.warning(
+                            "%s failed for %s (attempt %d/%d): %s; retrying in %.1fs",
+                            call_name,
+                            endpoint,
+                            attempt + 1,
+                            retries + 1,
+                            str(e),
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                if last_error:
+                    raise last_error
+                raise RuntimeError(f"{call_name} failed for {endpoint}")
             # Разрешаем переменные в payload
             if payload:
                 payload = self._resolve_variables(payload)
             if step_type == "api_get":
-                res = await self.api.get(endpoint, params=cfg.get("params"))
+                res = await _with_retries(lambda: self.api.get(endpoint, params=cfg.get("params")), "api_get")
             elif step_type == "api_post":
                 expected_status = cfg.get("expected_status")
                 expected_statuses = self._normalize_expected_status(expected_status)
+                if expected_statuses and "retries" not in cfg:
+                    # В real-hw/chaos сценариях после рестарта сервиса возможен transient
+                    # disconnect без HTTP-статуса. Для expected_status делаем мягкий дефолт retry.
+                    retries = max(retries, 2)
                 # Если указан expected_status, делаем запрос напрямую через httpx
                 # чтобы получить ответ даже при ошибке
                 if expected_statuses:
                     import httpx
-                    headers = await self.api._get_headers()
-                    url = urljoin(self.api.base_url + "/", endpoint.lstrip("/"))
-                    async with httpx.AsyncClient(timeout=self.api.timeout) as client:
-                        response = await client.post(url, json=payload, headers=headers)
-                        self.api._last_response = response
-                        if response.status_code in expected_statuses:
-                            res = response.json()
-                        else:
+
+                    async def _post_with_expected_status():
+                        headers = await self.api._get_headers()
+                        url = urljoin(self.api.base_url + "/", endpoint.lstrip("/"))
+                        async with httpx.AsyncClient(timeout=self.api.timeout) as client:
+                            response = await client.post(url, json=payload, headers=headers)
+                            self.api._last_response = response
+
+                        if response.status_code not in expected_statuses:
                             response.raise_for_status()
-                            res = response.json()
-                    # Для expected_status сохраняем также response данные
-                    res = {
-                        'data': res,
-                        'status_code': response.status_code,
-                        'headers': dict(response.headers),
-                    }
+
+                        try:
+                            response_payload = response.json()
+                        except Exception:
+                            response_payload = response.text
+
+                        return {
+                            'data': response_payload,
+                            'status_code': response.status_code,
+                            'headers': dict(response.headers),
+                        }
+
+                    res = await _with_retries(_post_with_expected_status, "api_post")
                 else:
-                    res = await self.api.post(endpoint, json=payload)
+                    res = await _with_retries(lambda: self.api.post(endpoint, json=payload), "api_post")
                 # Автозаполнение zone_id/node_id из API ответов
                 self._auto_extract_ids_from_api_response(endpoint, res)
             elif step_type == "api_put":
-                res = await self.api.put(endpoint, json=payload)
+                res = await _with_retries(lambda: self.api.put(endpoint, json=payload), "api_put")
                 # Автозаполнение zone_id/node_id из API ответов
                 self._auto_extract_ids_from_api_response(endpoint, res)
             elif step_type == "api_patch":
                 # APIClient doesn't have patch currently; use httpx under the hood
-                res = await self.api.request("PATCH", endpoint, json=payload)
+                res = await _with_retries(lambda: self.api.request("PATCH", endpoint, json=payload), "api_patch")
                 # Автозаполнение zone_id/node_id из API ответов
                 self._auto_extract_ids_from_api_response(endpoint, res)
             else:
-                res = await self.api.delete(endpoint)
+                res = await _with_retries(lambda: self.api.delete(endpoint), "api_delete")
                 # Автозаполнение zone_id/node_id из API ответов (если DELETE возвращает данные)
                 self._auto_extract_ids_from_api_response(endpoint, res)
             # Проверяем expected_status, если указан (для случаев когда не было ошибки)
@@ -2120,47 +2528,165 @@ class E2ERunner:
         # Automation Engine test hook
         if step_type == "ae_test_hook":
             import httpx
-            automation_engine_url = cfg.get("url")
-            if not automation_engine_url:
-                host = os.getenv("AUTOMATION_ENGINE_HOST")
-                if not host:
-                    host = "automation-engine" if os.getenv("E2E_CONTAINER") == "1" else "localhost"
-                port = os.getenv("AUTOMATION_ENGINE_API_PORT", "9505")
-                automation_engine_url = f"http://{host}:{port}"
+
             zone_id = cfg.get("zone_id") or self.context.get("zone_id")
-            controller = cfg.get("controller")
-            action = cfg.get("action")  # inject_error, clear_error, reset_backoff, set_state
-            error_type = cfg.get("error_type")
-            state = cfg.get("state")
+            action = cfg.get("action")
             command = cfg.get("command")
             
             if not zone_id:
                 raise ValueError("ae_test_hook requires zone_id")
             if not action:
                 raise ValueError("ae_test_hook requires action")
-            
-            payload = {
-                "zone_id": zone_id,
-                "action": action,
-            }
-            if controller:
-                payload["controller"] = controller
-            if error_type:
-                payload["error_type"] = error_type
-            if state:
-                payload["state"] = state
-            if command:
-                payload["command"] = self._resolve_variables(command)
-            
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(f"{automation_engine_url}/test/hook", json=payload)
-                if resp.status_code != 200:
-                    raise RuntimeError(f"Test hook failed: {resp.status_code} - {resp.text}")
-                
-                result = resp.json()
+            if action != "publish_command":
+                raise ValueError("ae_test_hook supports only action=publish_command")
+
+            resolved_command = self._resolve_variables(command or {})
+            if not isinstance(resolved_command, dict):
+                raise ValueError("ae_test_hook publish_command requires command object")
+
+            cmd_payload = dict(resolved_command)
+            cmd_payload["zone_id"] = int(cmd_payload.get("zone_id") or zone_id)
+            cmd_payload["greenhouse_uid"] = str(
+                cmd_payload.get("greenhouse_uid")
+                or os.getenv("TEST_NODE_GH_UID")
+                or os.getenv("E2E_GH_UID")
+                or "gh-test-1"
+            ).strip()
+            cmd_payload["source"] = str(cmd_payload.get("source") or "e2e_runner").strip() or "e2e_runner"
+
+            required = ("node_uid", "channel", "cmd")
+            for key in required:
+                if not str(cmd_payload.get(key) or "").strip():
+                    raise ValueError(f"ae_test_hook publish_command missing required field: {key}")
+
+            if "cmd_id" not in cmd_payload or not str(cmd_payload.get("cmd_id") or "").strip():
+                import uuid
+                cmd_payload["cmd_id"] = f"e2e:{uuid.uuid4().hex[:24]}"
+
+            history_logger_urls: List[str] = []
+
+            def _add_history_logger_url(candidate: Optional[str]) -> None:
+                if not candidate:
+                    return
+                resolved = str(self._resolve_variables(candidate)).strip().rstrip("/")
+                if not resolved:
+                    return
+                if resolved not in history_logger_urls:
+                    history_logger_urls.append(resolved)
+
+            _add_history_logger_url(cfg.get("history_logger_url"))
+            _add_history_logger_url(os.getenv("HISTORY_LOGGER_URL"))
+
+            in_container = self._use_docker_cli()
+            host = os.getenv("HISTORY_LOGGER_HOST")
+            if not host:
+                host = "history-logger" if in_container else "localhost"
+            default_port = "9300" if in_container else "9302"
+            port = os.getenv("HISTORY_LOGGER_PORT", default_port)
+            _add_history_logger_url(f"http://{host}:{port}")
+
+            if in_container:
+                _add_history_logger_url("http://history-logger:9300")
+            else:
+                _add_history_logger_url("http://localhost:9302")
+                _add_history_logger_url("http://127.0.0.1:9302")
+
+            if not history_logger_urls:
+                raise ValueError("Unable to resolve history-logger URL for ae_test_hook")
+
+            history_logger_token = str(
+                cfg.get("history_logger_token")
+                or os.getenv("HISTORY_LOGGER_API_TOKEN")
+                or os.getenv("PY_INGEST_TOKEN")
+                or "dev-token-12345"
+            ).strip()
+            headers: Dict[str, str] = {}
+            if history_logger_token:
+                headers["Authorization"] = f"Bearer {history_logger_token}"
+
+            retries = max(0, int(cfg.get("retries", 0) or 0))
+            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+            resp = None
+            last_error = None
+            last_endpoint = None
+
+            for history_logger_url in history_logger_urls:
+                endpoint = f"{history_logger_url}/commands"
+                last_endpoint = endpoint
+                for attempt in range(retries + 1):
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            resp = await client.post(
+                                endpoint,
+                                json=cmd_payload,
+                                headers=headers,
+                            )
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if attempt >= retries:
+                            break
+                        logger.warning(
+                            "ae_test_hook failed for %s (attempt %d/%d): %s; retrying in %.1fs",
+                            endpoint,
+                            attempt + 1,
+                            retries + 1,
+                            str(e),
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                if resp is not None:
+                    break
+
+            if resp is None:
+                if last_error:
+                    raise RuntimeError(
+                        f"ae_test_hook failed for endpoints={history_logger_urls}, "
+                        f"last_endpoint={last_endpoint}, error={last_error}"
+                    ) from last_error
+                raise RuntimeError(
+                    f"ae_test_hook failed: no response from history-logger (endpoints={history_logger_urls})"
+                )
+
+            upstream = resp.json() if resp.text else {}
+            command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
+
+            # Для guard-сценариев 4xx является ожидаемым бизнес-результатом
+            # и должен возвращаться как published=false, а не runtime exception.
+            if 400 <= resp.status_code < 500:
+                result = {
+                    "status": "ok",
+                    "data": {
+                        "published": False,
+                        "cmd_id": command_id or None,
+                        "zone_id": cmd_payload["zone_id"],
+                        "node_uid": cmd_payload["node_uid"],
+                        "channel": cmd_payload["channel"],
+                        "http_status": int(resp.status_code),
+                        "error": upstream.get("detail"),
+                    },
+                }
                 if "save" in cfg:
                     self.context[cfg["save"]] = result
                 return result
+
+            if resp.status_code != 200:
+                raise RuntimeError(f"History-logger /commands failed: {resp.status_code} - {resp.text}")
+
+            result = {
+                "status": "ok",
+                "data": {
+                    "published": bool(command_id),
+                    "cmd_id": command_id,
+                    "zone_id": cmd_payload["zone_id"],
+                    "node_uid": cmd_payload["node_uid"],
+                    "channel": cmd_payload["channel"],
+                    "http_status": int(resp.status_code),
+                },
+            }
+            if "save" in cfg:
+                self.context[cfg["save"]] = result
+            return result
 
         # Node-sim fault modes
         if step_type == "node_sim_fault_mode":
@@ -2244,8 +2770,11 @@ class E2ERunner:
                         'False': False,
                         'None': None,
                     }
-                    eval_globals = {'context': self.context}
-                    ok = bool(eval(str(resolved), {"__builtins__": safe_builtins}, eval_globals))
+                    eval_globals = {
+                        "__builtins__": safe_builtins,
+                        "context": self.context,
+                    }
+                    ok = bool(eval(str(resolved), eval_globals, {}))
                 except Exception as e:
                     raise AssertionError(f"Failed to evaluate assert condition '{resolved}': {e}")
             if not ok:

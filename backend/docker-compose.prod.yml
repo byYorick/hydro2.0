@@ -5,7 +5,7 @@ services:
       - "1883:1883"
     volumes:
       - ./services/mqtt-bridge/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./services/mqtt-bridge/passwords:/mosquitto/config/passwords:ro
+      - ./services/mqtt-bridge/passwords.txt:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
       - mqtt_data:/mosquitto/data
       - mqtt_logs:/mosquitto/log
@@ -74,11 +74,16 @@ services:
       redis-server
       --maxmemory 512mb
       --maxmemory-policy allkeys-lru
-      --save ""
-      --appendonly no
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly yes
+      --appendfsync everysec
       --tcp-backlog 511
       --timeout 0
       --tcp-keepalive 300
+    volumes:
+      - redis_data:/data
     deploy:
       resources:
         limits:
@@ -148,6 +153,11 @@ services:
       # ВАЖНО: Замените на уникальные ключи через переменные окружения
       - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
       - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET must be set}
+      # Laravel scheduler owner flags
+      - AUTOMATION_LARAVEL_SCHEDULER_ENABLED=${AUTOMATION_LARAVEL_SCHEDULER_ENABLED:-1}
+      - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN or PY_INGEST_TOKEN must be set}}
+      - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS:-60}
+      - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH:-500}
       - REVERB_HOST=0.0.0.0
       - REVERB_PORT=6001
       - REVERB_SCHEME=http
@@ -236,6 +246,7 @@ services:
       dockerfile: automation-engine/Dockerfile
     environment:
       - APP_ENV=production
+      - AUTOMATION_ENGINE_API_PORT=9405
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -248,7 +259,9 @@ services:
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - LARAVEL_API_URL=http://laravel
       # ВАЖНО: Токены для безопасности сервисов
+      - SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN or PY_INGEST_TOKEN must be set}}
       - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
     depends_on:
       - mqtt
@@ -257,11 +270,11 @@ services:
     ports:
       - "9401:9401"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/ready', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 45s
     restart: unless-stopped
   history-logger:
     build:
@@ -319,7 +332,6 @@ services:
       - "9090:9090"
     depends_on:
       - automation-engine
-      - scheduler
       - mqtt-bridge
     restart: unless-stopped
   grafana:
@@ -357,34 +369,6 @@ services:
     depends_on:
       - prometheus
       - laravel
-    restart: unless-stopped
-  scheduler:
-    build:
-      context: ./services
-      dockerfile: scheduler/Dockerfile
-    environment:
-      - APP_ENV=production
-      - MQTT_HOST=mqtt
-      - MQTT_PORT=1883
-      - MQTT_TLS=0
-      - MQTT_USER=${MQTT_SCHEDULER_USER:-scheduler}
-      # ВАЖНО: Замените на уникальный пароль через переменную окружения
-      - MQTT_PASS=${MQTT_SCHEDULER_PASS:?MQTT_SCHEDULER_PASS must be set}
-      - PG_HOST=db
-      - PG_DB=hydro
-      - PG_USER=hydro
-      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
-    depends_on:
-      - mqtt
-      - db
-    ports:
-      - "9402:9402"
-    healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9402)); s.close()' || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
     restart: unless-stopped
   digital-twin:
     build:
@@ -451,6 +435,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   prometheus_data:
   mqtt_data:
   mqtt_logs:

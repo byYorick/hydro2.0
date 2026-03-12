@@ -6,6 +6,11 @@
 
 Он дополняет `API_SPEC_FRONTEND_BACKEND_FULL.md`, но сфокусирован именно на списке URL и их назначении.
 
+Актуализация AE2-Lite (2026-02-21):
+- единый запуск workflow через `POST /zones/{id}/start-cycle` (внутренний AE endpoint);
+- legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
+- runtime path automation-engine использует direct SQL read-model.
+
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
@@ -41,7 +46,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/zones | auth:sanctum | Список зон (фильтры по теплице, статусу) |
 | POST | /api/zones | auth:sanctum (operator/admin/agronomist/engineer) | Создать зону |
 | GET | /api/zones/{id} | auth:sanctum | Детали зоны + активный рецепт |
-| PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны |
+| PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны, включая `automation_runtime=ae2|ae3` |
 | DELETE| /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить зону (если нет активных зависимостей) |
 
 Доп. действия:
@@ -58,15 +63,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
-| GET | /api/zones/{id}/scheduler-tasks | auth:sanctum | Последние scheduler-task по зоне (`lifecycle`, опц. `timeline` через `include_timeline=1`) |
-| GET | /api/zones/{id}/scheduler-tasks/{taskId} | auth:sanctum | Статус scheduler-task по taskId (proxy к automation-engine) + `timeline` и outcome (`decision/reason_code`) |
+| GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
+| GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
+| POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
+| POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 
-Инварианты scheduler-task (`/api/zones/{id}/scheduler-tasks*`):
-- terminal business-статусы: `completed|failed|rejected|expired`;
-- transport-статусы scheduler уровня: `timeout|not_found` (только для lifecycle/diagnostics);
-- `timeline[]` должен быть отсортирован по времени события по возрастанию.
+Контракт `PATCH /api/zones/{id}`:
+- допускает `automation_runtime: "ae2" | "ae3"`
+- при busy zone возвращает `409` с `code=runtime_switch_denied_zone_busy`
+- busy zone определяется через active `ae_tasks`, active `ae_zone_leases` или indeterminate `ae_commands` state
 
 ---
 
@@ -229,7 +236,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
 | POST | /api/python/ingest/telemetry | token-based | Инжест телеметрии из Python‑сервисов |
-| POST | /api/python/commands/ack | token-based | ACK выполнения команд узлами |
+| POST | /api/python/commands/ack | token-based | Подтверждение статусов команд (`SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED`) |
+
+Примечание по `POST /api/python/commands/ack`:
+- Терминальные статусы: `DONE`, `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`, `TIMEOUT`, `SEND_FAILED`.
+- Переходы из terminal в non-terminal запрещены (anti-rollback guard).
 
 ---
 
@@ -266,17 +277,172 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /health/live | internal | Liveness: процесс API доступен |
 | GET | /health/ready | internal | Readiness: `CommandBus`, DB и bootstrap lease-store готовы |
 
-### 18.2 Automation-engine scheduler endpoints
+### 18.2 Automation-engine runtime endpoints
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------|------|----------------------------------------------------|
-| POST | /scheduler/bootstrap | internal | Startup-handshake scheduler -> automation-engine |
-| POST | /scheduler/bootstrap/heartbeat | internal | Heartbeat/lease keepalive для scheduler |
-| POST | /scheduler/task | internal | Принять task intent от scheduler |
-| GET | /scheduler/task/{task_id} | internal | Получить task status/outcome |
-| POST | /scheduler/internal/enqueue | internal | Внутренний enqueue self-task (AE -> scheduler) |
+| POST | /zones/{id}/start-cycle | internal | Единственный внешний wake-up зоны (scheduler/manual trigger) |
+| GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций |
+| POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
+| POST | /zones/{id}/manual-step | internal | Ручной шаг workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
+| POST | /zones/{id}/start-relay-autotune | internal | Запуск relay-autotune PID (`pid_type: ph|ec`) для активной зоны |
 
-Инварианты task-level API (`POST /scheduler/task`):
-- обязательны `correlation_id`, `due_at`, `expires_at`;
-- идемпотентность по `correlation_id` + `idempotency_payload_mismatch` при mismatch payload;
-- успех execute-пути считается подтвержденным только при статусе ноды `DONE`.
+Инвариант `control_mode=manual`:
+- автоматические runtime-контроллеры зоны (climate/irrigation/recirculation/pH/EC) не публикуют команды;
+- scheduler auto-задачи в этом режиме получают `no_action` с `reason_code=manual_mode_only`;
+- разрешены только явные `POST /zones/{id}/manual-step`.
+
+Инварианты `POST /zones/{id}/start-cycle`:
+- endpoint не несет device-level payload (минимальный wake-up контракт);
+- endpoint принимает только `source` и `idempotency_key`;
+- фактические действия определяются pending intent-ами в БД;
+- повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение;
+- при активном intent этой же зоны (другой `idempotency_key`) endpoint возвращает `409 start_cycle_zone_busy`;
+- при активной scheduler-задаче зоны (`accepted|running`) endpoint возвращает `409 start_cycle_zone_busy`
+  с `active_task_id` и `active_task_status`;
+- при блокирующей `workflow_phase` без активной scheduler-задачи endpoint выполняет auto-heal/reset в `idle`,
+  если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (по умолчанию 600 сек);
+- при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
+  `task_status` и `reason=start_cycle_intent_terminal`.
+- для зон с `zones.automation_runtime='ae3'` поле `task_id` содержит canonical numeric AE3 task id
+  (в JSON остаётся строкой для совместимости внешнего контракта);
+- если AE3-ответ не содержит canonical numeric `task_id`, Laravel scheduler трактует submit как failed/retryable
+  и не создаёт fallback snapshot с `intent-*`;
+- для зон с `zones.automation_runtime='ae2'` сохраняется legacy compatibility `task_id=intent-<id>`.
+
+Контракт `POST /zones/{id}/start-relay-autotune`:
+- тело запроса: `{ "pid_type": "ph" | "ec" }`;
+- endpoint требует активную фазу workflow зоны (не `idle`), иначе `409 relay_autotune_zone_inactive`;
+- при уже запущенном autotune для зоны/типа возвращает `409 relay_autotune_already_running`.
+
+Минимальный request:
+```json
+{
+  "source": "laravel_scheduler",
+  "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
+}
+```
+
+Response:
+```json
+{
+  "status": "ok",
+  "data": {
+    "zone_id": 12,
+    "accepted": true,
+    "runner_state": "active",
+    "deduplicated": false,
+    "task_id": "321",
+    "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z"
+  }
+}
+```
+
+Response (terminal intent):
+```json
+{
+  "status": "ok",
+  "data": {
+    "zone_id": 12,
+    "accepted": false,
+    "runner_state": "terminal",
+    "deduplicated": true,
+    "task_id": "321",
+    "idempotency_key": "sch:z12:irrigation:2026-02-21T10:00:00Z",
+    "task_status": "failed",
+    "reason": "start_cycle_intent_terminal"
+  }
+}
+```
+
+Response (zone busy, active intent):
+```json
+{
+  "detail": {
+    "error": "start_cycle_zone_busy",
+    "zone_id": 12,
+    "active_intent_id": 889,
+    "active_status": "running"
+  }
+}
+```
+
+Response (zone busy, active task):
+```json
+{
+  "detail": {
+    "error": "start_cycle_zone_busy",
+    "zone_id": 12,
+    "active_task_id": "st-running",
+    "active_task_status": "running"
+  }
+}
+```
+
+### 18.3 Scheduler intents lifecycle (DB contract)
+
+`POST /zones/{id}/start-cycle` работает только как wake-up endpoint.
+Фактическое выполнение берется из `zone_automation_intents`.
+
+Lifecycle intents:
+- `pending`
+- `claimed`
+- `running`
+- `completed`
+- `failed`
+- `cancelled`
+
+Правила:
+- scheduler сначала пишет intent (`pending`) в БД, затем вызывает `start-cycle`;
+- `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
+- при повторном `idempotency_key` для active intent endpoint возвращает
+  `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;
+- если после claim обнаружена активная scheduler-задача зоны, intent переводится обратно в `pending`,
+  а endpoint возвращает `409 start_cycle_zone_busy`;
+- если обнаружена orphan/stuck `workflow_phase` без активной scheduler-задачи и возраст фазы выше
+  `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC`, runtime сбрасывает `zone_workflow_state.workflow_phase` в `idle`
+  и продолжает старт цикла;
+- при повторном `idempotency_key` для terminal intent endpoint возвращает
+  `accepted=false` + `runner_state=terminal` + `task_status`;
+- stale `claimed` intent может быть re-claimed после таймаута
+  `AE_START_CYCLE_CLAIM_STALE_SEC` (по умолчанию 180 сек) c инкрементом `retry_count`.
+
+`zone_automation_intents.payload` (wake-up only):
+```json
+{
+  "source": "laravel_scheduler",
+  "task_type": "diagnostics",
+  "workflow": "cycle_start",
+  "topology": "two_tank_drip_substrate_trays",
+  "grow_cycle_id": 123
+}
+```
+
+Ограничения payload:
+- `task_payload` и `schedule_payload` запрещены;
+- любые device-level steps/commands запрещены;
+- при наличии legacy-ключей runtime трактует их как невалидные для контракта wake-up only.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
+
+### 18.4 PID Advanced (Laravel API)
+
+Новые публичные endpoint-ы для панели PID/калибровок (frontend):
+
+| Метод | Путь | Auth | Описание |
+|-------|---------------------------------------------|------|-------------------------------------------|
+| GET | /api/zones/{zone}/pump-calibrations | auth:sanctum (viewer+) | Список дозирующих насосов зоны с активной калибровкой |
+| PUT | /api/zones/{zone}/pump-calibrations/{channelId} | auth:sanctum (operator+) | Сохранить новую калибровку `ml_per_sec` (создаёт новую запись в `pump_calibrations`) |
+| POST | /api/zones/{zone}/relay-autotune | auth:sanctum (operator+) | Запуск relay-autotune через proxy в automation-engine |
+| GET | /api/zones/{zone}/relay-autotune/status | auth:sanctum (viewer+) | Статус relay-autotune через proxy в automation-engine |
+
+Контракт `PUT /api/zones/{zone}/pump-calibrations/{channelId}`:
+- request body: `{ "ml_per_sec": number, "k_ms_per_ml_l"?: number }`;
+- деактивирует предыдущую активную калибровку `node_channel_id`;
+- создаёт `zone_event` типа `PUMP_CALIBRATION_SAVED`.
+
+Контракт `POST /api/zones/{zone}/relay-autotune`:
+- request body: `{ "pid_type": "ph" | "ec" }`;
+- требует активный grow cycle зоны;
+- создаёт `zone_event` типа `RELAY_AUTOTUNE_STARTED`;
+- проксирует запрос в automation-engine endpoint `/zones/{id}/start-relay-autotune`.

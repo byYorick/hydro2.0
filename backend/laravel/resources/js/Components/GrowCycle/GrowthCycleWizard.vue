@@ -7,28 +7,25 @@
   >
     <ErrorBoundary>
       <div class="mb-6">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-center gap-1.5">
           <div
             v-for="(step, index) in steps"
-            :key="index"
-            class="flex items-center flex-1"
-          >
-            <div class="flex items-center">
-              <div :class="['w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all', currentStep > index ? 'bg-[color:var(--accent-green)] text-white' : currentStep === index ? 'bg-[color:var(--accent-cyan)] text-white ring-2 ring-[color:var(--accent-cyan)] ring-offset-2' : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]']">
-                <span v-if="currentStep > index">✓</span>
-                <span v-else>{{ index + 1 }}</span>
-              </div>
-              <span :class="['ml-3 text-sm font-medium', currentStep >= index ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-muted)]']">
-                {{ step.title }}
-              </span>
-            </div>
-            <div
-              v-if="index < steps.length - 1"
-              :class="['flex-1 h-0.5 mx-4 transition-colors', currentStep > index ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--border-muted)]']"
-            ></div>
-          </div>
+            :key="step.key"
+            class="w-2.5 h-2.5 rounded-full transition-colors"
+            :class="[
+              index < currentStep
+                ? 'bg-[color:var(--accent-green)]'
+                : index === currentStep
+                  ? 'bg-[color:var(--accent-cyan)] ring-2 ring-[color:var(--accent-cyan)]/30'
+                  : 'bg-[color:var(--border-muted)]',
+            ]"
+          />
         </div>
+        <p class="text-center text-sm text-[color:var(--text-muted)] mt-2">
+          {{ steps[currentStep]?.label }} ({{ currentStep + 1 }} / {{ steps.length }})
+        </p>
       </div>
+
       <div
         v-if="currentStep === 0"
         class="space-y-4"
@@ -59,10 +56,8 @@
             </option>
           </select>
         </div>
-        <div class="text-xs text-[color:var(--text-muted)]">
-          💡 Подсказка: Убедитесь, что зона имеет привязанный рецепт и устройства
-        </div>
       </div>
+
       <div
         v-if="currentStep === 1"
         class="space-y-4"
@@ -85,10 +80,8 @@
             </option>
           </select>
         </div>
-        <div class="text-xs text-[color:var(--text-muted)]">
-          💡 Растение определяет контекст для подбора рецепта
-        </div>
       </div>
+
       <div
         v-if="currentStep === 2"
         class="space-y-4"
@@ -111,6 +104,7 @@
               Создать новый
             </Button>
           </div>
+
           <div v-if="recipeMode === 'select'">
             <select
               v-model="selectedRecipeId"
@@ -137,6 +131,7 @@
             />
           </div>
         </div>
+
         <div
           v-if="selectedRecipe"
           class="space-y-2"
@@ -158,6 +153,7 @@
             </option>
           </select>
         </div>
+
         <div
           v-if="selectedRevision"
           class="mt-4 p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
@@ -194,21 +190,17 @@
             </div>
           </div>
         </div>
-        <div class="text-xs text-[color:var(--text-muted)]">
-          💡 Подсказка: Рецепт определяет фазы роста и целевые параметры для каждой фазы
-        </div>
       </div>
+
       <div
         v-if="currentStep === 3"
-        class="space-y-4"
+        class="space-y-5"
       >
-        <div>
-          <h3 class="text-sm font-semibold mb-3">
-            Параметры запуска цикла
-          </h3>
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium mb-2">Дата начала</label>
+        <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
+          <h3 class="text-sm font-semibold">Период цикла</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="text-sm">
+              <span class="block font-medium mb-2">Дата начала</span>
               <input
                 v-model="form.startedAt"
                 type="datetime-local"
@@ -216,168 +208,568 @@
                 :min="minStartDate"
                 required
               />
-              <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                Цикл начнется с первой фазы выбранного рецепта
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium mb-2">Ожидаемая дата сбора (опционально)</label>
+            </label>
+            <label class="text-sm">
+              <span class="block font-medium mb-2">Ожидаемая дата сбора (опционально)</span>
               <input
                 v-model="form.expectedHarvestAt"
                 type="date"
                 class="input-field w-full"
                 :min="form.startedAt ? form.startedAt.slice(0, 10) : undefined"
               />
-              <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                Используется для планирования и аналитики
-              </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">
-              <div class="md:col-span-2 text-sm font-medium">
-                Параметры водного узла на старте
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-2">Тип системы</label>
-                <select
-                  v-model="form.irrigation.systemType"
-                  class="input-select w-full"
-                >
-                  <option value="drip">drip</option>
-                  <option value="substrate_trays">substrate_trays</option>
-                  <option value="nft">nft</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-2">Интервал полива (мин)</label>
-                <input
-                  v-model.number="form.irrigation.intervalMinutes"
-                  type="number"
-                  min="5"
-                  max="1440"
-                  class="input-field w-full"
-                />
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-2">Длительность полива (сек)</label>
-                <input
-                  v-model.number="form.irrigation.durationSeconds"
-                  type="number"
-                  min="1"
-                  max="3600"
-                  class="input-field w-full"
-                />
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-2">Объём чистого бака (л)</label>
-                <input
-                  v-model.number="form.irrigation.cleanTankFillL"
-                  type="number"
-                  min="10"
-                  max="5000"
-                  class="input-field w-full"
-                />
-              </div>
-              <div>
-                <label class="block text-sm font-medium mb-2">Объём питательного бака (л)</label>
-                <input
-                  v-model.number="form.irrigation.nutrientTankTargetL"
-                  type="number"
-                  min="10"
-                  max="5000"
-                  class="input-field w-full"
-                />
-              </div>
-            </div>
-            <div
-              v-if="selectedRecipe"
-              class="p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]"
-            >
-              <div class="text-xs font-medium mb-1">
-                Предполагаемая длительность цикла:
-              </div>
-              <div class="text-sm">
-                {{ Math.round(totalDurationDays) }} дней
-                <span class="text-xs text-[color:var(--text-muted)]"> ({{ selectedRevision?.phases?.length || 0 }} фаз) </span>
-              </div>
-            </div>
+            </label>
           </div>
-        </div>
+        </section>
       </div>
+
       <div
         v-if="currentStep === 4"
         class="space-y-4"
       >
-        <div>
-          <h3 class="text-sm font-semibold mb-3">
-            Предпросмотр цикла выращивания
-          </h3>
-          <div class="space-y-3">
-            <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">
-                Зона
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            v-for="item in automationTabs"
+            :key="item.id"
+            type="button"
+            class="btn btn-outline h-9 px-3 text-xs"
+            :class="item.id === automationTab ? 'border-[color:var(--accent-green)] text-[color:var(--text-primary)]' : ''"
+            @click="automationTab = item.id"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+
+        <section
+          v-if="automationTab === 1"
+          class="grid grid-cols-1 md:grid-cols-2 gap-3"
+        >
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Автоклимат
+            <select
+              v-model="climateForm.enabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">Включен</option>
+              <option :value="false">Выключен</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Температура день
+            <input
+              v-model.number="climateForm.dayTemp"
+              type="number"
+              min="10"
+              max="35"
+              step="0.5"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Температура ночь
+            <input
+              v-model.number="climateForm.nightTemp"
+              type="number"
+              min="10"
+              max="35"
+              step="0.5"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Влажность день
+            <input
+              v-model.number="climateForm.dayHumidity"
+              type="number"
+              min="30"
+              max="90"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Влажность ночь
+            <input
+              v-model.number="climateForm.nightHumidity"
+              type="number"
+              min="30"
+              max="90"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Интервал климата (мин)
+            <input
+              v-model.number="climateForm.intervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Min форточек (%)
+            <input
+              v-model.number="climateForm.ventMinPercent"
+              type="number"
+              min="0"
+              max="100"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Max форточек (%)
+            <input
+              v-model.number="climateForm.ventMaxPercent"
+              type="number"
+              min="0"
+              max="100"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+        </section>
+
+        <section
+          v-else-if="automationTab === 2"
+          class="space-y-3"
+        >
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Тип системы
+              <select
+                v-model="waterForm.systemType"
+                class="input-select mt-1 w-full"
+              >
+                <option value="drip">drip</option>
+                <option value="substrate_trays">substrate_trays</option>
+                <option value="nft">nft</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              target pH
+              <input
+                v-model.number="waterForm.targetPh"
+                type="number"
+                min="4"
+                max="9"
+                step="0.1"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              target EC
+              <input
+                v-model.number="waterForm.targetEc"
+                type="number"
+                min="0.1"
+                max="10"
+                step="0.1"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал полива (мин)
+              <input
+                v-model.number="waterForm.intervalMinutes"
+                type="number"
+                min="5"
+                max="1440"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Длительность (сек)
+              <input
+                v-model.number="waterForm.durationSeconds"
+                type="number"
+                min="1"
+                max="3600"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Баков
+              <input
+                v-model.number="waterForm.tanksCount"
+                type="number"
+                min="2"
+                max="3"
+                class="input-field mt-1 w-full"
+                :disabled="waterForm.systemType === 'drip'"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Диагностика
+              <select
+                v-model="waterForm.diagnosticsEnabled"
+                class="input-select mt-1 w-full"
+              >
+                <option :value="true">Включена</option>
+                <option :value="false">Выключена</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал диагностики (мин)
+              <input
+                v-model.number="waterForm.diagnosticsIntervalMinutes"
+                type="number"
+                min="1"
+                max="1440"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Workflow запуска
+              <select
+                v-model="waterForm.cycleStartWorkflowEnabled"
+                class="input-select mt-1 w-full"
+              >
+                <option :value="true">cycle_start</option>
+                <option :value="false">diagnostics</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Порог полного бака (0..1)
+              <input
+                v-model.number="waterForm.cleanTankFullThreshold"
+                type="number"
+                min="0.05"
+                max="1"
+                step="0.01"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Refill длительность (сек)
+              <input
+                v-model.number="waterForm.refillDurationSeconds"
+                type="number"
+                min="1"
+                max="3600"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Refill timeout (сек)
+              <input
+                v-model.number="waterForm.refillTimeoutSeconds"
+                type="number"
+                min="30"
+                max="86400"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
+              Refill обязательные типы нод (CSV)
+              <input
+                v-model="waterForm.refillRequiredNodeTypes"
+                type="text"
+                class="input-field mt-1 w-full"
+                placeholder="irrig,climate,light"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Refill канал
+              <input
+                v-model="waterForm.refillPreferredChannel"
+                type="text"
+                class="input-field mt-1 w-full"
+                placeholder="fill_valve"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Смена раствора
+              <select
+                v-model="waterForm.solutionChangeEnabled"
+                class="input-select mt-1 w-full"
+              >
+                <option :value="true">Включена</option>
+                <option :value="false">Выключена</option>
+              </select>
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Интервал смены (мин)
+              <input
+                v-model.number="waterForm.solutionChangeIntervalMinutes"
+                type="number"
+                min="1"
+                max="1440"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <label class="text-xs text-[color:var(--text-muted)]">
+              Длительность смены (сек)
+              <input
+                v-model.number="waterForm.solutionChangeDurationSeconds"
+                type="number"
+                min="1"
+                max="86400"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section
+          v-else
+          class="grid grid-cols-1 md:grid-cols-3 gap-3"
+        >
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Досветка
+            <select
+              v-model="lightingForm.enabled"
+              class="input-select mt-1 w-full"
+            >
+              <option :value="true">Включена</option>
+              <option :value="false">Выключена</option>
+            </select>
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Lux day
+            <input
+              v-model.number="lightingForm.luxDay"
+              type="number"
+              min="0"
+              max="120000"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Lux night
+            <input
+              v-model.number="lightingForm.luxNight"
+              type="number"
+              min="0"
+              max="120000"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Часов света
+            <input
+              v-model.number="lightingForm.hoursOn"
+              type="number"
+              min="0"
+              max="24"
+              step="0.5"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Интервал досветки (мин)
+            <input
+              v-model.number="lightingForm.intervalMinutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Начало
+            <input
+              v-model="lightingForm.scheduleStart"
+              type="time"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+          <label class="text-xs text-[color:var(--text-muted)]">
+            Конец
+            <input
+              v-model="lightingForm.scheduleEnd"
+              type="time"
+              class="input-field mt-1 w-full"
+            />
+          </label>
+        </section>
+      </div>
+
+      <div
+        v-if="currentStep === 5"
+        class="space-y-4"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold">Калибровка насосов</h3>
+            <p class="text-xs text-[color:var(--text-muted)] mt-1">
+              Укажите расход каждого дозирующего насоса в ml/sec.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="form.calibrationSkipped = !form.calibrationSkipped"
+          >
+            {{ form.calibrationSkipped ? "Вернуть калибровку" : "Пропустить шаг" }}
+          </Button>
+        </div>
+
+        <div
+          v-if="form.calibrationSkipped"
+          class="p-3 rounded-lg bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] text-sm text-[color:var(--badge-warning-text)]"
+        >
+          Калибровка пропущена. Коррекция EC может работать некорректно.
+        </div>
+
+        <div
+          v-if="isZoneChannelsLoading"
+          class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm text-[color:var(--text-muted)]"
+        >
+          Загружаю каналы насосов...
+        </div>
+
+        <div
+          v-else-if="zoneChannelsError"
+          class="p-4 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)] text-sm text-[color:var(--badge-danger-text)] space-y-2"
+        >
+          <div>{{ zoneChannelsError }}</div>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="fetchZoneChannels(true)"
+          >
+            Повторить
+          </Button>
+        </div>
+
+        <div
+          v-else-if="!hasCalibrationChannels"
+          class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm text-[color:var(--text-muted)] space-y-2"
+        >
+          <div>Насосы не найдены, настройте привязку нод.</div>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="fetchZoneChannels(true)"
+          >
+            Обновить список
+          </Button>
+        </div>
+
+        <div
+          v-else
+          class="space-y-2"
+        >
+          <div
+            v-for="entry in form.calibrations"
+            :key="entry.node_channel_id"
+            class="p-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+          >
+            <div class="grid grid-cols-1 md:grid-cols-[1fr_160px_130px] gap-3 items-end">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center justify-center h-6 px-2 rounded-md bg-[color:var(--bg-surface-strong)] text-xs font-semibold">
+                    {{ getCalibrationComponentLabel(entry.component) }}
+                  </span>
+                  <span class="text-sm font-medium">{{ entry.channel_label }}</span>
+                </div>
               </div>
-              <div class="text-sm font-medium">
-                {{ zoneName || `Зона #${form.zoneId}` }}
-              </div>
+
+              <label class="text-sm">
+                <span class="font-medium mb-1 block">ml/sec</span>
+                <input
+                  v-model.number="entry.ml_per_sec"
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  class="input-field w-full"
+                  :disabled="entry.skip"
+                />
+              </label>
+
+              <label class="inline-flex items-center gap-2 text-sm h-10">
+                <input
+                  v-model="entry.skip"
+                  type="checkbox"
+                />
+                Пропустить насос
+              </label>
             </div>
-            <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">
-                Рецепт
-              </div>
-              <div class="text-sm font-medium">
-                {{ selectedRecipe?.name || "Не выбран" }}
-              </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="currentStep === 6"
+        class="space-y-4"
+      >
+        <h3 class="text-sm font-semibold mb-1">Предпросмотр запуска</h3>
+
+        <div class="space-y-3">
+          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Зона</div>
+            <div class="text-sm font-medium">{{ zoneName || `Зона #${form.zoneId}` }}</div>
+          </div>
+
+          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Рецепт</div>
+            <div class="text-sm font-medium">{{ selectedRecipe?.name || "Не выбран" }}</div>
+            <div
+              v-if="totalDurationDays > 0"
+              class="text-xs text-[color:var(--text-muted)] mt-1"
+            >
+              Оценочная длительность: {{ Math.round(totalDurationDays) }} дней
             </div>
-            <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">
-                Дата начала
-              </div>
-              <div class="text-sm font-medium">
-                {{ formatDateTime(form.startedAt) }}
-              </div>
-            </div>
-            <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">
-                Параметры водного узла
-              </div>
-              <div class="text-sm font-medium">
-                {{ form.irrigation.cleanTankFillL }} / {{ form.irrigation.nutrientTankTargetL }} л
-              </div>
-              <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                Полив: каждые {{ form.irrigation.intervalMinutes }} мин, {{ form.irrigation.durationSeconds }} сек · {{ form.irrigation.systemType }}
-              </div>
-            </div>
+          </div>
+
+          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Период</div>
+            <div class="text-sm font-medium">Старт: {{ formatDateTime(form.startedAt) }}</div>
             <div
               v-if="form.expectedHarvestAt"
-              class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+              class="text-xs text-[color:var(--text-muted)] mt-1"
             >
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">
-                Ожидаемая дата сбора
-              </div>
-              <div class="text-sm font-medium">
-                {{ formatDate(form.expectedHarvestAt) }}
-              </div>
+              Сбор: {{ formatDate(form.expectedHarvestAt) }}
+            </div>
+          </div>
+
+          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Автоматика</div>
+            <div class="text-sm font-medium">
+              Автоматика: pH {{ waterForm.targetPh }}, EC {{ waterForm.targetEc }}, система {{ waterForm.systemType }}
+            </div>
+          </div>
+
+          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Полив</div>
+            <div class="text-sm font-medium">
+              {{ waterForm.systemType }}, каждые {{ waterForm.intervalMinutes }} мин, {{ waterForm.durationSeconds }} сек
             </div>
             <div
-              v-if="selectedRevision"
-              class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+              v-if="tanksCount === 2"
+              class="text-xs text-[color:var(--text-muted)] mt-1"
             >
-              <div class="text-xs text-[color:var(--text-dim)] mb-2">
-                План фаз:
-              </div>
-              <div class="space-y-2">
-                <div
-                  v-for="(phase, index) in selectedRevision.phases"
-                  :key="index"
-                  class="flex items-center justify-between text-xs"
-                >
-                  <span class="font-medium">{{ phase.name || `Фаза ${index + 1}` }}</span>
-                  <span class="text-[color:var(--text-muted)]"> {{ phase.duration_days ?? (phase.duration_hours ? Math.round(phase.duration_hours / 24) : "-") }} дней </span>
-                </div>
+              Баки: {{ waterForm.cleanTankFillL }} / {{ waterForm.nutrientTankTargetL }} л, партия {{ waterForm.irrigationBatchL }} л
+            </div>
+          </div>
+
+          <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">Калибровка насосов</div>
+            <div class="text-sm font-medium">
+              <span v-if="form.calibrationSkipped">Пропущена</span>
+              <span v-else>
+                {{ form.calibrations.filter((entry) => !entry.skip && entry.ml_per_sec > 0).length }} насосов будет сохранено
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="selectedRevision"
+            class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+          >
+            <div class="text-xs text-[color:var(--text-dim)] mb-2">План фаз:</div>
+            <div class="space-y-2">
+              <div
+                v-for="(phase, index) in selectedRevision.phases"
+                :key="index"
+                class="flex items-center justify-between text-xs"
+              >
+                <span class="font-medium">{{ phase.name || `Фаза ${index + 1}` }}</span>
+                <span class="text-[color:var(--text-muted)]">{{ phase.duration_days ?? (phase.duration_hours ? Math.round(phase.duration_hours / 24) : "-") }} дней</span>
               </div>
             </div>
           </div>
         </div>
+
         <div
           v-if="validationErrors.length > 0"
           class="p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
@@ -395,6 +787,7 @@
           </ul>
         </div>
       </div>
+
       <div
         v-if="error"
         class="mt-4 p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
@@ -415,6 +808,7 @@
         </ul>
       </div>
     </ErrorBoundary>
+
     <template #footer>
       <div class="flex items-center justify-between w-full">
         <Button
@@ -426,6 +820,7 @@
           Назад
         </Button>
         <div v-else></div>
+
         <div class="flex gap-2">
           <Button
             variant="secondary"
@@ -450,6 +845,7 @@
           </Button>
         </div>
       </div>
+
       <div
         v-if="nextStepBlockedReason && currentStep < steps.length - 1"
         class="mt-2 text-xs text-[color:var(--badge-danger-text)]"
@@ -459,7 +855,9 @@
     </template>
   </Modal>
 </template>
+
 <script setup lang="ts">
+import { ref } from "vue";
 import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useZones } from "@/composables/useZones";
@@ -470,68 +868,88 @@ import RecipeCreateWizard from "@/Components/RecipeCreateWizard.vue";
 import { useGrowthCycleWizard, type GrowthCycleWizardProps, type GrowthCycleWizardEmit } from "@/composables/useGrowthCycleWizard";
 
 interface Props extends GrowthCycleWizardProps {
-    show: boolean;
+  show: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-    show: false,
-    zoneId: undefined,
-    zoneName: "",
+  show: false,
+  zoneId: undefined,
+  zoneName: "",
 });
+
 const emit = defineEmits<{
-    close: [];
-    submit: [
-        data: {
-            zoneId: number;
-            recipeId?: number;
-            recipeRevisionId?: number;
-            startedAt: string;
-            expectedHarvestAt?: string;
-        },
-    ];
+  close: [];
+  submit: [
+    data: {
+      zoneId: number;
+      cycleId?: number;
+      recipeId?: number;
+      recipeRevisionId?: number;
+      startedAt: string;
+      expectedHarvestAt?: string;
+    },
+  ];
 }>();
+
 const { api } = useApi();
 const { showToast } = useToast();
 const { fetchZones } = useZones();
 const wizardEmit = emit as GrowthCycleWizardEmit;
+
 const {
-    currentStep,
-    recipeMode,
-    loading,
-    error,
-    errorDetails,
-    validationErrors,
-    form,
-    availableZones,
-    availablePlants,
-    availableRecipes,
-    selectedRecipe,
-    selectedRecipeId,
-    selectedRevisionId,
-    selectedPlantId,
-    availableRevisions,
-    selectedRevision,
-    steps,
-    wizardTitle,
-    minStartDate,
-    totalDurationDays,
-    canSubmit,
-    canProceed,
-    nextStepBlockedReason,
-    formatDateTime,
-    formatDate,
-    onZoneSelected,
-    onRecipeSelected,
-    onRecipeCreated,
-    nextStep,
-    prevStep,
-    onSubmit,
-    handleClose,
+  currentStep,
+  recipeMode,
+  loading,
+  error,
+  errorDetails,
+  validationErrors,
+  form,
+  climateForm,
+  waterForm,
+  lightingForm,
+  availableZones,
+  availablePlants,
+  availableRecipes,
+  selectedRecipe,
+  selectedRecipeId,
+  selectedRevisionId,
+  selectedPlantId,
+  availableRevisions,
+  selectedRevision,
+  steps,
+  wizardTitle,
+  minStartDate,
+  totalDurationDays,
+  tanksCount,
+  canSubmit,
+  canProceed,
+  nextStepBlockedReason,
+  isZoneChannelsLoading,
+  zoneChannelsError,
+  hasCalibrationChannels,
+  getCalibrationComponentLabel,
+  formatDateTime,
+  formatDate,
+  onZoneSelected,
+  onRecipeSelected,
+  onRecipeCreated,
+  fetchZoneChannels,
+  nextStep,
+  prevStep,
+  onSubmit,
+  handleClose,
 } = useGrowthCycleWizard({
-    props,
-    emit: wizardEmit,
-    api,
-    showToast,
-    fetchZones,
+  props,
+  emit: wizardEmit,
+  api,
+  showToast,
+  fetchZones,
 });
+
+const automationTab = ref<1 | 2 | 3>(1);
+const automationTabs = [
+  { id: 1, label: "Климат" },
+  { id: 2, label: "Водный узел" },
+  { id: 3, label: "Досветка" },
+] as const;
 </script>

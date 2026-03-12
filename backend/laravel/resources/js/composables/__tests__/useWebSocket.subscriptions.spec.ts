@@ -75,25 +75,25 @@ describe('WebSocket Subscription Registry', () => {
       // Первая подписка
       const unsubscribe1 = subscribeToZoneCommands(1, handler)
       
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(1)
       expect(__testExports.hasSubscription('sub-1')).toBe(true)
       
       // Вторая подписка на тот же канал (другой handler)
       const handler2 = vi.fn()
       const unsubscribe2 = subscribeToZoneCommands(1, handler2)
       
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(2)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(2)
       
       // Проверяем, что нет дублей
-      const channelSet = __testExports.channelSubscribers().get('commands.1')
+      const channelSet = __testExports.channelSubscribers().get('hydro.commands.1')
       expect(channelSet?.size).toBe(2)
       
       // Отписываемся
       unsubscribe1()
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(1)
       
       unsubscribe2()
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(0)
     })
     
     it('should handle resubscribe correctly', () => {
@@ -102,18 +102,18 @@ describe('WebSocket Subscription Registry', () => {
       
       // Подписываемся
       const unsubscribe = subscribeToZoneCommands(1, handler)
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(1)
       
       // Отписываемся
       unsubscribe()
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(0)
       
       // Подписываемся снова (resubscribe)
       const unsubscribe2 = subscribeToZoneCommands(1, handler)
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(1)
       
       unsubscribe2()
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(0)
     })
     
     it('should not allow duplicate subscription IDs', () => {
@@ -140,7 +140,7 @@ describe('WebSocket Subscription Registry', () => {
       const unsubscribe2 = subscribeToZoneCommands(1, handler)
       
       // Должно быть 2 подписки (разные instanceId)
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(2)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(2)
       
       // Но subscription IDs должны быть уникальными
       const subscriptions = Array.from(__testExports.activeSubscriptions().values())
@@ -161,9 +161,9 @@ describe('WebSocket Subscription Registry', () => {
       const unsub2 = subscribeToZoneCommands(2, handler)
       const unsub3 = subscribeToZoneCommands(3, handler)
       
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(1)
-      expect(__testExports.getSubscriptionCount('commands.2')).toBe(1)
-      expect(__testExports.getSubscriptionCount('commands.3')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.2')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.commands.3')).toBe(1)
       
       // Все подписки должны быть уникальными
       const allSubscriptions = __testExports.activeSubscriptions()
@@ -182,16 +182,16 @@ describe('WebSocket Subscription Registry', () => {
       
       const unsubscribe = subscribeToGlobalEvents(handler)
       
-      expect(__testExports.getSubscriptionCount('events.global')).toBe(1)
+      expect(__testExports.getSubscriptionCount('hydro.events.global')).toBe(1)
       
       // Проверяем реестр глобальных каналов
-      const registry = __testExports.globalChannelRegistry().get('events.global')
+      const registry = __testExports.globalChannelRegistry().get('hydro.events.global')
       expect(registry).toBeDefined()
       expect(registry?.subscriptionRefCount).toBe(1)
       expect(registry?.handlers.size).toBe(1)
       
       unsubscribe()
-      expect(__testExports.getSubscriptionCount('events.global')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.events.global')).toBe(0)
     })
     
     it('should reuse global channel on multiple subscriptions', () => {
@@ -203,12 +203,12 @@ describe('WebSocket Subscription Registry', () => {
       const unsub2 = subscribeToGlobalEvents(handler2)
       
       // Оба handler'а должны быть в реестре
-      const registry = __testExports.globalChannelRegistry().get('events.global')
+      const registry = __testExports.globalChannelRegistry().get('hydro.events.global')
       expect(registry?.subscriptionRefCount).toBe(2)
       expect(registry?.handlers.size).toBe(2)
       
       // Но канал должен быть один
-      const channelControl = __testExports.getChannelControl('events.global')
+      const channelControl = __testExports.getChannelControl('hydro.events.global')
       expect(channelControl).toBeDefined()
       
       unsub1()
@@ -216,6 +216,36 @@ describe('WebSocket Subscription Registry', () => {
       
       unsub2()
       expect(registry?.subscriptionRefCount).toBe(0)
+    })
+  })
+
+  describe('zone updates and alerts channels', () => {
+    it('should register zone updates subscription via useWebSocket runtime', () => {
+      const { subscribeToZoneUpdates } = useWebSocket()
+      const handler = vi.fn()
+
+      const unsubscribe = subscribeToZoneUpdates(5, handler)
+
+      expect(__testExports.getSubscriptionCount('hydro.zones.5')).toBe(1)
+      const channelControl = __testExports.getChannelControl('hydro.zones.5')
+      expect(channelControl?.kind).toBe('zoneUpdates')
+
+      unsubscribe()
+      expect(__testExports.getSubscriptionCount('hydro.zones.5')).toBe(0)
+    })
+
+    it('should register alerts subscription via useWebSocket runtime', () => {
+      const { subscribeToAlerts } = useWebSocket()
+      const handler = vi.fn()
+
+      const unsubscribe = subscribeToAlerts(handler)
+
+      expect(__testExports.getSubscriptionCount('hydro.alerts')).toBe(1)
+      const channelControl = __testExports.getChannelControl('hydro.alerts')
+      expect(channelControl?.kind).toBe('alerts')
+
+      unsubscribe()
+      expect(__testExports.getSubscriptionCount('hydro.alerts')).toBe(0)
     })
   })
   
@@ -235,10 +265,9 @@ describe('WebSocket Subscription Registry', () => {
       unsubscribeAll()
       
       expect(__testExports.activeSubscriptions().size).toBe(0)
-      expect(__testExports.getSubscriptionCount('commands.1')).toBe(0)
-      expect(__testExports.getSubscriptionCount('commands.2')).toBe(0)
-      expect(__testExports.getSubscriptionCount('events.global')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.commands.1')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.commands.2')).toBe(0)
+      expect(__testExports.getSubscriptionCount('hydro.events.global')).toBe(0)
     })
   })
 })
-

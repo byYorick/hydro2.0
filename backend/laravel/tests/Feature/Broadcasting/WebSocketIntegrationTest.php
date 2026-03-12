@@ -38,7 +38,7 @@ class WebSocketIntegrationTest extends TestCase
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) {
             return $e->commandId === 501
                 && $e->status === 'completed'
-                && $e->broadcastOn()->name === 'private-commands.10';
+                && $e->broadcastOn()->name === 'private-hydro.commands.10';
         });
 
         // Проверяем данные для broadcasting
@@ -120,7 +120,7 @@ class WebSocketIntegrationTest extends TestCase
 
             Event::assertDispatched(CommandStatusUpdated::class, function ($e) use ($zone) {
                 return $e->zoneId === $zone->id
-                    && $e->broadcastOn()->name === "private-commands.{$zone->id}";
+                    && $e->broadcastOn()->name === "private-hydro.commands.{$zone->id}";
             });
         }
     }
@@ -145,7 +145,7 @@ class WebSocketIntegrationTest extends TestCase
         Event::assertDispatched(CommandStatusUpdated::class, function ($e) {
             return $e->commandId === 999
                 && $e->zoneId === null
-                && $e->broadcastOn()->name === 'private-commands.global';
+                && $e->broadcastOn()->name === 'private-hydro.commands.global';
         });
     }
 

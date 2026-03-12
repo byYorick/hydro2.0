@@ -1,0 +1,7 @@
+# E66: Legacy full prod path ported to canonical AE3 happy path
+
+name: E66_full_prod_path_zone_recipe_bind_and_run
+description: |
+  Legacy AE2 full prod-path scenario migrated to standalone AE3-Lite.
+  Для real-hardware regression pack используется каноничный AE3 two-tank smoke.
+scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

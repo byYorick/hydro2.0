@@ -56,26 +56,28 @@ actions:
     wait_seconds: 3
     optional: true  # node-sim уже может быть запущен
 
-  # Шаг 1.5: Получаем zone_id и node_id из API (если не установлены автоматически)
-  - step: get_zones
-    type: api_get
-    endpoint: "/api/zones"
-    save: zones
-  
-  - step: get_nodes
-    type: api_get
-    endpoint: "/api/nodes"
-    save: nodes
+  # Шаг 1.5: Определяем node_id/zone_id по node_uid из setup.
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    expected_rows: 1
+    save: node_row
 
   - step: find_test_zone_and_node
     type: set
-    test_zone_id: ${nodes.data.data[0].zone_id}
-    test_node_id: ${nodes.data.data[0].id}
+    test_zone_id: ${node_row.0.zone_id}
+    test_node_id: ${node_row.0.node_id}
 
   # Шаг 2: Подписка на WebSocket канал команд зоны
   - step: subscribe_ws_commands
     type: websocket_subscribe
-    channel: "private-commands.${test_zone_id}"
+    channel: "private-hydro.zones.${test_zone_id}"
     wait_seconds: 1
 
   # Шаг 3: Отправка команды через API
@@ -92,16 +94,37 @@ actions:
     wait_seconds: 2
 
   # Шаг 3.5: Сохраняем COMMAND_ID
-  - step: set_command_id
+  - step: set_command_id_from_response
     type: set
-    COMMAND_ID: ${command_response.data.command_id}
+    command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
+
+  - step: fetch_command_id_from_db
+    type: database_query
+    query: |
+      SELECT cmd_id
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND node_id = :node_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    save: command_from_db
+    condition: ${!command_id || command_id == '' || command_id == null}
+
+  - step: set_command_id_from_db
+    type: set
+    command_id: ${command_from_db.0.cmd_id}
+    condition: ${command_from_db && len(command_from_db) > 0 && command_from_db[0].cmd_id}
 
   # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
   - step: node_sends_done_first
     type: mqtt_publish
     topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
     payload:
-      cmd_id: ${COMMAND_ID}
+      cmd_id: ${command_id}
       status: "DONE"
       details:
         result_code: 0
@@ -114,7 +137,7 @@ actions:
     type: mqtt_publish
     topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
     payload:
-      cmd_id: ${COMMAND_ID}
+      cmd_id: ${command_id}
       status: "DONE"
       details:
         result_code: 0
@@ -133,7 +156,7 @@ assertions:
       WHERE cmd_id = :cmd_id
       AND status = 'DONE'
     params:
-      cmd_id: ${COMMAND_ID}
+      cmd_id: ${command_id}
     timeout: 90.0
     expected_rows: 1
     save: command_status
@@ -146,7 +169,7 @@ assertions:
       FROM commands
       WHERE cmd_id = :cmd_id
     params:
-      cmd_id: ${COMMAND_ID}
+      cmd_id: ${command_id}
     timeout: 5.0
     expected_rows: 1
     expected:

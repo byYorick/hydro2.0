@@ -255,9 +255,14 @@ interface ServiceLog {
 
 interface ServiceLogMeta {
   page: number
+  current_page?: number
   per_page: number
+  perPage?: number
   total: number
+  total_count?: number
   last_page: number
+  lastPage?: number
+  total_pages?: number
 }
 
 interface Props {
@@ -430,22 +435,24 @@ async function fetchLogs(page = 1) {
 /**
  * Нормализует ответ API для логов (учитываем разные формы: {status, data, meta} | {data:{data,meta}} | массив)
  */
-function normalizeLogsResponse(response: any): { logs: ServiceLog[]; meta?: Partial<ServiceLogMeta> | null } {
-  const payload = response?.data ?? response
-  const directData = extractData<ServiceLog[] | Record<string, any>>(payload)
+function normalizeLogsResponse(response: { data?: unknown } | unknown): { logs: ServiceLog[]; meta?: Partial<ServiceLogMeta> | null } {
+  const payload = (response as { data?: unknown })?.data ?? response
+  const payloadRecord = payload as Record<string, unknown>
+  const directData = extractData<ServiceLog[] | Record<string, unknown>>(payload)
 
   // Вариант: extractData вернул массив
   if (Array.isArray(directData)) {
-    return { logs: directData, meta: (payload as any)?.meta ?? null }
+    return { logs: directData, meta: (payloadRecord?.meta as Partial<ServiceLogMeta>) ?? null }
   }
 
   // Вариант: объект с data/meta на первом или втором уровне
-  const inner = directData ?? payload ?? {}
-  const firstLevelData = Array.isArray(inner?.data) ? inner.data : null
-  const secondLevelData = Array.isArray(inner?.data?.data) ? inner.data.data : null
+  const inner = (directData ?? payloadRecord ?? {}) as Record<string, unknown>
+  const innerData = inner?.data as Record<string, unknown> | undefined
+  const firstLevelData = Array.isArray(inner?.data) ? inner.data as ServiceLog[] : null
+  const secondLevelData = Array.isArray(innerData?.data) ? innerData?.data as ServiceLog[] : null
 
   const logsData = firstLevelData || secondLevelData || []
-  const metaFromPayload = inner?.meta ?? inner?.data?.meta ?? (payload as any)?.meta ?? null
+  const metaFromPayload = (inner?.meta ?? innerData?.meta ?? payloadRecord?.meta) as Partial<ServiceLogMeta> | null ?? null
 
   return {
     logs: Array.isArray(logsData) ? logsData : [],
@@ -454,10 +461,10 @@ function normalizeLogsResponse(response: any): { logs: ServiceLog[]; meta?: Part
 }
 
 function updateMeta(metaPayload?: Partial<ServiceLogMeta> | null, fallbackTotal = 0) {
-  const pageValue = (metaPayload as any)?.page ?? (metaPayload as any)?.current_page
-  const perPageValue = (metaPayload as any)?.per_page ?? (metaPayload as any)?.perPage
-  const totalValue = (metaPayload as any)?.total ?? (metaPayload as any)?.total_count
-  const lastPageValue = (metaPayload as any)?.last_page ?? (metaPayload as any)?.lastPage ?? (metaPayload as any)?.total_pages
+  const pageValue = metaPayload?.page ?? metaPayload?.current_page
+  const perPageValue = metaPayload?.per_page ?? metaPayload?.perPage
+  const totalValue = metaPayload?.total ?? metaPayload?.total_count
+  const lastPageValue = metaPayload?.last_page ?? metaPayload?.lastPage ?? metaPayload?.total_pages
 
   meta.page = pageValue ?? meta.page
   meta.per_page = perPageValue ?? meta.per_page
@@ -478,7 +485,7 @@ function startPolling() {
   if (pollInterval) clearInterval(pollInterval)
 
   if (typeof window !== 'undefined') {
-    const existing = (window as any)[POLL_KEY] as ReturnType<typeof setInterval> | null
+    const existing = window[POLL_KEY]
     if (existing) clearInterval(existing)
   }
 
@@ -488,8 +495,7 @@ function startPolling() {
   }, POLL_INTERVAL_MS)
 
   if (typeof window !== 'undefined') {
-    const win = window as any
-    win[POLL_KEY] = pollInterval
+    window[POLL_KEY] = pollInterval
   }
 }
 
@@ -500,11 +506,10 @@ function stopPolling() {
   }
 
   if (typeof window !== 'undefined') {
-    const win = window as any
-    const existing = win[POLL_KEY] as ReturnType<typeof setInterval> | null
+    const existing = window[POLL_KEY]
     if (existing) {
       clearInterval(existing)
-      win[POLL_KEY] = null
+      window[POLL_KEY] = null
     }
   }
 }
@@ -538,15 +543,14 @@ watch(
     if (searchDebounce) clearTimeout(searchDebounce)
 
     if (typeof window !== 'undefined') {
-      const existing = (window as any)[SEARCH_KEY] as ReturnType<typeof setTimeout> | null
+      const existing = window[SEARCH_KEY]
       if (existing) clearTimeout(existing)
     }
 
     searchDebounce = setTimeout(() => fetchLogs(1), 400)
 
     if (typeof window !== 'undefined') {
-      const win = window as any
-      win[SEARCH_KEY] = searchDebounce
+      window[SEARCH_KEY] = searchDebounce
     }
   }
 )
@@ -563,11 +567,10 @@ onUnmounted(() => {
     searchDebounce = null
   }
   if (typeof window !== 'undefined') {
-    const win = window as any
-    const existing = win[SEARCH_KEY] as ReturnType<typeof setTimeout> | null
+    const existing = window[SEARCH_KEY]
     if (existing) {
       clearTimeout(existing)
-      win[SEARCH_KEY] = null
+      window[SEARCH_KEY] = null
     }
   }
 })

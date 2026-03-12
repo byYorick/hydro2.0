@@ -190,8 +190,8 @@ const {
   checkWebSocketStatus,
 } = useSystemStatus()
 
-const historyLoggerEndpoint = '/api/system/health[data.history_logger]'
-const automationEngineEndpoint = '/api/system/health[data.automation_engine]'
+const historyLoggerEndpoint = '/api/system/health (data.history_logger)'
+const automationEngineEndpoint = '/api/system/health (data.automation_engine)'
 
 
 // Вычисляем состояние цепочки

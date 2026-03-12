@@ -45,8 +45,24 @@ class ChannelAuthorizationTest extends TestCase
         $zone = \App\Models\Zone::factory()->create();
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
-            'channel_name' => "private-commands.{$zone->id}",
+            'channel_name' => "private-hydro.commands.{$zone->id}",
             'socket_id' => '789.012',
+        ]);
+
+        $response->assertOk();
+    }
+
+    /**
+     * Тест авторизации для legacy канала команд зоны (без префикса hydro.)
+     */
+    public function test_authorizes_legacy_commands_zone_channel_alias(): void
+    {
+        $user = User::factory()->create(['role' => 'operator']);
+        $zone = \App\Models\Zone::factory()->create();
+
+        $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
+            'channel_name' => "private-commands.{$zone->id}",
+            'socket_id' => '789.013',
         ]);
 
         $response->assertOk();
@@ -60,8 +76,23 @@ class ChannelAuthorizationTest extends TestCase
         $user = User::factory()->create(['role' => 'operator']);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
-            'channel_name' => 'private-commands.global',
+            'channel_name' => 'private-hydro.commands.global',
             'socket_id' => '345.678',
+        ]);
+
+        $response->assertOk();
+    }
+
+    /**
+     * Тест авторизации для legacy глобального канала команд (без префикса hydro.)
+     */
+    public function test_authorizes_legacy_global_commands_channel_alias(): void
+    {
+        $user = User::factory()->create(['role' => 'operator']);
+
+        $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
+            'channel_name' => 'private-commands.global',
+            'socket_id' => '345.679',
         ]);
 
         $response->assertOk();
@@ -75,7 +106,7 @@ class ChannelAuthorizationTest extends TestCase
         $user = User::factory()->create(['role' => 'operator']);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
-            'channel_name' => 'private-events.global',
+            'channel_name' => 'private-hydro.events.global',
             'socket_id' => '901.234',
         ]);
 
@@ -154,7 +185,7 @@ class ChannelAuthorizationTest extends TestCase
 
         foreach ($zones as $zone) {
             $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
-                'channel_name' => "private-commands.{$zone->id}",
+                'channel_name' => "private-hydro.commands.{$zone->id}",
                 'socket_id' => '123.456',
             ]);
 
@@ -162,4 +193,3 @@ class ChannelAuthorizationTest extends TestCase
         }
     }
 }
-

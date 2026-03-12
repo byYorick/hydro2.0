@@ -18,7 +18,7 @@
         </div>
 
         <div class="mt-3 text-xs text-[color:var(--text-dim)]">
-          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/6)
+          Прогресс: {{ progressPercent }}% ({{ completedSteps }}/{{ stepItems.length }})
         </div>
       </section>
 
@@ -119,6 +119,8 @@
             :value="generatedGreenhouseUid"
             type="text"
             class="input-field"
+            placeholder="UID (автогенерация)"
+            title="Уникальный идентификатор теплицы, генерируется автоматически из названия"
             disabled
           />
           <select
@@ -144,13 +146,24 @@
             placeholder="Описание"
             :disabled="!canConfigure"
           ></textarea>
-          <Button
-            size="sm"
-            :disabled="!canConfigure || !greenhouseForm.name.trim() || loading.stepGreenhouse"
-            @click="createGreenhouse"
-          >
-            {{ loading.stepGreenhouse ? 'Создание...' : 'Создать теплицу' }}
-          </Button>
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              :disabled="!canConfigure || !greenhouseForm.name.trim() || loading.stepGreenhouse"
+              @click="createGreenhouse"
+            >
+              {{ loading.stepGreenhouse ? 'Создание...' : 'Создать теплицу' }}
+            </Button>
+            <Button
+              v-if="availableGreenhouses.length > 0"
+              size="sm"
+              variant="secondary"
+              :disabled="loading.stepGreenhouse"
+              @click="greenhouseMode = 'select'"
+            >
+              Отмена
+            </Button>
+          </div>
         </div>
 
         <div
@@ -204,7 +217,7 @@
         </div>
 
         <div
-          v-if="zoneMode === 'create'"
+          v-else
           class="grid gap-3 md:grid-cols-4"
         >
           <input
@@ -225,15 +238,28 @@
             :value="generatedZoneUid"
             type="text"
             class="input-field"
+            placeholder="UID (автогенерация)"
+            title="Уникальный идентификатор зоны, генерируется автоматически из названия"
             disabled
           />
-          <Button
-            size="sm"
-            :disabled="!canConfigure || !stepGreenhouseDone || !zoneForm.name.trim() || loading.stepZone"
-            @click="createZone"
-          >
-            {{ loading.stepZone ? 'Создание...' : 'Создать зону' }}
-          </Button>
+          <div class="flex gap-2">
+            <Button
+              size="sm"
+              :disabled="!canConfigure || !stepGreenhouseDone || !zoneForm.name.trim() || loading.stepZone"
+              @click="createZone"
+            >
+              {{ loading.stepZone ? 'Создание...' : 'Создать зону' }}
+            </Button>
+            <Button
+              v-if="availableZones.length > 0"
+              size="sm"
+              variant="secondary"
+              :disabled="loading.stepZone"
+              @click="zoneMode = 'select'"
+            >
+              Отмена
+            </Button>
+          </div>
         </div>
 
         <div
@@ -249,7 +275,7 @@
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
             3. Культура и рецепт
           </h3>
-          <Badge :variant="stepPlantDone ? 'success' : 'neutral'">
+          <Badge :variant="stepPlantDone && stepRecipeDone ? 'success' : 'neutral'">
             {{ stepPlantDone && stepRecipeDone ? 'Готово' : 'Не настроено' }}
           </Badge>
         </div>
@@ -317,14 +343,14 @@
 
         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <div class="space-y-1 min-w-0">
-            <label class="block text-xs text-[color:var(--text-muted)]">Полив (обязательно)</label>
+            <label class="block text-xs text-[color:var(--text-muted)]">Полив + накопление (обязательно)</label>
             <div class="flex items-stretch gap-2">
               <select
                 v-model.number="deviceAssignments.irrigation"
                 class="input-select min-w-0 flex-1"
                 :disabled="!canConfigure || !stepZoneDone || irrigationNodes.length === 0"
               >
-                <option :value="null">Выберите узел полива</option>
+                <option :value="null">Выберите общий узел полива/накопления</option>
                 <option v-for="node in irrigationNodes" :key="`irrigation-${node.id}`" :value="node.id">
                   {{ node.name || node.uid || `Node #${node.id}` }}
                 </option>
@@ -389,30 +415,6 @@
             </div>
           </div>
           <div class="space-y-1 min-w-0">
-            <label class="block text-xs text-[color:var(--text-muted)]">Накопительный узел (обязательно)</label>
-            <div class="flex items-stretch gap-2">
-              <select
-                v-model.number="deviceAssignments.accumulation"
-                class="input-select min-w-0 flex-1"
-                :disabled="!canConfigure || !stepZoneDone || accumulationNodes.length === 0"
-              >
-                <option :value="null">Выберите накопительный узел</option>
-                <option v-for="node in accumulationNodes" :key="`accumulation-${node.id}`" :value="node.id">
-                  {{ node.name || node.uid || `Node #${node.id}` }}
-                </option>
-              </select>
-              <Button
-                size="sm"
-                variant="secondary"
-                class="shrink-0 whitespace-nowrap"
-                :disabled="!canAttachRole('accumulation')"
-                @click="attachNodeByRole('accumulation')"
-              >
-                {{ attachButtonLabel('accumulation') }}
-              </Button>
-            </div>
-          </div>
-          <div class="space-y-1 min-w-0">
             <label class="block text-xs text-[color:var(--text-muted)]">Климат (опционально)</label>
             <div class="flex items-stretch gap-2">
               <select
@@ -462,10 +464,27 @@
           </div>
         </div>
 
+        <div
+          v-if="!stepZoneDone"
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
+        >
+          Сначала создайте или выберите зону (шаг 2).
+        </div>
+
+        <div
+          v-else-if="!loading.nodes && availableNodes.length === 0"
+          class="rounded-lg border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]"
+        >
+          Нет доступных узлов. Убедитесь, что устройства зарегистрированы в системе и не привязаны к другим зонам. Нажмите «Обновить» после подключения устройств.
+        </div>
+
         <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
-          <span>Привязано: {{ attachedNodesCount }} (минимум 4 обязательных)</span>
+          <span>Привязано: {{ attachedNodesCount }} (минимум 3 обязательных)</span>
           <span v-if="missingRequiredDevices.length > 0" class="text-[color:var(--badge-warning-text)]">
             Не выбрано: {{ missingRequiredDevices.join(', ') }}
+          </span>
+          <span v-else-if="stepDevicesDone" class="text-[color:var(--badge-success-text)]">
+            Все обязательные устройства привязаны
           </span>
           <Button
             size="sm"
@@ -696,7 +715,7 @@ const {
 
 const showPlantCreateWizard = ref<boolean>(false)
 const showAutomationConfigurator = ref<boolean>(false)
-type DeviceRole = 'irrigation' | 'ph_correction' | 'ec_correction' | 'accumulation' | 'climate' | 'light'
+type DeviceRole = 'irrigation' | 'ph_correction' | 'ec_correction' | 'climate' | 'light'
 const attachingRole = ref<DeviceRole | null>(null)
 
 const deviceAssignments = reactive<SetupWizardDeviceAssignments>({
@@ -737,7 +756,24 @@ function matchesRole(node: Node, role: DeviceRole): boolean {
   const type = nodeType(node)
 
   if (role === 'irrigation') {
-    return type === 'irrig' || hasAnyChannel(node, ['pump_irrigation', 'valve_irrigation', 'main_pump'])
+    return type === 'irrig' || hasAnyChannel(node, [
+      'pump_main',
+      'main_pump',
+      'pump_irrigation',
+      'valve_irrigation',
+      'valve_clean_fill',
+      'valve_clean_supply',
+      'valve_solution_fill',
+      'valve_solution_supply',
+      'level_clean_min',
+      'level_clean_max',
+      'level_solution_min',
+      'level_solution_max',
+      'water_level',
+      'pump_in',
+      'drain',
+      'drain_main',
+    ])
   }
 
   if (role === 'ph_correction') {
@@ -746,10 +782,6 @@ function matchesRole(node: Node, role: DeviceRole): boolean {
 
   if (role === 'ec_correction') {
     return type === 'ec' || hasAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
-  }
-
-  if (role === 'accumulation') {
-    return type === 'water_sensor' || type === 'recirculation' || hasAnyChannel(node, ['water_level', 'pump_in', 'drain', 'drain_main'])
   }
 
   if (role === 'climate') {
@@ -766,7 +798,6 @@ function nodesByRole(role: DeviceRole): Node[] {
 const irrigationNodes = computed<Node[]>(() => nodesByRole('irrigation'))
 const phCorrectionNodes = computed<Node[]>(() => nodesByRole('ph_correction'))
 const ecCorrectionNodes = computed<Node[]>(() => nodesByRole('ec_correction'))
-const accumulationNodes = computed<Node[]>(() => nodesByRole('accumulation'))
 const climateNodes = computed<Node[]>(() => nodesByRole('climate'))
 const lightNodes = computed<Node[]>(() => nodesByRole('light'))
 
@@ -814,7 +845,6 @@ const selectedNodeIdsByRoles = computed<number[]>(() => {
     deviceAssignments.irrigation,
     deviceAssignments.ph_correction,
     deviceAssignments.ec_correction,
-    deviceAssignments.accumulation,
     deviceAssignments.climate,
     deviceAssignments.light,
   ]
@@ -828,10 +858,9 @@ const selectedNodeIdsByRoles = computed<number[]>(() => {
 
 const missingRequiredDevices = computed<string[]>(() => {
   const missing: string[] = []
-  if (!deviceAssignments.irrigation) missing.push('полив')
+  if (!deviceAssignments.irrigation) missing.push('полив + накопление')
   if (!deviceAssignments.ph_correction) missing.push('коррекция pH')
   if (!deviceAssignments.ec_correction) missing.push('коррекция EC')
-  if (!deviceAssignments.accumulation) missing.push('накопительный узел')
   return missing
 })
 
@@ -917,7 +946,18 @@ async function attachConfiguredNodes(): Promise<void> {
   }
 
   selectedNodeIds.value = selectedNodeIdsByRoles.value
-  await attachNodesToZone({ ...deviceAssignments })
+  await attachNodesToZone(buildAssignmentsPayload())
+}
+
+function buildAssignmentsPayload(): SetupWizardDeviceAssignments {
+  const irrigationId = typeof deviceAssignments.irrigation === 'number'
+    ? deviceAssignments.irrigation
+    : null
+
+  return {
+    ...deviceAssignments,
+    accumulation: irrigationId,
+  }
 }
 
 function canAttachRole(role: DeviceRole): boolean {
@@ -956,7 +996,7 @@ async function attachNodeByRole(role: DeviceRole): Promise<void> {
   try {
     selectedNodeIds.value = [nodeId]
     const assignmentsPayload = missingRequiredDevices.value.length === 0
-      ? { ...deviceAssignments }
+      ? buildAssignmentsPayload()
       : null
     await attachNodesToZone(assignmentsPayload)
   } finally {

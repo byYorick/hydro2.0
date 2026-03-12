@@ -35,7 +35,7 @@ describe('webSocketEventDispatchers', () => {
     const activeSubscriptions = new Map<string, ActiveSubscription>([
       ['sub-global-1', {
         id: 'sub-global-1',
-        channelName: 'events.global',
+        channelName: 'hydro.events.global',
         kind: 'globalEvents',
         handler,
         componentTag: 'TestComponent',
@@ -43,7 +43,7 @@ describe('webSocketEventDispatchers', () => {
       }],
     ])
     const channelSubscribers = new Map<string, Set<string>>([
-      ['events.global', new Set(['sub-global-1'])],
+      ['hydro.events.global', new Set(['sub-global-1'])],
     ])
 
     const { handleGlobalEvent } = createWebSocketEventDispatchers({
@@ -51,7 +51,7 @@ describe('webSocketEventDispatchers', () => {
       channelSubscribers,
     })
 
-    handleGlobalEvent('events.global', {
+    handleGlobalEvent('hydro.events.global', {
       zone_id: '42',
       occurred_at: '2026-02-07T00:00:00.000Z',
       server_ts: undefined,
@@ -72,7 +72,7 @@ describe('webSocketEventDispatchers', () => {
     const activeSubscriptions = new Map<string, ActiveSubscription>([
       ['sub-global-1', {
         id: 'sub-global-1',
-        channelName: 'events.global',
+        channelName: 'hydro.events.global',
         kind: 'globalEvents',
         handler,
         componentTag: 'TestComponent',
@@ -80,7 +80,7 @@ describe('webSocketEventDispatchers', () => {
       }],
     ])
     const channelSubscribers = new Map<string, Set<string>>([
-      ['events.global', new Set(['sub-global-1'])],
+      ['hydro.events.global', new Set(['sub-global-1'])],
     ])
 
     setZoneSnapshot(10, createSnapshot(10, 2000))
@@ -89,14 +89,14 @@ describe('webSocketEventDispatchers', () => {
       channelSubscribers,
     })
 
-    handleGlobalEvent('events.global', {
+    handleGlobalEvent('hydro.events.global', {
       id: 1,
       zone_id: 10,
       kind: 'WARNING',
       message: 'stale',
       server_ts: 1999,
     })
-    handleGlobalEvent('events.global', {
+    handleGlobalEvent('hydro.events.global', {
       id: 2,
       zone_id: 10,
       kind: 'WARNING',
@@ -117,7 +117,7 @@ describe('webSocketEventDispatchers', () => {
     const activeSubscriptions = new Map<string, ActiveSubscription>([
       ['sub-command-1', {
         id: 'sub-command-1',
-        channelName: 'commands.5',
+        channelName: 'hydro.commands.5',
         kind: 'zoneCommands',
         handler,
         componentTag: 'TestComponent',
@@ -125,7 +125,7 @@ describe('webSocketEventDispatchers', () => {
       }],
     ])
     const channelSubscribers = new Map<string, Set<string>>([
-      ['commands.5', new Set(['sub-command-1'])],
+      ['hydro.commands.5', new Set(['sub-command-1'])],
     ])
 
     setZoneSnapshot(5, createSnapshot(5, 1000))
@@ -134,19 +134,19 @@ describe('webSocketEventDispatchers', () => {
       channelSubscribers,
     })
 
-    handleCommandEvent('commands.5', {
+    handleCommandEvent('hydro.commands.5', {
       command_id: 101,
       status: 'DONE',
       message: 'stale',
       server_ts: 999,
     }, false)
-    handleCommandEvent('commands.5', {
+    handleCommandEvent('hydro.commands.5', {
       command_id: 102,
       status: 'DONE',
       message: 'null-ts',
       server_ts: null,
     }, false)
-    handleCommandEvent('commands.5', {
+    handleCommandEvent('hydro.commands.5', {
       command_id: 103,
       status: 'DONE',
       message: 'fresh',
@@ -171,7 +171,7 @@ describe('webSocketEventDispatchers', () => {
     const activeSubscriptions = new Map<string, ActiveSubscription>([
       ['sub-command-1', {
         id: 'sub-command-1',
-        channelName: 'commands.9',
+        channelName: 'hydro.commands.9',
         kind: 'zoneCommands',
         handler,
         componentTag: 'TestComponent',
@@ -179,7 +179,7 @@ describe('webSocketEventDispatchers', () => {
       }],
     ])
     const channelSubscribers = new Map<string, Set<string>>([
-      ['commands.9', new Set(['sub-command-1'])],
+      ['hydro.commands.9', new Set(['sub-command-1'])],
     ])
 
     const { handleCommandEvent } = createWebSocketEventDispatchers({
@@ -187,12 +187,12 @@ describe('webSocketEventDispatchers', () => {
       channelSubscribers,
     })
 
-    handleCommandEvent('commands.9', {
+    handleCommandEvent('hydro.commands.9', {
       status: 'DONE',
       message: 'no-id',
     }, false)
 
-    handleCommandEvent('commands.9', {
+    handleCommandEvent('hydro.commands.9', {
       command_id: 200,
       status: 'custom_state',
       message: 'normalized-status',

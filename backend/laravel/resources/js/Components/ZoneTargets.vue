@@ -263,25 +263,46 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import type { ZoneTelemetry, ZoneTargets } from '@/types'
 
 type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 
+type TargetRange = { min?: number; max?: number; target?: number }
+
 interface Props {
   telemetry?: ZoneTelemetry
   targets?: Partial<ZoneTargets> & {
-    ph?: { min?: number; max?: number; target?: number }
-    ec?: { min?: number; max?: number; target?: number }
-    temp?: { min?: number; max?: number; target?: number }
-    humidity?: { min?: number; max?: number; target?: number }
+    ph?: TargetRange
+    ec?: TargetRange
+    temp?: TargetRange
+    humidity?: TargetRange
+    climate_request?: { temp_air_target?: number; humidity_target?: number; co2_target?: number }
   }
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   telemetry: () => ({ ph: null, ec: null, temperature: null, humidity: null }),
   targets: () => ({})
+})
+
+// Бэкенд присылает { ph:{min,max,target}, ec:{...}, climate_request:{temp_air_target, humidity_target} }
+// Шаблон ожидает targets.temp и targets.humidity — нормализуем здесь
+const targets = computed(() => {
+  const t = (props.targets ?? {}) as Record<string, any>
+  const cr = (t.climate_request ?? {}) as Record<string, any>
+  return {
+    ph: (t.ph ?? null) as TargetRange | null,
+    ec: (t.ec ?? null) as TargetRange | null,
+    temp: (t.temp ?? (cr.temp_air_target != null
+      ? { target: cr.temp_air_target as number }
+      : null)) as TargetRange | null,
+    humidity: (t.humidity ?? (cr.humidity_target != null
+      ? { target: cr.humidity_target as number }
+      : null)) as TargetRange | null,
+  }
 })
 
 // Вычисляем индикатор (зеленый/желтый/красный)

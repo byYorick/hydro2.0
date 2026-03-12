@@ -321,6 +321,18 @@ Backend → Node
 **Правило (для всех нод):** узел обязан отправить `command_response` со статусом `DONE`,
 после чего выполнить перезагрузку.
 
+**Снимок состояния IRR-ноды:**
+- `cmd`: `state`
+- `params`: `{}`
+**Правило (для нод типа `irrig`):** узел обязан вернуть `command_response` со статусом `DONE`
+и `details.snapshot` (все дискретные поля только `bool`):
+- `clean_level_max`, `clean_level_min`
+- `solution_level_max`, `solution_level_min`
+- `valve_clean_fill`, `valve_clean_supply`
+- `valve_solution_fill`, `valve_solution_supply`
+- `valve_irrigation`
+- `pump_main`
+
 ## 10.2. Требования
 - Узел обязан:
  - валидировать команду (HMAC подпись, timestamp, параметры),
@@ -380,8 +392,12 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "details": "Pump is in cooldown period",
- "ts": 1710012930123
+ "ts": 1710012930123,
+ "error_code": "pump_in_cooldown",
+ "error_message": "Pump is in cooldown period",
+ "details": {
+  "cooldown_ms": 1200
+ }
 }
 ```
 
@@ -394,8 +410,9 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "details": "Command HMAC signature verification failed",
- "ts": 1710012930123
+ "ts": 1710012930123,
+ "error_code": "invalid_signature",
+ "error_message": "Command HMAC signature verification failed"
 }
 ```
 
@@ -404,10 +421,15 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "details": "Command timestamp is outside acceptable range",
- "ts": 1710012930123
+ "ts": 1710012930123,
+ "error_code": "timestamp_expired",
+ "error_message": "Command timestamp is outside acceptable range"
 }
 ```
+
+Канонические статусы `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.
+Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+Статус `SEND_FAILED` фиксируется на backend-слое при ошибке публикации и не приходит от ноды как `command_response`.
 
 ## 11.4. Подтверждение авто-остановки наполнения (2-бака)
 
@@ -441,6 +463,13 @@ Payload:
 {
   "event_code": "clean_fill_completed",
   "ts": 1710012930,
+  "snapshot": {
+    "clean_level_min": true,
+    "clean_level_max": true,
+    "solution_level_min": false,
+    "solution_level_max": false,
+    "pump_main": false
+  },
   "state": {
     "level_clean_min": 1,
     "level_clean_max": 1,
@@ -449,6 +478,36 @@ Payload:
   }
 }
 ```
+
+## 11.5. Ответ `command_response` для `cmd=state` (IRR)
+
+```json
+{
+  "cmd_id": "cmd-9201",
+  "status": "DONE",
+  "ts": 1710012930123,
+  "details": {
+    "snapshot": {
+      "clean_level_max": true,
+      "clean_level_min": true,
+      "solution_level_max": false,
+      "solution_level_min": true,
+      "valve_clean_fill": false,
+      "valve_clean_supply": true,
+      "valve_solution_fill": true,
+      "valve_solution_supply": false,
+      "valve_irrigation": false,
+      "pump_main": true
+    },
+    "sample_ts": 1710012930
+  }
+}
+```
+
+Требования:
+- `details.snapshot.*` — только `bool`;
+- отсутствие ключа трактуется backend как `unknown`;
+- `details.sample_ts` используется automation-engine для freshness-check.
 
 Нормализация `event_code` в backend:
 - источник: `event_code` (fallback: `event`, `type`);
@@ -466,6 +525,7 @@ Payload:
 Backend обязан:
 - принимать оба канала подтверждения (response + event);
 - сохранять событие в `zone_events`;
+- для `storage_state/event` извлекать `IRR_STATE_SNAPSHOT` из `snapshot` (основное поле) или `state` (fallback);
 - использовать poll как fallback-контроль при потере event.
 
 ---

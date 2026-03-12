@@ -16,6 +16,7 @@
 #include "relay_node_hw_map.h"
 #include "relay_driver.h"
 #include "mqtt_manager.h"
+#include "oled_ui.h"
 #include "config_storage.h"
 #include "esp_log.h"
 #include <string.h>
@@ -69,6 +70,49 @@ static void relay_node_build_error_details(
     const char **error_message_out,
     cJSON **extra_out
 );
+static void relay_node_update_oled_runtime(void);
+
+static void relay_node_update_oled_runtime(void) {
+    if (!oled_ui_is_initialized()) {
+        return;
+    }
+
+    oled_ui_model_t model = {0};
+    size_t channel_count = 0;
+    size_t max_channels = RELAY_NODE_HW_CHANNELS_COUNT;
+    if (max_channels > 8) {
+        max_channels = 8;
+    }
+
+    model.sensor_status.has_error = false;
+    model.sensor_status.i2c_connected = true;
+    model.sensor_status.using_stub = false;
+
+    for (size_t i = 0; i < max_channels; i++) {
+        const relay_node_hw_channel_t *hw = &RELAY_NODE_HW_CHANNELS[i];
+        if (!hw->channel_name) {
+            continue;
+        }
+
+        relay_state_t relay_state = RELAY_STATE_OPEN;
+        if (relay_driver_get_state(hw->channel_name, &relay_state) != ESP_OK) {
+            continue;
+        }
+
+        strncpy(model.channels[channel_count].name, hw->channel_name, sizeof(model.channels[channel_count].name) - 1);
+        model.channels[channel_count].name[sizeof(model.channels[channel_count].name) - 1] = '\0';
+        model.channels[channel_count].value = (relay_state == RELAY_STATE_CLOSED) ? 1.0f : 0.0f;
+        model.channels[channel_count].active = (relay_state == RELAY_STATE_CLOSED);
+        channel_count++;
+    }
+
+    if (channel_count == 0) {
+        return;
+    }
+
+    model.channel_count = channel_count;
+    (void)oled_ui_update_model(&model);
+}
 
 static bool relay_node_parse_state(const cJSON *state_item, int *state_out) {
     if (!state_item || !state_out) {
@@ -154,6 +198,7 @@ static void relay_node_auto_off_timer_cb(TimerHandle_t timer) {
                  entry->channel_name, esp_err_to_name(err));
     } else {
         ESP_LOGI(TAG, "Auto-off: relay %s opened", entry->channel_name);
+        relay_node_update_oled_runtime();
     }
 
     if (entry->cmd_id[0] && s_auto_off_done_queue) {
@@ -421,7 +466,7 @@ static esp_err_t relay_node_init_channel_callback(
 }
 
 // Обработчик команды set_relay с командным автоматом
-// Состояния: ACCEPTED -> DONE/FAILED
+// Состояния: ACK -> DONE/ERROR
 static esp_err_t handle_set_state(
     const char *channel,
     const cJSON *params,
@@ -443,7 +488,7 @@ static esp_err_t handle_set_state(
         ESP_LOGW(TAG, "set_relay invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             "invalid_params",
             "Missing or invalid state",
             NULL
@@ -465,7 +510,7 @@ static esp_err_t handle_set_state(
     
     bool use_delayed_done = (state == 1 && duration_ms > 0);
 
-    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды (если DONE будет сразу)
+    // Шаг 1: Отправляем ACK сразу при принятии команды (если DONE будет сразу)
     if (cmd_id && !use_delayed_done) {
         node_command_handler_publish_accepted(cmd_id, channel);
     }
@@ -475,14 +520,14 @@ static esp_err_t handle_set_state(
     // Шаг 2: Выполняем команду
     esp_err_t err = relay_driver_set_state(channel, relay_state);
     
-    // Шаг 3: Отправляем финальный ответ DONE или FAILED
+    // Шаг 3: Отправляем финальный ответ DONE или ERROR
     const char *final_status;
     const char *error_code = NULL;
     const char *error_message = NULL;
     cJSON *error_details = NULL;
     
     if (err != ESP_OK) {
-        final_status = "FAILED";
+        final_status = "ERROR";
         relay_node_build_error_details(
             err,
             channel,
@@ -496,12 +541,13 @@ static esp_err_t handle_set_state(
         relay_node_cancel_auto_off(channel, true);
     } else {
         if (use_delayed_done) {
-            final_status = "ACCEPTED";
+            final_status = "ACK";
             relay_node_schedule_auto_off(channel, cmd_id, duration_ms);
         } else {
             final_status = "DONE";
             relay_node_cancel_auto_off(channel, true);
         }
+        relay_node_update_oled_runtime();
     }
 
     *response = node_command_handler_create_response(
@@ -555,7 +601,7 @@ static esp_err_t handle_toggle(
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", get_err, error_message);
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             error_code,
             error_message,
             error_details
@@ -586,7 +632,7 @@ static esp_err_t handle_toggle(
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, error_message);
         *response = node_command_handler_create_response(
             cmd_id,
-            "FAILED",
+            "ERROR",
             error_code,
             error_message,
             error_details
@@ -609,6 +655,7 @@ static esp_err_t handle_toggle(
     cJSON_Delete(extra);
 
     ESP_LOGI(TAG, "Relay %s toggled to state %d", channel, new_state);
+    relay_node_update_oled_runtime();
     return ESP_OK;
 }
 
@@ -661,6 +708,7 @@ esp_err_t relay_node_framework_init(void) {
     }
 
     node_config_handler_set_channels_callback(relay_node_channels_callback, NULL);
+    relay_node_update_oled_runtime();
 
     ESP_LOGI(TAG, "node_framework initialized for relay_node");
     return ESP_OK;
@@ -780,6 +828,7 @@ static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx) {
     }
 
     cJSON_Delete(config);
+    relay_node_update_oled_runtime();
     return ESP_OK;
 }
 
