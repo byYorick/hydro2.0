@@ -52,11 +52,13 @@ class ActiveTaskStore
                 ],
             );
         } catch (\Throwable $e) {
-            Log::warning('Failed to upsert laravel scheduler active task snapshot', [
+            Log::error('Failed to upsert laravel scheduler active task snapshot', [
                 'task_id' => $taskId,
                 'zone_id' => $zoneId,
+                'schedule_key' => $scheduleKey,
                 'status' => $normalizedStatus,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return null;
@@ -78,9 +80,79 @@ class ActiveTaskStore
             Log::warning('Failed to load laravel scheduler task by task_id', [
                 'task_id' => $taskId,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return null;
+        }
+    }
+
+    public function findByIntentId(int $intentId, int $zoneId): ?LaravelSchedulerActiveTask
+    {
+        if ($intentId <= 0 || $zoneId <= 0) {
+            return null;
+        }
+
+        try {
+            return LaravelSchedulerActiveTask::query()
+                ->where('zone_id', $zoneId)
+                ->whereRaw("(details->>'intent_id')::int = ?", [$intentId])
+                ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
+                ->orderByDesc('id')
+                ->first();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to load laravel scheduler task by intent_id', [
+                'intent_id' => $intentId,
+                'zone_id' => $zoneId,
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Returns a map of schedule_key => is_busy for the given keys.
+     * Performs a single batched query instead of one per schedule key.
+     *
+     * @param  list<string>  $scheduleKeys
+     * @return array<string, bool>
+     */
+    public function batchFindBusyScheduleKeys(array $scheduleKeys, CarbonImmutable $now): array
+    {
+        $scheduleKeys = array_values(array_filter(array_unique(array_map('trim', $scheduleKeys))));
+        if ($scheduleKeys === []) {
+            return [];
+        }
+
+        try {
+            $busyKeys = LaravelSchedulerActiveTask::query()
+                ->select('schedule_key')
+                ->whereIn('schedule_key', $scheduleKeys)
+                ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
+                ->where(function ($query) use ($now): void {
+                    $query->whereNull('expires_at')
+                        ->orWhere('expires_at', '>=', $now);
+                })
+                ->pluck('schedule_key')
+                ->flip()
+                ->all();
+
+            $result = [];
+            foreach ($scheduleKeys as $key) {
+                $result[$key] = isset($busyKeys[$key]);
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            Log::warning('Failed to batch-check schedule keys busy status', [
+                'count' => count($scheduleKeys),
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+
+            return [];
         }
     }
 
@@ -106,6 +178,7 @@ class ActiveTaskStore
             Log::warning('Failed to load laravel scheduler active task by schedule key', [
                 'schedule_key' => $scheduleKey,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return null;
@@ -128,9 +201,10 @@ class ActiveTaskStore
                 ->limit($limit)
                 ->get();
         } catch (\Throwable $e) {
-            Log::warning('Failed to list laravel scheduler pending tasks for polling', [
+            Log::error('Failed to list laravel scheduler pending tasks for polling', [
                 'limit' => $limit,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return collect();
@@ -160,7 +234,7 @@ class ActiveTaskStore
         $terminalStatusPlaceholders = implode(', ', array_fill(0, count(SchedulerConstants::TERMINAL_STATUSES), '?'));
 
         try {
-            DB::update(
+            $affected = DB::update(
                 "
                 UPDATE laravel_scheduler_active_tasks
                 SET status = ?,
@@ -181,11 +255,18 @@ class ActiveTaskStore
                     ...SchedulerConstants::TERMINAL_STATUSES,
                 ],
             );
+            if ($affected === 0) {
+                Log::debug('markTerminal: no rows updated — task already terminal or not found', [
+                    'task_id' => $taskId,
+                    'status' => $normalizedStatus,
+                ]);
+            }
         } catch (\Throwable $e) {
-            Log::warning('Failed to mark laravel scheduler task as terminal', [
+            Log::error('Failed to mark laravel scheduler task as terminal', [
                 'task_id' => $taskId,
                 'status' => $normalizedStatus,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
         }
     }
@@ -211,6 +292,7 @@ class ActiveTaskStore
             Log::warning('Failed to update last_polled_at for laravel scheduler task', [
                 'task_id' => $taskId,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
         }
     }
@@ -237,7 +319,10 @@ class ActiveTaskStore
                 ->delete();
         } catch (\Throwable $e) {
             Log::warning('Failed to cleanup terminal laravel scheduler tasks', [
+                'threshold' => $threshold->toIso8601String(),
+                'limit' => $limit,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return 0;
@@ -257,6 +342,7 @@ class ActiveTaskStore
         } catch (\Throwable $e) {
             Log::warning('Failed to count active laravel scheduler tasks', [
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return 0;

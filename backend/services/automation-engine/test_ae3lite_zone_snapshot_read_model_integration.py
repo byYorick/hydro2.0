@@ -231,6 +231,28 @@ async def _insert_profile(zone_id: int) -> None:
     )
 
 
+async def _insert_correction_config(zone_id: int) -> None:
+    """Insert a minimal zone_correction_config so resolve_two_tank_runtime does not fail-closed."""
+    minimal_cfg = {"base": {"runtime": {}, "timing": {}, "retry": {}, "correction": {}}}
+    await execute(
+        """
+        INSERT INTO zone_correction_configs (
+            zone_id,
+            base_config,
+            phase_overrides,
+            resolved_config,
+            version,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, '{}'::jsonb, '{}'::jsonb, $2, 1, NOW(), NOW())
+        ON CONFLICT (zone_id) DO NOTHING
+        """,
+        zone_id,
+        minimal_cfg,
+    )
+
+
 async def _insert_irrig_node(zone_id: int, *, prefix: str) -> tuple[int, str]:
     short_uid = f"nd-{uuid4().hex[:20]}"
     rows = await fetch(
@@ -324,6 +346,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
             grow_cycle_id,
         )
         await _insert_profile(zone_id)
+        await _insert_correction_config(zone_id)
         await execute(
             """
             INSERT INTO zone_workflow_state (zone_id, workflow_phase, version, updated_at, payload)

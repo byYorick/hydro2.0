@@ -18,6 +18,7 @@ from ae3lite.api.rate_limit import SlidingWindowRateLimiter
 from ae3lite.api.responses import build_start_cycle_response
 from ae3lite.api.security import validate_scheduler_security_baseline
 from ae3lite.api.validation import validate_scheduler_zone
+from ae3lite.infrastructure.intent_status_listener import IntentStatusListener
 from ae3lite.runtime.bootstrap import build_ae3_runtime_bundle
 from ae3lite.runtime.config import Ae3RuntimeConfig
 from common.db import execute, fetch, get_pool
@@ -178,9 +179,38 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         bundle.worker.kick()
         app.state.ae3_runtime_bundle = bundle
         app.state.ae3_runtime_config = runtime_config
+
+        # Start intent status listener if DB DSN is available.
+        intent_listener_task: Optional[asyncio.Task] = None
+        intent_listener: Optional[IntentStatusListener] = None
+        if runtime_config.db_dsn:
+            async def _on_terminal_intent(data: dict) -> None:
+                intent_id = data.get("intent_id")
+                zone_id = data.get("zone_id")
+                status = data.get("status")
+                logger.info(
+                    "IntentStatusListener: terminal intent received intent_id=%s zone_id=%s status=%s",
+                    intent_id,
+                    zone_id,
+                    status,
+                )
+
+            intent_listener = IntentStatusListener(
+                dsn=runtime_config.db_dsn,
+                on_terminal_intent=_on_terminal_intent,
+            )
+            intent_listener_task = asyncio.create_task(
+                intent_listener.run(),
+                name="ae3-intent-status-listener",
+            )
+            background_tasks.add(intent_listener_task)
+            intent_listener_task.add_done_callback(background_tasks.discard)
+
         try:
             yield
         finally:
+            if intent_listener_task is not None and not intent_listener_task.done():
+                intent_listener.stop()
             await _drain_background_tasks(background_tasks)
 
     app = FastAPI(title="Automation Engine API", lifespan=_app_lifespan)

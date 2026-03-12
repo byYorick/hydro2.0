@@ -261,10 +261,11 @@ class ActiveTaskPollerTest extends TestCase
             'intent_type' => 'IRRIGATE_ONCE',
             'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'idempotency_key' => 'intent-expired-'.$zone->id,
-            'status' => 'running',
+            'status' => 'completed',
             'claimed_at' => now()->subMinutes(15),
+            'completed_at' => now()->subMinutes(2),
             'created_at' => now()->subMinutes(16),
-            'updated_at' => now()->subMinutes(12),
+            'updated_at' => now()->subMinutes(2),
         ]);
         $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
         DB::table('laravel_scheduler_active_tasks')->insert([

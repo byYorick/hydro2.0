@@ -63,6 +63,7 @@ class ActiveTaskPoller
             $cacheKey = SchedulerRuntimeHelper::activeTaskCacheKey($scheduleKey);
             if ($isBusy) {
                 Cache::put($cacheKey, ['task_id' => $taskId], now()->addSeconds($cfg['active_task_ttl_sec']));
+
                 continue;
             }
 
@@ -281,7 +282,9 @@ class ActiveTaskPoller
                     Log::warning('Failed to load zone_automation_intents status for laravel scheduler task', [
                         'task_id' => $taskId,
                         'intent_id' => $intentId,
+                        'zone_id' => (int) $task->zone_id,
                         'error' => $e->getMessage(),
+                        'exception_type' => get_class($e),
                     ]);
 
                     return null;
@@ -313,7 +316,9 @@ class ActiveTaskPoller
         } catch (\Throwable $e) {
             Log::warning('Failed to load scheduler_logs status for laravel scheduler task', [
                 'task_id' => $taskId,
+                'zone_id' => (int) $task->zone_id,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return null;
@@ -341,14 +346,70 @@ class ActiveTaskPoller
         array $cfg,
     ): ?string {
         if (preg_match('/^\d+$/', $taskId) !== 1) {
-            Log::warning('AE3 scheduler task_id is not canonical numeric id', [
+            Log::error('AE3 scheduler task_id is not canonical numeric id', [
                 'task_id' => $taskId,
                 'zone_id' => (int) $task->zone_id,
+                'task_type' => (string) $task->task_type,
+                'schedule_key' => (string) $task->schedule_key,
             ]);
 
             return 'not_found';
         }
 
+        // Fast path: read intent status from shared DB (avoids HTTP round-trip to AE).
+        $intentId = $this->resolveIntentIdForTask($task);
+        if ($intentId > 0) {
+            return $this->fetchIntentStatusFromDb($intentId, (int) $task->zone_id);
+        }
+
+        // Fallback: HTTP request to AE (for tasks created before intent_id was stored in details).
+        Log::debug('AE3 status poll via HTTP fallback (no intent_id in details)', [
+            'task_id' => $taskId,
+            'zone_id' => (int) $task->zone_id,
+            'schedule_key' => (string) $task->schedule_key,
+        ]);
+
+        return $this->fetchAe3StatusViaHttp($task, $taskId, $cfg);
+    }
+
+    private function fetchIntentStatusFromDb(int $intentId, int $zoneId): ?string
+    {
+        try {
+            $row = DB::table('zone_automation_intents')
+                ->where('id', $intentId)
+                ->where('zone_id', $zoneId)
+                ->first(['status']);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to read zone_automation_intents status from DB (AE3 fast path)', [
+                'intent_id' => $intentId,
+                'zone_id' => $zoneId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if ($row === null) {
+            return 'not_found';
+        }
+
+        return match (strtolower(trim((string) ($row->status ?? '')))) {
+            'pending', 'claimed', 'running', 'waiting_command' => 'accepted',
+            'completed' => 'completed',
+            'failed' => 'failed',
+            'cancelled' => 'cancelled',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     */
+    private function fetchAe3StatusViaHttp(
+        LaravelSchedulerActiveTask $task,
+        string $taskId,
+        array $cfg,
+    ): ?string {
         $apiUrl = rtrim((string) ($cfg['api_url'] ?? ''), '/');
         if ($apiUrl === '') {
             return null;
@@ -364,6 +425,7 @@ class ActiveTaskPoller
                 'task_id' => $taskId,
                 'zone_id' => (int) $task->zone_id,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
 
             return null;
@@ -471,13 +533,14 @@ class ActiveTaskPoller
                     'error_message' => $errorMessage,
                 ]);
         } catch (\Throwable $e) {
-            Log::warning('Failed to sync zone_automation_intents terminal status from laravel scheduler task', [
+            Log::error('Failed to sync zone_automation_intents terminal status from laravel scheduler task', [
                 'task_id' => trim((string) $task->task_id),
                 'zone_id' => (int) $task->zone_id,
                 'intent_id' => $intentId,
                 'terminal_status' => $terminalStatus,
                 'terminal_source' => $terminalSource,
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
             ]);
         }
     }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone as _tz
 from typing import Any, Callable, Optional
 
 from ae3lite.infrastructure.metrics import ACTIVE_TASKS, TICK_DURATION, TICK_ERRORS, ZONE_LEASE_LOST, ZONE_LEASE_RELEASE_FAILED
@@ -105,8 +105,9 @@ class Ae3RuntimeWorker:
             if intent_id > 0:
                 await self._safe_mark_intent_running(intent_id=intent_id)
 
+            lease_lost_event = asyncio.Event()
             heartbeat_task = self._spawn_background_task_fn(
-                self._lease_heartbeat(zone_id=task.zone_id),
+                self._lease_heartbeat(zone_id=task.zone_id, lease_lost_event=lease_lost_event),
                 task_name="ae3lite_lease_heartbeat",
             )
             final_task = task
@@ -122,6 +123,12 @@ class Ae3RuntimeWorker:
                 cancel = getattr(heartbeat_task, "cancel", None)
                 if callable(cancel):
                     cancel()
+                if lease_lost_event.is_set():
+                    self._logger.warning(
+                        "AE3 runtime task finished after lease was lost: zone_id=%s task_id=%s",
+                        task.zone_id,
+                        task.id,
+                    )
                 released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
                 if not released:
                     self._logger.warning(
@@ -147,12 +154,16 @@ class Ae3RuntimeWorker:
                             },
                         )
                     except Exception:
-                        self._logger.warning("AE3 failed to send lease_release_failed alert zone_id=%s", task.zone_id)
+                        self._logger.warning(
+                            "AE3 failed to send lease_release_failed alert zone_id=%s",
+                            task.zone_id,
+                            exc_info=True,
+                        )
 
             if intent_id > 0 and final_task is not None and not final_task.is_active:
                 await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
 
-    async def _lease_heartbeat(self, *, zone_id: int) -> None:
+    async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
         """Periodically extend zone lease while task is executing (heartbeat at 1/3 of TTL)."""
         interval = max(10.0, self._lease_ttl_sec / 3.0)
         while True:
@@ -167,12 +178,13 @@ class Ae3RuntimeWorker:
                 if extended:
                     self._log_debug("AE3 lease heartbeat extended: zone_id=%s owner=%s", zone_id, self._owner)
                 else:
-                    self._logger.warning(
-                        "AE3 lease heartbeat: lease lost for zone_id=%s owner=%s",
+                    self._logger.error(
+                        "AE3 lease heartbeat: lease lost for zone_id=%s owner=%s — task continues without lease",
                         zone_id,
                         self._owner,
                     )
                     ZONE_LEASE_LOST.labels(zone_id=str(zone_id)).inc()
+                    lease_lost_event.set()
                     try:
                         await send_infra_alert(
                             code="ae3_zone_lease_lost",
@@ -187,7 +199,12 @@ class Ae3RuntimeWorker:
                             },
                         )
                     except Exception:
-                        self._logger.warning("AE3 failed to send lease_lost alert zone_id=%s", zone_id)
+                        self._logger.warning(
+                            "AE3 failed to send lease_lost alert zone_id=%s",
+                            zone_id,
+                            exc_info=True,
+                        )
+                    break
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -272,14 +289,21 @@ class Ae3RuntimeWorker:
             return False
 
         now = self._now_fn()
-        if next_due_at.tzinfo is not None and now.tzinfo is None:
-            next_due_cmp = next_due_at.replace(tzinfo=None)
-        elif next_due_at.tzinfo is None and now.tzinfo is not None:
-            next_due_cmp = next_due_at.replace(tzinfo=now.tzinfo)
-        else:
-            next_due_cmp = next_due_at
+        # Normalize both to UTC-aware to avoid wrong comparisons when one is
+        # tz-aware and the other is naive (replace(tzinfo=None) strips info
+        # without converting, causing silent clock errors).
+        next_due_utc = (
+            next_due_at.astimezone(_tz.utc)
+            if next_due_at.tzinfo is not None
+            else next_due_at.replace(tzinfo=_tz.utc)
+        )
+        now_utc = (
+            now.astimezone(_tz.utc)
+            if now.tzinfo is not None
+            else now.replace(tzinfo=_tz.utc)
+        )
 
-        delay = (next_due_cmp - now).total_seconds()
+        delay = (next_due_utc - now_utc).total_seconds()
         if delay <= 0:
             delay = self._idle_poll_interval_sec
         self._log_debug(

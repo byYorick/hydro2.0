@@ -197,7 +197,30 @@ async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, soluti
                 int(rows[0]["id"]),
             )
     await _insert_ph_ec_support_nodes(zone_id=zone_id, greenhouse_id=greenhouse_id)
+    await _insert_correction_config(zone_id)
     return greenhouse_id, zone_id
+
+
+async def _insert_correction_config(zone_id: int) -> None:
+    """Insert a minimal zone_correction_config so resolve_two_tank_runtime does not fail-closed."""
+    minimal_cfg = {"base": {"runtime": {}, "timing": {}, "retry": {}, "correction": {}}}
+    await execute(
+        """
+        INSERT INTO zone_correction_configs (
+            zone_id,
+            base_config,
+            phase_overrides,
+            resolved_config,
+            version,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, '{}'::jsonb, '{}'::jsonb, $2, 1, NOW(), NOW())
+        ON CONFLICT (zone_id) DO NOTHING
+        """,
+        zone_id,
+        minimal_cfg,  # Python dict — jsonb codec in common.db pool encodes it via json.dumps
+    )
 
 
 async def _insert_pending_task(zone_id: int, *, prefix: str) -> int:

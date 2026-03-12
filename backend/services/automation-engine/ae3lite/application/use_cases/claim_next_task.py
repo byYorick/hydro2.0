@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Optional, Protocol, Tuple
 
 from ae3lite.domain.entities import AutomationTask, ZoneLease
 from ae3lite.domain.errors import TaskClaimRollbackError
+
+logger = logging.getLogger(__name__)
 
 
 class AutomationTaskRepository(Protocol):
@@ -62,9 +65,21 @@ class ClaimNextTaskUseCase:
 
         reverted = await self._task_repository.release_claim(task_id=task.id, owner=owner, now=now)
         if not reverted:
+            logger.error(
+                "Task claim rollback failed — zone lease conflict and cannot release: task_id=%s zone_id=%s owner=%s",
+                task.id,
+                task.zone_id,
+                owner,
+            )
             raise TaskClaimRollbackError(
                 f"Failed to rollback claimed task {task.id} after zone lease conflict"
             )
+        logger.debug(
+            "Task claim rolled back after zone lease conflict: task_id=%s zone_id=%s owner=%s",
+            task.id,
+            task.zone_id,
+            owner,
+        )
         return None
 
     async def next_pending_due_at(self) -> Optional[datetime]:

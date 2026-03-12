@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -10,6 +11,8 @@ from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import WorkflowState
 from ae3lite.domain.errors import CommandReconcileError, StartupRecoveryError, TaskExecutionError
 from ae3lite.domain.services.topology_registry import TopologyRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class StartupRecoveryUseCase:
@@ -57,6 +60,12 @@ class StartupRecoveryUseCase:
                 waiting_command_tasks += 1
                 recovered_waiting_command_tasks += 1
             else:
+                logger.error(
+                    "Startup recovery: unsupported outcome=%s task_id=%s zone_id=%s",
+                    outcome,
+                    getattr(task, "id", None),
+                    getattr(task, "zone_id", None),
+                )
                 raise StartupRecoveryError(f"Unsupported startup recovery outcome={outcome}")
             if terminal_outcome is not None:
                 terminal_outcomes.append(terminal_outcome)
@@ -120,6 +129,12 @@ class StartupRecoveryUseCase:
                 now=now,
             )
             if recovered_task is None:
+                logger.error(
+                    "Startup recovery: recover_waiting_command returned None task_id=%s zone_id=%s status=%s",
+                    task.id,
+                    task.zone_id,
+                    task.status,
+                )
                 raise StartupRecoveryError(f"Unable to recover task_id={task.id} into waiting_command")
             return "recovered_waiting_command", None
 
@@ -168,6 +183,12 @@ class StartupRecoveryUseCase:
         if result["state"] == "failed":
             return "failed", self._build_terminal_outcome(task=result["task"])
         if result["state"] != "done":
+            logger.error(
+                "Startup recovery: unsupported native recovery state=%s task_id=%s zone_id=%s",
+                result["state"],
+                task.id,
+                task.zone_id,
+            )
             raise StartupRecoveryError(f"Unsupported native recovery state={result['state']}")
 
         progressed_task = await self._apply_topology_done_transition(task=result["task"], now=now)
@@ -200,6 +221,13 @@ class StartupRecoveryUseCase:
                 now=now,
             )
             if failed is None:
+                logger.error(
+                    "Startup recovery: fail_for_recovery returned None for unknown stage task_id=%s zone_id=%s stage=%s topology=%s",
+                    task.id,
+                    task.zone_id,
+                    current_stage,
+                    topology,
+                )
                 raise StartupRecoveryError(
                     f"Unable to fail task_id={task.id} for unknown stage",
                 )
@@ -223,6 +251,13 @@ class StartupRecoveryUseCase:
                 now=now,
             )
             if failed is None:
+                logger.error(
+                    "Startup recovery: fail_for_recovery returned None on terminal_error stage task_id=%s zone_id=%s stage=%s error_code=%s",
+                    task.id,
+                    task.zone_id,
+                    current_stage,
+                    error_code,
+                )
                 raise StartupRecoveryError(
                     f"Unable to fail task_id={task.id} after recovery DONE",
                 )
@@ -270,6 +305,13 @@ class StartupRecoveryUseCase:
                 task=task, workflow=new_workflow, now=now,
             )
             if requeued is None:
+                logger.error(
+                    "Startup recovery: update_stage returned None on requeue task_id=%s zone_id=%s stage=%s next_stage=%s",
+                    task.id,
+                    task.zone_id,
+                    current_stage,
+                    next_stage,
+                )
                 raise StartupRecoveryError(
                     f"Unable to requeue task_id={task.id} after recovery DONE",
                 )
@@ -290,6 +332,12 @@ class StartupRecoveryUseCase:
             now=now,
         )
         if completed is None:
+            logger.error(
+                "Startup recovery: mark_completed returned None task_id=%s zone_id=%s stage=%s",
+                task.id,
+                task.zone_id,
+                current_stage,
+            )
             raise StartupRecoveryError(
                 f"Unable to complete task_id={task.id} after recovery DONE",
             )
@@ -323,6 +371,12 @@ class StartupRecoveryUseCase:
             now=now,
         )
         if failed_task is None:
+            logger.error(
+                "Startup recovery: fail_for_recovery returned None task_id=%s zone_id=%s error_code=%s",
+                task.id,
+                task.zone_id,
+                error_code,
+            )
             raise StartupRecoveryError(
                 f"Unable to fail task_id={task.id} during startup recovery with error_code={error_code}"
             )

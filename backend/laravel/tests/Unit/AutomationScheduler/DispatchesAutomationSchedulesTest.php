@@ -5,7 +5,11 @@ namespace Tests\Unit\AutomationScheduler;
 use App\Services\AutomationScheduler\ActiveTaskPoller;
 use App\Services\AutomationScheduler\ActiveTaskStore;
 use App\Services\AutomationScheduler\LightingScheduleParser;
-use App\Services\AutomationScheduler\SchedulerCycleService;
+use App\Services\AutomationScheduler\SchedulerCycleOrchestrator;
+use App\Services\AutomationScheduler\SchedulerCycleFinalizer;
+use App\Services\AutomationScheduler\SchedulerRuntimeHelper;
+use App\Services\AutomationScheduler\ScheduleDispatcher;
+use App\Services\AutomationScheduler\ScheduleLoader;
 use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\EffectiveTargetsService;
 use Carbon\CarbonImmutable;
@@ -15,7 +19,7 @@ use Tests\TestCase;
 
 class DispatchesAutomationSchedulesTest extends TestCase
 {
-    private SchedulerCycleService $service;
+    private SchedulerCycleOrchestrator $orchestrator;
 
     private ReflectionClass $reflection;
 
@@ -24,20 +28,33 @@ class DispatchesAutomationSchedulesTest extends TestCase
         parent::setUp();
 
         $activeTaskStore = new ActiveTaskStore;
-        $this->service = new SchedulerCycleService(
-            effectiveTargetsService: Mockery::mock(EffectiveTargetsService::class),
-            activeTaskStore: $activeTaskStore,
-            zoneCursorStore: new ZoneCursorStore,
+        $activeTaskPoller = new ActiveTaskPoller($activeTaskStore);
+        $zoneCursorStore = new ZoneCursorStore;
+
+        $this->orchestrator = new SchedulerCycleOrchestrator(
+            scheduleLoader: new ScheduleLoader(
+                effectiveTargetsService: Mockery::mock(EffectiveTargetsService::class),
+                zoneCursorStore: $zoneCursorStore,
+            ),
+            scheduleDispatcher: new ScheduleDispatcher(
+                activeTaskStore: $activeTaskStore,
+                activeTaskPoller: $activeTaskPoller,
+            ),
+            finalizer: new SchedulerCycleFinalizer(
+                zoneCursorStore: $zoneCursorStore,
+                activeTaskStore: $activeTaskStore,
+            ),
             lightingScheduleParser: new LightingScheduleParser,
-            activeTaskPoller: new ActiveTaskPoller($activeTaskStore),
+            activeTaskPoller: $activeTaskPoller,
+            activeTaskStore: $activeTaskStore,
         );
-        $this->reflection = new ReflectionClass($this->service);
+        $this->reflection = new ReflectionClass($this->orchestrator);
     }
 
     public function test_to_iso_adds_utc_suffix(): void
     {
         $value = CarbonImmutable::parse('2026-03-03 10:15:20', 'UTC');
-        $iso = $this->invokePrivateMethod('toIso', [$value]);
+        $iso = SchedulerRuntimeHelper::toIso($value);
 
         $this->assertSame('2026-03-03T10:15:20Z', $iso);
     }
@@ -50,6 +67,6 @@ class DispatchesAutomationSchedulesTest extends TestCase
         $refMethod = $this->reflection->getMethod($method);
         $refMethod->setAccessible(true);
 
-        return $refMethod->invokeArgs($this->service, $args);
+        return $refMethod->invokeArgs($this->orchestrator, $args);
     }
 }

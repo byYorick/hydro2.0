@@ -73,7 +73,12 @@ class ExecuteTaskUseCase:
                     "intent_trigger": str(getattr(running_task, "intent_trigger", "") or "") or None,
                 })
             except Exception:
-                logger.warning("AE3 failed to log AE_TASK_STARTED event", exc_info=True)
+                logger.warning(
+                    "AE3 failed to log AE_TASK_STARTED event zone_id=%s task_id=%s",
+                    running_task.zone_id,
+                    running_task.id,
+                    exc_info=True,
+                )
 
         snapshot = None
         plan = None
@@ -99,7 +104,12 @@ class ExecuteTaskUseCase:
                             "stage": str(getattr(final_task, "current_stage", "") or ""),
                         })
                     except Exception:
-                        logger.warning("AE3 failed to log AE_TASK_COMPLETED event", exc_info=True)
+                        logger.warning(
+                            "AE3 failed to log AE_TASK_COMPLETED event zone_id=%s task_id=%s",
+                            final_task.zone_id,
+                            final_task.id,
+                            exc_info=True,
+                        )
                 return final_task
 
             # Fallback for non-two-tank topologies (generic single-batch)
@@ -118,6 +128,16 @@ class ExecuteTaskUseCase:
             )
             return completed_task
         except (SnapshotBuildError, PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
+            error_code = getattr(exc, "code", "ae3_task_execution_failed")
+            logger.error(
+                "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_code=%s error=%s",
+                running_task.zone_id,
+                running_task.id,
+                getattr(running_task, "current_stage", None),
+                error_code,
+                exc,
+                exc_info=True,
+            )
             await self._attempt_fail_safe_shutdown(
                 task=running_task,
                 snapshot=snapshot,
@@ -127,12 +147,21 @@ class ExecuteTaskUseCase:
             return await self._fail_closed(
                 task=running_task,
                 owner=owner,
-                error_code=getattr(exc, "code", "ae3_task_execution_failed"),
+                error_code=error_code,
                 error_message=str(exc),
                 now=now,
             )
         except Exception as exc:
             message = str(exc).strip() or exc.__class__.__name__
+            logger.error(
+                "AE3 task execution unhandled exception: zone_id=%s task_id=%s stage=%s error_type=%s error=%s",
+                running_task.zone_id,
+                running_task.id,
+                getattr(running_task, "current_stage", None),
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
             await self._attempt_fail_safe_shutdown(
                 task=running_task,
                 snapshot=snapshot,
@@ -175,7 +204,13 @@ class ExecuteTaskUseCase:
                 },
             )
         except Exception:
-            logger.warning("AE3 failed to log AE_TASK_FAILED event", exc_info=True)
+            logger.warning(
+                "AE3 failed to log AE_TASK_FAILED event zone_id=%s task_id=%s error_code=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                error_code,
+                exc_info=True,
+            )
         return await self._finalize_task_use_case.fail_closed(
             task=task,
             owner=owner,
@@ -293,10 +328,11 @@ class ExecuteTaskUseCase:
                 now=now,
             )
             if not bool(result.get("success")):
-                logger.warning(
-                    "AE3 fail-safe shutdown batch reported non-success: task_id=%s zone_id=%s",
+                logger.error(
+                    "AE3 fail-safe shutdown batch reported non-success: task_id=%s zone_id=%s error_code=%s",
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
+                    result.get("error_code"),
                 )
         except asyncio.CancelledError:
             raise

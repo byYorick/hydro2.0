@@ -1,0 +1,631 @@
+<?php
+
+namespace App\Services\AutomationScheduler;
+
+use App\Models\SchedulerLog;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+
+class SchedulerCycleOrchestrator
+{
+    /**
+     * @var array<int, array{task_name: string, status: string, details: string, created_at: string}>
+     */
+    private array $schedulerLogsBuffer = [];
+
+    public function __construct(
+        private readonly ScheduleLoader $scheduleLoader,
+        private readonly ScheduleDispatcher $scheduleDispatcher,
+        private readonly SchedulerCycleFinalizer $finalizer,
+        private readonly LightingScheduleParser $lightingScheduleParser,
+        private readonly ActiveTaskPoller $activeTaskPoller,
+        private readonly ActiveTaskStore $activeTaskStore,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     * @param  array<int, int>  $zoneFilter
+     * @return array<string, mixed>
+     */
+    public function runCycle(array $cfg, array $zoneFilter): array
+    {
+        $this->schedulerLogsBuffer = [];
+        $cycleStartedAt = microtime(true);
+        /** @var array<string, int> $dispatchMetrics */
+        $dispatchMetrics = [];
+
+        try {
+            $this->finalizer->cleanupTerminalActiveTasks($cfg);
+
+            $traceId = $this->newTraceId();
+            if ($cfg['token'] === '') {
+                Log::error('Laravel scheduler dispatcher: missing scheduler api token');
+                $stats = [
+                    'dispatch_mode' => 'start_cycle',
+                    'zones_total' => 0,
+                    'zones_with_targets' => 0,
+                    'schedules_total' => 0,
+                    'attempted_dispatches' => 0,
+                    'successful_dispatches' => 0,
+                    'triggerless_schedules' => 0,
+                    'zones_pending_time_retry' => 0,
+                    'error' => 'missing_scheduler_api_token',
+                ];
+                $this->writeSchedulerLog(SchedulerConstants::CYCLE_LOG_TASK_NAME, 'failed', $stats);
+                $this->writeCycleMetrics($dispatchMetrics, $stats, $cycleStartedAt);
+
+                return $stats;
+            }
+
+            $headers = $this->schedulerHeaders($cfg, $traceId);
+            $reconciledBusyness = $this->activeTaskPoller->reconcilePendingActiveTasks(
+                cfg: $cfg,
+                writeLog: function (string $taskName, string $status, array $details): void {
+                    $this->writeSchedulerLog($taskName, $status, $details);
+                },
+            );
+            $zoneIds = $this->scheduleLoader->loadActiveZoneIds($zoneFilter);
+
+            if ($zoneIds === []) {
+                $stats = [
+                    'dispatch_mode' => 'start_cycle',
+                    'zones_total' => 0,
+                    'zones_with_targets' => 0,
+                    'schedules_total' => 0,
+                    'attempted_dispatches' => 0,
+                    'successful_dispatches' => 0,
+                    'triggerless_schedules' => 0,
+                    'zones_pending_time_retry' => 0,
+                ];
+                $this->writeSchedulerLog(SchedulerConstants::CYCLE_LOG_TASK_NAME, 'completed', $stats);
+                $this->writeCycleMetrics($dispatchMetrics, $stats, $cycleStartedAt);
+
+                return $stats;
+            }
+
+            $effectiveTargetsByZone = $this->scheduleLoader->loadEffectiveTargetsByZone($zoneIds);
+            $schedules = [];
+            $zonesWithTargets = 0;
+
+            foreach ($zoneIds as $zoneId) {
+                $zonePayload = $effectiveTargetsByZone[$zoneId] ?? null;
+                if (! is_array($zonePayload)) {
+                    continue;
+                }
+                $targets = $zonePayload['targets'] ?? null;
+                if (! is_array($targets)) {
+                    continue;
+                }
+
+                $zonesWithTargets++;
+                foreach ($this->buildSchedulesForZone($zoneId, $targets) as $schedule) {
+                    $schedules[] = $schedule;
+                }
+            }
+            $lastRunByTaskName = $this->scheduleLoader->loadLastRunBatch(
+                $this->scheduleLoader->collectIntervalTaskNames($schedules),
+            );
+
+            $attemptedDispatches = 0;
+            $successfulDispatches = 0;
+            $triggerlessCount = 0;
+            $replayBudget = $cfg['catchup_rate_limit_per_cycle'];
+
+            /** @var array<string, bool> $executedKeys */
+            $executedKeys = [];
+            /** @var array<int, CarbonImmutable> $zoneNow */
+            $zoneNow = [];
+            /** @var array<int, CarbonImmutable> $zoneLast */
+            $zoneLast = [];
+            /** @var array<int, bool> $zonesWithPendingTimeDispatch */
+            $zonesWithPendingTimeDispatch = [];
+            /** @var array<int, bool> $zonesWithSuccessfulTimeDispatch */
+            $zonesWithSuccessfulTimeDispatch = [];
+
+            $realNow = SchedulerRuntimeHelper::nowUtc();
+
+            // Batch-prefetch busy status for schedule_keys not yet covered by
+            // reconcilePendingActiveTasks() (limited to 500 rows). Without this,
+            // isScheduleBusy() fires 1-2 DB queries per schedule in the hot loop.
+            $unresolvedKeys = [];
+            foreach ($schedules as $schedule) {
+                if ($schedule instanceof ScheduleItem) {
+                    $key = $schedule->scheduleKey;
+                    if ($key !== '' && ! array_key_exists($key, $reconciledBusyness)) {
+                        $unresolvedKeys[] = $key;
+                    }
+                }
+            }
+            if ($unresolvedKeys !== []) {
+                $batchBusyness = $this->activeTaskStore->batchFindBusyScheduleKeys(
+                    array_unique($unresolvedKeys),
+                    $realNow,
+                );
+                $reconciledBusyness = array_merge($reconciledBusyness, $batchBusyness);
+            }
+
+            $context = new ScheduleCycleContext(
+                cfg: $cfg,
+                headers: $headers,
+                traceId: $traceId,
+                cycleNow: $realNow,
+                lastRunByTaskName: $lastRunByTaskName,
+                reconciledBusyness: $reconciledBusyness,
+            );
+            /** @var array<int, CarbonImmutable> $zoneCursorCache */
+            $zoneCursorCache = [];
+
+            foreach ($schedules as $schedule) {
+                if (! $schedule instanceof ScheduleItem) {
+                    continue;
+                }
+
+                $zoneId = $schedule->zoneId;
+                $taskType = $schedule->taskType;
+                if ($zoneId <= 0 || $taskType === '') {
+                    continue;
+                }
+
+                $scheduleKey = $schedule->scheduleKey;
+                if (isset($executedKeys[$scheduleKey])) {
+                    continue;
+                }
+
+                if (! isset($zoneNow[$zoneId])) {
+                    $zoneNow[$zoneId] = $realNow;
+                    $zoneLast[$zoneId] = $this->scheduleLoader->resolveZoneLastCheck(
+                        zoneId: $zoneId,
+                        now: $realNow,
+                        dispatchIntervalSec: max(10, (int) ($cfg['dispatch_interval_sec'] ?? 60)),
+                        cursorPersistEnabled: $cfg['cursor_persist_enabled'],
+                        zoneCursorCache: $zoneCursorCache,
+                    );
+                }
+
+                $now = $zoneNow[$zoneId];
+                $last = $zoneLast[$zoneId];
+
+                $intervalSec = ScheduleSpecHelper::safePositiveInt($schedule->intervalSec);
+                $taskName = SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType);
+
+                if ($intervalSec > 0) {
+                    if ($this->finalizer->shouldRunIntervalTask($taskName, $intervalSec, $now, $context->lastRunByTaskName)) {
+                        $attemptedDispatches++;
+                        $dispatchResult = $this->scheduleDispatcher->dispatch(
+                            zoneId: $zoneId,
+                            schedule: $schedule,
+                            triggerTime: $now,
+                            scheduleKey: $scheduleKey,
+                            context: $context,
+                            writeLog: function (string $taskName, string $status, array $details): void {
+                                $this->writeSchedulerLog($taskName, $status, $details);
+                            },
+                        );
+                        $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
+                        if ($dispatchResult['dispatched']) {
+                            $successfulDispatches++;
+                            $executedKeys[$scheduleKey] = true;
+                        }
+                    }
+
+                    continue;
+                }
+
+                $scheduleTime = $schedule->time;
+                if (is_string($scheduleTime) && $scheduleTime !== '') {
+                    $crossings = $this->finalizer->scheduleCrossings($last, $now, $scheduleTime);
+                    $plannedTriggers = $this->finalizer->applyCatchupPolicy($crossings, $now, $cfg['catchup_policy'], $cfg['catchup_max_windows']);
+                    $hadDispatchSuccess = false;
+                    $hadRetryableFailure = false;
+                    $deferredByReplayBudget = false;
+
+                    foreach ($plannedTriggers as $triggerTime) {
+                        $isReplay = $triggerTime->lt($now);
+                        if ($isReplay) {
+                            if ($replayBudget <= 0) {
+                                $deferredByReplayBudget = true;
+                                break;
+                            }
+                            $replayBudget--;
+                        }
+
+                        $dispatchTrigger = $triggerTime;
+                        $dispatchSchedule = $schedule;
+                        if ($isReplay) {
+                            $dispatchPayload = $schedule->payload;
+                            $dispatchPayload['catchup_original_trigger_time'] = SchedulerRuntimeHelper::toIso($triggerTime);
+                            $dispatchPayload['catchup_policy'] = $cfg['catchup_policy'];
+                            $dispatchSchedule = $schedule->withPayload($dispatchPayload);
+
+                            if ($now->diffInSeconds($triggerTime) > $cfg['due_grace_sec']) {
+                                $dispatchTrigger = $now;
+                            }
+                        }
+
+                        $attemptedDispatches++;
+                        $dispatchResult = $this->scheduleDispatcher->dispatch(
+                            zoneId: $zoneId,
+                            schedule: $dispatchSchedule,
+                            triggerTime: $dispatchTrigger,
+                            scheduleKey: $scheduleKey,
+                            context: $context,
+                            writeLog: function (string $taskName, string $status, array $details): void {
+                                $this->writeSchedulerLog($taskName, $status, $details);
+                            },
+                        );
+                        $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
+                        if ($dispatchResult['dispatched']) {
+                            $successfulDispatches++;
+                            $hadDispatchSuccess = true;
+                            $zonesWithSuccessfulTimeDispatch[$zoneId] = true;
+                            break;
+                        }
+                        if ($dispatchResult['retryable']) {
+                            $hadRetryableFailure = true;
+                        }
+                    }
+
+                    if ($plannedTriggers !== [] && ! $hadDispatchSuccess && ($hadRetryableFailure || $deferredByReplayBudget)) {
+                        $zonesWithPendingTimeDispatch[$zoneId] = true;
+                    }
+                    if ($plannedTriggers !== []) {
+                        $executedKeys[$scheduleKey] = true;
+                    }
+
+                    continue;
+                }
+
+                $startTime = $schedule->startTime;
+                $endTime = $schedule->endTime;
+                if (is_string($startTime) && is_string($endTime) && $startTime !== '' && $endTime !== '') {
+                    $desiredNow = $this->finalizer->isTimeInWindow($now->format('H:i:s'), $startTime, $endTime);
+                    $desiredLast = $this->finalizer->isTimeInWindow($last->format('H:i:s'), $startTime, $endTime);
+                    if ($desiredNow !== $desiredLast) {
+                        $attemptedDispatches++;
+                        $dispatchResult = $this->scheduleDispatcher->dispatch(
+                            zoneId: $zoneId,
+                            schedule: $schedule,
+                            triggerTime: $now,
+                            scheduleKey: $scheduleKey,
+                            context: $context,
+                            writeLog: function (string $taskName, string $status, array $details): void {
+                                $this->writeSchedulerLog($taskName, $status, $details);
+                            },
+                        );
+                        $this->incrementDispatchMetric($dispatchMetrics, $zoneId, $taskType, $dispatchResult);
+                        if ($dispatchResult['dispatched']) {
+                            $successfulDispatches++;
+                        }
+                    }
+                    $executedKeys[$scheduleKey] = true;
+
+                    continue;
+                }
+
+                $triggerlessCount++;
+            }
+
+            $zonesPendingTimeRetry = 0;
+            foreach ($zoneNow as $zoneId => $now) {
+                $cursorRetryPending = isset($zonesWithPendingTimeDispatch[$zoneId]) && ! isset($zonesWithSuccessfulTimeDispatch[$zoneId]);
+                if ($cursorRetryPending) {
+                    $zonesPendingTimeRetry++;
+                }
+
+                $cursorAt = $cursorRetryPending
+                    ? ($zoneLast[$zoneId] ?? $now)
+                    : $now;
+                $this->finalizer->persistZoneCursor(
+                    $zoneId,
+                    $cursorAt,
+                    $cfg['catchup_policy'],
+                    $cfg['cursor_persist_enabled'],
+                    function (string $taskName, string $status, array $details): void {
+                        $this->writeSchedulerLog($taskName, $status, $details);
+                    },
+                );
+            }
+
+            $stats = [
+                'dispatch_mode' => 'start_cycle',
+                'zones_total' => count($zoneIds),
+                'zones_with_targets' => $zonesWithTargets,
+                'schedules_total' => count($schedules),
+                'attempted_dispatches' => $attemptedDispatches,
+                'successful_dispatches' => $successfulDispatches,
+                'triggerless_schedules' => $triggerlessCount,
+                'zones_pending_time_retry' => $zonesPendingTimeRetry,
+            ];
+
+            $this->writeSchedulerLog(SchedulerConstants::CYCLE_LOG_TASK_NAME, 'completed', $stats);
+            $this->writeCycleMetrics($dispatchMetrics, $stats, $cycleStartedAt);
+
+            return $stats;
+        } finally {
+            $this->flushSchedulerLogsBuffer();
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $targets
+     * @return array<int, ScheduleItem>
+     */
+    private function buildSchedulesForZone(int $zoneId, array $targets): array
+    {
+        $schedules = [];
+
+        $irrigation = is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : [];
+        $irrigationSchedule = $targets['irrigation_schedule'] ?? ($irrigation['schedule'] ?? null);
+        if ($this->isTaskScheduleEnabled('irrigation', $targets, $irrigation)) {
+            foreach ($this->buildGenericTaskSchedules($zoneId, 'irrigation', $irrigation, $irrigationSchedule) as $schedule) {
+                $schedules[] = $schedule;
+            }
+        }
+
+        $lighting = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
+        if ($this->isTaskScheduleEnabled('lighting', $targets, $lighting)) {
+            $lightingSchedule = $targets['lighting_schedule'] ?? null;
+            foreach ($this->lightingScheduleParser->parse($zoneId, $lighting, $lightingSchedule, SchedulerRuntimeHelper::nowUtc()) as $schedule) {
+                $schedules[] = $schedule;
+            }
+        }
+
+        $genericConfigs = [
+            ['ventilation', is_array($targets['ventilation'] ?? null) ? $targets['ventilation'] : [], $targets['ventilation_schedule'] ?? null],
+            ['solution_change', is_array($targets['solution_change'] ?? null) ? $targets['solution_change'] : [], $targets['solution_change_schedule'] ?? null],
+            ['mist', is_array($targets['mist'] ?? null) ? $targets['mist'] : [], $targets['mist_schedule'] ?? null],
+            ['diagnostics', is_array($targets['diagnostics'] ?? null) ? $targets['diagnostics'] : [], $targets['diagnostics_schedule'] ?? null],
+        ];
+
+        foreach ($genericConfigs as [$taskType, $config, $scheduleSpec]) {
+            if (! $this->isTaskScheduleEnabled((string) $taskType, $targets, (array) $config)) {
+                continue;
+            }
+            $source = $scheduleSpec ?? $config;
+            foreach ($this->buildGenericTaskSchedules($zoneId, (string) $taskType, (array) $config, $source) as $schedule) {
+                $schedules[] = $schedule;
+            }
+        }
+
+        return $schedules;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<int, ScheduleItem>
+     */
+    private function buildGenericTaskSchedules(
+        int $zoneId,
+        string $taskType,
+        array $config,
+        mixed $scheduleSpec,
+    ): array {
+        $schedules = [];
+
+        foreach (ScheduleSpecHelper::extractTimeSpecs($scheduleSpec) as $timeSpec) {
+            $schedules[] = new ScheduleItem(
+                zoneId: $zoneId,
+                taskType: $taskType,
+                time: $timeSpec,
+            );
+        }
+
+        $intervalSec = ScheduleSpecHelper::safePositiveInt(
+            $config['interval_sec'] ?? ($config['every_sec'] ?? ($config['interval'] ?? null))
+        );
+        if ($intervalSec > 0) {
+            $schedules[] = new ScheduleItem(
+                zoneId: $zoneId,
+                taskType: $taskType,
+                intervalSec: $intervalSec,
+            );
+        }
+
+        return $schedules;
+    }
+
+    /**
+     * @param  array<string, mixed>  $targets
+     * @param  array<string, mixed>  $config
+     */
+    private function isTaskScheduleEnabled(string $taskType, array $targets, array $config): bool
+    {
+        $taskToSubsystem = [
+            'irrigation' => 'irrigation',
+            'lighting' => 'lighting',
+            'ventilation' => 'climate',
+            'diagnostics' => 'diagnostics',
+            'solution_change' => 'solution_change',
+        ];
+        $subsystemKey = $taskToSubsystem[$taskType] ?? null;
+        if (is_string($subsystemKey)) {
+            $enabled = $this->subsystemEnabledFromTargets($targets, $subsystemKey);
+            if ($enabled === false) {
+                return false;
+            }
+        }
+
+        $execution = is_array($config['execution'] ?? null) ? $config['execution'] : [];
+        if (($execution['force_skip'] ?? false) === true) {
+            return false;
+        }
+        if (($config['force_skip'] ?? false) === true) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $targets
+     */
+    private function subsystemEnabledFromTargets(array $targets, string $subsystemKey): ?bool
+    {
+        $extensions = $targets['extensions'] ?? null;
+        if (! is_array($extensions)) {
+            return null;
+        }
+        $subsystems = $extensions['subsystems'] ?? null;
+        if (! is_array($subsystems)) {
+            return null;
+        }
+        $subsystem = $subsystems[$subsystemKey] ?? null;
+        if (! is_array($subsystem)) {
+            return null;
+        }
+        $enabled = $subsystem['enabled'] ?? null;
+
+        return is_bool($enabled) ? $enabled : null;
+    }
+
+    /**
+     * @param  array<string, int>  $dispatchMetrics
+     * @param  array{dispatched: bool, retryable: bool, reason: string}  $dispatchResult
+     */
+    private function incrementDispatchMetric(
+        array &$dispatchMetrics,
+        int $zoneId,
+        string $taskType,
+        array $dispatchResult,
+    ): void {
+        $result = 'not_dispatched';
+        if ((bool) ($dispatchResult['dispatched'] ?? false)) {
+            $result = 'success';
+        } elseif ((bool) ($dispatchResult['retryable'] ?? false)) {
+            $result = 'retryable_failed';
+        } else {
+            $result = 'failed';
+        }
+
+        $metricKey = sprintf('%d|%s|%s', $zoneId, $taskType, $result);
+        $dispatchMetrics[$metricKey] = (int) ($dispatchMetrics[$metricKey] ?? 0) + 1;
+    }
+
+    /**
+     * @param  array<string, int>  $dispatchMetrics
+     * @param  array<string, mixed>  $stats
+     */
+    private function writeCycleMetrics(array $dispatchMetrics, array $stats, float $cycleStartedAt): void
+    {
+        foreach ($dispatchMetrics as $key => $value) {
+            [$zoneId, $taskType, $result] = array_pad(explode('|', $key, 3), 3, '');
+            $this->writeSchedulerLog(SchedulerConstants::METRICS_LOG_TASK_NAME, 'metric', [
+                'metric' => SchedulerConstants::METRIC_DISPATCHES_TOTAL,
+                'labels' => [
+                    'zone_id' => (int) $zoneId,
+                    'task_type' => (string) $taskType,
+                    'result' => (string) $result,
+                ],
+                'value' => (int) $value,
+            ]);
+        }
+
+        $durationSeconds = max(0.0, microtime(true) - $cycleStartedAt);
+        $this->writeSchedulerLog(SchedulerConstants::METRICS_LOG_TASK_NAME, 'metric', [
+            'metric' => SchedulerConstants::METRIC_CYCLE_DURATION_SECONDS,
+            'labels' => [
+                'dispatch_mode' => (string) ($stats['dispatch_mode'] ?? 'start_cycle'),
+            ],
+            'value' => round($durationSeconds, 6),
+        ]);
+
+        $activeTasksCount = $this->activeTaskStore->countActiveTasks(SchedulerRuntimeHelper::nowUtc());
+        $this->writeSchedulerLog(SchedulerConstants::METRICS_LOG_TASK_NAME, 'metric', [
+            'metric' => SchedulerConstants::METRIC_ACTIVE_TASKS_COUNT,
+            'labels' => [
+                'dispatch_mode' => (string) ($stats['dispatch_mode'] ?? 'start_cycle'),
+            ],
+            'value' => $activeTasksCount,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    private function writeSchedulerLog(string $taskName, string $status, array $details): void
+    {
+        if ($status === 'failed') {
+            $this->writeSchedulerLogImmediate($taskName, $status, $details);
+
+            return;
+        }
+
+        $encoded = json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (! is_string($encoded)) {
+            $encoded = '{}';
+        }
+
+        $this->schedulerLogsBuffer[] = [
+            'task_name' => $taskName,
+            'status' => $status,
+            'details' => $encoded,
+            'created_at' => SchedulerRuntimeHelper::nowUtc()->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    private function writeSchedulerLogImmediate(string $taskName, string $status, array $details): void
+    {
+        try {
+            SchedulerLog::query()->create([
+                'task_name' => $taskName,
+                'status' => $status,
+                'details' => $details,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write scheduler log from laravel dispatcher', [
+                'task_name' => $taskName,
+                'status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function flushSchedulerLogsBuffer(): void
+    {
+        if ($this->schedulerLogsBuffer === []) {
+            return;
+        }
+
+        try {
+            foreach (array_chunk($this->schedulerLogsBuffer, 500) as $chunk) {
+                DB::table('scheduler_logs')->insert($chunk);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to flush scheduler log buffer from laravel dispatcher', [
+                'buffer_size' => count($this->schedulerLogsBuffer),
+                'error' => $e->getMessage(),
+            ]);
+        } finally {
+            $this->schedulerLogsBuffer = [];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $cfg
+     * @return array<string, string>
+     */
+    private function schedulerHeaders(array $cfg, string $traceId): array
+    {
+        $headers = [
+            'Accept' => 'application/json',
+            'X-Trace-Id' => $traceId,
+            'X-Scheduler-Id' => $cfg['scheduler_id'],
+        ];
+
+        if ($cfg['token'] !== '') {
+            $headers['Authorization'] = 'Bearer '.$cfg['token'];
+        }
+
+        return $headers;
+    }
+
+    private function newTraceId(): string
+    {
+        return Str::lower((string) Str::uuid());
+    }
+}

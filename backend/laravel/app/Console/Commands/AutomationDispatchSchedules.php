@@ -41,27 +41,35 @@ class AutomationDispatchSchedules extends Command
         if ($lockResult['state'] === 'error') {
             Log::error('Laravel scheduler dispatcher lock acquisition failed', [
                 'error' => $lockResult['error'],
+                'lock_key' => $this->schedulerConfig()['lock_key'] ?? 'automation:dispatch-schedules',
             ]);
 
             return self::FAILURE;
         }
 
         $lock = $lockResult['lock'];
+        $cycleStartedAt = microtime(true);
         try {
             $stats = $this->schedulerCycleService->runCycle($this->schedulerConfig(), $zoneFilter);
+            $durationMs = (int) round((microtime(true) - $cycleStartedAt) * 1000);
             $this->line(sprintf(
-                'Dispatch cycle finished: zones=%d schedules=%d attempted=%d success=%d pending_retry=%d',
+                'Dispatch cycle finished: zones=%d schedules=%d attempted=%d success=%d pending_retry=%d duration_ms=%d',
                 (int) ($stats['zones_total'] ?? 0),
                 (int) ($stats['schedules_total'] ?? 0),
                 (int) ($stats['attempted_dispatches'] ?? 0),
                 (int) ($stats['successful_dispatches'] ?? 0),
                 (int) ($stats['zones_pending_time_retry'] ?? 0),
+                $durationMs,
             ));
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
+            $durationMs = (int) round((microtime(true) - $cycleStartedAt) * 1000);
             Log::error('Laravel scheduler dispatcher cycle failed', [
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+                'duration_ms' => $durationMs,
+                'zone_filter' => $zoneFilter,
             ]);
 
             return self::FAILURE;
@@ -118,8 +126,11 @@ class AutomationDispatchSchedules extends Command
         try {
             $lock->release();
         } catch (\Throwable $e) {
-            Log::warning('Laravel scheduler dispatcher failed to release lock', [
+            // Lock release failure risks deadlock on next cycle — treat as error.
+            Log::error('Laravel scheduler dispatcher failed to release lock', [
                 'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+                'lock_key' => $this->schedulerConfig()['lock_key'] ?? 'automation:dispatch-schedules',
             ]);
         }
     }
