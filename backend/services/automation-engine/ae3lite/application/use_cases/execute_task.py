@@ -260,6 +260,7 @@ class ExecuteTaskUseCase:
             return
 
         try:
+            task_status = "failed"
             task_id = int(getattr(task, "id", 0) or 0)
             zone_id = int(getattr(task, "zone_id", 0) or 0)
             workflow = getattr(task, "workflow", None)
@@ -267,7 +268,7 @@ class ExecuteTaskUseCase:
             details: dict[str, Any] = {
                 "task_id": task_id,
                 "task_type": str(getattr(task, "task_type", "") or "").strip().lower(),
-                "task_status": str(getattr(task, "status", "") or "").strip().lower(),
+                "task_status": task_status,
                 "error_code": str(error_code),
                 "error_message": str(error_message),
                 "message": str(error_message),
@@ -285,6 +286,9 @@ class ExecuteTaskUseCase:
             alert_severity = "error"
             if str(error_code).strip().lower() == "zone_correction_config_missing_critical":
                 alert_code = "biz_zone_correction_config_missing"
+                alert_severity = "critical"
+            if str(error_code).strip().lower() == "zone_dosing_calibration_missing_critical":
+                alert_code = "biz_zone_dosing_calibration_missing"
                 alert_severity = "critical"
 
             await repository.create_or_update_active(

@@ -20,6 +20,8 @@ class IntentMetadata:
 class LegacyIntentMapper:
     """Compatibility adapter between legacy ``zone_automation_intents`` and AE3 v2."""
 
+    DEFAULT_TRIGGER = "start_cycle_api"
+
     def extract_intent_metadata(
         self,
         *,
@@ -31,6 +33,7 @@ class LegacyIntentMapper:
         intent_payload = dict(payload) if isinstance(payload, Mapping) else {}
         _raw_id = intent_row.get("id")
         intent_id = int(_raw_id) if _raw_id is not None else None
+        intent_type = str(intent_row.get("intent_type") or "").strip().lower() or None
         topology = str(
             intent_payload.get("topology")
             or intent_row.get("topology")
@@ -40,10 +43,10 @@ class LegacyIntentMapper:
         return IntentMetadata(
             topology=topology,
             intent_source=str(source or "").strip() or "laravel_scheduler",
-            intent_trigger="start_cycle_api",
+            intent_trigger=intent_type or self.DEFAULT_TRIGGER,
             intent_id=intent_id,
             intent_meta={
-                "intent_type": str(intent_row.get("intent_type") or "").strip().lower() or None,
+                "intent_type": intent_type,
                 "intent_retry_count": int(intent_row.get("retry_count") or 0),
                 "intent_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
                 "intent_payload": intent_payload,
@@ -61,12 +64,13 @@ class LegacyIntentMapper:
     ) -> dict[str, Any]:
         payload = intent_row.get("payload")
         intent_payload = dict(payload) if isinstance(payload, Mapping) else {}
+        intent_type = str(intent_row.get("intent_type") or "").strip().lower() or None
         return {
             "source": str(source or "").strip() or "laravel_scheduler",
-            "trigger": "start_cycle_api",
+            "trigger": intent_type or self.DEFAULT_TRIGGER,
             "workflow": "cycle_start",
             "intent_id": (lambda v: int(v) if v is not None else None)(intent_row.get("id")),
-            "intent_type": str(intent_row.get("intent_type") or "").strip().lower() or None,
+            "intent_type": intent_type,
             "intent_retry_count": int(intent_row.get("retry_count") or 0),
             "intent_zone_id": int(intent_row.get("zone_id") or zone_id),
             "idempotency_key": str(idempotency_key or "").strip(),

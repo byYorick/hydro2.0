@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Zone;
@@ -252,12 +253,60 @@ class PythonBridgeServiceTest extends TestCase
         });
     }
 
+    public function test_send_growth_cycle_config_prefers_system_channel_and_persists_resolved_target(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $sensorOnlyNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-sensor-1',
+            'status' => 'ONLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $sensorOnlyNode->id,
+            'channel' => 'ph_sensor',
+            'type' => 'sensor',
+            'metric' => 'PH',
+        ]);
+
+        $systemNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-system-1',
+            'status' => 'ONLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $systemNode->id,
+            'channel' => 'system',
+            'type' => 'SERVICE',
+            'metric' => null,
+        ]);
+
+        $cmdId = $this->service->sendZoneCommand($zone, [
+            'type' => 'GROWTH_CYCLE_CONFIG',
+            'params' => ['mode' => 'adjust'],
+        ]);
+
+        $this->assertNotEmpty($cmdId);
+
+        $command = Command::query()->where('cmd_id', $cmdId)->firstOrFail();
+        $this->assertSame($systemNode->id, $command->node_id);
+        $this->assertSame('system', $command->channel);
+
+        Http::assertSent(function ($request) use ($zone, $systemNode) {
+            $data = $request->data();
+
+            return str_contains($request->url(), "zones/{$zone->id}/commands")
+                && ($data['node_uid'] ?? null) === $systemNode->uid
+                && ($data['channel'] ?? null) === 'system';
+        });
+    }
+
     public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_nodes(): void
     {
         $zone = Zone::factory()->create();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/No nodes are assigned to zone/');
+        $this->expectExceptionMessageMatches('/No nodes with system\/default channel are assigned to zone/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'GROWTH_CYCLE_CONFIG',

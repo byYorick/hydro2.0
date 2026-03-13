@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Command;
 use App\Models\DeviceNode;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -50,30 +51,23 @@ class PythonBridgeService
 
         // GROWTH_CYCLE_CONFIG - агрегированная команда на уровне зоны, не требует node_uid/channel
         if ($commandType === 'GROWTH_CYCLE_CONFIG') {
-            // Для агрегированного цикла выбираем реальный узел зоны:
-            // сначала online (регистронезависимо), затем любой закреплённый за зоной.
-            $firstNode = DeviceNode::where('zone_id', $zone->id)
-                ->orderByRaw(
-                    "CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'online' THEN 0 ELSE 1 END"
-                )
-                ->orderBy('id')
-                ->first();
-
-            if ($firstNode) {
-                $node = $firstNode;
-                $nodeUid = $firstNode->uid;
-                // Используем первый доступный канал, fallback на default.
-                $firstChannel = $firstNode->channels()->first();
-                $channel = $firstChannel?->channel ?? 'default';
-            } else {
+            $resolved = $this->resolveZoneLevelNodeAndChannel($zone);
+            if (! $resolved) {
                 $this->markCommandFailed(
                     $command,
-                    "No nodes are assigned to zone {$zone->id}. GROWTH_CYCLE_CONFIG cannot be published."
+                    "No nodes with system/default channel are assigned to zone {$zone->id}. GROWTH_CYCLE_CONFIG cannot be published."
                 );
                 throw new \InvalidArgumentException(
-                    "No nodes are assigned to zone {$zone->id}. Attach at least one node before applying GROWTH_CYCLE_CONFIG."
+                    "No nodes with system/default channel are assigned to zone {$zone->id}. Attach at least one compatible node before applying GROWTH_CYCLE_CONFIG."
                 );
             }
+
+            $node = $resolved['node'];
+            $nodeUid = $resolved['node_uid'];
+            $channel = $resolved['channel'];
+            $command->node_id = $node->id;
+            $command->channel = $channel;
+            $command->save();
 
             Log::info('PythonBridgeService: Using zone-level node/channel for GROWTH_CYCLE_CONFIG', [
                 'zone_id' => $zone->id,
@@ -128,6 +122,12 @@ class PythonBridgeService
                     "Channel {$channel} not found on node {$nodeUid}"
                 );
             }
+        }
+
+        if ($node instanceof DeviceNode) {
+            $command->node_id = $node->id;
+            $command->channel = $channel;
+            $command->save();
         }
 
         // Используем history-logger для всех команд (все общение бэка с нодами через history-logger)
@@ -329,6 +329,54 @@ class PythonBridgeService
         }
 
         return $cmdId;
+    }
+
+    private function resolveZoneLevelNodeAndChannel(Zone $zone): ?array
+    {
+        $nodes = DeviceNode::query()
+            ->where('zone_id', $zone->id)
+            ->with(['channels' => function ($query) {
+                $query->orderByRaw(
+                    "CASE
+                        WHEN LOWER(TRIM(COALESCE(channel, ''))) = 'system' THEN 0
+                        WHEN LOWER(TRIM(COALESCE(channel, ''))) = 'default' THEN 1
+                        ELSE 2
+                    END"
+                )->orderBy('id');
+            }])
+            ->orderByRaw(
+                "CASE WHEN LOWER(TRIM(COALESCE(status, ''))) = 'online' THEN 0 ELSE 1 END"
+            )
+            ->orderBy('id')
+            ->get();
+
+        foreach ($nodes as $node) {
+            $channel = $this->resolveZoneLevelChannel($node);
+            if ($channel === null) {
+                continue;
+            }
+
+            return [
+                'node' => $node,
+                'node_uid' => $node->uid,
+                'channel' => $channel,
+            ];
+        }
+
+        return null;
+    }
+
+    private function resolveZoneLevelChannel(DeviceNode $node): ?string
+    {
+        /** @var NodeChannel|null $channel */
+        $channel = $node->channels
+            ->first(function (NodeChannel $channel): bool {
+                $normalized = strtolower(trim((string) $channel->channel));
+
+                return in_array($normalized, ['system', 'default'], true);
+            });
+
+        return $channel?->channel;
     }
 
     /**

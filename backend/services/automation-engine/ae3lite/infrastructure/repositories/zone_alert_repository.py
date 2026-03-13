@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Iterable
+
 from common.db import get_pool
 
 
@@ -28,3 +30,35 @@ class PgZoneAlertRepository:
                 normalized_code,
             )
         return row is not None
+
+    async def find_first_active_by_codes(self, *, zone_id: int, codes: Iterable[str]) -> dict[str, object] | None:
+        normalized_codes = [
+            str(code or "").strip().lower()
+            for code in codes
+            if str(code or "").strip()
+        ]
+        if zone_id <= 0 or not normalized_codes:
+            return None
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, code, status, severity
+                FROM alerts
+                WHERE zone_id = $1
+                  AND status = 'ACTIVE'
+                  AND LOWER(code) = ANY($2::text[])
+                ORDER BY
+                    CASE
+                        WHEN LOWER(COALESCE(severity, '')) = 'critical' THEN 0
+                        WHEN LOWER(COALESCE(severity, '')) = 'error' THEN 1
+                        ELSE 2
+                    END,
+                    id ASC
+                LIMIT 1
+                """,
+                zone_id,
+                normalized_codes,
+            )
+        return dict(row) if row is not None else None

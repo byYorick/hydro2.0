@@ -6,7 +6,7 @@ from typing import Any, Iterable, List, Mapping, Sequence
 
 from ae3lite.application.dto import CommandPlan, ZoneActuatorRef, ZoneSnapshot
 from ae3lite.domain.entities import AutomationTask, PlannedCommand
-from ae3lite.domain.errors import PlannerConfigurationError
+from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runtime
 
 
@@ -26,6 +26,7 @@ class CycleStartPlanner:
         "magnesium": "ec_magnesium_pump",
         "micro": "ec_micro_pump",
     }
+    _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
         if task.task_type != "cycle_start":
@@ -179,6 +180,8 @@ class CycleStartPlanner:
             if phase_configs:
                 runtime["correction_by_phase"] = phase_configs
 
+        self._validate_required_correction_calibrations(runtime=runtime)
+
         return CommandPlan(
             task_type=task.task_type,
             workflow=workflow,
@@ -264,6 +267,72 @@ class CycleStartPlanner:
             if normalized:
                 result.append(normalized)
         return result
+
+    def _validate_required_correction_calibrations(self, *, runtime: Mapping[str, Any]) -> None:
+        seen_pairs: set[tuple[str, str]] = set()
+        correction_candidates = []
+
+        correction = runtime.get("correction")
+        if isinstance(correction, Mapping):
+            correction_candidates.append(correction)
+
+        correction_by_phase = runtime.get("correction_by_phase")
+        if isinstance(correction_by_phase, Mapping):
+            correction_candidates.extend(
+                cfg for cfg in correction_by_phase.values() if isinstance(cfg, Mapping)
+            )
+
+        for correction_cfg in correction_candidates:
+            actuators = correction_cfg.get("actuators")
+            if not isinstance(actuators, Mapping):
+                continue
+            for key in self._CORRECTION_PRECHECK_KEYS:
+                actuator = actuators.get(key)
+                self._validate_preflight_calibration(
+                    actuator=actuator,
+                    actuator_key=key,
+                    seen_pairs=seen_pairs,
+                )
+
+            ec_actuators = actuators.get("ec_actuators")
+            if not isinstance(ec_actuators, Mapping):
+                continue
+            for alias, actuator in ec_actuators.items():
+                self._validate_preflight_calibration(
+                    actuator=actuator,
+                    actuator_key=str(alias or "").strip().lower() or "ec",
+                    seen_pairs=seen_pairs,
+                )
+
+    def _validate_preflight_calibration(
+        self,
+        *,
+        actuator: Any,
+        actuator_key: str,
+        seen_pairs: set[tuple[str, str]],
+    ) -> None:
+        if not isinstance(actuator, Mapping):
+            return
+
+        node_uid = str(actuator.get("node_uid") or "").strip()
+        channel = str(actuator.get("channel") or "").strip()
+        if node_uid == "" or channel == "":
+            return
+
+        pair = (node_uid, channel.lower())
+        if pair in seen_pairs:
+            return
+        seen_pairs.add(pair)
+
+        calibration = actuator.get("calibration")
+        if isinstance(calibration, Mapping):
+            return
+
+        kind = "EC" if actuator_key.startswith("ec") else "PH"
+        raise PlannerConfigurationError(
+            f"{kind} dosing pump calibration is required (channel={channel}, node={node_uid})",
+            code=ErrorCodes.ZONE_DOSING_CALIBRATION_MISSING_CRITICAL,
+        )
 
     def _resolve_correction_actuators(
         self,

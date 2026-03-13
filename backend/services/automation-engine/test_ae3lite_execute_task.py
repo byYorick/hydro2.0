@@ -134,6 +134,14 @@ class _PlannerMissingZoneCorrectionConfigCritical:
         )
 
 
+class _PlannerMissingDosingCalibrationCritical:
+    def build(self, *, task, snapshot):
+        raise PlannerConfigurationError(
+            "EC dosing pump calibration is required (channel=pump_a, node=nd-ec-1)",
+            code="zone_dosing_calibration_missing_critical",
+        )
+
+
 class _GatewayOk:
     async def run_batch(self, *, task, commands, now):
         return {"success": True, "task": task}
@@ -281,6 +289,7 @@ async def test_execute_task_fail_closed_creates_task_failed_alert() -> None:
     assert alerts.calls[0]["severity"] == "error"
     details = alerts.calls[0]["details"]
     assert details["task_id"] == 99
+    assert details["task_status"] == "failed"
     assert details["error_code"] == "unsupported_command_plan_steps"
     assert details["stage"] == "startup"
     assert details["topology"] == "generic_cycle_start"
@@ -330,6 +339,33 @@ async def test_execute_task_critical_missing_zone_config_emits_critical_alert_an
     assert alerts.calls[0]["code"] == "biz_zone_correction_config_missing"
     assert alerts.calls[0]["severity"] == "critical"
     assert alerts.calls[0]["details"]["error_code"] == "zone_correction_config_missing_critical"
+    assert len(gateway.calls) == 1
+    assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
+
+
+@pytest.mark.asyncio
+async def test_execute_task_missing_dosing_calibration_emits_blocking_alert_and_shutdown() -> None:
+    task = _make_task(stage="startup", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerMissingDosingCalibrationCritical(),
+        command_gateway=gateway,
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "zone_dosing_calibration_missing_critical"
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_zone_dosing_calibration_missing"
+    assert alerts.calls[0]["severity"] == "critical"
+    assert alerts.calls[0]["details"]["task_status"] == "failed"
     assert len(gateway.calls) == 1
     assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
 

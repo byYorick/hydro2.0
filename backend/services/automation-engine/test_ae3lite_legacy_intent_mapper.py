@@ -86,9 +86,16 @@ class TestExtractIntentMetadata:
         meta = mapper.extract_intent_metadata(source="cron", intent_row={})
         assert meta.intent_source == "cron"
 
-    def test_trigger_always_start_cycle_api(self, mapper: LegacyIntentMapper) -> None:
+    def test_trigger_defaults_to_start_cycle_api_when_intent_type_missing(self, mapper: LegacyIntentMapper) -> None:
         meta = mapper.extract_intent_metadata(source="test", intent_row={})
         assert meta.intent_trigger == "start_cycle_api"
+
+    def test_trigger_uses_real_intent_type_when_present(self, mapper: LegacyIntentMapper) -> None:
+        meta = mapper.extract_intent_metadata(
+            source="test",
+            intent_row={"intent_type": "VENTILATION_TICK"},
+        )
+        assert meta.intent_trigger == "ventilation_tick"
 
     def test_retry_count_defaults_to_zero(self, mapper: LegacyIntentMapper) -> None:
         meta = mapper.extract_intent_metadata(source="test", intent_row={})
@@ -170,11 +177,20 @@ class TestBuildCycleStartPayload:
         )
         assert payload["workflow"] == "cycle_start"
 
-    def test_trigger_always_start_cycle_api(self, mapper: LegacyIntentMapper) -> None:
+    def test_trigger_defaults_to_start_cycle_api_when_intent_type_missing(self, mapper: LegacyIntentMapper) -> None:
         payload = mapper.build_cycle_start_payload(
             zone_id=5, source="test", intent_row={}, idempotency_key="k1-valid",
         )
         assert payload["trigger"] == "start_cycle_api"
+
+    def test_trigger_uses_real_intent_type_when_present(self, mapper: LegacyIntentMapper) -> None:
+        payload = mapper.build_cycle_start_payload(
+            zone_id=5,
+            source="test",
+            intent_row={"intent_type": "LIGHTING_TICK"},
+            idempotency_key="k1-valid",
+        )
+        assert payload["trigger"] == "lighting_tick"
 
     def test_source_defaults_to_laravel_scheduler_when_empty(self, mapper: LegacyIntentMapper) -> None:
         payload = mapper.build_cycle_start_payload(

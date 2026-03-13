@@ -15,6 +15,7 @@ use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -107,6 +108,21 @@ class GrowCycleControllerTest extends TestCase
                 'role' => $role,
             ]
         );
+    }
+
+    private function createPumpCalibration(NodeChannel $channel, string $component, float $mlPerSec): void
+    {
+        DB::table('pump_calibrations')->insert([
+            'node_channel_id' => $channel->id,
+            'component' => $component,
+            'ml_per_sec' => $mlPerSec,
+            'source' => 'test_fixture',
+            'sample_count' => 1,
+            'valid_from' => now(),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     #[Test]
@@ -303,6 +319,148 @@ class GrowCycleControllerTest extends TestCase
         $this->assertContains('Насос EC Calcium не привязан к каналу', $errors);
         $this->assertContains('Насос EC Magnesium не привязан к каналу', $errors);
         $this->assertContains('Насос EC Micro не привязан к каналу', $errors);
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_required_ec_pump_calibrations_are_missing(): void
+    {
+        $ecZone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => true,
+                'ph_control' => false,
+            ],
+        ]);
+        $this->attachRequiredInfrastructure($ecZone);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $ecZone->id,
+            'status' => 'online',
+        ]);
+
+        $npkChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $calciumChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_b',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $magnesiumChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_c',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $microChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_d',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->bindChannelToRole($ecZone, $npkChannel, 'ec_npk_pump', 'Насос EC NPK');
+        $this->bindChannelToRole($ecZone, $calciumChannel, 'ec_calcium_pump', 'Насос EC Calcium');
+        $this->bindChannelToRole($ecZone, $magnesiumChannel, 'ec_magnesium_pump', 'Насос EC Magnesium');
+        $this->bindChannelToRole($ecZone, $microChannel, 'ec_micro_pump', 'Насос EC Micro');
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$ecZone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start');
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Для насоса EC NPK не задана калибровка', $errors);
+        $this->assertContains('Для насоса EC Calcium не задана калибровка', $errors);
+        $this->assertContains('Для насоса EC Magnesium не задана калибровка', $errors);
+        $this->assertContains('Для насоса EC Micro не задана калибровка', $errors);
+    }
+
+    #[Test]
+    public function it_starts_cycle_when_required_ec_pump_calibrations_exist(): void
+    {
+        $ecZone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => true,
+                'ph_control' => false,
+            ],
+        ]);
+        $this->attachRequiredInfrastructure($ecZone);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $ecZone->id,
+            'status' => 'online',
+        ]);
+
+        $npkChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $calciumChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_b',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $magnesiumChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_c',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+        $microChannel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_d',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $this->bindChannelToRole($ecZone, $npkChannel, 'ec_npk_pump', 'Насос EC NPK');
+        $this->bindChannelToRole($ecZone, $calciumChannel, 'ec_calcium_pump', 'Насос EC Calcium');
+        $this->bindChannelToRole($ecZone, $magnesiumChannel, 'ec_magnesium_pump', 'Насос EC Magnesium');
+        $this->bindChannelToRole($ecZone, $microChannel, 'ec_micro_pump', 'Насос EC Micro');
+
+        $this->createPumpCalibration($npkChannel, 'npk', 1.0);
+        $this->createPumpCalibration($calciumChannel, 'calcium', 1.0);
+        $this->createPumpCalibration($magnesiumChannel, 'magnesium', 0.8);
+        $this->createPumpCalibration($microChannel, 'micro', 0.8);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$ecZone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('status', 'ok');
     }
 
     #[Test]

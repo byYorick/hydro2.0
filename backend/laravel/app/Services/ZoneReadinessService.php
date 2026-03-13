@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Alert;
 use App\Models\ChannelBinding;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
 use Illuminate\Support\Facades\DB;
@@ -179,6 +180,11 @@ class ZoneReadinessService
         // Проверка 1: Required bindings (только если strict_mode включен)
         $requiredBindings = $this->getRequiredBindings($zone);
         $missingBindings = [];
+        $calibrationRequiredBindings = array_values(array_intersect(
+            $requiredBindings,
+            array_merge(self::PH_REQUIRED_BINDINGS, self::EC_REQUIRED_BINDINGS)
+        ));
+        $missingCalibrations = [];
         if (! empty($requiredBindings)) {
             $missingBindings = $this->checkRequiredBindings($zone, $requiredBindings);
             if (! empty($missingBindings)) {
@@ -187,6 +193,21 @@ class ZoneReadinessService
                     'message' => 'Required bindings are missing: '.implode(', ', $missingBindings),
                     'bindings' => $missingBindings,
                     'required' => $requiredBindings,
+                ];
+            }
+        }
+
+        if (! empty($calibrationRequiredBindings)) {
+            $missingCalibrations = $this->checkRequiredCalibrations(
+                $zone,
+                array_values(array_diff($calibrationRequiredBindings, $missingBindings))
+            );
+            if (! empty($missingCalibrations)) {
+                $errorDetails[] = [
+                    'type' => 'missing_calibrations',
+                    'message' => 'Required pump calibrations are missing: '.implode(', ', $missingCalibrations),
+                    'bindings' => $missingCalibrations,
+                    'required' => $calibrationRequiredBindings,
                 ];
             }
         }
@@ -206,7 +227,15 @@ class ZoneReadinessService
             $requiredAssets[$role] = ! in_array($role, $missingBindings, true);
         }
 
-        $checks = array_merge($requiredAssets, [
+        $calibrationChecks = [];
+        foreach ($calibrationRequiredBindings as $role) {
+            if (in_array($role, $missingBindings, true)) {
+                continue;
+            }
+            $calibrationChecks["{$role}_calibration"] = ! in_array($role, $missingCalibrations, true);
+        }
+
+        $checks = array_merge($requiredAssets, $calibrationChecks, [
             'has_nodes' => $hasNodes,
             'online_nodes' => $hasOnlineNodes,
         ]);
@@ -219,6 +248,8 @@ class ZoneReadinessService
             'error_details' => $errorDetails,
             'required_bindings' => $requiredBindings,
             'missing_bindings' => $missingBindings,
+            'calibration_required_bindings' => $calibrationRequiredBindings,
+            'missing_calibrations' => $missingCalibrations,
             'required_assets' => $requiredAssets,
             'optional_assets' => $optionalAssets,
             'nodes' => [
@@ -348,6 +379,77 @@ class ZoneReadinessService
         $missingBindings = array_diff($requiredBindings, $existingBindings);
 
         return array_values($missingBindings);
+    }
+
+    /**
+     * Проверить наличие активной calibration для обязательных dosing pumps.
+     *
+     * @param  array<int, string>  $requiredBindings
+     * @return array<int, string>
+     */
+    private function checkRequiredCalibrations(Zone $zone, array $requiredBindings): array
+    {
+        if (empty($requiredBindings)) {
+            return [];
+        }
+
+        $bindingsByRole = ChannelBinding::query()
+            ->with('nodeChannel')
+            ->whereIn('role', $requiredBindings)
+            ->whereHas('infrastructureInstance', function ($query) use ($zone) {
+                $query->where(function ($ownerQuery) use ($zone) {
+                    $ownerQuery->where(function ($zoneOwner) use ($zone) {
+                        $zoneOwner->where('owner_type', 'zone')
+                            ->where('owner_id', $zone->id);
+                    })->orWhere(function ($greenhouseOwner) use ($zone) {
+                        $greenhouseOwner->where('owner_type', 'greenhouse')
+                            ->where('owner_id', $zone->greenhouse_id);
+                    });
+                });
+            })
+            ->get()
+            ->groupBy('role');
+
+        $missing = [];
+        foreach ($requiredBindings as $role) {
+            $bindings = $bindingsByRole->get($role, collect());
+            $hasCalibration = $bindings->contains(function (ChannelBinding $binding): bool {
+                return $this->nodeChannelHasActiveCalibration($binding->nodeChannel);
+            });
+
+            if (! $hasCalibration) {
+                $missing[] = $role;
+            }
+        }
+
+        return array_values($missing);
+    }
+
+    private function nodeChannelHasActiveCalibration(?NodeChannel $channel): bool
+    {
+        if (! $channel) {
+            return false;
+        }
+
+        $config = is_array($channel->config) ? $channel->config : [];
+        $legacyMlPerSec = data_get($config, 'pump_calibration.ml_per_sec');
+        if (is_numeric($legacyMlPerSec) && (float) $legacyMlPerSec > 0) {
+            return true;
+        }
+
+        if (! DB::getSchemaBuilder()->hasTable('pump_calibrations')) {
+            return false;
+        }
+
+        return DB::table('pump_calibrations')
+            ->where('node_channel_id', $channel->id)
+            ->where('is_active', true)
+            ->where('ml_per_sec', '>', 0)
+            ->where(function ($query) {
+                $query->whereNull('valid_to')
+                    ->orWhere('valid_to', '>', now());
+            })
+            ->exists();
     }
 
     /**

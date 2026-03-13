@@ -27,6 +27,7 @@ from ae3lite.infrastructure.repositories import (
     PgAeCommandRepository,
     PgAutomationTaskRepository,
     PgPidStateRepository,
+    PgZoneAlertRepository,
     PgZoneAlertWriteRepository,
     PgZoneLeaseRepository,
     PgZoneWorkflowRepository,
@@ -59,6 +60,7 @@ def build_ae3_runtime_bundle(
 ) -> Ae3RuntimeBundle:
     task_repository = PgAutomationTaskRepository()
     zone_lease_repository = PgZoneLeaseRepository()
+    zone_alert_repository = PgZoneAlertRepository()
     command_repository = PgAeCommandRepository()
     task_status_read_model = PgTaskStatusReadModel()
     http_client = httpx.AsyncClient(timeout=10.0)
@@ -73,6 +75,7 @@ def build_ae3_runtime_bundle(
         task_repository=task_repository,
         zone_lease_repository=zone_lease_repository,
         legacy_intent_mapper=LegacyIntentMapper(),
+        zone_alert_repository=zone_alert_repository,
     )
     reconcile_command_use_case = ReconcileCommandUseCase(
         task_repository=task_repository,

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from ae3lite.application.dto import TaskCreationResult
-from ae3lite.domain.errors import TaskCreateError
+from ae3lite.domain.errors import ErrorCodes, TaskCreateError
 from ae3lite.infrastructure.metrics import TASK_CREATED
 from common.db import get_pool
 
@@ -18,16 +18,23 @@ class CreateTaskFromIntentUseCase:
     prevent duplicate task creation under concurrent requests.
     """
 
+    HARD_BLOCKING_ALERT_CODES = frozenset({
+        "biz_zone_correction_config_missing",
+        "biz_zone_dosing_calibration_missing",
+    })
+
     def __init__(
         self,
         *,
         task_repository: Any,
         zone_lease_repository: Any,
         legacy_intent_mapper: Any,
+        zone_alert_repository: Any | None = None,
     ) -> None:
         self._task_repository = task_repository
         self._zone_lease_repository = zone_lease_repository
         self._legacy_intent_mapper = legacy_intent_mapper
+        self._zone_alert_repository = zone_alert_repository
 
     async def run(
         self,
@@ -72,7 +79,7 @@ class CreateTaskFromIntentUseCase:
                 active_task = await self._task_repository.get_active_for_zone(zone_id=zone_id)
                 if active_task is not None:
                     raise TaskCreateError(
-                        "start_cycle_zone_busy",
+                        ErrorCodes.START_CYCLE_ZONE_BUSY,
                         f"Zone {zone_id} already has active task_id={active_task.id}",
                         details={"active_task_id": active_task.id, "active_task_status": active_task.status},
                     )
@@ -81,11 +88,26 @@ class CreateTaskFromIntentUseCase:
                 lease_until = self._normalize_utc(active_lease.leased_until) if active_lease is not None else None
                 if active_lease is not None and lease_until is not None and lease_until > self._normalize_utc(now):
                     raise TaskCreateError(
-                        "start_cycle_zone_busy",
+                        ErrorCodes.START_CYCLE_ZONE_BUSY,
                         f"Zone {zone_id} already has active lease owner={active_lease.owner}",
                         details={
                             "active_lease_owner": active_lease.owner,
                             "active_lease_until": lease_until.isoformat(),
+                        },
+                    )
+
+                blocking_alert = await self._find_blocking_alert(zone_id=zone_id)
+                if blocking_alert is not None:
+                    raise TaskCreateError(
+                        ErrorCodes.START_CYCLE_ZONE_BUSY,
+                        (
+                            f"Zone {zone_id} is blocked by active alert "
+                            f"code={blocking_alert['code']} alert_id={blocking_alert['id']}"
+                        ),
+                        details={
+                            "blocking_alert_id": blocking_alert["id"],
+                            "blocking_alert_code": blocking_alert["code"],
+                            "blocking_alert_status": blocking_alert["status"],
                         },
                     )
 
@@ -115,6 +137,16 @@ class CreateTaskFromIntentUseCase:
             return TaskCreationResult(task=deduplicated_task, created=False)
 
         raise TaskCreateError("ae3_task_create_failed", f"Unable to create canonical task for zone_id={zone_id}")
+
+    async def _find_blocking_alert(self, *, zone_id: int) -> dict[str, Any] | None:
+        repository = self._zone_alert_repository
+        if repository is None:
+            return None
+        finder = getattr(repository, "find_first_active_by_codes", None)
+        if not callable(finder):
+            return None
+        alert = await finder(zone_id=zone_id, codes=self.HARD_BLOCKING_ALERT_CODES)
+        return dict(alert) if isinstance(alert, Mapping) else None
 
     def _normalize_utc(self, value: datetime) -> datetime:
         if value.tzinfo is None:

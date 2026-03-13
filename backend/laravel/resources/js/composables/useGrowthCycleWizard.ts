@@ -544,6 +544,35 @@ export function useGrowthCycleWizard({
     return availableRevisions.value.find((revision: any) => revision.id === selectedRevisionId.value) || null;
   });
 
+  function getCalibrationBlockingReason(): string | null {
+    if (form.value.calibrationSkipped) {
+      return null;
+    }
+
+    if (isZoneChannelsLoading.value) {
+      return "Дождитесь загрузки каналов насосов.";
+    }
+
+    if (zoneChannelsError.value) {
+      return zoneChannelsError.value;
+    }
+
+    if (!zoneChannelsLoaded.value) {
+      return "Загрузите список насосов перед продолжением.";
+    }
+
+    if (form.value.calibrations.length === 0) {
+      return "Заполните калибровки насосов или явно пропустите этот шаг.";
+    }
+
+    const invalidEntry = form.value.calibrations.find((entry) => !entry.skip && entry.ml_per_sec <= 0);
+    if (invalidEntry) {
+      return `Укажите корректный ml/sec для ${invalidEntry.channel_label} или пометьте насос как пропущенный.`;
+    }
+
+    return null;
+  }
+
   const steps: WizardStep[] = [
     { key: "zone", label: "Зона" },
     { key: "plant", label: "Растение" },
@@ -603,13 +632,17 @@ export function useGrowthCycleWizard({
       case 4:
         return true;
       case 5:
-        return true;
+        return getCalibrationBlockingReason() === null;
       default:
         return true;
     }
   });
 
   const canSubmit = computed(() => {
+    if (currentStep.value === 6) {
+      return getCalibrationBlockingReason() === null && validationErrors.value.length === 0;
+    }
+
     return canProceed.value && validationErrors.value.length === 0;
   });
 
@@ -649,6 +682,10 @@ export function useGrowthCycleWizard({
       if (startDate < now) {
         return "Дата начала не может быть в прошлом.";
       }
+    }
+
+    if (currentStep.value === 5) {
+      return getCalibrationBlockingReason() || "";
     }
 
     return "";
@@ -1097,12 +1134,19 @@ export function useGrowthCycleWizard({
         draftFormsHydrated.value = true;
       }
 
-      if (typeof draft.calibrationSkipped === "boolean") {
-        form.value.calibrationSkipped = draft.calibrationSkipped;
-      }
-
       if (typeof draft.currentStep === "number") {
-        currentStep.value = clamp(Math.round(draft.currentStep), 0, steps.length - 1);
+        const restoredStep = clamp(Math.round(draft.currentStep), 0, steps.length - 1);
+        if (restoredStep >= 5) {
+          currentStep.value = 4;
+          form.value.calibrationSkipped = false;
+        } else {
+          currentStep.value = restoredStep;
+          if (typeof draft.calibrationSkipped === "boolean") {
+            form.value.calibrationSkipped = draft.calibrationSkipped;
+          }
+        }
+      } else if (typeof draft.calibrationSkipped === "boolean") {
+        form.value.calibrationSkipped = draft.calibrationSkipped;
       }
     } catch (err) {
       logger.warn("[GrowthCycleWizard] Failed to load draft", err);
@@ -1286,6 +1330,20 @@ export function useGrowthCycleWizard({
 
     if (!form.value.zoneId || !selectedRevisionId.value || !selectedPlantId.value || !form.value.startedAt) {
       error.value = "Заполните все обязательные поля";
+      return;
+    }
+
+    if (!form.value.calibrationSkipped && (!zoneChannelsLoaded.value || form.value.calibrations.length === 0)) {
+      await fetchZoneChannels(true);
+    }
+
+    const calibrationBlockingReason = getCalibrationBlockingReason();
+    if (calibrationBlockingReason) {
+      currentStep.value = 5;
+      validationErrors.value = [calibrationBlockingReason];
+      error.value = calibrationBlockingReason;
+      errorDetails.value = [];
+      showToast(calibrationBlockingReason, "error", TOAST_TIMEOUT.NORMAL);
       return;
     }
 
@@ -1531,7 +1589,18 @@ export function useGrowthCycleWizard({
   watch(
     () => currentStep.value,
     (step) => {
-      if (steps[step]?.key === "calibration") {
+      const stepKey = steps[step]?.key;
+      if (!form.value.calibrationSkipped && (stepKey === "calibration" || stepKey === "confirm")) {
+        void fetchZoneChannels(stepKey === "confirm");
+      }
+    },
+  );
+
+  watch(
+    () => form.value.calibrationSkipped,
+    (calibrationSkipped) => {
+      const stepKey = steps[currentStep.value]?.key;
+      if (!calibrationSkipped && !zoneChannelsLoaded.value && (stepKey === "calibration" || stepKey === "confirm")) {
         void fetchZoneChannels(true);
       }
     },

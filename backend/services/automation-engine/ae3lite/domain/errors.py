@@ -121,6 +121,7 @@ class ErrorCodes:
     START_CYCLE_INTENT_TERMINAL = "start_cycle_intent_terminal"
     START_CYCLE_IDEMPOTENCY_KEY_CONFLICT = "start_cycle_idempotency_key_conflict"
     START_CYCLE_MISSING_IDEMPOTENCY_KEY = "start_cycle_missing_idempotency_key"
+    START_CYCLE_BLOCKED_BY_ALERT = "start_cycle_blocked_by_alert"
 
     # API / infra
     AE3_API_UNHANDLED_EXCEPTION = "ae3_api_unhandled_exception"
@@ -129,6 +130,7 @@ class ErrorCodes:
 
     # Critical configuration guards
     ZONE_CORRECTION_CONFIG_MISSING_CRITICAL = "zone_correction_config_missing_critical"
+    ZONE_DOSING_CALIBRATION_MISSING_CRITICAL = "zone_dosing_calibration_missing_critical"
 
 
 class Ae3LiteError(Exception):

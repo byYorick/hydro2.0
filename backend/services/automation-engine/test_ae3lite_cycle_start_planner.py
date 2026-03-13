@@ -213,8 +213,8 @@ def test_cycle_start_planner_resolves_legacy_dosing_aliases_from_bound_pumps() -
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump", pump_calibration={"ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
                 ZoneActuatorRef(
                     node_uid="nd-ec-1",
@@ -268,10 +268,10 @@ def test_cycle_start_planner_resolves_modern_dosing_names_to_legacy_roles() -> N
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
                 ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="dose_ph_down"),
-                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="dose_ph_up"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="dose_ph_down", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="dose_ph_up", pump_calibration={"ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
-                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="dose_ec_a"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="dose_ec_a", pump_calibration={"component": "npk", "ml_per_sec": 1.0}),
                 ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=50, role="system", channel_type="SERVICE"),
             ),
         }
@@ -283,6 +283,53 @@ def test_cycle_start_planner_resolves_modern_dosing_names_to_legacy_roles() -> N
     assert correction_actuators["ec"]["channel"] == "pump_a"
     assert correction_actuators["ph_up"]["channel"] == "pump_base"
     assert correction_actuators["ph_down"]["channel"] == "pump_acid"
+
+
+def test_cycle_start_planner_fails_closed_when_dosing_calibration_missing_preflight() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "correction": {
+                    "dose_ec_channel": "ec_npk_pump",
+                    "dose_ph_up_channel": "ph_base_pump",
+                    "dose_ph_down_channel": "ph_acid_pump",
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="ec_npk_pump"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=50, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+
+    with pytest.raises(PlannerConfigurationError) as exc:
+        planner.build(task=_task(now), snapshot=snapshot)
+
+    assert getattr(exc.value, "code", None) == "zone_dosing_calibration_missing_critical"
+    assert "channel=pump_a" in str(exc.value)
 
 
 def test_cycle_start_planner_rejects_unsupported_schema_version() -> None:

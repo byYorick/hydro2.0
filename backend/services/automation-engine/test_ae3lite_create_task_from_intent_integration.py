@@ -8,7 +8,7 @@ import pytest
 from ae3lite.application.adapters import LegacyIntentMapper
 from ae3lite.application.use_cases import CreateTaskFromIntentUseCase
 from ae3lite.domain.errors import TaskCreateError
-from ae3lite.infrastructure.repositories import PgAutomationTaskRepository, PgZoneLeaseRepository
+from ae3lite.infrastructure.repositories import PgAutomationTaskRepository, PgZoneAlertRepository, PgZoneLeaseRepository
 from common.db import execute, fetch
 
 
@@ -26,6 +26,17 @@ async def _insert_zone(prefix: str) -> int:
 
 
 async def _cleanup(prefix: str) -> None:
+    await execute(
+        """
+        DELETE FROM alerts
+        WHERE zone_id IN (
+            SELECT id
+            FROM zones
+            WHERE name LIKE $1
+        )
+        """,
+        f"{prefix}%",
+    )
     await execute("DELETE FROM zones WHERE name LIKE $1", f"{prefix}%")
 
 
@@ -140,5 +151,46 @@ async def test_create_task_from_intent_rejects_active_zone_lease() -> None:
 
         assert exc.value.code == "start_cycle_zone_busy"
         assert exc.value.details["active_lease_owner"] == "busy-worker"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_create_task_from_intent_rejects_zone_with_active_blocking_alert() -> None:
+    prefix = f"ae3-create-task-alert-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=PgAutomationTaskRepository(),
+        zone_lease_repository=PgZoneLeaseRepository(),
+        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_alert_repository=PgZoneAlertRepository(),
+    )
+
+    try:
+        zone_id = await _insert_zone(prefix)
+        await execute(
+            """
+            INSERT INTO alerts (
+                zone_id, source, code, type, details, status, category, severity, error_count, created_at, first_seen_at, last_seen_at
+            )
+            VALUES (
+                $1, 'biz', 'biz_zone_dosing_calibration_missing', 'zone', '{}'::jsonb, 'ACTIVE', 'operations', 'critical', 1, $2, $2, $2
+            )
+            """,
+            zone_id,
+            now,
+        )
+
+        with pytest.raises(TaskCreateError) as exc:
+            await use_case.run(
+                zone_id=zone_id,
+                source="laravel_scheduler",
+                idempotency_key=f"{prefix}-idem",
+                intent_row=_intent_row(zone_id, prefix),
+                now=now,
+            )
+
+        assert exc.value.code == "start_cycle_zone_busy"
+        assert exc.value.details["blocking_alert_code"] == "biz_zone_dosing_calibration_missing"
     finally:
         await _cleanup(prefix)

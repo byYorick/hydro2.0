@@ -528,6 +528,14 @@ class GrowCycleController extends Controller
             'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
             'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
         ];
+        $calibrationMessages = [
+            'ph_acid_pump' => 'Для насоса pH кислоты не задана калибровка',
+            'ph_base_pump' => 'Для насоса pH щёлочи не задана калибровка',
+            'ec_npk_pump' => 'Для насоса EC NPK не задана калибровка',
+            'ec_calcium_pump' => 'Для насоса EC Calcium не задана калибровка',
+            'ec_magnesium_pump' => 'Для насоса EC Magnesium не задана калибровка',
+            'ec_micro_pump' => 'Для насоса EC Micro не задана калибровка',
+        ];
         foreach ($roleMessages as $role => $message) {
             if (array_key_exists($role, $checks) && ! $checks[$role]) {
                 $errors[] = $message;
@@ -541,7 +549,7 @@ class GrowCycleController extends Controller
             }
 
             $type = (string) ($issue['type'] ?? '');
-            if ($type !== 'missing_bindings') {
+            if (! in_array($type, ['missing_bindings', 'missing_calibrations'], true)) {
                 continue;
             }
 
@@ -551,7 +559,9 @@ class GrowCycleController extends Controller
                     continue;
                 }
 
-                if (isset($roleMessages[$binding])) {
+                if ($type === 'missing_calibrations' && isset($calibrationMessages[$binding])) {
+                    $errors[] = $calibrationMessages[$binding];
+                } elseif (isset($roleMessages[$binding])) {
                     $errors[] = $roleMessages[$binding];
                 } else {
                     $errors[] = "Не привязан обязательный канал: {$binding}";
