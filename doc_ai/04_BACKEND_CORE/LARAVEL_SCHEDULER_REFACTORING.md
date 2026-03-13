@@ -12,7 +12,7 @@
 
 1. **Фаза 1 — Cleanup:** Удалены 3 deprecated трейта (~1300 строк); `SchedulerCycleService` (1421 строка) разбит на 4 специализированных класса + тонкая обёртка (backward compat).
 2. **Фаза 2 — Boundary fix:** Статус AE3-задач читается напрямую из shared DB (`zone_automation_intents`) вместо HTTP-опроса AE API. HTTP остался как fallback для старых задач без `intent_id` в details.
-3. **Фаза 3 — Event-driven:** Добавлен PostgreSQL NOTIFY-триггер на терминальные переходы `zone_automation_intents`; реализованы два слушателя — Python AE background task и Laravel artisan daemon.
+3. **Фаза 3 — Event-driven:** Добавлен PostgreSQL NOTIFY-триггер на терминальные переходы `zone_automation_intents`; реализованы два слушателя — Python AE background task и Laravel artisan daemon. В AE callback теперь будит worker через `worker.kick()`, а tracked background tasks ведутся fail-closed.
 
 ---
 
@@ -55,7 +55,7 @@ zone_automation_intents (PostgreSQL)
     │       └──► ActiveTaskStore::markTerminal()
     │               └──► laravel_scheduler_active_tasks.status = terminal
     │
-    └──► IntentStatusListener (Python AE)  ← realtime (для собственного state)
+    └──► IntentStatusListener (Python AE)  ← realtime fast-path wake-up
 ```
 
 ### Fallback polling
@@ -93,7 +93,7 @@ zone_automation_intents (PostgreSQL)
 | Файл | Статус | Ответственность |
 |------|--------|-----------------|
 | `ae3lite/infrastructure/intent_status_listener.py` | Создан | `IntentStatusListener` — asyncpg LISTEN, auto-reconnect |
-| `ae3lite/runtime/app.py` | Изменён | Запуск listener в lifespan |
+| `ae3lite/runtime/app.py` | Изменён | Запуск listener в lifespan, `worker.kick()` callback, hard-limit background tasks |
 
 ---
 
@@ -309,19 +309,25 @@ class IntentStatusListener:
 
 ```python
 if runtime_config.db_dsn:
+    async def _on_terminal_intent(data: dict[str, Any]) -> None:
+        bundle.worker.kick()
+
     intent_listener = IntentStatusListener(
         dsn=runtime_config.db_dsn,
         on_terminal_intent=_on_terminal_intent,
     )
-    intent_listener_task = asyncio.create_task(
+    intent_listener_task = _spawn_background_task(
         intent_listener.run(),
-        name="ae3-intent-status-listener",
+        background_tasks=background_tasks,
+        task_name="ae3-intent-status-listener",
     )
-    background_tasks.add(intent_listener_task)
-    intent_listener_task.add_done_callback(background_tasks.discard)
 ```
 
 При shutdown: `intent_listener.stop()` → `_drain_background_tasks()`.
+
+Дополнительные runtime-инварианты:
+- Python listener не ведёт отдельный status store и не меняет DB state напрямую; его роль — ускорить повторный drain через `worker.kick()`.
+- `background_tasks` registry в AE имеет hard limit и при переполнении отклоняет spawn fail-closed, вместо best-effort продолжения.
 
 ### PHP: automation:intent-listener
 

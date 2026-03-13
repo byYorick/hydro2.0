@@ -1224,6 +1224,79 @@ lsat_corr_idx (correlation_id)
 
 ---
 
+## 8.5.1. laravel_scheduler_dispatch_metric_totals (ACTIVE)
+
+Персистентные Prometheus-compatible counters для Laravel scheduler. Таблица не
+подпадает под `logs:cleanup` и используется exporter-ом вместо реконструкции из
+`scheduler_logs`.
+
+```
+id BIGSERIAL PK
+zone_id BIGINT FK -> zones
+task_type VARCHAR(64) NOT NULL
+result VARCHAR(64) NOT NULL
+total BIGINT NOT NULL DEFAULT 0
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+ls_dispatch_metric_unique (zone_id, task_type, result) UNIQUE
+ls_dispatch_metric_task_result_idx (task_type, result)
+```
+
+Назначение:
+- источник для `laravel_scheduler_dispatches_total{zone_id,task_type,result}`;
+- монотонные счётчики, устойчивые к retention cleanup логов.
+
+---
+
+## 8.5.2. laravel_scheduler_cycle_duration_aggregates (ACTIVE)
+
+Агрегированное состояние histogram метрики длительности scheduler cycle.
+
+```
+id BIGSERIAL PK
+dispatch_mode VARCHAR(64) UNIQUE NOT NULL
+sample_count BIGINT NOT NULL DEFAULT 0
+sample_sum DOUBLE PRECISION NOT NULL DEFAULT 0
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Назначение:
+- хранение `_count` и `_sum` для `laravel_scheduler_cycle_duration_seconds`;
+- независимость histogram от TTL в `scheduler_logs`.
+
+---
+
+## 8.5.3. laravel_scheduler_cycle_duration_bucket_counts (ACTIVE)
+
+Персистентные bucket counts для histogram `laravel_scheduler_cycle_duration_seconds`.
+
+```
+id BIGSERIAL PK
+dispatch_mode VARCHAR(64) NOT NULL
+bucket_le VARCHAR(32) NOT NULL
+sample_count BIGINT NOT NULL DEFAULT 0
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
+
+Индексы:
+```
+ls_cycle_duration_bucket_unique (dispatch_mode, bucket_le) UNIQUE
+ls_cycle_duration_bucket_mode_idx (dispatch_mode)
+```
+
+Назначение:
+- хранение cumulative bucket counts для фиксированного набора `le` bucket-ов;
+- exporter строит `_bucket{le="+Inf"}` из `sample_count` таблицы
+  `laravel_scheduler_cycle_duration_aggregates`.
+
+---
+
 ## 8.6. laravel_scheduler_zone_cursors (LEGACY / OPTIONAL)
 
 Исторический курсор legacy scheduler-reconcile.
@@ -1376,6 +1449,7 @@ zone 1—N alerts
 zone 1—N zone_events
 zone 1—N scheduler_logs (логическая связь через `scheduler_logs.details.zone_id`, без FK)
 zone 1—N laravel_scheduler_active_tasks
+zone 1—N laravel_scheduler_dispatch_metric_totals
 zone 1—1 laravel_scheduler_zone_cursors
 zone 1—N commands
 zone 1—1 zone_workflow_state

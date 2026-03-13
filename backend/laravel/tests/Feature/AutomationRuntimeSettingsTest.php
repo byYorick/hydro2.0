@@ -165,6 +165,18 @@ class AutomationRuntimeSettingsTest extends TestCase
         $this->assertSame(15, $schedulerConfig['due_grace_sec']);
     }
 
+    public function test_scheduler_config_derives_hard_stale_from_expires_when_legacy_default_is_unchanged(): void
+    {
+        Config::set('services.automation_engine.scheduler_due_grace_sec', 15);
+        Config::set('services.automation_engine.scheduler_expires_after_sec', 900);
+        Config::set('services.automation_engine.scheduler_hard_stale_after_sec', 1200);
+
+        $schedulerConfig = app(AutomationRuntimeConfigService::class)->schedulerConfig();
+
+        $this->assertSame(900, $schedulerConfig['expires_after_sec']);
+        $this->assertSame(1800, $schedulerConfig['hard_stale_after_sec']);
+    }
+
     /**
      * @param  array<int, array<string, mixed>>|null  $sections
      * @return array<string, mixed>|null

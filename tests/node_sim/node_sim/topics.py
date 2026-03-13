@@ -166,6 +166,27 @@ def config_report(gh: str, zone: str, node: str) -> str:
     return f"hydro/{gh}/{zone}/{node}/config_report"
 
 
+def config(gh: str, zone: str, node: str) -> str:
+    """
+    Генерирует топик для config.
+    """
+    return f"hydro/{gh}/{zone}/{node}/config"
+
+
+def event(gh: str, zone: str, node: str, ch: str) -> str:
+    """
+    Генерирует топик события по каналу.
+    """
+    return f"hydro/{gh}/{zone}/{node}/{ch}/event"
+
+
+def node_hello() -> str:
+    """
+    Канонический top-level топик node_hello.
+    """
+    return "hydro/node_hello"
+
+
 def temp_command(node_uid_or_hw: str, ch: str) -> str:
     """
     Генерирует временный топик для команд (до привязки к зоне).

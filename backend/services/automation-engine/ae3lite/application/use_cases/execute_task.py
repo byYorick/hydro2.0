@@ -21,6 +21,9 @@ from ae3lite.domain.errors import (
 logger = logging.getLogger(__name__)
 
 
+TASK_EXECUTION_TIMEOUT_CANCEL_MSG = "ae3_task_execution_timeout"
+
+
 class ExecuteTaskUseCase:
     """Runs one AE3 cycle_start stage and returns terminal or safely requeued task."""
 
@@ -127,6 +130,31 @@ class ExecuteTaskUseCase:
                 now=now,
             )
             return completed_task
+        except asyncio.CancelledError as exc:
+            if not self._is_timeout_cancellation(exc):
+                raise
+
+            timeout_now = datetime.now(timezone.utc)
+            logger.error(
+                "AE3 task execution cancelled by runtime timeout: zone_id=%s task_id=%s stage=%s error_code=%s",
+                running_task.zone_id,
+                running_task.id,
+                getattr(running_task, "current_stage", None),
+                TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+            )
+            await self._attempt_fail_safe_shutdown(
+                task=running_task,
+                snapshot=snapshot,
+                plan=plan,
+                now=timeout_now,
+            )
+            return await self._fail_closed(
+                task=running_task,
+                owner=owner,
+                error_code=TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+                error_message="Task execution exceeded runtime timeout",
+                now=timeout_now,
+            )
         except (SnapshotBuildError, PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
             error_code = getattr(exc, "code", "ae3_task_execution_failed")
             logger.error(
@@ -377,3 +405,6 @@ class ExecuteTaskUseCase:
         if version_int <= 0:
             return
         await repository.mark_applied(zone_id=int(snapshot.zone_id), version=version_int, now=now)
+
+    def _is_timeout_cancellation(self, exc: asyncio.CancelledError) -> bool:
+        return any(str(arg) == TASK_EXECUTION_TIMEOUT_CANCEL_MSG for arg in getattr(exc, "args", ()))

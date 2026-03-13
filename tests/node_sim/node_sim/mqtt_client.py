@@ -78,6 +78,7 @@ class MqttClient:
         
         # Callback для обработки команд
         self._command_callback: Optional[Callable[[str, dict], None]] = None
+        self._connection_callback: Optional[Callable[[bool], None]] = None
         
         # Флаги режима работы
         self._preconfig_mode = False
@@ -138,6 +139,10 @@ class MqttClient:
             callback: Функция (topic, command_dict) -> None
         """
         self._command_callback = callback
+
+    def set_connection_callback(self, callback: Callable[[bool], None]):
+        """Установить callback изменения состояния подключения."""
+        self._connection_callback = callback
         
     def _create_client(self) -> mqtt.Client:
         """Создать новый MQTT клиент."""
@@ -188,6 +193,11 @@ class MqttClient:
             self._connected.set()
             self._current_backoff = self._base_backoff  # Сброс backoff
             logger.info(f"Connected to MQTT broker at {self.host}:{self.port}")
+            if self._connection_callback:
+                try:
+                    self._connection_callback(True)
+                except Exception as e:
+                    logger.error(f"Error in connection callback: {e}", exc_info=True)
             
             # Переподписка на все топики
             self._resubscribe_all()
@@ -198,6 +208,11 @@ class MqttClient:
     def _on_disconnect(self, client: mqtt.Client, userdata, rc: int):
         """Обработчик отключения."""
         self._connected.clear()
+        if self._connection_callback:
+            try:
+                self._connection_callback(False)
+            except Exception as e:
+                logger.error(f"Error in connection callback: {e}", exc_info=True)
         
         if rc == 0:
             logger.info("Disconnected from MQTT broker normally")

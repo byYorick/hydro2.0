@@ -24,6 +24,7 @@ use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SchedulerTaskController;
+use App\Http\Controllers\SchedulerMetricsController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SimulationController;
@@ -70,6 +71,8 @@ Route::get('system/health', [SystemController::class, 'health'])
         \App\Http\Middleware\AuthenticateWithApiToken::class, // Попытка аутентификации через токен (необязательно)
         'throttle:300,1',
     ]);
+Route::get('system/scheduler/metrics', SchedulerMetricsController::class)
+    ->middleware('throttle:300,1');
 
 // E2E Auth Bootstrap endpoint - создание пользователя и токена для E2E тестов
 // Регистрируется только в testing/e2e окружениях.

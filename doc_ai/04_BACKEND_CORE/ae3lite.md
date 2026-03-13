@@ -1,7 +1,7 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.2-canonical
-**Дата:** 2026-03-06
+**Версия:** 3.3-canonical
+**Дата:** 2026-03-12
 **Статус:** CANONICAL MINIMAL SPEC
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -269,6 +269,16 @@ Terminal:
 3. dedupe не заменяет реальный terminal status
 4. publish failure не трактуется как implicit ACK
 
+### 4.4 Runtime hardening
+
+1. `HistoryLoggerClient` в `v1` может сделать ровно один дополнительный HTTP retry только для transient transport error или `HTTP 5xx`, затем runtime обязан fail-closed.
+2. Polling ожидания terminal статуса команды должен быть bounded: старт от `AE_RECONCILE_POLL_INTERVAL_SEC`, backoff `x1.5`, верхняя граница `5s`.
+3. `scheduler_intent_terminal` `LISTEN/NOTIFY` используется как fast-path для `worker.kick()`, но не заменяет canonical DB state и обязательный polling fallback.
+4. Runtime обязан жёстко ограничивать tracked background tasks; переполнение registry не может игнорироваться и должно отклоняться fail-closed.
+5. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.
+6. Timeout whole-task execution обязан идти по fail-closed path: worker отменяет run с внутренней причиной `ae3_task_execution_timeout`, runtime выполняет fail-safe shutdown актуаторов, затем завершает task/intent как `failed`.
+7. Обычная отмена процесса/loop shutdown не должна маскироваться под timeout: recovery path после restart остаётся отдельным механизмом.
+
 ---
 
 ## 6. Read-model и planner
@@ -478,6 +488,20 @@ Canonical status endpoint для зон на `ae3`.
 2. Stale critical telemetry приводит к fail.
 3. Неопределённое состояние команды трактуется как incident, а не как success.
 4. Recovery не должен повторно публиковать команду без явного безопасного основания.
+5. Whole-task execution timeout трактуется как terminal runtime failure, а не как мягкий retry сигнал.
+
+### 9.4 Минимальная observability
+
+Prometheus runtime минимум для lifecycle intents:
+1. `ae3_intent_claimed_total{source_status}`
+2. `ae3_intent_terminal_total{status}`
+3. `ae3_intent_stale_reclaimed_total`
+
+Дополнительно сохраняются обязательные command/runtime метрики:
+1. `ae3_command_dispatched_total`
+2. `ae3_command_dispatch_duration_seconds`
+3. `ae3_command_terminal_total`
+4. `ae3_tick_duration_seconds`
 
 ---
 

@@ -227,6 +227,16 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $firstTask = LaravelSchedulerActiveTask::query()->orderBy('id')->first();
         $this->assertNotNull($firstTask);
         $this->assertSame('3001', (string) $firstTask->task_id);
+        $intentId = (int) (($firstTask->details ?? [])['intent_id'] ?? 0);
+        $this->assertGreaterThan(0, $intentId);
+
+        DB::table('zone_automation_intents')
+            ->where('id', $intentId)
+            ->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'updated_at' => now(),
+            ]);
 
         Cache::flush();
         $this->travel(61)->seconds();
@@ -234,7 +244,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->artisan('automation:dispatch-schedules')
             ->assertExitCode(0);
 
-        Http::assertSent(static function ($request): bool {
+        Http::assertNotSent(static function ($request): bool {
             return $request->method() === 'GET' && str_ends_with($request->url(), '/internal/tasks/3001');
         });
 
@@ -252,6 +262,10 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'task_id' => '3002',
             'zone_id' => $zone->id,
             'status' => 'accepted',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'id' => $intentId,
+            'status' => 'completed',
         ]);
     }
 

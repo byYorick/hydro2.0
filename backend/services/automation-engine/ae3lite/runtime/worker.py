@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timezone as _tz
 from typing import Any, Callable, Optional
 
+from ae3lite.application.use_cases.execute_task import TASK_EXECUTION_TIMEOUT_CANCEL_MSG
 from ae3lite.infrastructure.metrics import ACTIVE_TASKS, TICK_DURATION, TICK_ERRORS, ZONE_LEASE_LOST, ZONE_LEASE_RELEASE_FAILED
 from common.infra_alerts import send_infra_alert
 
@@ -28,6 +29,7 @@ class Ae3RuntimeWorker:
         now_fn: Callable[[], datetime],
         logger: Any,
         lease_ttl_sec: int = 300,
+        max_task_execution_sec: int = 900,
     ) -> None:
         self._owner = str(owner or "ae3-runtime").strip() or "ae3-runtime"
         self._claim_next_task_use_case = claim_next_task_use_case
@@ -41,10 +43,13 @@ class Ae3RuntimeWorker:
         self._now_fn = now_fn
         self._logger = logger
         self._lease_ttl_sec = max(30, int(lease_ttl_sec))
+        self._max_task_execution_sec = max_task_execution_sec
         self._drain_task: Optional[Any] = None
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
         self._wake_task: Optional[Any] = None
+        self._last_drain_exit_ok = True
+        self._last_drain_exit_reason = "idle"
 
     def kick(self) -> Any:
         self._pending_kicks += 1
@@ -85,83 +90,140 @@ class Ae3RuntimeWorker:
 
     async def _drain_pending_tasks(self) -> None:
         self._log_debug("AE3 runtime drain started")
-        while True:
-            claimed = await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
-            if claimed is None:
-                if self._pending_kicks > 0:
-                    self._log_debug("AE3 runtime drain retrying after deferred kick")
-                    self._pending_kicks = 0
-                    continue
-                if await self._schedule_wake_for_next_pending():
-                    self._log_debug("AE3 runtime drain sleeping until next due task")
+        drain_ok = False
+        drain_reason = "worker_unexpected_exit"
+        try:
+            while True:
+                claimed = await self._claim_next_task_use_case.run(owner=self._owner, now=self._now_fn())
+                if claimed is None:
+                    if self._pending_kicks > 0:
+                        self._log_debug("AE3 runtime drain retrying after deferred kick")
+                        self._pending_kicks = 0
+                        continue
+                    if await self._schedule_wake_for_next_pending():
+                        self._log_debug("AE3 runtime drain sleeping until next due task")
+                        drain_ok = True
+                        drain_reason = "sleeping"
+                        return
+                    self._log_debug("AE3 runtime drain idle: no pending tasks")
+                    drain_ok = True
+                    drain_reason = "idle"
                     return
-                self._log_debug("AE3 runtime drain idle: no pending tasks")
-                return
 
-            self._pending_kicks = 0
-            task, _lease = claimed
-            self._log_debug("AE3 runtime claimed task: task_id=%s zone_id=%s", task.id, task.zone_id)
-            intent_id = int(task.intent_id or 0)
-            if intent_id > 0:
-                await self._safe_mark_intent_running(intent_id=intent_id)
+                self._pending_kicks = 0
+                task, _lease = claimed
+                self._log_debug("AE3 runtime claimed task: task_id=%s zone_id=%s", task.id, task.zone_id)
+                intent_id = int(task.intent_id or 0)
+                if intent_id > 0:
+                    await self._safe_mark_intent_running(intent_id=intent_id)
 
-            lease_lost_event = asyncio.Event()
-            heartbeat_task = self._spawn_background_task_fn(
-                self._lease_heartbeat(zone_id=task.zone_id, lease_lost_event=lease_lost_event),
-                task_name="ae3lite_lease_heartbeat",
-            )
-            final_task = task
-            ACTIVE_TASKS.labels(topology=task.topology).inc()
-            try:
-                with TICK_DURATION.time():
-                    final_task = await self._execute_task_use_case.run(task=task, now=self._now_fn())
-            except Exception as exc:
-                TICK_ERRORS.labels(error_type=type(exc).__name__).inc()
-                raise
-            finally:
-                ACTIVE_TASKS.labels(topology=task.topology).dec()
-                cancel = getattr(heartbeat_task, "cancel", None)
-                if callable(cancel):
-                    cancel()
-                if lease_lost_event.is_set():
-                    self._logger.warning(
-                        "AE3 runtime task finished after lease was lost: zone_id=%s task_id=%s",
-                        task.zone_id,
-                        task.id,
-                    )
-                released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
-                if not released:
-                    self._logger.warning(
-                        "AE3 runtime failed to release zone lease: zone_id=%s owner=%s task_id=%s",
-                        task.zone_id,
-                        self._owner,
-                        task.id,
-                    )
-                    ZONE_LEASE_RELEASE_FAILED.labels(zone_id=str(task.zone_id)).inc()
-                    try:
-                        await send_infra_alert(
-                            code="ae3_zone_lease_release_failed",
-                            alert_type="AE3 Zone Lease Release Failed",
-                            severity="error",
-                            zone_id=int(task.zone_id),
-                            service="automation-engine",
-                            component="worker:lease",
-                            details={
-                                "task_id": int(task.id),
-                                "owner": self._owner,
-                                "topology": str(getattr(task, "topology", "")),
-                                "message": "Zone lease could not be released after task completion — zone may be locked.",
-                            },
+                lease_lost_event = asyncio.Event()
+                heartbeat_task = self._spawn_background_task_fn(
+                    self._lease_heartbeat(zone_id=task.zone_id, lease_lost_event=lease_lost_event),
+                    task_name="ae3lite_lease_heartbeat",
+                )
+                final_task = task
+                timed_out = False
+                ACTIVE_TASKS.labels(topology=task.topology).inc()
+                try:
+                    with TICK_DURATION.time():
+                        execution_task = asyncio.create_task(
+                            self._execute_task_use_case.run(task=task, now=self._now_fn()),
+                            name=f"ae3lite_execute_task:{task.id}",
                         )
-                    except Exception:
+                        try:
+                            final_task = await asyncio.wait_for(
+                                asyncio.shield(execution_task),
+                                timeout=float(self._max_task_execution_sec),
+                            )
+                        except asyncio.TimeoutError:
+                            timed_out = True
+                            execution_task.cancel(TASK_EXECUTION_TIMEOUT_CANCEL_MSG)
+                            try:
+                                final_task = await execution_task
+                            except asyncio.CancelledError:
+                                final_task = None
+                            TICK_ERRORS.labels(error_type="TimeoutError").inc()
+                            self._logger.error(
+                                "AE3 task execution timeout: zone_id=%s task_id=%s timeout_sec=%s",
+                                task.zone_id,
+                                task.id,
+                                self._max_task_execution_sec,
+                            )
+                        except asyncio.CancelledError:
+                            execution_task.cancel()
+                            raise
+                except Exception as exc:
+                    TICK_ERRORS.labels(error_type=type(exc).__name__).inc()
+                    raise
+                finally:
+                    ACTIVE_TASKS.labels(topology=task.topology).dec()
+                    cancel = getattr(heartbeat_task, "cancel", None)
+                    if callable(cancel):
+                        cancel()
+                    if lease_lost_event.is_set():
                         self._logger.warning(
-                            "AE3 failed to send lease_release_failed alert zone_id=%s",
+                            "AE3 runtime task finished after lease was lost: zone_id=%s task_id=%s",
                             task.zone_id,
-                            exc_info=True,
+                            task.id,
                         )
+                    released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
+                    if not released:
+                        self._logger.warning(
+                            "AE3 runtime failed to release zone lease: zone_id=%s owner=%s task_id=%s",
+                            task.zone_id,
+                            self._owner,
+                            task.id,
+                        )
+                        ZONE_LEASE_RELEASE_FAILED.labels(zone_id=str(task.zone_id)).inc()
+                        try:
+                            await send_infra_alert(
+                                code="ae3_zone_lease_release_failed",
+                                alert_type="AE3 Zone Lease Release Failed",
+                                severity="error",
+                                zone_id=int(task.zone_id),
+                                service="automation-engine",
+                                component="worker:lease",
+                                details={
+                                    "task_id": int(task.id),
+                                    "owner": self._owner,
+                                    "topology": str(getattr(task, "topology", "")),
+                                    "message": "Zone lease could not be released after task completion — zone may be locked.",
+                                },
+                            )
+                        except Exception:
+                            self._logger.warning(
+                                "AE3 failed to send lease_release_failed alert zone_id=%s",
+                                task.zone_id,
+                                exc_info=True,
+                            )
 
-            if intent_id > 0 and final_task is not None and not final_task.is_active:
-                await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
+                if timed_out:
+                    if intent_id > 0:
+                        if final_task is not None and not getattr(final_task, "is_active", True):
+                            await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
+                        else:
+                            await self._safe_mark_intent_terminal_result(
+                                intent_id=intent_id,
+                                now=self._now_fn(),
+                                success=False,
+                                error_code="task_execution_timeout",
+                                error_message=f"Task execution exceeded {self._max_task_execution_sec}s timeout",
+                            )
+                    self._log_debug("AE3 runtime continuing drain after timed out task: task_id=%s", task.id)
+                    continue
+
+                if intent_id > 0 and final_task is not None and not final_task.is_active:
+                    await self._safe_mark_intent_terminal(task=final_task, intent_id=intent_id)
+        except asyncio.CancelledError:
+            drain_reason = "worker_cancelled"
+            raise
+        except Exception as exc:
+            drain_reason = f"worker_crashed:{type(exc).__name__}"
+            raise
+        finally:
+            self._last_drain_exit_ok = drain_ok
+            self._last_drain_exit_reason = drain_reason
 
     async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
         """Periodically extend zone lease while task is executing (heartbeat at 1/3 of TTL)."""
@@ -375,6 +437,23 @@ class Ae3RuntimeWorker:
         add_done_callback = getattr(task, "add_done_callback", None)
         if callable(add_done_callback):
             add_done_callback(_on_done)
+
+    def drain_health(self) -> tuple[bool, str]:
+        """Return (ok, reason) for readiness probe."""
+        drain = self._drain_task
+        if drain is None:
+            return self._last_drain_exit_ok, self._last_drain_exit_reason
+        if not drain.done():
+            return True, self._owner
+        if drain.cancelled():
+            return False, "worker_cancelled"
+        try:
+            exc = drain.exception()
+        except Exception:
+            return False, "worker_exception_unknown"
+        if exc is not None:
+            return False, f"worker_crashed:{type(exc).__name__}"
+        return self._last_drain_exit_ok, self._last_drain_exit_reason
 
     def _log_debug(self, message: str, *args: Any) -> None:
         debug = getattr(self._logger, "debug", None)

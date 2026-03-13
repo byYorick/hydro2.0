@@ -33,6 +33,7 @@ def _config(**kwargs: object) -> Ae3RuntimeConfig:
         start_cycle_rate_limit_window_sec=10,
         verbose_http_logging=False,
         worker_owner="test-worker",
+        max_task_execution_sec=900,
     )
     defaults.update(kwargs)
     return Ae3RuntimeConfig(**defaults)

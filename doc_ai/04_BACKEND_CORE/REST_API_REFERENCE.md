@@ -175,6 +175,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 |-------|---------------------------------|------|-------------------------------------------|
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
+| GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler (`dispatches`, `cycle_duration`, `active_tasks`); `counter`/`histogram` читаются из персистентных aggregate tables, а не из `scheduler_logs` |
 
 ---
 

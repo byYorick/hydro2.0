@@ -30,6 +30,10 @@ from common.utils.time import utcnow_naive as _utcnow
 logger = logging.getLogger(__name__)
 
 
+class BackgroundTaskLimitError(RuntimeError):
+    """Raised when AE3 refuses to spawn more tracked background tasks."""
+
+
 async def _drain_background_tasks(background_tasks: set[asyncio.Task], timeout_sec: float = 5.0) -> None:
     pending = [task for task in background_tasks if not task.done()]
     if not pending:
@@ -49,6 +53,12 @@ async def _drain_background_tasks(background_tasks: set[asyncio.Task], timeout_s
 _BACKGROUND_TASKS_SIZE_LIMIT = 256
 
 
+def _close_coro(coro: Any) -> None:
+    close = getattr(coro, "close", None)
+    if callable(close):
+        close()
+
+
 def _spawn_background_task(
     coro: Any,
     *,
@@ -58,14 +68,21 @@ def _spawn_background_task(
     task_id: Optional[str] = None,
     task_type: Optional[str] = None,
 ) -> asyncio.Task:
+    completed_tasks = {task for task in background_tasks if task.done()}
+    if completed_tasks:
+        background_tasks.difference_update(completed_tasks)
     active_count = len(background_tasks)
     if active_count >= _BACKGROUND_TASKS_SIZE_LIMIT:
         logger.error(
-            "AE3 background_tasks set reached size limit=%s active=%s task_name=%s; "
-            "possible task leak — spawning anyway",
+            "AE3 background_tasks limit exceeded: limit=%s active=%s task_name=%s; "
+            "rejecting spawn to fail closed",
             _BACKGROUND_TASKS_SIZE_LIMIT,
             active_count,
             task_name,
+        )
+        _close_coro(coro)
+        raise BackgroundTaskLimitError(
+            f"ae3_background_task_limit_exceeded: task_name={task_name} active={active_count} limit={_BACKGROUND_TASKS_SIZE_LIMIT}"
         )
     task = asyncio.create_task(coro, name=str(task_name))
     background_tasks.add(task)
@@ -126,6 +143,22 @@ def _spawn_background_task(
     return task
 
 
+def _build_intent_listener_callback(*, worker: Any, logger: logging.Logger) -> Any:
+    async def _on_terminal_intent(data: dict[str, Any]) -> None:
+        intent_id = data.get("intent_id")
+        zone_id = data.get("zone_id")
+        status = data.get("status")
+        logger.info(
+            "IntentStatusListener: terminal intent received intent_id=%s zone_id=%s status=%s; kicking worker",
+            intent_id,
+            zone_id,
+            status,
+        )
+        worker.kick()
+
+    return _on_terminal_intent
+
+
 def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     runtime_config = config or Ae3RuntimeConfig.from_env()
     if config is None:
@@ -184,27 +217,15 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         intent_listener_task: Optional[asyncio.Task] = None
         intent_listener: Optional[IntentStatusListener] = None
         if runtime_config.db_dsn:
-            async def _on_terminal_intent(data: dict) -> None:
-                intent_id = data.get("intent_id")
-                zone_id = data.get("zone_id")
-                status = data.get("status")
-                logger.info(
-                    "IntentStatusListener: terminal intent received intent_id=%s zone_id=%s status=%s",
-                    intent_id,
-                    zone_id,
-                    status,
-                )
-
             intent_listener = IntentStatusListener(
                 dsn=runtime_config.db_dsn,
-                on_terminal_intent=_on_terminal_intent,
+                on_terminal_intent=_build_intent_listener_callback(worker=bundle.worker, logger=logger),
             )
-            intent_listener_task = asyncio.create_task(
+            intent_listener_task = _spawn_background_task(
                 intent_listener.run(),
-                name="ae3-intent-status-listener",
+                background_tasks=background_tasks,
+                task_name="ae3-intent-status-listener",
             )
-            background_tasks.add(intent_listener_task)
-            intent_listener_task.add_done_callback(background_tasks.discard)
 
         try:
             yield
@@ -212,6 +233,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             if intent_listener_task is not None and not intent_listener_task.done():
                 intent_listener.stop()
             await _drain_background_tasks(background_tasks)
+            await bundle.http_client.aclose()
 
     app = FastAPI(title="Automation Engine API", lifespan=_app_lifespan)
     app.state.ae3_runtime_bundle = bundle
@@ -370,16 +392,18 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             db_reason = type(exc).__name__
             logger.warning("AE3 readiness DB probe failed: %s", exc, exc_info=True)
 
+        worker_ok, worker_reason = bundle.worker.drain_health()
+        all_ok = db_ready and worker_ok
         payload = {
-            "status": "ok" if db_ready else "degraded",
+            "status": "ok" if all_ok else "degraded",
             "service": "automation-engine",
-            "ready": db_ready,
+            "ready": all_ok,
             "checks": {
                 "db": {"ok": db_ready, "reason": db_reason},
-                "worker": {"ok": True, "reason": runtime_config.worker_owner},
+                "worker": {"ok": worker_ok, "reason": worker_reason},
             },
         }
-        return payload if db_ready else JSONResponse(status_code=503, content=payload)
+        return payload if all_ok else JSONResponse(status_code=503, content=payload)
 
     return app
 

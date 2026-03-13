@@ -1,8 +1,8 @@
 # ARCHITECTURE_FLOWS.md
 # Ключевые архитектурные потоки hydro 2.0 (AE2-Lite + AE3-Lite target)
 
-**Версия:** 3.1  
-**Дата обновления:** 2026-03-06  
+**Версия:** 3.2  
+**Дата обновления:** 2026-03-12  
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -27,6 +27,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime.
 Инварианты:
 - прямой MQTT publish из Laravel/automation-engine запрещён;
 - единственная точка публикации команд: `POST /commands` в `history-logger`.
+- `automation-engine` может сделать не более одного transient retry к `history-logger` при transport error / `HTTP 5xx`; дальнейшая деградация — fail-closed.
 
 ---
 
@@ -120,3 +121,13 @@ Compatibility path:
 - ingress до cutover остаётся через `POST /zones/{id}/start-cycle` и `zone_automation_intents`;
 - status migration идёт через canonical `GET /internal/tasks/{task_id}`;
 - dual-run shadow, legacy status mirrors и `root_intent_id` bridge в canonical v1 не требуются.
+
+AE3 fast-path / fallback:
+- terminal transition intent-а публикует `scheduler_intent_terminal`, который будит Laravel listener и AE3 worker fast-path;
+- fast-path не заменяет canonical PostgreSQL state и reconcile polling;
+- ожидание terminal legacy command status использует bounded backoff, а не фиксированный sleep.
+
+AE3 timeout invariants:
+- whole-task execution ограничен `AE_MAX_TASK_EXECUTION_SEC` (default `900s`);
+- timeout-path обязан пройти через fail-safe shutdown и terminal `failed`, а не оставлять `ae_tasks`/`zone_automation_intents` в active state;
+- scheduler default timing chain: `expires_after_sec = 600s`, effective `hard_stale_after_sec = max(900, expires_after_sec * 2)`; при дефолтном `expires_after_sec` это даёт `1200s`.

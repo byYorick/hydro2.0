@@ -17,10 +17,13 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
+from prometheus_client import REGISTRY
 
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
+from ae3lite.infrastructure.gateways import sequential_command_gateway as sequential_command_gateway_module
 from ae3lite.infrastructure.gateways.sequential_command_gateway import SequentialCommandGateway
+from ae3lite.infrastructure.metrics import COMMAND_POLL_ITERATIONS
 
 
 NOW = datetime(2026, 3, 10, 12, 0, 0)
@@ -89,6 +92,18 @@ class _FakeCommandRepo:
 
     async def get_latest_for_task(self, *, task_id):
         return self._ae_command_row
+
+
+class _SequencedLegacyCommandRepo(_FakeCommandRepo):
+    def __init__(self, *, legacy_rows):
+        super().__init__(legacy_row=legacy_rows[-1])
+        self._legacy_rows = list(legacy_rows)
+        self._legacy_index = 0
+
+    async def get_legacy_command_by_cmd_id(self, *, zone_id, cmd_id):
+        row = self._legacy_rows[min(self._legacy_index, len(self._legacy_rows) - 1)]
+        self._legacy_index += 1
+        return row
 
 
 def _mock_task(task_id=1, **kwargs):
@@ -312,3 +327,48 @@ async def test_publish_fails_if_legacy_cmd_id_not_found():
     with pytest.raises(TaskExecutionError) as exc_info:
         await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
     assert exc_info.value.code == "command_send_failed"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_uses_exponential_backoff_while_command_is_non_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    command_repo = _SequencedLegacyCommandRepo(
+        legacy_rows=[
+            _PENDING_ROW,
+            _PENDING_ROW,
+            _PENDING_ROW,
+            _DONE_ROW,
+        ]
+    )
+    gw = _make_gw(command_repo=command_repo, poll_interval=0.1)
+
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+
+    assert result["success"] is True
+    assert sleep_calls == pytest.approx([0.1, 0.15, 0.225, 0.3375])
+
+
+@pytest.mark.asyncio
+async def test_run_batch_records_roundtrip_latency_and_poll_iterations():
+    labels = {"channel": "pump_main", "terminal_status": "DONE"}
+    before_roundtrip_count = REGISTRY.get_sample_value("ae3_command_roundtrip_duration_seconds_count", labels) or 0.0
+    before_roundtrip_sum = REGISTRY.get_sample_value("ae3_command_roundtrip_duration_seconds_sum", labels) or 0.0
+    before_poll_iterations = COMMAND_POLL_ITERATIONS.labels(**labels)._value.get()
+
+    gw = _make_gw(command_repo=_SequencedLegacyCommandRepo(legacy_rows=[_PENDING_ROW, _DONE_ROW]), poll_interval=0.001)
+
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+
+    assert result["success"] is True
+    assert (REGISTRY.get_sample_value("ae3_command_roundtrip_duration_seconds_count", labels) or 0.0) == (
+        before_roundtrip_count + 1.0
+    )
+    assert (REGISTRY.get_sample_value("ae3_command_roundtrip_duration_seconds_sum", labels) or 0.0) > before_roundtrip_sum
+    assert COMMAND_POLL_ITERATIONS.labels(**labels)._value.get() == before_poll_iterations + 2.0

@@ -7,6 +7,7 @@ import pytest
 
 from ae3lite.domain.errors import CommandPublishError
 from ae3lite.infrastructure.clients import HistoryLoggerClient
+from ae3lite.infrastructure.clients import history_logger_client as history_logger_client_module
 
 
 @pytest.mark.asyncio
@@ -69,3 +70,75 @@ async def test_history_logger_client_fails_closed_on_invalid_response() -> None:
             )
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_history_logger_client_retries_once_on_retryable_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+    sleep_calls: list[float] = []
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, json={"detail": "temporary_unavailable"})
+        return httpx.Response(200, json={"status": "ok", "data": {"command_id": "cmd-456"}})
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(history_logger_client_module.asyncio, "sleep", fake_sleep)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(base_url="http://history-logger:9300", client=client)
+
+    try:
+        command_id = await gateway.publish(
+            greenhouse_uid="gh-1",
+            zone_id=9,
+            node_uid="nd-irrig-1",
+            channel="pump_main",
+            cmd="set_relay",
+            params={"state": True},
+        )
+    finally:
+        await client.aclose()
+
+    assert command_id == "cmd-456"
+    assert attempts == 2
+    assert sleep_calls == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_history_logger_client_retries_once_on_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+    sleep_calls: list[float] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ConnectError("connection dropped", request=request)
+        return httpx.Response(200, json={"status": "ok", "data": {"command_id": "cmd-789"}})
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    monkeypatch.setattr(history_logger_client_module.asyncio, "sleep", fake_sleep)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = HistoryLoggerClient(base_url="http://history-logger:9300", client=client)
+
+    try:
+        command_id = await gateway.publish(
+            greenhouse_uid="gh-1",
+            zone_id=9,
+            node_uid="nd-irrig-1",
+            channel="pump_main",
+            cmd="set_relay",
+            params={"state": True},
+        )
+    finally:
+        await client.aclose()
+
+    assert command_id == "cmd-789"
+    assert attempts == 2
+    assert sleep_calls == [1.0]

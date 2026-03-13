@@ -315,6 +315,7 @@ class ScheduleDispatcher
                     payload = EXCLUDED.payload,
                     not_before = EXCLUDED.not_before,
                     updated_at = EXCLUDED.updated_at
+                WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
                 RETURNING id
                 ",
                 [

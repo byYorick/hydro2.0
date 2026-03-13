@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
 
+import httpx
+
 from ae3lite.application.adapters import LegacyIntentMapper
 from ae3lite.application.use_cases import (
     ClaimNextTaskUseCase,
@@ -43,6 +45,7 @@ class Ae3RuntimeBundle:
     get_zone_automation_state_use_case: GetZoneAutomationStateUseCase
     task_status_read_model: PgTaskStatusReadModel
     worker: Ae3RuntimeWorker
+    http_client: httpx.AsyncClient
 
 
 def build_ae3_runtime_bundle(
@@ -58,10 +61,12 @@ def build_ae3_runtime_bundle(
     zone_lease_repository = PgZoneLeaseRepository()
     command_repository = PgAeCommandRepository()
     task_status_read_model = PgTaskStatusReadModel()
+    http_client = httpx.AsyncClient(timeout=10.0)
     history_logger_client = HistoryLoggerClient(
         base_url=config.history_logger_url,
         token=config.history_logger_api_token,
         source="automation-engine",
+        client=http_client,
     )
 
     create_task_from_intent_use_case = CreateTaskFromIntentUseCase(
@@ -126,6 +131,7 @@ def build_ae3_runtime_bundle(
         now_fn=now_fn,
         logger=logger,
         lease_ttl_sec=config.lease_ttl_sec,
+        max_task_execution_sec=config.max_task_execution_sec,
     )
     get_zone_control_state_use_case = GetZoneControlStateUseCase(
         task_repository=task_repository,
@@ -141,4 +147,5 @@ def build_ae3_runtime_bundle(
         get_zone_automation_state_use_case=get_zone_automation_state_use_case,
         task_status_read_model=task_status_read_model,
         worker=worker,
+        http_client=http_client,
     )

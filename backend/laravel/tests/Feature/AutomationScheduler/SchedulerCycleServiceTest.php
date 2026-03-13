@@ -70,6 +70,16 @@ class SchedulerCycleServiceTest extends TestCase
             'task_name' => 'laravel_scheduler_metrics',
             'status' => 'metric',
         ]);
+        $this->assertDatabaseHas('laravel_scheduler_dispatch_metric_totals', [
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'result' => 'success',
+            'total' => 1,
+        ]);
+        $this->assertDatabaseHas('laravel_scheduler_cycle_duration_aggregates', [
+            'dispatch_mode' => 'start_cycle',
+            'sample_count' => 1,
+        ]);
         $this->assertDatabaseHas('zone_correction_configs', [
             'zone_id' => $zone->id,
             'version' => 1,

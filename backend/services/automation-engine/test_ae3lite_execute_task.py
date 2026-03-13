@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 
 from ae3lite.application.dto import ZoneActuatorRef
-from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase
+from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase, TASK_EXECUTION_TIMEOUT_CANCEL_MSG
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import PlannerConfigurationError, SnapshotBuildError
 
@@ -173,6 +174,11 @@ class _WorkflowRouterFails:
 class _WorkflowRouterRaises:
     async def run(self, *, task, plan, now):
         raise RuntimeError("boom")
+
+
+class _WorkflowRouterCancelledByTimeout:
+    async def run(self, *, task, plan, now):
+        raise asyncio.CancelledError(TASK_EXECUTION_TIMEOUT_CANCEL_MSG)
 
 
 class _AlertRepositoryRecorder:
@@ -438,3 +444,32 @@ async def test_execute_task_two_tank_failure_triggers_fail_safe_shutdown() -> No
         "pump_main",
     ]
     assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
+
+
+@pytest.mark.asyncio
+async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe_shutdown() -> None:
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=gateway,
+        workflow_router=_WorkflowRouterCancelledByTimeout(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+    assert finalize.calls[0]["error_message"] == "Task execution exceeded runtime timeout"
+    assert len(gateway.calls) == 1
+    assert [command.channel for command in gateway.calls[0]] == [
+        "valve_clean_fill",
+        "valve_clean_supply",
+        "valve_solution_fill",
+        "valve_solution_supply",
+        "valve_irrigation",
+        "pump_main",
+    ]

@@ -49,6 +49,9 @@ final class SchedulerConstants
 
     public const METRIC_ACTIVE_TASKS_COUNT = 'laravel_scheduler_active_tasks_count';
 
+    /** @var list<float> */
+    public const CYCLE_DURATION_BUCKETS = [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0];
+
     public const ACTIVE_ZONE_STATUSES_LOWER = [
         'online',
         'warning',

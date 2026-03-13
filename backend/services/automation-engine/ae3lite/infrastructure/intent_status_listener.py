@@ -120,7 +120,7 @@ class IntentStatusListener:
             status,
         )
 
-        asyncio.get_event_loop().create_task(self._dispatch(data))
+        asyncio.get_running_loop().create_task(self._dispatch(data))
 
     async def _dispatch(self, data: dict[str, Any]) -> None:
         try:

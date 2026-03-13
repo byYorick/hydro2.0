@@ -1,8 +1,8 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE2-Lite)
 
-**Версия:** 3.0  
-**Дата обновления:** 2026-02-21  
+**Версия:** 3.1  
+**Дата обновления:** 2026-03-12  
 **Статус:** Актуально (канонично для runtime)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -17,6 +17,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 - единый запуск workflow зоны через `POST /zones/{id}/start-cycle`;
 - direct SQL read-model в runtime path automation-engine;
 - `LISTEN/NOTIFY + reconcile polling` для телеметрии и статусов команд.
+- для AE3-совместимого runtime: fast-path wake-up по `scheduler_intent_terminal` без отказа от DB-first source of truth.
 
 ---
 
@@ -102,6 +103,17 @@ Payload-contract:
 
 Источник истины:
 - таблицы PostgreSQL; не runtime HTTP запросы в Laravel API.
+
+### 3.4 AE3-Lite compat hardening
+
+Для AE3-совместимого runtime path действуют дополнительные правила:
+- `scheduler_intent_terminal` используется только как fast-path для `worker.kick()`; source of truth остаётся в PostgreSQL.
+- reconcile polling для legacy command wait использует bounded exponential backoff: старт от `reconcile_poll_interval_sec`, множитель `1.5`, верхняя граница `5s`.
+- публикация команды в `history-logger` допускает не более одного transient retry с backoff `1s` для transport error или `HTTP 5xx`; далее runtime fail-closed.
+- registry background tasks должен быть hard-limited; overflow не может продолжаться в режиме best-effort.
+- whole-task execution ограничен `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout обязан переводить runtime в fail-closed path с fail-safe shutdown и terminal `failed`.
+- runtime различает timeout cancel и обычный service shutdown cancel: только timeout-path завершается как `ae3_task_execution_timeout`, штатная остановка оставляет recovery после restart.
+- минимальные Prometheus-метрики intent lifecycle: `ae3_intent_claimed_total`, `ae3_intent_terminal_total`, `ae3_intent_stale_reclaimed_total`.
 
 ---
 

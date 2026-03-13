@@ -11,6 +11,25 @@ Prometheus-метрики AE3-Lite v2.
 
 from prometheus_client import Counter, Gauge, Histogram
 
+# ─── Intent lifecycle ───────────────────────────────────────────────
+
+INTENT_CLAIMED = Counter(
+    "ae3_intent_claimed_total",
+    "Total legacy intents claimed by AE3",
+    ["source_status"],
+)
+
+INTENT_TERMINAL = Counter(
+    "ae3_intent_terminal_total",
+    "Total legacy intents marked terminal by AE3",
+    ["status"],
+)
+
+INTENT_STALE_RECLAIMED = Counter(
+    "ae3_intent_stale_reclaimed_total",
+    "Total stale claimed intents reclaimed by AE3",
+)
+
 # ─── Task lifecycle ─────────────────────────────────────────────────
 
 TASK_CREATED = Counter(
@@ -104,6 +123,19 @@ COMMAND_TERMINAL = Counter(
     "ae3_command_terminal_total",
     "Total terminal command acknowledgements received",
     ["terminal_status"],  # DONE, NO_EFFECT, ERROR, TIMEOUT, etc.
+)
+
+COMMAND_ROUNDTRIP_DURATION = Histogram(
+    "ae3_command_roundtrip_duration_seconds",
+    "Time from accepted publish to terminal legacy command status",
+    ["channel", "terminal_status"],
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
+)
+
+COMMAND_POLL_ITERATIONS = Counter(
+    "ae3_command_poll_iterations_total",
+    "Total polling iterations spent waiting for terminal legacy command status",
+    ["channel", "terminal_status"],
 )
 
 # ─── Active tasks gauge ─────────────────────────────────────────────

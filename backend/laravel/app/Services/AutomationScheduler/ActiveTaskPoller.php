@@ -569,8 +569,8 @@ class ActiveTaskPoller
      */
     private function hardStaleAfterSec(array $cfg): int
     {
-        $expiresAfterSec = max(1, (int) ($cfg['expires_after_sec'] ?? 120));
-        $default = max(1800, $expiresAfterSec * 3);
+        $expiresAfterSec = max(1, (int) ($cfg['expires_after_sec'] ?? 600));
+        $default = max(900, $expiresAfterSec * 2);
 
         return max($expiresAfterSec + 1, (int) ($cfg['hard_stale_after_sec'] ?? $default));
     }

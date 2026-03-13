@@ -51,6 +51,17 @@ class TelemetryConfig:
 
 
 @dataclass
+class TestNodeProfileConfig:
+    """Конфигурация профиля firmware/test_node."""
+    gh_uid: str = "gh-temp"
+    zone_uid: str = "zn-temp"
+    telemetry_interval_seconds: float = 5.0
+    heartbeat_interval_seconds: float = 5.0
+    config_report_interval_seconds: float = 30.0
+    publish_aux_telemetry: bool = True
+
+
+@dataclass
 class FailureModeConfig:
     """Конфигурация режимов отказов."""
     delay_response: bool = False
@@ -69,9 +80,11 @@ class FailureModeConfig:
 @dataclass
 class SimConfig:
     """Полная конфигурация симулятора."""
+    profile: Optional[str] = None
     mqtt: MqttConfig = field(default_factory=MqttConfig)
     node: NodeConfig = field(default_factory=NodeConfig)
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
+    test_node: TestNodeProfileConfig = field(default_factory=TestNodeProfileConfig)
     failure_mode: Optional[FailureModeConfig] = None
     
     @classmethod
@@ -143,6 +156,28 @@ class SimConfig:
             status_interval_seconds=telemetry_data.get("status_interval_seconds", 60.0),
             heartbeat_interval_seconds=telemetry_data.get("heartbeat_interval_seconds", 30.0)
         )
+
+        test_node_data = data.get("test_node", {})
+        test_node_config = TestNodeProfileConfig(
+            gh_uid=test_node_data.get("gh_uid", "gh-temp"),
+            zone_uid=test_node_data.get("zone_uid", "zn-temp"),
+            telemetry_interval_seconds=test_node_data.get(
+                "telemetry_interval_seconds",
+                telemetry_config.interval_seconds,
+            ),
+            heartbeat_interval_seconds=test_node_data.get(
+                "heartbeat_interval_seconds",
+                telemetry_config.interval_seconds,
+            ),
+            config_report_interval_seconds=test_node_data.get(
+                "config_report_interval_seconds",
+                30.0,
+            ),
+            publish_aux_telemetry=test_node_data.get(
+                "publish_aux_telemetry",
+                True,
+            ),
+        )
         
         # Режим отказов
         failure_mode = None
@@ -163,9 +198,11 @@ class SimConfig:
             )
         
         return cls(
+            profile=data.get("profile"),
             mqtt=mqtt_config,
             node=node_config,
             telemetry=telemetry_config,
+            test_node=test_node_config,
             failure_mode=failure_mode
         )
     
@@ -179,23 +216,38 @@ class SimConfig:
         if not (1 <= self.mqtt.port <= 65535):
             errors.append("mqtt.port must be between 1 and 65535")
         
+        is_test_node_profile = self.profile == "test_node_multi_v1"
+
         # Валидация ноды
-        if not self.node.gh_uid:
-            errors.append("node.gh_uid is required")
-        if not self.node.zone_uid:
-            errors.append("node.zone_uid is required")
-        if not self.node.node_uid:
-            errors.append("node.node_uid is required")
-        if not self.node.hardware_id:
-            errors.append("node.hardware_id is required")
-        if self.node.mode not in ("preconfig", "configured"):
-            errors.append("node.mode must be 'preconfig' or 'configured'")
+        if not is_test_node_profile:
+            if not self.node.gh_uid:
+                errors.append("node.gh_uid is required")
+            if not self.node.zone_uid:
+                errors.append("node.zone_uid is required")
+            if not self.node.node_uid:
+                errors.append("node.node_uid is required")
+            if not self.node.hardware_id:
+                errors.append("node.hardware_id is required")
+            if self.node.mode not in ("preconfig", "configured"):
+                errors.append("node.mode must be 'preconfig' or 'configured'")
         
         # Валидация телеметрии
         if self.telemetry.interval_seconds <= 0:
             errors.append("telemetry.interval_seconds must be > 0")
         if self.telemetry.heartbeat_interval_seconds <= 0:
             errors.append("telemetry.heartbeat_interval_seconds must be > 0")
+
+        if is_test_node_profile:
+            if not self.test_node.gh_uid:
+                errors.append("test_node.gh_uid is required")
+            if not self.test_node.zone_uid:
+                errors.append("test_node.zone_uid is required")
+            if self.test_node.telemetry_interval_seconds <= 0:
+                errors.append("test_node.telemetry_interval_seconds must be > 0")
+            if self.test_node.heartbeat_interval_seconds <= 0:
+                errors.append("test_node.heartbeat_interval_seconds must be > 0")
+            if self.test_node.config_report_interval_seconds <= 0:
+                errors.append("test_node.config_report_interval_seconds must be > 0")
 
         # Валидация initial_sensors
         if self.node.initial_sensors and not isinstance(self.node.initial_sensors, dict):

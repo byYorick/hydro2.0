@@ -22,8 +22,11 @@ async def run_simulator(config: SimConfig):
         config: Конфигурация симулятора
     """
     logger.info("Starting node simulator...")
-    logger.info(f"Node: {config.node.node_uid} ({config.node.hardware_id})")
-    logger.info(f"Mode: {config.node.mode}")
+    if config.profile == "test_node_multi_v1":
+        logger.info("Profile: test_node_multi_v1")
+    else:
+        logger.info(f"Node: {config.node.node_uid} ({config.node.hardware_id})")
+        logger.info(f"Mode: {config.node.mode}")
     logger.info(f"MQTT: {config.mqtt.host}:{config.mqtt.port}")
     
     # Импортируем компоненты
@@ -34,6 +37,7 @@ async def run_simulator(config: SimConfig):
         from .telemetry import TelemetryPublisher
         from .status import StatusPublisher
         from .config_report import publish_config_report
+        from .test_node_profile import run_test_node_profile
     except ImportError as e:
         logger.error(f"Failed to import components: {e}")
         logger.error("Make sure all dependencies are installed: pip install -r requirements.txt")
@@ -71,6 +75,13 @@ async def run_simulator(config: SimConfig):
         logger.error(f"Failed to connect to MQTT: {e}")
         sys.exit(1)
     
+    if config.profile == "test_node_multi_v1":
+        try:
+            await run_test_node_profile(config, mqtt)
+        finally:
+            mqtt.disconnect()
+        return
+
     # Создаем модель ноды
     node = NodeModel(
         gh_uid=config.node.gh_uid,

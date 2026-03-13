@@ -7,6 +7,7 @@ use App\Services\AutomationScheduler\ActiveTaskStore;
 use App\Services\AutomationScheduler\LightingScheduleParser;
 use App\Services\AutomationScheduler\SchedulerCycleOrchestrator;
 use App\Services\AutomationScheduler\SchedulerCycleFinalizer;
+use App\Services\AutomationScheduler\SchedulerMetricsStore;
 use App\Services\AutomationScheduler\SchedulerRuntimeHelper;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
 use App\Services\AutomationScheduler\ScheduleLoader;
@@ -47,6 +48,7 @@ class DispatchesAutomationSchedulesTest extends TestCase
             lightingScheduleParser: new LightingScheduleParser,
             activeTaskPoller: $activeTaskPoller,
             activeTaskStore: $activeTaskStore,
+            schedulerMetricsStore: new SchedulerMetricsStore,
         );
         $this->reflection = new ReflectionClass($this->orchestrator);
     }

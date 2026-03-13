@@ -410,6 +410,23 @@ services:
     command: python -m node_sim.cli multi --config /app/config/workflow-sim.yaml
     networks:
     - backend
+  node-sim-test-node:
+    build:
+      context: ../../tests/node_sim
+      dockerfile: Dockerfile
+    environment:
+    - PYTHONUNBUFFERED=1
+    - MQTT_HOST=mosquitto
+    - MQTT_PORT=1883
+    volumes:
+    - ../../tests/node_sim:/app
+    - ./node-sim-test-node.yaml:/app/config/test-node.yaml:ro
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    command: python -m node_sim.cli run --config /app/config/test-node.yaml
+    networks:
+    - backend
   e2e-runner:
     build:
       context: .
@@ -450,6 +467,8 @@ services:
       node-sim:
         condition: service_started
       node-sim-workflow:
+        condition: service_started
+      node-sim-test-node:
         condition: service_started
       node-sim-manager:
         condition: service_started

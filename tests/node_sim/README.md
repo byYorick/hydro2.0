@@ -20,6 +20,19 @@ pip install -r requirements.txt
 python -m node_sim.cli run --config sim.example.yaml
 ```
 
+### Запуск профиля `test_node`
+
+```bash
+python -m node_sim.cli run --config config/test_node.yaml
+```
+
+Этот профиль повторяет логику `firmware/test_node`:
+- 5 виртуальных нод в одном процессе;
+- общий state водного контура, staged level-switches и drift;
+- `node_hello`, `status`, `heartbeat`, `config_report`, `event`;
+- strict `command`/`config` обработка, namespace auto-bind, `reset_binding`, `reboot`;
+- sensor-mode gating для pH/EC и сервисные команды `storage_state/system`.
+
 ### Запуск сценария
 
 ```bash

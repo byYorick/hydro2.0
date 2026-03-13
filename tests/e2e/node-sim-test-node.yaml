@@ -1,0 +1,21 @@
+# Конфигурация profile=test_node_multi_v1 для AE3/E61 realhw-like E2E сценариев
+
+profile: test_node_multi_v1
+
+mqtt:
+  host: mosquitto
+  port: 1883
+  username: null
+  password: null
+  tls: false
+  ca_certs: null
+  client_id: node-sim-test-node
+  keepalive: 60
+
+test_node:
+  gh_uid: gh-test-1
+  zone_uid: zn-test-1
+  telemetry_interval_seconds: 5.0
+  heartbeat_interval_seconds: 5.0
+  config_report_interval_seconds: 30.0
+  publish_aux_telemetry: false

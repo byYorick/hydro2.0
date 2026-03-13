@@ -1,0 +1,18 @@
+profile: test_node_multi_v1
+
+mqtt:
+  host: localhost
+  port: 1883
+  username: null
+  password: null
+  tls: false
+  ca_certs: null
+  client_id: node-sim-test-node
+  keepalive: 60
+
+test_node:
+  gh_uid: gh-temp
+  zone_uid: zn-temp
+  telemetry_interval_seconds: 5.0
+  heartbeat_interval_seconds: 5.0
+  config_report_interval_seconds: 30.0

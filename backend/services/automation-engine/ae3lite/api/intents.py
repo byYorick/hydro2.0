@@ -6,9 +6,17 @@ from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from ae3lite.api.contracts import StartCycleRequest
+from ae3lite.infrastructure.metrics import INTENT_CLAIMED, INTENT_STALE_RECLAIMED, INTENT_TERMINAL
 
 TERMINAL_INTENT_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_INTENT_STATUSES = {"claimed", "running"}
+
+
+def _affected_rows(command_tag: Any) -> int:
+    try:
+        return int(str(command_tag).split()[-1])
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return 0
 
 
 async def claim_start_cycle_intent(
@@ -25,7 +33,7 @@ async def claim_start_cycle_intent(
     rows = await fetch_fn(
         """
         WITH candidate AS (
-            SELECT id
+            SELECT id, status AS previous_status
             FROM zone_automation_intents
             WHERE zone_id = $1
               AND idempotency_key = $2
@@ -68,7 +76,7 @@ async def claim_start_cycle_intent(
             updated_at = $3
         FROM candidate
         WHERE intents.id = candidate.id
-        RETURNING intents.*
+        RETURNING intents.*, candidate.previous_status
         """,
         zone_id,
         req.idempotency_key,
@@ -77,7 +85,12 @@ async def claim_start_cycle_intent(
         stale_running_before,
     )
     if rows:
-        return {"decision": "claimed", "intent": dict(rows[0])}
+        intent = dict(rows[0])
+        source_status = str(intent.pop("previous_status", "") or "").strip().lower() or "unknown"
+        INTENT_CLAIMED.labels(source_status=source_status).inc()
+        if source_status == "claimed":
+            INTENT_STALE_RECLAIMED.inc()
+        return {"decision": "claimed", "intent": intent}
 
     existing_rows = await fetch_fn(
         """
@@ -176,7 +189,8 @@ async def mark_intent_terminal(
     error_message: Optional[str],
     execute_fn: Callable[..., Awaitable[Any]],
 ) -> None:
-    await execute_fn(
+    status = "completed" if success else "failed"
+    result = await execute_fn(
         """
         UPDATE zone_automation_intents
         SET status = $2,
@@ -185,13 +199,16 @@ async def mark_intent_terminal(
             error_code = $4,
             error_message = $5
         WHERE id = $1
+          AND status IN ('pending', 'claimed', 'running')
         """,
         intent_id,
-        "completed" if success else "failed",
+        status,
         now,
         error_code if not success else None,
         error_message if not success else None,
     )
+    if _affected_rows(result) > 0:
+        INTENT_TERMINAL.labels(status=status).inc()
 
 
 __all__ = [

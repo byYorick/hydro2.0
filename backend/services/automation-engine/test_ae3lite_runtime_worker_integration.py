@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,7 @@ from ae3lite.application.use_cases import (
     StartupRecoveryUseCase,
     WorkflowRouter,
 )
+from ae3lite.application.use_cases.execute_task import TASK_EXECUTION_TIMEOUT_CANCEL_MSG
 from ae3lite.domain.services import CycleStartPlanner, TopologyRegistry
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
 from ae3lite.infrastructure.read_models import PgZoneRuntimeMonitor, PgZoneSnapshotReadModel
@@ -584,3 +586,216 @@ async def test_runtime_worker_survives_cleanup_race_after_publish() -> None:
     finally:
         if not cleaned_up:
             await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_timeout_cancels_execution_with_timeout_reason_and_marks_intent_failed() -> None:
+    cancel_args: list[tuple[object, ...]] = []
+    terminal_calls: list[dict[str, object]] = []
+    released: list[tuple[int, str]] = []
+
+    task = SimpleNamespace(
+        id=701,
+        zone_id=81,
+        topology="generic_cycle_start",
+        intent_id=991,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimOnce:
+        def __init__(self) -> None:
+            self._used = False
+
+        async def run(self, **kwargs):
+            if self._used:
+                return None
+            self._used = True
+            return task, None
+
+    class _ExecuteTimeoutAware:
+        async def run(self, *, task, now):
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError as exc:
+                cancel_args.append(exc.args)
+                return SimpleNamespace(
+                    id=task.id,
+                    zone_id=task.zone_id,
+                    topology=task.topology,
+                    intent_id=task.intent_id,
+                    status="failed",
+                    error_code=TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+                    error_message="Task execution exceeded runtime timeout",
+                    is_active=False,
+                )
+
+    async def _release(*, zone_id, owner):
+        released.append((zone_id, owner))
+        return True
+
+    async def _noop(**kwargs):
+        return None
+
+    async def _mark_terminal(**kwargs):
+        terminal_calls.append(dict(kwargs))
+
+    worker = Ae3RuntimeWorker(
+        owner="worker-timeout-test",
+        claim_next_task_use_case=_ClaimOnce(),
+        idle_poll_interval_sec=0.05,
+        execute_task_use_case=_ExecuteTimeoutAware(),
+        startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+        zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+        spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
+        mark_intent_running_fn=_noop,
+        mark_intent_terminal_fn=_mark_terminal,
+        now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        logger=type(
+            "Logger",
+            (),
+            {
+                "debug": staticmethod(lambda *args, **kwargs: None),
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        )(),
+        max_task_execution_sec=0.01,
+    )
+
+    await worker._drain_pending_tasks()
+
+    assert cancel_args == [(TASK_EXECUTION_TIMEOUT_CANCEL_MSG,)]
+    assert released == [(81, "worker-timeout-test")]
+    assert len(terminal_calls) == 1
+    assert terminal_calls[0]["intent_id"] == 991
+    assert terminal_calls[0]["success"] is False
+    assert terminal_calls[0]["error_code"] == TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+    assert terminal_calls[0]["error_message"] == "Task execution exceeded runtime timeout"
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_continues_draining_after_timeout_without_extra_kick() -> None:
+    terminal_calls: list[dict[str, object]] = []
+    released: list[tuple[int, str]] = []
+    executed_task_ids: list[int] = []
+
+    timed_out_task = SimpleNamespace(
+        id=801,
+        zone_id=91,
+        topology="generic_cycle_start",
+        intent_id=1991,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+    completed_task = SimpleNamespace(
+        id=802,
+        zone_id=92,
+        topology="generic_cycle_start",
+        intent_id=0,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimSequence:
+        def __init__(self) -> None:
+            self._items = [timed_out_task, completed_task]
+
+        async def run(self, **kwargs):
+            if not self._items:
+                return None
+            return self._items.pop(0), None
+
+    class _ExecuteSequence:
+        async def run(self, *, task, now):
+            executed_task_ids.append(int(task.id))
+            if int(task.id) == timed_out_task.id:
+                try:
+                    await asyncio.sleep(3600)
+                except asyncio.CancelledError:
+                    return SimpleNamespace(
+                        id=task.id,
+                        zone_id=task.zone_id,
+                        topology=task.topology,
+                        intent_id=task.intent_id,
+                        status="failed",
+                        error_code=TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+                        error_message="Task execution exceeded runtime timeout",
+                        is_active=False,
+                    )
+            return SimpleNamespace(
+                id=task.id,
+                zone_id=task.zone_id,
+                topology=task.topology,
+                intent_id=task.intent_id,
+                status="completed",
+                error_code=None,
+                error_message=None,
+                is_active=False,
+            )
+
+    async def _release(*, zone_id, owner):
+        released.append((zone_id, owner))
+        return True
+
+    async def _noop(**kwargs):
+        return None
+
+    async def _mark_terminal(**kwargs):
+        terminal_calls.append(dict(kwargs))
+
+    worker = Ae3RuntimeWorker(
+        owner="worker-timeout-continue-test",
+        claim_next_task_use_case=_ClaimSequence(),
+        idle_poll_interval_sec=0.05,
+        execute_task_use_case=_ExecuteSequence(),
+        startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+        zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+        spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
+        mark_intent_running_fn=_noop,
+        mark_intent_terminal_fn=_mark_terminal,
+        now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        logger=type(
+            "Logger",
+            (),
+            {
+                "debug": staticmethod(lambda *args, **kwargs: None),
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        )(),
+        max_task_execution_sec=0.01,
+    )
+
+    await worker._drain_pending_tasks()
+
+    assert executed_task_ids == [801, 802]
+    assert released == [
+        (91, "worker-timeout-continue-test"),
+        (92, "worker-timeout-continue-test"),
+    ]
+    assert len(terminal_calls) == 1
+    assert terminal_calls[0]["intent_id"] == 1991
+    assert worker.drain_health() == (True, "idle")
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_health_reports_unexpected_clean_exit() -> None:
+    worker = _build_noop_worker(
+        spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
+    )
+    done_task = asyncio.create_task(asyncio.sleep(0), name="ae3-done-drain")
+
+    await done_task
+
+    worker._drain_task = done_task
+    worker._last_drain_exit_ok = False
+    worker._last_drain_exit_reason = "worker_unexpected_exit"
+
+    assert worker.drain_health() == (False, "worker_unexpected_exit")

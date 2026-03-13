@@ -22,6 +22,7 @@ class SchedulerCycleOrchestrator
         private readonly LightingScheduleParser $lightingScheduleParser,
         private readonly ActiveTaskPoller $activeTaskPoller,
         private readonly ActiveTaskStore $activeTaskStore,
+        private readonly SchedulerMetricsStore $schedulerMetricsStore,
     ) {}
 
     /**
@@ -509,6 +510,12 @@ class SchedulerCycleOrchestrator
      */
     private function writeCycleMetrics(array $dispatchMetrics, array $stats, float $cycleStartedAt): void
     {
+        $this->schedulerMetricsStore->recordDispatchTotals($dispatchMetrics);
+
+        $durationSeconds = max(0.0, microtime(true) - $cycleStartedAt);
+        $dispatchMode = (string) ($stats['dispatch_mode'] ?? 'start_cycle');
+        $this->schedulerMetricsStore->observeCycleDuration($dispatchMode, $durationSeconds);
+
         foreach ($dispatchMetrics as $key => $value) {
             [$zoneId, $taskType, $result] = array_pad(explode('|', $key, 3), 3, '');
             $this->writeSchedulerLog(SchedulerConstants::METRICS_LOG_TASK_NAME, 'metric', [
@@ -522,11 +529,10 @@ class SchedulerCycleOrchestrator
             ]);
         }
 
-        $durationSeconds = max(0.0, microtime(true) - $cycleStartedAt);
         $this->writeSchedulerLog(SchedulerConstants::METRICS_LOG_TASK_NAME, 'metric', [
             'metric' => SchedulerConstants::METRIC_CYCLE_DURATION_SECONDS,
             'labels' => [
-                'dispatch_mode' => (string) ($stats['dispatch_mode'] ?? 'start_cycle'),
+                'dispatch_mode' => $dispatchMode,
             ],
             'value' => round($durationSeconds, 6),
         ]);

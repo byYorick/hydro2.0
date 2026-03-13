@@ -30,6 +30,7 @@ class Ae3RuntimeConfig:
     start_cycle_rate_limit_window_sec: int
     verbose_http_logging: bool
     worker_owner: str
+    max_task_execution_sec: int
 
     @classmethod
     def from_env(cls) -> "Ae3RuntimeConfig":
@@ -78,6 +79,7 @@ class Ae3RuntimeConfig:
             start_cycle_rate_limit_window_sec=max(1, int(os.getenv("AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC", "10"))),
             verbose_http_logging=_env_true("AE_DEV_VERBOSE_HTTP_LOGGING", default_verbose),
             worker_owner=str(os.getenv("AE_WORKER_OWNER", "ae3-runtime-worker")).strip() or "ae3-runtime-worker",
+            max_task_execution_sec=max(60, int(os.getenv("AE_MAX_TASK_EXECUTION_SEC", "900"))),
         )
 
     def validate(self) -> None:

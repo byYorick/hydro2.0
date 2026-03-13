@@ -135,7 +135,7 @@ class AutomationRuntimeConfigService
             'label' => 'expires_after_sec',
             'description' => 'Локальный expiry активной scheduler-task.',
             'config_path' => 'services.automation_engine.scheduler_expires_after_sec',
-            'default' => 120,
+            'default' => 600,
             'type' => 'int',
             'input_type' => 'number',
             'editable' => true,
@@ -149,7 +149,7 @@ class AutomationRuntimeConfigService
             'label' => 'hard_stale_after_sec',
             'description' => 'Жёсткий stale-порог: после него scheduler может закрыть task локально.',
             'config_path' => 'services.automation_engine.scheduler_hard_stale_after_sec',
-            'default' => 1800,
+            'default' => 1200,
             'type' => 'int',
             'input_type' => 'number',
             'editable' => true,
@@ -370,10 +370,17 @@ class AutomationRuntimeConfigService
     public function schedulerConfig(): array
     {
         $dueGraceSec = max(1, $this->intValue('automation_engine.scheduler_due_grace_sec', 15));
-        $expiresAfterSec = max($dueGraceSec + 1, $this->intValue('automation_engine.scheduler_expires_after_sec', 120));
+        $expiresAfterSec = max($dueGraceSec + 1, $this->intValue('automation_engine.scheduler_expires_after_sec', 600));
+        $defaultHardStaleAfterSec = max(900, $expiresAfterSec * 2);
+        $configuredHardStaleAfterSec = $this->intValue(
+            'automation_engine.scheduler_hard_stale_after_sec',
+            $defaultHardStaleAfterSec
+        );
+        $usesLegacyDefaultHardStale = ! $this->hasOverride('automation_engine.scheduler_hard_stale_after_sec')
+            && $configuredHardStaleAfterSec === 1200;
         $hardStaleAfterSec = max(
             $expiresAfterSec + 1,
-            $this->intValue('automation_engine.scheduler_hard_stale_after_sec', 1800)
+            $usesLegacyDefaultHardStale ? $defaultHardStaleAfterSec : $configuredHardStaleAfterSec
         );
 
         $catchupPolicy = strtolower($this->stringValue('automation_engine.scheduler_catchup_policy', 'replay_limited'));

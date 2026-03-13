@@ -10,7 +10,14 @@ from typing import Any, Mapping, Sequence
 
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
-from ae3lite.infrastructure.metrics import COMMAND_DISPATCHED, COMMAND_DISPATCH_DURATION, COMMAND_TERMINAL
+from ae3lite.infrastructure.metrics import (
+    COMMAND_DISPATCH_DURATION,
+    COMMAND_DISPATCHED,
+    COMMAND_POLL_ITERATIONS,
+    COMMAND_ROUNDTRIP_DURATION,
+    COMMAND_TERMINAL,
+)
+from common.utils.time import utcnow_naive as _utcnow
 
 _NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "ACCEPTED", "RUNNING"})
 _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT", "SEND_FAILED"})
@@ -26,11 +33,15 @@ class SequentialCommandGateway:
         command_repository: Any,
         history_logger_client: Any,
         poll_interval_sec: float,
+        poll_backoff_factor: float = 1.5,
+        poll_max_interval_sec: float = 5.0,
     ) -> None:
         self._task_repository = task_repository
         self._command_repository = command_repository
         self._history_logger_client = history_logger_client
         self._poll_interval_sec = max(0.05, float(poll_interval_sec))
+        self._poll_backoff_factor = max(1.0, float(poll_backoff_factor))
+        self._poll_max_interval_sec = max(self._poll_interval_sec, float(poll_max_interval_sec))
 
     async def run_batch(self, *, task: Any, commands: Sequence[PlannedCommand], now: datetime) -> Mapping[str, Any]:
         current_task = task
@@ -128,17 +139,28 @@ class SequentialCommandGateway:
             if hasattr(task, "workflow") and task.workflow.stage_deadline_at is not None
             else None
         )
+        roundtrip_started_at = time.monotonic()
+        poll_interval_sec = self._poll_interval_sec
+        poll_iterations = 0
         while True:
-            await asyncio.sleep(self._poll_interval_sec)
-            reconcile_now = datetime.utcnow().replace(microsecond=0)
+            await asyncio.sleep(poll_interval_sec)
+            reconcile_now = _utcnow().replace(microsecond=0)
             if _poll_deadline is not None and reconcile_now > _poll_deadline:
                 raise TaskExecutionError(
                     "ae3_command_poll_deadline_exceeded",
                     f"Command polling exceeded stage deadline for task {task.id}",
                 )
             result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
+            poll_iterations += 1
             if result["state"] == "waiting_command":
+                poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
                 continue
+            self._observe_roundtrip_metrics(
+                channel=planned.channel,
+                terminal_status=result.get("legacy_status"),
+                roundtrip_started_at=roundtrip_started_at,
+                poll_iterations=poll_iterations,
+            )
             task_state = result["task"]
             status_entry = {
                 "ae_command_id": int(ae_command_id),
@@ -162,6 +184,23 @@ class SequentialCommandGateway:
                 "error_code": result["error_code"],
                 "error_message": result["error_message"],
             }
+
+    def _observe_roundtrip_metrics(
+        self,
+        *,
+        channel: str | None,
+        terminal_status: Any,
+        roundtrip_started_at: float,
+        poll_iterations: int,
+    ) -> None:
+        channel_label = str(channel or "").strip() or "unknown"
+        terminal_label = str(terminal_status or "").strip().upper() or "UNKNOWN"
+        COMMAND_ROUNDTRIP_DURATION.labels(channel=channel_label, terminal_status=terminal_label).observe(
+            max(0.0, time.monotonic() - roundtrip_started_at)
+        )
+        COMMAND_POLL_ITERATIONS.labels(channel=channel_label, terminal_status=terminal_label).inc(
+            max(0, poll_iterations)
+        )
 
     async def _resolve_legacy_command(
         self,
