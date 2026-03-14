@@ -39,6 +39,11 @@ def _correction_config(*, ph_overrides=None, ec_overrides=None, dosing_overrides
         "ph_dose_ml_per_unit_L": 0.5,
         "max_ec_dose_ml": 50.0,
         "max_ph_dose_ml": 20.0,
+        "pump_calibration": {
+            "min_dose_ms": 50,
+            "ml_per_sec_min": 0.01,
+            "ml_per_sec_max": 100.0,
+        },
     }
     if ph_overrides:
         config["controllers"]["ph"].update(ph_overrides)
@@ -138,6 +143,78 @@ def test_build_dose_plan_uses_process_calibration_and_min_effective_ml() -> None
     assert dose_plan.ph_channel == "ph_down_pump"
     assert dose_plan.ph_amount_ml == 1.5
     assert dose_plan.ph_duration_ms == 187
+
+
+def test_build_dose_plan_caps_ph_down_by_modeled_closure_dose() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.283,
+        current_ec=1.05,
+        target_ph=5.75,
+        target_ec=1.05,
+        ph_min=5.7,
+        ph_max=5.8,
+        ec_min=1.0,
+        ec_max=1.1,
+        ph_tolerance_pct=15.0,
+        ec_tolerance_pct=25.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 5.0, "ki": 0.05, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0}
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_down_gain_per_ml": 0.12}},
+        ec_component_policy={},
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 0.5, "min_effective_ml": 0.0},
+        },
+    )
+
+    assert dose_plan.needs_ph_down is True
+    # gap to upper bound 5.8 is 0.483; with gain 0.12 max safe dose is 4.025 ml.
+    assert dose_plan.ph_amount_ml == pytest.approx(4.025, rel=1e-6)
+    assert dose_plan.ph_duration_ms == 8050
+
+
+def test_build_dose_plan_caps_ph_up_by_modeled_closure_dose() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.038,
+        current_ec=1.05,
+        target_ph=5.75,
+        target_ec=1.05,
+        ph_min=5.7,
+        ph_max=5.8,
+        ec_min=1.0,
+        ec_max=1.1,
+        ph_tolerance_pct=15.0,
+        ec_tolerance_pct=25.0,
+        correction_config=_correction_config(
+            ph_overrides={"kp": 5.0, "ki": 0.05, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0}
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.10}},
+        ec_component_policy={},
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 0.5, "min_effective_ml": 0.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ph_up is True
+    # gap to lower bound 5.7 is 0.662; with gain 0.10 max safe dose is 6.62 ml.
+    assert dose_plan.ph_amount_ml == pytest.approx(6.62, rel=1e-6)
+    assert dose_plan.ph_duration_ms == 13240
 
 
 def test_build_dose_plan_ignores_stale_feedforward_bias_after_hold_window() -> None:
@@ -287,6 +364,40 @@ def test_build_dose_plan_uses_explicit_target_window_for_ph_direction() -> None:
     assert dose_plan.ph_channel == "ph_down_pump"
 
 
+def test_build_dose_plan_respects_explicit_window_even_inside_deadband() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=5.66,
+        current_ec=1.05,
+        target_ph=5.75,
+        target_ec=1.05,
+        ph_min=5.70,
+        ph_max=5.80,
+        ec_min=1.00,
+        ec_max=1.10,
+        ph_tolerance_pct=15.0,
+        ec_tolerance_pct=25.0,
+        correction_config=_correction_config(
+            ph_overrides={"deadband": 0.05, "min_interval_sec": 0}
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ph_up_gain_per_ml": 0.2}},
+        ec_component_policy={},
+        ec_actuator=None,
+        ec_actuators={},
+        ph_up_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 8.0, "min_effective_ml": 1.0},
+        },
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ph_up is True
+    assert dose_plan.ph_channel == "ph_up_pump"
+
+
 def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> None:
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 8, 12, 5, 0)
@@ -340,8 +451,9 @@ def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> 
     # integral = 0.9 + gap*dt = 0.9 + 0.95*10 = 10.4, clamped to max_integral=1.0
     assert dose_plan.pid_state_updates["ec"]["integral"] == 1.0
     assert dose_plan.pid_state_updates["ec"]["prev_error"] == 0.95
-    # output = kp*gap + ki*integral = 2.0*0.95 + 0.5*1.0 = 2.4; dose = 2.4/gain(0.25) = 9.6
-    assert dose_plan.ec_amount_ml == 9.6
+    # output = 9.6 ml by PI term, but the planner now caps one pulse to the
+    # modeled closure dose to the nearest allowed bound: (1.95 - 1.0) / 0.25 = 3.8 ml.
+    assert dose_plan.ec_amount_ml == 3.8
 
 
 def test_build_dose_plan_returns_retry_delay_when_min_interval_is_active() -> None:
@@ -999,7 +1111,7 @@ def test_dose_ml_to_ms_raises_on_ml_per_sec_too_low() -> None:
     from ae3lite.domain.errors import PlannerConfigurationError
 
     with pytest.raises(PlannerConfigurationError, match="valid range"):
-        _dose_ml_to_ms(1.0, {"ml_per_sec": 0.001})
+        _dose_ml_to_ms(1.0, {"ml_per_sec": 0.001}, _correction_config())
 
 
 def test_dose_ml_to_ms_raises_on_ml_per_sec_too_high() -> None:
@@ -1009,7 +1121,7 @@ def test_dose_ml_to_ms_raises_on_ml_per_sec_too_high() -> None:
     from ae3lite.domain.errors import PlannerConfigurationError
 
     with pytest.raises(PlannerConfigurationError, match="valid range"):
-        _dose_ml_to_ms(1.0, {"ml_per_sec": 200.0})
+        _dose_ml_to_ms(1.0, {"ml_per_sec": 200.0}, _correction_config())
 
 
 def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
@@ -1019,7 +1131,7 @@ def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
 
     # 0.002ml / 1.0 ml_per_sec = 2ms < 50ms → должен быть warning
     with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.correction_planner"):
-        result = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0})
+        result = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0}, _correction_config())
 
     assert result == 0
     assert any("below minimum" in record.message or "Dose discarded" in record.message

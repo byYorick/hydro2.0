@@ -31,6 +31,11 @@ def _make_task(
     phase: str = "idle",
     correction: CorrectionState | None = None,
     clean_fill_cycle: int = 0,
+    stage_deadline_at: datetime | None = None,
+    stage_entered_at: datetime | None = None,
+    stage_retry_count: int = 0,
+    control_mode: str = "auto",
+    pending_manual_step: str | None = None,
 ) -> AutomationTask:
     corr_row: dict = {}
     if correction:
@@ -69,8 +74,9 @@ def _make_task(
         "topology": "two_tank", "intent_source": None, "intent_trigger": None,
         "intent_id": None, "intent_meta": {},
         "current_stage": stage, "workflow_phase": phase,
-        "stage_deadline_at": None, "stage_retry_count": 0,
-        "stage_entered_at": NOW, "clean_fill_cycle": clean_fill_cycle,
+        "stage_deadline_at": stage_deadline_at, "stage_retry_count": stage_retry_count,
+        "stage_entered_at": stage_entered_at or NOW, "clean_fill_cycle": clean_fill_cycle,
+        "control_mode_snapshot": control_mode, "pending_manual_step": pending_manual_step,
         **corr_row,
     })
 
@@ -227,6 +233,23 @@ async def test_router_applies_transition_outcome():
     assert tr.record_transition_calls[0]["to_stage"] == "clean_fill_check"
 
 
+async def test_router_transition_preserves_control_mode_and_clears_pending_manual_step():
+    outcome = StageOutcome(kind="transition", next_stage="clean_fill_check")
+    task = _make_task(
+        stage="clean_fill_start",
+        control_mode="manual",
+        pending_manual_step="clean_fill_start",
+    )
+    router, tr, _wr = _make_router(startup_outcome=outcome, return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.control_mode == "manual"
+    assert wf.pending_manual_step is None
+
+
 async def test_router_applies_enter_correction():
     """enter_correction outcome → update_stage with CorrectionState set."""
     corr = CorrectionState(
@@ -274,6 +297,47 @@ async def test_router_applies_exit_correction():
     call = tr.update_stage_calls[0]
     assert call["workflow"].current_stage == "solution_fill_stop_to_ready"
     assert call["correction"] is None  # cleared
+
+
+async def test_router_same_stage_transition_preserves_deadline_and_stage_entered_at():
+    exit_outcome = StageOutcome(kind="exit_correction", next_stage="solution_fill_check")
+    corr = CorrectionState(
+        corr_step="corr_done", attempt=2, max_attempts=5,
+        ec_attempt=1, ec_max_attempts=5, ph_attempt=1, ph_max_attempts=5,
+        activated_here=False, stabilization_sec=60,
+        return_stage_success="solution_fill_check",
+        return_stage_fail="solution_fill_check",
+        outcome_success=True, needs_ec=False, ec_node_uid=None, ec_channel=None,
+        ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+        ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+    )
+    task = _make_task(
+        stage="solution_fill_check",
+        correction=corr,
+        stage_deadline_at=NOW + timedelta(seconds=1800),
+        stage_entered_at=NOW - timedelta(seconds=120),
+    )
+    router, tr, _ = _make_router(correction_outcome=exit_outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(), now=NOW)
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "solution_fill_check"
+    assert wf.stage_deadline_at == (NOW + timedelta(seconds=1800)).replace(tzinfo=None)
+    assert wf.stage_entered_at == (NOW - timedelta(seconds=120)).replace(tzinfo=None)
+
+
+async def test_router_new_stage_transition_resets_stage_retry_count_by_default():
+    outcome = StageOutcome(kind="transition", next_stage="clean_fill_check")
+    task = _make_task(stage="clean_fill_start", stage_retry_count=3)
+    router, tr, _ = _make_router(startup_outcome=outcome, return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "clean_fill_check"
+    assert wf.stage_retry_count == 0
 
 
 async def test_router_dispatches_corr_done_to_correction_handler():

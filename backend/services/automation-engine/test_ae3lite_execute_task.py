@@ -143,21 +143,21 @@ class _PlannerMissingDosingCalibrationCritical:
 
 
 class _GatewayOk:
-    async def run_batch(self, *, task, commands, now):
+    async def run_batch(self, *, task, commands, now, **kwargs):
         return {"success": True, "task": task}
 
 
 class _GatewayFails:
-    async def run_batch(self, *, task, commands, now):
+    async def run_batch(self, *, task, commands, now, **kwargs):
         return {"success": False, "error_code": "hw_error", "error_message": "device offline"}
 
 
 class _GatewayRecorder:
     def __init__(self) -> None:
-        self.calls: list[tuple] = []
+        self.calls: list[dict[str, object]] = []
 
-    async def run_batch(self, *, task, commands, now):
-        self.calls.append(tuple(commands))
+    async def run_batch(self, *, task, commands, now, **kwargs):
+        self.calls.append({"commands": tuple(commands), "kwargs": kwargs})
         return {"success": True, "task": task}
 
 
@@ -199,6 +199,22 @@ class _AlertRepositoryRecorder:
         if self._should_fail:
             raise RuntimeError("alert write failed")
         return 101
+
+
+class _WorkflowRepoRecorder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+        self.calls.append(
+            {
+                "zone_id": zone_id,
+                "workflow_phase": workflow_phase,
+                "payload": payload,
+                "scheduler_task_id": scheduler_task_id,
+                "now": now,
+            }
+        )
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -340,7 +356,11 @@ async def test_execute_task_critical_missing_zone_config_emits_critical_alert_an
     assert alerts.calls[0]["severity"] == "critical"
     assert alerts.calls[0]["details"]["error_code"] == "zone_correction_config_missing_critical"
     assert len(gateway.calls) == 1
-    assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
+    assert all(
+        command.payload.get("params", {}).get("state") is False
+        for command in gateway.calls[0]["commands"]
+    )
 
 
 @pytest.mark.asyncio
@@ -367,7 +387,11 @@ async def test_execute_task_missing_dosing_calibration_emits_blocking_alert_and_
     assert alerts.calls[0]["severity"] == "critical"
     assert alerts.calls[0]["details"]["task_status"] == "failed"
     assert len(gateway.calls) == 1
-    assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
+    assert all(
+        command.payload.get("params", {}).get("state") is False
+        for command in gateway.calls[0]["commands"]
+    )
 
 
 @pytest.mark.asyncio
@@ -470,7 +494,8 @@ async def test_execute_task_two_tank_failure_triggers_fail_safe_shutdown() -> No
 
     assert finalize.calls[0]["error_code"] == "ae3_task_execution_unhandled_exception"
     assert len(gateway.calls) == 1
-    sent_channels = [command.channel for command in gateway.calls[0]]
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
+    sent_channels = [command.channel for command in gateway.calls[0]["commands"]]
     assert sent_channels == [
         "valve_clean_fill",
         "valve_clean_supply",
@@ -479,7 +504,10 @@ async def test_execute_task_two_tank_failure_triggers_fail_safe_shutdown() -> No
         "valve_irrigation",
         "pump_main",
     ]
-    assert all(command.payload.get("params", {}).get("state") is False for command in gateway.calls[0])
+    assert all(
+        command.payload.get("params", {}).get("state") is False
+        for command in gateway.calls[0]["commands"]
+    )
 
 
 @pytest.mark.asyncio
@@ -501,11 +529,42 @@ async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe
     assert finalize.calls[0]["error_code"] == TASK_EXECUTION_TIMEOUT_CANCEL_MSG
     assert finalize.calls[0]["error_message"] == "Task execution exceeded runtime timeout"
     assert len(gateway.calls) == 1
-    assert [command.channel for command in gateway.calls[0]] == [
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
+    assert [command.channel for command in gateway.calls[0]["commands"]] == [
         "valve_clean_fill",
         "valve_clean_supply",
         "valve_solution_fill",
         "valve_solution_supply",
         "valve_irrigation",
         "pump_main",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle() -> None:
+    task = _make_task(stage="solution_fill_start", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    workflow_repo = _WorkflowRepoRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelFails(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        workflow_repository=workflow_repo,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "ae3_task_execution_failed"
+    assert finalize.calls[0]["error_message"] == "snapshot_missing"
+    assert workflow_repo.calls == [
+        {
+            "zone_id": 99,
+            "workflow_phase": "idle",
+            "payload": {"ae3_cycle_start_stage": "solution_fill_start"},
+            "scheduler_task_id": "99",
+            "now": NOW,
+        }
     ]

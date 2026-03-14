@@ -180,12 +180,13 @@ class ZoneAutomationStateControllerTest extends TestCase
                 'detail' => 'Not Found',
             ], 404),
             "http://automation-engine:9405/zones/{$zone->id}/control-mode" => Http::response([
+                'status' => 'ok',
                 'data' => [
                     'zone_id' => $zone->id,
                     'control_mode' => 'semi',
                     'workflow_phase' => 'tank_recirc',
                     'current_stage' => 'prepare_recirculation_check',
-                    'allowed_manual_steps' => ['prepare_recirculation_stop_to_ready'],
+                    'allowed_manual_steps' => ['prepare_recirculation_stop'],
                 ],
             ], 200),
         ]);
@@ -201,7 +202,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('control_mode', 'semi')
             ->assertJsonPath('workflow_phase', 'tank_recirc')
             ->assertJsonPath('current_stage', 'prepare_recirculation_check')
-            ->assertJsonPath('allowed_manual_steps.0', 'prepare_recirculation_stop_to_ready')
+            ->assertJsonPath('allowed_manual_steps.0', 'prepare_recirculation_stop')
             ->assertJsonPath('compatibility.source', 'ae3_control_mode_fallback')
             ->assertJsonPath('state_meta.source', 'live')
             ->assertJsonPath('state_meta.is_stale', false);

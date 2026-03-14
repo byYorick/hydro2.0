@@ -24,7 +24,7 @@
           v-model="taskIdModel"
           type="text"
           class="w-full md:flex-1 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)] px-3 py-2 text-sm"
-          placeholder="Введите ID задачи: 78, st-..., intent-..."
+          placeholder="Введите numeric ID задачи: 78"
         />
         <div class="flex gap-2">
           <Button

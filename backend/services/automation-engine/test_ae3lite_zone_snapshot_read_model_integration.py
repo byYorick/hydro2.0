@@ -295,6 +295,56 @@ async def _insert_sensor(*, greenhouse_id: int, zone_id: int, node_id: int, sens
 
 
 async def _cleanup(prefix: str) -> None:
+    await execute(
+        """
+        DELETE FROM ae_stage_transitions
+        WHERE task_id IN (
+            SELECT t.id
+            FROM ae_tasks t
+            JOIN zones z ON z.id = t.zone_id
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE g.name LIKE $1
+        )
+        """,
+        f"{prefix}%",
+    )
+    await execute(
+        """
+        DELETE FROM ae_commands
+        WHERE task_id IN (
+            SELECT t.id
+            FROM ae_tasks t
+            JOIN zones z ON z.id = t.zone_id
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE g.name LIKE $1
+        )
+        """,
+        f"{prefix}%",
+    )
+    await execute(
+        """
+        DELETE FROM ae_zone_leases
+        WHERE zone_id IN (
+            SELECT z.id
+            FROM zones z
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE g.name LIKE $1
+        )
+        """,
+        f"{prefix}%",
+    )
+    await execute(
+        """
+        DELETE FROM commands
+        WHERE zone_id IN (
+            SELECT z.id
+            FROM zones z
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+            WHERE g.name LIKE $1
+        )
+        """,
+        f"{prefix}%",
+    )
     await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
 
 

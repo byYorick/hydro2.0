@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import asyncpg
+
 from ae3lite.domain.entities import ZoneLease
 from common.db import get_pool
 
@@ -91,9 +93,13 @@ class PgZoneLeaseRepository:
             )
         return row is not None
 
-    async def get(self, *, zone_id: int) -> Optional[ZoneLease]:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+    async def get(
+        self,
+        *,
+        zone_id: int,
+        conn: asyncpg.Connection | None = None,
+    ) -> Optional[ZoneLease]:
+        if conn is not None:
             row = await conn.fetchrow(
                 """
                 SELECT zone_id, owner, leased_until, updated_at
@@ -103,6 +109,18 @@ class PgZoneLeaseRepository:
                 """,
                 zone_id,
             )
+        else:
+            pool = await get_pool()
+            async with pool.acquire() as pool_conn:
+                row = await pool_conn.fetchrow(
+                    """
+                    SELECT zone_id, owner, leased_until, updated_at
+                    FROM ae_zone_leases
+                    WHERE zone_id = $1
+                    LIMIT 1
+                    """,
+                    zone_id,
+                )
         return ZoneLease.from_row(row) if row is not None else None
 
     async def release_expired(self, *, now: datetime) -> int:

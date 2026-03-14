@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 
 _WORKFLOW_PHASE_TO_STATE: dict[str, str] = {
@@ -43,6 +43,7 @@ _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("clean_fill_check", "clean_fill_stop_to_solution"): ("CLEAN_FILL_COMPLETED", "Чистая вода заполнена"),
     ("clean_fill_stop_to_solution", "solution_fill_start"): ("SOLUTION_FILL_STARTED", "Запуск наполнения раствором"),
     ("solution_fill_start", "solution_fill_check"): ("SOLUTION_FILL_IN_PROGRESS", "Наполнение раствором"),
+    ("solution_fill_check", "solution_fill_check"): ("SOLUTION_FILL_CORRECTION", "Коррекция раствора при наполнении"),
     ("solution_fill_check", "solution_fill_stop_to_prepare"): ("SOLUTION_FILL_COMPLETED", "Раствор заполнен"),
     ("solution_fill_stop_to_prepare", "prepare_recirculation_start"): ("RECIRC_STARTED", "Запуск рециркуляции"),
     ("prepare_recirculation_start", "prepare_recirculation_check"): ("RECIRC_IN_PROGRESS", "Рециркуляция"),
@@ -57,6 +58,9 @@ _PH_LABELS = frozenset({"ph_sensor", "ph"})
 _EC_LABELS = frozenset({"ec_sensor", "ec"})
 _CLEAN_MAX_LABELS = frozenset({"level_clean_max", "clean_level_max", "clean_max"})
 _SOLUTION_MAX_LABELS = frozenset({"level_solution_max", "solution_level_max", "solution_max"})
+_SOLUTION_MIN_LABELS = frozenset({"level_solution_min", "solution_level_min", "solution_min"})
+_EC_CORRECTION_STEPS = frozenset({"corr_dose_ec", "corr_wait_ec"})
+_PH_CORRECTION_STEPS = frozenset({"corr_dose_ph", "corr_wait_ph"})
 
 
 class GetZoneAutomationStateUseCase:
@@ -67,15 +71,40 @@ class GetZoneAutomationStateUseCase:
     Enriches with stage transitions (timeline) and live telemetry (current_levels).
     """
 
-    def __init__(self, *, task_repository: Any, fetch_fn: Callable) -> None:
+    def __init__(
+        self,
+        *,
+        task_repository: Any,
+        workflow_repository: Any | None = None,
+        fetch_fn: Callable | None = None,
+        startup_reset_guard_use_case: Any | None = None,
+    ) -> None:
         self._task_repository = task_repository
         self._fetch_fn = fetch_fn
+        self._workflow_repository = workflow_repository
+        self._startup_reset_guard_use_case = startup_reset_guard_use_case
 
     async def run(self, *, zone_id: int) -> dict[str, Any]:
         # Try active task first, then last terminal task
         task: Optional[Any] = await self._task_repository.get_active_for_zone(zone_id=zone_id)
+        workflow_state: Optional[Any] = None
+        last_task: Optional[Any] = None
+        solution_tank_guard = None
+        if task is None and self._startup_reset_guard_use_case is not None:
+            try:
+                guard_result = await self._startup_reset_guard_use_case.run(zone_id=zone_id, now=self._now())
+                solution_tank_guard = self._normalize_solution_tank_guard(
+                    guard_result
+                )
+            except Exception:
+                pass
+        if task is None and self._workflow_repository is not None:
+            try:
+                workflow_state = await self._workflow_repository.get(zone_id=zone_id)
+            except Exception:
+                workflow_state = None
         if task is None:
-            task = await self._task_repository.get_last_for_zone(zone_id=zone_id)
+            last_task = await self._task_repository.get_last_for_zone(zone_id=zone_id)
 
         # Fetch enrichment data in parallel-ish (sequential is fine — both are fast)
         transitions: list[dict] = []
@@ -86,8 +115,26 @@ class GetZoneAutomationStateUseCase:
                 pass
 
         telemetry = await self._fetch_zone_telemetry(zone_id=zone_id)
+        if task is None and self._should_prefer_workflow_state(workflow_state) and not self._workflow_state_is_stale(
+            workflow_state=workflow_state,
+            last_task=last_task,
+        ):
+            return self._build_workflow_state(
+                zone_id=zone_id,
+                workflow_state=workflow_state,
+                telemetry=telemetry,
+                solution_tank_guard=solution_tank_guard,
+            )
+        if task is None:
+            task = last_task
 
-        return self._build_state(zone_id=zone_id, task=task, transitions=transitions, telemetry=telemetry)
+        return self._build_state(
+            zone_id=zone_id,
+            task=task,
+            transitions=transitions,
+            telemetry=telemetry,
+            solution_tank_guard=solution_tank_guard,
+        )
 
     async def _fetch_zone_telemetry(self, *, zone_id: int) -> dict[str, Any]:
         """Query telemetry_last for pH, EC and water level sensors of this zone."""
@@ -108,6 +155,9 @@ class GetZoneAutomationStateUseCase:
             return {}
 
         result: dict[str, Any] = {}
+        clean_max_triggered: bool | None = None
+        solution_max_triggered: bool | None = None
+        solution_min_triggered: bool | None = None
         for row in rows:
             label = str(row["label"] or "").strip().lower()
             value = float(row["last_value"]) if row["last_value"] is not None else None
@@ -116,9 +166,19 @@ class GetZoneAutomationStateUseCase:
             elif label in _EC_LABELS:
                 result["ec"] = value
             elif label in _CLEAN_MAX_LABELS:
-                result["clean_tank_level_percent"] = 100 if value == 1.0 else 0
+                clean_max_triggered = value == 1.0
             elif label in _SOLUTION_MAX_LABELS:
-                result["nutrient_tank_level_percent"] = 100 if value == 1.0 else 0
+                solution_max_triggered = value == 1.0
+            elif label in _SOLUTION_MIN_LABELS:
+                solution_min_triggered = value is not None and value >= 1.0
+        if clean_max_triggered is not None:
+            result["clean_tank_level_percent"] = 100 if clean_max_triggered else 0
+        if solution_max_triggered:
+            result["nutrient_tank_level_percent"] = 100
+        elif solution_min_triggered:
+            result["nutrient_tank_level_percent"] = 0
+        elif solution_max_triggered is not None:
+            result["nutrient_tank_level_percent"] = 0
         return result
 
     def _build_timeline(self, transitions: list[dict]) -> list[dict]:
@@ -147,9 +207,10 @@ class GetZoneAutomationStateUseCase:
         task: Optional[Any],
         transitions: list[dict],
         telemetry: dict[str, Any],
+        solution_tank_guard: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if task is None:
-            return self._idle_state(zone_id=zone_id)
+            return self._idle_state(zone_id=zone_id, solution_tank_guard=solution_tank_guard)
 
         status = str(getattr(task, "status", "") or "").strip().lower()
         wf = getattr(task, "workflow", None)
@@ -166,6 +227,11 @@ class GetZoneAutomationStateUseCase:
             state = "IDLE"
 
         timeline = self._build_timeline(transitions)
+        active_processes = self._build_active_processes(
+            workflow_phase=workflow_phase,
+            is_active=is_active,
+            correction=getattr(task, "correction", None),
+        )
 
         return {
             "zone_id": zone_id,
@@ -195,19 +261,86 @@ class GetZoneAutomationStateUseCase:
                 "ph": telemetry.get("ph"),
                 "ec": telemetry.get("ec"),
             },
-            "active_processes": {
-                "pump_in": is_active and workflow_phase == "tank_filling",
-                "circulation_pump": is_active and workflow_phase == "tank_recirc",
-                "ph_correction": False,
-                "ec_correction": False,
-            },
+            "active_processes": active_processes,
             "timeline": timeline,
             "next_state": None,
             "estimated_completion_sec": None,
             "irr_node_state": None,
+            "solution_tank_guard": solution_tank_guard,
         }
 
-    def _idle_state(self, *, zone_id: int) -> dict[str, Any]:
+    def _build_workflow_state(
+        self,
+        *,
+        zone_id: int,
+        workflow_state: Any,
+        telemetry: dict[str, Any],
+        solution_tank_guard: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
+        payload = getattr(workflow_state, "payload", None)
+        normalized_payload = payload if isinstance(payload, Mapping) else {}
+        current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip() or None
+        workflow_guard = self._solution_tank_guard_from_payload(normalized_payload)
+        if solution_tank_guard is None:
+            solution_tank_guard = workflow_guard
+        elif workflow_guard is not None:
+            solution_tank_guard = {
+                **workflow_guard,
+                **{k: v for k, v in solution_tank_guard.items() if v is not None},
+            }
+        state = _WORKFLOW_PHASE_TO_STATE.get(workflow_phase, "IDLE")
+        state_label = _STATE_LABELS.get(state, "Ожидание")
+        if workflow_phase == "idle" and str(current_stage or "").strip().lower() == "startup":
+            state_label = "Инициализация"
+
+        return {
+            "zone_id": zone_id,
+            "state": state,
+            "state_label": state_label,
+            "state_details": {
+                "started_at": getattr(workflow_state, "started_at", None),
+                "elapsed_sec": 0,
+                "progress_percent": 0,
+                "failed": False,
+                "error_code": None,
+                "error_message": None,
+            },
+            "workflow_phase": workflow_phase,
+            "current_stage": current_stage,
+            "current_stage_label": _STAGE_LABELS.get(str(current_stage or ""), None),
+            "system_config": {
+                "tanks_count": 2,
+                "system_type": "drip",
+                "clean_tank_capacity_l": None,
+                "nutrient_tank_capacity_l": None,
+            },
+            "current_levels": {
+                "clean_tank_level_percent": telemetry.get("clean_tank_level_percent", 0),
+                "nutrient_tank_level_percent": telemetry.get("nutrient_tank_level_percent", 0),
+                "buffer_tank_level_percent": None,
+                "ph": telemetry.get("ph"),
+                "ec": telemetry.get("ec"),
+            },
+            "active_processes": {
+                "pump_in": workflow_phase == "tank_filling",
+                "circulation_pump": workflow_phase == "tank_recirc",
+                "ph_correction": False,
+                "ec_correction": False,
+            },
+            "timeline": [],
+            "next_state": None,
+            "estimated_completion_sec": None,
+            "irr_node_state": None,
+            "solution_tank_guard": solution_tank_guard,
+        }
+
+    def _idle_state(
+        self,
+        *,
+        zone_id: int,
+        solution_tank_guard: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
             "zone_id": zone_id,
             "state": "IDLE",
@@ -246,4 +379,91 @@ class GetZoneAutomationStateUseCase:
             "next_state": None,
             "estimated_completion_sec": None,
             "irr_node_state": None,
+            "solution_tank_guard": solution_tank_guard,
+        }
+
+    def _build_active_processes(
+        self,
+        *,
+        workflow_phase: str,
+        is_active: bool,
+        correction: Any | None,
+    ) -> dict[str, bool]:
+        corr_step = str(getattr(correction, "corr_step", "") or "").strip().lower()
+        return {
+            "pump_in": is_active and workflow_phase == "tank_filling",
+            "circulation_pump": is_active and workflow_phase == "tank_recirc",
+            "ph_correction": is_active and corr_step in _PH_CORRECTION_STEPS,
+            "ec_correction": is_active and corr_step in _EC_CORRECTION_STEPS,
+        }
+
+    def _should_prefer_workflow_state(self, workflow_state: Optional[Any]) -> bool:
+        if workflow_state is None:
+            return False
+        workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
+        payload = getattr(workflow_state, "payload", None)
+        normalized_payload = payload if isinstance(payload, Mapping) else {}
+        current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip().lower()
+        return workflow_phase in {"tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"} or current_stage == "startup"
+
+    def _workflow_state_is_stale(self, *, workflow_state: Optional[Any], last_task: Optional[Any]) -> bool:
+        if workflow_state is None or last_task is None:
+            return False
+        if bool(getattr(last_task, "is_active", False)):
+            return False
+
+        scheduler_task_id = str(getattr(workflow_state, "scheduler_task_id", "") or "").strip()
+        if scheduler_task_id and scheduler_task_id == str(getattr(last_task, "id", "") or ""):
+            return True
+
+        workflow_updated_at = getattr(workflow_state, "updated_at", None)
+        task_updated_at = getattr(last_task, "updated_at", None)
+        if workflow_updated_at is None or task_updated_at is None:
+            return False
+
+        workflow_cmp = workflow_updated_at.replace(tzinfo=None) if getattr(workflow_updated_at, "tzinfo", None) is not None else workflow_updated_at
+        task_cmp = task_updated_at.replace(tzinfo=None) if getattr(task_updated_at, "tzinfo", None) is not None else task_updated_at
+        return task_cmp >= workflow_cmp
+
+    def _now(self) -> Any:
+        from common.utils.time import utcnow_naive
+
+        return utcnow_naive()
+
+    def _normalize_solution_tank_guard(self, guard_result: Any) -> dict[str, Any] | None:
+        if not isinstance(guard_result, Mapping):
+            return None
+        level = guard_result.get("level")
+        normalized_level = level if isinstance(level, Mapping) else {}
+        sensor_label = (
+            guard_result.get("sensor_label")
+            or normalized_level.get("sensor_label")
+            or guard_result.get("guard_sensor_label")
+        )
+        sample_ts = (
+            guard_result.get("sample_ts")
+            or normalized_level.get("sample_ts")
+            or guard_result.get("guard_sample_ts")
+        )
+        normalized_sample_ts = sample_ts.isoformat() if hasattr(sample_ts, "isoformat") else sample_ts
+        return {
+            "checked": True,
+            "reset": bool(guard_result.get("reset")),
+            "reason": guard_result.get("reason"),
+            "sensor_label": sensor_label,
+            "sample_ts": normalized_sample_ts,
+        }
+
+    def _solution_tank_guard_from_payload(self, payload: Mapping[str, Any]) -> dict[str, Any] | None:
+        reason = payload.get("guard_reason")
+        sensor_label = payload.get("guard_sensor_label")
+        sample_ts = payload.get("guard_sample_ts")
+        if reason is None and sensor_label is None and sample_ts is None:
+            return None
+        return {
+            "checked": True,
+            "reset": True,
+            "reason": reason,
+            "sensor_label": sensor_label,
+            "sample_ts": sample_ts,
         }

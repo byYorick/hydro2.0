@@ -108,8 +108,8 @@ TWO_TANK: Mapping[str, StageDef] = {
         workflow_phase="tank_filling",
         timeout_key="solution_fill_timeout_sec",
         has_correction=True,
-        on_corr_success="solution_fill_stop_to_ready",
-        on_corr_fail="solution_fill_stop_to_prepare",
+        on_corr_success="solution_fill_check",
+        on_corr_fail="solution_fill_check",
     ),
     "solution_fill_stop_to_ready": StageDef(
         "solution_fill_stop_to_ready", "command",

@@ -43,12 +43,24 @@ class SequentialCommandGateway:
         self._poll_backoff_factor = max(1.0, float(poll_backoff_factor))
         self._poll_max_interval_sec = max(self._poll_interval_sec, float(poll_max_interval_sec))
 
-    async def run_batch(self, *, task: Any, commands: Sequence[PlannedCommand], now: datetime) -> Mapping[str, Any]:
+    async def run_batch(
+        self,
+        *,
+        task: Any,
+        commands: Sequence[PlannedCommand],
+        now: datetime,
+        track_task_state: bool = True,
+    ) -> Mapping[str, Any]:
         current_task = task
         combined_statuses: list[dict[str, Any]] = []
 
         for command in commands:
-            result = await self._run_command(task=current_task, command=command, now=now)
+            result = await self._run_command(
+                task=current_task,
+                command=command,
+                now=now,
+                track_task_state=track_task_state,
+            )
             combined_statuses.extend(result["command_statuses"])
             current_task = result["task"]
             if not result["success"]:
@@ -79,7 +91,14 @@ class SequentialCommandGateway:
             return {"state": "waiting_command", "task": task, "legacy_status": None, "external_id": external_id, "cmd_id": cmd_id}
         return await self._apply_legacy_outcome(task=task, ae_command=ae_command, legacy_row=legacy_row, now=now)
 
-    async def _run_command(self, *, task: Any, command: PlannedCommand, now: datetime) -> Mapping[str, Any]:
+    async def _run_command(
+        self,
+        *,
+        task: Any,
+        command: PlannedCommand,
+        now: datetime,
+        track_task_state: bool,
+    ) -> Mapping[str, Any]:
         step_no = await self._command_repository.get_next_step_no(task_id=task.id)
         planned = replace(command, step_no=step_no)
         cmd_name, params = self._extract_publish_payload(planned)
@@ -123,6 +142,21 @@ class SequentialCommandGateway:
                 external_id=str(legacy_command_id),
                 now=now,
             )
+            status_entry = {
+                "ae_command_id": int(ae_command_id),
+                "node_uid": planned.node_uid,
+                "channel": planned.channel,
+                "cmd": cmd_name,
+                "external_id": str(legacy_command_id),
+                "legacy_cmd_id": published_cmd_id,
+                "terminal_status": None,
+            }
+            if not track_task_state:
+                return {
+                    "success": True,
+                    "task": task,
+                    "command_statuses": [status_entry],
+                }
             waiting_task = await self._task_repository.mark_waiting_command(
                 task_id=task.id,
                 owner=str(task.claimed_by or ""),
@@ -163,10 +197,7 @@ class SequentialCommandGateway:
             )
             task_state = result["task"]
             status_entry = {
-                "ae_command_id": int(ae_command_id),
-                "node_uid": planned.node_uid,
-                "channel": planned.channel,
-                "cmd": cmd_name,
+                **status_entry,
                 "external_id": result.get("external_id"),
                 "legacy_cmd_id": result.get("cmd_id"),
                 "terminal_status": result.get("legacy_status"),

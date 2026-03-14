@@ -135,7 +135,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)
 
-**Цель:** Набрать бак с раствором и скорректировать NPK + pH до целевых значений.
+**Цель:** Набрать бак с раствором; пока бак не полон, выполнять in-flow коррекцию NPK + pH.
+Если к моменту заполнения бака targets не достигнуты, переводить зону в `TANK_RECIRC`.
 
 **Последовательность:**
 ```
@@ -144,25 +145,22 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 3. Ожидание стабилизации (60-120 сек, настраиваемо)
 4. pH/EC ноды → MQTT: telemetry с flow_active: true, stable: false
 5. После стабилизации: stable: true
-6. Automation-engine: проверка EC (NPK)
-   - Если EC < target: дозирование NPK (компоненты A+B)
-   - Ожидание смешивания (120 сек)
-   - Повторное измерение
-7. Automation-engine: проверка pH
-   - Если pH вне диапазона: дозирование pH+/pH-
-   - Ожидание смешивания (60 сек)
-   - Повторное измерение
-8. Если targets достигнуты:
-   - → Состояние READY
-   - Automation-engine → MQTT: stop pump_in
-   - Automation-engine → MQTT: deactivate ph_node, ec_node
-9. Если targets НЕ достигнуты:
-   - → Состояние TANK_RECIRC
+6. Пока `solution_max` ещё не сработал, Automation-engine:
+   - проверяет EC (NPK) и при необходимости дозирует NPK;
+   - проверяет pH и при необходимости дозирует pH+/pH-;
+   - после correction sub-cycle возвращается в тот же `solution_fill_check`.
+7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
+   - действует исходный `solution_fill_timeout_sec` для всего stage целиком.
+8. Когда `solution_max` сработал:
+   - если targets достигнуты → `READY`, stop fill, deactivate sensors;
+   - если targets НЕ достигнуты → stop fill и переход в `TANK_RECIRC`.
 ```
 
 **Коррекция:**
-- NPK (EC): Компоненты A + B в соотношении из effective-targets
+- NPK (EC): in-flow дозирование на этапе набора раствора
 - pH: pH+ или pH- в зависимости от отклонения
+- После достижения `solution_max` дополнительная коррекция в `TANK_FILLING` не продолжается:
+  дальнейшее доведение до targets происходит только в `TANK_RECIRC`
 
 ### 3.2. Режим 2: TANK_RECIRC (Рециркуляция бака)
 

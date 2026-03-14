@@ -213,18 +213,18 @@ async def test_corr_check_within_tolerance_exits_success():
     assert outcome.correction.outcome_success is True
 
 
-async def test_corr_check_max_attempts_exceeded_exits_fail():
-    """corr_check: attempt > max_attempts → exit_correction (fail)."""
+async def test_corr_check_max_attempts_exceeded_solution_fill_requeues_without_new_correction_cycle():
+    """solution_fill exhaustion must not restart correction with fresh attempt counters."""
     corr = _base_corr(corr_step="corr_check", attempt=6, max_attempts=5)
     task = _make_task(corr=corr)
     monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)  # off target
     handler = _make_handler(monitor=monitor)
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
-    assert outcome.kind == "exit_correction"
-    assert outcome.next_stage == "solution_fill_stop_to_prepare"
-    assert outcome.correction is not None
-    assert outcome.correction.outcome_success is False
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_check"
+    assert outcome.stage_retry_count == 1
+    assert outcome.due_delay_sec == 10
 
 
 
@@ -378,6 +378,11 @@ async def test_corr_check_persists_pid_state_updates_when_dose_needed():
         },
         "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
         "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 200,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
     }
 
     class _PlanWithCalib:

@@ -178,7 +178,7 @@ class CorrectionHandler(BaseStageHandler):
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if corr.attempt >= corr.max_attempts:
-            return await self._correction_exhausted(task=task, corr=corr)
+            return await self._correction_exhausted(task=task, plan=plan, corr=corr)
 
         # Build dose plan
         correction_cfg = self._correction_config(plan=plan, task=task)
@@ -238,9 +238,9 @@ class CorrectionHandler(BaseStageHandler):
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
-            return await self._correction_exhausted(task=task, corr=corr)
+            return await self._correction_exhausted(task=task, plan=plan, corr=corr)
         if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
-            return await self._correction_exhausted(task=task, corr=corr)
+            return await self._correction_exhausted(task=task, plan=plan, corr=corr)
 
         # Save dose plan into correction state
         next_corr = replace(
@@ -459,6 +459,7 @@ class CorrectionHandler(BaseStageHandler):
         self,
         *,
         task: Any,
+        plan: Any,
         corr: CorrectionState,
     ) -> StageOutcome:
         stage = str(task.current_stage)
@@ -502,6 +503,14 @@ class CorrectionHandler(BaseStageHandler):
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
                 stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+        if str(task.current_stage).strip().lower() == "solution_fill_check":
+            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+            return StageOutcome(
+                kind="transition",
+                next_stage="solution_fill_check",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
             )
         return self._transition_to_deactivate_or_return(corr=corr, success=False)
 

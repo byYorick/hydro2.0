@@ -180,9 +180,9 @@ class CorrectionPlanner:
         ec_deadband = _non_negative_float(controller_ec.get("deadband"), 0.0)
         ph_deadband = _non_negative_float(controller_ph.get("deadband"), 0.0)
 
-        ec_needs = ec_gap > ec_deadband
-        ph_needs_up = ph_up_gap > ph_deadband
-        ph_needs_down = ph_down_gap > ph_deadband
+        ec_needs = ec_gap > 0.0 if ec_has_explicit_window else ec_gap > ec_deadband
+        ph_needs_up = ph_up_gap > 0.0 if ph_has_explicit_window else ph_up_gap > ph_deadband
+        ph_needs_down = ph_down_gap > 0.0 if ph_has_explicit_window else ph_down_gap > ph_deadband
 
         ec_retry_after = None
         ph_retry_after = None
@@ -451,6 +451,13 @@ def _compute_amount_ml(
         sensitivity_default = _DEFAULT_EC_SENSITIVITY if kind == "ec" else _DEFAULT_PH_SENSITIVITY
         sensitivity = _positive_float(correction_config.get(sensitivity_key), sensitivity_default)
         dose_ml = gap * solution_volume_l * sensitivity
+
+    if gain is not None and gap > 0:
+        # A single pulse must not exceed the modelled dose required to reach the
+        # nearest allowed bound/target. Without this cap, kp>1 PI output can
+        # command a dose that overshoots the window in one step and causes
+        # acid/base ping-pong during recirculation.
+        dose_ml = min(dose_ml, gap / gain)
 
     min_effective_ml = max(0.0, float(calibration.get("min_effective_ml") or 0.0))
     if dose_ml > 0 and min_effective_ml > 0:

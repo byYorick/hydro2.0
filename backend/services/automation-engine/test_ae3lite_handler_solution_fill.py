@@ -3,11 +3,12 @@
 Outcomes:
 1. Tank full + targets reached → solution_fill_stop_to_ready
 2. Tank full + targets not reached → solution_fill_stop_to_prepare
-3. Deadline exceeded → solution_fill_timeout_stop
-4. Still filling → poll
-5. Level unavailable/stale → TaskExecutionError
-6. IRR state mismatch → TaskExecutionError
-7. PH/EC unavailable → TaskExecutionError
+3. Tank still filling + targets not reached → enter correction
+4. Deadline exceeded → solution_fill_timeout_stop
+5. Still filling + targets reached → poll
+6. Level unavailable/stale → TaskExecutionError
+7. IRR state mismatch → TaskExecutionError
+8. PH/EC unavailable → TaskExecutionError
 """
 from __future__ import annotations
 
@@ -50,7 +51,13 @@ _GOOD_IRR = {
 }
 
 
-def _make_task(*, deadline: datetime = FUTURE) -> AutomationTask:
+def _make_task(
+    *,
+    deadline: datetime = FUTURE,
+    stage_retry_count: int = 0,
+    control_mode: str = "auto",
+    pending_manual_step: str | None = None,
+) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 2, "zone_id": 20, "task_type": "cycle_start", "status": "running",
         "idempotency_key": "k", "scheduled_for": NOW, "due_at": NOW,
@@ -60,8 +67,11 @@ def _make_task(*, deadline: datetime = FUTURE) -> AutomationTask:
         "topology": "two_tank", "intent_source": None, "intent_trigger": None,
         "intent_id": None, "intent_meta": {},
         "current_stage": "solution_fill_check", "workflow_phase": "solution_fill",
-        "stage_deadline_at": deadline, "stage_retry_count": 0,
-        "stage_entered_at": NOW, "clean_fill_cycle": 1, "corr_step": None,
+        "stage_deadline_at": deadline, "stage_retry_count": stage_retry_count,
+        "stage_entered_at": NOW, "clean_fill_cycle": 1,
+        "control_mode_snapshot": control_mode,
+        "pending_manual_step": pending_manual_step,
+        "corr_step": None,
     })
 
 
@@ -112,8 +122,8 @@ class _Plan:
 
 
 class _StageDef:
-    on_corr_success = "solution_fill_stop_to_ready"
-    on_corr_fail = "solution_fill_stop_to_prepare"
+    on_corr_success = "solution_fill_check"
+    on_corr_fail = "solution_fill_check"
 
 
 def _handler(monitor: _Monitor | None = None) -> SolutionFillCheckHandler:
@@ -141,10 +151,10 @@ async def test_tank_full_targets_within_tolerance() -> None:
     assert outcome.next_stage == "solution_fill_stop_to_ready"
 
 
-# ── 2. Tank full + targets not reached → stop_to_prepare ─────────────────────
+# ── 2. Tank full + targets not reached → stop to prepare ─────────────────────
 
 @pytest.mark.asyncio
-async def test_tank_full_targets_not_reached_transitions_to_stop_prepare() -> None:
+async def test_tank_full_targets_not_reached_transitions_to_prepare() -> None:
     m = _Monitor(max_triggered=True, min_triggered=True, ph=4.0, ec=0.5)
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
@@ -152,15 +162,67 @@ async def test_tank_full_targets_not_reached_transitions_to_stop_prepare() -> No
 
 
 @pytest.mark.asyncio
-async def test_tank_full_targets_not_reached_uses_stage_def_on_corr_fail() -> None:
+async def test_filling_targets_not_reached_enters_correction() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.return_stage_success == "solution_fill_check"
+    assert outcome.correction.return_stage_fail == "solution_fill_check"
+
+
+@pytest.mark.asyncio
+async def test_filling_targets_not_reached_uses_stage_def_on_corr_fail() -> None:
     class _CustomStageDef:
         on_corr_success = "custom_success"
         on_corr_fail = "custom_stop"
 
-    m = _Monitor(max_triggered=True, min_triggered=True, ph=4.0, ec=0.5)
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_CustomStageDef(), now=NOW)
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.return_stage_success == "custom_success"
+    assert outcome.correction.return_stage_fail == "custom_stop"
+
+
+@pytest.mark.asyncio
+async def test_filling_targets_not_reached_after_correction_exhaustion_returns_poll() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
+    outcome = await _handler(m).run(
+        task=_make_task(stage_retry_count=1),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 10
+
+
+@pytest.mark.asyncio
+async def test_manual_solution_fill_without_pending_step_polls() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=4.0, ec=0.5)
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="manual"),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 10
+
+
+@pytest.mark.asyncio
+async def test_manual_solution_fill_stop_routes_to_prepare_when_not_full() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4)
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="manual", pending_manual_step="solution_fill_stop"),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "custom_stop"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
 
 
 # ── 3. Deadline exceeded → timeout_stop ──────────────────────────────────────
@@ -172,11 +234,12 @@ async def test_deadline_exceeded_transitions_to_timeout() -> None:
     assert outcome.next_stage == "solution_fill_timeout_stop"
 
 
-# ── 4. Still filling → poll ───────────────────────────────────────────────────
+# ── 5. Still filling + targets reached → poll ────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_still_filling_returns_poll() -> None:
-    outcome = await _handler().run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+async def test_still_filling_targets_reached_returns_poll() -> None:
+    m = _Monitor(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4)
+    outcome = await _handler(m).run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "poll"
     assert outcome.due_delay_sec == 10
 
@@ -213,7 +276,7 @@ async def test_sensor_inconsistency_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_ph_unavailable_raises() -> None:
-    m = _Monitor(max_triggered=True, min_triggered=True, has_ph=False)
+    m = _Monitor(max_triggered=False, min_triggered=False, has_ph=False)
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert exc_info.value.code == "two_tank_prepare_targets_unavailable"
@@ -221,7 +284,7 @@ async def test_ph_unavailable_raises() -> None:
 
 @pytest.mark.asyncio
 async def test_ec_unavailable_raises() -> None:
-    m = _Monitor(max_triggered=True, min_triggered=True, has_ec=False)
+    m = _Monitor(max_triggered=False, min_triggered=False, has_ec=False)
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert exc_info.value.code == "two_tank_prepare_targets_unavailable"

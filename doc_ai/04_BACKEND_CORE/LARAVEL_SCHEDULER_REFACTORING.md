@@ -365,11 +365,11 @@ php artisan automation:intent-listener --poll-interval=5000
 
 ## Архитектурный факт: intent_type vs task_type
 
-**Все типы задач всегда выполняются как `diagnostics/cycle_start`.**
+**Для AE3 v1 через `POST /zones/{id}/start-cycle` будится только `irrigation`.**
 
-`mapTaskTypeToIntentType('irrigation')` → `'IRRIGATE_ONCE'` — это значение сохраняется в `zone_automation_intents.intent_type` **только для аудита**. На стороне AE (`api_intents.py`) при обработке intent всегда создаётся `SchedulerTaskRequest(task_type="diagnostics")`. Automation-engine сам определяет что делать, исходя из текущей фазы зоны (FSM).
+`mapTaskTypeToIntentType('irrigation')` → `'IRRIGATE_ONCE'` — это значение сохраняется в `zone_automation_intents.intent_type` для аудита, а runtime-path AE3 исполняет только `cycle_start`. Scheduler-maintenance task types (`lighting`, `ventilation`, `solution_change`, `mist`, `diagnostics`) не должны будить `cycle_start` в AE3 v1 и пропускаются на стороне Laravel dispatcher до появления выделенных executor-ов.
 
-Это осознанное архитектурное решение: scheduler только триггерит цикл, логика принадлежит AE.
+Это осознанное ограничение текущего scope: AE3 v1 владеет только cycle-start workflow, а scheduler не должен расширять этот scope косвенно через legacy task_type.
 
 ---
 

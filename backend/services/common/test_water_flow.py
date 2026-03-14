@@ -669,12 +669,18 @@ async def test_calibrate_pump_success():
         "node_status": "online",
     }
 
-    with patch("common.water_flow.fetch") as mock_fetch, \
+    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+         patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
+        mock_settings.return_value = {
+            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
+            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
+            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
+        }
         mock_fetch.return_value = [channel_info]
         mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
 
@@ -712,12 +718,18 @@ async def test_calibrate_pump_calculates_k_from_ec_profile():
         "node_status": "online",
     }
 
-    with patch("common.water_flow.fetch") as mock_fetch, \
+    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+         patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
+        mock_settings.return_value = {
+            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
+            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
+            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
+        }
         mock_fetch.return_value = [channel_info]
         mock_send.return_value = {"status": "sent", "cmd_id": "cmd-4"}
 
@@ -758,12 +770,18 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
         "node_status": "online",
     }
 
-    with patch("common.water_flow.fetch") as mock_fetch, \
+    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+         patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
+        mock_settings.return_value = {
+            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
+            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
+            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
+        }
         mock_fetch.return_value = [channel_info]
         mock_send.return_value = {"status": "sent", "cmd_id": "cmd-2"}
         mock_httpx_client.return_value = AsyncMock()
@@ -792,12 +810,18 @@ async def test_calibrate_pump_accepts_ph_component_alias():
         "node_status": "online",
     }
 
-    with patch("common.water_flow.fetch") as mock_fetch, \
+    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+         patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
          patch("asyncio.sleep"):
+        mock_settings.return_value = {
+            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
+            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
+            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
+        }
         mock_fetch.return_value = [channel_info]
         mock_send.return_value = {"status": "sent", "cmd_id": "cmd-3"}
 

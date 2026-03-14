@@ -55,7 +55,7 @@ class ActiveTaskStoreTest extends TestCase
         $this->assertSame('unit-test', $loaded->details['source'] ?? null);
     }
 
-    public function test_find_active_by_schedule_key_ignores_terminal_and_expired_tasks(): void
+    public function test_find_active_by_schedule_key_returns_locally_expired_non_terminal_task_for_reconciliation(): void
     {
         $zone = Zone::factory()->create();
         $now = CarbonImmutable::parse('2026-02-20 12:30:00', 'UTC');
@@ -87,22 +87,33 @@ class ActiveTaskStoreTest extends TestCase
             details: [],
         );
 
+        $active = $this->store->findActiveByScheduleKey($scheduleKey, $now);
+        $this->assertNotNull($active);
+        $this->assertSame('task-expired', $active->task_id);
+    }
+
+    public function test_batch_find_busy_schedule_keys_keeps_locally_expired_non_terminal_task_busy(): void
+    {
+        $zone = Zone::factory()->create();
+        $now = CarbonImmutable::parse('2026-02-20 12:30:00', 'UTC');
+        $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|interval=60';
+
         $this->store->upsertTaskSnapshot(
-            taskId: 'task-active',
+            taskId: 'task-expired-busy',
             zoneId: $zone->id,
-            taskType: 'lighting',
+            taskType: 'irrigation',
             scheduleKey: $scheduleKey,
-            correlationId: 'corr-active',
-            status: 'running',
-            acceptedAt: $now,
-            dueAt: $now->addSeconds(15),
-            expiresAt: $now->addSeconds(120),
+            correlationId: 'corr-expired-busy',
+            status: 'accepted',
+            acceptedAt: $now->subMinutes(5),
+            dueAt: $now->subMinutes(4),
+            expiresAt: $now->subMinute(),
             details: [],
         );
 
-        $active = $this->store->findActiveByScheduleKey($scheduleKey, $now);
-        $this->assertNotNull($active);
-        $this->assertSame('task-active', $active->task_id);
+        $busy = $this->store->batchFindBusyScheduleKeys([$scheduleKey], $now);
+
+        $this->assertSame([$scheduleKey => true], $busy);
     }
 
     public function test_mark_terminal_touch_polled_and_cleanup(): void

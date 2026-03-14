@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
 from ae3lite.domain.errors import SnapshotBuildError
+from ae3lite.domain.services.phase_utils import normalize_phase_key
 from common.db import get_pool
 from .effective_targets_sql_utils import (
     build_base_targets,
@@ -133,6 +134,12 @@ class PgZoneSnapshotReadModel:
                         prev_derivative,
                         last_output_ms,
                         last_dose_at,
+                        hold_until,
+                        last_measurement_at,
+                        last_measured_value,
+                        feedforward_bias,
+                        no_effect_count,
+                        last_correction_kind,
                         stats,
                         current_zone,
                         updated_at
@@ -158,6 +165,34 @@ class PgZoneSnapshotReadModel:
                     SELECT version, resolved_config, phase_overrides
                     FROM zone_correction_configs
                     WHERE zone_id = $1
+                    """,
+                    zone_id,
+                )
+
+                process_calibration_rows = await conn.fetch(
+                    """
+                    SELECT
+                        mode,
+                        ec_gain_per_ml,
+                        ph_up_gain_per_ml,
+                        ph_down_gain_per_ml,
+                        ph_per_ec_ml,
+                        ec_per_ph_ml,
+                        transport_delay_sec,
+                        settle_sec,
+                        confidence,
+                        source,
+                        valid_from,
+                        valid_to,
+                        is_active,
+                        meta,
+                        updated_at
+                    FROM zone_process_calibrations
+                    WHERE zone_id = $1
+                      AND is_active = TRUE
+                      AND valid_from <= NOW()
+                      AND (valid_to IS NULL OR valid_to > NOW())
+                    ORDER BY mode ASC, valid_from DESC, id DESC
                     """,
                     zone_id,
                 )
@@ -229,6 +264,7 @@ class PgZoneSnapshotReadModel:
         pid_state = self._build_pid_state(pid_state_rows)
         pid_configs = self._build_pid_configs(pid_config_rows)
         correction_config = self._build_correction_config(correction_config_row)
+        process_calibrations = self._build_process_calibrations(process_calibration_rows)
         actuators = tuple(
             ZoneActuatorRef(
                 node_uid=str(row.get("node_uid") or "").strip(),
@@ -261,6 +297,7 @@ class PgZoneSnapshotReadModel:
             pid_state=pid_state,
             pid_configs=pid_configs,
             actuators=actuators,
+            process_calibrations=process_calibrations,
             correction_config=correction_config,
         )
 
@@ -395,7 +432,7 @@ class PgZoneSnapshotReadModel:
         for row in rows:
             if not row.get("is_active", True):
                 continue
-            mode = str(row.get("mode") or "").strip().lower()
+            mode = normalize_phase_key(row.get("mode"))
             if not mode or mode in result:
                 continue
             result[mode] = {
@@ -478,6 +515,12 @@ class PgZoneSnapshotReadModel:
                 "prev_derivative": self._to_float(row.get("prev_derivative")),
                 "last_output_ms": int(row.get("last_output_ms") or 0),
                 "last_dose_at": row.get("last_dose_at"),
+                "hold_until": row.get("hold_until"),
+                "last_measurement_at": row.get("last_measurement_at"),
+                "last_measured_value": self._to_float(row.get("last_measured_value")),
+                "feedforward_bias": self._to_float(row.get("feedforward_bias")),
+                "no_effect_count": int(row.get("no_effect_count") or 0),
+                "last_correction_kind": row.get("last_correction_kind"),
                 "stats": row.get("stats"),
                 "current_zone": row.get("current_zone"),
                 "updated_at": row.get("updated_at"),

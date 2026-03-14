@@ -9,6 +9,7 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
+use App\Services\AutomationRuntimeConfigService;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -231,6 +232,59 @@ class GrowCycleServiceTest extends TestCase
             'zone_id' => $zone->id,
             'version' => 1,
             'change_type' => 'bootstrap',
+        ]);
+    }
+
+    #[Test]
+    public function it_does_not_throw_after_commit_when_automation_start_cycle_dispatch_fails(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
+        $service = new class($runtimeConfig) extends GrowCycleService {
+            protected function isGrowCycleStartDispatchEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function automationStartCycleConfig(): array
+            {
+                return [
+                    'api_url' => 'http://automation-engine:9405',
+                    'timeout_sec' => 2.0,
+                    'scheduler_id' => 'laravel-scheduler',
+                    'token' => 'test-token',
+                ];
+            }
+
+            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            {
+                throw new \RuntimeException('automation_engine_start_cycle_http_error_v2:500:boom');
+            }
+        };
+
+        $cycle = $service->createCycle($zone, $revision, $plant->id);
+        $startedCycle = $service->startCycle($cycle, Carbon::now());
+
+        $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
+        $this->assertSame('RUNNING', $zone->fresh()->status);
+        $this->assertDatabaseHas('grow_cycles', [
+            'id' => $cycle->id,
+            'status' => GrowCycleStatus::RUNNING->value,
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'status' => 'pending',
         ]);
     }
 }

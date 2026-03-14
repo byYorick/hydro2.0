@@ -52,6 +52,7 @@ def _bind_with_claim(claim_return: dict) -> object:
         start_cycle_rate_limit_max_requests_fn=lambda: 30,
         claim_start_cycle_intent_fn=claim_intent,
         create_task_from_intent_fn=None,
+        ensure_solution_tank_startup_reset_fn=None,
         kick_worker_fn=lambda: None,
         build_start_cycle_response_fn=lambda **kwargs: {},
         mark_intent_terminal_fn=mark_intent_terminal,

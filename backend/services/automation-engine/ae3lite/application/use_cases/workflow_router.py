@@ -211,31 +211,43 @@ class WorkflowRouter:
 
         topology = task.topology
         next_def = self._registry.get(topology, next_stage)
+        same_stage = next_stage == task.current_stage
 
         # Record metrics for completed stage
-        self._record_stage_duration(task=task, now=now)
-        STAGE_ENTERED.labels(topology=topology, stage=next_stage).inc()
+        if not same_stage:
+            self._record_stage_duration(task=task, now=now)
+            STAGE_ENTERED.labels(topology=topology, stage=next_stage).inc()
         if (outcome.stage_retry_count or 0) > 0:
             STAGE_RETRY.labels(topology=topology, stage=next_stage).inc()
 
         # Compute new workflow state
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        deadline = self._compute_deadline(
-            stage_def=next_def, runtime=runtime, now=now,
+        deadline = (
+            task.workflow.stage_deadline_at
+            if same_stage
+            else self._compute_deadline(stage_def=next_def, runtime=runtime, now=now)
         )
         clean_fill_cycle = (
             outcome.clean_fill_cycle
             if outcome.clean_fill_cycle is not None
             else task.workflow.clean_fill_cycle
         )
+        stage_retry_count = (
+            outcome.stage_retry_count
+            if outcome.stage_retry_count is not None
+            else (task.workflow.stage_retry_count if same_stage else 0)
+        )
+        stage_entered_at = task.workflow.stage_entered_at if same_stage else now
 
         new_workflow = WorkflowState(
             current_stage=next_stage,
             workflow_phase=next_def.workflow_phase,
             stage_deadline_at=deadline,
-            stage_retry_count=outcome.stage_retry_count or 0,
-            stage_entered_at=now,
+            stage_retry_count=stage_retry_count,
+            stage_entered_at=stage_entered_at,
             clean_fill_cycle=clean_fill_cycle,
+            control_mode=task.workflow.control_mode,
+            pending_manual_step=None,
         )
 
         # Record transition in audit trail

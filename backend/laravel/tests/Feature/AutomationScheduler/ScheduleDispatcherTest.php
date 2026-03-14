@@ -3,9 +3,12 @@
 namespace Tests\Feature\AutomationScheduler;
 
 use App\Models\Zone;
+use App\Services\AutomationScheduler\ScheduleCycleContext;
+use App\Services\AutomationScheduler\ScheduleItem;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -75,5 +78,65 @@ class ScheduleDispatcherTest extends TestCase
             json_decode((string) $before->payload, true, 512, JSON_THROW_ON_ERROR),
             json_decode((string) $after->payload, true, 512, JSON_THROW_ON_ERROR),
         );
+    }
+
+    public function test_dispatch_skips_non_irrigation_task_for_ae3_runtime(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake();
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-03-14 07:30:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'ventilation',
+            intervalSec: 60,
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+        );
+        $logs = [];
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertSame([
+            'dispatched' => false,
+            'retryable' => false,
+            'reason' => 'ae3_task_type_not_supported',
+        ], $result);
+        $this->assertDatabaseCount('zone_automation_intents', 0);
+        Http::assertNothingSent();
+        $this->assertCount(1, $logs);
+        $this->assertSame('skipped', $logs[0]['status']);
+        $this->assertSame('ae3_task_type_not_supported', $logs[0]['context']['reason']);
     }
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -320,9 +321,11 @@ def _build_worker(*, zone_id: int, clean_full: bool, solution_full: bool) -> Ae3
             topology_registry=TopologyRegistry(),
         ),
         zone_lease_repository=lease_repository,
+        zone_intent_repository=type("IntentRepoStub", (), {
+            "mark_running": staticmethod(_noop),
+            "mark_terminal": staticmethod(_noop),
+        })(),
         spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-two-tank")),
-        mark_intent_running_fn=_noop,
-        mark_intent_terminal_fn=_noop,
         now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         logger=type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None), "debug": staticmethod(lambda *args, **kwargs: None)})(),
     )
@@ -331,11 +334,8 @@ def _build_worker(*, zone_id: int, clean_full: bool, solution_full: bool) -> Ae3
 @pytest.mark.asyncio
 async def test_two_tank_cycle_start_completes_when_clean_and_solution_tanks_ready() -> None:
     prefix = f"ae3-two-tank-ready-{uuid4().hex}"
+    worker: Ae3RuntimeWorker | None = None
     try:
-        await execute("DELETE FROM ae_commands")
-        await execute("DELETE FROM ae_zone_leases")
-        await execute("DELETE FROM ae_tasks")
-        await execute("DELETE FROM commands WHERE source = 'automation-engine'")
         _greenhouse_id, zone_id = await _insert_two_tank_runtime_zone(prefix, clean_full=True, solution_full=True)
         task_id = await _insert_pending_task(zone_id, prefix=prefix)
         worker = _build_worker(zone_id=zone_id, clean_full=True, solution_full=True)
@@ -350,17 +350,19 @@ async def test_two_tank_cycle_start_completes_when_clean_and_solution_tanks_read
         assert str(workflow_rows[0]["workflow_phase"]).lower() == "ready"
         assert int(command_rows[0]["cnt"]) >= 8
     finally:
+        wake_task = getattr(worker, "_wake_task", None)
+        if wake_task is not None and not wake_task.done():
+            wake_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await wake_task
         await _cleanup(prefix)
 
 
 @pytest.mark.asyncio
 async def test_two_tank_cycle_start_requeues_clean_fill_check_when_clean_tank_not_full() -> None:
     prefix = f"ae3-two-tank-refill-{uuid4().hex}"
+    worker: Ae3RuntimeWorker | None = None
     try:
-        await execute("DELETE FROM ae_commands")
-        await execute("DELETE FROM ae_zone_leases")
-        await execute("DELETE FROM ae_tasks")
-        await execute("DELETE FROM commands WHERE source = 'automation-engine'")
         _greenhouse_id, zone_id = await _insert_two_tank_runtime_zone(prefix, clean_full=False, solution_full=False)
         task_id = await _insert_pending_task(zone_id, prefix=prefix)
         worker = _build_worker(zone_id=zone_id, clean_full=False, solution_full=False)
@@ -376,4 +378,9 @@ async def test_two_tank_cycle_start_requeues_clean_fill_check_when_clean_tank_no
         assert str(workflow_rows[0]["workflow_phase"]).lower() == "tank_filling"
         assert int(command_rows[0]["cnt"]) >= 2
     finally:
+        wake_task = getattr(worker, "_wake_task", None)
+        if wake_task is not None and not wake_task.done():
+            wake_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await wake_task
         await _cleanup(prefix)

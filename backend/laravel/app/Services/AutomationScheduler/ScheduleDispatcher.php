@@ -42,6 +42,25 @@ class ScheduleDispatcher
             ];
         }
 
+        if (! $this->supportsAe3StartCycleTaskType($zoneId, $taskType)) {
+            $writeLog(
+                SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
+                'skipped',
+                [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'reason' => 'ae3_task_type_not_supported',
+                    'automation_runtime' => $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch'),
+                ],
+            );
+
+            return [
+                'dispatched' => false,
+                'retryable' => false,
+                'reason' => 'ae3_task_type_not_supported',
+            ];
+        }
+
         if ($this->activeTaskPoller->isScheduleBusy(
             scheduleKey: $scheduleKey,
             cfg: $cfg,
@@ -133,6 +152,29 @@ class ScheduleDispatcher
         }
 
         if (! $response->successful()) {
+            $responseBody = $response->json();
+            $detail = is_array($responseBody) ? ($responseBody['detail'] ?? null) : null;
+            if (
+                $response->status() === 409
+                && is_array($detail)
+                && (($detail['error'] ?? null) === 'start_cycle_intent_terminal')
+            ) {
+                $writeLog($taskName, 'failed', [
+                    'zone_id' => $zoneId,
+                    'task_type' => $taskType,
+                    'error' => 'start_cycle_intent_terminal',
+                    'status_code' => $response->status(),
+                    'response' => $responseBody,
+                    'schedule_key' => $scheduleKey,
+                    'correlation_id' => $correlationId,
+                ]);
+
+                return [
+                    'dispatched' => false,
+                    'retryable' => false,
+                    'reason' => 'start_cycle_intent_terminal',
+                ];
+            }
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
                 'task_type' => $taskType,
@@ -488,6 +530,16 @@ class ScheduleDispatcher
     private function isTerminalStatus(string $status): bool
     {
         return in_array($status, SchedulerConstants::TERMINAL_STATUSES, true);
+    }
+
+    private function supportsAe3StartCycleTaskType(int $zoneId, string $taskType): bool
+    {
+        $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
+        if ($automationRuntime !== 'ae3') {
+            return true;
+        }
+
+        return $taskType === 'irrigation';
     }
 
     private function parseIsoDateTime(?string $value): ?CarbonImmutable

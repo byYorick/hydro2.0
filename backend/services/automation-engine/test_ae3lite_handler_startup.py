@@ -30,10 +30,15 @@ _RUNTIME = {
     "irr_state_max_age_sec": 60,
     "irr_state_wait_timeout_sec": 0.0,
     "irr_state_wait_poll_interval_sec": 0.05,
+    "level_poll_interval_sec": 5,
 }
 
 
-def _make_task() -> AutomationTask:
+def _make_task(
+    *,
+    control_mode: str = "auto",
+    pending_manual_step: str | None = None,
+) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 3, "zone_id": 30, "task_type": "cycle_start", "status": "running",
         "idempotency_key": "k", "scheduled_for": NOW, "due_at": NOW,
@@ -44,7 +49,10 @@ def _make_task() -> AutomationTask:
         "intent_id": None, "intent_meta": {},
         "current_stage": "startup", "workflow_phase": "startup",
         "stage_deadline_at": None, "stage_retry_count": 0,
-        "stage_entered_at": NOW, "clean_fill_cycle": 0, "corr_step": None,
+        "stage_entered_at": NOW, "clean_fill_cycle": 0,
+        "control_mode_snapshot": control_mode,
+        "pending_manual_step": pending_manual_step,
+        "corr_step": None,
     })
 
 
@@ -139,21 +147,48 @@ async def test_clean_tank_not_full_starts_clean_fill() -> None:
     assert outcome.clean_fill_cycle == 1
 
 
-# ── 3. IRR state unavailable → safe fallback ─────────────────────────────────
+@pytest.mark.asyncio
+async def test_manual_startup_without_pending_step_polls() -> None:
+    m = _Monitor(clean_max_triggered=False)
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="manual"),
+        plan=_Plan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 5
+
 
 @pytest.mark.asyncio
-async def test_irr_state_unavailable_uses_safe_fallback() -> None:
+async def test_manual_startup_with_pending_clean_fill_start_transitions() -> None:
+    m = _Monitor(clean_max_triggered=False)
+    outcome = await _handler(m).run(
+        task=_make_task(control_mode="manual", pending_manual_step="clean_fill_start"),
+        plan=_Plan(),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "clean_fill_start"
+
+
+# ── 3. IRR state unavailable/stale → fail-closed ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_irr_state_unavailable_raises() -> None:
     m = _Monitor(irr_states=[{"has_snapshot": False, "is_stale": False, "snapshot": None}])
-    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
-    # Should still proceed (safe fallback) and start clean_fill
-    assert outcome.next_stage in ("clean_fill_start", "solution_fill_start")
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
+    assert exc_info.value.code == "irr_state_unavailable"
 
 
 @pytest.mark.asyncio
-async def test_irr_state_stale_uses_safe_fallback() -> None:
+async def test_irr_state_stale_raises() -> None:
     m = _Monitor(irr_states=[{"has_snapshot": True, "is_stale": True, "snapshot": None}])
-    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
-    assert outcome.next_stage in ("clean_fill_start", "solution_fill_start")
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
+    assert exc_info.value.code == "irr_state_stale"
 
 
 # ── 4. IRR mismatch (pump_main on) → safety stop → re-check → proceed ────────
@@ -201,3 +236,26 @@ async def test_level_unavailable_raises() -> None:
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
     assert exc_info.value.code == "two_tank_clean_level_unavailable"
+
+
+# ── 8. Sensor inconsistency (max=1, min=0) ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_sensor_inconsistency_raises() -> None:
+    """Clean max triggered but min not triggered → sensor_state_inconsistent."""
+    m = _Monitor(clean_max_triggered=True, clean_min_triggered=False)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
+    assert exc_info.value.code == "sensor_state_inconsistent"
+
+
+# ── 9. Probe command fails → TaskExecutionError ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_probe_command_failure_raises() -> None:
+    """Probe gateway fails (pump_main=False path) → TaskExecutionError propagated."""
+    m = _Monitor()  # default: pump_main=False (no mismatch)
+    gw = _Gateway(success=False, error_code="fail")
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await _handler(m, gw).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
+    assert exc_info.value.code == "fail"

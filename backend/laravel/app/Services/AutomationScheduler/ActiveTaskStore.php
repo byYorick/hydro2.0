@@ -131,10 +131,6 @@ class ActiveTaskStore
                 ->select('schedule_key')
                 ->whereIn('schedule_key', $scheduleKeys)
                 ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
-                ->where(function ($query) use ($now): void {
-                    $query->whereNull('expires_at')
-                        ->orWhere('expires_at', '>=', $now);
-                })
                 ->pluck('schedule_key')
                 ->flip()
                 ->all();
@@ -167,10 +163,6 @@ class ActiveTaskStore
             return LaravelSchedulerActiveTask::query()
                 ->where('schedule_key', $scheduleKey)
                 ->whereNotIn('status', SchedulerConstants::TERMINAL_STATUSES)
-                ->where(function ($query) use ($now): void {
-                    $query->whereNull('expires_at')
-                        ->orWhere('expires_at', '>=', $now);
-                })
                 ->orderByDesc('accepted_at')
                 ->orderByDesc('id')
                 ->first();

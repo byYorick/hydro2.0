@@ -203,33 +203,42 @@ class GrowCycleService
             return;
         }
 
-        $cfg = $this->automationStartCycleConfig();
-        $idempotencyKey = $this->buildGrowCycleStartIdempotencyKey($zoneId, $cycleId);
+        try {
+            $cfg = $this->automationStartCycleConfig();
+            $idempotencyKey = $this->buildGrowCycleStartIdempotencyKey($zoneId, $cycleId);
 
-        $this->upsertGrowCycleStartIntent(
-            zoneId: $zoneId,
-            cycleId: $cycleId,
-            idempotencyKey: $idempotencyKey
-        );
+            $this->upsertGrowCycleStartIntent(
+                zoneId: $zoneId,
+                cycleId: $cycleId,
+                idempotencyKey: $idempotencyKey
+            );
 
-        $response = $this->postAutomationStartCycle(
-            zoneId: $zoneId,
-            idempotencyKey: $idempotencyKey,
-            cfg: $cfg
-        );
+            $response = $this->postAutomationStartCycle(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                cfg: $cfg
+            );
 
-        $taskId = trim((string) data_get($response, 'data.task_id', ''));
-        Log::info('Grow cycle start-cycle dispatched to automation-engine', [
-            'zone_id' => $zoneId,
-            'cycle_id' => $cycleId,
-            'idempotency_key' => $idempotencyKey,
-            'task_id' => $taskId !== '' ? $taskId : null,
-            'accepted' => (bool) data_get($response, 'data.accepted', false),
-            'deduplicated' => (bool) data_get($response, 'data.deduplicated', false),
-        ]);
+            $taskId = trim((string) data_get($response, 'data.task_id', ''));
+            Log::info('Grow cycle start-cycle dispatched to automation-engine', [
+                'zone_id' => $zoneId,
+                'cycle_id' => $cycleId,
+                'idempotency_key' => $idempotencyKey,
+                'task_id' => $taskId !== '' ? $taskId : null,
+                'accepted' => (bool) data_get($response, 'data.accepted', false),
+                'deduplicated' => (bool) data_get($response, 'data.deduplicated', false),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Grow cycle start-cycle dispatch failed after cycle commit', [
+                'zone_id' => $zoneId,
+                'cycle_id' => $cycleId,
+                'error' => $e->getMessage(),
+                'exception_type' => get_class($e),
+            ]);
+        }
     }
 
-    private function isGrowCycleStartDispatchEnabled(): bool
+    protected function isGrowCycleStartDispatchEnabled(): bool
     {
         if (app()->runningInConsole()) {
             return false;
@@ -241,7 +250,7 @@ class GrowCycleService
     /**
      * @return array{api_url: string, timeout_sec: float, scheduler_id: string, token: string}
      */
-    private function automationStartCycleConfig(): array
+    protected function automationStartCycleConfig(): array
     {
         $schedulerCfg = $this->runtimeConfig->schedulerConfig();
 
@@ -253,7 +262,7 @@ class GrowCycleService
         ];
     }
 
-    private function buildGrowCycleStartIdempotencyKey(int $zoneId, int $cycleId): string
+    protected function buildGrowCycleStartIdempotencyKey(int $zoneId, int $cycleId): string
     {
         $base = sprintf('grow-cycle-start|zone:%d|cycle:%d', $zoneId, $cycleId);
         $digest = substr(hash('sha256', $base), 0, 24);
@@ -261,7 +270,7 @@ class GrowCycleService
         return sprintf('gcs:z%d:c%d:%s', $zoneId, $cycleId, $digest);
     }
 
-    private function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
+    protected function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
     {
         app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
 
@@ -314,7 +323,7 @@ class GrowCycleService
      * @param  array{api_url: string, timeout_sec: float, scheduler_id: string, token: string}  $cfg
      * @return array<string, mixed>
      */
-    private function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+    protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
     {
         if ($cfg['token'] === '') {
             throw new \RuntimeException('automation_engine_scheduler_token_missing');

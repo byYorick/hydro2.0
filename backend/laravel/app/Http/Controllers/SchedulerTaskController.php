@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
 class SchedulerTaskController extends Controller
 {
     use BuildsSchedulerTaskProcessView;
-    private const TASK_ID_PATTERN = '/^(?:\d{1,20}|st-[A-Za-z0-9\-_.:]{6,128}|intent-\d{1,20})$/';
+    private const TASK_ID_PATTERN = '/^(?:\d{1,20}|st-[A-Za-z0-9\-_.:]{6,128})$/';
 
     private const PROCESS_PHASE_SEQUENCE = [
         'clean_fill',
@@ -347,7 +347,7 @@ class SchedulerTaskController extends Controller
         foreach ($rows as $row) {
             $details = $this->normalizeDetails($row->details);
             $taskId = (string) ($details['task_id'] ?? str_replace('ae_scheduler_task_', '', (string) $row->task_name));
-            if ($taskId === '') {
+            if ($taskId === '' || preg_match(self::TASK_ID_PATTERN, $taskId) !== 1) {
                 continue;
             }
 
@@ -717,8 +717,7 @@ class SchedulerTaskController extends Controller
             $normalizedCorrelationId = trim($activeTask['correlation_id']);
         }
 
-        $intentId = $this->extractIntentIdFromTaskId($normalizedTaskId)
-            ?? $this->extractIntentIdFromActiveTask($activeTask);
+        $intentId = $this->extractIntentIdFromActiveTask($activeTask);
         $intent = $this->loadIntentSnapshot($zoneId, $intentId, $normalizedCorrelationId);
         if ($intent !== null) {
             $intentId = isset($intent['id']) && is_numeric($intent['id']) ? (int) $intent['id'] : $intentId;
@@ -1023,17 +1022,6 @@ class SchedulerTaskController extends Controller
                 'metadata' => $this->normalizeDetails($normalized['metadata'] ?? null),
             ];
         })->all();
-    }
-
-    private function extractIntentIdFromTaskId(string $taskId): ?int
-    {
-        if (preg_match('/^intent-(\d+)$/', $taskId, $matches) !== 1) {
-            return null;
-        }
-
-        $intentId = (int) ($matches[1] ?? 0);
-
-        return $intentId > 0 ? $intentId : null;
     }
 
     /**

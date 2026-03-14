@@ -30,6 +30,7 @@ def _snapshot(
     startup: dict[str, object] | None = None,
     correction_config: dict[str, object] | None = None,
     prepare_tolerance: dict[str, object] | None = None,
+    process_calibrations: dict[str, object] | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         workflow_phase="tank_filling",
@@ -47,6 +48,7 @@ def _snapshot(
             "correction": correction,
         },
         targets={},
+        process_calibrations=process_calibrations if process_calibrations is not None else {},
         correction_config=correction_config if correction_config is not None else _minimal_zone_correction_config(),
     )
 
@@ -282,3 +284,24 @@ def test_resolve_two_tank_runtime_keeps_startup_prepare_timeout_when_phase_is_no
     )
 
     assert runtime["prepare_recirculation_timeout_sec"] == 30
+
+
+def test_resolve_two_tank_runtime_exposes_process_calibrations_to_runtime() -> None:
+    runtime = resolve_two_tank_runtime(
+        _snapshot(
+            correction={"ec_mix_wait_sec": 10, "stabilization_sec": 0},
+            process_calibrations={
+                "solution_fill": {
+                    "ec_gain_per_ml": 0.25,
+                    "transport_delay_sec": 15,
+                },
+                "tank_recirc": {
+                    "ph_down_gain_per_ml": 0.12,
+                    "settle_sec": 45,
+                },
+            },
+        )
+    )
+
+    assert runtime["process_calibrations"]["solution_fill"]["ec_gain_per_ml"] == 0.25
+    assert runtime["process_calibrations"]["tank_recirc"]["settle_sec"] == 45

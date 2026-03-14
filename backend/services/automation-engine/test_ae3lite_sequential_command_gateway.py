@@ -59,6 +59,8 @@ class _FakeCommandRepo:
         self.step_no = 0
         self.created_ids: list[int] = []
         self.updated: list[dict] = []
+        self.publish_accepted_calls: list[dict] = []
+        self.publish_failed_calls: list[dict] = []
 
     async def get_next_step_no(self, *, task_id):
         self.step_no += 1
@@ -76,10 +78,14 @@ class _FakeCommandRepo:
         return 1001
 
     async def mark_publish_accepted(self, *, ae_command_id, external_id, now):
-        pass
+        self.publish_accepted_calls.append(
+            {"ae_command_id": ae_command_id, "external_id": external_id, "now": now}
+        )
 
     async def mark_publish_failed(self, *, ae_command_id, last_error, now):
-        pass
+        self.publish_failed_calls.append(
+            {"ae_command_id": ae_command_id, "last_error": last_error, "now": now}
+        )
 
     async def update_from_legacy(self, **_kw):
         pass
@@ -372,3 +378,29 @@ async def test_run_batch_records_roundtrip_latency_and_poll_iterations():
     )
     assert (REGISTRY.get_sample_value("ae3_command_roundtrip_duration_seconds_sum", labels) or 0.0) > before_roundtrip_sum
     assert COMMAND_POLL_ITERATIONS.labels(**labels)._value.get() == before_poll_iterations + 2.0
+
+
+@pytest.mark.asyncio
+async def test_run_batch_publish_only_skips_waiting_command_tracking():
+    command_repo = _FakeCommandRepo(legacy_row=_PENDING_ROW)
+    task_repo = _FakeTaskRepo()
+
+    async def _boom(**_kwargs):
+        raise AssertionError("mark_waiting_command must not be called for publish-only batch")
+
+    task_repo.mark_waiting_command = _boom
+    gw = _make_gw(command_repo=command_repo, task_repo=task_repo)
+
+    result = await gw.run_batch(
+        task=_make_task(),
+        commands=[_planned(channel="valve_clean_fill")],
+        now=NOW,
+        track_task_state=False,
+    )
+
+    assert result["success"] is True
+    assert result["commands_total"] == 1
+    assert result["command_statuses"][0]["legacy_cmd_id"] == "hl-ae3-t1-z1-s1"
+    assert result["command_statuses"][0]["terminal_status"] is None
+    assert len(command_repo.publish_accepted_calls) == 1
+    assert command_repo.publish_failed_calls == []

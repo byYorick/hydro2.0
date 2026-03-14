@@ -41,8 +41,15 @@ class PgAutomationTaskRepository:
         return AutomationTask.from_row(row) if row is not None else None
 
     async def get_active_for_zone(self, *, zone_id: int) -> Optional[AutomationTask]:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+        return await self.get_active_for_zone_with_conn(zone_id=zone_id)
+
+    async def get_active_for_zone_with_conn(
+        self,
+        *,
+        zone_id: int,
+        conn: asyncpg.Connection | None = None,
+    ) -> Optional[AutomationTask]:
+        if conn is not None:
             row = await conn.fetchrow(
                 """
                 SELECT *
@@ -54,6 +61,20 @@ class PgAutomationTaskRepository:
                 """,
                 zone_id,
             )
+        else:
+            pool = await get_pool()
+            async with pool.acquire() as pool_conn:
+                row = await pool_conn.fetchrow(
+                    """
+                    SELECT *
+                    FROM ae_tasks
+                    WHERE zone_id = $1
+                      AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+                    ORDER BY updated_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    zone_id,
+                )
         return AutomationTask.from_row(row) if row is not None else None
 
     async def get_last_for_zone(self, *, zone_id: int) -> Optional[AutomationTask]:
@@ -114,19 +135,20 @@ class PgAutomationTaskRepository:
         scheduled_for: datetime,
         due_at: datetime,
         now: datetime,
+        conn: asyncpg.Connection | None = None,
     ) -> Optional[AutomationTask]:
-        pool = await get_pool()
         normalized_scheduled_for = self._normalize_timestamp(scheduled_for)
         normalized_due_at = self._normalize_timestamp(due_at)
         normalized_now = self._normalize_timestamp(now)
         normalized_meta = dict(intent_meta) if isinstance(intent_meta, Mapping) else {}
         try:
-            async with pool.acquire() as conn:
+            if conn is not None:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO ae_tasks (
                         zone_id, task_type, status, idempotency_key,
                         topology, current_stage, workflow_phase,
+                        control_mode_snapshot,
                         intent_source, intent_trigger, intent_id, intent_meta,
                         scheduled_for, due_at, stage_entered_at,
                         created_at, updated_at
@@ -134,6 +156,7 @@ class PgAutomationTaskRepository:
                     VALUES (
                         $1, 'cycle_start', 'pending', $2,
                         $3, 'startup', 'idle',
+                        (SELECT control_mode FROM zones WHERE id = $1),
                         $4, $5, $6, $7::jsonb,
                         $8, $9, $10,
                         $10, $10
@@ -151,6 +174,40 @@ class PgAutomationTaskRepository:
                     normalized_due_at,
                     normalized_now,
                 )
+            else:
+                pool = await get_pool()
+                async with pool.acquire() as pool_conn:
+                    row = await pool_conn.fetchrow(
+                        """
+                        INSERT INTO ae_tasks (
+                            zone_id, task_type, status, idempotency_key,
+                            topology, current_stage, workflow_phase,
+                            control_mode_snapshot,
+                            intent_source, intent_trigger, intent_id, intent_meta,
+                            scheduled_for, due_at, stage_entered_at,
+                            created_at, updated_at
+                        )
+                        VALUES (
+                            $1, 'cycle_start', 'pending', $2,
+                            $3, 'startup', 'idle',
+                            (SELECT control_mode FROM zones WHERE id = $1),
+                            $4, $5, $6, $7::jsonb,
+                            $8, $9, $10,
+                            $10, $10
+                        )
+                        RETURNING *
+                        """,
+                        zone_id,
+                        idempotency_key,
+                        topology,
+                        intent_source,
+                        intent_trigger,
+                        intent_id,
+                        normalized_meta,
+                        normalized_scheduled_for,
+                        normalized_due_at,
+                        normalized_now,
+                    )
         except asyncpg.UniqueViolationError:
             return None
         return AutomationTask.from_row(row) if row is not None else None
@@ -338,33 +395,35 @@ class PgAutomationTaskRepository:
                     stage_retry_count     = $6,
                     stage_entered_at      = $7,
                     clean_fill_cycle      = $8,
-                    corr_step                 = $9,
-                    corr_attempt              = $10,
-                    corr_max_attempts         = $11,
-                    corr_ec_attempt           = $12,
-                    corr_ec_max_attempts      = $13,
-                    corr_ph_attempt           = $14,
-                    corr_ph_max_attempts      = $15,
-                    corr_activated_here       = $16,
-                    corr_stabilization_sec    = $17,
-                    corr_return_stage_success = $18,
-                    corr_return_stage_fail    = $19,
-                    corr_outcome_success      = $20,
-                    corr_needs_ec             = $21,
-                    corr_ec_node_uid          = $22,
-                    corr_ec_channel           = $23,
-                    corr_ec_duration_ms       = $24,
-                    corr_needs_ph_up          = $25,
-                    corr_needs_ph_down        = $26,
-                    corr_ph_node_uid          = $27,
-                    corr_ph_channel           = $28,
-                    corr_ph_duration_ms       = $29,
-                    corr_wait_until           = $30,
-                    corr_ec_component         = $31,
-                    corr_ec_amount_ml         = $32,
-                    corr_ph_amount_ml         = $33,
-                    due_at     = $34,
-                    updated_at = $35
+                    pending_manual_step   = $9,
+                    control_mode_snapshot = $10,
+                    corr_step                 = $11,
+                    corr_attempt              = $12,
+                    corr_max_attempts         = $13,
+                    corr_ec_attempt           = $14,
+                    corr_ec_max_attempts      = $15,
+                    corr_ph_attempt           = $16,
+                    corr_ph_max_attempts      = $17,
+                    corr_activated_here       = $18,
+                    corr_stabilization_sec    = $19,
+                    corr_return_stage_success = $20,
+                    corr_return_stage_fail    = $21,
+                    corr_outcome_success      = $22,
+                    corr_needs_ec             = $23,
+                    corr_ec_node_uid          = $24,
+                    corr_ec_channel           = $25,
+                    corr_ec_duration_ms       = $26,
+                    corr_needs_ph_up          = $27,
+                    corr_needs_ph_down        = $28,
+                    corr_ph_node_uid          = $29,
+                    corr_ph_channel           = $30,
+                    corr_ph_duration_ms       = $31,
+                    corr_wait_until           = $32,
+                    corr_ec_component         = $33,
+                    corr_ec_amount_ml         = $34,
+                    corr_ph_amount_ml         = $35,
+                    due_at     = $36,
+                    updated_at = $37
                 WHERE id = $1
                   AND claimed_by = $2
                   AND status IN ('claimed', 'running')
@@ -378,6 +437,8 @@ class PgAutomationTaskRepository:
                 workflow.stage_retry_count,
                 workflow.stage_entered_at,
                 workflow.clean_fill_cycle,
+                workflow.pending_manual_step,
+                workflow.control_mode,
                 # correction (all None when correction is None)
                 correction.corr_step if correction else None,
                 correction.attempt if correction else None,
@@ -407,6 +468,70 @@ class PgAutomationTaskRepository:
                 normalized_due_at,
                 normalized_now,
             )
+        return AutomationTask.from_row(row) if row is not None else None
+
+    async def set_pending_manual_step(
+        self,
+        *,
+        task_id: int,
+        manual_step: str,
+        now: datetime,
+    ) -> Optional[AutomationTask]:
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE ae_tasks
+                SET pending_manual_step = $2,
+                    updated_at = $3
+                WHERE id = $1
+                  AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+                RETURNING *
+                """,
+                task_id,
+                manual_step,
+                normalized_now,
+            )
+        return AutomationTask.from_row(row) if row is not None else None
+
+    async def update_control_mode_snapshot_for_zone(
+        self,
+        *,
+        zone_id: int,
+        control_mode: str,
+        now: datetime,
+    ) -> Optional[AutomationTask]:
+        pool = await get_pool()
+        normalized_now = self._normalize_timestamp(now)
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    WITH candidate AS (
+                        SELECT id
+                        FROM ae_tasks
+                        WHERE zone_id = $1
+                          AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+                        ORDER BY updated_at DESC, id DESC
+                        FOR UPDATE
+                        LIMIT 1
+                    )
+                    UPDATE ae_tasks tasks
+                    SET control_mode_snapshot = $2,
+                        pending_manual_step = CASE
+                            WHEN $2 = 'auto' THEN NULL
+                            ELSE tasks.pending_manual_step
+                        END,
+                        updated_at = $3
+                    FROM candidate
+                    WHERE tasks.id = candidate.id
+                    RETURNING tasks.*
+                    """,
+                    zone_id,
+                    control_mode,
+                    normalized_now,
+                )
         return AutomationTask.from_row(row) if row is not None else None
 
     # ── Terminal transitions ────────────────────────────────────────

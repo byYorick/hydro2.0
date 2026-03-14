@@ -64,7 +64,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         return StageOutcome(
             kind="transition",
             next_stage="prepare_recirculation_check",
-            stage_retry_count=retry_count + 1,
+            stage_retry_count=retry_count,
         )
 
     async def _emit_retry_limit_alert(

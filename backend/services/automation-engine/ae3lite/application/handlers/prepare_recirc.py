@@ -31,6 +31,8 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome:
         runtime = plan.runtime
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+        pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
         await self._probe_irr_state(
             task=task, plan=plan, now=now,
@@ -40,6 +42,18 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 "pump_main": True,
             },
         )
+
+        if pending_manual_step == "prepare_recirculation_stop":
+            _logger.info("prepare_recirculation_check: manual stop requested zone_id=%s", task.zone_id)
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_stop_to_ready",
+            )
+        if control_mode == "manual":
+            return StageOutcome(
+                kind="poll",
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            )
 
         # Check deadline first (fail-fast)
         deadline = task.workflow.stage_deadline_at

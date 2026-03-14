@@ -18,7 +18,10 @@ class ZoneProcessCalibrationController extends Controller
     private const ALLOWED_MODES = [
         'generic',
         'solution_fill',
+        'tank_filling',
         'tank_recirc',
+        'prepare_recirculation',
+        'irrigation',
         'irrigating',
         'irrig_recirc',
     ];
@@ -164,7 +167,16 @@ class ZoneProcessCalibrationController extends Controller
     private function normalizeMode(string $mode): ?string
     {
         $normalized = trim(strtolower($mode));
-        return in_array($normalized, self::ALLOWED_MODES, true) ? $normalized : null;
+        if (! in_array($normalized, self::ALLOWED_MODES, true)) {
+            return null;
+        }
+
+        return match ($normalized) {
+            'tank_filling' => 'solution_fill',
+            'prepare_recirculation' => 'tank_recirc',
+            'irrigating', 'irrig_recirc' => 'irrigation',
+            default => $normalized,
+        };
     }
 
     /**

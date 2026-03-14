@@ -71,6 +71,31 @@ class ZoneProcessCalibrationControllerTest extends TestCase
         ]);
     }
 
+    public function test_upsert_normalizes_legacy_irrigating_alias_to_canonical_irrigation_mode(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/irrigating", [
+            'ec_gain_per_ml' => 0.22,
+            'transport_delay_sec' => 18,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.mode', 'irrigation');
+
+        $this->assertDatabaseHas('zone_process_calibrations', [
+            'zone_id' => $zone->id,
+            'mode' => 'irrigation',
+            'ec_gain_per_ml' => 0.22,
+            'transport_delay_sec' => 18,
+            'is_active' => true,
+        ]);
+        $this->assertDatabaseMissing('zone_process_calibrations', [
+            'zone_id' => $zone->id,
+            'mode' => 'irrigating',
+        ]);
+    }
+
     public function test_upsert_deactivates_previous_active_calibration_for_same_mode(): void
     {
         $zone = Zone::factory()->create();

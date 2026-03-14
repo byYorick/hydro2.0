@@ -12,11 +12,6 @@ from ae3lite.domain.errors import TaskExecutionError
 
 logger = logging.getLogger(__name__)
 
-# These error codes mean IRR state snapshot is missing or stale.
-# In dev/no-hardware environments we treat the hardware as safe (pump off).
-_SAFE_FALLBACK_CODES = frozenset({"irr_state_unavailable", "irr_state_stale"})
-
-
 class StartupHandler(BaseStageHandler):
     """Handles the ``startup`` stage: probe + level check + conditional routing."""
 
@@ -33,29 +28,12 @@ class StartupHandler(BaseStageHandler):
                 task=task, plan=plan, now=now, expected={"pump_main": False},
             )
         except TaskExecutionError as exc:
-            if exc.code in _SAFE_FALLBACK_CODES:
-                logger.warning(
-                    "startup: IRR state unavailable for zone_id=%s (%s), assuming safe state (pump off)",
-                    task.zone_id,
-                    exc.code,
-                )
-            elif exc.code != "irr_state_mismatch" or "pump_main" not in str(exc):
+            if exc.code != "irr_state_mismatch" or "pump_main" not in str(exc):
                 raise
-            else:
-                await self._run_startup_safety_stop(task=task, plan=plan, now=now)
-                try:
-                    await self._probe_irr_state(
-                        task=task, plan=plan, now=now, expected={"pump_main": False},
-                    )
-                except TaskExecutionError as exc2:
-                    if exc2.code in _SAFE_FALLBACK_CODES:
-                        logger.warning(
-                            "startup: IRR state unavailable after safety stop for zone_id=%s (%s), assuming safe state",
-                            task.zone_id,
-                            exc2.code,
-                        )
-                    else:
-                        raise
+            await self._run_startup_safety_stop(task=task, plan=plan, now=now)
+            await self._probe_irr_state(
+                task=task, plan=plan, now=now, expected={"pump_main": False},
+            )
         runtime = plan.runtime
 
         clean_max = await self._read_level(
@@ -67,6 +45,29 @@ class StartupHandler(BaseStageHandler):
             unavailable_error="two_tank_clean_level_unavailable",
             stale_error="two_tank_clean_level_stale",
         )
+        pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+
+        if control_mode in ("manual", "semi"):
+            if clean_max["is_triggered"] and pending_manual_step == "solution_fill_start":
+                await self._check_sensor_consistency(
+                    task=task,
+                    runtime=runtime,
+                    min_labels_key="clean_min_sensor_labels",
+                    min_unavailable_error="two_tank_clean_min_level_unavailable",
+                    min_stale_error="two_tank_clean_min_level_stale",
+                )
+                return StageOutcome(kind="transition", next_stage="solution_fill_start")
+            if not clean_max["is_triggered"] and pending_manual_step == "clean_fill_start":
+                return StageOutcome(
+                    kind="transition",
+                    next_stage="clean_fill_start",
+                    clean_fill_cycle=1,
+                )
+            return StageOutcome(
+                kind="poll",
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 5)),
+            )
 
         if clean_max["is_triggered"]:
             # Clean tank full — verify consistency, skip to solution fill

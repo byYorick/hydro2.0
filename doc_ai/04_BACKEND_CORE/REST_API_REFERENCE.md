@@ -78,6 +78,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - при busy zone возвращает `409` с `code=runtime_switch_denied_zone_busy`
 - busy zone определяется через active `ae_tasks`, active `ae_zone_leases` или indeterminate `ae_commands` state
 
+Контракт `GET /api/zones/{id}/state`:
+- `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.
+- поле `solution_tank_guard` (если присутствует) отражает последний non-blocking startup guard по solution tank: `checked`, `reset`, `reason`, `sensor_label`, `sample_ts`.
+- если `zone_workflow_state` ссылается на уже terminal `ae_task` или отстаёт от `ae_tasks.updated_at`, endpoint обязан считать такой workflow snapshot stale и возвращать состояние по последней terminal task, а не показывать ложную active phase.
+
 ---
 
 ## 4. Nodes
@@ -291,14 +296,19 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 |-------|-------------------------------|------|----------------------------------------------------|
 | POST | /zones/{id}/start-cycle | internal | Единственный внешний wake-up зоны (scheduler/manual trigger) |
 | GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций |
+| GET | /zones/{id}/control-mode | internal | Текущий `control_mode`, `current_stage`, `pending_manual_step` и public manual-step список |
 | POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
-| POST | /zones/{id}/manual-step | internal | Ручной шаг workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
+| POST | /zones/{id}/manual-step | internal | Запрос public manual-step для active canonical AE3 task |
 | POST | /zones/{id}/start-relay-autotune | internal | Запуск relay-autotune PID (`pid_type: ph|ec`) для активной зоны |
 
-Инвариант `control_mode=manual`:
-- автоматические runtime-контроллеры зоны (climate/irrigation/recirculation/pH/EC) не публикуют команды;
-- scheduler auto-задачи в этом режиме получают `no_action` с `reason_code=manual_mode_only`;
-- разрешены только явные `POST /zones/{id}/manual-step`.
+Инварианты manual-control runtime path:
+- `GET /zones/{id}/control-mode` всегда возвращает только public/generic manual-step коды:
+  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`, `prepare_recirculation_stop`;
+- `semi` паузит `startup` перед входом в следующую fill-фазу, пока оператор не отправит соответствующий `manual-step`;
+- `manual` паузит `startup` и check-стадии two-tank workflow, пока оператор не отправит соответствующий `manual-step`;
+- `POST /zones/{id}/manual-step` принимает только canonical active task и возвращает canonical numeric `task_id`
+  (в JSON строкой для совместимости внешнего контракта);
+- при переключении в `auto` active `pending_manual_step` сбрасывается fail-closed.
 
 Инварианты `POST /zones/{id}/start-cycle`:
 - endpoint не несет device-level payload (минимальный wake-up контракт);
@@ -310,6 +320,13 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   с `active_task_id` и `active_task_status`;
 - при блокирующей `workflow_phase` без активной scheduler-задачи endpoint выполняет auto-heal/reset в `idle`,
   если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (по умолчанию 600 сек);
+- если зона была в `ready`, но сработал `solution_min` датчик бака раствора, AE3 перед
+  обработкой wake-up сбрасывает `zone_workflow_state` в `idle` с
+  `payload.ae3_cycle_start_stage='startup'`, чтобы зона перестала считаться готовой к поливу
+  и следующий `cycle_start` шёл через refill/startup path;
+- если execution самого `solution_tank` startup guard завершился инфраструктурной ошибкой,
+  endpoint fail-closed отвечает `503 start_cycle_solution_tank_guard_failed`
+  и не claim-ит новый intent/task;
 - при terminal intent endpoint возвращает `accepted=false`, `runner_state=terminal`,
   `task_status` и `reason=start_cycle_intent_terminal`.
 - для зон с `zones.automation_runtime='ae3'` поле `task_id` содержит canonical numeric AE3 task id
@@ -383,6 +400,17 @@ Response (zone busy, active task):
     "zone_id": 12,
     "active_task_id": "st-running",
     "active_task_status": "running"
+  }
+}
+```
+
+Response (solution tank guard failed):
+```json
+{
+  "detail": {
+    "error": "start_cycle_solution_tank_guard_failed",
+    "zone_id": 12,
+    "message": "solution tank startup guard failed"
   }
 }
 ```

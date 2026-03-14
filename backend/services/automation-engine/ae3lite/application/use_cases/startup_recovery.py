@@ -214,6 +214,8 @@ class StartupRecoveryUseCase:
         try:
             stage_def = self._registry.get(topology, current_stage)
         except KeyError:
+            if self._workflow_repository is not None:
+                await self._sync_workflow_failure_state(task=task, now=now)
             failed = await self._task_repository.fail_for_recovery(
                 task_id=task.id,
                 error_code="startup_recovery_unknown_stage",
@@ -364,6 +366,8 @@ class StartupRecoveryUseCase:
         error_message: str,
         now: datetime,
     ) -> AutomationTask:
+        if self._workflow_repository is not None:
+            await self._sync_workflow_failure_state(task=task, now=now)
         failed_task = await self._task_repository.fail_for_recovery(
             task_id=task.id,
             error_code=error_code,
@@ -381,6 +385,23 @@ class StartupRecoveryUseCase:
                 f"Unable to fail task_id={task.id} during startup recovery with error_code={error_code}"
             )
         return failed_task
+
+    async def _sync_workflow_failure_state(self, *, task: AutomationTask, now: datetime) -> None:
+        try:
+            await self._workflow_repository.upsert_phase(
+                zone_id=task.zone_id,
+                workflow_phase="idle",
+                payload={"ae3_cycle_start_stage": "failed"},
+                scheduler_task_id=str(task.id),
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "Startup recovery: failed to sync zone_workflow_state on recovery fail zone_id=%s task_id=%s",
+                task.zone_id,
+                task.id,
+                exc_info=True,
+            )
 
     def _missing_command_error_code(self, task: AutomationTask) -> str:
         if task.status == "waiting_command":

@@ -8,26 +8,46 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, AsyncIterator, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
+from pydantic import BaseModel, ConfigDict, Field
 
 from ae3lite.api import bind_internal_task_route, bind_start_cycle_route
-from ae3lite.api.intents import claim_start_cycle_intent, mark_intent_running, mark_intent_terminal
 from ae3lite.api.rate_limit import SlidingWindowRateLimiter
 from ae3lite.api.responses import build_start_cycle_response
 from ae3lite.api.security import validate_scheduler_security_baseline
 from ae3lite.api.validation import validate_scheduler_zone
+from ae3lite.domain.errors import ManualControlError
 from ae3lite.infrastructure.intent_status_listener import IntentStatusListener
 from ae3lite.runtime.bootstrap import build_ae3_runtime_bundle
 from ae3lite.runtime.config import Ae3RuntimeConfig
-from common.db import execute, fetch, get_pool
+from common.db import fetch, get_pool
 from common.infra_alerts import send_infra_alert, send_infra_exception_alert
 from common.service_logs import send_service_log
 from common.trace_context import clear_trace_id, extract_trace_id_from_headers, set_trace_id
 from common.utils.time import utcnow_naive as _utcnow
 
 logger = logging.getLogger(__name__)
+
+
+class ControlModeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    control_mode: str = Field(..., min_length=1, max_length=16, pattern="^(auto|semi|manual)$")
+    source: str = Field(default="laravel_api", min_length=1, max_length=64)
+
+
+class ManualStepRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    manual_step: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern="^(clean_fill_start|clean_fill_stop|solution_fill_start|solution_fill_stop|prepare_recirculation_start|prepare_recirculation_stop)$",
+    )
+    source: str = Field(default="laravel_manual_step", min_length=1, max_length=64)
 
 
 class BackgroundTaskLimitError(RuntimeError):
@@ -169,26 +189,6 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
     )
 
-    async def _mark_intent_running_fn(*, intent_id: int, now: datetime) -> None:
-        await mark_intent_running(intent_id=intent_id, now=now, execute_fn=execute)
-
-    async def _mark_intent_terminal_fn(
-        *,
-        intent_id: int,
-        now: datetime,
-        success: bool,
-        error_code: Optional[str],
-        error_message: Optional[str],
-    ) -> None:
-        await mark_intent_terminal(
-            intent_id=intent_id,
-            now=now,
-            success=success,
-            error_code=error_code,
-            error_message=error_message,
-            execute_fn=execute,
-        )
-
     bundle = build_ae3_runtime_bundle(
         config=runtime_config,
         spawn_background_task_fn=lambda coro, **kwargs: _spawn_background_task(
@@ -199,8 +199,6 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             task_id=kwargs.get("task_id"),
             task_type=kwargs.get("task_type"),
         ),
-        mark_intent_running_fn=_mark_intent_running_fn,
-        mark_intent_terminal_fn=_mark_intent_terminal_fn,
         now_fn=_utcnow,
         logger=logger,
     )
@@ -340,24 +338,31 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         start_cycle_rate_limit_check_fn=lambda zone_id: rate_limiter.check(zone_id=zone_id),
         start_cycle_rate_limit_window_sec_fn=lambda: runtime_config.start_cycle_rate_limit_window_sec,
         start_cycle_rate_limit_max_requests_fn=lambda: runtime_config.start_cycle_rate_limit_max_requests,
-        claim_start_cycle_intent_fn=lambda *, zone_id, req, now: claim_start_cycle_intent(
+        claim_start_cycle_intent_fn=lambda *, zone_id, req, now: bundle.zone_intent_repository.claim_start_cycle(
             zone_id=zone_id,
             req=req,
             now=now,
             claimed_stale_after_sec=runtime_config.start_cycle_claim_stale_sec,
             running_stale_after_sec=runtime_config.start_cycle_running_stale_sec,
-            fetch_fn=fetch,
         ),
-        create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now: bundle.create_task_from_intent_use_case.run(
+        create_task_from_intent_fn=lambda *, zone_id, source, idempotency_key, intent_row, now, allow_create=True: bundle.create_task_from_intent_use_case.run(
             zone_id=zone_id,
             source=source,
             idempotency_key=idempotency_key,
             intent_row=intent_row,
             now=now,
+            allow_create=allow_create,
+        ),
+        ensure_solution_tank_startup_reset_fn=lambda *, zone_id: bundle.solution_tank_startup_guard_use_case.run(
+            zone_id=zone_id,
+            now=_utcnow(),
         ),
         kick_worker_fn=bundle.worker.kick,
         build_start_cycle_response_fn=build_start_cycle_response,
-        mark_intent_terminal_fn=_mark_intent_terminal_fn,
+        mark_intent_terminal_fn=lambda *, intent_id, now, success, error_code, error_message: bundle.zone_intent_repository.mark_terminal(
+            intent_id=intent_id, now=now, success=success,
+            error_code=error_code, error_message=error_message,
+        ),
         logger=logger,
     )
     bind_internal_task_route(
@@ -375,7 +380,45 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     async def get_zone_control_mode(zone_id: int) -> dict[str, Any]:
         """Return current control_mode and allowed manual steps for a zone."""
         result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
-        return {"data": {**result, "zone_id": zone_id}}
+        return {"status": "ok", "data": {**result, "zone_id": zone_id}}
+
+    @app.post("/zones/{zone_id}/control-mode")
+    async def set_zone_control_mode(zone_id: int, request: Request, req: ControlModeRequest) -> dict[str, Any]:
+        """Persist control_mode for the zone and sync the active task snapshot."""
+        await _validate_scheduler_security_baseline(request)
+        await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
+        await bundle.set_control_mode_use_case.run(
+            zone_id=zone_id,
+            control_mode=req.control_mode,
+            now=_utcnow(),
+        )
+        result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
+        bundle.worker.kick()
+        return {"status": "ok", "data": {**result, "zone_id": zone_id}}
+
+    @app.post("/zones/{zone_id}/manual-step")
+    async def request_zone_manual_step(zone_id: int, request: Request, req: ManualStepRequest) -> dict[str, Any]:
+        """Store a pending public manual step for the active zone task."""
+        await _validate_scheduler_security_baseline(request)
+        await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
+        try:
+            result = await bundle.request_manual_step_use_case.run(
+                zone_id=zone_id,
+                manual_step=req.manual_step,
+                now=_utcnow(),
+            )
+        except ManualControlError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={
+                    "status": "error",
+                    "code": exc.code,
+                    "message": str(exc),
+                    **exc.details,
+                },
+            ) from exc
+        bundle.worker.kick()
+        return {"status": "ok", "data": result}
 
     @app.get("/health/live")
     async def health_live() -> dict[str, Any]:

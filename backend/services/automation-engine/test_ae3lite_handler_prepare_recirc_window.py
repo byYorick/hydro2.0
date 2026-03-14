@@ -2,7 +2,7 @@
 
 Outcomes:
 1. retry_count >= attempt_limit → fail (attempt_limit_reached)
-2. retry_count < attempt_limit → transition (retry_count+1), run commands
+2. retry_count < attempt_limit → transition (same exhausted-window count), run commands
 3. Commands (stop phase) fail → TaskExecutionError
 4. Commands (start phase) fail → TaskExecutionError
 5. Alert emitted when limit reached (if repository provided)
@@ -116,7 +116,7 @@ async def test_limit_exceeded_also_returns_fail() -> None:
 @pytest.mark.asyncio
 async def test_below_limit_transitions_to_check() -> None:
     outcome = await _handler().run(
-        task=_make_task(retry_count=0),
+        task=_make_task(retry_count=1),
         plan=_Plan(attempt_limit=3),
         stage_def=None, now=NOW,
     )
@@ -126,14 +126,14 @@ async def test_below_limit_transitions_to_check() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_count_incremented_on_rollover() -> None:
-    for initial in (0, 1, 2):
+async def test_rollover_preserves_exhausted_window_count() -> None:
+    for initial in (1, 2):
         outcome = await _handler().run(
             task=_make_task(retry_count=initial),
             plan=_Plan(attempt_limit=3),
             stage_def=None, now=NOW,
         )
-        assert outcome.stage_retry_count == initial + 1
+        assert outcome.stage_retry_count == initial
 
 
 # ── 3. Stop-phase command failure → TaskExecutionError ───────────────────────

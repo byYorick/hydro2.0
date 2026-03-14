@@ -44,6 +44,7 @@ use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\ZonePumpCalibrationsController;
+use App\Http\Controllers\ZoneProcessCalibrationController;
 use App\Http\Controllers\ZoneRelayAutotuneController;
 use App\Http\Controllers\SensorCalibrationController;
 use Illuminate\Http\Request;
@@ -144,6 +145,8 @@ Route::middleware([
     Route::get('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'show']);
     Route::get('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'show']);
     Route::get('zones/{zone}/correction-config/history', [ZoneCorrectionConfigController::class, 'history']);
+    Route::get('zones/{zone}/process-calibrations', [ZoneProcessCalibrationController::class, 'index']);
+    Route::get('zones/{zone}/process-calibrations/{mode}', [ZoneProcessCalibrationController::class, 'show']);
     Route::get('system/automation-settings', [SystemAutomationSettingsController::class, 'index'])
         ->middleware('role:admin');
     Route::get('system/automation-settings/{namespace}', [SystemAutomationSettingsController::class, 'show'])
@@ -281,6 +284,7 @@ Route::middleware([
         // PID Config (operator+)
         Route::put('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'update']);
         Route::put('zones/{zone}/pump-calibrations/{channelId}', [ZonePumpCalibrationsController::class, 'update']);
+        Route::put('zones/{zone}/process-calibrations/{mode}', [ZoneProcessCalibrationController::class, 'update']);
         Route::put('system/automation-settings/{namespace}', [SystemAutomationSettingsController::class, 'update'])
             ->middleware('role:admin');
         Route::post('system/automation-settings/{namespace}/reset', [SystemAutomationSettingsController::class, 'reset'])

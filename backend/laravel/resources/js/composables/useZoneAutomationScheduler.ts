@@ -301,7 +301,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     const taskId = normalizeTaskId(taskIdRaw)
     if (!taskId) {
       schedulerTaskStatus.value = null
-      schedulerTaskError.value = 'Укажите task_id вида numeric AE3, st-... или intent-...'
+      schedulerTaskError.value = 'Укажите numeric task_id AE3.'
       return
     }
 

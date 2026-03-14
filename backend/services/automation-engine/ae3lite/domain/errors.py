@@ -190,3 +190,20 @@ class TaskExecutionError(Ae3LiteError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = str(code or "ae3_task_execution_failed").strip() or "ae3_task_execution_failed"
+
+
+class ManualControlError(Ae3LiteError):
+    """Raised when manual control/control-mode API must reject the request."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        status_code: int = 409,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = str(code or "manual_control_error").strip() or "manual_control_error"
+        self.status_code = int(status_code or 409)
+        self.details = details if isinstance(details, dict) else {}

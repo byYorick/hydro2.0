@@ -9,6 +9,7 @@ use App\Models\Zone;
 use App\Services\AutomationScheduler\SchedulerCycleService;
 use App\Services\EffectiveTargetsService;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use Tests\RefreshDatabase;
@@ -144,6 +145,118 @@ class SchedulerCycleServiceTest extends TestCase
         $this->assertNotNull($taskLog);
         $this->assertSame('failed', $taskLog->status);
         $this->assertSame('ae3_task_id_missing', ($taskLog->details ?? [])['error'] ?? null);
+    }
+
+    public function test_run_cycle_treats_terminal_intent_without_task_as_non_retryable_failure(): void
+    {
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                return Http::response([
+                    'detail' => [
+                        'error' => 'start_cycle_intent_terminal',
+                        'zone_id' => $zone->id,
+                        'idempotency_key' => 'sch:z'.$zone->id.':irrigation:test',
+                    ],
+                ], 409);
+            }
+
+            return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+        });
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $stats = $service->runCycle($this->schedulerConfig(), [$zone->id]);
+
+        $this->assertSame(1, (int) ($stats['zones_total'] ?? 0));
+        $this->assertGreaterThanOrEqual(1, (int) ($stats['attempted_dispatches'] ?? 0));
+        $this->assertSame(0, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertDatabaseMissing('laravel_scheduler_active_tasks', [
+            'zone_id' => $zone->id,
+        ]);
+
+        $taskLog = SchedulerLog::query()
+            ->where('task_name', 'laravel_scheduler_task_irrigation_zone_'.$zone->id)
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($taskLog);
+        $this->assertSame('failed', $taskLog->status);
+        $this->assertSame('start_cycle_intent_terminal', ($taskLog->details ?? [])['error'] ?? null);
+    }
+
+    public function test_run_cycle_does_not_duplicate_dispatch_for_locally_expired_alive_task_outside_poll_batch(): void
+    {
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
+
+        $intentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-active-'.$zone->id,
+            'status' => 'running',
+            'claimed_at' => now()->subMinutes(6),
+            'created_at' => now()->subMinutes(7),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+        $foreignZone = Zone::factory()->create(['status' => 'online']);
+        $foreignIntentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $foreignZone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-foreign-'.$foreignZone->id,
+            'status' => 'running',
+            'claimed_at' => now()->subMinutes(10),
+            'created_at' => now()->subMinutes(11),
+            'updated_at' => now()->subMinutes(9),
+        ]);
+
+        DB::table('laravel_scheduler_active_tasks')->insert([
+            'task_id' => '7001',
+            'zone_id' => $foreignZone->id,
+            'task_type' => 'lighting',
+            'schedule_key' => 'zone:'.$foreignZone->id.'|type:lighting|time=12:00:00',
+            'correlation_id' => 'corr-foreign',
+            'status' => 'accepted',
+            'accepted_at' => now()->subMinutes(10),
+            'due_at' => now()->subMinutes(9),
+            'expires_at' => now()->addMinutes(5),
+            'details' => json_encode(['task_id' => '7001', 'intent_id' => $foreignIntentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now()->subMinutes(10),
+            'updated_at' => now()->subMinutes(10),
+        ]);
+
+        DB::table('laravel_scheduler_active_tasks')->insert([
+            'task_id' => '9002',
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'schedule_key' => 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60',
+            'correlation_id' => 'corr-ae3-9002',
+            'status' => 'accepted',
+            'accepted_at' => now()->subMinutes(6),
+            'due_at' => now()->subMinutes(5),
+            'expires_at' => now()->subMinute(),
+            'details' => json_encode(['task_id' => '9002', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now()->subMinutes(6),
+            'updated_at' => now()->subMinutes(6),
+        ]);
+
+        Http::fake();
+
+        /** @var SchedulerCycleService $service */
+        $service = $this->app->make(SchedulerCycleService::class);
+        $cfg = $this->schedulerConfig();
+        $cfg['active_task_poll_batch'] = 1;
+        $stats = $service->runCycle($cfg, [$zone->id]);
+
+        $this->assertSame(1, (int) ($stats['zones_total'] ?? 0));
+        $this->assertGreaterThanOrEqual(1, (int) ($stats['attempted_dispatches'] ?? 0));
+        $this->assertSame(0, (int) ($stats['successful_dispatches'] ?? 0));
+        $this->assertDatabaseCount('laravel_scheduler_active_tasks', 2);
+        Http::assertNothingSent();
     }
 
     /**

@@ -33,6 +33,17 @@ class CleanFillCheckHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome:
         runtime = plan.runtime
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+        pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
+
+        if pending_manual_step == "clean_fill_stop":
+            _logger.info("clean_fill_check: manual stop requested zone_id=%s", task.zone_id)
+            return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
+        if control_mode == "manual":
+            return StageOutcome(
+                kind="poll",
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            )
 
         clean_max = await self._read_level(
             task=task,

@@ -55,7 +55,7 @@ class ActiveTaskPollerTest extends TestCase
 
     public function test_reconcile_pending_active_tasks_returns_schedule_busyness_map(): void
     {
-        $zone = Zone::factory()->create(['status' => 'online']);
+        $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
         $intentId = DB::table('zone_automation_intents')->insertGetId([
             'zone_id' => $zone->id,
             'intent_type' => 'IRRIGATE_ONCE',
@@ -68,7 +68,7 @@ class ActiveTaskPollerTest extends TestCase
 
         $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
         DB::table('laravel_scheduler_active_tasks')->insert([
-            'task_id' => 'intent-'.$intentId,
+            'task_id' => '1001',
             'zone_id' => $zone->id,
             'task_type' => 'irrigation',
             'schedule_key' => $scheduleKey,
@@ -77,7 +77,7 @@ class ActiveTaskPollerTest extends TestCase
             'accepted_at' => CarbonImmutable::now('UTC'),
             'due_at' => CarbonImmutable::now('UTC')->addSeconds(30),
             'expires_at' => CarbonImmutable::now('UTC')->addMinutes(5),
-            'details' => json_encode(['task_id' => 'intent-'.$intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'details' => json_encode(['task_id' => '1001', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -443,6 +443,58 @@ class ActiveTaskPollerTest extends TestCase
             'id' => $intentId,
             'status' => 'failed',
             'error_code' => 'scheduler_task_timeout',
+        ]);
+    }
+
+    public function test_is_schedule_busy_revalidates_locally_expired_ae3_task_when_not_in_reconciled_map(): void
+    {
+        $zone = Zone::factory()->create(['status' => 'online', 'automation_runtime' => 'ae3']);
+        $intentId = DB::table('zone_automation_intents')->insertGetId([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['source' => 'test'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'idempotency_key' => 'intent-busy-'.$zone->id,
+            'status' => 'running',
+            'claimed_at' => now()->subMinutes(6),
+            'created_at' => now()->subMinutes(7),
+            'updated_at' => now()->subMinutes(2),
+        ]);
+        $scheduleKey = 'zone:'.$zone->id.'|type:irrigation|time=None|start=None|end=None|interval=60';
+        DB::table('laravel_scheduler_active_tasks')->insert([
+            'task_id' => '901',
+            'zone_id' => $zone->id,
+            'task_type' => 'irrigation',
+            'schedule_key' => $scheduleKey,
+            'correlation_id' => 'corr-ae3-901',
+            'status' => 'accepted',
+            'accepted_at' => now()->subMinutes(6),
+            'due_at' => now()->subMinutes(5),
+            'expires_at' => now()->subMinute(),
+            'details' => json_encode(['task_id' => '901', 'intent_id' => $intentId], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'created_at' => now()->subMinutes(6),
+            'updated_at' => now()->subMinutes(6),
+        ]);
+
+        $poller = new ActiveTaskPoller(new ActiveTaskStore);
+        $isBusy = $poller->isScheduleBusy(
+            scheduleKey: $scheduleKey,
+            cfg: [
+                'active_task_ttl_sec' => 180,
+                'expires_after_sec' => 120,
+                'hard_stale_after_sec' => 1800,
+            ],
+            reconciledBusyness: [],
+            writeLog: static function (string $taskName, string $status, array $details): void {},
+        );
+
+        $this->assertTrue($isBusy);
+        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+            'task_id' => '901',
+            'status' => 'accepted',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'id' => $intentId,
+            'status' => 'running',
         ]);
     }
 }

@@ -1,4 +1,4 @@
-"""SolutionFillCheckHandler — level + targets + correction entry."""
+"""SolutionFillCheckHandler — in-flow correction while solution tank is filling."""
 
 from __future__ import annotations
 
@@ -16,13 +16,14 @@ _logger = logging.getLogger(__name__)
 
 
 class SolutionFillCheckHandler(BaseStageHandler):
-    """Handles ``solution_fill_check``: probe, level sensor, targets, correction.
+    """Handles ``solution_fill_check``: fill window plus in-flow correction.
 
     Outcomes:
     1. Tank full + targets reached → ``solution_fill_stop_to_ready``
     2. Tank full + targets not reached → ``solution_fill_stop_to_prepare``
-    3. Deadline exceeded → ``solution_fill_timeout_stop``
-    4. Still filling → poll
+    3. Tank still filling + targets not reached → correction inside ``solution_fill_check``
+    4. Tank still filling + targets reached → poll
+    5. Deadline exceeded → ``solution_fill_timeout_stop``
     """
 
     async def run(
@@ -34,6 +35,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
         now: datetime,
     ) -> StageOutcome:
         runtime = plan.runtime
+        control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
+        pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
         await self._probe_irr_state(
             task=task, plan=plan, now=now,
@@ -43,6 +46,16 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 "pump_main": True,
             },
         )
+
+        if pending_manual_step == "solution_fill_stop":
+            if await self._should_finish_to_ready(task=task, plan=plan):
+                return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
+            return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
+        if control_mode == "manual":
+            return StageOutcome(
+                kind="poll",
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            )
 
         solution_max = await self._read_level(
             task=task,
@@ -71,15 +84,13 @@ class SolutionFillCheckHandler(BaseStageHandler):
                     next_stage="solution_fill_stop_to_ready",
                 )
 
-            # Tank is already full: first stop fill hardware, correction is allowed only
-            # after transition to prepare_recirculation stages.
             _logger.info(
-                "solution_fill_check: tank full but targets not met, stopping fill before recirculation zone_id=%s",
+                "solution_fill_check: tank full and targets not met, switching to prepare recirculation zone_id=%s",
                 task.zone_id,
             )
             return StageOutcome(
                 kind="transition",
-                next_stage=stage_def.on_corr_fail or "solution_fill_stop_to_prepare",
+                next_stage="solution_fill_stop_to_prepare",
             )
 
         # Check deadline
@@ -108,11 +119,58 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 _logger.warning("Failed to send solution_fill_timeout alert zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
-        # Still filling — poll
-        return StageOutcome(
-            kind="poll",
-            due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+        if await self._targets_reached(task=task, plan=plan):
+            return StageOutcome(
+                kind="poll",
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            )
+
+        if int(getattr(task.workflow, "stage_retry_count", 0) or 0) > 0:
+            _logger.info(
+                "solution_fill_check: in-flow correction already exhausted, continuing fill without new correction zone_id=%s retry_count=%s",
+                task.zone_id,
+                getattr(task.workflow, "stage_retry_count", 0),
+            )
+            return StageOutcome(
+                kind="poll",
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            )
+
+        _logger.info(
+            "solution_fill_check: filling in progress and targets not met, entering in-flow correction zone_id=%s",
+            task.zone_id,
         )
+        corr = self._build_correction_state(
+            task=task,
+            runtime=runtime,
+            sensors_already_active=True,
+            return_stage_success=stage_def.on_corr_success or "solution_fill_check",
+            return_stage_fail=stage_def.on_corr_fail or "solution_fill_check",
+        )
+        return StageOutcome(kind="enter_correction", correction=corr)
+
+    async def _should_finish_to_ready(self, *, task: Any, plan: Any) -> bool:
+        runtime = plan.runtime
+        solution_max = await self._read_level(
+            task=task,
+            zone_id=task.zone_id,
+            labels=runtime["solution_max_sensor_labels"],
+            threshold=runtime["level_switch_on_threshold"],
+            telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+            unavailable_error="two_tank_solution_level_unavailable",
+            stale_error="two_tank_solution_level_stale",
+        )
+        if not solution_max["is_triggered"]:
+            return False
+
+        await self._check_sensor_consistency(
+            task=task,
+            runtime=runtime,
+            min_labels_key="solution_min_sensor_labels",
+            min_unavailable_error="two_tank_solution_min_level_unavailable",
+            min_stale_error="two_tank_solution_min_level_stale",
+        )
+        return await self._targets_reached(task=task, plan=plan)
 
     def _build_correction_state(
         self,

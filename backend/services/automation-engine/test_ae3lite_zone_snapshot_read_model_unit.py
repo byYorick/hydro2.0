@@ -169,6 +169,86 @@ def test_build_process_calibrations_prefers_first_active_profile_per_mode() -> N
     assert result["generic"]["settle_sec"] == 30
 
 
+def test_build_process_calibrations_normalizes_legacy_mode_aliases() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._build_process_calibrations(
+        [
+            {
+                "mode": "irrigating",
+                "ec_gain_per_ml": 0.21,
+                "ph_up_gain_per_ml": None,
+                "ph_down_gain_per_ml": None,
+                "ph_per_ec_ml": None,
+                "ec_per_ph_ml": None,
+                "transport_delay_sec": 12,
+                "settle_sec": 30,
+                "confidence": 0.8,
+                "source": "legacy_irrigating",
+                "valid_from": None,
+                "valid_to": None,
+                "is_active": True,
+                "meta": {},
+                "updated_at": None,
+            },
+            {
+                "mode": "irrig_recirc",
+                "ec_gain_per_ml": 0.99,
+                "ph_up_gain_per_ml": None,
+                "ph_down_gain_per_ml": None,
+                "ph_per_ec_ml": None,
+                "ec_per_ph_ml": None,
+                "transport_delay_sec": 99,
+                "settle_sec": 99,
+                "confidence": 0.1,
+                "source": "should_not_override_alias_group",
+                "valid_from": None,
+                "valid_to": None,
+                "is_active": True,
+                "meta": {},
+                "updated_at": None,
+            },
+        ]
+    )
+
+    assert "irrigation" in result
+    assert result["irrigation"]["source"] == "legacy_irrigating"
+    assert result["irrigation"]["transport_delay_sec"] == 12
+
+
+def test_build_pid_state_preserves_wallclock_runtime_fields() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._build_pid_state(
+        [
+            {
+                "pid_type": "ph",
+                "integral": 1.25,
+                "prev_error": -0.4,
+                "prev_derivative": 0.02,
+                "last_output_ms": 250,
+                "last_dose_at": "2026-03-10T10:00:00Z",
+                "hold_until": "2026-03-10T10:05:00Z",
+                "last_measurement_at": "2026-03-10T10:04:30Z",
+                "last_measured_value": 5.88,
+                "feedforward_bias": 0.07,
+                "no_effect_count": 2,
+                "last_correction_kind": "ec",
+                "stats": {"samples": 4},
+                "current_zone": "tank_recirc",
+                "updated_at": "2026-03-10T10:04:31Z",
+            }
+        ]
+    )
+
+    assert result["ph"]["hold_until"] == "2026-03-10T10:05:00Z"
+    assert result["ph"]["last_measurement_at"] == "2026-03-10T10:04:30Z"
+    assert result["ph"]["last_measured_value"] == 5.88
+    assert result["ph"]["feedforward_bias"] == 0.07
+    assert result["ph"]["no_effect_count"] == 2
+    assert result["ph"]["last_correction_kind"] == "ec"
+
+
 def test_build_correction_config_preserves_runtime_contract_fields() -> None:
     read_model = PgZoneSnapshotReadModel()
     row = {

@@ -23,6 +23,7 @@ def bind_start_cycle_route(
     start_cycle_rate_limit_max_requests_fn: Callable[[], int],
     claim_start_cycle_intent_fn: Callable[..., Awaitable[dict[str, Any]]],
     create_task_from_intent_fn: Callable[..., Awaitable[Any]],
+    ensure_solution_tank_startup_reset_fn: Callable[..., Awaitable[dict[str, Any]]] | None,
     kick_worker_fn: Callable[[], Any],
     build_start_cycle_response_fn: Callable[..., dict[str, Any]],
     mark_intent_terminal_fn: Callable[..., Awaitable[None]],
@@ -88,6 +89,25 @@ def bind_start_cycle_route(
     async def zone_start_cycle(zone_id: int, request: Request, req: StartCycleRequest = Body(...)) -> dict[str, Any]:
         await validate_scheduler_zone_fn(zone_id)
         await validate_scheduler_security_baseline_fn(request)
+        if ensure_solution_tank_startup_reset_fn is not None:
+            try:
+                await ensure_solution_tank_startup_reset_fn(zone_id=zone_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "AE3 compat start-cycle solution tank guard failed: zone_id=%s",
+                    zone_id,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "start_cycle_solution_tank_guard_failed",
+                        "zone_id": zone_id,
+                        "message": str(exc) or "solution tank startup guard failed",
+                    },
+                ) from exc
 
         if is_start_cycle_rate_limit_enabled_fn() and not start_cycle_rate_limit_check_fn(zone_id):
             raise HTTPException(
@@ -150,6 +170,7 @@ def bind_start_cycle_route(
                 idempotency_key=req.idempotency_key,
                 intent_row=intent_row,
                 now=now,
+                allow_create=decision != "terminal",
             )
         except Exception as exc:
             code = str(getattr(exc, "code", "ae3_task_create_failed")).strip() or "ae3_task_create_failed"
@@ -165,6 +186,16 @@ def bind_start_cycle_route(
                     detail={
                         "error": code,
                         "zone_id": zone_id,
+                        **(details if isinstance(details, dict) else {}),
+                    },
+                ) from exc
+            if code == "start_cycle_intent_terminal":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": code,
+                        "zone_id": zone_id,
+                        "idempotency_key": req.idempotency_key,
                         **(details if isinstance(details, dict) else {}),
                     },
                 ) from exc

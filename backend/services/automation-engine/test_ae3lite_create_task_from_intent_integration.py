@@ -194,3 +194,32 @@ async def test_create_task_from_intent_rejects_zone_with_active_blocking_alert()
         assert exc.value.details["blocking_alert_code"] == "biz_zone_dosing_calibration_missing"
     finally:
         await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_create_task_from_intent_terminal_mode_fails_closed_when_task_missing() -> None:
+    prefix = f"ae3-create-task-terminal-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=PgAutomationTaskRepository(),
+        zone_lease_repository=PgZoneLeaseRepository(),
+        legacy_intent_mapper=LegacyIntentMapper(),
+    )
+
+    try:
+        zone_id = await _insert_zone(prefix)
+
+        with pytest.raises(TaskCreateError) as exc:
+            await use_case.run(
+                zone_id=zone_id,
+                source="laravel_scheduler",
+                idempotency_key=f"{prefix}-idem",
+                intent_row=_intent_row(zone_id, prefix),
+                now=now,
+                allow_create=False,
+            )
+
+        assert exc.value.code == "start_cycle_intent_terminal"
+        assert exc.value.details["idempotency_key"] == f"{prefix}-idem"
+    finally:
+        await _cleanup(prefix)

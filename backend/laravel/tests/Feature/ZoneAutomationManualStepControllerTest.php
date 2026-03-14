@@ -50,7 +50,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
                 'status' => 'ok',
                 'data' => [
                     'zone_id' => $zone->id,
-                    'task_id' => 'st-manual-step-1',
+                    'task_id' => '321',
                     'manual_step' => 'clean_fill_start',
                     'control_mode' => 'manual',
                 ],
@@ -66,7 +66,7 @@ class ZoneAutomationManualStepControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.zone_id', $zone->id)
-            ->assertJsonPath('data.task_id', 'st-manual-step-1')
+            ->assertJsonPath('data.task_id', '321')
             ->assertJsonPath('data.manual_step', 'clean_fill_start');
 
         Http::assertSent(function (HttpRequest $request) use ($zone): bool {

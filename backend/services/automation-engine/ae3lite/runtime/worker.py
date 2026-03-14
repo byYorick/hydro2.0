@@ -23,9 +23,8 @@ class Ae3RuntimeWorker:
         execute_task_use_case: Any,
         startup_recovery_use_case: Any,
         zone_lease_repository: Any,
+        zone_intent_repository: Any,
         spawn_background_task_fn: Callable[..., Any],
-        mark_intent_running_fn: Callable[..., Any],
-        mark_intent_terminal_fn: Callable[..., Any],
         now_fn: Callable[[], datetime],
         logger: Any,
         lease_ttl_sec: int = 300,
@@ -37,9 +36,8 @@ class Ae3RuntimeWorker:
         self._execute_task_use_case = execute_task_use_case
         self._startup_recovery_use_case = startup_recovery_use_case
         self._zone_lease_repository = zone_lease_repository
+        self._zone_intent_repository = zone_intent_repository
         self._spawn_background_task_fn = spawn_background_task_fn
-        self._mark_intent_running_fn = mark_intent_running_fn
-        self._mark_intent_terminal_fn = mark_intent_terminal_fn
         self._now_fn = now_fn
         self._logger = logger
         self._lease_ttl_sec = max(30, int(lease_ttl_sec))
@@ -48,6 +46,7 @@ class Ae3RuntimeWorker:
         self._pending_kicks = 0
         self._respawn_guard_task: Optional[Any] = None
         self._wake_task: Optional[Any] = None
+        self._wake_handle: Optional[asyncio.Handle] = None
         self._last_drain_exit_ok = True
         self._last_drain_exit_reason = "idle"
 
@@ -280,7 +279,7 @@ class Ae3RuntimeWorker:
 
     async def _safe_mark_intent_running(self, *, intent_id: int) -> None:
         try:
-            await self._mark_intent_running_fn(intent_id=intent_id, now=self._now_fn())
+            await self._zone_intent_repository.mark_running(intent_id=intent_id, now=self._now_fn())
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -305,7 +304,7 @@ class Ae3RuntimeWorker:
         error_message: Any,
     ) -> None:
         try:
-            await self._mark_intent_terminal_fn(
+            await self._zone_intent_repository.mark_terminal(
                 intent_id=intent_id,
                 now=now,
                 success=success,
@@ -378,36 +377,45 @@ class Ae3RuntimeWorker:
         return True
 
     def _arm_wake_task(self, *, delay: float) -> None:
+        wake_handle = self._wake_handle
+        if wake_handle is not None and not wake_handle.cancelled():
+            return
         if self._wake_task is not None and not self._wake_task.done():
             return
 
-        async def _wake_after_delay() -> None:
-            try:
-                await asyncio.sleep(max(0.0, delay))
-                if self._drain_task is not None and not self._drain_task.done():
-                    self._log_debug(
-                        "AE3 runtime wake skipped: owner=%s active_drain_task=%s",
-                        self._owner,
-                        self._drain_task,
-                    )
-                    return
-                self._log_debug(
-                    "AE3 runtime wake firing: owner=%s delay_sec=%.3f",
-                    self._owner,
-                    delay,
-                )
-                self._spawn_drain_task()
-            finally:
-                if self._wake_task is wake_task:
-                    self._wake_task = None
+        loop = self._current_loop()
+        if loop is None:
+            return
 
-        wake_task = self._spawn_background_task_fn(
-            _wake_after_delay(),
-            task_name="ae3lite_runtime_wake",
-        )
-        self._wake_task = wake_task
+        def _wake_callback() -> None:
+            if self._wake_handle is not wake_handle_ref:
+                return
+            self._wake_handle = None
+            if self._drain_task is not None and not self._drain_task.done():
+                self._log_debug(
+                    "AE3 runtime wake skipped: owner=%s active_drain_task=%s",
+                    self._owner,
+                    self._drain_task,
+                )
+                self._pending_kicks += 1
+                self._arm_respawn_on_done(self._drain_task)
+                return
+            self._log_debug(
+                "AE3 runtime wake firing: owner=%s delay_sec=%.3f",
+                self._owner,
+                delay,
+            )
+            self._spawn_drain_task()
+
+        wake_handle_ref = loop.call_later(max(0.0, delay), _wake_callback)
+        self._wake_handle = wake_handle_ref
+        self._wake_task = None
 
     def _cancel_wake_task(self) -> None:
+        wake_handle = self._wake_handle
+        if wake_handle is not None:
+            wake_handle.cancel()
+            self._wake_handle = None
         wake_task = self._wake_task
         if wake_task is None or wake_task.done():
             self._wake_task = None

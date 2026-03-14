@@ -44,6 +44,7 @@ class ExecuteTaskUseCase:
         planner: Any,
         command_gateway: Any,
         workflow_router: Any,
+        workflow_repository: Any | None = None,
         zone_correction_config_repository: Any | None = None,
         alert_repository: Any | None = None,
         finalize_task_use_case: Any | None = None,
@@ -53,6 +54,7 @@ class ExecuteTaskUseCase:
         self._planner = planner
         self._command_gateway = command_gateway
         self._workflow_router = workflow_router
+        self._workflow_repository = workflow_repository
         self._zone_correction_config_repository = zone_correction_config_repository
         self._alert_repository = alert_repository
         self._finalize_task_use_case = finalize_task_use_case or FinalizeTaskUseCase(task_repository=task_repository)
@@ -213,6 +215,7 @@ class ExecuteTaskUseCase:
         error_message: str,
         now: datetime,
     ) -> Any:
+        await self._sync_workflow_failure_state(task=task, now=now)
         await self._emit_task_failed_alert(
             task=task,
             error_code=error_code,
@@ -245,6 +248,25 @@ class ExecuteTaskUseCase:
             error_code=error_code,
             error_message=error_message,
             now=now,
+            )
+
+    async def _sync_workflow_failure_state(self, *, task: Any, now: datetime) -> None:
+        if self._workflow_repository is None:
+            return
+        try:
+            await self._workflow_repository.upsert_phase(
+                zone_id=int(getattr(task, "zone_id", 0) or 0),
+                workflow_phase="idle",
+                payload={"ae3_cycle_start_stage": str(getattr(task, "current_stage", "") or "")},
+                scheduler_task_id=str(getattr(task, "id", "") or ""),
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 failed to sync zone_workflow_state on fail-closed zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
             )
 
     async def _emit_task_failed_alert(
@@ -358,6 +380,7 @@ class ExecuteTaskUseCase:
                 task=task,
                 commands=tuple(planned_commands),
                 now=now,
+                track_task_state=False,
             )
             if not bool(result.get("success")):
                 logger.error(

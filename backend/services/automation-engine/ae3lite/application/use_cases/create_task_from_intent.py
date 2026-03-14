@@ -44,6 +44,7 @@ class CreateTaskFromIntentUseCase:
         idempotency_key: str,
         intent_row: Mapping[str, Any],
         now: datetime,
+        allow_create: bool = True,
     ) -> TaskCreationResult:
         normalized_key = str(idempotency_key or "").strip()
         if normalized_key == "":
@@ -59,6 +60,15 @@ class CreateTaskFromIntentUseCase:
                     details={"conflict_zone_id": existing_task.zone_id},
                 )
             return TaskCreationResult(task=existing_task, created=False)
+        if not allow_create:
+            raise TaskCreateError(
+                ErrorCodes.START_CYCLE_INTENT_TERMINAL,
+                (
+                    f"Terminal intent idempotency_key={normalized_key} for zone_id={zone_id} "
+                    "has no canonical task"
+                ),
+                details={"idempotency_key": normalized_key},
+            )
 
         # Acquire advisory lock for zone to make the check+create atomic
         pool = await get_pool()
@@ -76,7 +86,11 @@ class CreateTaskFromIntentUseCase:
                     )
 
                 # Within the lock: check active tasks and lease
-                active_task = await self._task_repository.get_active_for_zone(zone_id=zone_id)
+                active_task_getter = getattr(self._task_repository, "get_active_for_zone_with_conn", None)
+                if callable(active_task_getter):
+                    active_task = await active_task_getter(zone_id=zone_id, conn=conn)
+                else:
+                    active_task = await self._task_repository.get_active_for_zone(zone_id=zone_id)
                 if active_task is not None:
                     raise TaskCreateError(
                         ErrorCodes.START_CYCLE_ZONE_BUSY,
@@ -84,7 +98,7 @@ class CreateTaskFromIntentUseCase:
                         details={"active_task_id": active_task.id, "active_task_status": active_task.status},
                     )
 
-                active_lease = await self._zone_lease_repository.get(zone_id=zone_id)
+                active_lease = await self._zone_lease_repository.get(zone_id=zone_id, conn=conn)
                 lease_until = self._normalize_utc(active_lease.leased_until) if active_lease is not None else None
                 if active_lease is not None and lease_until is not None and lease_until > self._normalize_utc(now):
                     raise TaskCreateError(
@@ -96,7 +110,7 @@ class CreateTaskFromIntentUseCase:
                         },
                     )
 
-                blocking_alert = await self._find_blocking_alert(zone_id=zone_id)
+                blocking_alert = await self._find_blocking_alert(zone_id=zone_id, conn=conn)
                 if blocking_alert is not None:
                     raise TaskCreateError(
                         ErrorCodes.START_CYCLE_ZONE_BUSY,
@@ -126,6 +140,7 @@ class CreateTaskFromIntentUseCase:
                     scheduled_for=now,
                     due_at=now,
                     now=now,
+                    conn=conn,
                 )
                 if created_task is not None:
                     TASK_CREATED.labels(topology=meta.topology).inc()
@@ -138,14 +153,20 @@ class CreateTaskFromIntentUseCase:
 
         raise TaskCreateError("ae3_task_create_failed", f"Unable to create canonical task for zone_id={zone_id}")
 
-    async def _find_blocking_alert(self, *, zone_id: int) -> dict[str, Any] | None:
+    async def _find_blocking_alert(self, *, zone_id: int, conn: Any | None = None) -> dict[str, Any] | None:
         repository = self._zone_alert_repository
         if repository is None:
             return None
         finder = getattr(repository, "find_first_active_by_codes", None)
         if not callable(finder):
             return None
-        alert = await finder(zone_id=zone_id, codes=self.HARD_BLOCKING_ALERT_CODES)
+        if conn is not None:
+            try:
+                alert = await finder(zone_id=zone_id, codes=self.HARD_BLOCKING_ALERT_CODES, conn=conn)
+            except TypeError:
+                alert = await finder(zone_id=zone_id, codes=self.HARD_BLOCKING_ALERT_CODES)
+        else:
+            alert = await finder(zone_id=zone_id, codes=self.HARD_BLOCKING_ALERT_CODES)
         return dict(alert) if isinstance(alert, Mapping) else None
 
     def _normalize_utc(self, value: datetime) -> datetime:

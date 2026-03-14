@@ -13,9 +13,12 @@ from ae3lite.application.use_cases import (
     ClaimNextTaskUseCase,
     CreateTaskFromIntentUseCase,
     ExecuteTaskUseCase,
+    GuardSolutionTankStartupResetUseCase,
     GetZoneAutomationStateUseCase,
     GetZoneControlStateUseCase,
+    RequestManualStepUseCase,
     ReconcileCommandUseCase,
+    SetControlModeUseCase,
     StartupRecoveryUseCase,
 )
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
@@ -29,6 +32,7 @@ from ae3lite.infrastructure.repositories import (
     PgPidStateRepository,
     PgZoneAlertRepository,
     PgZoneAlertWriteRepository,
+    PgZoneIntentRepository,
     PgZoneLeaseRepository,
     PgZoneWorkflowRepository,
 )
@@ -42,9 +46,13 @@ class Ae3RuntimeBundle:
     """Ready-to-use AE3 runtime services for compat ingress and worker drain."""
 
     create_task_from_intent_use_case: CreateTaskFromIntentUseCase
+    solution_tank_startup_guard_use_case: GuardSolutionTankStartupResetUseCase
     get_zone_control_state_use_case: GetZoneControlStateUseCase
+    request_manual_step_use_case: RequestManualStepUseCase
+    set_control_mode_use_case: SetControlModeUseCase
     get_zone_automation_state_use_case: GetZoneAutomationStateUseCase
     task_status_read_model: PgTaskStatusReadModel
+    zone_intent_repository: PgZoneIntentRepository
     worker: Ae3RuntimeWorker
     http_client: httpx.AsyncClient
 
@@ -53,8 +61,6 @@ def build_ae3_runtime_bundle(
     *,
     config: Ae3RuntimeConfig,
     spawn_background_task_fn: Callable[..., Any],
-    mark_intent_running_fn: Callable[..., Any],
-    mark_intent_terminal_fn: Callable[..., Any],
     now_fn: Callable[[], datetime],
     logger: Any,
 ) -> Ae3RuntimeBundle:
@@ -63,6 +69,7 @@ def build_ae3_runtime_bundle(
     zone_alert_repository = PgZoneAlertRepository()
     command_repository = PgAeCommandRepository()
     task_status_read_model = PgTaskStatusReadModel()
+    zone_intent_repository = PgZoneIntentRepository()
     http_client = httpx.AsyncClient(timeout=10.0)
     history_logger_client = HistoryLoggerClient(
         base_url=config.history_logger_url,
@@ -117,6 +124,7 @@ def build_ae3_runtime_bundle(
             planner=CycleStartPlanner(),
             command_gateway=command_gateway,
             workflow_router=workflow_router,
+            workflow_repository=workflow_repository,
             alert_repository=alert_repository,
         ),
         startup_recovery_use_case=StartupRecoveryUseCase(
@@ -128,9 +136,8 @@ def build_ae3_runtime_bundle(
             topology_registry=topology_registry,
         ),
         zone_lease_repository=zone_lease_repository,
+        zone_intent_repository=zone_intent_repository,
         spawn_background_task_fn=spawn_background_task_fn,
-        mark_intent_running_fn=mark_intent_running_fn,
-        mark_intent_terminal_fn=mark_intent_terminal_fn,
         now_fn=now_fn,
         logger=logger,
         lease_ttl_sec=config.lease_ttl_sec,
@@ -140,15 +147,33 @@ def build_ae3_runtime_bundle(
         task_repository=task_repository,
         fetch_fn=fetch,
     )
-    get_zone_automation_state_use_case = GetZoneAutomationStateUseCase(
+    request_manual_step_use_case = RequestManualStepUseCase(
         task_repository=task_repository,
         fetch_fn=fetch,
     )
+    set_control_mode_use_case = SetControlModeUseCase(
+        task_repository=task_repository,
+    )
+    solution_tank_startup_guard_use_case = GuardSolutionTankStartupResetUseCase(
+        runtime_monitor=runtime_monitor,
+        workflow_repository=workflow_repository,
+        fetch_fn=fetch,
+    )
+    get_zone_automation_state_use_case = GetZoneAutomationStateUseCase(
+        task_repository=task_repository,
+        workflow_repository=workflow_repository,
+        fetch_fn=fetch,
+        startup_reset_guard_use_case=solution_tank_startup_guard_use_case,
+    )
     return Ae3RuntimeBundle(
         create_task_from_intent_use_case=create_task_from_intent_use_case,
+        solution_tank_startup_guard_use_case=solution_tank_startup_guard_use_case,
         get_zone_control_state_use_case=get_zone_control_state_use_case,
+        request_manual_step_use_case=request_manual_step_use_case,
+        set_control_mode_use_case=set_control_mode_use_case,
         get_zone_automation_state_use_case=get_zone_automation_state_use_case,
         task_status_read_model=task_status_read_model,
+        zone_intent_repository=zone_intent_repository,
         worker=worker,
         http_client=http_client,
     )

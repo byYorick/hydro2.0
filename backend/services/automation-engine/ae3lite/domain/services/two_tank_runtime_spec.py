@@ -296,6 +296,11 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "prepare_tolerance_by_phase": prepare_tolerance_by_phase,
         "pid_state": dict(snapshot.pid_state) if isinstance(getattr(snapshot, "pid_state", None), Mapping) else {},
         "pid_configs": dict(snapshot.pid_configs) if isinstance(getattr(snapshot, "pid_configs", None), Mapping) else {},
+        "process_calibrations": (
+            dict(snapshot.process_calibrations)
+            if isinstance(getattr(snapshot, "process_calibrations", None), Mapping)
+            else {}
+        ),
         # Correction config: dose channels, timing, dosing sensitivity.
         # "actuators" key is populated later by CycleStartPlanner after actuator resolution.
         "correction": dict(default_correction_cfg),
@@ -744,4 +749,3 @@ def _build_prepare_tolerance_cfg(
             100.0,
         ),
     }
-

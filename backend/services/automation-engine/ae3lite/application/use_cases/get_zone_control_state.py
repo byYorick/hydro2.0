@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-_ALLOWED_STEPS_BY_STAGE: dict[str, list[str]] = {
-    "startup": ["clean_fill_start", "solution_fill_start"],
-    "clean_fill_check": ["clean_fill_stop"],
-    "solution_fill_check": ["solution_fill_stop_to_ready", "solution_fill_stop_to_prepare"],
-    "prepare_recirculation_check": ["prepare_recirculation_stop_to_ready"],
-}
+from ae3lite.application.use_cases.manual_control_contract import (
+    AVAILABLE_CONTROL_MODES,
+    allowed_manual_steps_for_stage,
+    normalize_control_mode,
+)
 
 
 class GetZoneControlStateUseCase:
@@ -32,8 +31,7 @@ class GetZoneControlStateUseCase:
         control_mode = "auto"
         if rows:
             raw = rows[0].get("control_mode") if hasattr(rows[0], "get") else getattr(rows[0], "control_mode", None)
-            if raw is not None:
-                control_mode = str(raw).strip() or "auto"
+            control_mode = normalize_control_mode(raw)
 
         # Read active task for current_stage
         task: Optional[Any] = await self._task_repository.get_active_for_zone(zone_id=zone_id)
@@ -52,10 +50,11 @@ class GetZoneControlStateUseCase:
         # Compute allowed steps only for manual/semi modes
         allowed_manual_steps: list[str] = []
         if control_mode in ("manual", "semi") and current_stage is not None:
-            allowed_manual_steps = _ALLOWED_STEPS_BY_STAGE.get(current_stage, [])
+            allowed_manual_steps = allowed_manual_steps_for_stage(current_stage)
 
         return {
             "control_mode": control_mode,
+            "available_modes": list(AVAILABLE_CONTROL_MODES),
             "current_stage": current_stage,
             "workflow_phase": workflow_phase,
             "pending_manual_step": pending_manual_step,

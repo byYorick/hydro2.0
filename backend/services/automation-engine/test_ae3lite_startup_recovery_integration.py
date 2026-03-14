@@ -226,6 +226,28 @@ async def _count_ae_commands(*, task_id: int) -> int:
     return int(rows[0]["cnt"])
 
 
+async def _count_active_recovery_tasks() -> int:
+    rows = await fetch(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM ae_tasks
+        WHERE status IN ('claimed', 'running', 'waiting_command')
+        """
+    )
+    return int(rows[0]["cnt"])
+
+
+async def _count_waiting_command_tasks() -> int:
+    rows = await fetch(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM ae_tasks
+        WHERE status = 'waiting_command'
+        """
+    )
+    return int(rows[0]["cnt"])
+
+
 async def _cleanup(prefix: str) -> None:
     await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
 
@@ -253,6 +275,7 @@ async def test_startup_recovery_completes_waiting_command_task_on_done() -> None
     prefix = f"ae3-recovery-done-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
+    baseline_scanned = await _count_active_recovery_tasks()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
@@ -283,7 +306,7 @@ async def test_startup_recovery_completes_waiting_command_task_on_done() -> None
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
         ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == 1
+        assert result.scanned_tasks == baseline_scanned + 1
         assert result.completed_tasks == 1
         assert result.failed_tasks == 0
         assert len(result.terminal_outcomes) == 1
@@ -306,6 +329,7 @@ async def test_startup_recovery_fails_waiting_command_task_on_timeout() -> None:
     prefix = f"ae3-recovery-timeout-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
+    baseline_scanned = await _count_active_recovery_tasks()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
@@ -330,7 +354,7 @@ async def test_startup_recovery_fails_waiting_command_task_on_timeout() -> None:
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
         ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == 1
+        assert result.scanned_tasks == baseline_scanned + 1
         assert result.completed_tasks == 0
         assert result.failed_tasks == 1
         assert updated_task is not None
@@ -345,10 +369,68 @@ async def test_startup_recovery_fails_waiting_command_task_on_timeout() -> None:
 
 
 @pytest.mark.asyncio
+async def test_startup_recovery_fail_closed_syncs_zone_workflow_state_to_idle() -> None:
+    prefix = f"ae3-recovery-workflow-fail-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task_repo = PgAutomationTaskRepository()
+    command_repo = PgAeCommandRepository()
+    lease_repo = PgZoneLeaseRepository()
+    workflow_repo = PgZoneWorkflowRepository()
+    reconcile_use_case = ReconcileCommandUseCase(task_repository=task_repo, command_repository=command_repo)
+    recovery_use_case = StartupRecoveryUseCase(
+        task_repository=task_repo,
+        lease_repository=lease_repo,
+        reconcile_command_use_case=reconcile_use_case,
+        workflow_repository=workflow_repo,
+        topology_registry=TopologyRegistry(),
+    )
+    baseline_scanned = await _count_active_recovery_tasks()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+        await workflow_repo.upsert_phase(
+            zone_id=zone_id,
+            workflow_phase="tank_filling",
+            payload={"ae3_cycle_start_stage": "solution_fill_start"},
+            scheduler_task_id="999",
+            now=now,
+        )
+        task_id = await _insert_task(
+            zone_id,
+            prefix=prefix,
+            task_status="waiting_command",
+            now=now,
+            topology="two_tank",
+            current_stage="solution_fill_start",
+            workflow_phase="tank_filling",
+        )
+
+        result = await recovery_use_case.run(now=now + timedelta(seconds=5))
+
+        updated_task = await task_repo.get_by_id(task_id=task_id)
+        workflow_row = await workflow_repo.get(zone_id=zone_id)
+        assert result.scanned_tasks == baseline_scanned + 1
+        assert result.failed_tasks == 1
+        assert updated_task is not None
+        assert updated_task.status == "failed"
+        assert updated_task.error_code == "startup_recovery_inconsistent_command_state"
+        assert workflow_row is not None
+        assert workflow_row.workflow_phase == "idle"
+        assert workflow_row.scheduler_task_id == str(task_id)
+        assert workflow_row.payload["ae3_cycle_start_stage"] == "failed"
+        assert await _count_ae_commands(task_id=task_id) == 0
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
 async def test_startup_recovery_recovers_running_task_with_non_terminal_command_without_double_publish() -> None:
     prefix = f"ae3-recovery-ack-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
+    baseline_scanned = await _count_active_recovery_tasks()
+    baseline_waiting = await _count_waiting_command_tasks()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
@@ -367,8 +449,8 @@ async def test_startup_recovery_recovers_running_task_with_non_terminal_command_
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
         ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == 1
-        assert result.waiting_command_tasks == 1
+        assert result.scanned_tasks == baseline_scanned + 1
+        assert result.waiting_command_tasks == baseline_waiting + 1
         assert result.recovered_waiting_command_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "waiting_command"
@@ -398,6 +480,7 @@ async def test_startup_recovery_fails_task_without_confirmed_external_command(
     prefix = f"ae3-recovery-unconfirmed-{task_status}-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
+    baseline_scanned = await _count_active_recovery_tasks()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
@@ -409,7 +492,7 @@ async def test_startup_recovery_fails_task_without_confirmed_external_command(
         result = await recovery_use_case.run(now=now + timedelta(seconds=3))
 
         updated_task = await task_repo.get_by_id(task_id=task_id)
-        assert result.scanned_tasks == 1
+        assert result.scanned_tasks == baseline_scanned + 1
         assert result.failed_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "failed"
@@ -429,6 +512,7 @@ async def test_startup_recovery_releases_only_expired_leases() -> None:
     prefix = f"ae3-recovery-leases-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     recovery_use_case, _task_repo, _command_repo, lease_repo = _build_use_case()
+    baseline_scanned = await _count_active_recovery_tasks()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
@@ -452,7 +536,7 @@ async def test_startup_recovery_releases_only_expired_leases() -> None:
         expired_lease = await lease_repo.get(zone_id=expired_zone_id)
         fresh_lease = await lease_repo.get(zone_id=fresh_zone_id)
         assert result.released_expired_leases == 1
-        assert result.scanned_tasks == 0
+        assert result.scanned_tasks == baseline_scanned
         assert expired_lease is None
         assert fresh_lease is not None
         assert fresh_lease.owner == "worker-fresh"
@@ -482,6 +566,8 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         workflow_repository=workflow_repo,
         topology_registry=TopologyRegistry(),
     )
+    baseline_scanned = await _count_active_recovery_tasks()
+    baseline_waiting = await _count_waiting_command_tasks()
 
     try:
         greenhouse_id = await _insert_greenhouse(prefix)
@@ -515,10 +601,10 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
         updated_task = await task_repo.get_by_id(task_id=task_id)
         workflow_row = await workflow_repo.get(zone_id=zone_id)
         ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == 1
+        assert result.scanned_tasks == baseline_scanned + 1
         assert result.completed_tasks == 0
         assert result.failed_tasks == 0
-        assert result.waiting_command_tasks == 1
+        assert result.waiting_command_tasks == baseline_waiting + 1
         assert result.recovered_waiting_command_tasks == 1
         assert updated_task is not None
         assert updated_task.status == "pending"

@@ -101,8 +101,8 @@ class TestTopologyRegistryLookup:
     def test_get_correction_enabled_stage(self, registry: TopologyRegistry):
         sdef = registry.get("two_tank", "solution_fill_check")
         assert sdef.has_correction is True
-        assert sdef.on_corr_success == "solution_fill_stop_to_ready"
-        assert sdef.on_corr_fail == "solution_fill_stop_to_prepare"
+        assert sdef.on_corr_success == "solution_fill_check"
+        assert sdef.on_corr_fail == "solution_fill_check"
 
     def test_get_terminal_stage(self, registry: TopologyRegistry):
         sdef = registry.get("two_tank", "clean_fill_timeout_stop")

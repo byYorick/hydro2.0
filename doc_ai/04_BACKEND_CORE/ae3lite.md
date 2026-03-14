@@ -177,6 +177,7 @@ Correction state для `cycle_start` хранится в explicit columns `ae_t
 3. `workflow.stage_retry_count` для recirculation timeout windows
 4. terminal error `prepare_recirculation_attempt_limit_reached` после исчерпания `prepare_recirculation_max_attempts`
 5. stage timeout (`solution_fill_timeout_sec` / `prepare_recirculation_timeout_sec`) ограничивает весь stage целиком, включая активный correction sub-machine; при истечении deadline correction обязан быть прерван fail-closed переходом stage
+6. возврат correction из `solution_fill_check` обратно в `solution_fill_check` не переоткрывает `solution_fill_timeout_sec`; stage deadline сохраняется до terminal transition из stage
 
 #### `PlannedCommand`
 
@@ -233,6 +234,8 @@ Terminal:
 6. `ready`
 
 Только `cycle_start` имеет право мутировать `zone_workflow_state`.
+`startup` как отдельная `workflow_phase` не существует: возврат в startup кодируется как
+`workflow_phase='idle'` + `payload.ae3_cycle_start_stage='startup'`.
 
 ---
 
@@ -252,6 +255,9 @@ Terminal:
 10. Только `DONE` переводит execution к следующему step.
 11. Любой другой terminal завершает task как `failed`.
 12. После terminal task lease освобождается.
+13. Если зона была в `ready`, но `solution_min` датчик сработал, runtime обязан
+    auto-reset `zone_workflow_state` обратно в `idle/startup`, чтобы зона больше
+    не считалась готовой к поливу до следующего `cycle_start`.
 
 ### 4.2 Execution policy
 
@@ -278,6 +284,8 @@ Terminal:
 5. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.
 6. Timeout whole-task execution обязан идти по fail-closed path: worker отменяет run с внутренней причиной `ae3_task_execution_timeout`, runtime выполняет fail-safe shutdown актуаторов, затем завершает task/intent как `failed`.
 7. Обычная отмена процесса/loop shutdown не должна маскироваться под timeout: recovery path после restart остаётся отдельным механизмом.
+8. Fail-safe shutdown команды публикуются как publish-only batch: они не должны повторно переводить уже terminal/closing task в `waiting_command` и не должны искажать `ae_commands` ложным `publish_failed`, если устройство реально подтвердило shutdown после terminal failure основной задачи.
+9. Перед fail-closed terminal transition runtime обязан синхронизировать `zone_workflow_state` обратно в `workflow_phase='idle'`, чтобы stale phase не переживала terminal failure task.
 
 ---
 

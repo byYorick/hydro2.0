@@ -162,6 +162,20 @@ class _MockLeaseRepo:
         return 0
 
 
+class _MockWorkflowRepo:
+    def __init__(self) -> None:
+        self.upserts: list[dict[str, Any]] = []
+
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+        self.upserts.append({
+            "zone_id": zone_id,
+            "workflow_phase": workflow_phase,
+            "payload": payload,
+            "scheduler_task_id": scheduler_task_id,
+            "now": now,
+        })
+
+
 class _MockReconcileUseCase:
     def __init__(self, *, state: str = "waiting_command"):
         self._state = state
@@ -310,3 +324,29 @@ async def test_recovery_missing_ae_command_fails_gracefully():
     assert result.failed_tasks == 1
     assert result.scanned_tasks == 1
     assert repo.failed[0]["error_code"] == "ae3_missing_ae_command"
+
+
+async def test_recovery_unknown_stage_syncs_workflow_idle_before_fail() -> None:
+    task = _make_task(status="waiting_command", stage="broken_stage")
+    repo = _MockTaskRepo(tasks=[task])
+    workflow_repo = _MockWorkflowRepo()
+    uc = StartupRecoveryUseCase(
+        task_repository=repo,
+        lease_repository=_MockLeaseRepo(),
+        reconcile_command_use_case=_MockReconcileUseCase(),
+        command_gateway=_MockCommandGateway(recover_state="done"),
+        workflow_repository=workflow_repo,
+        topology_registry=TopologyRegistry(),
+    )
+
+    result = await uc.run(now=NOW)
+
+    assert result.failed_tasks == 1
+    assert repo.failed[0]["error_code"] == "startup_recovery_unknown_stage"
+    assert workflow_repo.upserts == [{
+        "zone_id": task.zone_id,
+        "workflow_phase": "idle",
+        "payload": {"ae3_cycle_start_stage": "failed"},
+        "scheduler_task_id": str(task.id),
+        "now": NOW,
+    }]

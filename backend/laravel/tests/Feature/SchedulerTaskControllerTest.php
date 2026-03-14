@@ -33,7 +33,7 @@ class SchedulerTaskControllerTest extends TestCase
             'task_name' => 'laravel_scheduler_task_irrigation_zone_'.$zone->id,
             'status' => 'accepted',
             'details' => [
-                'task_id' => 'intent-101',
+                'task_id' => '101',
                 'zone_id' => $zone->id,
                 'task_type' => 'irrigation',
                 'status' => 'claimed',
@@ -46,7 +46,7 @@ class SchedulerTaskControllerTest extends TestCase
             'task_name' => 'laravel_scheduler_task_irrigation_zone_'.$zone->id,
             'status' => 'completed',
             'details' => [
-                'task_id' => 'intent-101',
+                'task_id' => '101',
                 'zone_id' => $zone->id,
                 'task_type' => 'irrigation',
                 'status' => 'completed',
@@ -59,7 +59,7 @@ class SchedulerTaskControllerTest extends TestCase
             'task_name' => 'laravel_scheduler_task_lighting_zone_'.$otherZone->id,
             'status' => 'completed',
             'details' => [
-                'task_id' => 'intent-202',
+                'task_id' => '202',
                 'zone_id' => $otherZone->id,
                 'task_type' => 'lighting',
                 'status' => 'completed',
@@ -73,11 +73,48 @@ class SchedulerTaskControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.task_id', 'intent-101')
+            ->assertJsonPath('data.0.task_id', '101')
             ->assertJsonPath('data.0.status', 'completed')
             ->assertJsonPath('data.0.source', 'scheduler_logs');
 
         $this->assertCount(2, $response->json('data.0.lifecycle'));
+    }
+
+    public function test_scheduler_tasks_index_omits_legacy_intent_task_ids(): void
+    {
+        [$user, $token] = $this->createViewer();
+        $zone = Zone::factory()->create();
+
+        SchedulerLog::create([
+            'task_name' => 'laravel_scheduler_task_irrigation_zone_'.$zone->id,
+            'status' => 'completed',
+            'details' => [
+                'task_id' => 'intent-101',
+                'zone_id' => $zone->id,
+                'task_type' => 'irrigation',
+                'status' => 'completed',
+            ],
+        ]);
+
+        SchedulerLog::create([
+            'task_name' => 'laravel_scheduler_task_irrigation_zone_'.$zone->id,
+            'status' => 'completed',
+            'details' => [
+                'task_id' => '301',
+                'zone_id' => $zone->id,
+                'task_type' => 'irrigation',
+                'status' => 'completed',
+            ],
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/scheduler-tasks");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.task_id', '301');
     }
 
     public function test_scheduler_tasks_index_can_include_timeline(): void
@@ -284,48 +321,18 @@ class SchedulerTaskControllerTest extends TestCase
             ->assertJsonPath('code', 'NOT_FOUND');
     }
 
-    public function test_scheduler_task_show_supports_intent_task_ids(): void
+    public function test_scheduler_task_show_rejects_legacy_intent_task_ids(): void
     {
         [$user, $token] = $this->createViewer();
         $zone = Zone::factory()->create();
-
-        SchedulerLog::create([
-            'task_name' => 'laravel_scheduler_task_irrigation_zone_'.$zone->id,
-            'status' => 'accepted',
-            'details' => [
-                'task_id' => 'intent-77',
-                'zone_id' => $zone->id,
-                'task_type' => 'irrigation',
-                'status' => 'pending',
-                'correlation_id' => 'sch:z'.$zone->id.':irrigation:intent-77',
-                'created_at' => now()->subMinute()->toIso8601String(),
-            ],
-        ]);
-
-        SchedulerLog::create([
-            'task_name' => 'laravel_scheduler_task_irrigation_zone_'.$zone->id,
-            'status' => 'completed',
-            'details' => [
-                'task_id' => 'intent-77',
-                'zone_id' => $zone->id,
-                'task_type' => 'irrigation',
-                'status' => 'completed',
-                'correlation_id' => 'sch:z'.$zone->id.':irrigation:intent-77',
-                'updated_at' => now()->toIso8601String(),
-            ],
-        ]);
 
         $response = $this->actingAs($user)
             ->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/zones/{$zone->id}/scheduler-tasks/intent-77");
 
-        $response->assertOk()
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('data.task_id', 'intent-77')
-            ->assertJsonPath('data.status', 'completed')
-            ->assertJsonCount(2, 'data.lifecycle')
-            ->assertJsonPath('data.lifecycle.0.status', 'accepted')
-            ->assertJsonPath('data.source', 'scheduler_logs');
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('code', 'VALIDATION_ERROR');
     }
 
     public function test_scheduler_task_show_supports_numeric_ae3_task_ids(): void

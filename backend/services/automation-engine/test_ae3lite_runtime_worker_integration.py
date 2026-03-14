@@ -27,6 +27,36 @@ from ae3lite.infrastructure.repositories import (
 )
 from ae3lite.runtime import Ae3RuntimeWorker
 from common.db import execute, fetch
+
+
+class _MockIntentRepository:
+    """Minimal intent repository stub for worker tests."""
+
+    def __init__(self, *, mark_terminal_calls: list | None = None) -> None:
+        self._mark_terminal_calls = mark_terminal_calls
+
+    async def mark_running(self, *, intent_id: int, now: datetime) -> None:
+        pass
+
+    async def mark_terminal(
+        self,
+        *,
+        intent_id: int,
+        now: datetime,
+        success: bool,
+        error_code: object,
+        error_message: object,
+    ) -> None:
+        if self._mark_terminal_calls is not None:
+            self._mark_terminal_calls.append(
+                {
+                    "intent_id": intent_id,
+                    "now": now,
+                    "success": success,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                }
+            )
 from test_ae3lite_zone_snapshot_read_model_integration import (
     _cleanup,
     _insert_greenhouse,
@@ -120,10 +150,8 @@ async def _insert_pending_task(
 
 
 async def _reset_runtime_tables() -> None:
-    await execute("DELETE FROM ae_commands")
-    await execute("DELETE FROM ae_zone_leases")
-    await execute("DELETE FROM ae_tasks")
-    await execute("DELETE FROM commands WHERE source = 'automation-engine'")
+    """Deprecated global cleanup helper kept for backward compatibility."""
+    return None
 
 
 async def _insert_single_step_profile(zone_id: int) -> None:
@@ -298,9 +326,8 @@ def _build_worker(*, terminal_status: str, error_message: str | None = None) -> 
             topology_registry=TopologyRegistry(),
         ),
         zone_lease_repository=lease_repository,
+        zone_intent_repository=_MockIntentRepository(),
         spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
-        mark_intent_running_fn=_noop,
-        mark_intent_terminal_fn=_noop,
         now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         logger=type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None)})(),
     )
@@ -317,9 +344,8 @@ def _build_noop_worker(*, spawn_background_task_fn) -> Ae3RuntimeWorker:
         execute_task_use_case=type("ExecuteTaskUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
         startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
         zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_noop_run)})(),
+        zone_intent_repository=_MockIntentRepository(),
         spawn_background_task_fn=spawn_background_task_fn,
-        mark_intent_running_fn=_noop_run,
-        mark_intent_terminal_fn=_noop_run,
         now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         logger=type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None)})(),
     )
@@ -342,7 +368,6 @@ async def test_runtime_worker_claims_executes_and_completes_pending_task_on_done
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     try:
-        await _reset_runtime_tables()
         _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
         task_id = await _insert_pending_task(zone_id, prefix=prefix, now=now)
         worker = _build_worker(terminal_status="DONE")
@@ -460,9 +485,8 @@ async def test_runtime_worker_marks_terminal_intents_discovered_during_startup_r
         execute_task_use_case=type("ExecuteTaskUseCaseStub", (), {"run": staticmethod(_noop_run)})(),
         startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_recovery_run)})(),
         zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_noop_run)})(),
+        zone_intent_repository=_MockIntentRepository(mark_terminal_calls=terminal_calls),
         spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
-        mark_intent_running_fn=_noop_run,
-        mark_intent_terminal_fn=_mark_terminal,
         now_fn=lambda: fixed_now,
         logger=type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None)})(),
     )
@@ -494,7 +518,6 @@ async def test_runtime_worker_fails_pending_task_on_timeout_terminal() -> None:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     try:
-        await _reset_runtime_tables()
         _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
         task_id = await _insert_pending_task(zone_id, prefix=prefix, now=now)
         worker = _build_worker(terminal_status="TIMEOUT", error_message="closed_loop_timeout")
@@ -516,7 +539,6 @@ async def test_runtime_worker_wakes_itself_for_delayed_pending_task() -> None:
     worker: Ae3RuntimeWorker | None = None
 
     try:
-        await _reset_runtime_tables()
         _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
         task_id = await _insert_pending_task(
             zone_id,
@@ -560,7 +582,6 @@ async def test_runtime_worker_survives_cleanup_race_after_publish() -> None:
     cleaned_up = False
 
     try:
-        await _reset_runtime_tables()
         _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
         task_id = await _insert_pending_task(zone_id, prefix=prefix, now=now)
         worker = _build_worker(terminal_status="ACK")
@@ -649,9 +670,8 @@ async def test_runtime_worker_timeout_cancels_execution_with_timeout_reason_and_
         execute_task_use_case=_ExecuteTimeoutAware(),
         startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
         zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+        zone_intent_repository=_MockIntentRepository(mark_terminal_calls=terminal_calls),
         spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
-        mark_intent_running_fn=_noop,
-        mark_intent_terminal_fn=_mark_terminal,
         now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         logger=type(
             "Logger",
@@ -757,9 +777,8 @@ async def test_runtime_worker_continues_draining_after_timeout_without_extra_kic
         execute_task_use_case=_ExecuteSequence(),
         startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
         zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+        zone_intent_repository=_MockIntentRepository(mark_terminal_calls=terminal_calls),
         spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
-        mark_intent_running_fn=_noop,
-        mark_intent_terminal_fn=_mark_terminal,
         now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
         logger=type(
             "Logger",

@@ -9,6 +9,7 @@ from ae3lite.api import bind_start_cycle_route
 from ae3lite.api.contracts import StartCycleRequest
 from ae3lite.application.dto import TaskCreationResult
 from ae3lite.domain.entities import AutomationTask
+from ae3lite.domain.errors import TaskCreateError
 
 
 def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
@@ -29,9 +30,15 @@ def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
     })
 
 
-def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "claimed"):
+def _bind_test_route(
+    *,
+    creation_result: TaskCreationResult | None,
+    decision: str = "claimed",
+    create_error: Exception | None = None,
+    guard_error: Exception | None = None,
+):
     app = FastAPI()
-    captured: dict[str, object] = {"worker_kicked": 0}
+    captured: dict[str, object] = {"worker_kicked": 0, "guard_calls": 0, "claim_calls": 0}
 
     async def validate_zone(_zone_id: int):
         return None
@@ -40,11 +47,22 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
         return None
 
     async def claim_intent(*, zone_id: int, req, now):
+        captured["claim_calls"] = int(captured["claim_calls"]) + 1
         return {"decision": decision, "intent": {"id": 77, "zone_id": zone_id, "status": "running"}}
 
     async def create_task_from_intent(**kwargs):
         captured["create_kwargs"] = kwargs
+        if create_error is not None:
+            raise create_error
+        assert creation_result is not None
         return creation_result
+
+    async def ensure_solution_tank_startup_reset(**kwargs):
+        captured["guard_calls"] = int(captured["guard_calls"]) + 1
+        captured["guard_kwargs"] = kwargs
+        if guard_error is not None:
+            raise guard_error
+        return {"reset": False}
 
     def kick_worker():
         captured["worker_kicked"] = int(captured["worker_kicked"]) + 1
@@ -65,6 +83,7 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
         start_cycle_rate_limit_max_requests_fn=lambda: 30,
         claim_start_cycle_intent_fn=claim_intent,
         create_task_from_intent_fn=create_task_from_intent,
+        ensure_solution_tank_startup_reset_fn=ensure_solution_tank_startup_reset,
         kick_worker_fn=kick_worker,
         build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
         mark_intent_terminal_fn=mark_intent_terminal,
@@ -92,6 +111,8 @@ async def test_compat_start_cycle_routes_ae3_zone_to_canonical_task_creation() -
     assert response["data"]["runner_state"] == "active"
     assert response["data"]["is_duplicate"] is False
     assert captured["worker_kicked"] == 1
+    assert captured["guard_calls"] == 1
+    assert captured["guard_kwargs"] == {"zone_id": 7}
 
 
 @pytest.mark.asyncio
@@ -111,6 +132,7 @@ async def test_compat_start_cycle_returns_terminal_payload_for_terminal_ae3_task
     assert response["data"]["accepted"] is False
     assert response["data"]["runner_state"] == "terminal"
     assert response["data"]["task_status"] == "failed"
+    assert _captured["create_kwargs"]["allow_create"] is False
 
 
 @pytest.mark.asyncio
@@ -144,6 +166,7 @@ async def test_compat_start_cycle_translates_ae3_busy_error_to_409() -> None:
         start_cycle_rate_limit_max_requests_fn=lambda: 30,
         claim_start_cycle_intent_fn=claim_intent,
         create_task_from_intent_fn=create_task_from_intent,
+        ensure_solution_tank_startup_reset_fn=None,
         kick_worker_fn=lambda: None,
         build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
         mark_intent_terminal_fn=mark_intent_terminal,
@@ -162,3 +185,52 @@ async def test_compat_start_cycle_translates_ae3_busy_error_to_409() -> None:
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_cycle_zone_busy"
     assert detail["active_task_id"] == 99
+
+
+@pytest.mark.asyncio
+async def test_compat_start_cycle_terminal_intent_missing_task_returns_409_fail_closed() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=None,
+        decision="terminal",
+        create_error=TaskCreateError(
+            "start_cycle_intent_terminal",
+            "terminal intent has no canonical task",
+            details={"idempotency_key": "sch:z7:test"},
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-terminal-missing"}),
+            req=StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:test"),
+        )
+
+    assert captured["create_kwargs"]["allow_create"] is False
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_cycle_intent_terminal"
+    assert detail["zone_id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_compat_start_cycle_guard_failure_returns_503_before_claiming_intent() -> None:
+    endpoint, captured = _bind_test_route(
+        creation_result=None,
+        guard_error=RuntimeError("db offline"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-guard-fail"}),
+            req=StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:guardfail"),
+        )
+
+    assert captured["guard_calls"] == 1
+    assert captured["claim_calls"] == 0
+    assert "create_kwargs" not in captured
+    assert exc.value.status_code == 503
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_cycle_solution_tank_guard_failed"
+    assert detail["zone_id"] == 7
