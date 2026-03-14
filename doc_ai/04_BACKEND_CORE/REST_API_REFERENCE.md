@@ -63,6 +63,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
+| GET | /api/zones/{id}/correction-config | auth:sanctum | Текущий correction config зоны + `resolved_config.pump_calibration` |
+| PUT/PATCH | /api/zones/{id}/correction-config | auth:sanctum (operator/admin/agronomist/engineer) | Обновить zone override correction config, включая `base_config.pump_calibration` |
+| GET | /api/zones/{id}/correction-config/history | auth:sanctum | История версий correction config зоны |
 | GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
 | GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
 | POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
@@ -176,6 +179,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
 | GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler (`dispatches`, `cycle_duration`, `active_tasks`); `counter`/`histogram` читаются из персистентных aggregate tables, а не из `scheduler_logs` |
+| GET | /api/system/automation-settings | auth:sanctum (admin) | Список системных automation settings namespaces (`pump_calibration`, `sensor_calibration`) |
+| GET | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Получить config и field catalog namespace |
+| PUT | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Частично обновить namespace через merge с defaults |
+| POST | /api/system/automation-settings/{namespace}/reset | auth:sanctum (admin) | Сбросить namespace к catalog defaults |
 
 ---
 
@@ -434,13 +441,34 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 |-------|---------------------------------------------|------|-------------------------------------------|
 | GET | /api/zones/{zone}/pump-calibrations | auth:sanctum (viewer+) | Список дозирующих насосов зоны с активной калибровкой |
 | PUT | /api/zones/{zone}/pump-calibrations/{channelId} | auth:sanctum (operator+) | Сохранить новую калибровку `ml_per_sec` (создаёт новую запись в `pump_calibrations`) |
+| GET | /api/zones/{zone}/sensor-calibrations | auth:sanctum | История calibration sessions по pH/EC сенсорам зоны |
+| GET | /api/zones/{zone}/sensor-calibrations/status | auth:sanctum | Статус по каждому sensor channel: `ok|warning|critical|never` и наличие active session |
+| GET | /api/zones/{zone}/sensor-calibrations/{id} | auth:sanctum | Детали одной calibration session |
+| POST | /api/zones/{zone}/sensor-calibrations | auth:sanctum (operator+) | Создать calibration session для `node_channel_id` и `sensor_type=ph|ec` |
+| POST | /api/zones/{zone}/sensor-calibrations/{id}/point | auth:sanctum (operator+) | Отправить stage 1 или stage 2 через `history-logger POST /commands` |
+| POST | /api/zones/{zone}/sensor-calibrations/{id}/cancel | auth:sanctum (operator+) | Отменить не-terminal calibration session |
 | POST | /api/zones/{zone}/relay-autotune | auth:sanctum (operator+) | Запуск relay-autotune через proxy в automation-engine |
 | GET | /api/zones/{zone}/relay-autotune/status | auth:sanctum (viewer+) | Статус relay-autotune через proxy в automation-engine |
 
 Контракт `PUT /api/zones/{zone}/pump-calibrations/{channelId}`:
 - request body: `{ "ml_per_sec": number, "k_ms_per_ml_l"?: number }`;
+- min/max validation и default duration берутся из `system_automation_settings(namespace='pump_calibration')`;
 - деактивирует предыдущую активную калибровку `node_channel_id`;
 - создаёт `zone_event` типа `PUMP_CALIBRATION_SAVED`.
+
+Контракт `GET/PUT /api/zones/{zone}/correction-config`:
+- `resolved_config.pump_calibration` обязателен для AE3-Lite runtime;
+- `base_config.pump_calibration` хранит только zone-level override diff;
+- response meta включает `pump_calibration_defaults` и `pump_calibration_field_catalog`.
+
+Контракт `POST /api/zones/{zone}/sensor-calibrations/{id}/point`:
+- request body: `{ "stage": 1|2, "reference_value": number }`;
+- `reference_value` валидируется против `system_automation_settings(namespace='sensor_calibration')`;
+- `stage=1` допустим только из `started`;
+- `stage=2` допустим только из `point_1_done`;
+- успешный enqueue переводит session в `point_1_pending` или `point_2_pending`;
+- terminal status `DONE` приходит через `POST /api/python/commands/ack` и переводит session в `point_1_done` или `completed`;
+- terminal status `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` переводит session в `failed`.
 
 Контракт `POST /api/zones/{zone}/relay-autotune`:
 - request body: `{ "pid_type": "ph" | "ec" }`;

@@ -164,14 +164,18 @@ AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
   "scenarios/ae3lite/E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
 )
+CALIBRATION_SCENARIOS=(
+  "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"
+  "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"
+)
 
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|calibration|full] [--list]
 
 Env:
-  SCENARIO_SET=automation|workflow|ae3lite|full   # default: full
+  SCENARIO_SET=automation|workflow|ae3lite|calibration|full   # default: full
   TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID=auto|<uid>
   REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
   E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
@@ -185,6 +189,7 @@ collect_full_scenarios() {
     "${AUTOMATION_SCENARIOS[@]}" \
     "${WORKFLOW_SCENARIOS[@]}" \
     "${AE3LITE_SCENARIOS[@]}" \
+    "${CALIBRATION_SCENARIOS[@]}" \
     | LC_ALL=C sort -u
 }
 
@@ -216,6 +221,9 @@ resolve_scenarios() {
       ;;
     ae3lite)
       SCENARIOS=("${AE3LITE_SCENARIOS[@]}")
+      ;;
+    calibration)
+      SCENARIOS=("${CALIBRATION_SCENARIOS[@]}")
       ;;
     full)
       mapfile -t SCENARIOS < <(collect_full_scenarios)
@@ -253,7 +261,7 @@ for arg in "$@"; do
       SCENARIO_SET="${arg#--set=}"
       ;;
     --set)
-      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|full>"
+      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|calibration|full>"
       exit 1
       ;;
     --list)

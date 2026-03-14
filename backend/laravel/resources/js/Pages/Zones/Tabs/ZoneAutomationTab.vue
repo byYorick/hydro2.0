@@ -119,7 +119,12 @@
           />
           <RelayAutotuneTrigger :zone-id="Number(zoneId)" />
         </section>
+        <ZonePumpCalibrationSettingsCard :zone-id="Number(zoneId)" />
         <PumpCalibrationsPanel :zone-id="Number(zoneId)" />
+        <SensorCalibrationStatus
+          :zone-id="Number(zoneId)"
+          :settings="sensorCalibrationSettings"
+        />
       </ZoneAutomationAccordionSection>
 
       <!-- Аккордеон 3: Настройки Automation Engine -->
@@ -252,8 +257,11 @@ import Button from '@/Components/Button.vue'
 import PidConfigForm from '@/Components/PidConfigForm.vue'
 import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
 import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
+import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
+import ZonePumpCalibrationSettingsCard from '@/Components/ZonePumpCalibrationSettingsCard.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import { buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
+import { usePageProp } from '@/composables/usePageProps'
 import type {
   ClimateFormState,
   LightingFormState,
@@ -264,6 +272,7 @@ import type {
 import { useZoneAutomationTab } from '@/composables/useZoneAutomationTab'
 import type { AutomationState } from '@/types/Automation'
 import type { PidConfigWithMeta } from '@/types/PidConfig'
+import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
 interface ZoneAutomationWizardApplyPayload {
   climateForm: ClimateFormState
@@ -472,6 +481,7 @@ function formatAutomationEngineSettingValue(item: AutomationEngineSettingItem): 
 }
 
 const props = defineProps<ZoneAutomationTabProps>()
+const sensorCalibrationSettings = usePageProp<'sensorCalibrationSettings', SensorCalibrationSettings>('sensorCalibrationSettings')
 
 const {
   role,

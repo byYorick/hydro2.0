@@ -114,7 +114,7 @@ class CalibratePumpRequest(BaseModel):
     """Request model for dosing pump calibration."""
 
     node_channel_id: int = Field(..., ge=1, description="Actuator node_channel ID for pump")
-    duration_sec: int = Field(..., ge=1, le=120, description="Pump run duration (seconds)")
+    duration_sec: int = Field(..., ge=1, le=600, description="Pump run duration (seconds)")
     actual_ml: Optional[float] = Field(None, gt=0.0, description="Measured real volume in ml")
     skip_run: bool = Field(False, description="Skip physical run and only persist calibration")
     component: Optional[str] = Field(None, max_length=16, description="npk|calcium|magnesium|micro|ph_up|ph_down")

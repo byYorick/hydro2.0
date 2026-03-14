@@ -104,6 +104,10 @@ class TestSuite:
         ae3lite_realhw = [
             str(base_path / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"),
         ]
+        calibration_realhw = [
+            str(base_path / "calibration" / "E110_sensor_calibration_realhw_create_cancel.yaml"),
+            str(base_path / "calibration" / "E111_sensor_calibration_realhw_unsupported_command.yaml"),
+        ]
 
         suites = {
             "smoke": [
@@ -189,6 +193,7 @@ class TestSuite:
             "ae3lite": ae3lite_v1 + ae3lite_realhw,
             "ae3lite_v1": ae3lite_v1,
             "ae3lite_realhw": ae3lite_realhw,
+            "calibration_realhw": calibration_realhw,
             "snapshot": [
                 str(base_path / "snapshot" / "E30_snapshot_contains_last_event_id.yaml"),
                 str(base_path / "snapshot" / "E31_reconnect_replay_gap.yaml"),
@@ -250,7 +255,7 @@ class TestSuite:
             # Check if it's a predefined suite
             if path in ["smoke", "core", "commands", "alerts", "infrastructure",
                        "grow_cycle", "automation_engine", "automation_engine_realhw",
-                       "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "snapshot", "chaos",
+                       "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "calibration_realhw", "snapshot", "chaos",
                        "prod_readiness_realhw", "full"]:
                 scenarios.extend(self._get_suite_scenarios(path))
                 continue
@@ -353,6 +358,8 @@ class TestSuite:
             tags.append('automation_engine')
         if 'ae3lite' in path_parts:
             tags.append('ae3lite')
+        if 'calibration' in path_parts:
+            tags.append('calibration')
         if 'workflow' in path_parts:
             tags.append('workflow')
         if 'scheduler' in path_parts:
@@ -451,7 +458,7 @@ Examples:
             "--suite", "-s",
             choices=["smoke", "core", "commands", "alerts", "infrastructure",
                     "grow_cycle", "automation_engine", "automation_engine_realhw",
-                    "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "snapshot", "chaos",
+                    "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "calibration_realhw", "snapshot", "chaos",
                     "prod_readiness_realhw", "full"],
             help="Run predefined test suite"
         )
@@ -673,7 +680,7 @@ Examples:
         print("Available test suites:")
         suites = ["smoke", "core", "commands", "alerts", "infrastructure",
                  "grow_cycle", "automation_engine", "automation_engine_realhw",
-                 "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "snapshot", "chaos",
+                 "workflow", "scheduler", "ae3lite", "ae3lite_v1", "ae3lite_realhw", "calibration_realhw", "snapshot", "chaos",
                  "prod_readiness_realhw", "full"]
         for suite in suites:
             scenarios = self._get_suite_scenarios(suite)

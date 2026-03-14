@@ -68,6 +68,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
     resolved_meta_cfg = _to_mapping(resolved_cfg.get("meta"))
+    resolved_pump_calibration_cfg = _to_mapping(resolved_cfg.get("pump_calibration"))
     phase_overrides_cfg = _to_mapping(resolved_meta_cfg.get("phase_overrides"))
     solution_fill_overrides = _to_mapping(phase_overrides_cfg.get("solution_fill"))
     tank_recirc_overrides = _to_mapping(phase_overrides_cfg.get("tank_recirc"))
@@ -91,13 +92,14 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     recirc_retry_cfg = _to_mapping(tank_recirc_cfg.get("retry"))
 
     correction_by_phase = {
-        "solution_fill": _build_correction_cfg(solution_fill_cfg, execution_correction_cfg, solution_fill_overrides),
-        "tank_recirc": _build_correction_cfg(tank_recirc_cfg, execution_correction_cfg, tank_recirc_overrides),
-        "irrigation": _build_correction_cfg(irrigation_cfg, execution_correction_cfg, irrigation_overrides),
+        "solution_fill": _build_correction_cfg(solution_fill_cfg, execution_correction_cfg, solution_fill_overrides, resolved_pump_calibration_cfg),
+        "tank_recirc": _build_correction_cfg(tank_recirc_cfg, execution_correction_cfg, tank_recirc_overrides, resolved_pump_calibration_cfg),
+        "irrigation": _build_correction_cfg(irrigation_cfg, execution_correction_cfg, irrigation_overrides, resolved_pump_calibration_cfg),
         "generic": _build_correction_cfg(
             active_phase_cfg,
             execution_correction_cfg,
             _to_mapping(phase_overrides_cfg.get(active_phase_key)),
+            resolved_pump_calibration_cfg,
         ),
     }
     prepare_tolerance_by_phase = {
@@ -545,6 +547,7 @@ def _build_correction_cfg(
     phase_cfg: Mapping[str, Any],
     execution_correction_cfg: Mapping[str, Any],
     phase_override_cfg: Mapping[str, Any],
+    pump_calibration_cfg: Mapping[str, Any],
 ) -> dict[str, Any]:
     timing_cfg = _to_mapping(phase_cfg.get("timing"))
     dosing_cfg = _to_mapping(phase_cfg.get("dosing"))
@@ -701,6 +704,7 @@ def _build_correction_cfg(
             10000.0,
         ),
         "controllers": controllers_cfg,
+        "pump_calibration": dict(pump_calibration_cfg),
         "ec_component_policy": _normalize_component_policy(
             _choose_phase_or_execution(
                 phase_value=phase_cfg.get("ec_component_policy"),
@@ -740,5 +744,4 @@ def _build_prepare_tolerance_cfg(
             100.0,
         ),
     }
-
 

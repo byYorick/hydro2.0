@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Events\TelemetryBatchUpdated;
+use App\Models\Command;
 use App\Models\DeviceNode;
+use App\Models\SensorCalibration;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
@@ -251,15 +253,15 @@ class PythonIngestController extends Controller
 
         // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
         $normalizedStatus = match (strtoupper($data['status'])) {
-            'SENT' => \App\Models\Command::STATUS_SENT,
-            'ACK' => \App\Models\Command::STATUS_ACK,
-            'DONE' => \App\Models\Command::STATUS_DONE,
-            'NO_EFFECT' => \App\Models\Command::STATUS_NO_EFFECT,
-            'ERROR' => \App\Models\Command::STATUS_ERROR,
-            'INVALID' => \App\Models\Command::STATUS_INVALID,
-            'BUSY' => \App\Models\Command::STATUS_BUSY,
-            'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
-            'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
+            'SENT' => Command::STATUS_SENT,
+            'ACK' => Command::STATUS_ACK,
+            'DONE' => Command::STATUS_DONE,
+            'NO_EFFECT' => Command::STATUS_NO_EFFECT,
+            'ERROR' => Command::STATUS_ERROR,
+            'INVALID' => Command::STATUS_INVALID,
+            'BUSY' => Command::STATUS_BUSY,
+            'TIMEOUT' => Command::STATUS_TIMEOUT,
+            'SEND_FAILED' => Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']),
         };
         
@@ -276,7 +278,7 @@ class PythonIngestController extends Controller
         $eventStatus = $normalizedStatus;
 
         DB::transaction(function () use (&$command, &$eventStatus, &$skipMessage, $data, $normalizedStatus, $details): void {
-            $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])
+            $command = Command::where('cmd_id', $data['cmd_id'])
                 ->latest('id')
                 ->lockForUpdate()
                 ->first();
@@ -294,7 +296,7 @@ class PythonIngestController extends Controller
             $currentStatus = $command->status;
             $newStatus = $normalizedStatus;
 
-            $finalStatuses = \App\Models\Command::FINAL_STATUSES;
+            $finalStatuses = Command::FINAL_STATUSES;
             if (in_array($currentStatus, $finalStatuses, true)) {
                 Log::info('commandAck: Command already in final status, skipping update', [
                     'cmd_id' => $data['cmd_id'],
@@ -306,16 +308,16 @@ class PythonIngestController extends Controller
             }
 
             $statusOrder = [
-                \App\Models\Command::STATUS_QUEUED => 0,
-                \App\Models\Command::STATUS_SENT => 2,
-                \App\Models\Command::STATUS_ACK => 3,
-                \App\Models\Command::STATUS_DONE => 4,
-                \App\Models\Command::STATUS_NO_EFFECT => 4,
-                \App\Models\Command::STATUS_ERROR => 4,
-                \App\Models\Command::STATUS_INVALID => 4,
-                \App\Models\Command::STATUS_BUSY => 4,
-                \App\Models\Command::STATUS_TIMEOUT => 4,
-                \App\Models\Command::STATUS_SEND_FAILED => 4,
+                Command::STATUS_QUEUED => 0,
+                Command::STATUS_SENT => 2,
+                Command::STATUS_ACK => 3,
+                Command::STATUS_DONE => 4,
+                Command::STATUS_NO_EFFECT => 4,
+                Command::STATUS_ERROR => 4,
+                Command::STATUS_INVALID => 4,
+                Command::STATUS_BUSY => 4,
+                Command::STATUS_TIMEOUT => 4,
+                Command::STATUS_SEND_FAILED => 4,
             ];
 
             $currentOrder = $statusOrder[$currentStatus] ?? 0;
@@ -345,27 +347,27 @@ class PythonIngestController extends Controller
                 $updates['duration_ms'] = $details['duration_ms'];
             }
 
-            if ($normalizedStatus === \App\Models\Command::STATUS_SENT && ! $command->sent_at) {
+            if ($normalizedStatus === Command::STATUS_SENT && ! $command->sent_at) {
                 $updates['sent_at'] = now();
             }
 
-            if ($normalizedStatus === \App\Models\Command::STATUS_ACK && ! $command->ack_at) {
+            if ($normalizedStatus === Command::STATUS_ACK && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
 
             if (in_array($normalizedStatus, [
-                \App\Models\Command::STATUS_DONE,
-                \App\Models\Command::STATUS_NO_EFFECT,
+                Command::STATUS_DONE,
+                Command::STATUS_NO_EFFECT,
             ], true) && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
 
             if (in_array($normalizedStatus, [
-                \App\Models\Command::STATUS_ERROR,
-                \App\Models\Command::STATUS_INVALID,
-                \App\Models\Command::STATUS_BUSY,
-                \App\Models\Command::STATUS_TIMEOUT,
-                \App\Models\Command::STATUS_SEND_FAILED,
+                Command::STATUS_ERROR,
+                Command::STATUS_INVALID,
+                Command::STATUS_BUSY,
+                Command::STATUS_TIMEOUT,
+                Command::STATUS_SEND_FAILED,
             ], true) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
@@ -379,6 +381,11 @@ class PythonIngestController extends Controller
             if ($command->isDirty()) {
                 $command->save();
             }
+            $this->syncSensorCalibrationsForCommand(
+                commandId: (string) $command->cmd_id,
+                status: $normalizedStatus,
+                details: $details,
+            );
             $command = $command->fresh();
             $eventStatus = (string) $command->status;
         }, 3);
@@ -632,6 +639,55 @@ class PythonIngestController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to create/update alert: '.$e->getMessage(),
             ], 500);
+        }
+    }
+
+    private function syncSensorCalibrationsForCommand(string $commandId, string $status, array $details): void
+    {
+        if (! in_array($status, Command::FINAL_STATUSES, true)) {
+            return;
+        }
+
+        $calibrations = SensorCalibration::query()
+            ->where(function ($query) use ($commandId): void {
+                $query->where('point_1_command_id', $commandId)
+                    ->orWhere('point_2_command_id', $commandId);
+            })
+            ->lockForUpdate()
+            ->get();
+
+        if ($calibrations->isEmpty()) {
+            return;
+        }
+
+        $errorMessage = $details['error_message'] ?? $details['message'] ?? $details['error_code'] ?? null;
+        foreach ($calibrations as $calibration) {
+            if ($calibration->isTerminal()) {
+                continue;
+            }
+
+            if ($calibration->point_1_command_id === $commandId) {
+                $calibration->point_1_result = $status;
+                $calibration->point_1_error = $status === Command::STATUS_DONE ? null : (string) ($errorMessage ?? $status);
+                if ($status === Command::STATUS_DONE) {
+                    $calibration->status = SensorCalibration::STATUS_POINT_1_DONE;
+                } else {
+                    $calibration->status = SensorCalibration::STATUS_FAILED;
+                    $calibration->completed_at = now();
+                }
+                $calibration->save();
+                continue;
+            }
+
+            if ($calibration->point_2_command_id === $commandId) {
+                $calibration->point_2_result = $status;
+                $calibration->point_2_error = $status === Command::STATUS_DONE ? null : (string) ($errorMessage ?? $status);
+                $calibration->status = $status === Command::STATUS_DONE
+                    ? SensorCalibration::STATUS_COMPLETED
+                    : SensorCalibration::STATUS_FAILED;
+                $calibration->completed_at = now();
+                $calibration->save();
+            }
         }
     }
 }

@@ -59,8 +59,8 @@
               v-model.number="editValues[pump.node_channel_id]"
               type="number"
               step="0.01"
-              min="0.01"
-              max="20"
+              :min="settings.ml_per_sec_min"
+              :max="settings.ml_per_sec_max"
               class="input-field w-28"
               placeholder="мл/сек"
             />
@@ -76,7 +76,7 @@
           </div>
 
           <div
-            v-if="Number(pump.calibration_age_days) > 30"
+            v-if="Number(pump.calibration_age_days) > settings.age_warning_days"
             class="text-xs text-[color:var(--badge-warning-text)]"
           >
             Калибровка устарела ({{ pump.calibration_age_days }} дн)
@@ -97,8 +97,10 @@ import { computed, onMounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
+import { usePageProp } from '@/composables/usePageProps'
 import { usePidConfig } from '@/composables/usePidConfig'
 import type { PumpCalibration } from '@/types/PidConfig'
+import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
 const props = defineProps<{ zoneId: number }>()
 
@@ -108,6 +110,7 @@ const editValues = ref<Record<number, number>>({})
 const saving = ref<Record<number, boolean>>({})
 
 const { getPumpCalibrations, updatePumpCalibration } = usePidConfig()
+const settings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
 
 const hasUncalibrated = computed(() => calibrations.value.some((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0))
 const uncalibratedCount = computed(() => calibrations.value.filter((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0).length)
@@ -190,7 +193,11 @@ async function loadCalibrations(): Promise<void> {
 async function savePumpCalibration(pump: PumpCalibration): Promise<void> {
   const channelId = pump.node_channel_id
   const mlPerSec = Number(editValues.value[channelId])
-  if (!Number.isFinite(mlPerSec) || mlPerSec <= 0) {
+  if (
+    !Number.isFinite(mlPerSec)
+    || mlPerSec < settings.value.ml_per_sec_min
+    || mlPerSec > settings.value.ml_per_sec_max
+  ) {
     return
   }
 

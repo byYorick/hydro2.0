@@ -74,6 +74,13 @@ Content-Type: application/json
 - `cmd` (string, required) — команда для ноды
 - `params` (object, required) — параметры команды
 - `source` (string, optional) — источник команды (`automation`, `scheduler`, `api`)
+- `cmd_id` (string, optional) — внешний command id, который будет сохранён в `commands.cmd_id`
+
+Примечание:
+- sensor calibration не имеет отдельного history-logger endpoint;
+- backend публикует её через этот же `POST /commands` с `cmd="calibrate"`;
+- для pH используются `params = { "stage": 1|2, "known_ph": number }`;
+- для EC используются `params = { "stage": 1|2, "tds_value": integer }`.
 
 **Response (200 OK):**
 ```json
@@ -254,6 +261,18 @@ curl http://localhost:9300/health
 | `REBOOT` | Перезагрузка ноды | - |
 | `SAFE_MODE` | Переход в safe mode | - |
 | `GET_STATUS` | Запрос статуса | - |
+
+### 3.6. Команды калибровки сенсоров
+
+| Тип команды | Описание | Параметры |
+|------------|----------|-----------|
+| `calibrate` | Stage-based калибровка pH/EC сенсора | `stage`, `known_ph` или `tds_value` |
+
+Контракт:
+- `stage=1` и `stage=2` публикуются отдельными командами;
+- `cmd_id` приходит из Laravel и затем используется в `POST /api/python/commands/ack`;
+- terminal status `DONE` трактуется Laravel как успешное завершение этапа;
+- terminal status `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`, `TIMEOUT`, `SEND_FAILED` трактуются как failed stage на стороне Laravel.
 
 ---
 

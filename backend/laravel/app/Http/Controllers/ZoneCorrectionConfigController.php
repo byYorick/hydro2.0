@@ -23,14 +23,20 @@ class ZoneCorrectionConfigController extends Controller
     public function show(Request $request, Zone $zone): JsonResponse
     {
         $this->authorizeZoneAccess($request, $zone);
-
-        return response()->json([
-            'status' => 'ok',
-            'data' => array_merge(
-                $this->configService->getResponsePayload($zone),
-                ['available_presets' => $this->presetService->list()]
-            ),
-        ]);
+        try {
+            return response()->json([
+                'status' => 'ok',
+                'data' => array_merge(
+                    $this->configService->getResponsePayload($zone),
+                    ['available_presets' => $this->presetService->list()]
+                ),
+            ]);
+        } catch (\InvalidArgumentException|\DomainException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
     }
 
     public function update(UpdateZoneCorrectionConfigRequest $request, Zone $zone): JsonResponse

@@ -1,6 +1,8 @@
 import { computed, reactive, ref, watch } from 'vue'
+import { usePageProp } from '@/composables/usePageProps'
 import type { Device } from '@/types'
 import type { PumpCalibrationComponent, PumpChannelOption, PumpCalibrationSavePayload } from '@/types/Calibration'
+import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
 interface PumpCalibrationProps {
   show?: boolean
@@ -30,6 +32,7 @@ const componentKeywords: Record<PumpCalibrationComponent, string[]> = {
 export { componentOptions }
 
 export function usePumpCalibration(props: PumpCalibrationProps) {
+  const settings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
   const form = reactive<{
     component: PumpCalibrationComponent
     node_channel_id: number | null
@@ -42,7 +45,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
   }>({
     component: 'npk',
     node_channel_id: null,
-    duration_sec: 20,
+    duration_sec: settings.value.default_run_duration_sec,
     actual_ml: null,
     test_volume_l: null,
     ec_before_ms: null,
@@ -311,8 +314,12 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
     if (!form.node_channel_id || form.node_channel_id <= 0) {
       return 'Выберите канал помпы.'
     }
-    if (!Number.isFinite(form.duration_sec) || form.duration_sec < 1 || form.duration_sec > 120) {
-      return 'Время запуска должно быть от 1 до 120 секунд.'
+    if (
+      !Number.isFinite(form.duration_sec)
+      || form.duration_sec < settings.value.calibration_duration_min_sec
+      || form.duration_sec > settings.value.calibration_duration_max_sec
+    ) {
+      return `Время запуска должно быть от ${settings.value.calibration_duration_min_sec} до ${settings.value.calibration_duration_max_sec} секунд.`
     }
     const hasAnyEcCalibrationInput = form.test_volume_l !== null || form.ec_before_ms !== null || form.ec_after_ms !== null
     if (hasAnyEcCalibrationInput) {
@@ -400,6 +407,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
       }
       loadPersistedBindings()
       formError.value = null
+      form.duration_sec = settings.value.default_run_duration_sec
       ensureSelection()
     },
   )

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\SystemAutomationSetting;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneCorrectionPreset;
@@ -263,6 +264,29 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.preset.slug', 'test-node')
             ->assertJsonPath('data.version', 2)
             ->assertJsonPath('data.resolved_config.meta.preset_slug', 'test-node');
+    }
+
+    public function test_show_rejects_zone_pump_override_that_conflicts_with_current_system_defaults(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'base_config' => [
+                'pump_calibration' => [
+                    'age_warning_days' => 80,
+                ],
+            ],
+            'phase_overrides' => [],
+        ])->assertOk();
+
+        $setting = SystemAutomationSetting::query()->firstWhere('namespace', 'pump_calibration');
+        $config = $setting->config;
+        $config['age_critical_days'] = 60;
+        $setting->update(['config' => $config]);
+
+        $this->getJson("/api/zones/{$zone->id}/correction-config")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Field pump_calibration.age_warning_days must be <= pump_calibration.age_critical_days.');
     }
 
     public function test_service_ignores_nonexistent_updated_by_user(): void

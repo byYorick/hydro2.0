@@ -30,12 +30,6 @@ _DEFAULT_MAX_EC_DOSE_ML: float = 50.0
 #: Hard upper limit for a single pH dose when correction_config.max_ph_dose_ml is absent.
 _DEFAULT_MAX_PH_DOSE_ML: float = 20.0
 
-# ── Minimum effective dose duration (5.2) ────────────────────────────────────
-
-#: Pulses shorter than this are below the minimum reliable activation time for
-#: dosing pumps and are discarded (treated as 0ms / no dose).
-_MIN_DOSE_MS: int = 50
-
 # ── EC component selection fallback order (5.3) ──────────────────────────────
 
 #: Preferred order for EC components when no ec_component_policy is configured.
@@ -241,7 +235,7 @@ class CorrectionPlanner:
                 )
                 if ec_pid_update:
                     pid_updates["ec"] = ec_pid_update
-                ec_duration_ms = _dose_ml_to_ms(ec_amount_ml, calibration)
+                ec_duration_ms = _dose_ml_to_ms(ec_amount_ml, calibration, correction_config)
                 ec_needs = ec_duration_ms > 0
             else:
                 ec_needs = False
@@ -285,7 +279,7 @@ class CorrectionPlanner:
                 )
                 if ph_pid_update:
                     pid_updates["ph"] = ph_pid_update
-                ph_duration_ms = _dose_ml_to_ms(ph_amount_ml, calibration)
+                ph_duration_ms = _dose_ml_to_ms(ph_amount_ml, calibration, correction_config)
                 ph_needs_up = ph_needs_up and ph_duration_ms > 0
                 ph_needs_down = ph_needs_down and ph_duration_ms > 0
             else:
@@ -561,7 +555,23 @@ def _reset_pid_state_if_inside_bounds(
     return updates
 
 
-def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
+def _dose_ml_to_ms(
+    dose_ml: float,
+    calibration: Mapping[str, Any],
+    correction_config: Mapping[str, Any],
+) -> int:
+    pump_calibration = correction_config.get("pump_calibration")
+    if not isinstance(pump_calibration, Mapping):
+        raise PlannerConfigurationError(
+            "pump_calibration config is missing from correction_config"
+        )
+    min_dose_ms = _positive_int(pump_calibration.get("min_dose_ms"), 0)
+    ml_min = _positive_float(pump_calibration.get("ml_per_sec_min"), 0.0)
+    ml_max = _positive_float(pump_calibration.get("ml_per_sec_max"), 0.0)
+    if min_dose_ms <= 0 or ml_min <= 0 or ml_max <= 0 or ml_max < ml_min:
+        raise PlannerConfigurationError(
+            "pump_calibration config is invalid; expected min_dose_ms/ml_per_sec_min/ml_per_sec_max"
+        )
     raw = calibration.get("ml_per_sec")
     if raw is None:
         raise PlannerConfigurationError(
@@ -577,24 +587,21 @@ def _dose_ml_to_ms(dose_ml: float, calibration: Mapping[str, Any]) -> int:
         raise PlannerConfigurationError(
             f"Pump calibration ml_per_sec must be positive, got {ml_per_sec}"
         )
-    # Guard against obviously wrong calibration values (typos, unit errors).
-    # 0.01 ml/s ≈ 36 ml/h (very slow drip); 100 ml/s = 6 L/min (very fast).
-    if not (0.01 <= ml_per_sec <= 100.0):
+    if not (ml_min <= ml_per_sec <= ml_max):
         raise PlannerConfigurationError(
             f"Pump calibration ml_per_sec={ml_per_sec} is outside the valid range "
-            f"[0.01, 100.0]; check pump calibration data"
+            f"[{ml_min}, {ml_max}]; check pump calibration data"
         )
     duration_ms = int(dose_ml / ml_per_sec * 1000)
     if duration_ms <= 0:
         return 0
-    # Discard pulses shorter than _MIN_DOSE_MS — below reliable pump activation time.
-    if duration_ms < _MIN_DOSE_MS:
+    if duration_ms < min_dose_ms:
         _logger.warning(
             "Dose discarded: computed duration %dms is below minimum %dms "
             "(dose_ml=%.4f, ml_per_sec=%.4f). "
             "Check pump calibration or min_effective_ml setting.",
             duration_ms,
-            _MIN_DOSE_MS,
+            min_dose_ms,
             dose_ml,
             ml_per_sec,
         )

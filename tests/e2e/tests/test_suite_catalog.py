@@ -48,6 +48,14 @@ class TestSuiteCatalog(unittest.TestCase):
             "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
         )
 
+    def test_calibration_realhw_suite_contains_sensor_calibration_scenarios(self) -> None:
+        scenarios = self.suite._get_suite_scenarios("calibration_realhw")
+        for suffix in [
+            "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
+            "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml",
+        ]:
+            self.assert_contains_scenario(scenarios, suffix)
+
     def test_automation_engine_suite_contains_legacy_entrypoints(self) -> None:
         scenarios = self.suite._get_suite_scenarios("automation_engine")
         for suffix in [
@@ -77,6 +85,17 @@ class TestSuiteCatalog(unittest.TestCase):
             "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml",
         )
 
+    def test_discover_by_suite_alias_supports_calibration_realhw_suite(self) -> None:
+        discovered = self.suite.discover_scenarios(["calibration_realhw"])
+        self.assert_contains_scenario(
+            discovered,
+            "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
+        )
+        self.assert_contains_scenario(
+            discovered,
+            "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml",
+        )
+
     def test_cli_parser_includes_ae3_suites(self) -> None:
         parser = TestSuite.create_cli_parser()
         suite_option = next(action for action in parser._actions if action.dest == "suite")
@@ -86,6 +105,7 @@ class TestSuiteCatalog(unittest.TestCase):
             "ae3lite",
             "ae3lite_v1",
             "ae3lite_realhw",
+            "calibration_realhw",
             "scheduler",
             "automation_engine",
             "workflow",
@@ -106,6 +126,10 @@ class TestSuiteCatalog(unittest.TestCase):
             scenarios,
             "scenarios/workflow/E94_startup_to_ready_smoke.yaml",
         )
+        self.assert_contains_scenario(
+            scenarios,
+            "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
+        )
 
     def test_scheduler_tags_are_inferred_from_path(self) -> None:
         scenario_path = E2E_ROOT / "scenarios" / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"
@@ -119,6 +143,18 @@ class TestSuiteCatalog(unittest.TestCase):
         self.assertIn("ae3lite", tags)
         self.assertIn("realhw", tags)
         self.assertIn("two_tank", tags)
+        self.assertIn("smoke", tags)
+
+    def test_calibration_realhw_tags_are_inferred_from_path(self) -> None:
+        scenario_path = (
+            E2E_ROOT
+            / "scenarios"
+            / "calibration"
+            / "E110_sensor_calibration_realhw_create_cancel.yaml"
+        )
+        tags = self.suite._get_scenario_tags(str(scenario_path))
+        self.assertIn("calibration", tags)
+        self.assertIn("realhw", tags)
         self.assertIn("smoke", tags)
 
 

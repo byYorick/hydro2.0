@@ -61,8 +61,8 @@
             <input
               v-model.number="form.duration_sec"
               type="number"
-              min="1"
-              max="120"
+              :min="pumpSettings.calibration_duration_min_sec"
+              :max="pumpSettings.calibration_duration_max_sec"
               step="1"
               class="input-field mt-1 w-full"
               data-testid="pump-calibration-duration"
@@ -221,9 +221,11 @@
 <script setup lang="ts">
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import { usePageProp } from '@/composables/usePageProps'
 import type { Device } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import { usePumpCalibration } from '@/composables/usePumpCalibration'
+import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
 interface Props {
   show?: boolean
@@ -246,6 +248,8 @@ const emit = defineEmits<{
   (e: 'start', payload: PumpCalibrationRunPayload): void
   (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
+
+const pumpSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
 
 const {
   form,

@@ -29,6 +29,18 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
         self.assertIn("for service in node-sim-workflow node-sim-manager; do", self.script)
         self.assertIn("real-hardware harness видел только реальную test_node", self.script)
 
+    def test_real_hardware_launcher_exposes_calibration_suite(self) -> None:
+        self.assertIn('CALIBRATION_SCENARIOS=(', self.script)
+        self.assertIn(
+            '"scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"',
+            self.script,
+        )
+        self.assertIn("--set=<automation|workflow|ae3lite|calibration|full>", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,251 @@
+# E110: Sensor calibration create/cancel smoke on real test_node
+# DoD:
+# - real test PH node is attached to the dedicated test zone
+# - create/status/history/show endpoints expose the new calibration session
+# - cancel transitions the session to cancelled and clears active-session status
+
+name: E110_sensor_calibration_realhw_create_cancel
+description: |
+  Реальный smoke для backend-managed sensor calibration на выделенной test-zone.
+  Сценарий использует PH sensor channel реального `firmware/test_node`, создает
+  calibration session, проверяет status/history/show API и затем отменяет сессию.
+
+tags:
+  - calibration
+  - realhw
+  - smoke
+
+actions:
+  - step: set_test_context
+    type: set
+    fixture_prefix: sensor-cal-realhw-${TIMESTAMP_MS}
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_ph_node_uid: ${TEST_PH_NODE_UID}
+
+  - step: capture_scenario_window
+    type: database_query
+    query: |
+      SELECT NOW() AS started_at
+    expected_rows: 1
+    save: scenario_window
+
+  - step: load_zone_context
+    type: database_query
+    query: |
+      SELECT id AS zone_id, greenhouse_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_ctx
+
+  - step: set_zone_context
+    type: set
+    zone_id: ${zone_ctx.0.zone_id}
+    greenhouse_id: ${zone_ctx.0.greenhouse_id}
+
+  - step: resolve_ph_node
+    type: database_query
+    query: |
+      SELECT id AS node_id, uid AS node_uid
+      FROM nodes
+      WHERE LOWER(COALESCE(type, '')) = 'ph'
+      ORDER BY
+        CASE
+          WHEN uid = :preferred_uid AND zone_id = :zone_id THEN 0
+          WHEN uid = 'nd-test-ph-1' THEN 1
+          WHEN uid = :preferred_uid THEN 2
+          WHEN zone_id = :zone_id THEN 3
+          ELSE 4
+        END,
+        id
+      LIMIT 1
+    params:
+      preferred_uid: ${test_ph_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: ph_node_row
+
+  - step: attach_ph_node_to_zone
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = :zone_id,
+          updated_at = NOW()
+      WHERE id = :node_id
+        AND (zone_id IS DISTINCT FROM :zone_id)
+    params:
+      zone_id: ${zone_id}
+      node_id: ${ph_node_row.0.node_id}
+
+  - step: set_ph_node_context
+    type: set
+    ph_node_id: ${ph_node_row.0.node_id}
+    test_ph_node_uid: ${ph_node_row.0.node_uid}
+
+  - step: upsert_ph_sensor_channel
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
+      VALUES (CAST(:node_id AS bigint), 'ph_sensor', 'sensor', 'PH', 'pH', '{}'::jsonb, NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          metric = EXCLUDED.metric,
+          unit = EXCLUDED.unit,
+          updated_at = NOW()
+    params:
+      node_id: ${ph_node_id}
+
+  - step: load_ph_sensor_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id, channel
+      FROM node_channels
+      WHERE node_id = CAST(:node_id AS bigint)
+        AND channel = 'ph_sensor'
+      LIMIT 1
+    params:
+      node_id: ${ph_node_id}
+    expected_rows: 1
+    save: ph_channel_row
+
+  - step: set_ph_channel_context
+    type: set
+    ph_node_channel_id: ${ph_channel_row.0.node_channel_id}
+
+  - step: cleanup_existing_sensor_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM sensor_calibrations
+      WHERE zone_id = :zone_id
+        AND node_channel_id = :node_channel_id
+    params:
+      zone_id: ${zone_id}
+      node_channel_id: ${ph_node_channel_id}
+
+  - step: create_ph_calibration
+    type: api_post
+    endpoint: /api/zones/${zone_id}/sensor-calibrations
+    payload:
+      node_channel_id: ${ph_node_channel_id}
+      sensor_type: ph
+    save: ph_calibration_create
+
+  - step: set_calibration_context
+    type: set
+    ph_calibration_id: ${ph_calibration_create.data.calibration.id}
+
+  - step: wait_ph_calibration_started
+    type: db.wait
+    query: |
+      SELECT id, status, point_1_command_id, completed_at
+      FROM sensor_calibrations
+      WHERE id = :calibration_id
+        AND status = 'started'
+      LIMIT 1
+    params:
+      calibration_id: ${ph_calibration_id}
+    expected_rows: 1
+    timeout: 15
+    save: ph_started_row
+
+  - step: fetch_status_with_active_session
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/status
+    save: status_before_cancel
+
+  - step: fetch_ph_history_before_cancel
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations?sensor_type=ph&node_channel_id=${ph_node_channel_id}&limit=10
+    save: ph_history_before_cancel
+
+  - step: fetch_created_calibration
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/${ph_calibration_id}
+    save: ph_calibration_show_before_cancel
+
+  - step: cancel_ph_calibration
+    type: api_post
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/${ph_calibration_id}/cancel
+    payload: {}
+    save: cancel_response
+
+  - step: wait_ph_calibration_cancelled
+    type: db.wait
+    query: |
+      SELECT id, status, completed_at
+      FROM sensor_calibrations
+      WHERE id = :calibration_id
+        AND status = 'cancelled'
+        AND completed_at IS NOT NULL
+      LIMIT 1
+    params:
+      calibration_id: ${ph_calibration_id}
+    expected_rows: 1
+    timeout: 15
+    save: ph_cancelled_row
+
+  - step: fetch_status_after_cancel
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/status
+    save: status_after_cancel
+
+  - step: fetch_ph_history_after_cancel
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations?sensor_type=ph&node_channel_id=${ph_node_channel_id}&limit=10
+    save: ph_history_after_cancel
+
+  - step: fetch_cancelled_calibration
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/${ph_calibration_id}
+    save: ph_calibration_show_after_cancel
+
+assertions:
+  - name: create_returns_started_calibration
+    type: custom_assert
+    condition: str(context.get('ph_calibration_create', {}).get('status', '')) == 'ok' and str((context.get('ph_calibration_create', {}).get('data') or {}).get('calibration', {}).get('status', '')) == 'started'
+
+  - name: status_before_cancel_marks_active_session
+    type: custom_assert
+    condition: any(int(item.get('node_channel_id', 0)) == int(context.get('ph_node_channel_id', 0)) and bool(item.get('has_active_session')) and int(item.get('active_calibration_id', 0)) == int(context.get('ph_calibration_id', 0)) for item in (context.get('status_before_cancel', {}).get('data') or []))
+
+  - name: history_before_cancel_contains_started_session
+    type: custom_assert
+    condition: any(int(item.get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str(item.get('status', '')) == 'started' for item in (context.get('ph_history_before_cancel', {}).get('data') or []))
+
+  - name: show_before_cancel_matches_created_session
+    type: custom_assert
+    condition: int((context.get('ph_calibration_show_before_cancel', {}).get('data') or {}).get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str((context.get('ph_calibration_show_before_cancel', {}).get('data') or {}).get('status', '')) == 'started'
+
+  - name: cancel_returns_ok
+    type: custom_assert
+    condition: str(context.get('cancel_response', {}).get('status', '')) == 'ok'
+
+  - name: status_after_cancel_clears_active_session
+    type: custom_assert
+    condition: any(int(item.get('node_channel_id', 0)) == int(context.get('ph_node_channel_id', 0)) and not bool(item.get('has_active_session')) and item.get('active_calibration_id') is None for item in (context.get('status_after_cancel', {}).get('data') or []))
+
+  - name: history_after_cancel_contains_cancelled_session
+    type: custom_assert
+    condition: any(int(item.get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str(item.get('status', '')) == 'cancelled' and item.get('completed_at') for item in (context.get('ph_history_after_cancel', {}).get('data') or []))
+
+  - name: show_after_cancel_matches_cancelled_session
+    type: custom_assert
+    condition: int((context.get('ph_calibration_show_after_cancel', {}).get('data') or {}).get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str((context.get('ph_calibration_show_after_cancel', {}).get('data') or {}).get('status', '')) == 'cancelled' and (context.get('ph_calibration_show_after_cancel', {}).get('data') or {}).get('completed_at') is not None
+
+cleanup:
+  - step: cancel_non_terminal_sensor_calibrations
+    type: database_execute
+    query: |
+      UPDATE sensor_calibrations
+      SET status = 'cancelled',
+          completed_at = COALESCE(completed_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND node_channel_id = :node_channel_id
+        AND status NOT IN ('completed', 'failed', 'cancelled')
+    params:
+      zone_id: ${zone_id}
+      node_channel_id: ${ph_node_channel_id}

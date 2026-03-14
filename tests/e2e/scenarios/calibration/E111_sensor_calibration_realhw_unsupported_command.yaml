@@ -1,0 +1,335 @@
+# E111: Sensor calibration unsupported calibrate command on real test_node
+# DoD:
+# - PH and EC calibration point submission publishes calibrate command through history-logger
+# - real test_node rejects unsupported calibrate command with terminal INVALID/ERROR
+# - Laravel ingest marks corresponding calibration sessions as failed
+
+name: E111_sensor_calibration_realhw_unsupported_command
+description: |
+  Реальный negative-path контракт для sensor calibration на `firmware/test_node`.
+  Поскольку test_node не реализует `calibrate`, backend должен пройти полный protected
+  command pipeline и завершить calibration session статусом `failed` после terminal
+  ACK (`INVALID` или `ERROR`) от реальной ноды.
+
+tags:
+  - calibration
+  - realhw
+  - negative
+
+actions:
+  - step: set_test_context
+    type: set
+    fixture_prefix: sensor-cal-unsupported-${TIMESTAMP_MS}
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_ph_node_uid: ${TEST_PH_NODE_UID}
+    test_ec_node_uid: ${TEST_EC_NODE_UID}
+
+  - step: load_zone_context
+    type: database_query
+    query: |
+      SELECT id AS zone_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_ctx
+
+  - step: set_zone_context
+    type: set
+    zone_id: ${zone_ctx.0.zone_id}
+
+  - step: resolve_ph_node
+    type: database_query
+    query: |
+      SELECT id AS node_id, uid AS node_uid
+      FROM nodes
+      WHERE LOWER(COALESCE(type, '')) = 'ph'
+      ORDER BY
+        CASE
+          WHEN uid = :preferred_uid AND zone_id = :zone_id THEN 0
+          WHEN uid = 'nd-test-ph-1' THEN 1
+          WHEN uid = :preferred_uid THEN 2
+          WHEN zone_id = :zone_id THEN 3
+          ELSE 4
+        END,
+        id
+      LIMIT 1
+    params:
+      preferred_uid: ${test_ph_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: ph_node_row
+
+  - step: attach_ph_node_to_zone
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = :zone_id,
+          updated_at = NOW()
+      WHERE id = :node_id
+        AND (zone_id IS DISTINCT FROM :zone_id)
+    params:
+      zone_id: ${zone_id}
+      node_id: ${ph_node_row.0.node_id}
+
+  - step: resolve_ec_node
+    type: database_query
+    query: |
+      SELECT id AS node_id, uid AS node_uid
+      FROM nodes
+      WHERE LOWER(COALESCE(type, '')) = 'ec'
+      ORDER BY
+        CASE
+          WHEN uid = :preferred_uid AND zone_id = :zone_id THEN 0
+          WHEN uid = 'nd-test-ec-1' THEN 1
+          WHEN uid = :preferred_uid THEN 2
+          WHEN zone_id = :zone_id THEN 3
+          ELSE 4
+        END,
+        id
+      LIMIT 1
+    params:
+      preferred_uid: ${test_ec_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: ec_node_row
+
+  - step: attach_ec_node_to_zone
+    type: database_execute
+    query: |
+      UPDATE nodes
+      SET zone_id = :zone_id,
+          updated_at = NOW()
+      WHERE id = :node_id
+        AND (zone_id IS DISTINCT FROM :zone_id)
+    params:
+      zone_id: ${zone_id}
+      node_id: ${ec_node_row.0.node_id}
+
+  - step: set_node_context
+    type: set
+    ph_node_id: ${ph_node_row.0.node_id}
+    ec_node_id: ${ec_node_row.0.node_id}
+    test_ph_node_uid: ${ph_node_row.0.node_uid}
+    test_ec_node_uid: ${ec_node_row.0.node_uid}
+
+  - step: upsert_sensor_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
+      VALUES
+        (CAST(:ph_node_id AS bigint), 'ph_sensor', 'sensor', 'PH', 'pH', '{}'::jsonb, NOW(), NOW()),
+        (CAST(:ec_node_id AS bigint), 'ec_sensor', 'sensor', 'EC', 'mS/cm', '{}'::jsonb, NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          metric = EXCLUDED.metric,
+          unit = EXCLUDED.unit,
+          updated_at = NOW()
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+
+  - step: load_ph_sensor_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id, channel
+      FROM node_channels
+      WHERE node_id = CAST(:ph_node_id AS bigint)
+        AND channel = 'ph_sensor'
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+    expected_rows: 1
+    save: ph_channel_row
+
+  - step: load_ec_sensor_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id, channel
+      FROM node_channels
+      WHERE node_id = CAST(:ec_node_id AS bigint)
+        AND channel = 'ec_sensor'
+      LIMIT 1
+    params:
+      ec_node_id: ${ec_node_id}
+    expected_rows: 1
+    save: ec_channel_row
+
+  - step: set_channel_context
+    type: set
+    ph_node_channel_id: ${ph_channel_row.0.node_channel_id}
+    ec_node_channel_id: ${ec_channel_row.0.node_channel_id}
+
+  - step: cleanup_existing_sensor_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM sensor_calibrations
+      WHERE zone_id = :zone_id
+        AND node_channel_id IN (CAST(:ph_node_channel_id AS bigint), CAST(:ec_node_channel_id AS bigint))
+    params:
+      zone_id: ${zone_id}
+      ph_node_channel_id: ${ph_node_channel_id}
+      ec_node_channel_id: ${ec_node_channel_id}
+
+  - step: create_ph_calibration
+    type: api_post
+    endpoint: /api/zones/${zone_id}/sensor-calibrations
+    payload:
+      node_channel_id: ${ph_node_channel_id}
+      sensor_type: ph
+    save: ph_calibration_create
+
+  - step: submit_ph_point_1
+    type: api_post
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/${ph_calibration_create.data.calibration.id}/point
+    payload:
+      stage: 1
+      reference_value: 7.0
+    save: ph_point_1_response
+
+  - step: set_ph_command_context
+    type: set
+    ph_calibration_id: ${ph_calibration_create.data.calibration.id}
+    ph_command_id: ${ph_point_1_response.data.point_1_command_id}
+
+  - step: wait_ph_command_terminal
+    type: db.wait
+    query: |
+      SELECT cmd_id, cmd, channel, status, error_code, error_message
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status IN ('INVALID', 'ERROR')
+      LIMIT 1
+    params:
+      cmd_id: ${ph_command_id}
+    expected_rows: 1
+    timeout: 45
+    save: ph_command_terminal_row
+
+  - step: wait_ph_calibration_failed
+    type: db.wait
+    query: |
+      SELECT id, status, point_1_command_id, point_1_result, point_1_error, completed_at
+      FROM sensor_calibrations
+      WHERE id = :calibration_id
+        AND status = 'failed'
+        AND point_1_result IN ('INVALID', 'ERROR')
+        AND completed_at IS NOT NULL
+      LIMIT 1
+    params:
+      calibration_id: ${ph_calibration_id}
+    expected_rows: 1
+    timeout: 45
+    save: ph_failed_row
+
+  - step: fetch_ph_history_after_failed_point
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations?sensor_type=ph&node_channel_id=${ph_node_channel_id}&limit=10
+    save: ph_history_after_failure
+
+  - step: create_ec_calibration
+    type: api_post
+    endpoint: /api/zones/${zone_id}/sensor-calibrations
+    payload:
+      node_channel_id: ${ec_node_channel_id}
+      sensor_type: ec
+    save: ec_calibration_create
+
+  - step: submit_ec_point_1
+    type: api_post
+    endpoint: /api/zones/${zone_id}/sensor-calibrations/${ec_calibration_create.data.calibration.id}/point
+    payload:
+      stage: 1
+      reference_value: 1413
+    save: ec_point_1_response
+
+  - step: set_ec_command_context
+    type: set
+    ec_calibration_id: ${ec_calibration_create.data.calibration.id}
+    ec_command_id: ${ec_point_1_response.data.point_1_command_id}
+
+  - step: wait_ec_command_terminal
+    type: db.wait
+    query: |
+      SELECT cmd_id, cmd, channel, status, error_code, error_message
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status IN ('INVALID', 'ERROR')
+      LIMIT 1
+    params:
+      cmd_id: ${ec_command_id}
+    expected_rows: 1
+    timeout: 45
+    save: ec_command_terminal_row
+
+  - step: wait_ec_calibration_failed
+    type: db.wait
+    query: |
+      SELECT id, status, point_1_command_id, point_1_result, point_1_error, completed_at
+      FROM sensor_calibrations
+      WHERE id = :calibration_id
+        AND status = 'failed'
+        AND point_1_result IN ('INVALID', 'ERROR')
+        AND completed_at IS NOT NULL
+      LIMIT 1
+    params:
+      calibration_id: ${ec_calibration_id}
+    expected_rows: 1
+    timeout: 45
+    save: ec_failed_row
+
+  - step: fetch_ec_history_after_failed_point
+    type: api_get
+    endpoint: /api/zones/${zone_id}/sensor-calibrations?sensor_type=ec&node_channel_id=${ec_node_channel_id}&limit=10
+    save: ec_history_after_failure
+
+assertions:
+  - name: ph_create_returns_started
+    type: custom_assert
+    condition: str((context.get('ph_calibration_create', {}).get('data') or {}).get('calibration', {}).get('status', '')) == 'started'
+
+  - name: ph_point_submit_marks_pending
+    type: custom_assert
+    condition: str((context.get('ph_point_1_response', {}).get('data') or {}).get('status', '')) == 'point_1_pending' and str((context.get('ph_point_1_response', {}).get('data') or {}).get('point_1_command_id', '')) != ''
+
+  - name: ph_command_terminal_uses_calibrate_on_ph_sensor
+    type: custom_assert
+    condition: str(context.get('ph_command_terminal_row', [{}])[0].get('cmd', '')) == 'calibrate' and str(context.get('ph_command_terminal_row', [{}])[0].get('channel', '')) == 'ph_sensor' and str(context.get('ph_command_terminal_row', [{}])[0].get('status', '')) in ['INVALID', 'ERROR']
+
+  - name: ph_history_contains_failed_session
+    type: custom_assert
+    condition: any(int(item.get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str(item.get('status', '')) == 'failed' and str(item.get('point_1_result', '')) in ['INVALID', 'ERROR'] for item in (context.get('ph_history_after_failure', {}).get('data') or []))
+
+  - name: ec_create_returns_started
+    type: custom_assert
+    condition: str((context.get('ec_calibration_create', {}).get('data') or {}).get('calibration', {}).get('status', '')) == 'started'
+
+  - name: ec_point_submit_marks_pending
+    type: custom_assert
+    condition: str((context.get('ec_point_1_response', {}).get('data') or {}).get('status', '')) == 'point_1_pending' and str((context.get('ec_point_1_response', {}).get('data') or {}).get('point_1_command_id', '')) != ''
+
+  - name: ec_command_terminal_uses_calibrate_on_ec_sensor
+    type: custom_assert
+    condition: str(context.get('ec_command_terminal_row', [{}])[0].get('cmd', '')) == 'calibrate' and str(context.get('ec_command_terminal_row', [{}])[0].get('channel', '')) == 'ec_sensor' and str(context.get('ec_command_terminal_row', [{}])[0].get('status', '')) in ['INVALID', 'ERROR']
+
+  - name: ec_history_contains_failed_session
+    type: custom_assert
+    condition: any(int(item.get('id', 0)) == int(context.get('ec_calibration_id', 0)) and str(item.get('status', '')) == 'failed' and str(item.get('point_1_result', '')) in ['INVALID', 'ERROR'] for item in (context.get('ec_history_after_failure', {}).get('data') or []))
+
+cleanup:
+  - step: cancel_non_terminal_sensor_calibrations
+    type: database_execute
+    query: |
+      UPDATE sensor_calibrations
+      SET status = 'cancelled',
+          completed_at = COALESCE(completed_at, NOW()),
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND node_channel_id IN (CAST(:ph_node_channel_id AS bigint), CAST(:ec_node_channel_id AS bigint))
+        AND status NOT IN ('completed', 'failed', 'cancelled')
+    params:
+      zone_id: ${zone_id}
+      ph_node_channel_id: ${ph_node_channel_id}
+      ec_node_channel_id: ${ec_node_channel_id}

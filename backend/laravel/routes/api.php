@@ -30,6 +30,7 @@ use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SystemController;
+use App\Http\Controllers\SystemAutomationSettingsController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneAutomationLogicProfileController;
@@ -44,6 +45,7 @@ use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\ZonePumpCalibrationsController;
 use App\Http\Controllers\ZoneRelayAutotuneController;
+use App\Http\Controllers\SensorCalibrationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -142,6 +144,13 @@ Route::middleware([
     Route::get('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'show']);
     Route::get('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'show']);
     Route::get('zones/{zone}/correction-config/history', [ZoneCorrectionConfigController::class, 'history']);
+    Route::get('system/automation-settings', [SystemAutomationSettingsController::class, 'index'])
+        ->middleware('role:admin');
+    Route::get('system/automation-settings/{namespace}', [SystemAutomationSettingsController::class, 'show'])
+        ->middleware('role:admin');
+    Route::get('zones/{zone}/sensor-calibrations', [SensorCalibrationController::class, 'index']);
+    Route::get('zones/{zone}/sensor-calibrations/status', [SensorCalibrationController::class, 'status']);
+    Route::get('zones/{zone}/sensor-calibrations/{calibration}', [SensorCalibrationController::class, 'show']);
     Route::get('correction-config-presets', [ZoneCorrectionPresetController::class, 'index']);
     Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
     Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
@@ -272,6 +281,13 @@ Route::middleware([
         // PID Config (operator+)
         Route::put('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'update']);
         Route::put('zones/{zone}/pump-calibrations/{channelId}', [ZonePumpCalibrationsController::class, 'update']);
+        Route::put('system/automation-settings/{namespace}', [SystemAutomationSettingsController::class, 'update'])
+            ->middleware('role:admin');
+        Route::post('system/automation-settings/{namespace}/reset', [SystemAutomationSettingsController::class, 'reset'])
+            ->middleware('role:admin');
+        Route::post('zones/{zone}/sensor-calibrations', [SensorCalibrationController::class, 'create']);
+        Route::post('zones/{zone}/sensor-calibrations/{calibration}/point', [SensorCalibrationController::class, 'point']);
+        Route::post('zones/{zone}/sensor-calibrations/{calibration}/cancel', [SensorCalibrationController::class, 'cancel']);
         Route::post('zones/{zone}/relay-autotune', [ZoneRelayAutotuneController::class, 'start']);
 
         // Alerts (operator+)

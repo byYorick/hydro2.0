@@ -10,6 +10,7 @@ use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\Recipe;
 use App\Models\SystemLog;
+use App\Models\SystemAutomationSetting;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
@@ -1326,8 +1327,20 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'alerts' => $alerts,
                 'events' => $events,
                 'cycles' => $cycles,
+                'pumpCalibrationSettings' => SystemAutomationSetting::forNamespace('pump_calibration'),
+                'sensorCalibrationSettings' => SystemAutomationSetting::forNamespace('sensor_calibration'),
             ]);
         })->name('zones.show');
+
+        Route::get('/system/settings', function () {
+            abort_unless((auth()->user()?->role ?? null) === 'admin', 403);
+
+            return Inertia::render('SystemSettings', [
+                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+                'pumpCalibrationSettings' => SystemAutomationSetting::forNamespace('pump_calibration'),
+                'sensorCalibrationSettings' => SystemAutomationSetting::forNamespace('sensor_calibration'),
+            ]);
+        })->name('system.settings');
     });
 
     Route::prefix('devices')->group(function () {

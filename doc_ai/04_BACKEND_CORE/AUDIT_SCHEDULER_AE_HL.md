@@ -2,7 +2,7 @@
 
 **Дата:** 2026-03-12
 **Ветка:** ae3
-**Статус:** Phase 1 выполнена; observability остаётся открытой, hardening частично закрыт
+**Статус:** аудит синхронизирован с актуальным кодом на 2026-03-13; часть исторических пунктов закрыта, оставшиеся замечания относятся в основном к observability и hardening
 
 ---
 
@@ -74,6 +74,8 @@ asyncio.get_event_loop().create_task(self._dispatch(data))
 
 ### 1.3 [MEDIUM] `datetime.utcnow()` в SequentialCommandGateway
 
+**Статус:** закрыто 2026-03-12
+
 **Файл:** `backend/services/automation-engine/ae3lite/infrastructure/gateways/sequential_command_gateway.py:133`
 
 ```python
@@ -82,10 +84,10 @@ reconcile_now = datetime.utcnow().replace(microsecond=0)
 
 **Проблема:** `datetime.utcnow()` deprecated в Python 3.12. Весь остальной код использует `utcnow_naive` из `common.utils.time`. Это единственное место с прямым вызовом `utcnow()`.
 
-**Фикс:** Заменить на `datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)` или пробросить `now_fn` в gateway.
+**Фикс:** Прямой `utcnow()` убран; gateway использует общий UTC helper.
 
-**Приоритет:** P2
-**Оценка:** 10 минут
+**Приоритет:** закрыто
+**Оценка:** выполнено
 
 ---
 
@@ -112,7 +114,9 @@ async def _post(self, path, payload, headers):
 
 ---
 
-### 1.5 [MEDIUM] `upsertSchedulerIntent` мутирует terminal intents
+### 1.5 [MEDIUM] `upsertSchedulerIntent` мутировал terminal intents
+
+**Статус:** закрыто 2026-03-12
 
 **Файл:** `backend/laravel/app/Services/AutomationScheduler/ScheduleDispatcher.php:298-328`
 
@@ -141,7 +145,9 @@ WHERE zone_automation_intents.status NOT IN ('completed', 'failed', 'cancelled')
 
 ---
 
-### 1.6 [LOW] IntentStatusListener в AE — бесполезный callback
+### 1.6 [LOW] IntentStatusListener в AE использует fire-and-forget fast-path
+
+**Статус:** частично закрыто 2026-03-12
 
 **Файл:** `backend/services/automation-engine/ae3lite/runtime/app.py:187-196`
 
@@ -156,12 +162,12 @@ async def _on_terminal_intent(data: dict) -> None:
     )
 ```
 
-**Проблема:** Callback только логирует. Не триггерит worker kick, не обновляет кэш, не очищает lease. Listener потребляет отдельное DB-соединение (вне пула) и CPU ради одного `logger.info`.
+**Проблема:** Исходная формулировка устарела. Callback уже делает `worker.kick()` и используется как realtime fast-path. Актуальное замечание уже уже: dispatch остаётся fire-and-forget, а ошибка callback только логируется.
 
-**Фикс:** Либо удалить listener из AE (NOTIFY полезен только для Laravel-стороны), либо добавить полезное действие — например, `bundle.worker.kick()` для быстрого подхвата следующей задачи.
+**Фикс:** Держать listener как fast-path wake-up. При дальнейшем усложнении callback потребуется retry/self-heal или явный fallback.
 
-**Приоритет:** P3
-**Оценка:** 15 минут (удаление) или 30 минут (полезный callback)
+**Приоритет:** P4
+**Оценка:** 15-30 минут при необходимости дополнительного hardening
 
 ---
 
@@ -190,17 +196,19 @@ async def _on_terminal_intent(data: dict) -> None:
 
 ---
 
-### 2.2 [MEDIUM] Двойной NOTIFY при scheduler + AE terminal update
+### 2.2 [INFO] Двойной NOTIFY при scheduler + AE terminal update
+
+**Статус:** исторический сценарий; критичный конфликт закрыт фиксами в `mark_intent_terminal`
 
 **Сценарий:**
 1. AE завершает task → `mark_intent_terminal(completed)` → trigger fires NOTIFY
 2. Scheduler одновременно поллит → `syncIntentTerminalStatus(failed)` → guard `WHERE status IN ('pending','claimed','running')` → UPDATE пропускается (уже completed)
 
-Этот сценарий безопасен благодаря guard в scheduler. **НО** обратный порядок опасен (см. bug 1.1):
+Этот сценарий безопасен благодаря guard в scheduler. Ранее обратный порядок был опасен (см. bug 1.1):
 1. Scheduler поллит → `syncIntentTerminalStatus(failed)` → UPDATE (с guard) succeeds
 2. AE завершает → `mark_intent_terminal(completed)` → UPDATE (без guard!) succeeds → перезаписывает failed → **рассинхрон**
 
-**Фикс:** Bug 1.1 (добавить WHERE guard в `mark_intent_terminal`).
+После добавления WHERE guard в `mark_intent_terminal` этот сценарий больше не является открытым багом.
 
 ---
 
@@ -276,16 +284,16 @@ HL (command publish)
 
 **Проблемы:**
 
-1. **hard_stale_after_sec = 30 минут** — scheduler считает задачу "потенциально живой" 30 минут даже если AE уже пометил intent terminal. Это значит что `isScheduleBusy()` возвращает `true` до 30 минут если intent_notify_listener не сработал.
+1. **`hard_stale_after_sec` по умолчанию всё ещё велик** — effective default сейчас `1200s` (20 минут), поэтому без fast-path notify/poll reconcile зона может оставаться busy дольше, чем хотелось бы для чувствительных расписаний.
 
 2. **Разрыв частично закрыт:** scheduler defaults приведены к `expires_after_sec=600s` и effective `hard_stale_after_sec=max(900, expires_after_sec*2)`. При явном override `hard_stale_after_sec` пользовательское значение сохраняется.
 
-3. **Нет retry budget для failed commands:** Если HL вернул ошибку, command gateway сразу fail-ит task. Нет retry с backoff на transient HL errors.
+3. **Retry budget жёстко ограничен архитектурой:** у `automation-engine -> history-logger` разрешён не более чем один transient retry с backoff. Это сознательный fail-closed инвариант, а не просто недоделка.
 
-**Фикс:**
+**Фикс / текущее состояние:**
 - Выровнять `expires_after_sec` с реальной длительностью workflow (предложение: 600s)
 - Уменьшить `hard_stale_after_sec` (предложение: `max(900, expires_after_sec * 2)`)
-- Добавить 1-retry с 1s backoff в `HistoryLoggerClient.publish()`
+- Не увеличивать retries в `HistoryLoggerClient.publish()` без синхронного изменения архитектурной спецификации
 
 **Приоритет:** P1
 **Оценка:** 1 час
@@ -293,6 +301,8 @@ HL (command publish)
 ---
 
 ### 3.3 [MEDIUM] Command polling без backoff
+
+**Статус:** закрыто 2026-03-12
 
 **Файл:** `backend/services/automation-engine/ae3lite/infrastructure/gateways/sequential_command_gateway.py:131-141`
 
@@ -302,22 +312,24 @@ while True:
     ...
 ```
 
-**Проблема:** Фиксированный интервал 0.5s. Для relay_node (ответ за 50-100ms) — избыточная задержка. Для climate_node (ответ за 5-30s) — слишком частый polling.
+**Проблема:** Исторический пункт. На момент первичного аудита polling был с фиксированным интервалом; сейчас в runtime уже есть bounded backoff.
 
-**Фикс:** Экспоненциальный backoff: start=0.2s, max=5s, factor=1.5.
+**Фикс:** Реализован bounded backoff: start от базового poll interval, рост до max interval с backoff factor.
 
-**Приоритет:** P3
-**Оценка:** 20 минут
+**Приоритет:** закрыто
+**Оценка:** выполнено
 
 ---
 
 ### 3.4 [LOW] `_BACKGROUND_TASKS_SIZE_LIMIT = 256` — мягкий лимит
 
+**Статус:** закрыто 2026-03-12
+
 **Файл:** `backend/services/automation-engine/ae3lite/runtime/app.py:49,62-69`
 
-При достижении 256 background tasks — лишь `logger.error`, но task всё равно создаётся. В теории бесконечный рост.
+Исторический пункт. Сейчас при превышении лимита spawn отклоняется fail-closed с ошибкой, а coroutine закрывается.
 
-**Фикс:** Hard limit с отклонением создания task (return None или raise).
+**Фикс:** Hard limit с отклонением создания task реализован.
 
 **Приоритет:** P3
 
@@ -327,43 +339,44 @@ while True:
 
 ### 4.1 [HIGH] Laravel Scheduler не экспортирует Prometheus метрики
 
-**Проблема:** Все метрики scheduler идут в таблицу `scheduler_logs` (DB). Нет Prometheus endpoint → невозможно:
+**Статус:** закрыто 2026-03-12
+
+**Проблема:** Исторический пункт. Сейчас у Laravel scheduler есть metrics endpoint и exporter.
+
+Раньше все метрики scheduler шли только в БД, из-за чего было невозможно:
 - Построить dashboard в Grafana для cycle duration, dispatch rate, active tasks
 - Настроить алерты на Prometheus (увеличение failed dispatches, cycle duration spike)
 - Корреляция между scheduler и AE метриками в одном стеке
 
-**Python сервисы:** AE (`:9401/metrics`), HL (`:9301/metrics`), Scheduler (`:9402/metrics`) — все имеют Prometheus.
+**Текущее состояние:** есть `/api/system/scheduler/metrics`, exporter и feature-тесты на Prometheus output.
 
-**Фикс:** Добавить Prometheus PHP exporter или реализовать `/metrics` endpoint в Laravel, экспортирующий:
-- `laravel_scheduler_cycle_duration_seconds` (histogram)
-- `laravel_scheduler_dispatches_total` (counter by zone_id, task_type, result)
-- `laravel_scheduler_active_tasks_count` (gauge)
+**Фикс:** реализован.
 
-**Приоритет:** P2
-**Оценка:** 2-3 часа (новый endpoint + метрики)
+**Приоритет:** закрыто
+**Оценка:** выполнено
 
 ---
 
 ### 4.2 [MEDIUM] Нет метрики для полного RTT команды
 
+**Статус:** закрыто 2026-03-12
+
 **Файл:** `backend/services/automation-engine/ae3lite/infrastructure/metrics.py`
 
-**Есть:**
-- `ae3_command_dispatch_duration_seconds` — время отправки в HL
-- `ae3_command_terminal_total` — счётчик terminal статусов
+Исторический пункт. Эти метрики уже есть:
+- `ae3_command_roundtrip_duration_seconds`
+- `ae3_command_poll_iterations_total`
 
-**Нет:**
-- **`ae3_command_roundtrip_duration_seconds`** — от publish до terminal status (включая время на node ответ)
-- **`ae3_command_poll_iterations_total`** — сколько poll циклов до terminal (для определения оптимального poll interval)
+**Фикс:** реализован в `SequentialCommandGateway` и `metrics.py`.
 
-**Фикс:** Добавить histogram RTT и counter poll iterations в `SequentialCommandGateway`.
-
-**Приоритет:** P2
-**Оценка:** 30 минут
+**Приоритет:** закрыто
+**Оценка:** выполнено
 
 ---
 
 ### 4.3 [MEDIUM] health_ready всегда рапортует worker=ok
+
+**Статус:** закрыто 2026-03-12
 
 **Файл:** `backend/services/automation-engine/ae3lite/runtime/app.py:378-380`
 
@@ -371,12 +384,12 @@ while True:
 "worker": {"ok": True, "reason": runtime_config.worker_owner},
 ```
 
-**Проблема:** Если drain task упал и не был respawned — readiness probe врёт. Kubernetes/Docker не узнает что AE не обрабатывает задачи.
+**Проблема:** Исторический пункт. Сейчас readiness probe использует `bundle.worker.drain_health()` и уже не рапортует worker как безусловно healthy.
 
-**Фикс:** Проверять `bundle.worker._drain_task` is not None and not done, и проверять время последнего claim (если > 5 * idle_poll_interval — suspicious).
+**Фикс:** Проверка health drain worker реализована.
 
-**Приоритет:** P1
-**Оценка:** 30 минут
+**Приоритет:** закрыто
+**Оценка:** выполнено
 
 ---
 
@@ -393,16 +406,17 @@ while True:
 
 ### 4.5 [LOW] Отсутствуют метрики для intent lifecycle
 
-Нет Prometheus метрик для:
-- `intent_created_total`
-- `intent_claimed_total`
-- `intent_terminal_total{status}`
-- `intent_stale_reclaimed_total`
+**Статус:** частично закрыто 2026-03-12
 
-Это ключевой coordination primitive, но он невидим в мониторинге.
+Сейчас уже есть:
+- `ae3_intent_claimed_total`
+- `ae3_intent_terminal_total{status}`
+- `ae3_intent_stale_reclaimed_total`
 
-**Приоритет:** P3
-**Оценка:** 30 минут
+Остаётся возможное улучшение: добавить отдельную creation-метрику, если она действительно нужна для операционной картины.
+
+**Приоритет:** P4
+**Оценка:** 15-30 минут при подтверждённой ценности
 
 ---
 
@@ -451,14 +465,16 @@ while True:
 
 ### Фаза 2: Observability (P2)
 
+**Статус:** частично выполнена 2026-03-12
+
 | # | Задача | Файл(ы) | Оценка |
 |---|--------|---------|--------|
-| 7 | Prometheus метрики в Laravel scheduler | Laravel, новый endpoint | 2-3 часа |
-| 8 | Command RTT histogram + poll iteration counter | `sequential_command_gateway.py`, `metrics.py` | 30 мин |
-| 9 | `datetime.utcnow()` → `utcnow_naive` | `sequential_command_gateway.py` | 10 мин |
-| 10 | WHERE guard в `upsertSchedulerIntent` | `ScheduleDispatcher.php` | 10 мин |
+| 7 | Prometheus метрики в Laravel scheduler | Laravel, новый endpoint | выполнено |
+| 8 | Command RTT histogram + poll iteration counter | `sequential_command_gateway.py`, `metrics.py` | выполнено |
+| 9 | `datetime.utcnow()` → `utcnow_naive` | `sequential_command_gateway.py` | выполнено |
+| 10 | WHERE guard в `upsertSchedulerIntent` | `ScheduleDispatcher.php` | выполнено |
 
-**Итого фаза 2:** ~3.5 часа
+**Итого фаза 2:** базовые задачи выполнены; открыты только дополнительные observability-улучшения
 
 ### Фаза 3: Hardening (P3)
 
@@ -467,13 +483,13 @@ while True:
 
 | # | Задача | Файл(ы) | Оценка |
 |---|--------|---------|--------|
-| 11 | Intent lifecycle Prometheus метрики | `ae3lite/api/intents.py`, `metrics.py` | 30 мин |
-| 12 | Exponential backoff в command polling | `sequential_command_gateway.py` | 20 мин |
-| 13 | Удалить или активировать AE IntentStatusListener | `ae3lite/runtime/app.py` | 15 мин |
-| 14 | Hard limit на background tasks | `ae3lite/runtime/app.py` | 15 мин |
-| 15 | 1-retry с backoff в HistoryLoggerClient | `history_logger_client.py` | 30 мин |
+| 11 | Intent lifecycle Prometheus метрики | `ae3lite/api/intents.py`, `metrics.py` | выполнено частично |
+| 12 | Exponential backoff в command polling | `sequential_command_gateway.py` | выполнено |
+| 13 | Удалить или активировать AE IntentStatusListener | `ae3lite/runtime/app.py` | выполнено (активирован fast-path kick) |
+| 14 | Hard limit на background tasks | `ae3lite/runtime/app.py` | выполнено |
+| 15 | 1-retry с backoff в HistoryLoggerClient | `history_logger_client.py` | выполнено |
 
-**Итого фаза 3:** ~2 часа
+**Итого фаза 3:** основные hardening-задачи для AE закрыты
 
 ### Тестирование
 
@@ -494,7 +510,7 @@ make protocol-check
 
 ---
 
-## Приложение: Диаграмма таймаутов (после исправлений фазы 1)
+## Приложение: Диаграмма таймаутов (актуализировано после синхронизации аудита)
 
 ```
 Scheduler dispatch cycle (every ~60s)
@@ -512,7 +528,7 @@ Scheduler dispatch cycle (every ~60s)
 │                             │   └─ heartbeat: 100s
 │                             ├─ whole-task timeout: 900s
 │                             └─ stage_deadline_at: varies
-│                                 └─ command poll: 0.5s fixed
+│                                 └─ command poll: bounded backoff
 │
 │                                              HL Command
 │                                              └─ httpx timeout: 5s
@@ -523,4 +539,5 @@ Scheduler dispatch cycle (every ~60s)
 - `expires_after_sec`: default **600s**
 - `hard_stale_after_sec`: effective default **max(900, expires*2)**
 - `AE_MAX_TASK_EXECUTION_SEC`: default **900s** (15 min)
-- Command poll: 0.5s fixed → **0.2s start, 5s max, 1.5x backoff**
+- Command poll: bounded backoff с ростом до max interval
+- `automation-engine -> history-logger`: не более **1 transient retry** с backoff `1s`, далее fail-closed

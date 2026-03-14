@@ -160,9 +160,13 @@ updated_at
 ```
 
 Практика для актуаторов-дозаторов:
-- калибровка насоса хранится в `node_channels.config.pump_calibration`:
+- оперативная калибровка канала насоса хранится в `node_channels.config.pump_calibration` как last-known mirror:
   `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`,
   `k_ms_per_ml_l`, `test_volume_l`, `ec_before_ms`, `ec_after_ms`, `delta_ec_ms`, `temperature_c`.
+- системные пороги и UI/runtime defaults для pump calibration хранятся в `system_automation_settings(namespace='pump_calibration')`.
+- zone-level override для runtime pump calibration хранится в
+  `zone_correction_configs.base_config.pump_calibration` и раскрывается в
+  `zone_correction_configs.resolved_config.pump_calibration`.
 - `component` для EC-питания поддерживает: `npk`, `calcium`, `magnesium`, `micro` (для pH — `acid`/`base`).
 - Для новой логики питания не используется legacy 3-компонентная схема: актуальна только 4-компонентная модель.
 
@@ -1677,12 +1681,66 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 
 ---
 
-# 16. Pump Calibration Domain Model (2026-02-25)
+# 16. Calibration Settings Domain Model (2026-03-14)
 
-Добавлена выделенная доменная сущность калибровки насосов.  
-`node_channels.config.pump_calibration` сохранён как **legacy read-through fallback** на переходный период.
+Добавлены системные automation settings и backend-managed tracking калибровок сенсоров.
+`node_channels.config.pump_calibration` сохранён как operational mirror/manual calibration payload,
+но не является source of truth для системных порогов runtime.
 
-### 16.1. Таблица `pump_calibrations`
+### 16.1. Таблица `system_automation_settings`
+
+- Назначение: системный source of truth для automation-wide defaults и validation bounds.
+- Ключевые поля:
+  - `namespace` (unique string)
+  - `config` (jsonb)
+  - `updated_by` (nullable FK -> `users.id`)
+  - `created_at`, `updated_at`
+- Поддерживаемые namespace:
+  - `pump_calibration`
+  - `sensor_calibration`
+- Для `pump_calibration` хранятся:
+  - `ml_per_sec_min`, `ml_per_sec_max`
+  - `min_dose_ms`
+  - `calibration_duration_min_sec`, `calibration_duration_max_sec`
+  - `quality_score_basic`, `quality_score_with_k`, `quality_score_legacy`
+  - `age_warning_days`, `age_critical_days`
+  - `default_run_duration_sec`
+- Для `sensor_calibration` хранятся:
+  - `ph_point_1_value`, `ph_point_2_value`
+  - `ec_point_1_tds`, `ec_point_2_tds`
+  - `reminder_days`, `critical_days`
+  - `command_timeout_sec`
+  - `ph_reference_min`, `ph_reference_max`
+  - `ec_tds_reference_max`
+
+### 16.2. Таблица `sensor_calibrations`
+
+- Назначение: backend-managed async tracking двухточечной калибровки pH/EC сенсоров.
+- Ключевые поля:
+  - `zone_id` (FK -> `zones.id`)
+  - `node_channel_id` (FK -> `node_channels.id`)
+  - `sensor_type` (`ph|ec`)
+  - `status`
+  - `point_1_reference`, `point_1_command_id`, `point_1_sent_at`, `point_1_result`, `point_1_error`
+  - `point_2_reference`, `point_2_command_id`, `point_2_sent_at`, `point_2_result`, `point_2_error`
+  - `completed_at`
+  - `calibrated_by` (nullable FK -> `users.id`)
+  - `notes`, `meta`
+- State machine:
+  - `started`
+  - `point_1_pending`
+  - `point_1_done`
+  - `point_2_pending`
+  - `completed`
+  - `failed`
+  - `cancelled`
+- Командная связка:
+  - stage 1 и stage 2 публикуются через `history-logger POST /commands`
+  - `point_1_command_id` и `point_2_command_id` совпадают с `commands.cmd_id`
+  - terminal status `DONE` завершает этап успешно
+  - terminal status `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` маппится в `failed`
+
+### 16.3. Таблица `pump_calibrations`
 
 - Назначение: версионируемое хранение калибровок дозирующих каналов.
 - Ключевые поля:
@@ -1696,7 +1754,16 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   - новая калибровка деактивирует предыдущую (`is_active=false`, `valid_to=NOW()`),
   - актуальная калибровка выбирается по `is_active=true` и `valid_from DESC`.
 
-### 16.2. Таблица `node_channels` (activity sync)
+### 16.4. Zone correction config: pump calibration override
+
+- `zone_correction_configs.base_config.pump_calibration` хранит только zone-level diff относительно
+  `system_automation_settings(namespace='pump_calibration')`.
+- `zone_correction_configs.resolved_config.pump_calibration` хранит fully resolved runtime payload
+  для Automation-Engine.
+- `zone_correction_config_versions.resolved_config.pump_calibration` versioned вместе с остальным correction config.
+- AE3-Lite использует `resolved_config.pump_calibration` как canonical runtime source.
+
+### 16.5. Таблица `node_channels` (activity sync)
 
 Добавлены поля:
 - `last_seen_at` — последнее подтверждённое присутствие канала в `config_report`.
@@ -1706,10 +1773,12 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - destructive-delete заменён на soft-deactivate (`is_active=false`) при explicit full-snapshot prune;
 - по умолчанию prune отключён для transport-safe поведения.
 
-### 16.3. Совместимость чтения
+### 16.6. Совместимость чтения
 
-- Automation-Engine сначала читает активную запись из `pump_calibrations`.
-- При отсутствии записи используется fallback из `node_channels.config.pump_calibration`.
+- Automation-Engine читает runtime bounds из `zone_correction_configs.resolved_config.pump_calibration`.
+- Ручная pump calibration панели Laravel читает активную запись из `pump_calibrations`.
+- `node_channels.config.pump_calibration` допустим как read-through mirror/manual payload, но не как source of truth
+  для системных default/min/max порогов.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 

@@ -3,6 +3,7 @@ Water Flow Engine - контроль уровня воды, расхода и з
 Согласно WATER_FLOW_ENGINE.md
 """
 import asyncio
+import json
 import os
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timedelta
@@ -27,6 +28,23 @@ _IRRIGATION_ACTIVE_PHASES = {"irrig_recirc", "irrigating"}
 
 import logging as _logging
 _wf_logger = _logging.getLogger(__name__)
+
+
+async def _load_system_automation_settings(namespace: str) -> Dict[str, Any]:
+    rows = await fetch(
+        """
+        SELECT config
+        FROM system_automation_settings
+        WHERE namespace = $1
+        LIMIT 1
+        """,
+        namespace,
+    )
+    if not rows:
+        raise RuntimeError(f"system_automation_settings namespace '{namespace}' not found")
+
+    config = rows[0]["config"]
+    return json.loads(config) if isinstance(config, str) else dict(config)
 
 
 async def check_water_level(
@@ -944,8 +962,14 @@ async def calibrate_pump(
     if not HTTPX_AVAILABLE:
         raise RuntimeError("httpx is required for pump calibration")
 
-    if duration_sec <= 0:
-        raise ValueError("duration_sec must be positive")
+    settings = await _load_system_automation_settings("pump_calibration")
+    duration_min_sec = int(settings["calibration_duration_min_sec"])
+    duration_max_sec = int(settings["calibration_duration_max_sec"])
+
+    if duration_sec < duration_min_sec or duration_sec > duration_max_sec:
+        raise ValueError(
+            f"duration_sec must be within [{duration_min_sec}, {duration_max_sec}]"
+        )
 
     normalized_component: Optional[str] = None
     if component is not None:
@@ -1052,6 +1076,12 @@ async def calibrate_pump(
     ml_per_sec = round(actual_ml_value / float(duration_sec), 6)
     if ml_per_sec <= 0:
         raise ValueError("Calculated ml_per_sec must be greater than 0")
+    ml_per_sec_min = float(settings["ml_per_sec_min"])
+    ml_per_sec_max = float(settings["ml_per_sec_max"])
+    if ml_per_sec < ml_per_sec_min or ml_per_sec > ml_per_sec_max:
+        raise ValueError(
+            f"Calculated ml_per_sec must be within [{ml_per_sec_min}, {ml_per_sec_max}]"
+        )
 
     k_ms_per_ml_l: Optional[float] = None
     ec_delta_ms: Optional[float] = None
@@ -1093,7 +1123,11 @@ async def calibrate_pump(
     }
     current_config["pump_calibration"] = calibration_payload
 
-    quality_score = 0.9 if k_ms_per_ml_l is not None else 0.75
+    quality_score = (
+        float(settings["quality_score_with_k"])
+        if k_ms_per_ml_l is not None
+        else float(settings["quality_score_basic"])
+    )
     await execute(
         """
         UPDATE pump_calibrations
