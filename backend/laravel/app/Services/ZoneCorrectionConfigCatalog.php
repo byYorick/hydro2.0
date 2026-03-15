@@ -206,7 +206,13 @@ class ZoneCorrectionConfigCatalog
                     self::field('retry.max_ph_correction_attempts', 'Max pH attempts', 'Лимит pH-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 32767]),
                     self::field('retry.prepare_recirculation_timeout_sec', 'Recirculation timeout', 'Длительность одного окна recirculation before retry.', 'integer', ['min' => 30, 'max' => 7200]),
                     self::field('retry.prepare_recirculation_max_attempts', 'Recirculation max windows', 'Сколько timeout-window допускается до alert/stop.', 'integer', ['min' => 1, 'max' => 10]),
-                    self::field('retry.prepare_recirculation_max_correction_attempts', 'Recirculation correction cap', 'Верхний guard для correction loop внутри одного recirculation window.', 'integer', ['min' => 1, 'max' => 500, 'advanced_only' => true]),
+                    self::field(
+                        'retry.prepare_recirculation_max_correction_attempts',
+                        'Recirculation correction cap',
+                        'Верхний guard для correction loop внутри одного recirculation window. Legacy sentinel 32767 допускается для обратной совместимости и нормализуется runtime-слоем.',
+                        'integer',
+                        ['min' => 1, 'max' => 500, 'advanced_only' => true, 'legacy_sentinel_values' => [32767]]
+                    ),
                 ],
             ],
             [
@@ -416,6 +422,9 @@ class ZoneCorrectionConfigCatalog
         if ($type === 'integer') {
             if (! is_int($value)) {
                 throw new InvalidArgumentException("Поле {$path} должно быть integer.");
+            }
+            if (isset($field['legacy_sentinel_values']) && in_array($value, $field['legacy_sentinel_values'], true)) {
+                return;
             }
             if (isset($field['min']) && $value < $field['min']) {
                 throw new InvalidArgumentException("Поле {$path} должно быть >= {$field['min']}.");

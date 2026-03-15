@@ -40,7 +40,7 @@ class VariableResolver:
             resolved = {}
             for k, v in value.items():
                 resolved[k] = self.resolve_variables(v, required_vars)
-            logger.info(f"VariableResolver: resolved dict {value} -> {resolved}, context has zone_id: {'zone_id' in self.context}, node_id: {'node_id' in self.context}")
+            logger.debug(f"VariableResolver: resolved dict {value} -> {resolved}, context has zone_id: {'zone_id' in self.context}, node_id: {'node_id' in self.context}")
             return resolved
         elif isinstance(value, list):
             return [self.resolve_variables(item, required_vars) for item in value]
@@ -56,7 +56,7 @@ class VariableResolver:
             var_expr = match.group(1)
             try:
                 value = self._resolve_variable_expression(var_expr)
-                logger.info(f"VariableResolver: resolving '{var_expr}' -> {value}, context has it: {var_expr in self.context}")
+                logger.debug(f"VariableResolver: resolving '{var_expr}' -> {value}, context has it: {var_expr in self.context}")
                 if required_vars and var_expr in required_vars and value is None:
                     raise ValueError(f"Required variable '{var_expr}' is not set")
                 return str(value) if value is not None else ""
@@ -76,7 +76,7 @@ class VariableResolver:
 
         # Start with the first part as variable name
         current = self.context.get(parts[0])
-        logger.info(f"VariableResolver: looking for '{expr}', parts[0]='{parts[0]}', found in context: {current is not None}, context keys: {list(self.context.keys())[:10]}")
+        logger.debug(f"VariableResolver: looking for '{expr}', parts[0]='{parts[0]}', found in context: {current is not None}, context keys: {list(self.context.keys())[:10]}")
         if current is None:
             # Try to find in context with different naming
             current = self._find_variable_fallback(parts[0])

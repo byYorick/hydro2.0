@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from ae3lite.application.use_cases import ClaimNextTaskUseCase
+from ae3lite.domain.entities.workflow_state import WorkflowState
 from ae3lite.infrastructure.repositories import PgAutomationTaskRepository, PgZoneLeaseRepository
 from common.db import execute, fetch
 
@@ -189,6 +190,78 @@ async def test_claim_next_task_reverts_claim_when_zone_lease_is_busy() -> None:
         assert str(rows[0]["status"]).lower() == "pending"
         assert rows[0]["claimed_by"] is None
         assert rows[0]["claimed_at"] is None
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_update_stage_requeues_task_as_unclaimed_pending() -> None:
+    prefix = f"ae3-requeue-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task_repo = PgAutomationTaskRepository()
+    lease_repo = PgZoneLeaseRepository()
+    use_case = ClaimNextTaskUseCase(
+        task_repository=task_repo,
+        zone_lease_repository=lease_repo,
+        lease_ttl_sec=120,
+    )
+
+    try:
+        zone_id = await _insert_zone(f"{prefix}-zone")
+        task_id = await _insert_task(
+            zone_id=zone_id,
+            idempotency_key=f"{prefix}-task",
+            scheduled_for=now - timedelta(minutes=1),
+            due_at=now - timedelta(seconds=5),
+        )
+
+        claimed = await use_case.run(owner="worker-a", now=now)
+        assert claimed is not None
+        claimed_task, _lease = claimed
+        assert claimed_task.id == task_id
+
+        requeued = await task_repo.update_stage(
+            task_id=task_id,
+            owner="worker-a",
+            workflow=WorkflowState(
+                current_stage="prepare_recirculation_check",
+                workflow_phase="tank_recirc",
+                stage_deadline_at=now + timedelta(seconds=30),
+                stage_retry_count=0,
+                stage_entered_at=now,
+                clean_fill_cycle=1,
+            ),
+            correction=None,
+            due_at=now - timedelta(seconds=1),
+            now=now,
+        )
+        assert requeued is not None
+        assert requeued.status == "pending"
+        assert requeued.claimed_by is None
+        assert requeued.claimed_at is None
+
+        rows = await fetch(
+            """
+            SELECT status, claimed_by, claimed_at
+            FROM ae_tasks
+            WHERE id = $1
+            """,
+            task_id,
+        )
+        assert str(rows[0]["status"]).lower() == "pending"
+        assert rows[0]["claimed_by"] is None
+        assert rows[0]["claimed_at"] is None
+
+        released = await lease_repo.release(zone_id=zone_id, owner="worker-a")
+        assert released is True
+
+        reclaimed = await use_case.run(owner="worker-b", now=now)
+        assert reclaimed is not None
+        reclaimed_task, reclaimed_lease = reclaimed
+        assert reclaimed_task.id == task_id
+        assert reclaimed_task.status == "claimed"
+        assert reclaimed_task.claimed_by == "worker-b"
+        assert reclaimed_lease.zone_id == zone_id
     finally:
         await _cleanup(prefix)
 

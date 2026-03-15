@@ -294,16 +294,6 @@ class CycleStartPlanner:
                     seen_pairs=seen_pairs,
                 )
 
-            ec_actuators = actuators.get("ec_actuators")
-            if not isinstance(ec_actuators, Mapping):
-                continue
-            for alias, actuator in ec_actuators.items():
-                self._validate_preflight_calibration(
-                    actuator=actuator,
-                    actuator_key=str(alias or "").strip().lower() or "ec",
-                    seen_pairs=seen_pairs,
-                )
-
     def _validate_preflight_calibration(
         self,
         *,

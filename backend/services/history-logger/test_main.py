@@ -593,6 +593,44 @@ async def test_process_telemetry_batch_resolves_node_unassigned_alert_on_recover
 
 
 @pytest.mark.asyncio
+async def test_process_telemetry_batch_skips_unknown_entity_alerts_for_temp_namespace():
+    import telemetry_processing as tp
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
+    import time
+
+    tp._zone_cache.clear()
+    tp._node_cache.clear()
+    tp._anomaly_alert_last_sent.clear()
+    tp._warning_throttle_last_sent.clear()
+    tp._cache_last_update = time.time()
+
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-temp-1",
+            zone_uid="zn-temp",
+            gh_uid="gh-temp",
+            metric_type="PH",
+            value=6.5,
+            channel="ph_sensor",
+            ts=utcnow(),
+        )
+    ]
+
+    with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.execute", new_callable=AsyncMock), \
+         patch("telemetry_processing.send_infra_alert", new_callable=AsyncMock) as mock_alert, \
+         patch("telemetry_processing.logger") as mock_logger:
+        mock_fetch.return_value = []
+        mock_alert.return_value = True
+
+        await process_telemetry_batch(samples)
+
+    mock_alert.assert_not_awaited()
+    mock_logger.warning.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_process_telemetry_batch_falls_back_to_uid_lookup_for_unassigned_node_with_gh_uid():
     """If node cache is cold, resolver must fallback to UID-only lookup and emit node_unassigned."""
     import telemetry_processing as tp

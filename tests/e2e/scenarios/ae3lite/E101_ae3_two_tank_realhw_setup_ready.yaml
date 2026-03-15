@@ -1328,25 +1328,14 @@ actions:
         AND ecs.node_id = CAST(:ec_node_id AS bigint)
         AND ecs.type = 'EC'
         AND ecs.label = 'ec_sensor'
-        AND (
-          (
-            ph.last_ts >= NOW() - INTERVAL '30 seconds'
-            AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
-            AND ph.last_value BETWEEN 4.80 AND 5.20
-            AND ec.last_value BETWEEN 2.20 AND 2.60
-          )
-          OR EXISTS (
-            SELECT 1
-            FROM ae_tasks t
-            WHERE t.id = CAST(:task_id AS bigint)
-              AND t.status = 'completed'
-          )
-        )
+        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ph.last_value BETWEEN 4.80 AND 5.20
+        AND ec.last_value BETWEEN 2.20 AND 2.60
       LIMIT 1
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
-      task_id: ${task_id}
     timeout: 420.0
     expected_rows: 1
     save: targets_reached_row

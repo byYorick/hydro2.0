@@ -30,6 +30,7 @@ from ae3lite.infrastructure.repositories import (
     PgAeCommandRepository,
     PgAutomationTaskRepository,
     PgPidStateRepository,
+    PgZoneCorrectionConfigRepository,
     PgZoneAlertRepository,
     PgZoneAlertWriteRepository,
     PgZoneIntentRepository,
@@ -97,6 +98,7 @@ def build_ae3_runtime_bundle(
     workflow_repository = PgZoneWorkflowRepository()
     alert_repository = PgZoneAlertWriteRepository()
     pid_state_repository = PgPidStateRepository()
+    zone_correction_config_repository = PgZoneCorrectionConfigRepository()
     runtime_monitor = PgZoneRuntimeMonitor()
     topology_registry = TopologyRegistry()
 
@@ -125,6 +127,7 @@ def build_ae3_runtime_bundle(
             command_gateway=command_gateway,
             workflow_router=workflow_router,
             workflow_repository=workflow_repository,
+            zone_correction_config_repository=zone_correction_config_repository,
             alert_repository=alert_repository,
         ),
         startup_recovery_use_case=StartupRecoveryUseCase(

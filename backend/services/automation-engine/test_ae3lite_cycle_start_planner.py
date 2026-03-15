@@ -332,6 +332,54 @@ def test_cycle_start_planner_fails_closed_when_dosing_calibration_missing_prefli
     assert "channel=pump_a" in str(exc.value)
 
 
+def test_cycle_start_planner_allows_uncalibrated_unused_ec_backup_channels() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "correction": {
+                    "dose_ec_channel": "dose_ec_a",
+                    "dose_ph_up_channel": "ph_base_pump",
+                    "dose_ph_down_channel": "ph_acid_pump",
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_acid", node_channel_id=46, role="ph_acid_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="pump_base", node_channel_id=47, role="ph_base_pump", pump_calibration={"ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=48, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_a", node_channel_id=49, role="dose_ec_a", pump_calibration={"component": "npk", "ml_per_sec": 1.0}),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="pump_b", node_channel_id=50, role="ec_calcium_pump"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=51, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+
+    plan = planner.build(task=_task(now), snapshot=snapshot)
+
+    correction_actuators = plan.runtime["correction"]["actuators"]
+    assert correction_actuators["ec"]["channel"] == "pump_a"
+    assert correction_actuators["ec_actuators"]["pump_b"]["channel"] == "pump_b"
+
+
 def test_cycle_start_planner_rejects_unsupported_schema_version() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()

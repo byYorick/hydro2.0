@@ -138,22 +138,39 @@ class PgZoneRuntimeMonitor:
             "is_stale": is_stale,
         }
 
-    async def read_latest_irr_state(self, *, zone_id: int, max_age_sec: int) -> Mapping[str, Any]:
+    async def read_latest_irr_state(
+        self,
+        *,
+        zone_id: int,
+        max_age_sec: int,
+        expected_cmd_id: str | None = None,
+    ) -> Mapping[str, Any]:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT payload_json, details, created_at
+                SELECT
+                    payload_json,
+                    details,
+                    created_at,
+                    COALESCE(details->>'cmd_id', payload_json->>'cmd_id') AS snapshot_cmd_id
                 FROM zone_events
                 WHERE zone_id = $1
                   AND type = 'IRR_STATE_SNAPSHOT'
+                  AND ($2::text IS NULL OR COALESCE(details->>'cmd_id', payload_json->>'cmd_id') = $2)
                 ORDER BY created_at DESC, id DESC
                 LIMIT 1
                 """,
                 zone_id,
+                expected_cmd_id,
             )
         if row is None:
-            return {"has_snapshot": False, "is_stale": False, "snapshot": None}
+            return {
+                "has_snapshot": False,
+                "is_stale": False,
+                "snapshot": None,
+                "cmd_id": expected_cmd_id,
+            }
 
         payload = self._resolve_zone_event_payload(row)
         snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), Mapping) else None
@@ -165,4 +182,5 @@ class PgZoneRuntimeMonitor:
             "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else None,
             "sample_age_sec": age_sec,
             "created_at": row.get("created_at"),
+            "cmd_id": str(row.get("snapshot_cmd_id") or "").strip() or None,
         }

@@ -10,7 +10,10 @@ use App\Models\Command;
 use App\Models\ZoneEvent;
 use App\Observers\CommandObserver;
 use App\Observers\ZoneEventObserver;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -67,18 +70,32 @@ class AppServiceProvider extends ServiceProvider
 
         Vite::prefetch(concurrency: 3);
 
-        // Настройка rate limiting для регистрации нод
-        // Более строгий лимит: 10 запросов в минуту по IP
-        \Illuminate\Support\Facades\RateLimiter::for('node_register', function (\Illuminate\Http\Request $request) {
-            return \Illuminate\Cache\RateLimiting\Limit::perMinute(10)
-                ->by($request->ip())
-                ->response(function ($request, array $headers) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'RATE_LIMIT_EXCEEDED',
-                        'message' => 'Too many node registration attempts. Please try again later.',
-                    ], 429)->withHeaders($headers);
-                });
+        // Регистрация одной ноды может ретраиться, а несколько нод приходят через один bridge IP.
+        // Поэтому держим жёсткий лимит на identity узла и отдельный burst-лимит на IP.
+        RateLimiter::for('node_register', function (Request $request) {
+            $identity = trim((string) (
+                $request->input('node_uid')
+                ?: $request->input('hardware_id')
+                ?: $request->input('uid')
+                ?: 'unknown'
+            ));
+            $ip = (string) $request->ip();
+            $limitResponse = static function ($request, array $headers) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'RATE_LIMIT_EXCEEDED',
+                    'message' => 'Too many node registration attempts. Please try again later.',
+                ], 429)->withHeaders($headers);
+            };
+
+            return [
+                Limit::perMinute(120)
+                    ->by("node_register:ip:{$ip}")
+                    ->response($limitResponse),
+                Limit::perMinute(10)
+                    ->by("node_register:identity:{$ip}:{$identity}")
+                    ->response($limitResponse),
+            ];
         });
 
         // Регистрация слушателей событий

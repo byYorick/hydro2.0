@@ -225,13 +225,16 @@ class TestConfigReportFormatSync:
         payload = json.dumps(payload_data).encode('utf-8')
 
         with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers._store_pending_config_report', new_callable=AsyncMock) as mock_store:
+             patch('mqtt_handlers._store_pending_config_report', new_callable=AsyncMock) as mock_store, \
+             patch('mqtt_handlers.logger') as mock_logger:
 
             mock_fetch.return_value = []
 
             await handle_config_report(topic, payload)
 
             mock_store.assert_awaited_once_with("esp32-aabbccddeeff", topic, payload)
+            mock_logger.warning.assert_not_called()
+            mock_logger.info.assert_called()
 
     @pytest.mark.asyncio
     async def test_process_pending_config_report_after_registration(self):
@@ -458,6 +461,25 @@ class TestHeartbeatFormatSync:
             mock_received.labels.assert_called_once()
             # Проверяем, что был выполнен SQL запрос
             assert mock_execute.called
+
+    @pytest.mark.asyncio
+    async def test_handle_heartbeat_temp_topic_missing_node_logs_once_as_info(self):
+        """Temp heartbeat без зарегистрированной ноды должен логироваться как transient info, а не warning spam."""
+        from mqtt_handlers import handle_heartbeat, _transient_warning_last_seen
+
+        topic = "hydro/gh-temp/zn-temp/nd-test-ph-1/heartbeat"
+        payload = json.dumps({"uptime": 42}).encode("utf-8")
+        _transient_warning_last_seen.clear()
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.logger') as mock_logger:
+            mock_fetch.return_value = []
+
+            await handle_heartbeat(topic, payload)
+            await handle_heartbeat(topic, payload)
+
+            assert mock_logger.warning.call_count == 0
+            assert mock_logger.info.call_count >= 1
 
 
 class TestNodeHelloFormatSync:

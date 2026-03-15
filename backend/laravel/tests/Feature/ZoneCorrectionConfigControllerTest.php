@@ -266,6 +266,30 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.resolved_config.meta.preset_slug', 'test-node');
     }
 
+    public function test_accepts_legacy_prepare_recirculation_correction_cap_sentinel(): void
+    {
+        $zone = Zone::factory()->create();
+        $preset = ZoneCorrectionPreset::query()->where('slug', 'test-node')->firstOrFail();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'preset_id' => $preset->id,
+            'base_config' => [],
+            'phase_overrides' => [
+                'solution_fill' => [
+                    'retry' => [
+                        'prepare_recirculation_max_correction_attempts' => 32767,
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath(
+                'data.resolved_config.phases.solution_fill.retry.prepare_recirculation_max_correction_attempts',
+                32767
+            );
+    }
+
     public function test_show_rejects_zone_pump_override_that_conflicts_with_current_system_defaults(): void
     {
         $zone = Zone::factory()->create();

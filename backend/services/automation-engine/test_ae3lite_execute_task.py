@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -59,6 +60,9 @@ class _TaskRepoRunning:
 
     async def mark_completed(self, *, task_id, owner, now):
         return replace(self._running_task, status="completed")
+
+    async def get_by_id(self, *, task_id):
+        return self._running_task
 
 
 class _SnapshotReadModelOk:
@@ -179,6 +183,15 @@ class _WorkflowRouterFails:
         return replace(task, status="failed")
 
 
+class _WorkflowRouterPending:
+    async def run(self, *, task, plan, now):
+        return replace(
+            task,
+            status="pending",
+            workflow=replace(task.workflow, current_stage="prepare_recirculation_check"),
+        )
+
+
 class _WorkflowRouterRaises:
     async def run(self, *, task, plan, now):
         raise RuntimeError("boom")
@@ -236,6 +249,32 @@ async def test_execute_task_uses_passed_now_for_fail_closed() -> None:
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["now"] == NOW
+
+
+@pytest.mark.asyncio
+async def test_execute_task_expected_domain_errors_do_not_log_traceback(caplog: pytest.LogCaptureFixture) -> None:
+    finalize = _FinalizeTaskUseCase()
+    task = _make_task(stage="startup")
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelFails(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        finalize_task_use_case=finalize,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        await use_case.run(task=task, now=NOW)
+
+    domain_logs = [
+        record
+        for record in caplog.records
+        if "AE3 task execution domain error:" in record.getMessage()
+    ]
+    assert len(domain_logs) == 1
+    assert domain_logs[0].exc_info is None
+    assert "error_type=SnapshotBuildError" in domain_logs[0].getMessage()
 
 
 @pytest.mark.asyncio
@@ -395,6 +434,32 @@ async def test_execute_task_missing_dosing_calibration_emits_blocking_alert_and_
 
 
 @pytest.mark.asyncio
+async def test_execute_task_skips_fail_safe_shutdown_when_task_was_cleaned_up() -> None:
+    task = _make_task(stage="startup", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+
+    class _TaskRepoDeletedDuringUnwind(_TaskRepoRunning):
+        async def get_by_id(self, *, task_id):
+            assert task_id == task.id
+            return None
+
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoDeletedDuringUnwind(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerMissingDosingCalibrationCritical(),
+        command_gateway=gateway,
+        workflow_router=object(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "zone_dosing_calibration_missing_critical"
+    assert gateway.calls == []
+
+
+@pytest.mark.asyncio
 async def test_execute_task_does_not_mark_correction_config_applied_when_snapshot_load_fails() -> None:
     finalize = _FinalizeTaskUseCase()
     correction_config_repository = _CorrectionConfigRepository()
@@ -454,6 +519,29 @@ async def test_execute_task_marks_correction_config_applied_for_failed_two_tank_
     result = await use_case.run(task=task, now=NOW)
 
     assert result.status == "failed"
+    assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_marks_correction_config_applied_for_pending_two_tank_task() -> None:
+    """Hot-reload ack must persist while the two-tank task is still active."""
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    correction_config_repository = _CorrectionConfigRepository()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterPending(),
+        zone_correction_config_repository=correction_config_repository,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "pending"
+    assert result.current_stage == "prepare_recirculation_check"
     assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
 
 

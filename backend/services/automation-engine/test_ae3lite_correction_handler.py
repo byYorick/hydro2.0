@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -225,6 +226,21 @@ async def test_corr_check_max_attempts_exceeded_solution_fill_requeues_without_n
     assert outcome.next_stage == "solution_fill_check"
     assert outcome.stage_retry_count == 1
     assert outcome.due_delay_sec == 10
+
+
+async def test_corr_check_max_attempts_exceeded_sends_alert_with_message(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(corr_step="corr_check", attempt=6, max_attempts=5)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
+    handler = _make_handler(monitor=monitor)
+    send_alert = AsyncMock(return_value=True)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.send_infra_alert", send_alert)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+
+    await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    send_alert.assert_awaited_once()
+    assert send_alert.await_args.kwargs["message"] == "Correction cycle exhausted all configured attempts."
 
 
 

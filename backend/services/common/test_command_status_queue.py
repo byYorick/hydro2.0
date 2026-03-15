@@ -141,6 +141,35 @@ async def test_send_status_to_laravel_queues_and_alerts_on_command_not_found():
 
 
 @pytest.mark.asyncio
+async def test_send_status_to_laravel_ignores_command_not_found_for_e2e_cmd():
+    settings = SimpleNamespace(
+        laravel_api_url="http://laravel",
+        history_logger_api_token="token",
+        ingest_token="token",
+    )
+    queue = AsyncMock()
+    response = _ResponseStub(
+        404,
+        text='{"status":"error","code":"COMMAND_NOT_FOUND"}',
+        payload={"status": "error", "code": "COMMAND_NOT_FOUND", "message": "Command not found"},
+    )
+
+    with patch("common.command_status_queue.get_settings", return_value=settings), \
+         patch("common.command_status_queue.make_request", new=AsyncMock(return_value=response)), \
+         patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue._emit_command_ack_not_found_alert", new=AsyncMock()) as mock_alert:
+        ok = await send_status_to_laravel(
+            "e2e:cmd-missing",
+            CommandStatus.ACK,
+            {"zone_id": 7, "node_uid": "nd-1", "channel": "pump_1"},
+        )
+
+    assert ok is True
+    queue.enqueue.assert_not_called()
+    mock_alert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_send_status_to_laravel_does_not_enqueue_when_disabled():
     settings = SimpleNamespace(
         laravel_api_url="http://laravel",

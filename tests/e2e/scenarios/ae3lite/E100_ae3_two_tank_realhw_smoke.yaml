@@ -163,6 +163,51 @@ actions:
     ph_node_id: ${ph_node_row.0.node_id}
     ec_node_id: ${ec_node_row.0.node_id}
 
+  - step: load_ec_pump_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_a'
+      LIMIT 1
+    params:
+      node_id: ${ec_node_id}
+    expected_rows: 1
+    save: ec_pump_channel_row
+
+  - step: load_ph_up_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_base'
+      LIMIT 1
+    params:
+      node_id: ${ph_node_id}
+    expected_rows: 1
+    save: ph_up_channel_row
+
+  - step: load_ph_down_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_acid'
+      LIMIT 1
+    params:
+      node_id: ${ph_node_id}
+    expected_rows: 1
+    save: ph_down_channel_row
+
+  - step: set_correction_channel_ids
+    type: set
+    ec_pump_channel_id: ${ec_pump_channel_row.0.node_channel_id}
+    ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
+    ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
+
   - step: cleanup_zone_ae_commands
     type: database_execute
     query: |
@@ -281,6 +326,116 @@ actions:
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
+
+  - step: cleanup_existing_correction_bindings
+    type: database_execute
+    query: |
+      DELETE FROM channel_bindings
+      WHERE role IN ('dose_ec_a', 'dose_ph_up', 'dose_ph_down')
+        AND node_channel_id IN (
+          SELECT nc.id
+          FROM node_channels nc
+          JOIN nodes n ON n.id = nc.node_id
+          WHERE n.zone_id = :zone_id
+        )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_existing_correction_infra
+    type: database_execute
+    query: |
+      DELETE FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :zone_id
+        AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH Down')
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_existing_e2e_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM pump_calibrations
+      WHERE source = 'e2e_realhw_setup_ready'
+        AND node_channel_id IN (
+          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ph_up_channel_id AS bigint),
+          CAST(:ph_down_channel_id AS bigint)
+        )
+    params:
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: insert_correction_infrastructure
+    type: database_execute
+    query: |
+      INSERT INTO infrastructure_instances (
+        owner_type,
+        owner_id,
+        asset_type,
+        label,
+        required,
+        created_at,
+        updated_at
+      )
+      VALUES
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Dose', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Up', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Down', TRUE, NOW(), NOW())
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_correction_bindings
+    type: database_execute
+    query: |
+      INSERT INTO channel_bindings (
+        infrastructure_instance_id,
+        node_channel_id,
+        direction,
+        role,
+        created_at,
+        updated_at
+      )
+      SELECT ii.id, mapping.node_channel_id, 'actuator', mapping.role, NOW(), NOW()
+      FROM (
+        VALUES
+          ('AE3 E2E EC Dose', CAST(:ec_pump_channel_id AS bigint), 'dose_ec_a'),
+          ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint), 'dose_ph_up'),
+          ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'dose_ph_down')
+      ) AS mapping(label, node_channel_id, role)
+      JOIN infrastructure_instances ii
+        ON ii.owner_type = 'zone'
+       AND ii.owner_id = :zone_id
+       AND ii.label = mapping.label
+    params:
+      zone_id: ${zone_id}
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: insert_correction_calibrations
+    type: database_execute
+    query: |
+      INSERT INTO pump_calibrations (
+        node_channel_id,
+        ml_per_sec,
+        k_ms_per_ml_l,
+        source,
+        quality_score,
+        sample_count,
+        valid_from,
+        is_active,
+        created_at,
+        updated_at
+      )
+      VALUES
+        (CAST(:ec_pump_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
+    params:
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
 
   - step: deactivate_active_profiles
     type: database_execute
@@ -1012,6 +1167,49 @@ cleanup:
       WHERE id = CAST(:recipe_id AS bigint)
     params:
       recipe_id: ${recipe_id}
+
+  - step: cleanup_e2e_calibrations
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM pump_calibrations
+      WHERE source = 'e2e_realhw_setup_ready'
+        AND node_channel_id IN (
+          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ph_up_channel_id AS bigint),
+          CAST(:ph_down_channel_id AS bigint)
+        )
+    params:
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: cleanup_e2e_correction_bindings
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM channel_bindings
+      WHERE role IN ('dose_ec_a', 'dose_ph_up', 'dose_ph_down')
+        AND node_channel_id IN (
+          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ph_up_channel_id AS bigint),
+          CAST(:ph_down_channel_id AS bigint)
+        )
+    params:
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: cleanup_e2e_correction_infra
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :zone_id
+        AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH Down')
+    params:
+      zone_id: ${zone_id}
 
   - step: cleanup_created_profile
     type: database_execute

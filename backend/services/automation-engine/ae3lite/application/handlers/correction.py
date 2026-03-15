@@ -481,6 +481,7 @@ class CorrectionHandler(BaseStageHandler):
             await send_infra_alert(
                 code="biz_correction_exhausted",
                 alert_type="AE3 Correction Exhausted",
+                message="Correction cycle exhausted all configured attempts.",
                 severity="error",
                 zone_id=int(task.zone_id),
                 service="automation-engine",

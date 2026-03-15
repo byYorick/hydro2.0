@@ -122,6 +122,19 @@ class _MockGateway:
         return {"success": True, "error_code": None, "error_message": None}
 
 
+class _ProbeGateway(_MockGateway):
+    def __init__(self, *, probe_cmd_id: str) -> None:
+        self._probe_cmd_id = probe_cmd_id
+
+    async def run_batch(self, *, task: Any, commands: Any, now: Any) -> dict:
+        return {
+            "success": True,
+            "error_code": None,
+            "error_message": None,
+            "command_statuses": [{"legacy_cmd_id": self._probe_cmd_id}],
+        }
+
+
 class _MockPlan:
     def __init__(self, runtime: dict | None = None) -> None:
         self.runtime = runtime or RUNTIME
@@ -260,6 +273,26 @@ async def test_irr_state_stale_waits_for_fresh_snapshot() -> None:
     monitor = _Monitor(ph=5.8, ec=1.4, irr_states=[stale, fresh])
     handler = _make_handler(monitor=monitor)
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert monitor.irr_reads >= 2
+
+
+@pytest.mark.asyncio
+async def test_irr_state_waits_for_matching_probe_cmd_id() -> None:
+    """Old snapshot from another probe must not satisfy current probe."""
+    runtime = {**RUNTIME, "irr_state_wait_timeout_sec": 0.02, "irr_state_wait_poll_interval_sec": 0.005}
+
+    class _CausalMonitor(_Monitor):
+        async def read_latest_irr_state(self, *, expected_cmd_id: str | None = None, **_kw: Any) -> dict:
+            self.irr_reads += 1
+            if expected_cmd_id == "probe-cmd-99" and self.irr_reads >= 2:
+                return {**dict(_IRR_MATCH), "cmd_id": "probe-cmd-99"}
+            return {**dict(_IRR_MATCH), "cmd_id": "older-probe"}
+
+    monitor = _CausalMonitor(ph=5.8, ec=1.4)
+    handler = _make_handler(monitor=monitor, gateway=_ProbeGateway(probe_cmd_id="probe-cmd-99"))
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
     assert monitor.irr_reads >= 2

@@ -144,6 +144,14 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=full
 остаются отдельными YAML-файлами, но могут быть явно портированы на каноничные
 AE3 сценарии через `scenario_ref` внутри самих файлов.
 
+Ключевые AE3 real-hardware сценарии:
+
+- `E101_ae3_two_tank_realhw_setup_ready` — каноничный end-to-end путь до `workflow_phase=ready`; именно этот тест доводит систему до состояния, где реальный полив разрешён.
+- `E101_ae3_two_tank_realhw_ready_during_fill` — альтернативный happy-path, где `ready` достигается ещё на fill-path.
+- `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-сценарий, который после retry-limit снова доводит систему до `ready`.
+- `E104_ae3_two_tank_realhw_hot_reload_correction_config` — strict hot-reload test активного correction loop; он проверяет, что pH/EC реально сходятся к target после live reconfiguration, но сам по себе не является каноничным тестом “полив разрешён”.
+- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict piggyback-correction test в `prepare_recirculation_check`; перед recirculation-loop сценарий детерминированно seed-ит раствор вне target window, затем требует совместного дозирования и строгого попадания pH/EC в target, но не финального выхода в `ready`.
+
 Опциональные фильтры:
 
 ```bash

@@ -67,11 +67,13 @@ class BaseStageHandler:
             raise TaskExecutionError(
                 str(result["error_code"]), str(result["error_message"]),
             )
+        probe_cmd_id = self._extract_probe_cmd_id(result=result)
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         state = await self._read_probe_state_with_retry(
             task=task,
             runtime=runtime,
             expected=expected,
+            expected_cmd_id=probe_cmd_id,
         )
         if not state["has_snapshot"]:
             raise TaskExecutionError(
@@ -95,6 +97,7 @@ class BaseStageHandler:
         task: Any,
         runtime: Mapping[str, Any],
         expected: Mapping[str, bool],
+        expected_cmd_id: str | None = None,
     ) -> Mapping[str, Any]:
         max_age_sec = int(runtime.get("irr_state_max_age_sec") or 60)
         wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
@@ -105,8 +108,13 @@ class BaseStageHandler:
         state = await self._runtime_monitor.read_latest_irr_state(
             zone_id=task.zone_id,
             max_age_sec=max_age_sec,
+            expected_cmd_id=expected_cmd_id,
         )
-        if not self._probe_state_needs_retry(state=state, expected=expected) or timeout_sec <= 0.0:
+        if not self._probe_state_needs_retry(
+            state=state,
+            expected=expected,
+            expected_cmd_id=expected_cmd_id,
+        ) or timeout_sec <= 0.0:
             return state
 
         deadline = monotonic() + timeout_sec
@@ -115,8 +123,13 @@ class BaseStageHandler:
             state = await self._runtime_monitor.read_latest_irr_state(
                 zone_id=task.zone_id,
                 max_age_sec=max_age_sec,
+                expected_cmd_id=expected_cmd_id,
             )
-            if not self._probe_state_needs_retry(state=state, expected=expected):
+            if not self._probe_state_needs_retry(
+                state=state,
+                expected=expected,
+                expected_cmd_id=expected_cmd_id,
+            ):
                 return state
         return state
 
@@ -125,8 +138,11 @@ class BaseStageHandler:
         *,
         state: Mapping[str, Any],
         expected: Mapping[str, bool],
+        expected_cmd_id: str | None = None,
     ) -> bool:
         if not state.get("has_snapshot") or state.get("is_stale"):
+            return True
+        if expected_cmd_id is not None and str(state.get("cmd_id") or "").strip() != expected_cmd_id:
             return True
         snapshot = state.get("snapshot")
         if not isinstance(snapshot, Mapping):
@@ -135,6 +151,18 @@ class BaseStageHandler:
             if bool(snapshot.get(key)) != bool(value):
                 return True
         return False
+
+    def _extract_probe_cmd_id(self, *, result: Mapping[str, Any]) -> str | None:
+        statuses = result.get("command_statuses")
+        if not isinstance(statuses, Sequence):
+            return None
+        for item in reversed(statuses):
+            if not isinstance(item, Mapping):
+                continue
+            probe_cmd_id = str(item.get("legacy_cmd_id") or "").strip()
+            if probe_cmd_id:
+                return probe_cmd_id
+        return None
 
     # ── Level switch reading ────────────────────────────────────────
 

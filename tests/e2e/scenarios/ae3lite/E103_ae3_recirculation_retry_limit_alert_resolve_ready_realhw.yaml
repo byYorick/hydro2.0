@@ -1449,9 +1449,10 @@ cleanup:
 - step: cleanup_retry_limit_overrides_final
   type: database_execute
   optional: true
-  query: "\nDELETE FROM grow_cycle_overrides\nWHERE grow_cycle_id IN (\n  CAST(:grow_cycle_id\
-    \ AS bigint),\n  CAST(:grow_cycle_id_2 AS bigint)\n)\n  AND parameter\
-    \ IN ('ph.target', 'ph.min', 'ph.max', 'ec.target', 'ec.min', 'ec.max')\n"
+  query: "\nDELETE FROM grow_cycle_overrides\nWHERE CAST(grow_cycle_id AS text) IN\
+    \ (\n  CAST(:grow_cycle_id AS text),\n  CAST(:grow_cycle_id_2 AS text)\n)\n \
+    \ AND parameter IN ('ph.target', 'ph.min', 'ph.max', 'ec.target', 'ec.min',\
+    \ 'ec.max')\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
     grow_cycle_id_2: ${grow_cycle_id_2}

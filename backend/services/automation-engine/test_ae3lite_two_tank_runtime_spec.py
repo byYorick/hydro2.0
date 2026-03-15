@@ -261,7 +261,61 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
     assert runtime["prepare_recirculation_timeout_sec"] == 360
 
 
-def test_resolve_two_tank_runtime_keeps_startup_prepare_timeout_when_phase_is_not_overridden() -> None:
+def test_resolve_two_tank_runtime_prefers_correction_config_over_execution_defaults() -> None:
+    runtime = resolve_two_tank_runtime(
+        _snapshot(
+            correction={
+                "ec_mix_wait_sec": 10,
+                "ph_mix_wait_sec": 10,
+                "max_ec_correction_attempts": 8,
+                "max_ph_correction_attempts": 8,
+            },
+            startup={
+                "solution_fill_timeout_sec": 240,
+                "prepare_recirculation_timeout_sec": 30,
+                "level_poll_interval_sec": 5,
+            },
+            correction_config={
+                "base": {
+                    "timing": {
+                        "ec_mix_wait_sec": 30,
+                        "ph_mix_wait_sec": 25,
+                        "level_poll_interval_sec": 20,
+                    },
+                    "retry": {
+                        "max_ec_correction_attempts": 5,
+                        "max_ph_correction_attempts": 5,
+                        "prepare_recirculation_timeout_sec": 600,
+                    },
+                    "runtime": {
+                        "solution_fill_timeout_sec": 900,
+                    },
+                },
+                "phases": {
+                    "solution_fill": {
+                        "timing": {
+                            "ec_mix_wait_sec": 25,
+                            "ph_mix_wait_sec": 20,
+                        },
+                    },
+                    "tank_recirc": {},
+                    "irrigation": {},
+                },
+                "meta": {},
+            },
+        )
+    )
+
+    assert runtime["correction"]["ec_mix_wait_sec"] == 25
+    assert runtime["correction"]["ph_mix_wait_sec"] == 20
+    assert runtime["correction"]["max_ec_correction_attempts"] == 5
+    assert runtime["correction"]["max_ph_correction_attempts"] == 5
+    assert runtime["solution_fill_timeout_sec"] == 900
+    assert runtime["prepare_recirculation_timeout_sec"] == 600
+    assert runtime["level_poll_interval_sec"] == 20
+
+
+def test_resolve_two_tank_runtime_prefers_correction_config_prepare_timeout_over_startup_default() -> None:
     runtime = resolve_two_tank_runtime(
         _snapshot(
             correction={"ec_mix_wait_sec": 10, "stabilization_sec": 0},
@@ -283,7 +337,7 @@ def test_resolve_two_tank_runtime_keeps_startup_prepare_timeout_when_phase_is_no
         )
     )
 
-    assert runtime["prepare_recirculation_timeout_sec"] == 30
+    assert runtime["prepare_recirculation_timeout_sec"] == 600
 
 
 def test_resolve_two_tank_runtime_exposes_process_calibrations_to_runtime() -> None:

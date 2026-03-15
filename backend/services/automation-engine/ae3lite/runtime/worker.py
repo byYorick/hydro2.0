@@ -179,6 +179,7 @@ class Ae3RuntimeWorker:
                             await send_infra_alert(
                                 code="ae3_zone_lease_release_failed",
                                 alert_type="AE3 Zone Lease Release Failed",
+                                message="Zone lease could not be released after task completion.",
                                 severity="error",
                                 zone_id=int(task.zone_id),
                                 service="automation-engine",
@@ -250,6 +251,7 @@ class Ae3RuntimeWorker:
                         await send_infra_alert(
                             code="ae3_zone_lease_lost",
                             alert_type="AE3 Zone Lease Lost",
+                            message="Zone lease heartbeat failed and the worker kept running without a valid lease.",
                             severity="critical",
                             zone_id=int(zone_id),
                             service="automation-engine",

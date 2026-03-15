@@ -55,6 +55,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
 #define SOLUTION_FILL_DELAY_SEC 20
+#define STATE_QUERY_BARRIER_QUIET_MS 1500
+#define STATE_QUERY_BARRIER_POLL_MS 50
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
 #define SOLUTION_MAX_LATCH_LEVEL 0.92f
 #define IRR_STATE_MAX_AGE_SEC 30
@@ -71,6 +73,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CORRECTION_SETTLE_TICKS 4
 #define CORRECTION_REACTION_SCALE_MIN 0.5f
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
+#define CONTROL_DELAY_MIN_MS 120
+#define CONTROL_DELAY_MAX_MS 260
 #define TRANSIENT_DELAY_BASE_MIN_MS 220
 #define TRANSIENT_DELAY_BASE_MAX_MS 460
 #define TRANSIENT_DELAY_EXTRA_MIN_MS 160
@@ -196,6 +200,10 @@ typedef struct {
     int8_t level_solution_min_override;
     bool level_solution_max_override_present;
     int8_t level_solution_max_override;
+    bool ph_value_present;
+    float ph_value;
+    bool ec_value_present;
+    float ec_value;
     int execute_delay_ms;
 } pending_command_t;
 
@@ -272,6 +280,10 @@ static bool s_wildcard_subscribe_warned = false;
 static bool s_factory_reset_pending = false;
 static volatile bool s_config_report_on_connect_pending = false;
 static bool s_state_command_fastpath_enabled = false;
+static volatile bool s_command_worker_busy = false;
+static volatile int64_t s_last_non_state_command_rx_ms = 0;
+
+static void publish_telemetry_for_node(const char *node_uid, const char *channel, const char *metric_type, float value);
 
 typedef struct {
     char cmd_id[96];
@@ -418,6 +430,10 @@ static void ui_logf(const char *node_uid, const char *fmt, ...) {
 
 static int64_t get_uptime_seconds(void) {
     return esp_timer_get_time() / 1000000LL;
+}
+
+static int64_t get_uptime_ms_precise(void) {
+    return esp_timer_get_time() / 1000LL;
 }
 
 static void reset_virtual_state_runtime(void) {
@@ -907,6 +923,46 @@ static float resolve_solution_min_switch_value(void) {
         }
     }
     return level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true);
+}
+
+static void publish_current_virtual_sensor_snapshot(bool include_levels, bool include_ph, bool include_ec) {
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+
+    if (include_levels) {
+        publish_telemetry_for_node(
+            "nd-test-irrig-1",
+            "level_clean_min",
+            "WATER_LEVEL_SWITCH",
+            resolve_clean_min_switch_value()
+        );
+        publish_telemetry_for_node(
+            "nd-test-irrig-1",
+            "level_clean_max",
+            "WATER_LEVEL_SWITCH",
+            resolve_clean_max_switch_value()
+        );
+        publish_telemetry_for_node(
+            "nd-test-irrig-1",
+            "level_solution_min",
+            "WATER_LEVEL_SWITCH",
+            resolve_solution_min_switch_value()
+        );
+        publish_telemetry_for_node(
+            "nd-test-irrig-1",
+            "level_solution_max",
+            "WATER_LEVEL_SWITCH",
+            resolve_solution_max_switch_value()
+        );
+    }
+
+    if (include_ph && s_virtual_state.ph_sensor_mode_active) {
+        publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", s_virtual_state.ph_value);
+    }
+    if (include_ec && s_virtual_state.ec_sensor_mode_active) {
+        publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", s_virtual_state.ec_value);
+    }
 }
 
 static bool is_clean_fill_active(void) {
@@ -2099,7 +2155,7 @@ static void publish_irrig_node_event(const char *event_code) {
 }
 
 static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t *job, cJSON *params) {
-    int delay_ms = 900;
+    int delay_ms = random_range_ms(CONTROL_DELAY_MIN_MS, CONTROL_DELAY_MAX_MS);
     cJSON *sim_delay_ms;
     cJSON *ttl_ms;
 
@@ -2125,6 +2181,22 @@ static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t
     }
     if (kind == COMMAND_KIND_RESTART) {
         return random_range_ms(1200, 2200);
+    }
+    if (kind == COMMAND_KIND_ACTUATOR && (!job || !is_transient_command(job))) {
+        if (params && cJSON_IsObject(params)) {
+            ttl_ms = cJSON_GetObjectItem(params, "ttl_ms");
+            if (ttl_ms && cJSON_IsNumber(ttl_ms)) {
+                delay_ms = (int)cJSON_GetNumberValue(ttl_ms);
+                if (delay_ms < CONTROL_DELAY_MIN_MS) {
+                    delay_ms = CONTROL_DELAY_MIN_MS;
+                }
+                if (delay_ms > 4000) {
+                    delay_ms = 4000;
+                }
+                return delay_ms;
+            }
+        }
+        return delay_ms;
     }
 
     if (job && kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
@@ -2160,6 +2232,20 @@ static int resolve_command_delay_ms(command_kind_t kind, const pending_command_t
         delay_ms = 8000;
     }
     return delay_ms;
+}
+
+static bool is_sensor_calibration_channel(const char *channel) {
+    if (!channel) {
+        return false;
+    }
+    return strcmp(channel, "ph_sensor") == 0 || strcmp(channel, "ec_sensor") == 0;
+}
+
+static bool is_unsupported_sensor_calibration_command(const pending_command_t *job) {
+    if (!job || !is_sensor_calibration_channel(job->channel)) {
+        return false;
+    }
+    return strcmp(job->cmd, "calibrate") == 0;
 }
 
 static void extract_command_params(cJSON *command_json, pending_command_t *job) {
@@ -2294,6 +2380,18 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
     cJSON *level_solution_max_override = cJSON_GetObjectItem(params, "level_solution_max_override");
     if (parse_switch_override_param(level_solution_max_override, &job->level_solution_max_override)) {
         job->level_solution_max_override_present = true;
+    }
+
+    cJSON *ph_value = cJSON_GetObjectItem(params, "ph_value");
+    if (ph_value && cJSON_IsNumber(ph_value)) {
+        job->ph_value_present = true;
+        job->ph_value = (float)cJSON_GetNumberValue(ph_value);
+    }
+
+    cJSON *ec_value = cJSON_GetObjectItem(params, "ec_value");
+    if (ec_value && cJSON_IsNumber(ec_value)) {
+        job->ec_value_present = true;
+        job->ec_value = (float)cJSON_GetNumberValue(ec_value);
     }
 
     job->execute_delay_ms = resolve_command_delay_ms(job->kind, job, params);
@@ -2570,6 +2668,10 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             cJSON_AddStringToObject(details, "event_code", job->event_code);
             handled = true;
         } else if (strcmp(job->cmd, "set_fault_mode") == 0) {
+            bool publish_levels = false;
+            bool publish_ph = false;
+            bool publish_ec = false;
+
             if (job->clean_sensor_conflict_present) {
                 s_virtual_state.force_clean_sensor_conflict = job->clean_sensor_conflict;
             }
@@ -2584,15 +2686,27 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             }
             if (job->level_clean_min_override_present) {
                 s_virtual_state.level_clean_min_override = job->level_clean_min_override;
+                publish_levels = true;
             }
             if (job->level_clean_max_override_present) {
                 s_virtual_state.level_clean_max_override = job->level_clean_max_override;
+                publish_levels = true;
             }
             if (job->level_solution_min_override_present) {
                 s_virtual_state.level_solution_min_override = job->level_solution_min_override;
+                publish_levels = true;
             }
             if (job->level_solution_max_override_present) {
                 s_virtual_state.level_solution_max_override = job->level_solution_max_override;
+                publish_levels = true;
+            }
+            if (job->ph_value_present) {
+                s_virtual_state.ph_value = clamp_float(job->ph_value, 4.8f, 7.2f);
+                publish_ph = true;
+            }
+            if (job->ec_value_present) {
+                s_virtual_state.ec_value = clamp_float(job->ec_value, 0.4f, 3.2f);
+                publish_ec = true;
             }
             if (s_virtual_state.level_clean_max_override > 0 && s_virtual_state.clean_fill_stage_active) {
                 s_virtual_state.clean_fill_stage_active = false;
@@ -2614,6 +2728,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                 publish_irrig_node_event("solution_fill_completed");
                 cJSON_AddBoolToObject(details, "solution_fill_forced_complete", true);
             }
+            publish_current_virtual_sensor_snapshot(publish_levels, publish_ph, publish_ec);
             cJSON_AddBoolToObject(details, "sensor_conflict_clean", s_virtual_state.force_clean_sensor_conflict);
             cJSON_AddBoolToObject(details, "sensor_conflict_solution", s_virtual_state.force_solution_sensor_conflict);
             cJSON_AddBoolToObject(details, "clean_fill_timeout_mode", s_virtual_state.simulate_clean_fill_timeout);
@@ -2622,6 +2737,12 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             cJSON_AddStringToObject(details, "level_clean_max_override", switch_override_label(s_virtual_state.level_clean_max_override));
             cJSON_AddStringToObject(details, "level_solution_min_override", switch_override_label(s_virtual_state.level_solution_min_override));
             cJSON_AddStringToObject(details, "level_solution_max_override", switch_override_label(s_virtual_state.level_solution_max_override));
+            if (job->ph_value_present) {
+                cJSON_AddNumberToObject(details, "ph_value", s_virtual_state.ph_value);
+            }
+            if (job->ec_value_present) {
+                cJSON_AddNumberToObject(details, "ec_value", s_virtual_state.ec_value);
+            }
             handled = true;
         } else if (strcmp(job->cmd, "reset_binding") == 0) {
             esp_err_t reset_err = config_storage_reset_namespace(PRECONFIG_GH_UID, PRECONFIG_ZONE_UID);
@@ -2754,6 +2875,13 @@ static void execute_pending_command(const pending_command_t *job) {
         return;
     }
 
+    if (job->kind == COMMAND_KIND_GENERIC && is_unsupported_sensor_calibration_command(job)) {
+        cJSON_AddStringToObject(details, "error", "unsupported_sensor_calibration_command");
+        publish_command_response(job->node_uid, job->channel, job->cmd_id, "INVALID", details);
+        cJSON_Delete(details);
+        return;
+    }
+
     if (job->kind == COMMAND_KIND_ACTUATOR && is_transient_command(job)) {
         if (is_main_pump_channel(job->channel)) {
             transient_main_pump_initial_state = s_virtual_state.main_pump_on;
@@ -2879,7 +3007,9 @@ static void command_worker_task(void *pv_parameters) {
 
     while (1) {
         if (xQueueReceive(s_command_queue, &job, portMAX_DELAY) == pdTRUE) {
+            s_command_worker_busy = true;
             execute_pending_command(&job);
+            s_command_worker_busy = false;
         }
     }
 }
@@ -2892,6 +3022,28 @@ static void state_command_worker_task(void *pv_parameters) {
 
     while (1) {
         if (xQueueReceive(s_state_command_queue, &job, portMAX_DELAY) == pdTRUE) {
+            int64_t barrier_started_ms = get_uptime_ms_precise();
+            while (1) {
+                int64_t quiet_since_ms = s_last_non_state_command_rx_ms;
+                int64_t now_ms = get_uptime_ms_precise();
+                bool queue_idle = (
+                    s_command_queue == NULL
+                    || (
+                        uxQueueMessagesWaiting(s_command_queue) == 0
+                        && !s_command_worker_busy
+                    )
+                );
+
+                if (quiet_since_ms < barrier_started_ms) {
+                    quiet_since_ms = barrier_started_ms;
+                }
+
+                if (queue_idle && (now_ms - quiet_since_ms) >= STATE_QUERY_BARRIER_QUIET_MS) {
+                    break;
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(STATE_QUERY_BARRIER_POLL_MS));
+            }
             execute_pending_command(&job);
         }
     }
@@ -3112,13 +3264,18 @@ static void command_callback(const char *topic, const char *channel, const char 
     ui_logf(node_uid, "cmd ack %s/%s", topic_channel, cmd_name);
 
     if (job.kind == COMMAND_KIND_STATE_QUERY) {
-        if (s_state_command_fastpath_enabled && s_state_command_queue) {
+        if (s_state_command_fastpath_enabled && s_state_command_queue != NULL) {
             queue_send_status = xQueueSend(s_state_command_queue, &job, 0);
-        } else if (s_command_queue) {
+        }
+        if (queue_send_status != pdTRUE && s_command_queue) {
             queue_send_status = xQueueSendToFront(s_command_queue, &job, 0);
         }
     } else if (s_command_queue) {
         queue_send_status = xQueueSend(s_command_queue, &job, 0);
+    }
+
+    if (queue_send_status == pdTRUE && job.kind != COMMAND_KIND_STATE_QUERY) {
+        s_last_non_state_command_rx_ms = get_uptime_ms_precise();
     }
 
     if (queue_send_status != pdTRUE) {
@@ -3991,6 +4148,7 @@ static void cleanup_init_runtime_resources(void) {
     s_wildcard_subscriptions_ready = false;
     s_wildcard_subscribe_warned = false;
     s_state_command_fastpath_enabled = false;
+    s_last_non_state_command_rx_ms = 0;
     (void)mqtt_manager_deinit();
     wifi_manager_deinit();
 }
@@ -4012,6 +4170,7 @@ esp_err_t test_node_app_init(void) {
     s_start_time_seconds = get_timestamp_seconds();
     s_factory_reset_pending = false;
     s_state_command_fastpath_enabled = false;
+    s_last_non_state_command_rx_ms = 0;
     s_wildcard_subscribe_warned = false;
     test_node_ui_set_mode("BOOT");
     test_node_ui_set_wifi_status(false, "X");

@@ -524,9 +524,7 @@ def _prefer_phase_runtime_value(
 ) -> Any:
     if prefer_phase and phase_value is not None:
         return phase_value
-    if startup_value is not None:
-        return startup_value
-    return _first_non_null(phase_value, base_value)
+    return _first_non_null(phase_value, base_value, startup_value)
 
 
 def _has_nested_override(raw_value: Mapping[str, Any], *path: str) -> bool:
@@ -545,7 +543,7 @@ def _has_nested_override(raw_value: Mapping[str, Any], *path: str) -> bool:
 def _choose_phase_or_execution(*, phase_value: Any, execution_value: Any, prefer_phase: bool) -> Any:
     if prefer_phase and phase_value is not None:
         return phase_value
-    return _first_non_null(execution_value, phase_value)
+    return _first_non_null(phase_value, execution_value)
 
 
 def _build_correction_cfg(

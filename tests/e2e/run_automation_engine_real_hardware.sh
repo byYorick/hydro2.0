@@ -321,8 +321,10 @@ scan_logs_since_epoch() {
 
 db_query_line() {
   local sql="$1"
-  "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
-    psql -U "${POSTGRES_USER:-hydro}" -d "${POSTGRES_DB:-hydro_e2e}" -AtF '|' -c "$sql"
+  "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T \
+    -e PGOPTIONS='-c client_min_messages=warning' \
+    postgres \
+    psql -qX -U "${POSTGRES_USER:-hydro}" -d "${POSTGRES_DB:-hydro_e2e}" -AtF '|' -c "$sql"
 }
 
 scenario_db_metrics_since_epoch() {
@@ -1225,7 +1227,9 @@ prepare_real_hardware_node() {
   "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" up -d \
     postgres redis mosquitto history-logger mqtt-bridge automation-engine laravel digital-twin >/dev/null
 
-  for service in node-sim-workflow node-sim-manager; do
+  # В real-hardware контуре не должно остаться ни одного node-sim publisher
+  # с nd-test-* UID, иначе IRR/state ответы от симулятора смешаются с реальной нодой.
+  for service in node-sim node-sim-workflow node-sim-test-node node-sim-manager; do
     "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" stop "$service" >/dev/null 2>&1 || true
   done
   echo "ℹ️ Убедился, что real-hardware harness видел только реальную test_node"
@@ -1258,6 +1262,16 @@ prepare_real_hardware_node() {
   local target_zone_uid target_gh_uid
   target_zone_uid="$zone_uid"
   target_gh_uid="$gh_uid"
+
+  echo "🧹 Удаляю stale AE3 blocking alerts для тестовой зоны..."
+  db_query_line "
+    DELETE FROM alerts
+    WHERE zone_id = ${zone_id}
+      AND code IN (
+        'biz_zone_correction_config_missing',
+        'biz_zone_dosing_calibration_missing'
+      );
+  " >/dev/null
 
   echo "🧹 Удаляю все ноды из БД перед тестом..."
   db_query_line "TRUNCATE TABLE nodes RESTART IDENTITY CASCADE;" >/dev/null

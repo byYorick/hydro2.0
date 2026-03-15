@@ -177,9 +177,12 @@ Pipeline:
 
 Приоритет обработки `state`:
 
-- `state` обслуживается выделенным fast-path (`STATE_COMMAND_QUEUE_LENGTH` + отдельный worker),
-  чтобы критические проверки 2-бакового workflow быстрее получали свежий `IRR_STATE_SNAPSHOT`.
-- При недоступности fast-path используется fail-safe fallback:
+- `state` обслуживается выделенной deferred queue (`STATE_COMMAND_QUEUE_LENGTH` + отдельный worker),
+  чтобы критические проверки 2-бакового workflow получали causally-correct `IRR_STATE_SNAPSHOT`.
+- Перед выполнением `state` worker ждёт quiet-window `1500 ms` после получения самого `state`
+  и после последней non-state команды, а также пустую основную command queue и отсутствие
+  in-flight команды у основного worker.
+- При недоступности или переполнении выделенной state queue используется fail-safe fallback:
   постановка `state` в начало общей очереди (`xQueueSendToFront`).
 
 ## 4.4. Поддерживаемые команды
@@ -197,7 +200,19 @@ Pipeline:
 - `reset_binding`
 - `activate_sensor_mode`, `deactivate_sensor_mode`
 
-Особенность: неизвестный `cmd` попадает в `COMMAND_KIND_GENERIC` и завершается `DONE` (`virtual_noop`), а не `INVALID`.
+Особенность: неизвестный `cmd` попадает в `COMMAND_KIND_GENERIC` и обычно завершается `DONE` (`virtual_noop`), а не `INVALID`.
+Исключение: `calibrate` на `ph_sensor`/`ec_sensor` завершается terminal `INVALID` с
+`details.error=unsupported_sensor_calibration_command`, чтобы negative-path sensor calibration
+не маскировался под успешный `virtual_noop`.
+
+Параметры `storage_state/set_fault_mode`:
+
+- `level_clean_min_override`, `level_clean_max_override`
+- `level_solution_min_override`, `level_solution_max_override`
+- `ph_value` -> принудительное текущее значение `ph_sensor` в диапазоне `4.8..7.2`
+- `ec_value` -> принудительное текущее значение `ec_sensor` в диапазоне `0.4..3.2`
+
+При изменении `*_override`, `ph_value` или `ec_value` test-node публикует immediate telemetry snapshot, чтобы real-hardware E2E не зависели от следующего periodic telemetry tick.
 
 ---
 
@@ -260,22 +275,32 @@ Pipeline:
 
 Пассивный drift на тик телеметрии:
 
-- `pH`: `drift + 0.001`
-- `EC`: `drift*2 - 0.004`
+- `pH`: `drift + 0.0005`
+- `EC`: `drift*2 - 0.0025`
 
 где `drift` — детерминированная псевдо-динамика из telemetry loop.
 
 Реакция коррекции:
 
-- `pump_acid`: `pH -= 0.08 * scale`
-- `pump_base`: `pH += 0.08 * scale`
-- `pump_a..pump_d`: `EC += 0.04 * scale`
+- `pump_acid`: `pH -= 0.10 * scale * phase_factor`
+- `pump_base`: `pH += 0.10 * scale * phase_factor`
+- `pump_a..pump_d`: `EC += 0.055 * scale * phase_factor`
+
+Phase factor:
+
+- `solution_fill` path:
+  - `pH`: `0.50`
+  - `EC`: `0.50`
+- `tank_recirc` path:
+  - `pH`: `2.50`
+  - `EC`: `3.20`
+- вне fill/recirc path: `1.0`
 
 Scale:
 
 - при `params.ml > 0`: `scale = ml / nominal_ml`;
 - иначе при `params.duration_ms > 0`: `scale = (duration_ms/1000) / nominal_ml`;
-- далее `scale` ограничивается диапазоном `0.5..4.0`;
+- далее `scale` ограничивается диапазоном `0.5..5.0`;
 - nominal: `pH=8 ml`, `EC=12 ml`.
 
 Наблюдаемость для backend/e2e:
@@ -307,6 +332,13 @@ Transient-overlap правило для `pump_main`:
   - пишет в NVS temp namespace (`gh-temp/zn-temp`);
   - runtime namespace меняется после reboot.
 
+### 5.4.1. Каноничные AE3 real-hardware сценарии
+
+- `E101_ae3_two_tank_realhw_setup_ready` — каноничный сценарий, который доводит two-tank систему до `workflow_phase=ready`; после этого полив разрешён.
+- `E101_ae3_two_tank_realhw_ready_during_fill` — альтернативный happy-path, где `ready` достигается ещё на fill-path без recirculation.
+- `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-вариант: после first-run retry-limit второй прогон снова доводит систему до `ready`.
+- `E104_ae3_two_tank_realhw_hot_reload_correction_config` — не тест “полив уже разрешён”, а strict hot-reload тест активного correction loop; он проверяет сходимость pH/EC и применение новой config version внутри `tank_recirc`.
+
 ---
 
 ## 6. Модель исполнения и симуляции
@@ -319,6 +351,8 @@ Transient-overlap правило для `pump_main`:
   - probe/state: `180..480 ms`
   - config-report cmd: `120..320 ms`
   - restart: `1200..2200 ms`
+  - non-transient actuator control path (`set_relay`, `set_pwm`, `activate_sensor_mode`,
+    `deactivate_sensor_mode`, `reset_state`, `set_fault_mode`): `120..260 ms`
   - transient (`run_pump`/`dose`): масштабируемая задержка, с ограничениями
 
 Параметры управления:
@@ -386,8 +420,10 @@ Transient-overlap правило для `pump_main`:
 
 ## 7.5. Ограничения командной семантики
 
-- Неизвестные `cmd` завершаются `DONE` (`virtual_noop`) вместо `INVALID`.
-- Это маскирует ошибки оркестрации и не подходит для боевых нод.
+- Большинство неизвестных `cmd` по-прежнему завершаются `DONE` (`virtual_noop`) вместо `INVALID`.
+- Исключение сделано только для `calibrate` на `ph_sensor`/`ec_sensor`, где требуется terminal `INVALID`
+  для negative-path sensor calibration.
+- Остальные `virtual_noop` всё ещё могут маскировать ошибки оркестрации и не подходят для боевых нод.
 
 ## 7.6. Ограничения multi-node эмуляции
 

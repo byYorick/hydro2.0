@@ -161,7 +161,8 @@ node_secret = random(32 bytes)
 ## 4.3. Ограничения API
 
 - Максимум 120 запросов/минуту по IP для стандартных API (Rate Limiting)
-- Максимум 10 запросов/минуту по IP для регистрации узлов (node_register)
+- Для `node_register`: максимум 10 запросов/минуту на один `node_uid`/`hardware_id`
+  и дополнительный burst-лимит 120 запросов/минуту по IP bridge
 - IP whitelist для регистрации узлов (настраивается через `services.node_registration.allowed_ips`)
 - Все изменения рецептов/зон логируются в zone_events.
 

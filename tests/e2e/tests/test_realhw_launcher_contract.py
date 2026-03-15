@@ -26,7 +26,10 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
         )
 
     def test_real_hardware_launcher_stops_node_sim_noise_services(self) -> None:
-        self.assertIn("for service in node-sim-workflow node-sim-manager; do", self.script)
+        self.assertIn(
+            "for service in node-sim node-sim-workflow node-sim-test-node node-sim-manager; do",
+            self.script,
+        )
         self.assertIn("real-hardware harness видел только реальную test_node", self.script)
 
     def test_real_hardware_launcher_exposes_calibration_suite(self) -> None:
@@ -40,6 +43,16 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             self.script,
         )
         self.assertIn("--set=<automation|workflow|ae3lite|calibration|full>", self.script)
+
+    def test_real_hardware_launcher_cleans_stale_blocking_ae3_alerts(self) -> None:
+        self.assertIn("Удаляю stale AE3 blocking alerts для тестовой зоны", self.script)
+        self.assertIn("DELETE FROM alerts", self.script)
+        self.assertIn("'biz_zone_correction_config_missing'", self.script)
+        self.assertIn("'biz_zone_dosing_calibration_missing'", self.script)
+
+    def test_real_hardware_launcher_suppresses_expected_psql_notice_noise(self) -> None:
+        self.assertIn("client_min_messages=warning", self.script)
+        self.assertIn("psql -qX", self.script)
 
 
 if __name__ == "__main__":

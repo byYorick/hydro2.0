@@ -57,16 +57,27 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
             "${recirc_ec_correction_row.0.id}",
         )
 
-    def test_post_piggyback_checks_require_not_failed_not_pending_only(self) -> None:
+    def test_post_piggyback_checks_require_live_targets_not_just_status(self) -> None:
         task_step = self._find_step("actions", "wait_task_not_failed_after_piggyback")
+        targets_step = self._find_step("actions", "wait_targets_reached_on_node_after_piggyback")
         internal_assert = self._find_assertion("internal_task_not_failed")
+        targets_assert = self._find_assertion("targets_reached_after_piggyback")
 
         task_query = str(task_step.get("query") or "")
         self.assertIn("status IN ('pending', 'completed')", task_query)
         self.assertNotIn("current_stage = 'prepare_recirculation_check'", task_query)
 
+        targets_query = str(targets_step.get("query") or "")
+        self.assertIn("ph.last_value BETWEEN 5.00 AND 5.15", targets_query)
+        self.assertIn("ec.last_value BETWEEN 2.30 AND 2.38", targets_query)
+        self.assertIn("ph.last_ts >= NOW() - INTERVAL '30 seconds'", targets_query)
+        self.assertNotIn("OR EXISTS", targets_query)
+
         condition = str(internal_assert.get("condition") or "")
         self.assertIn("in ('pending', 'completed')", condition)
+
+        targets_condition = str(targets_assert.get("condition") or "")
+        self.assertIn("len(context.get('targets_reached_after_piggyback_row', [])) == 1", targets_condition)
 
     def test_fixture_profile_does_not_embed_legacy_startup_or_correction_runtime(self) -> None:
         profile_step = self._find_step("actions", "insert_ae3_profile")

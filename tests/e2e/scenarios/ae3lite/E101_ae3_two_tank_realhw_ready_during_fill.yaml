@@ -1090,6 +1090,54 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
+  - step: stabilize_ph_ec_targets_before_solution_full
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        ph_value: 6.90
+        ec_value: 0.65
+    save: stabilize_ph_ec_response
+
+  - step: wait_stabilize_ph_ec_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${stabilize_ph_ec_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_stabilized_ph_ec_telemetry
+    type: db.wait
+    query: |
+      SELECT COUNT(*)::int AS stabilized_cnt
+      FROM sensors s
+      JOIN telemetry_last tl ON tl.sensor_id = s.id
+      WHERE COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '15 seconds'
+        AND (
+          (s.node_id = CAST(:ph_node_id AS bigint) AND s.type = 'PH' AND s.label = 'ph_sensor' AND COALESCE(tl.last_value, 0) BETWEEN 6.88 AND 6.92)
+          OR
+          (s.node_id = CAST(:ec_node_id AS bigint) AND s.type = 'EC' AND s.label = 'ec_sensor' AND COALESCE(tl.last_value, 0) BETWEEN 0.64 AND 0.66)
+        )
+      HAVING COUNT(*) = 2
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 20.0
+    expected_rows: 1
+    save: stabilized_ph_ec_row
+
   - step: force_solution_tank_full
     type: ae_test_hook
     zone_id: ${zone_id}

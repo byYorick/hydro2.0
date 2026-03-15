@@ -96,6 +96,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                 await send_infra_alert(
                     code="biz_clean_fill_timeout",
                     alert_type="AE3 Clean Fill Timeout",
+                    message="Clean tank fill deadline exceeded after all retry cycles.",
                     severity="warning",
                     zone_id=int(task.zone_id),
                     service="automation-engine",

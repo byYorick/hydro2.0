@@ -105,6 +105,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 await send_infra_alert(
                     code="biz_solution_fill_timeout",
                     alert_type="AE3 Solution Fill Timeout",
+                    message="Solution tank fill deadline exceeded before the stage could complete.",
                     severity="warning",
                     zone_id=int(task.zone_id),
                     service="automation-engine",

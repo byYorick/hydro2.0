@@ -96,7 +96,8 @@ class _Monitor:
         self._level_stale = level_stale
         self._ph = {"has_value": has_ph, "is_stale": False, "value": ph}
         self._ec = {"has_value": has_ec, "is_stale": False, "value": ec}
-        self._irr = irr_state if irr_state is not None else _GOOD_IRR
+        self._irr = irr_state if irr_state is not None else dict(_GOOD_IRR)
+        self._irr_reads = 0
 
     async def read_level_switch(self, *, sensor_labels: Any, **_kw: Any) -> dict:
         self._level_call += 1
@@ -104,6 +105,7 @@ class _Monitor:
         return {"has_level": self._has_level, "is_stale": self._level_stale, "is_triggered": triggered}
 
     async def read_latest_irr_state(self, **_kw: Any) -> dict:
+        self._irr_reads += 1
         return self._irr
 
     async def read_metric(self, *, sensor_type: str, **_kw: Any) -> dict:
@@ -113,6 +115,19 @@ class _Monitor:
 class _Gateway:
     async def run_batch(self, **_kw: Any) -> dict:
         return {"success": True, "error_code": None, "error_message": None}
+
+
+class _ProbeGateway:
+    def __init__(self, *, probe_cmd_id: str) -> None:
+        self._probe_cmd_id = probe_cmd_id
+
+    async def run_batch(self, **_kw: Any) -> dict:
+        return {
+            "success": True,
+            "error_code": None,
+            "error_message": None,
+            "command_statuses": [{"legacy_cmd_id": self._probe_cmd_id}],
+        }
 
 
 class _Plan:
@@ -126,10 +141,10 @@ class _StageDef:
     on_corr_fail = "solution_fill_check"
 
 
-def _handler(monitor: _Monitor | None = None) -> SolutionFillCheckHandler:
+def _handler(monitor: _Monitor | None = None, gateway: Any | None = None) -> SolutionFillCheckHandler:
     return SolutionFillCheckHandler(
         runtime_monitor=monitor or _Monitor(),
-        command_gateway=_Gateway(),
+        command_gateway=gateway or _Gateway(),
     )
 
 
@@ -242,6 +257,31 @@ async def test_still_filling_targets_reached_returns_poll() -> None:
     outcome = await _handler(m).run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "poll"
     assert outcome.due_delay_sec == 10
+
+
+@pytest.mark.asyncio
+async def test_probe_waits_for_matching_cmd_id_snapshot() -> None:
+    runtime = {**_RUNTIME, "irr_state_wait_timeout_sec": 0.02, "irr_state_wait_poll_interval_sec": 0.005}
+
+    class _CausalMonitor(_Monitor):
+        def __init__(self) -> None:
+            super().__init__(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4)
+
+        async def read_latest_irr_state(self, *, expected_cmd_id: str | None = None, **_kw: Any) -> dict:
+            self._irr_reads += 1
+            if expected_cmd_id == "probe-cmd-42" and self._irr_reads >= 2:
+                return {**_GOOD_IRR, "cmd_id": "probe-cmd-42"}
+            return {**_GOOD_IRR, "cmd_id": "older-probe"}
+
+    monitor = _CausalMonitor()
+    outcome = await _handler(monitor, _ProbeGateway(probe_cmd_id="probe-cmd-42")).run(
+        task=_make_task(deadline=FUTURE),
+        plan=_Plan(runtime),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+    assert outcome.kind == "poll"
+    assert monitor._irr_reads >= 2
 
 
 # ── 5. Level unavailable/stale ────────────────────────────────────────────────

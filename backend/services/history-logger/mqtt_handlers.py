@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 _PENDING_CONFIG_REPORT_TTL_SEC = int(os.getenv("CONFIG_REPORT_BUFFER_TTL_SEC", "120"))
 _PENDING_CONFIG_REPORT_MAX = int(os.getenv("CONFIG_REPORT_BUFFER_MAX", "128"))
+_TRANSIENT_WARNING_TTL_SEC = float(os.getenv("MQTT_HANDLER_TRANSIENT_WARNING_TTL_SEC", "30"))
 _CONFIG_REPORT_DEFAULT_ALLOW_PRUNE = os.getenv(
     "CONFIG_REPORT_PRUNE_MISSING_CHANNELS", "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
@@ -100,6 +101,29 @@ _PENDING_CONFIG_REPORTS: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 _PENDING_CONFIG_REPORTS_LOCK = asyncio.Lock()
 _BINDING_COMPLETION_LOCKS: dict[int, asyncio.Lock] = {}
 _BINDING_COMPLETION_LOCKS_GUARD = asyncio.Lock()
+_transient_warning_last_seen: dict[tuple[str, str], float] = {}
+
+
+def _log_transient_warning(kind: str, entity: str, message: str) -> None:
+    now = utcnow().timestamp()
+    key = (kind, entity)
+    last = _transient_warning_last_seen.get(key)
+    if last is not None and (now - last) < _TRANSIENT_WARNING_TTL_SEC:
+        logger.debug(message)
+        return
+    _transient_warning_last_seen[key] = now
+    logger.warning(message)
+
+
+def _log_transient_info(kind: str, entity: str, message: str) -> None:
+    now = utcnow().timestamp()
+    key = (kind, entity)
+    last = _transient_warning_last_seen.get(key)
+    if last is not None and (now - last) < _TRANSIENT_WARNING_TTL_SEC:
+        logger.debug(message)
+        return
+    _transient_warning_last_seen[key] = now
+    logger.info(message)
 
 
 def _resolve_stub_insert_status(normalized_status: CommandStatus) -> str:
@@ -609,7 +633,11 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 hardware_id,
             )
             if not node_rows:
-                logger.warning(f"[HEARTBEAT] Node not found for hardware_id: {hardware_id}")
+                _log_transient_info(
+                    "heartbeat_hardware_missing",
+                    hardware_id,
+                    f"[HEARTBEAT] Node not found for hardware_id: {hardware_id}",
+                )
                 return
             node_uid = node_rows[0]["uid"]
             logger.info(f"[HEARTBEAT] Found node_uid: {node_uid} for hardware_id: {hardware_id}")
@@ -1163,8 +1191,8 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                 hardware_id,
             )
             if not node_rows:
-                logger.warning(
-                    f"[CONFIG_REPORT] Node not found for hardware_id {hardware_id}, skipping config_report"
+                logger.info(
+                    f"[CONFIG_REPORT] Node not found for hardware_id {hardware_id}, buffering config_report until registration"
                 )
                 CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
                 await _store_pending_config_report(hardware_id, topic, payload)
@@ -1197,8 +1225,10 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                 node_uid,
             )
             if not node_rows:
-                logger.warning(
-                    f"[CONFIG_REPORT] Node {node_uid} not found in database, skipping config_report"
+                _log_transient_warning(
+                    "config_report_node_missing",
+                    node_uid,
+                    f"[CONFIG_REPORT] Node {node_uid} not found in database, skipping config_report",
                 )
                 CONFIG_REPORT_ERROR.labels(node_uid=node_uid).inc()
                 return

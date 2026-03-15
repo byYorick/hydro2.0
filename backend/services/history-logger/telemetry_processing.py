@@ -72,6 +72,10 @@ _node_unassigned_last_seen: dict[tuple[int, str], float] = {}
 _node_unassigned_recovery_grace_sec = float(
     os.getenv("TELEMETRY_NODE_UNASSIGNED_RECOVERY_GRACE_SEC", "5")
 )
+_warning_throttle_last_sent: dict[tuple[str, str, str, str], float] = {}
+_warning_throttle_sec = float(
+    os.getenv("TELEMETRY_WARNING_THROTTLE_SEC", "30")
+)
 
 # Backoff состояние для telemetry broadcast
 _broadcast_error_count = 0
@@ -237,6 +241,34 @@ def _build_anomaly_throttle_key(
             channel or "-",
         ]
     )
+
+
+def _is_temp_namespace(gh_uid: Optional[str], zone_uid: Optional[str]) -> bool:
+    return (gh_uid or "").startswith("gh-temp") or (zone_uid or "").startswith("zn-temp")
+
+
+def _should_emit_warning(
+    key: tuple[str, str, str, str],
+    now_ts: Optional[float] = None,
+) -> bool:
+    now = now_ts if now_ts is not None else time.time()
+    last = _warning_throttle_last_sent.get(key)
+    if last is None or (now - last) >= _warning_throttle_sec:
+        _warning_throttle_last_sent[key] = now
+        return True
+    return False
+
+
+def _log_warning_throttled(
+    *,
+    key: tuple[str, str, str, str],
+    message: str,
+    extra: Optional[dict] = None,
+) -> None:
+    if _should_emit_warning(key):
+        logger.warning(message, extra=extra)
+    else:
+        logger.debug(message, extra=extra)
 
 
 def _parse_node_info(
@@ -968,7 +1000,7 @@ async def refresh_caches() -> None:
                 if greenhouse_id is not None:
                     _zone_greenhouse_cache[zone_id] = greenhouse_id
         else:
-            logger.warning("refresh_caches: zones query returned 0 rows, keeping existing cache to avoid data loss")
+            logger.info("refresh_caches: zones query returned 0 rows, keeping existing cache to avoid data loss")
 
         nodes = await fetch(
             """
@@ -979,7 +1011,7 @@ async def refresh_caches() -> None:
             """
         )
         if not nodes:
-            logger.warning("refresh_caches: nodes query returned 0 rows, keeping existing cache to avoid data loss")
+            logger.info("refresh_caches: nodes query returned 0 rows, keeping existing cache to avoid data loss")
             _cache_last_update = time.time()
             logger.info(
                 f"Cache refreshed: {len(_zone_cache)} zone entries, {len(_node_cache)} node entries"
@@ -1096,9 +1128,19 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
         for zone_uid, gh_uid in zone_gh_pairs:
             if (zone_uid, gh_uid) not in zone_uid_to_id:
                 if (zone_uid, None) not in zone_uid_to_id:
-                    logger.warning(
-                        f"Zone not found: zone_uid={zone_uid}, gh_uid={gh_uid}",
-                        extra={"zone_uid": zone_uid, "gh_uid": gh_uid},
+                    extra = {"zone_uid": zone_uid, "gh_uid": gh_uid}
+                    if _is_temp_namespace(gh_uid, zone_uid):
+                        logger.debug(
+                            "Zone not found during temp namespace telemetry bootstrap: zone_uid=%s, gh_uid=%s",
+                            zone_uid,
+                            gh_uid,
+                            extra=extra,
+                        )
+                        continue
+                    _log_warning_throttled(
+                        key=("zone_not_found", gh_uid or "-", zone_uid, "-"),
+                        message=f"Zone not found: zone_uid={zone_uid}, gh_uid={gh_uid}",
+                        extra=extra,
                     )
                     await _emit_telemetry_anomaly_alert(
                         code="infra_telemetry_zone_not_found",
@@ -1241,11 +1283,19 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                             node_uid,
                             extra={"node_uid": node_uid},
                         )
-                    logger.warning(
-                        "Node not found: node_uid=%s, gh_uid=%s",
-                        node_uid,
-                        gh_uid,
-                        extra={"node_uid": node_uid, "gh_uid": gh_uid},
+                    extra = {"node_uid": node_uid, "gh_uid": gh_uid}
+                    if _is_temp_namespace(gh_uid, None):
+                        logger.debug(
+                            "Node not found during temp namespace telemetry bootstrap: node_uid=%s, gh_uid=%s",
+                            node_uid,
+                            gh_uid,
+                            extra=extra,
+                        )
+                        continue
+                    _log_warning_throttled(
+                        key=("node_not_found", gh_uid or "-", node_uid, "-"),
+                        message=f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
+                        extra=extra,
                     )
                     await _emit_telemetry_anomaly_alert(
                         code="infra_telemetry_node_not_found",
@@ -1302,30 +1352,56 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     },
                 )
             else:
-                logger.warning(
-                    "Skipping sample: zone_id not found for zone_uid",
-                    extra={
-                        "zone_uid": sample.zone_uid,
-                        "node_uid": sample.node_uid,
-                        "metric_type": sample.metric_type,
-                        "zone_uid_format_valid": sample.zone_uid.startswith("zn-")
-                        if sample.zone_uid
-                        else False,
-                    },
-                )
+                extra = {
+                    "zone_uid": sample.zone_uid,
+                    "node_uid": sample.node_uid,
+                    "metric_type": sample.metric_type,
+                    "zone_uid_format_valid": sample.zone_uid.startswith("zn-")
+                    if sample.zone_uid
+                    else False,
+                }
+                if _is_temp_namespace(sample.gh_uid, sample.zone_uid):
+                    logger.debug(
+                        "Skipping sample: zone_id not found for temp namespace zone_uid",
+                        extra=extra,
+                    )
+                else:
+                    _log_warning_throttled(
+                        key=(
+                            "zone_id_not_found",
+                            sample.gh_uid or "-",
+                            sample.zone_uid or "-",
+                            sample.metric_type or "-",
+                        ),
+                        message="Skipping sample: zone_id not found for zone_uid",
+                        extra=extra,
+                    )
             TELEMETRY_DROPPED.labels(reason="zone_id_not_found").inc()
             continue
 
         if node_id is None:
-            logger.warning(
-                "Skipping sample: node_id not found for node_uid",
-                extra={
-                    "node_uid": sample.node_uid,
-                    "zone_uid": sample.zone_uid,
-                    "gh_uid": sample.gh_uid,
-                    "metric_type": sample.metric_type,
-                },
-            )
+            extra = {
+                "node_uid": sample.node_uid,
+                "zone_uid": sample.zone_uid,
+                "gh_uid": sample.gh_uid,
+                "metric_type": sample.metric_type,
+            }
+            if _is_temp_namespace(sample.gh_uid, sample.zone_uid):
+                logger.debug(
+                    "Skipping sample: node_id not found during temp namespace bootstrap",
+                    extra=extra,
+                )
+            else:
+                _log_warning_throttled(
+                    key=(
+                        "node_id_not_found",
+                        sample.gh_uid or "-",
+                        sample.node_uid or "-",
+                        sample.metric_type or "-",
+                    ),
+                    message="Skipping sample: node_id not found for node_uid",
+                    extra=extra,
+                )
             TELEMETRY_DROPPED.labels(reason="node_id_not_found").inc()
             await _emit_telemetry_anomaly_alert(
                 code="infra_telemetry_sample_dropped_node_not_found",

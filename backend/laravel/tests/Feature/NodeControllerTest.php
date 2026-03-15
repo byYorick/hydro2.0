@@ -190,17 +190,35 @@ class NodeControllerTest extends TestCase
             $this->markTestSkipped('Service token not configured');
         }
 
-        // Делаем 11 запросов (лимит 10 в минуту)
+        // Один и тот же узел не должен бесконечно ретраиться через общий bridge IP.
         for ($i = 0; $i < 11; $i++) {
             $response = $this->withHeader('Authorization', "Bearer {$token}")
                 ->postJson('/api/nodes/register', [
-                    'node_uid' => "test-node-{$i}",
+                    'node_uid' => 'test-node-rate-limited',
                     'type' => 'ph',
                 ]);
         }
 
-        // Последний запрос должен быть заблокирован
         $response->assertStatus(429);
+    }
+
+    public function test_node_registration_allows_burst_for_distinct_nodes_behind_same_bridge_ip(): void
+    {
+        $token = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
+
+        if (!$token) {
+            $this->markTestSkipped('Service token not configured');
+        }
+
+        for ($i = 0; $i < 11; $i++) {
+            $response = $this->withHeader('Authorization', "Bearer {$token}")
+                ->postJson('/api/nodes/register', [
+                    'node_uid' => "test-node-burst-{$i}",
+                    'type' => 'ph',
+                ]);
+
+            $response->assertStatus(201);
+        }
     }
 
     public function test_node_update_requires_authorization(): void

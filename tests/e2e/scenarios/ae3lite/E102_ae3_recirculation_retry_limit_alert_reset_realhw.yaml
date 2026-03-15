@@ -195,7 +195,73 @@ actions:
   payload:
     preset_id: ${test_node_correction_preset_row.0.id}
     base_config: {}
-    phase_overrides: {}
+    phase_overrides:
+      solution_fill:
+        retry:
+          max_ec_correction_attempts: 3
+          max_ph_correction_attempts: 3
+          prepare_recirculation_timeout_sec: 120
+          prepare_recirculation_max_attempts: 3
+          prepare_recirculation_max_correction_attempts: 32767
+        controllers:
+          ec:
+            kp: 12.0
+            ki: 0.12
+            kd: 0.0
+            deadband: 0.08
+            max_dose_ml: 20.0
+            max_integral: 24.0
+            min_interval_sec: 20
+          ph:
+            kp: 4.0
+            ki: 0.04
+            kd: 0.0
+            deadband: 0.05
+            max_dose_ml: 10.0
+            max_integral: 10.0
+            min_interval_sec: 20
+        dosing:
+          ec_dose_ml_per_mS_L: 2.0
+          ph_dose_ml_per_unit_L: 0.5
+          max_ec_dose_ml: 20.0
+          max_ph_dose_ml: 10.0
+        timing:
+          ec_mix_wait_sec: 20
+          ph_mix_wait_sec: 20
+          stabilization_sec: 10
+      tank_recirc:
+        retry:
+          max_ec_correction_attempts: 10
+          max_ph_correction_attempts: 10
+          prepare_recirculation_timeout_sec: 30
+          prepare_recirculation_max_attempts: 3
+          prepare_recirculation_max_correction_attempts: 32767
+        controllers:
+          ec:
+            kp: 18.0
+            ki: 0.18
+            kd: 0.0
+            deadband: 0.05
+            max_dose_ml: 30.0
+            max_integral: 48.0
+            min_interval_sec: 15
+          ph:
+            kp: 6.0
+            ki: 0.06
+            kd: 0.0
+            deadband: 0.04
+            max_dose_ml: 16.0
+            max_integral: 16.0
+            min_interval_sec: 15
+        dosing:
+          ec_dose_ml_per_mS_L: 2.5
+          ph_dose_ml_per_unit_L: 0.8
+          max_ec_dose_ml: 30.0
+          max_ph_dose_ml: 16.0
+        timing:
+          ec_mix_wait_sec: 15
+          ph_mix_wait_sec: 15
+          stabilization_sec: 10
   save: correction_config_update_response
 - step: upsert_irrig_channels
   type: database_execute
@@ -1268,9 +1334,10 @@ cleanup:
 - step: cleanup_retry_limit_overrides_final
   type: database_execute
   optional: true
-  query: "\nDELETE FROM grow_cycle_overrides\nWHERE grow_cycle_id IN (\n  CAST(:grow_cycle_id\
-    \ AS bigint),\n  CAST(NULLIF(:grow_cycle_id_2, '') AS bigint)\n)\n  AND parameter\
-    \ IN ('ph.target', 'ph.min', 'ph.max', 'ec.target', 'ec.min', 'ec.max')\n"
+  query: "\nDELETE FROM grow_cycle_overrides\nWHERE CAST(grow_cycle_id AS text) IN\
+    \ (\n  CAST(:grow_cycle_id AS text),\n  CAST(:grow_cycle_id_2 AS text)\n)\n \
+    \ AND parameter IN ('ph.target', 'ph.min', 'ph.max', 'ec.target', 'ec.min',\
+    \ 'ec.max')\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
     grow_cycle_id_2: ${grow_cycle_id_2}

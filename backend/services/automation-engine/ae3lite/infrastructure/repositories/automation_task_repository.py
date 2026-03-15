@@ -389,6 +389,8 @@ class PgAutomationTaskRepository:
                 """
                 UPDATE ae_tasks
                 SET status = 'pending',
+                    claimed_by            = NULL,
+                    claimed_at            = NULL,
                     current_stage         = $3,
                     workflow_phase        = $4,
                     stage_deadline_at     = $5,

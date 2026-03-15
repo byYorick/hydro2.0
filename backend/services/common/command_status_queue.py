@@ -91,6 +91,10 @@ def _is_command_not_found_response(resp: Any, payload: Dict[str, Any]) -> bool:
     return str(payload.get("code", "")).upper().strip() == "COMMAND_NOT_FOUND"
 
 
+def _is_non_laravel_test_cmd_id(cmd_id: str) -> bool:
+    return str(cmd_id or "").startswith("e2e:")
+
+
 def _should_emit_command_ack_not_found_alert(now: datetime, key: str) -> bool:
     last = _last_command_ack_not_found_alert_at.get(key)
     if last is None:
@@ -765,6 +769,12 @@ async def send_status_to_laravel(
         else:
             error_payload = _decode_laravel_error_payload(resp)
             if _is_command_not_found_response(resp, error_payload):
+                if _is_non_laravel_test_cmd_id(cmd_id):
+                    logger.info(
+                        f"[STATUS_DELIVERY] STEP 6.2: Ignoring COMMAND_NOT_FOUND for non-Laravel test cmd_id={cmd_id}, "
+                        f"status={status_value}"
+                    )
+                    return True
                 logger.warning(
                     f"[STATUS_DELIVERY] STEP 6.2: COMMAND_NOT_FOUND for cmd_id={cmd_id}, "
                     f"status={status_value}. Response body: {resp.text[:200]}"

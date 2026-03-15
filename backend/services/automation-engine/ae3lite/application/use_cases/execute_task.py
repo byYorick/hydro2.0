@@ -160,13 +160,13 @@ class ExecuteTaskUseCase:
         except (SnapshotBuildError, PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
             error_code = getattr(exc, "code", "ae3_task_execution_failed")
             logger.error(
-                "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_code=%s error=%s",
+                "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
                 running_task.zone_id,
                 running_task.id,
                 getattr(running_task, "current_stage", None),
+                type(exc).__name__,
                 error_code,
                 exc,
-                exc_info=True,
             )
             await self._attempt_fail_safe_shutdown(
                 task=running_task,
@@ -341,6 +341,21 @@ class ExecuteTaskUseCase:
         topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
         if topology not in {"two_tank", "two_tank_drip_substrate_trays"}:
             return
+        get_task_by_id = getattr(self._task_repository, "get_by_id", None)
+        if callable(get_task_by_id):
+            try:
+                current_task = await get_task_by_id(task_id=int(getattr(task, "id", 0) or 0))
+            except Exception:
+                logger.warning(
+                    "AE3 fail-safe shutdown preflight failed to load task state: task_id=%s zone_id=%s",
+                    getattr(task, "id", None),
+                    getattr(task, "zone_id", None),
+                    exc_info=True,
+                )
+                current_task = None
+            if current_task is None or not bool(getattr(current_task, "is_active", False)):
+                self._log_skip_fail_safe_shutdown(task=task, reason="task_missing_or_inactive")
+                return
         actuators = getattr(snapshot, "actuators", ()) if snapshot is not None else ()
         if not actuators:
             return
@@ -398,6 +413,14 @@ class ExecuteTaskUseCase:
                 getattr(task, "zone_id", None),
             )
 
+    def _log_skip_fail_safe_shutdown(self, *, task: Any, reason: str) -> None:
+        logger.info(
+            "AE3 skipping fail-safe shutdown: task_id=%s zone_id=%s reason=%s",
+            getattr(task, "id", None),
+            getattr(task, "zone_id", None),
+            reason,
+        )
+
     async def _mark_correction_config_applied_if_needed(
         self,
         *,
@@ -408,10 +431,6 @@ class ExecuteTaskUseCase:
     ) -> None:
         repository = self._zone_correction_config_repository
         if repository is None:
-            return
-        if getattr(task, "is_active", False):
-            return
-        if str(getattr(task, "status", "")).strip().lower() not in {"completed", "failed"}:
             return
 
         topology = str(getattr(plan, "topology", "") or getattr(task, "topology", "")).strip().lower()
