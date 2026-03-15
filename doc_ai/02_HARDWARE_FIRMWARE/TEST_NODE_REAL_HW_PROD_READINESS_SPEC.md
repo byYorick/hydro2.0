@@ -338,6 +338,19 @@ Transient-overlap правило для `pump_main`:
 - `E101_ae3_two_tank_realhw_ready_during_fill` — альтернативный happy-path, где `ready` достигается ещё на fill-path без recirculation.
 - `E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw` — recovery-вариант: после first-run retry-limit второй прогон снова доводит систему до `ready`.
 - `E104_ae3_two_tank_realhw_hot_reload_correction_config` — не тест “полив уже разрешён”, а strict hot-reload тест активного correction loop; он проверяет сходимость pH/EC и применение новой config version внутри `tank_recirc`.
+- `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle` — strict piggyback тест для correction sub-machine в `prepare_recirculation_check`: сценарий обязан увидеть EC correction, затем PH correction в том же полном correction loop, без reset ноды и без раннего failed terminal state.
+
+Для `E106` важен отдельный инвариант воспроизводимости:
+
+- `reset_state` по-прежнему возвращает test-node в дефолт `pH=6.90`, `EC=0.60`;
+- этого достаточно для happy-path и retry-limit сценариев, но не гарантирует воспроизводимый strict piggyback target после полного рестарта всего e2e стека;
+- поэтому каноничный `E106` перед `tank_recirc` correction loop детерминированно seed-ит раствор через `storage_state/set_fault_mode` в окно вне target:
+  - `ph_value=5.68`
+  - `ec_value=1.92`
+- после такого seed сценарий всё ещё требует строгого доведения до runtime target window:
+  - `pH 5.00..5.15`
+  - `EC 2.30..2.38`
+- это не ослабление acceptance criteria, а фиксация каноничной стартовой точки для проверки именно piggyback semantics, а не cold-start endurance от `reset_state`.
 
 ---
 
