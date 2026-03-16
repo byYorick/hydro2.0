@@ -381,6 +381,16 @@ actions:
     ec_pump_channel_id: ${ec_pump_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
+- step: cleanup_existing_process_calibrations
+  type: database_execute
+  query: "DELETE FROM zone_process_calibrations\nWHERE zone_id = :zone_id\n  AND source = 'e2e_realhw_process_observe'\n"
+  params:
+    zone_id: ${zone_id}
+- step: insert_process_calibrations
+  type: database_execute
+  query: "INSERT INTO zone_process_calibrations (\n  zone_id,\n  mode,\n  ec_gain_per_ml,\n  ph_up_gain_per_ml,\n  ph_down_gain_per_ml,\n  ph_per_ec_ml,\n  ec_per_ph_ml,\n  transport_delay_sec,\n  settle_sec,\n  confidence,\n  source,\n  valid_from,\n  is_active,\n  meta,\n  created_at,\n  updated_at\n)\nVALUES\n  (\n    :zone_id,\n    'solution_fill',\n    0.0025,\n    0.0100,\n    0.0100,\n    -0.0015,\n    0.0000,\n    4,\n    4,\n    0.90,\n    'e2e_realhw_process_observe',\n    NOW() - INTERVAL '1 minute',\n    TRUE,\n    jsonb_build_object(\n      'observe', jsonb_build_object(\n        'telemetry_period_sec', 2,\n        'window_min_samples', 3,\n        'decision_window_sec', 6,\n        'observe_poll_sec', 2,\n        'min_effect_fraction', 0.20,\n        'stability_max_slope', 0.08,\n        'no_effect_consecutive_limit', 3\n      )\n    ),\n    NOW(),\n    NOW()\n  ),\n  (\n    :zone_id,\n    'tank_recirc',\n    0.0080,\n    0.0180,\n    0.0180,\n    -0.0025,\n    0.0000,\n    4,\n    4,\n    0.95,\n    'e2e_realhw_process_observe',\n    NOW() - INTERVAL '1 minute',\n    TRUE,\n    jsonb_build_object(\n      'observe', jsonb_build_object(\n        'telemetry_period_sec', 2,\n        'window_min_samples', 3,\n        'decision_window_sec', 6,\n        'observe_poll_sec', 2,\n        'min_effect_fraction', 0.20,\n        'stability_max_slope', 0.08,\n        'no_effect_consecutive_limit', 3\n      )\n    ),\n    NOW(),\n    NOW()\n  ),\n  (\n    :zone_id,\n    'irrigation',\n    0.0060,\n    0.0140,\n    0.0140,\n    -0.0020,\n    0.0000,\n    6,\n    4,\n    0.85,\n    'e2e_realhw_process_observe',\n    NOW() - INTERVAL '1 minute',\n    TRUE,\n    jsonb_build_object(\n      'observe', jsonb_build_object(\n        'telemetry_period_sec', 2,\n        'window_min_samples', 3,\n        'decision_window_sec', 6,\n        'observe_poll_sec', 2,\n        'min_effect_fraction', 0.20,\n        'stability_max_slope', 0.08,\n        'no_effect_consecutive_limit', 3\n      )\n    ),\n    NOW(),\n    NOW()\n  )\n"
+  params:
+    zone_id: ${zone_id}
 - step: deactivate_active_profiles
   type: database_execute
   query: "UPDATE zone_automation_logic_profiles\nSET is_active = FALSE,\n    updated_at\
@@ -397,7 +407,7 @@ actions:
     \ jsonb_build_array('irrig'),\n        'startup', jsonb_build_object(\n      \
     \    'level_poll_interval_sec', 5,\n          'clean_fill_timeout_sec', 120,\n\
     \          'solution_fill_timeout_sec', 240,\n          'prepare_recirculation_timeout_sec',\
-    \ 30,\n          'telemetry_max_age_sec', 300,\n          'irr_state_max_age_sec',\
+    \ 30,\n          'telemetry_max_age_sec', 10,\n          'irr_state_max_age_sec',\
     \ 30,\n          'sensor_mode_stabilization_time_sec', 0\n        ),\n        'prepare_tolerance', jsonb_build_object(\n\
     \          'ph_pct', 5,\n          'ec_pct', 10\n        ),\n        'correction',\
     \ jsonb_build_object(\n          'dose_ec_channel', 'dose_ec_a',\n          'dose_ph_up_channel',\
@@ -1369,6 +1379,12 @@ cleanup:
     ec_pump_channel_id: ${ec_pump_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
+- step: cleanup_e2e_process_calibrations
+  type: database_execute
+  optional: true
+  query: "DELETE FROM zone_process_calibrations\nWHERE zone_id = :zone_id\n  AND source = 'e2e_realhw_process_observe'\n"
+  params:
+    zone_id: ${zone_id}
 - step: cleanup_e2e_bindings
   type: database_execute
   optional: true

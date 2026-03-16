@@ -653,6 +653,13 @@ updated_at TIMESTAMP
 PK (zone_id, pid_type)
 ```
 
+Runtime-семантика AE3-Lite:
+- `last_measured_value` хранит baseline/последнее подтверждённое измерение controller-а;
+- `hold_until` блокирует раннее повторное решение до окончания process observation window;
+- `feedforward_bias` используется для cross-coupled correction после `EC`-дозы;
+- `no_effect_count` хранит consecutive no-effect attempts по конкретному `pid_type`;
+- ordinary attempt limits и `no_effect_count` — разные safety-механизмы.
+
 Индексы:
 ```
 idx_pid_state_zone_id (zone_id)

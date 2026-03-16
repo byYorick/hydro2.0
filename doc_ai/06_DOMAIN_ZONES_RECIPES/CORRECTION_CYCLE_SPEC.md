@@ -17,6 +17,15 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - запуск цикла автоматики выполняется через `POST /zones/{id}/start-cycle`;
 - runtime-резолв target/config выполняется через SQL read-model (effective-targets API не используется в runtime path).
 
+Актуализация AE3-Lite in-flow correction (2026-03-15):
+- correction decision больше не строится по одному `telemetry_last` sample;
+- для `EC` и `pH` используется модель `dose -> hold -> observe -> decide`;
+- окно наблюдения собирается из `telemetry_samples`, а не из одного текущего значения;
+- в одном decision tick допускается не более одного химического воздействия;
+- последовательность `EC -> PH` без повторного observe-step запрещена;
+- `3` consecutive `no-effect` для одного `pid_type` дают alert и fail-closed ветку correction window;
+- обычные correction attempts и `no-effect` attempts — независимые лимиты.
+
 ---
 
 ## 1. Проблема и решение
@@ -133,6 +142,23 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 3. Режимы коррекции
 
+### 3.0. Базовый runtime-контракт correction sub-machine
+
+Для `EC` и `pH` действует единая семантика:
+
+1. `dose` — отправляется одна доза;
+2. `hold` — до `hold_until` новые решения запрещены;
+3. `observe` — после `transport_delay_sec` собирается окно samples из `telemetry_samples`;
+4. `decide` — по агрегированному отклику (`median`/устойчивое окно), а не по одному sample,
+   принимается решение `done / next dose / no-effect / exhausted`.
+
+Обязательные правила:
+- `transport_delay_sec` и `settle_sec` берутся из `zone_process_calibrations`;
+- если process calibration отсутствует, новый in-flow correction path идёт fail-closed;
+- `telemetry_max_age_sec` должен быть согласован с фактической частотой telemetry;
+- для production in-flow режима ожидается telemetry cadence порядка `2 сек`;
+- `EC` и `pH` имеют отдельные `no_effect_count`, отдельные process gains и отдельные observation thresholds.
+
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)
 
 **Цель:** Набрать бак с раствором; пока бак не полон, выполнять in-flow коррекцию NPK + pH.
@@ -146,8 +172,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 4. pH/EC ноды → MQTT: telemetry с flow_active: true, stable: false
 5. После стабилизации: stable: true
 6. Пока `solution_max` ещё не сработал, Automation-engine:
-   - проверяет EC (NPK) и при необходимости дозирует NPK;
-   - проверяет pH и при необходимости дозирует pH+/pH-;
+   - читает observation window для EC/pH;
+   - принимает не более одного correction action за тик;
+   - при необходимости дозирует NPK **или** pH+/pH-;
    - после correction sub-cycle возвращается в тот же `solution_fill_check`.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
    - действует исходный `solution_fill_timeout_sec` для всего stage целиком.
@@ -157,8 +184,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```
 
 **Коррекция:**
-- NPK (EC): in-flow дозирование на этапе набора раствора
-- pH: pH+ или pH- в зависимости от отклонения
+- NPK (EC): in-flow дозирование на этапе набора раствора через `dose -> hold -> observe -> decide`
+- pH: pH+ или pH- через тот же observation-driven цикл
 - После достижения `solution_max` дополнительная коррекция в `TANK_FILLING` не продолжается:
   дальнейшее доведение до targets происходит только в `TANK_RECIRC`
 
@@ -188,6 +215,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
    - terminal error: `prepare_recirculation_attempt_limit_reached`
    - alert code: `biz_prepare_recirculation_retry_exhausted`
 ```
+
+Дополнение по fail-closed:
+- если один и тот же `EC` или `pH` contour трижды подряд не даёт наблюдаемого отклика,
+  correction window завершается alert-ом `no-effect`;
+- `no-effect` не равен обычной недокоррекции: при наличии физического отклика correction может
+  продолжаться большим числом малых доз до общего attempt/time limit.
 
 **Макс timeout-window:** 5
 **Интервал между попытками:** 2 мин

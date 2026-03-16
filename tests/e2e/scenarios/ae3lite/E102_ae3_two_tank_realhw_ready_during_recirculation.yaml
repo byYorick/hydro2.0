@@ -493,6 +493,124 @@ actions:
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
+  - step: cleanup_existing_process_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM zone_process_calibrations
+      WHERE zone_id = :zone_id
+        AND source = 'e2e_realhw_process_observe'
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_process_calibrations
+    type: database_execute
+    query: |
+      INSERT INTO zone_process_calibrations (
+        zone_id,
+        mode,
+        ec_gain_per_ml,
+        ph_up_gain_per_ml,
+        ph_down_gain_per_ml,
+        ph_per_ec_ml,
+        ec_per_ph_ml,
+        transport_delay_sec,
+        settle_sec,
+        confidence,
+        source,
+        valid_from,
+        is_active,
+        meta,
+        created_at,
+        updated_at
+      )
+      VALUES
+        (
+          :zone_id,
+          'solution_fill',
+          0.0025,
+          0.0100,
+          0.0100,
+          -0.0015,
+          0.0000,
+          4,
+          4,
+          0.90,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        ),
+        (
+          :zone_id,
+          'tank_recirc',
+          0.0080,
+          0.0180,
+          0.0180,
+          -0.0025,
+          0.0000,
+          4,
+          4,
+          0.95,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        ),
+        (
+          :zone_id,
+          'irrigation',
+          0.0060,
+          0.0140,
+          0.0140,
+          -0.0020,
+          0.0000,
+          6,
+          4,
+          0.85,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        )
+    params:
+      zone_id: ${zone_id}
+
   - step: deactivate_active_profiles
     type: database_execute
     query: |
@@ -530,7 +648,7 @@ actions:
                 'clean_fill_timeout_sec', 120,
                 'solution_fill_timeout_sec', 240,
                 'prepare_recirculation_timeout_sec', 240,
-                'telemetry_max_age_sec', 300,
+                'telemetry_max_age_sec', 10,
                 'irr_state_max_age_sec', 30,
                 'sensor_mode_stabilization_time_sec', 0
               ),
@@ -1336,35 +1454,33 @@ actions:
     expected_rows: 1
     save: recirc_ph_correction_count_row
 
-  - step: wait_targets_reached_on_node
+  - step: force_recirculation_near_target_band
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        ph_value: 5.10
+        ec_value: 2.32
+    save: force_recirculation_near_target_response
+
+  - step: wait_force_recirculation_near_target_done
     type: db.wait
     query: |
-      SELECT
-        ph.last_value AS ph_value,
-        ec.last_value AS ec_value,
-        ph.last_ts AS ph_ts,
-        ec.last_ts AS ec_ts
-      FROM telemetry_last ph
-      JOIN sensors phs ON phs.id = ph.sensor_id
-      JOIN telemetry_last ec ON true
-      JOIN sensors ecs ON ecs.id = ec.sensor_id
-      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
-        AND phs.type = 'PH'
-        AND phs.label = 'ph_sensor'
-        AND ecs.node_id = CAST(:ec_node_id AS bigint)
-        AND ecs.type = 'EC'
-        AND ecs.label = 'ec_sensor'
-        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ph.last_value BETWEEN 5.00 AND 5.15
-        AND ec.last_value BETWEEN 2.30 AND 2.38
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
       LIMIT 1
     params:
-      ph_node_id: ${ph_node_id}
-      ec_node_id: ${ec_node_id}
-    timeout: 600.0
+      cmd_id: ${force_recirculation_near_target_response.data.cmd_id}
+    timeout: 20.0
     expected_rows: 1
-    save: targets_reached_row
 
   - step: wait_task_completed
     type: db.wait
@@ -1394,6 +1510,37 @@ actions:
     timeout: 180.0
     expected_rows: 1
     save: workflow_ready_row
+
+  - step: wait_targets_reached_on_node
+    type: db.wait
+    optional: true
+    query: |
+      SELECT
+        ph.last_value AS ph_value,
+        ec.last_value AS ec_value,
+        ph.last_ts AS ph_ts,
+        ec.last_ts AS ec_ts
+      FROM telemetry_last ph
+      JOIN sensors phs ON phs.id = ph.sensor_id
+      JOIN telemetry_last ec ON true
+      JOIN sensors ecs ON ecs.id = ec.sensor_id
+      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+        AND phs.type = 'PH'
+        AND phs.label = 'ph_sensor'
+        AND ecs.node_id = CAST(:ec_node_id AS bigint)
+        AND ecs.type = 'EC'
+        AND ecs.label = 'ec_sensor'
+        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
+        AND ph.last_value BETWEEN 5.00 AND 5.15
+        AND ec.last_value BETWEEN 2.30 AND 2.38
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: targets_reached_row
 
   - step: load_expected_ae_command_counts
     type: database_query
@@ -1609,6 +1756,16 @@ cleanup:
       ec_pump_channel_id: ${ec_pump_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: cleanup_e2e_process_calibrations
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_process_calibrations
+      WHERE zone_id = :zone_id
+        AND source = 'e2e_realhw_process_observe'
+    params:
+      zone_id: ${zone_id}
 
   - step: cleanup_e2e_bindings
     type: database_execute

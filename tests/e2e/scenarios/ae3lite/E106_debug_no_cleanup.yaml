@@ -1,31 +1,31 @@
-# E106: AE3-Lite piggyback EC->PH full correction cycle on real test_node
+# E106: AE3-Lite sequential EC->observe->PH correction cycle on real test_node
 # DoD:
 # - real test_node проходит staged setup до `prepare_recirculation_check`
-# - correction публикует EC run_pump, затем PH run_pump в recirculation path
+# - correction публикует EC run_pump, затем PH run_pump после observe-window
 # - обе дозировки происходят без reset_state и без раннего fail task
-# - task остаётся живым в `prepare_recirculation_check` после piggyback-пары
+# - task остаётся живым в `prepare_recirculation_check` после sequential correction loop
 
 name: E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle
 description: |
-  Real-hardware piggyback flow для native AE3-Lite на `firmware/test_node`.
+  Real-hardware sequential observe-loop flow для native AE3-Lite на `firmware/test_node`.
   Сценарий готовит test-zone под AE3 two-tank topology, делает reset через protected
   command pipeline и затем проводит staged setup до `prepare_recirculation_check`.
   После входа в recirculation window сценарий проверяет correction v2 инвариант:
-  сначала проходит EC correction, затем PH correction в том же полном correction loop,
-  без reset ноды и без раннего failed terminal state.
+  сначала проходит EC correction, затем PH correction после observe-window в том же
+  correction loop, без reset ноды и без раннего failed terminal state.
 
 actions:
   - step: set_test_context
     type: set
-    fixture_prefix: ae3-realhw-piggyback-${TIMESTAMP_MS}
+    fixture_prefix: ae3-realhw-sequential-${TIMESTAMP_MS}
     test_zone_uid: ${TEST_NODE_ZONE_UID}
     test_node_uid: ${TEST_NODE_UID}
     test_ph_node_uid: ${TEST_PH_NODE_UID}
     test_ec_node_uid: ${TEST_EC_NODE_UID}
-    recipe_name: ae3-realhw-piggyback-recipe-${TIMESTAMP_MS}
-    idempotency_key: ae3-realhw-piggyback-start-cycle-${TIMESTAMP_MS}
+    recipe_name: ae3-realhw-sequential-recipe-${TIMESTAMP_MS}
+    idempotency_key: ae3-realhw-sequential-start-cycle-${TIMESTAMP_MS}
     scheduler_source: laravel_scheduler
-    scheduler_trace_id: ae3-realhw-piggyback-trace-${TIMESTAMP_MS}
+    scheduler_trace_id: ae3-realhw-sequential-trace-${TIMESTAMP_MS}
 
   - step: capture_scenario_window
     type: database_query
@@ -493,6 +493,124 @@ actions:
       ec_pump_channel_id: ${ec_pump_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: cleanup_existing_process_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM zone_process_calibrations
+      WHERE zone_id = :zone_id
+        AND source = 'e2e_realhw_process_observe'
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_process_calibrations
+    type: database_execute
+    query: |
+      INSERT INTO zone_process_calibrations (
+        zone_id,
+        mode,
+        ec_gain_per_ml,
+        ph_up_gain_per_ml,
+        ph_down_gain_per_ml,
+        ph_per_ec_ml,
+        ec_per_ph_ml,
+        transport_delay_sec,
+        settle_sec,
+        confidence,
+        source,
+        valid_from,
+        is_active,
+        meta,
+        created_at,
+        updated_at
+      )
+      VALUES
+        (
+          :zone_id,
+          'solution_fill',
+          0.0025,
+          0.0100,
+          0.0100,
+          -0.0015,
+          0.0000,
+          4,
+          4,
+          0.90,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        ),
+        (
+          :zone_id,
+          'tank_recirc',
+          0.0080,
+          0.0180,
+          0.0180,
+          -0.0025,
+          0.0000,
+          4,
+          4,
+          0.95,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        ),
+        (
+          :zone_id,
+          'irrigation',
+          0.0060,
+          0.0140,
+          0.0140,
+          -0.0020,
+          0.0000,
+          6,
+          4,
+          0.85,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        )
+    params:
+      zone_id: ${zone_id}
 
   - step: deactivate_active_profiles
     type: database_execute

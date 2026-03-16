@@ -48,7 +48,18 @@ class ZoneProcessCalibrationControllerTest extends TestCase
             'settle_sec' => 45,
             'confidence' => 0.91,
             'source' => 'hil_manual',
-            'meta' => ['batch' => 'cal-1'],
+            'meta' => [
+                'batch' => 'cal-1',
+                'observe' => [
+                    'telemetry_period_sec' => 2,
+                    'window_min_samples' => 3,
+                    'decision_window_sec' => 6,
+                    'observe_poll_sec' => 2,
+                    'min_effect_fraction' => 0.25,
+                    'stability_max_slope' => 0.05,
+                    'no_effect_consecutive_limit' => 3,
+                ],
+            ],
         ];
 
         $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/tank_recirc", $payload);
@@ -57,7 +68,8 @@ class ZoneProcessCalibrationControllerTest extends TestCase
             ->assertJsonPath('data.mode', 'tank_recirc')
             ->assertJsonPath('data.transport_delay_sec', 20)
             ->assertJsonPath('data.settle_sec', 45)
-            ->assertJsonPath('data.confidence', 0.91);
+            ->assertJsonPath('data.confidence', 0.91)
+            ->assertJsonPath('data.meta.observe.window_min_samples', 3);
 
         $this->assertDatabaseHas('zone_process_calibrations', [
             'zone_id' => $zone->id,
@@ -181,9 +193,20 @@ class ZoneProcessCalibrationControllerTest extends TestCase
         $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/generic", [
             'confidence' => 2,
             'transport_delay_sec' => 7200,
+            'meta' => [
+                'observe' => [
+                    'window_min_samples' => 1,
+                    'min_effect_fraction' => 0.001,
+                ],
+            ],
         ]);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['confidence', 'transport_delay_sec']);
+            ->assertJsonValidationErrors([
+                'confidence',
+                'transport_delay_sec',
+                'meta.observe.window_min_samples',
+                'meta.observe.min_effect_fraction',
+            ]);
     }
 }

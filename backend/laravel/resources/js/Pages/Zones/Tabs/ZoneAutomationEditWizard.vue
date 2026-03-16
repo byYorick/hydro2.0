@@ -416,10 +416,11 @@
               </div>
               <div>
                 <dt class="font-mono text-[color:var(--text-primary)]">
-                  correction.ec_mix_wait_sec / ph_mix_wait_sec / stabilization_sec
+                  correction.stabilization_sec + process calibration observe window
                 </dt>
                 <dd class="text-[color:var(--text-dim)]">
-                  Времена ожидания смешивания после дозирования и время стабилизации перед проверкой.
+                  Stage-level stabilization перед первым corr_check и observe-window после дозы, который задаётся
+                  через process calibration / correction-config, а не через legacy waits в diagnostics execution.
                 </dd>
               </div>
               <div>
@@ -647,27 +648,7 @@
               />
             </label>
             <label class="text-xs text-[color:var(--text-muted)]">
-              Ожидание смешивания EC (correction.ec_mix_wait_sec)
-              <input
-                v-model.number="draftWaterForm.correctionEcMixWaitSec"
-                type="number"
-                min="10"
-                max="3600"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Ожидание смешивания pH (correction.ph_mix_wait_sec)
-              <input
-                v-model.number="draftWaterForm.correctionPhMixWaitSec"
-                type="number"
-                min="10"
-                max="3600"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Время стабилизации (correction.stabilization_sec)
+              Stage stabilization (correction.stabilization_sec)
               <input
                 v-model.number="draftWaterForm.correctionStabilizationSec"
                 type="number"
@@ -676,6 +657,12 @@
                 class="input-field mt-1 w-full"
               />
             </label>
+            <div class="rounded-2xl border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-xs text-[color:var(--text-muted)] md:col-span-2">
+              Observe-window после дозы больше не редактируется в этом wizard и не публикуется в
+              `diagnostics.execution.correction`. Production runtime использует `transport_delay_sec` / `settle_sec`
+              и observe-параметры из correction-config/process calibration. Старые поля `ec_mix_wait_sec` и
+              `ph_mix_wait_sec` читаются только как compatibility bridge при загрузке legacy-конфигов.
+            </div>
             <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
               Обязательные типы нод для refill (CSV)
               <input

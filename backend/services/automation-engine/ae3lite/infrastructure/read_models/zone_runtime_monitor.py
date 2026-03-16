@@ -33,6 +33,28 @@ class PgZoneRuntimeMonitor:
                 return value
         return {}
 
+    async def _read_metric_sensor(self, *, zone_id: int, sensor_type: str) -> Mapping[str, Any] | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT
+                    s.id AS sensor_id,
+                    s.label AS sensor_label,
+                    tl.last_value AS value,
+                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+                FROM sensors s
+                LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+                WHERE s.zone_id = $1
+                  AND s.is_active = TRUE
+                  AND s.type = $2
+                ORDER BY COALESCE(tl.last_ts, tl.updated_at) DESC NULLS LAST, s.id DESC
+                LIMIT 1
+                """,
+                zone_id,
+                sensor_type,
+            )
+
     async def read_level_switch(
         self,
         *,
@@ -97,26 +119,7 @@ class PgZoneRuntimeMonitor:
         }
 
     async def read_metric(self, *, zone_id: int, sensor_type: str, telemetry_max_age_sec: int) -> Mapping[str, Any]:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    s.id AS sensor_id,
-                    s.label AS sensor_label,
-                    tl.last_value AS value,
-                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
-                FROM sensors s
-                LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
-                WHERE s.zone_id = $1
-                  AND s.is_active = TRUE
-                  AND s.type = $2
-                ORDER BY COALESCE(tl.last_ts, tl.updated_at) DESC NULLS LAST, s.id DESC
-                LIMIT 1
-                """,
-                zone_id,
-                sensor_type,
-            )
+        row = await self._read_metric_sensor(zone_id=zone_id, sensor_type=sensor_type)
         if row is None:
             return {"has_value": False, "is_stale": False, "value": None}
 
@@ -136,6 +139,72 @@ class PgZoneRuntimeMonitor:
             "sample_age_sec": age_sec,
             "has_value": value is not None,
             "is_stale": is_stale,
+        }
+
+    async def read_metric_window(
+        self,
+        *,
+        zone_id: int,
+        sensor_type: str,
+        since_ts: datetime,
+        telemetry_max_age_sec: int,
+        limit: int = 64,
+    ) -> Mapping[str, Any]:
+        sensor_row = await self._read_metric_sensor(zone_id=zone_id, sensor_type=sensor_type)
+        if sensor_row is None:
+            return {
+                "has_sensor": False,
+                "has_samples": False,
+                "is_stale": False,
+                "sensor_id": None,
+                "sensor_label": None,
+                "samples": (),
+                "latest_sample_ts": None,
+            }
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT ts, value
+                FROM telemetry_samples
+                WHERE sensor_id = $1
+                  AND ts >= $2
+                ORDER BY ts ASC, id ASC
+                LIMIT $3
+                """,
+                int(sensor_row["sensor_id"]),
+                since_ts,
+                max(1, int(limit)),
+            )
+
+        samples: list[dict[str, Any]] = []
+        latest_sample_ts: Optional[datetime] = None
+        for row in rows:
+            raw_value = row.get("value")
+            try:
+                value = float(raw_value) if raw_value is not None else None
+            except (TypeError, ValueError):
+                value = None
+            ts = row.get("ts")
+            latest_sample_ts = ts if ts is not None else latest_sample_ts
+            if value is None:
+                continue
+            samples.append({"ts": ts, "value": value})
+
+        if latest_sample_ts is None:
+            latest_sample_ts = sensor_row.get("sample_ts")
+        age_sec = self._age_sec(latest_sample_ts)
+        is_stale = bool(latest_sample_ts is not None and ((age_sec or 0.0) > max(0, int(telemetry_max_age_sec))))
+        return {
+            "has_sensor": True,
+            "has_samples": bool(samples),
+            "is_stale": is_stale,
+            "sensor_id": sensor_row.get("sensor_id"),
+            "sensor_label": sensor_row.get("sensor_label"),
+            "samples": tuple(samples),
+            "latest_sample_ts": latest_sample_ts,
+            "sample_age_sec": age_sec,
         }
 
     async def read_latest_irr_state(

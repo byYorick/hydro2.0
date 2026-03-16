@@ -15,7 +15,7 @@ mqtt:
 test_node:
   gh_uid: gh-test-1
   zone_uid: zn-test-1
-  telemetry_interval_seconds: 5.0
-  heartbeat_interval_seconds: 5.0
+  telemetry_interval_seconds: 2.0
+  heartbeat_interval_seconds: 2.0
   config_report_interval_seconds: 30.0
   publish_aux_telemetry: false

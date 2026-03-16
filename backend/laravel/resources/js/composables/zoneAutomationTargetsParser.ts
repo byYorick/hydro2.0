@@ -567,13 +567,13 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
       500
     )
   }
-  const correctionEcMixWaitSec = readNumber(correction?.ec_mix_wait_sec)
-  if (correctionEcMixWaitSec !== null) {
-    waterForm.correctionEcMixWaitSec = clamp(Math.round(correctionEcMixWaitSec), 10, 3600)
+  const correctionEcFallbackWaitSec = readNumber(correction?.ec_mix_wait_sec)
+  if (correctionEcFallbackWaitSec !== null) {
+    waterForm.correctionEcMixWaitSec = clamp(Math.round(correctionEcFallbackWaitSec), 10, 3600)
   }
-  const correctionPhMixWaitSec = readNumber(correction?.ph_mix_wait_sec)
-  if (correctionPhMixWaitSec !== null) {
-    waterForm.correctionPhMixWaitSec = clamp(Math.round(correctionPhMixWaitSec), 10, 3600)
+  const correctionPhFallbackWaitSec = readNumber(correction?.ph_mix_wait_sec)
+  if (correctionPhFallbackWaitSec !== null) {
+    waterForm.correctionPhMixWaitSec = clamp(Math.round(correctionPhFallbackWaitSec), 10, 3600)
   }
   const correctionStabilizationSec = readNumber(correction?.stabilization_sec)
   if (correctionStabilizationSec !== null) {

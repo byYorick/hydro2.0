@@ -1,34 +1,36 @@
-# E106: AE3-Lite piggyback EC->PH full correction cycle on real test_node
+# E106: AE3-Lite sequential EC->observe->PH correction cycle on real test_node
 # DoD:
 # - real test_node проходит staged setup до `prepare_recirculation_check`
-# - correction публикует EC run_pump, затем PH run_pump в recirculation path
+# - correction публикует EC run_pump, затем после observe-window PH run_pump в recirculation path
+# - по EC виден delayed peak, затем decay на свежей live telemetry
 # - обе дозировки происходят без reset_state и без раннего fail task
-# - task остаётся живым в `prepare_recirculation_check` после piggyback-пары
+# - task остаётся живым в `prepare_recirculation_check` после sequential correction loop
 # - seeded recirculation раствор строго доходит до target window
 
 name: E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle
 description: |
-  Real-hardware piggyback flow для native AE3-Lite на `firmware/test_node`.
+  Real-hardware sequential observe-loop flow для native AE3-Lite на `firmware/test_node`.
   Сценарий готовит test-zone под AE3 two-tank topology, делает reset через protected
   command pipeline и затем проводит staged setup до `prepare_recirculation_check`.
   После входа в recirculation window сценарий проверяет correction v2 инвариант:
-  сначала проходит EC correction, затем PH correction в том же полном correction loop,
-  без reset ноды и без раннего failed terminal state. Для воспроизводимости после
-  полного рестарта стека piggyback-loop стартует из каноничного seeded раствора,
+  сначала проходит EC correction, затем по live telemetry виден delayed peak и
+  последующий decay, и только после observe-window проходит PH correction в том же
+  correction loop, без reset ноды и без раннего failed terminal state. Для воспроизводимости после
+  полного рестарта стека sequential loop стартует из каноничного seeded раствора,
   который остаётся вне target window, но детерминированно требует и EC, и PH дозирования.
 
 actions:
   - step: set_test_context
     type: set
-    fixture_prefix: ae3-realhw-piggyback-${TIMESTAMP_MS}
+    fixture_prefix: ae3-realhw-sequential-${TIMESTAMP_MS}
     test_zone_uid: ${TEST_NODE_ZONE_UID}
     test_node_uid: ${TEST_NODE_UID}
     test_ph_node_uid: ${TEST_PH_NODE_UID}
     test_ec_node_uid: ${TEST_EC_NODE_UID}
-    recipe_name: ae3-realhw-piggyback-recipe-${TIMESTAMP_MS}
-    idempotency_key: ae3-realhw-piggyback-start-cycle-${TIMESTAMP_MS}
+    recipe_name: ae3-realhw-sequential-recipe-${TIMESTAMP_MS}
+    idempotency_key: ae3-realhw-sequential-start-cycle-${TIMESTAMP_MS}
     scheduler_source: laravel_scheduler
-    scheduler_trace_id: ae3-realhw-piggyback-trace-${TIMESTAMP_MS}
+    scheduler_trace_id: ae3-realhw-sequential-trace-${TIMESTAMP_MS}
 
   - step: capture_scenario_window
     type: database_query
@@ -496,6 +498,124 @@ actions:
       ec_pump_channel_id: ${ec_pump_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: cleanup_existing_process_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM zone_process_calibrations
+      WHERE zone_id = :zone_id
+        AND source = 'e2e_realhw_process_observe'
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_process_calibrations
+    type: database_execute
+    query: |
+      INSERT INTO zone_process_calibrations (
+        zone_id,
+        mode,
+        ec_gain_per_ml,
+        ph_up_gain_per_ml,
+        ph_down_gain_per_ml,
+        ph_per_ec_ml,
+        ec_per_ph_ml,
+        transport_delay_sec,
+        settle_sec,
+        confidence,
+        source,
+        valid_from,
+        is_active,
+        meta,
+        created_at,
+        updated_at
+      )
+      VALUES
+        (
+          :zone_id,
+          'solution_fill',
+          0.0025,
+          0.0100,
+          0.0100,
+          -0.0015,
+          0.0000,
+          4,
+          4,
+          0.90,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        ),
+        (
+          :zone_id,
+          'tank_recirc',
+          0.0080,
+          0.0180,
+          0.0180,
+          -0.0025,
+          0.0000,
+          4,
+          4,
+          0.95,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        ),
+        (
+          :zone_id,
+          'irrigation',
+          0.0060,
+          0.0140,
+          0.0140,
+          -0.0020,
+          0.0000,
+          6,
+          4,
+          0.85,
+          'e2e_realhw_process_observe',
+          NOW() - INTERVAL '1 minute',
+          TRUE,
+          jsonb_build_object(
+            'observe', jsonb_build_object(
+              'telemetry_period_sec', 2,
+              'window_min_samples', 3,
+              'decision_window_sec', 6,
+              'observe_poll_sec', 2,
+              'min_effect_fraction', 0.20,
+              'stability_max_slope', 0.08,
+              'no_effect_consecutive_limit', 3
+            )
+          ),
+          NOW(),
+          NOW()
+        )
+    params:
+      zone_id: ${zone_id}
 
   - step: deactivate_active_profiles
     type: database_execute
@@ -1166,6 +1286,35 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
+  - step: wait_sensor_mode_telemetry_cadence
+    type: db.wait
+    query: |
+      SELECT
+        ph.last_ts AS ph_ts,
+        ec.last_ts AS ec_ts,
+        EXTRACT(EPOCH FROM (NOW() - ph.last_ts))::numeric(10,3) AS ph_age_sec,
+        EXTRACT(EPOCH FROM (NOW() - ec.last_ts))::numeric(10,3) AS ec_age_sec
+      FROM telemetry_last ph
+      JOIN sensors phs ON phs.id = ph.sensor_id
+      JOIN telemetry_last ec ON true
+      JOIN sensors ecs ON ecs.id = ec.sensor_id
+      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+        AND phs.type = 'PH'
+        AND phs.label = 'ph_sensor'
+        AND ecs.node_id = CAST(:ec_node_id AS bigint)
+        AND ecs.type = 'EC'
+        AND ecs.label = 'ec_sensor'
+        AND ph.last_ts >= NOW() - INTERVAL '6 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '6 seconds'
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+    timeout: 20.0
+    expected_rows: 1
+    save: sensor_mode_cadence_row
+    save: sensor_mode_cadence_row
+
   - step: force_solution_tank_full
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1353,7 +1502,7 @@ actions:
   - step: wait_recirculation_ec_correction_command
     type: db.wait
     query: |
-      SELECT id, channel, payload->>'cmd' AS cmd
+      SELECT id, channel, payload->>'cmd' AS cmd, created_at
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
@@ -1369,10 +1518,56 @@ actions:
     expected_rows: 1
     save: recirc_ec_correction_row
 
+  - step: wait_recirculation_ec_peak_sample
+    type: db.wait
+    query: |
+      SELECT
+        ec.last_ts AS ts,
+        ec.last_value AS value
+      FROM telemetry_last ec
+      JOIN sensors s ON s.id = ec.sensor_id
+      WHERE s.node_id = CAST(:ec_node_id AS bigint)
+        AND s.type = 'EC'
+        AND s.label = 'ec_sensor'
+        AND ec.last_ts >= CAST(:after_command_at AS timestamptz) + INTERVAL '2 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '6 seconds'
+        AND ec.last_value >= 1.95
+      LIMIT 1
+    params:
+      ec_node_id: ${ec_node_id}
+      after_command_at: ${recirc_ec_correction_row.0.created_at}
+    timeout: 80.0
+    expected_rows: 1
+    save: recirc_ec_peak_row
+
+  - step: wait_recirculation_ec_decay_sample
+    type: db.wait
+    query: |
+      SELECT
+        ec.last_ts AS ts,
+        ec.last_value AS value
+      FROM telemetry_last ec
+      JOIN sensors s ON s.id = ec.sensor_id
+      WHERE s.node_id = CAST(:ec_node_id AS bigint)
+        AND s.type = 'EC'
+        AND s.label = 'ec_sensor'
+        AND ec.last_ts >= CAST(:after_peak_at AS timestamptz) + INTERVAL '2 seconds'
+        AND ec.last_ts >= NOW() - INTERVAL '6 seconds'
+        AND ec.last_value <= CAST(:peak_value AS numeric) - 0.01
+      LIMIT 1
+    params:
+      ec_node_id: ${ec_node_id}
+      after_peak_at: ${recirc_ec_peak_row.0.ts}
+      after_command_at: ${recirc_ec_correction_row.0.created_at}
+      peak_value: ${recirc_ec_peak_row.0.value}
+    timeout: 80.0
+    expected_rows: 1
+    save: recirc_ec_decay_row
+
   - step: wait_recirculation_ph_correction_command
     type: db.wait
     query: |
-      SELECT id, channel, payload->>'cmd' AS cmd
+      SELECT id, channel, payload->>'cmd' AS cmd, created_at
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND id > CAST(:after_command_id AS bigint)
@@ -1390,7 +1585,7 @@ actions:
     expected_rows: 1
     save: recirc_ph_correction_row
 
-  - step: wait_task_not_failed_after_piggyback
+  - step: wait_task_not_failed_after_sequential_loop
     type: db.wait
     query: |
       SELECT
@@ -1408,9 +1603,9 @@ actions:
       task_id: ${task_id}
     timeout: 120.0
     expected_rows: 1
-    save: task_not_failed_after_piggyback_row
+    save: task_not_failed_after_sequential_loop_row
 
-  - step: wait_targets_reached_on_node_after_piggyback
+  - step: wait_targets_reached_on_node_after_sequential_loop
     type: db.wait
     query: |
       SELECT
@@ -1438,7 +1633,7 @@ actions:
       ec_node_id: ${ec_node_id}
     timeout: 420.0
     expected_rows: 1
-    save: targets_reached_after_piggyback_row
+    save: targets_reached_after_sequential_loop_row
 
   - step: load_expected_ae_command_counts
     type: database_query
@@ -1564,13 +1759,25 @@ assertions:
     type: custom_assert
     condition: "str(context.get('prepare_recirc_stage_row', [{}])[0].get('current_stage', '')).lower() == 'prepare_recirculation_check' and str(context.get('prepare_recirc_stage_row', [{}])[0].get('workflow_phase', '')).lower() == 'tank_recirc'"
 
-  - name: task_not_failed_after_piggyback
+  - name: telemetry_cadence_after_sensor_mode
     type: custom_assert
-    condition: "str(context.get('task_not_failed_after_piggyback_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not context.get('task_not_failed_after_piggyback_row', [{}])[0].get('error_code')"
+    condition: "len(context.get('sensor_mode_cadence_row', [])) == 1 and float(context.get('sensor_mode_cadence_row', [{}])[0].get('ph_age_sec', 999.0)) <= 6.0 and float(context.get('sensor_mode_cadence_row', [{}])[0].get('ec_age_sec', 999.0)) <= 6.0"
 
-  - name: targets_reached_after_piggyback
+  - name: recirculation_ec_peak_observed
     type: custom_assert
-    condition: "len(context.get('targets_reached_after_piggyback_row', [])) == 1"
+    condition: "len(context.get('recirc_ec_peak_row', [])) == 1"
+
+  - name: recirculation_ec_decay_observed
+    type: custom_assert
+    condition: "len(context.get('recirc_ec_decay_row', [])) == 1"
+
+  - name: task_not_failed_after_sequential_loop
+    type: custom_assert
+    condition: "str(context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('status', '')).lower() in ('pending', 'completed') and not context.get('task_not_failed_after_sequential_loop_row', [{}])[0].get('error_code')"
+
+  - name: targets_reached_after_sequential_loop
+    type: custom_assert
+    condition: "len(context.get('targets_reached_after_sequential_loop_row', [])) == 1"
 
   - name: at_least_ten_ae_commands_logged
     type: custom_assert
@@ -1596,7 +1803,7 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 2"
 
-  - name: piggyback_ph_correction_logged
+  - name: sequential_ph_correction_logged
     type: custom_assert
     condition: "len(context.get('recirc_ph_correction_row', [])) == 1"
 
@@ -1647,6 +1854,16 @@ cleanup:
       ec_pump_channel_id: ${ec_pump_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: cleanup_e2e_process_calibrations
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_process_calibrations
+      WHERE zone_id = :zone_id
+        AND source = 'e2e_realhw_process_observe'
+    params:
+      zone_id: ${zone_id}
 
   - step: cleanup_e2e_bindings
     type: database_execute

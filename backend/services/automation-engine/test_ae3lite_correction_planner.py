@@ -1081,6 +1081,9 @@ def test_no_integral_spike_after_reset_and_reentry() -> None:
                 "max_integral": 100.0,
             }
         ),
+        workflow_phase="solution_fill",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 0.2}},
+        ec_component_policy={},
         pid_state={"ec": reset_ec_state},
         now=t_reentry,
         ec_actuator=None,

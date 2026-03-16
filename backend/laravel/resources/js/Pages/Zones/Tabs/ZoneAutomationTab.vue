@@ -386,22 +386,10 @@ const automationEngineSettingDescriptors: AutomationEngineSettingDescriptor[] = 
     description: 'Верхний общий лимит шагов коррекции внутри окон рециркуляции.',
   },
   {
-    key: 'subsystems.diagnostics.execution.correction.ec_mix_wait_sec',
-    label: 'correction.ec_mix_wait_sec',
-    unit: 'sec',
-    description: 'Ожидание смешивания после дозирования EC перед следующей проверкой.',
-  },
-  {
-    key: 'subsystems.diagnostics.execution.correction.ph_mix_wait_sec',
-    label: 'correction.ph_mix_wait_sec',
-    unit: 'sec',
-    description: 'Ожидание смешивания после дозирования pH перед следующей проверкой.',
-  },
-  {
     key: 'subsystems.diagnostics.execution.correction.stabilization_sec',
     label: 'correction.stabilization_sec',
     unit: 'sec',
-    description: 'Время стабилизации раствора перед чтением датчиков.',
+    description: 'Stage-level stabilization перед первым corr_check; не заменяет observe-window после дозы.',
   },
   {
     key: 'subsystems.irrigation.execution.interval_sec',

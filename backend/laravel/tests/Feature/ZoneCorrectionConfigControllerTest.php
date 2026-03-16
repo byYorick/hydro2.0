@@ -58,6 +58,15 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                         'anti_windup' => ['enabled' => true],
                         'overshoot_guard' => ['enabled' => true, 'hard_min' => 4.0, 'hard_max' => 8.5],
                         'no_effect' => ['enabled' => true, 'max_count' => 2],
+                        'observe' => [
+                            'telemetry_period_sec' => 2,
+                            'window_min_samples' => 3,
+                            'decision_window_sec' => 6,
+                            'observe_poll_sec' => 2,
+                            'min_effect_fraction' => 0.25,
+                            'stability_max_slope' => 0.02,
+                            'no_effect_consecutive_limit' => 3,
+                        ],
                     ],
                     'ec' => [
                         'mode' => 'supervisory_allocator',
@@ -71,6 +80,15 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                         'anti_windup' => ['enabled' => true],
                         'overshoot_guard' => ['enabled' => true, 'hard_min' => 0.0, 'hard_max' => 4.0],
                         'no_effect' => ['enabled' => true, 'max_count' => 2],
+                        'observe' => [
+                            'telemetry_period_sec' => 2,
+                            'window_min_samples' => 3,
+                            'decision_window_sec' => 6,
+                            'observe_poll_sec' => 2,
+                            'min_effect_fraction' => 0.25,
+                            'stability_max_slope' => 0.05,
+                            'no_effect_consecutive_limit' => 3,
+                        ],
                     ],
                 ],
                 'runtime' => [
@@ -174,6 +192,15 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                             'anti_windup' => ['enabled' => true],
                             'overshoot_guard' => ['enabled' => true, 'hard_min' => 4.0, 'hard_max' => 8.5],
                             'no_effect' => ['enabled' => true, 'max_count' => 2],
+                            'observe' => [
+                                'telemetry_period_sec' => 2,
+                                'window_min_samples' => 3,
+                                'decision_window_sec' => 6,
+                                'observe_poll_sec' => 2,
+                                'min_effect_fraction' => 0.25,
+                                'stability_max_slope' => 0.02,
+                                'no_effect_consecutive_limit' => 3,
+                            ],
                         ],
                         'ec' => [
                             'mode' => 'supervisory_allocator',
@@ -187,6 +214,15 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                             'anti_windup' => ['enabled' => true],
                             'overshoot_guard' => ['enabled' => true, 'hard_min' => 0.0, 'hard_max' => 4.0],
                             'no_effect' => ['enabled' => true, 'max_count' => 2],
+                            'observe' => [
+                                'telemetry_period_sec' => 2,
+                                'window_min_samples' => 3,
+                                'decision_window_sec' => 6,
+                                'observe_poll_sec' => 2,
+                                'min_effect_fraction' => 0.25,
+                                'stability_max_slope' => 0.05,
+                                'no_effect_consecutive_limit' => 3,
+                            ],
                         ],
                     ],
                     'tolerance' => [

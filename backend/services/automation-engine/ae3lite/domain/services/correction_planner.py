@@ -18,12 +18,6 @@ _logger = logging.getLogger(__name__)
 #: Default solution tank volume when not provided in correction_config.
 _DEFAULT_SOLUTION_VOLUME_L: float = 100.0
 
-#: Default dosing sensitivity for EC: ml of solution per (mS * L of tank volume).
-_DEFAULT_EC_SENSITIVITY: float = 1.0
-
-#: Default dosing sensitivity for pH: ml of solution per (pH unit * L of tank volume).
-_DEFAULT_PH_SENSITIVITY: float = 0.5
-
 #: Hard upper limit for a single EC dose when correction_config.max_ec_dose_ml is absent.
 _DEFAULT_MAX_EC_DOSE_ML: float = 50.0
 
@@ -286,6 +280,18 @@ class CorrectionPlanner:
                 ph_needs_up = False
                 ph_needs_down = False
 
+        if ec_needs:
+            # In a delayed in-flow process we must re-observe after every dose.
+            # Returning EC and pH in the same tick would recreate the legacy
+            # piggyback behaviour and compound transport-delay error.
+            ph_needs_up = False
+            ph_needs_down = False
+            ph_node_uid = ""
+            ph_channel = ""
+            ph_amount_ml = 0.0
+            ph_duration_ms = 0
+            ph_retry_after = None
+
         retry_after = _min_positive(ec_retry_after, ph_retry_after)
         return DosePlan(
             needs_ec=ec_needs,
@@ -447,10 +453,9 @@ def _compute_amount_ml(
         )
         dose_ml = output_units / gain if gain > 0 else 0.0
     else:
-        sensitivity_key = "ec_dose_ml_per_mS_L" if kind == "ec" else "ph_dose_ml_per_unit_L"
-        sensitivity_default = _DEFAULT_EC_SENSITIVITY if kind == "ec" else _DEFAULT_PH_SENSITIVITY
-        sensitivity = _positive_float(correction_config.get(sensitivity_key), sensitivity_default)
-        dose_ml = gap * solution_volume_l * sensitivity
+        raise PlannerConfigurationError(
+            f"Process gain is required for {kind} in observation-driven correction mode"
+        )
 
     if gain is not None and gap > 0:
         # A single pulse must not exceed the modelled dose required to reach the

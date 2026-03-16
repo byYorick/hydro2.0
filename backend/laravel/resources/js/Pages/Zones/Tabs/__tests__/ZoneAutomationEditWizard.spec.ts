@@ -113,6 +113,20 @@ function createProps() {
 }
 
 describe('ZoneAutomationEditWizard.vue', () => {
+  it('показывает пояснение про observe-window и compatibility bridge', async () => {
+    const wrapper = mount(ZoneAutomationEditWizard, {
+      props: createProps(),
+    })
+
+    const nextButton = wrapper.findAll('button').find((button) => button.text() === 'Далее')
+    expect(nextButton).toBeTruthy()
+    await nextButton!.trigger('click')
+
+    expect(wrapper.text()).not.toContain('Legacy fallback hold для EC')
+    expect(wrapper.text()).toContain('Observe-window после дозы больше не редактируется в этом wizard')
+    expect(wrapper.text()).toContain('compatibility bridge')
+  })
+
   it('блокирует поле "Баков" для drip-системы', async () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),

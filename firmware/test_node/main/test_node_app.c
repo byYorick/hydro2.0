@@ -39,7 +39,7 @@ static const char *CMD_TAG = "test_node_cmd";
 #define PRECONFIG_GH_UID "gh-temp"
 #define PRECONFIG_ZONE_UID "zn-temp"
 
-#define TELEMETRY_INTERVAL_MS 5000
+#define TELEMETRY_INTERVAL_MS 2000
 #define CONFIG_REPORT_INTERVAL_MS 30000
 #define COMMAND_QUEUE_LENGTH 32
 #define STATE_COMMAND_QUEUE_LENGTH 12
@@ -60,8 +60,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CLEAN_MAX_LATCH_LEVEL 0.92f
 #define SOLUTION_MAX_LATCH_LEVEL 0.92f
 #define IRR_STATE_MAX_AGE_SEC 30
-#define PH_DRIFT_BIAS_PER_TICK 0.0005f
-#define EC_DRIFT_BIAS_PER_TICK -0.0025f
+#define PH_DRIFT_BIAS_PER_TICK 0.0002f
+#define EC_DRIFT_BIAS_PER_TICK -0.0010f
 #define PH_REACTION_BASE_DELTA 0.10f
 #define EC_REACTION_BASE_DELTA 0.055f
 #define PH_REACTION_NOMINAL_ML 8.0f
@@ -70,7 +70,10 @@ static const char *CMD_TAG = "test_node_cmd";
 #define CORRECTION_FILL_PHASE_FACTOR 0.50f
 #define CORRECTION_RECIRC_PH_PHASE_FACTOR 2.50f
 #define CORRECTION_RECIRC_EC_PHASE_FACTOR 3.20f
-#define CORRECTION_SETTLE_TICKS 4
+#define CORRECTION_RESPONSE_DELAY_TICKS 2
+#define CORRECTION_DECAY_TICKS 4
+#define CORRECTION_TRANSIENT_RATIO 0.60f
+#define TELEMETRY_DRIFT_WAVE_AMPLITUDE 0.0009f
 #define CORRECTION_REACTION_SCALE_MIN 0.5f
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
 #define CONTROL_DELAY_MIN_MS 120
@@ -147,6 +150,14 @@ typedef struct {
     uint8_t light_pwm;
     uint8_t irrigation_boost_ticks;
     uint8_t correction_boost_ticks;
+    float pending_ph_delta;
+    float pending_ec_delta;
+    float ph_decay_remaining;
+    float ec_decay_remaining;
+    uint8_t pending_ph_delay_ticks;
+    uint8_t pending_ec_delay_ticks;
+    uint8_t ph_decay_ticks_remaining;
+    uint8_t ec_decay_ticks_remaining;
     int64_t clean_fill_started_at;
     int64_t solution_fill_started_at;
 } virtual_state_t;
@@ -331,6 +342,14 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
+    .pending_ph_delta = 0.0f,
+    .pending_ec_delta = 0.0f,
+    .ph_decay_remaining = 0.0f,
+    .ec_decay_remaining = 0.0f,
+    .pending_ph_delay_ticks = 0,
+    .pending_ec_delay_ticks = 0,
+    .ph_decay_ticks_remaining = 0,
+    .ec_decay_ticks_remaining = 0,
     .clean_fill_started_at = 0,
     .solution_fill_started_at = 0,
 };
@@ -374,6 +393,14 @@ static virtual_state_t s_virtual_state = {
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
+    .pending_ph_delta = 0.0f,
+    .pending_ec_delta = 0.0f,
+    .ph_decay_remaining = 0.0f,
+    .ec_decay_remaining = 0.0f,
+    .pending_ph_delay_ticks = 0,
+    .pending_ec_delay_ticks = 0,
+    .ph_decay_ticks_remaining = 0,
+    .ec_decay_ticks_remaining = 0,
     .clean_fill_started_at = 0,
     .solution_fill_started_at = 0,
 };
@@ -803,6 +830,121 @@ static float resolve_correction_phase_factor(bool ec_channel) {
         return CORRECTION_FILL_PHASE_FACTOR;
     }
     return 1.0f;
+}
+
+static void clear_correction_response_state(void) {
+    s_virtual_state.pending_ph_delta = 0.0f;
+    s_virtual_state.pending_ec_delta = 0.0f;
+    s_virtual_state.ph_decay_remaining = 0.0f;
+    s_virtual_state.ec_decay_remaining = 0.0f;
+    s_virtual_state.pending_ph_delay_ticks = 0;
+    s_virtual_state.pending_ec_delay_ticks = 0;
+    s_virtual_state.ph_decay_ticks_remaining = 0;
+    s_virtual_state.ec_decay_ticks_remaining = 0;
+    s_virtual_state.correction_boost_ticks = 0;
+}
+
+static void schedule_correction_response(bool ec_channel, float delta) {
+    float *pending_delta = ec_channel ? &s_virtual_state.pending_ec_delta : &s_virtual_state.pending_ph_delta;
+    uint8_t *delay_ticks = ec_channel ? &s_virtual_state.pending_ec_delay_ticks : &s_virtual_state.pending_ph_delay_ticks;
+    uint8_t total_activity_ticks = CORRECTION_RESPONSE_DELAY_TICKS + CORRECTION_DECAY_TICKS + 1;
+
+    *pending_delta += delta;
+    if (*delay_ticks == 0) {
+        *delay_ticks = CORRECTION_RESPONSE_DELAY_TICKS;
+    }
+    if (s_virtual_state.correction_boost_ticks < total_activity_ticks) {
+        s_virtual_state.correction_boost_ticks = total_activity_ticks;
+    }
+}
+
+static void apply_metric_decay(
+    float *value,
+    float *decay_remaining,
+    uint8_t *decay_ticks_remaining,
+    float min_value,
+    float max_value
+) {
+    float step;
+
+    if (!value || !decay_remaining || !decay_ticks_remaining) {
+        return;
+    }
+    if (*decay_ticks_remaining == 0 || fabsf(*decay_remaining) < 0.0001f) {
+        *decay_remaining = 0.0f;
+        *decay_ticks_remaining = 0;
+        return;
+    }
+
+    step = *decay_remaining / (float)(*decay_ticks_remaining);
+    *value = clamp_float(*value - step, min_value, max_value);
+    *decay_remaining -= step;
+    (*decay_ticks_remaining)--;
+
+    if (*decay_ticks_remaining == 0 || fabsf(*decay_remaining) < 0.0001f) {
+        *decay_remaining = 0.0f;
+        *decay_ticks_remaining = 0;
+    }
+}
+
+static void apply_scheduled_metric_response(
+    float *value,
+    float *pending_delta,
+    uint8_t *delay_ticks,
+    float *decay_remaining,
+    uint8_t *decay_ticks_remaining,
+    float min_value,
+    float max_value
+) {
+    bool onset_applied = false;
+
+    if (!value || !pending_delta || !delay_ticks || !decay_remaining || !decay_ticks_remaining) {
+        return;
+    }
+
+    if (*delay_ticks > 0) {
+        (*delay_ticks)--;
+        if (*delay_ticks == 0 && fabsf(*pending_delta) >= 0.0001f) {
+            float onset_delta = *pending_delta;
+            float transient_delta = onset_delta * CORRECTION_TRANSIENT_RATIO;
+
+            *value = clamp_float(*value + onset_delta, min_value, max_value);
+            *pending_delta = 0.0f;
+            onset_applied = true;
+
+            if (fabsf(transient_delta) >= 0.0001f) {
+                *decay_remaining += transient_delta;
+                if (*decay_ticks_remaining < CORRECTION_DECAY_TICKS) {
+                    *decay_ticks_remaining = CORRECTION_DECAY_TICKS;
+                }
+            }
+        }
+    }
+
+    if (!onset_applied) {
+        apply_metric_decay(value, decay_remaining, decay_ticks_remaining, min_value, max_value);
+    }
+}
+
+static void apply_scheduled_correction_responses(void) {
+    apply_scheduled_metric_response(
+        &s_virtual_state.ph_value,
+        &s_virtual_state.pending_ph_delta,
+        &s_virtual_state.pending_ph_delay_ticks,
+        &s_virtual_state.ph_decay_remaining,
+        &s_virtual_state.ph_decay_ticks_remaining,
+        4.8f,
+        7.2f
+    );
+    apply_scheduled_metric_response(
+        &s_virtual_state.ec_value,
+        &s_virtual_state.pending_ec_delta,
+        &s_virtual_state.pending_ec_delay_ticks,
+        &s_virtual_state.ec_decay_remaining,
+        &s_virtual_state.ec_decay_ticks_remaining,
+        0.4f,
+        3.2f
+    );
 }
 
 static int random_range_ms(int min_value, int max_value) {
@@ -2592,21 +2734,33 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
         float phase_factor = resolve_correction_phase_factor(false);
         float delta = PH_REACTION_BASE_DELTA * scale * phase_factor;
-        s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value - delta, 4.8f, 7.2f);
-        s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        float projected_peak = clamp_float(
+            s_virtual_state.ph_value + s_virtual_state.pending_ph_delta - delta,
+            4.8f,
+            7.2f
+        );
+        schedule_correction_response(false, -delta);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", -delta);
-        cJSON_AddNumberToObject(details, "ph_after", s_virtual_state.ph_value);
+        cJSON_AddNumberToObject(details, "ph_after", projected_peak);
+        cJSON_AddNumberToObject(details, "effect_delay_sec", (float)TELEMETRY_INTERVAL_MS * CORRECTION_RESPONSE_DELAY_TICKS / 1000.0f);
+        cJSON_AddNumberToObject(details, "effect_decay_sec", (float)TELEMETRY_INTERVAL_MS * CORRECTION_DECAY_TICKS / 1000.0f);
         handled = true;
     } else if (strcmp(job->channel, "pump_base") == 0) {
         float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
         float phase_factor = resolve_correction_phase_factor(false);
         float delta = PH_REACTION_BASE_DELTA * scale * phase_factor;
-        s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + delta, 4.8f, 7.2f);
-        s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        float projected_peak = clamp_float(
+            s_virtual_state.ph_value + s_virtual_state.pending_ph_delta + delta,
+            4.8f,
+            7.2f
+        );
+        schedule_correction_response(false, delta);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", delta);
-        cJSON_AddNumberToObject(details, "ph_after", s_virtual_state.ph_value);
+        cJSON_AddNumberToObject(details, "ph_after", projected_peak);
+        cJSON_AddNumberToObject(details, "effect_delay_sec", (float)TELEMETRY_INTERVAL_MS * CORRECTION_RESPONSE_DELAY_TICKS / 1000.0f);
+        cJSON_AddNumberToObject(details, "effect_decay_sec", (float)TELEMETRY_INTERVAL_MS * CORRECTION_DECAY_TICKS / 1000.0f);
         handled = true;
     } else if (
         strcmp(job->channel, "pump_a") == 0 ||
@@ -2617,11 +2771,17 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         float scale = resolve_correction_reaction_scale(job, EC_REACTION_NOMINAL_ML);
         float phase_factor = resolve_correction_phase_factor(true);
         float delta = EC_REACTION_BASE_DELTA * scale * phase_factor;
-        s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + delta, 0.4f, 3.2f);
-        s_virtual_state.correction_boost_ticks = CORRECTION_SETTLE_TICKS;
+        float projected_peak = clamp_float(
+            s_virtual_state.ec_value + s_virtual_state.pending_ec_delta + delta,
+            0.4f,
+            3.2f
+        );
+        schedule_correction_response(true, delta);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ec", delta);
-        cJSON_AddNumberToObject(details, "ec_after", s_virtual_state.ec_value);
+        cJSON_AddNumberToObject(details, "ec_after", projected_peak);
+        cJSON_AddNumberToObject(details, "effect_delay_sec", (float)TELEMETRY_INTERVAL_MS * CORRECTION_RESPONSE_DELAY_TICKS / 1000.0f);
+        cJSON_AddNumberToObject(details, "effect_decay_sec", (float)TELEMETRY_INTERVAL_MS * CORRECTION_DECAY_TICKS / 1000.0f);
         handled = true;
     } else if (strcmp(job->channel, "fan_air") == 0 || strcmp(job->channel, "fan") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
@@ -2701,10 +2861,12 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                 publish_levels = true;
             }
             if (job->ph_value_present) {
+                clear_correction_response_state();
                 s_virtual_state.ph_value = clamp_float(job->ph_value, 4.8f, 7.2f);
                 publish_ph = true;
             }
             if (job->ec_value_present) {
+                clear_correction_response_state();
                 s_virtual_state.ec_value = clamp_float(job->ec_value, 0.4f, 3.2f);
                 publish_ec = true;
             }
@@ -2766,6 +2928,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                     s_virtual_state.ph_sensor_mode_active = true;
                     handled = true;
                 }
+                publish_current_virtual_sensor_snapshot(false, true, false);
             } else if (strstr(job->node_uid, "-ec-") != NULL) {
                 if (s_virtual_state.ec_sensor_mode_active) {
                     cJSON_AddStringToObject(details, "note", "sensor_mode_already_active_treated_as_done");
@@ -2774,6 +2937,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                     s_virtual_state.ec_sensor_mode_active = true;
                     handled = true;
                 }
+                publish_current_virtual_sensor_snapshot(false, false, true);
             }
         } else if (strcmp(job->cmd, "deactivate_sensor_mode") == 0) {
             if (strstr(job->node_uid, "-ph-") != NULL) {
@@ -3433,7 +3597,7 @@ static void config_callback(const char *topic, const char *data, int data_len, v
 }
 
 static void apply_passive_drift(void) {
-    float drift = ((float)(s_telemetry_tick % 11) - 5.0f) * 0.002f;
+    float drift = ((float)(s_telemetry_tick % 11) - 5.0f) * TELEMETRY_DRIFT_WAVE_AMPLITUDE;
     float ph_drift = drift;
     float ec_drift = drift * 2.0f;
     bool clean_fill_active = is_clean_fill_active();
@@ -3441,7 +3605,12 @@ static void apply_passive_drift(void) {
     bool irrigation_active = is_irrigation_active();
     int64_t now_sec = get_timestamp_seconds();
 
-    if (s_virtual_state.correction_boost_ticks == 0) {
+    apply_scheduled_correction_responses();
+
+    if (s_virtual_state.pending_ph_delay_ticks == 0 &&
+        s_virtual_state.pending_ec_delay_ticks == 0 &&
+        s_virtual_state.ph_decay_ticks_remaining == 0 &&
+        s_virtual_state.ec_decay_ticks_remaining == 0) {
         ph_drift += PH_DRIFT_BIAS_PER_TICK;
         ec_drift += EC_DRIFT_BIAS_PER_TICK;
     }

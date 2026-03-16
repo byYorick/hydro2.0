@@ -474,7 +474,7 @@ actions:
                 'clean_fill_timeout_sec', 120,
                 'solution_fill_timeout_sec', 180,
                 'prepare_recirculation_timeout_sec', 180,
-                'telemetry_max_age_sec', 300,
+                'telemetry_max_age_sec', 10,
                 'irr_state_max_age_sec', 30
               ),
               'target_ph', 5.8,

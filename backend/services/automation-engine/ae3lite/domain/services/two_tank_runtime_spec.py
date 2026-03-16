@@ -335,15 +335,29 @@ def _validate_prepare_recirculation_timing(runtime: dict[str, Any]) -> None:
     correction = correction_by_phase.get("tank_recirc") if isinstance(correction_by_phase, Mapping) else None
     if not isinstance(correction, Mapping):
         correction = runtime.get("correction", {})
-    ec_mix_wait_sec = correction.get("ec_mix_wait_sec", 0)
     stabilization_sec = correction.get("stabilization_sec", 0)
-    minimum_needed = ec_mix_wait_sec + stabilization_sec
+    process_calibrations = runtime.get("process_calibrations")
+    tank_recirc_process_cfg = (
+        process_calibrations.get("tank_recirc")
+        if isinstance(process_calibrations, Mapping) and isinstance(process_calibrations.get("tank_recirc"), Mapping)
+        else {}
+    )
+    observe_window_sec = _tank_recirc_observe_window_sec(correction=correction, process_cfg=tank_recirc_process_cfg)
+    minimum_needed = stabilization_sec + observe_window_sec
     if timeout_sec < minimum_needed:
         raise PlannerConfigurationError(
             f"prepare_recirculation_timeout_sec={timeout_sec}s is less than "
-            f"ec_mix_wait_sec + stabilization_sec = {ec_mix_wait_sec} + {stabilization_sec} = {minimum_needed}s; "
-            "correction window is too short to complete even one mixing cycle"
+            f"stabilization_sec + observe_window_sec = {stabilization_sec} + {observe_window_sec} = {minimum_needed}s; "
+            "correction window is too short to complete one observation-driven correction cycle"
         )
+
+
+def _tank_recirc_observe_window_sec(*, correction: Mapping[str, Any], process_cfg: Mapping[str, Any]) -> int:
+    transport_delay_sec = _resolve_int(process_cfg.get("transport_delay_sec"), 0, 0)
+    settle_sec = _resolve_int(process_cfg.get("settle_sec"), 0, 0)
+    if transport_delay_sec > 0 and settle_sec > 0:
+        return transport_delay_sec + settle_sec
+    return _resolve_int(correction.get("ec_mix_wait_sec"), 120, 10)
 
 
 def _normalize_node_types(raw_value: Any) -> list[str]:

@@ -179,6 +179,15 @@ Correction state для `cycle_start` хранится в explicit columns `ae_t
 5. stage timeout (`solution_fill_timeout_sec` / `prepare_recirculation_timeout_sec`) ограничивает весь stage целиком, включая активный correction sub-machine; при истечении deadline correction обязан быть прерван fail-closed переходом stage
 6. возврат correction из `solution_fill_check` обратно в `solution_fill_check` не переоткрывает `solution_fill_timeout_sec`; stage deadline сохраняется до terminal transition из stage
 
+Correction runtime invariants:
+1. для `EC` и `pH` используется только observation-driven модель `dose -> hold -> observe -> decide`;
+2. correction decision не опирается на один `telemetry_last` sample;
+3. observation window читается из `telemetry_samples`;
+4. в одном decision tick допускается не более одного химического воздействия;
+5. legacy piggyback `EC -> PH` без повторного observe-step запрещён;
+6. `3` consecutive `no-effect` для одного `pid_type` дают alert и fail-closed ветку текущего correction window;
+7. ordinary correction attempts и `no-effect` attempts считаются раздельно.
+
 #### `PlannedCommand`
 
 Execution record внутри task:

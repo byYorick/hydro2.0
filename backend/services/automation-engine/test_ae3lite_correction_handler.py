@@ -6,8 +6,8 @@ Steps:
  3. corr_check within tolerance → exit_correction (success)
  4. corr_check max attempts exceeded → exit_correction (fail)
  5. corr_dose_ec → issues EC pulse → corr_wait_ec
- 6. corr_wait_ec with PH needed → corr_dose_ph
- 7. corr_wait_ph → corr_check (attempt+1, dose plan cleared)
+ 6. corr_wait_ec observes response → corr_check
+ 7. corr_wait_ph observes response → corr_check (attempt+1, dose plan cleared)
  8. corr_deactivate (activated_here=True) → corr_done → exit_correction
 """
 
@@ -29,17 +29,64 @@ from ae3lite.domain.errors import TaskExecutionError
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
 
 RUNTIME = {
-    "telemetry_max_age_sec": 300,
+    "telemetry_max_age_sec": 10,
     "target_ph": 6.0,
     "target_ec": 2.0,
     "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
+    "process_calibrations": {
+        "solution_fill": {
+            "ec_gain_per_ml": 0.2,
+            "ph_up_gain_per_ml": 0.2,
+            "ph_down_gain_per_ml": 0.2,
+            "ph_per_ec_ml": 0.0,
+            "transport_delay_sec": 6,
+            "settle_sec": 4,
+            "meta": {
+                "observe": {
+                    "telemetry_period_sec": 2,
+                    "window_min_samples": 3,
+                    "min_effect_fraction": 0.25,
+                    "stability_max_slope": 0.2,
+                }
+            },
+        },
+        "tank_recirc": {
+            "ec_gain_per_ml": 0.2,
+            "ph_up_gain_per_ml": 0.2,
+            "ph_down_gain_per_ml": 0.2,
+            "ph_per_ec_ml": 0.0,
+            "transport_delay_sec": 6,
+            "settle_sec": 4,
+            "meta": {
+                "observe": {
+                    "telemetry_period_sec": 2,
+                    "window_min_samples": 3,
+                    "min_effect_fraction": 0.25,
+                    "stability_max_slope": 0.2,
+                }
+            },
+        },
+    },
+    "pid_state": {},
     "correction": {
-        "ec_mix_wait_sec": 120,
-        "ph_mix_wait_sec": 60,
         "max_ec_correction_attempts": 5,
         "max_ph_correction_attempts": 5,
         "prepare_recirculation_max_correction_attempts": 32767,
         "stabilization_sec": 60,
+        "controllers": {
+            "ec": {
+                "telemetry_period_sec": 2,
+                "window_min_samples": 3,
+                "min_effect_fraction": 0.25,
+                "stability_max_slope": 0.2,
+            },
+            "ph": {
+                "telemetry_period_sec": 2,
+                "window_min_samples": 3,
+                "min_effect_fraction": 0.25,
+                "stability_max_slope": 0.2,
+            },
+        },
         "actuators": {
             "ec": {"node_uid": "ec-node", "channel": "ec_pump"},
             "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
@@ -93,6 +140,9 @@ def _make_task(
         "corr_ph_channel": corr.ph_channel,
         "corr_ph_duration_ms": corr.ph_duration_ms,
         "corr_wait_until": corr.wait_until,
+        "corr_ec_component": corr.ec_component,
+        "corr_ec_amount_ml": corr.ec_amount_ml,
+        "corr_ph_amount_ml": corr.ph_amount_ml,
     })
 
 
@@ -126,8 +176,8 @@ def _base_corr(**kwargs) -> CorrectionState:
 
 
 class _MockPlan:
-    def __init__(self, *, ph: float = 6.0, ec: float = 2.0):
-        self.runtime = RUNTIME
+    def __init__(self, *, ph: float = 6.0, ec: float = 2.0, runtime: dict | None = None):
+        self.runtime = runtime or RUNTIME
         self.named_plans = {
             "sensor_mode_activate": (_SENSOR_CMD,),
             "sensor_mode_deactivate": (_SENSOR_CMD,),
@@ -138,13 +188,37 @@ class _MockPlan:
 
 
 class _MockRuntimeMonitor:
-    def __init__(self, *, ph: float = 6.0, ec: float = 2.0):
+    def __init__(self, *, ph: float = 6.0, ec: float = 2.0, ph_samples=None, ec_samples=None):
         self._ph = ph
         self._ec = ec
+        self._ph_samples = list(ph_samples) if ph_samples is not None else [
+            {"ts": NOW - timedelta(seconds=4), "value": ph},
+            {"ts": NOW - timedelta(seconds=2), "value": ph},
+            {"ts": NOW, "value": ph},
+        ]
+        self._ec_samples = list(ec_samples) if ec_samples is not None else [
+            {"ts": NOW - timedelta(seconds=4), "value": ec},
+            {"ts": NOW - timedelta(seconds=2), "value": ec},
+            {"ts": NOW, "value": ec},
+        ]
 
     async def read_metric(self, *, zone_id, sensor_type, telemetry_max_age_sec):
         value = self._ph if sensor_type == "PH" else self._ec
         return {"has_value": True, "is_stale": False, "value": value}
+
+    async def read_metric_window(self, *, zone_id, sensor_type, since_ts, telemetry_max_age_sec, limit=64):
+        samples = self._ph_samples if sensor_type == "PH" else self._ec_samples
+        filtered = tuple(sample for sample in samples if sample["ts"] >= since_ts)
+        return {
+            "has_sensor": True,
+            "has_samples": bool(filtered),
+            "is_stale": False,
+            "sensor_id": 1,
+            "sensor_label": sensor_type.lower(),
+            "samples": filtered,
+            "latest_sample_ts": filtered[-1]["ts"] if filtered else NOW,
+            "sample_age_sec": 0.0,
+        }
 
 
 class _MockGateway:
@@ -162,9 +236,13 @@ class _MockGateway:
 class _MockPidStateRepository:
     def __init__(self) -> None:
         self.upsert_calls: list[dict] = []
+        self.feedforward_cleared: list[int] = []
 
     async def upsert_states(self, *, zone_id, now, updates):
         self.upsert_calls.append({"zone_id": zone_id, "updates": updates})
+
+    async def clear_feedforward_bias(self, *, zone_id):
+        self.feedforward_cleared.append(zone_id)
 
 
 def _make_handler(*, monitor=None, gateway=None, pid_repo=None) -> CorrectionHandler:
@@ -261,37 +339,74 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_ec"
     assert outcome.correction.ec_attempt == 1
-    assert outcome.due_delay_sec == 120  # ec_mix_wait_sec
+    assert outcome.due_delay_sec == 10
+    assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
 
 
-async def test_corr_wait_ec_routes_to_dose_ph_when_needed():
-    """corr_wait_ec: PH also needed → advance to corr_dose_ph."""
+async def test_corr_wait_ec_observes_response_and_returns_to_check():
+    """corr_wait_ec: after hold/observe returns to corr_check, without piggyback PH dose."""
     corr = _base_corr(
         corr_step="corr_wait_ec",
-        needs_ph_up=True,
-        ph_node_uid="ph-node",
-        ph_channel="ph_up_pump",
-        ph_duration_ms=1000,
+        attempt=2,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
     )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 0,
+        }
+    }
     task = _make_task(corr=corr)
-    handler = _make_handler()
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    pid_repo = _MockPidStateRepository()
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.4},
+        {"ts": NOW, "value": 1.45},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind == "enter_correction"
-    assert outcome.correction.corr_step == "corr_dose_ph"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.attempt == 3
+    assert outcome.correction.needs_ec is False
+    assert pid_repo.feedforward_cleared == [60]
 
 
-async def test_corr_wait_ph_bumps_attempt_and_clears_dose_plan():
-    """corr_wait_ph: bumps attempt counter, clears dose plan, goes to corr_check."""
+async def test_corr_wait_ph_observes_response_and_clears_dose_plan():
+    """corr_wait_ph: observe pH response, bump attempt, clear dose plan, go to corr_check."""
     corr = _base_corr(
         corr_step="corr_wait_ph",
         attempt=2,
-        needs_ec=True, ec_node_uid="ec-node", ec_channel="ec_pump", ec_duration_ms=2000,
+        ph_attempt=1,
         needs_ph_up=True, ph_node_uid="ph-node", ph_channel="ph_up_pump", ph_duration_ms=1000,
+        ph_amount_ml=2.0,
+        wait_until=NOW - timedelta(seconds=1),
     )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ph": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 5.6,
+            "no_effect_count": 0,
+        }
+    }
     task = _make_task(corr=corr)
-    handler = _make_handler()
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    monitor = _MockRuntimeMonitor(ph_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 5.8},
+        {"ts": NOW - timedelta(seconds=2), "value": 5.95},
+        {"ts": NOW, "value": 6.0},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind == "enter_correction"
     c = outcome.correction
@@ -301,6 +416,44 @@ async def test_corr_wait_ph_bumps_attempt_and_clears_dose_plan():
     assert c.ec_node_uid is None
     assert c.needs_ph_up is False
     assert c.ph_node_uid is None
+
+
+async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=2,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 2,
+        }
+    }
+    task = _make_task(corr=corr)
+    send_alert = AsyncMock(return_value=True)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.send_infra_alert", send_alert)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.01},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.02},
+        {"ts": NOW, "value": 1.01},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_check"
+    send_alert.assert_awaited_once()
 
 
 async def test_corr_check_prepare_recirc_retry_limit_transitions_window_exhausted():

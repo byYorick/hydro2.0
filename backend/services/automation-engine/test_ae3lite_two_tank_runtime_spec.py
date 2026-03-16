@@ -170,6 +170,49 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_mix_plus_stabili
         resolve_two_tank_runtime(snap)
 
 
+def test_resolve_two_tank_runtime_prefers_process_hold_window_for_prepare_recirculation_validation() -> None:
+    runtime = resolve_two_tank_runtime(
+        _snapshot(
+            correction={
+                "ec_mix_wait_sec": 10,
+                "stabilization_sec": 10,
+            },
+            startup={
+                "prepare_recirculation_timeout_sec": 55,
+            },
+            process_calibrations={
+                "tank_recirc": {
+                    "transport_delay_sec": 25,
+                    "settle_sec": 20,
+                }
+            },
+        )
+    )
+
+    assert runtime["prepare_recirculation_timeout_sec"] == 55
+
+
+def test_resolve_two_tank_runtime_raises_when_timeout_less_than_process_hold_window() -> None:
+    with pytest.raises(PlannerConfigurationError, match="observe_window_sec"):
+        resolve_two_tank_runtime(
+            _snapshot(
+                correction={
+                    "ec_mix_wait_sec": 10,
+                    "stabilization_sec": 10,
+                },
+                startup={
+                    "prepare_recirculation_timeout_sec": 50,
+                },
+                process_calibrations={
+                    "tank_recirc": {
+                        "transport_delay_sec": 25,
+                        "settle_sec": 20,
+                    }
+                },
+            )
+        )
+
+
 def test_resolve_two_tank_runtime_raises_when_zone_correction_config_missing() -> None:
     snap = SimpleNamespace(
         zone_id=188,

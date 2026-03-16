@@ -206,16 +206,6 @@ export function buildGrowthCycleConfigPayload(
     1,
     500
   )
-  const correctionEcMixWaitSec = clamp(
-    Math.round(normalizeNumber(waterForm.correctionEcMixWaitSec, 120)),
-    10,
-    3600
-  )
-  const correctionPhMixWaitSec = clamp(
-    Math.round(normalizeNumber(waterForm.correctionPhMixWaitSec, 60)),
-    10,
-    3600
-  )
   const correctionStabilizationSec = clamp(
     Math.round(normalizeNumber(waterForm.correctionStabilizationSec, 60)),
     0,
@@ -298,8 +288,6 @@ export function buildGrowthCycleConfigPayload(
       max_ph_correction_attempts: correctionMaxPhCorrectionAttempts,
       prepare_recirculation_max_attempts: correctionPrepareRecirculationMaxAttempts,
       prepare_recirculation_max_correction_attempts: correctionPrepareRecirculationMaxCorrectionAttempts,
-      ec_mix_wait_sec: correctionEcMixWaitSec,
-      ph_mix_wait_sec: correctionPhMixWaitSec,
       stabilization_sec: correctionStabilizationSec,
     }
     diagnosticsExecution.irrigation_recovery = {

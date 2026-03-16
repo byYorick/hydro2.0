@@ -246,10 +246,25 @@ min_pulse_ml = ml_per_sec * (MIN_DOSE_MS / 1000)
   "solution_fill": {
     "ec_gain_per_ml": 0.25,
     "ph_up_gain_per_ml": 0.10,
-    "ph_down_gain_per_ml": 0.12
+    "ph_down_gain_per_ml": 0.12,
+    "transport_delay_sec": 6,
+    "settle_sec": 4,
+    "meta": {
+      "observe": {
+        "telemetry_period_sec": 2,
+        "window_min_samples": 3,
+        "decision_window_sec": 6,
+        "observe_poll_sec": 2,
+        "min_effect_fraction": 0.25,
+        "stability_max_slope": 0.05,
+        "no_effect_consecutive_limit": 3
+      }
+    }
   },
   "irrigation": {
-    "ec_gain_per_ml": 0.15
+    "ec_gain_per_ml": 0.15,
+    "transport_delay_sec": 8,
+    "settle_sec": 6
   }
 }
 ```
@@ -258,11 +273,23 @@ min_pulse_ml = ml_per_sec * (MIN_DOSE_MS / 1000)
 в баке `solution_volume_l` литров. Используется как делитель:
 `dose_ml = output_units / ec_gain_per_ml`.
 
-Если `process_calibrations` не задан или поле отсутствует для фазы — planner
-переключается на fallback-алгоритм (`sensitivity`):
-```
-dose_ml = gap * solution_volume_l * ec_dose_ml_per_mS_L
-```
+Observation-driven runtime больше не поддерживает planner fallback по
+`ec_dose_ml_per_mS_L` / `ph_dose_ml_per_unit_L`. Если для фазы отсутствует
+нужный process gain (`ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`)
+или не заданы `transport_delay_sec` / `settle_sec`, planner/handler работают
+fail-closed.
+
+### Observe-параметры
+
+`meta.observe` у phase calibration задаёт поведение окна наблюдения:
+
+- `telemetry_period_sec` — ожидаемый период telemetry;
+- `window_min_samples` — минимальное количество samples в окне;
+- `decision_window_sec` — минимальная длина decision-window;
+- `observe_poll_sec` — шаг повторной проверки, если окно ещё не готово;
+- `min_effect_fraction` — нижняя граница физически значимого отклика;
+- `stability_max_slope` — порог стабильности окна;
+- `no_effect_consecutive_limit` — сколько подряд no-effect доз допускается до alert/fail-closed.
 
 ### Маппинг фаз
 
