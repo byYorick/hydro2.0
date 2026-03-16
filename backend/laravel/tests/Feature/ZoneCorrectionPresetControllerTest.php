@@ -111,8 +111,6 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                     'timing' => [
                         'sensor_mode_stabilization_time_sec' => 30,
                         'stabilization_sec' => 30,
-                        'ec_mix_wait_sec' => 40,
-                        'ph_mix_wait_sec' => 25,
                         'telemetry_max_age_sec' => 180,
                         'irr_state_max_age_sec' => 15,
                         'level_poll_interval_sec' => 30,
@@ -122,8 +120,6 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                         'dose_ec_channel' => 'dose_ec_a',
                         'dose_ph_up_channel' => 'dose_ph_up',
                         'dose_ph_down_channel' => 'dose_ph_down',
-                        'ec_dose_ml_per_mS_L' => 0.5,
-                        'ph_dose_ml_per_unit_L' => 0.2,
                         'max_ec_dose_ml' => 16.0,
                         'max_ph_dose_ml' => 8.0,
                     ],
@@ -133,10 +129,6 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                         'prepare_recirculation_timeout_sec' => 600,
                         'prepare_recirculation_max_attempts' => 3,
                         'prepare_recirculation_max_correction_attempts' => 200,
-                    ],
-                    'adaptive_mix_wait' => [
-                        'enabled' => true,
-                        'reference_volume_l' => 20.0,
                     ],
                     'tolerance' => [
                         'prepare_tolerance' => ['ph_pct' => 10.0, 'ec_pct' => 18.0],
@@ -210,8 +202,6 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                         'timing' => [
                             'sensor_mode_stabilization_time_sec' => 30,
                             'stabilization_sec' => 30,
-                            'ec_mix_wait_sec' => 55,
-                            'ph_mix_wait_sec' => 35,
                             'telemetry_max_age_sec' => 180,
                             'irr_state_max_age_sec' => 15,
                             'level_poll_interval_sec' => 30,
@@ -221,8 +211,6 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                             'dose_ec_channel' => 'dose_ec_a',
                             'dose_ph_up_channel' => 'dose_ph_up',
                             'dose_ph_down_channel' => 'dose_ph_down',
-                            'ec_dose_ml_per_mS_L' => 0.5,
-                            'ph_dose_ml_per_unit_L' => 0.2,
                             'max_ec_dose_ml' => 12.0,
                             'max_ph_dose_ml' => 6.0,
                         ],
@@ -239,10 +227,6 @@ class ZoneCorrectionPresetControllerTest extends TestCase
                         'safety' => [
                             'safe_mode_on_no_effect' => true,
                             'block_on_active_no_effect_alert' => true,
-                        ],
-                        'adaptive_mix_wait' => [
-                            'enabled' => true,
-                            'reference_volume_l' => 20.0,
                         ],
                     ],
                 ],

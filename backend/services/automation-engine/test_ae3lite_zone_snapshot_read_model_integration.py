@@ -253,6 +253,35 @@ async def _insert_correction_config(zone_id: int) -> None:
     )
 
 
+async def _insert_process_calibrations(zone_id: int) -> None:
+    await execute(
+        """
+        INSERT INTO zone_process_calibrations (
+            zone_id,
+            mode,
+            ec_gain_per_ml,
+            ph_up_gain_per_ml,
+            ph_down_gain_per_ml,
+            transport_delay_sec,
+            settle_sec,
+            confidence,
+            source,
+            valid_from,
+            valid_to,
+            is_active,
+            meta,
+            created_at,
+            updated_at
+        )
+        VALUES
+            ($1, 'solution_fill', 0.10, 0.05, -0.05, 6, 4, 0.90, 'test-fixture', NOW() - INTERVAL '1 minute', NULL, TRUE, '{}'::jsonb, NOW(), NOW()),
+            ($1, 'tank_recirc', 0.10, 0.05, -0.05, 6, 4, 0.90, 'test-fixture', NOW() - INTERVAL '1 minute', NULL, TRUE, '{}'::jsonb, NOW(), NOW()),
+            ($1, 'irrigation', 0.10, 0.05, -0.05, 6, 4, 0.90, 'test-fixture', NOW() - INTERVAL '1 minute', NULL, TRUE, '{}'::jsonb, NOW(), NOW())
+        """,
+        zone_id,
+    )
+
+
 async def _insert_irrig_node(zone_id: int, *, prefix: str) -> tuple[int, str]:
     short_uid = f"nd-{uuid4().hex[:20]}"
     rows = await fetch(
@@ -397,6 +426,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         )
         await _insert_profile(zone_id)
         await _insert_correction_config(zone_id)
+        await _insert_process_calibrations(zone_id)
         await execute(
             """
             INSERT INTO zone_workflow_state (zone_id, workflow_phase, version, updated_at, payload)

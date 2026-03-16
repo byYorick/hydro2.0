@@ -523,15 +523,15 @@ Relay-autotune не входит в initial runtime contract.
 3. `execute_task.py`: условие изменено с `!= "completed"` на `not in {"completed", "failed"}`.
 4. `test_ae3lite_execute_task.py`: добавлен тест `test_execute_task_marks_correction_config_applied_for_failed_two_tank_task`.
 
-### 11.2 BUG-2: Нет валидации `prepare_recirculation_timeout_sec >= mix_wait + stabilization` [FIXED]
+### 11.2 BUG-2: Нет валидации `prepare_recirculation_timeout_sec >= observe_window + stabilization` [FIXED]
 
 **Причина:**
 
-`resolve_two_tank_runtime` не проверял что окно рециркуляции физически позволяет хотя бы один цикл коррекции. Конфиг с `timeout < ec_mix_wait + stabilization` принимался молча.
+`resolve_two_tank_runtime` не проверял что окно рециркуляции физически позволяет хотя бы один цикл коррекции. Конфиг с `timeout < observe_window + stabilization` принимался молча.
 
 **Фикс:**
 
-1. `two_tank_runtime_spec.py`: добавлена функция `_validate_prepare_recirculation_timing`, вызываемая после резолва обоих значений. Бросает `PlannerConfigurationError` если `timeout_sec < ec_mix_wait_sec + stabilization_sec`.
+1. `two_tank_runtime_spec.py`: добавлена функция `_validate_prepare_recirculation_timing`, вызываемая после резолва runtime-конфига. Бросает `PlannerConfigurationError` если `timeout_sec < observe_window_sec + stabilization_sec`.
 2. `test_ae3lite_two_tank_runtime_spec.py`: добавлены два теста — happy path (timeout == minimum) и error case (timeout < minimum).
 
 ### 11.3 BUG-4: history-logger `refresh_caches` затирал кеш нулевым результатом [FIXED]

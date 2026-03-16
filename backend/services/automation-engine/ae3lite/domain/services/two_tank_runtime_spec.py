@@ -10,9 +10,8 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 # ── Defaults for retry/attempt limits ────────────────────────────────────────
 
 #: Maximum correction attempts during prepare_recirculation before escalating.
-#: Replaces the former magic number 32767 (effectively infinite).
 _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
-_LEGACY_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS_SENTINEL: int = 32767
+_MAX_CORRECTION_ATTEMPTS: int = 500
 
 
 def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
@@ -357,7 +356,9 @@ def _tank_recirc_observe_window_sec(*, correction: Mapping[str, Any], process_cf
     settle_sec = _resolve_int(process_cfg.get("settle_sec"), 0, 0)
     if transport_delay_sec > 0 and settle_sec > 0:
         return transport_delay_sec + settle_sec
-    return _resolve_int(correction.get("ec_mix_wait_sec"), 120, 10)
+    raise PlannerConfigurationError(
+        "tank_recirc process calibration must provide transport_delay_sec and settle_sec"
+    )
 
 
 def _normalize_node_types(raw_value: Any) -> list[str]:
@@ -399,6 +400,10 @@ def _resolve_int(raw_value: Any, default: int, minimum: int) -> int:
     return max(int(minimum), value)
 
 
+def _resolve_bounded_int(raw_value: Any, default: int, minimum: int, maximum: int) -> int:
+    return min(int(maximum), _resolve_int(raw_value, default, minimum))
+
+
 def _resolve_float(raw_value: Any, default: float, minimum: float, maximum: float) -> float:
     try:
         value = float(raw_value)
@@ -408,10 +413,12 @@ def _resolve_float(raw_value: Any, default: float, minimum: float, maximum: floa
 
 
 def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> int:
-    value = _resolve_int(raw_value, _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS, 1)
-    if value >= _LEGACY_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS_SENTINEL:
-        return _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS
-    return value
+    return _resolve_bounded_int(
+        raw_value,
+        _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS,
+        1,
+        _MAX_CORRECTION_ATTEMPTS,
+    )
 
 
 def _resolve_target(targets: Mapping[str, Any], execution: Mapping[str, Any], key: str) -> float:
@@ -607,26 +614,6 @@ def _build_correction_cfg(
                 "ph_acid_pump",
             )
         ).strip().lower(),
-        "ec_dose_ml_per_mS_L": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=dosing_cfg.get("ec_dose_ml_per_mS_L"),
-                execution_value=execution_correction_cfg.get("ec_dose_ml_per_mS_L"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "ec_dose_ml_per_mS_L"),
-            ),
-            1.0,
-            0.001,
-            100.0,
-        ),
-        "ph_dose_ml_per_unit_L": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=dosing_cfg.get("ph_dose_ml_per_unit_L"),
-                execution_value=execution_correction_cfg.get("ph_dose_ml_per_unit_L"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "ph_dose_ml_per_unit_L"),
-            ),
-            0.5,
-            0.001,
-            50.0,
-        ),
         "max_ec_dose_ml": _resolve_float(
             _choose_phase_or_execution(
                 phase_value=dosing_cfg.get("max_ec_dose_ml"),
@@ -647,24 +634,6 @@ def _build_correction_cfg(
             0.5,
             200.0,
         ),
-        "ec_mix_wait_sec": _resolve_int(
-            _choose_phase_or_execution(
-                phase_value=timing_cfg.get("ec_mix_wait_sec"),
-                execution_value=execution_correction_cfg.get("ec_mix_wait_sec"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "timing", "ec_mix_wait_sec"),
-            ),
-            120,
-            10,
-        ),
-        "ph_mix_wait_sec": _resolve_int(
-            _choose_phase_or_execution(
-                phase_value=timing_cfg.get("ph_mix_wait_sec"),
-                execution_value=execution_correction_cfg.get("ph_mix_wait_sec"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "timing", "ph_mix_wait_sec"),
-            ),
-            60,
-            10,
-        ),
         "stabilization_sec": _resolve_int(
             _choose_phase_or_execution(
                 phase_value=timing_cfg.get("stabilization_sec"),
@@ -674,7 +643,7 @@ def _build_correction_cfg(
             60,
             0,
         ),
-        "max_ec_correction_attempts": _resolve_int(
+        "max_ec_correction_attempts": _resolve_bounded_int(
             _choose_phase_or_execution(
                 phase_value=retry_cfg.get("max_ec_correction_attempts"),
                 execution_value=execution_correction_cfg.get("max_ec_correction_attempts"),
@@ -682,8 +651,9 @@ def _build_correction_cfg(
             ),
             5,
             1,
+            _MAX_CORRECTION_ATTEMPTS,
         ),
-        "max_ph_correction_attempts": _resolve_int(
+        "max_ph_correction_attempts": _resolve_bounded_int(
             _choose_phase_or_execution(
                 phase_value=retry_cfg.get("max_ph_correction_attempts"),
                 execution_value=execution_correction_cfg.get("max_ph_correction_attempts"),
@@ -691,6 +661,7 @@ def _build_correction_cfg(
             ),
             5,
             1,
+            _MAX_CORRECTION_ATTEMPTS,
         ),
         "prepare_recirculation_max_attempts": _resolve_int(
             _choose_phase_or_execution(

@@ -43,11 +43,6 @@ export interface CorrectionRetryConfig {
   prepare_recirculation_max_correction_attempts: number
 }
 
-export interface CorrectionAdaptiveMixWaitConfig {
-  enabled: boolean
-  reference_volume_l: number
-}
-
 export interface ZoneCorrectionConfigPayload {
   id: number
   zone_id: number

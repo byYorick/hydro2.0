@@ -18,23 +18,14 @@ class PythonIngestController extends Controller
 {
     private function ensureToken(Request $request): void
     {
-        // Используем PY_INGEST_TOKEN как основной токен для ingest
-        // Fallback на PY_API_TOKEN для обратной совместимости
+        // Используем PY_INGEST_TOKEN как основной токен для ingest.
         $expected = Config::get('services.python_bridge.ingest_token') ?? Config::get('services.python_bridge.token');
         $given = $request->bearerToken();
-
-        Log::info('[COMMAND_ACK_AUTH] Token check', [
-            'has_expected_token' => !empty($expected),
-            'has_given_token' => !empty($given),
-            'expected_token_length' => $expected ? strlen($expected) : 0,
-            'given_token_length' => $given ? strlen($given) : 0,
-            'tokens_match' => $expected && $given ? hash_equals($expected, (string) $given) : false,
-        ]);
 
         // Если токен не настроен, всегда требуем токен (даже в testing)
         // Это обеспечивает безопасность по умолчанию
         if (! $expected) {
-            Log::error('[COMMAND_ACK_AUTH] Token not configured in Laravel');
+            Log::error('Python ingest token not configured in Laravel');
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
@@ -44,9 +35,8 @@ class PythonIngestController extends Controller
         }
 
         if (! $given || ! hash_equals($expected, (string) $given)) {
-            Log::warning('[COMMAND_ACK_AUTH] Token validation failed', [
+            Log::warning('Python ingest token validation failed', [
                 'has_given' => !empty($given),
-                'token_match' => $expected && $given ? hash_equals($expected, (string) $given) : false,
             ]);
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
@@ -55,8 +45,6 @@ class PythonIngestController extends Controller
                 ], 401)
             );
         }
-        
-        Log::info('[COMMAND_ACK_AUTH] Token validated successfully');
     }
 
     /**
@@ -216,27 +204,10 @@ class PythonIngestController extends Controller
 
     public function commandAck(Request $request)
     {
-        Log::info('[COMMAND_ACK] STEP 0: commandAck endpoint called', [
-            'method' => $request->method(),
-            'url' => $request->fullUrl(),
-            'ip' => $request->ip(),
-            'headers' => [
-                'authorization' => $request->header('Authorization') ? 'present' : 'missing',
-                'content-type' => $request->header('Content-Type'),
-            ],
-        ]);
-        
-        Log::info('[COMMAND_ACK] STEP 1: Received commandAck request', [
-            'cmd_id' => $request->input('cmd_id'),
-            'status' => $request->input('status'),
-            'has_details' => $request->has('details'),
-        ]);
-        
         try {
             $this->ensureToken($request);
-            Log::info('[COMMAND_ACK] STEP 2: Token validated');
         } catch (\Exception $e) {
-            Log::error('[COMMAND_ACK] STEP 2: Token validation failed', [
+            Log::error('Python ingest commandAck token validation failed', [
                 'error' => $e->getMessage(),
                 'exception' => get_class($e),
             ]);
@@ -248,8 +219,6 @@ class PythonIngestController extends Controller
             'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY,TIMEOUT,SEND_FAILED'],
             'details' => ['nullable', 'array'],
         ]);
-        
-        Log::info('[COMMAND_ACK] STEP 3: Request validated', ['data' => $data]);
 
         // Нормализуем статус в новые значения: SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED
         $normalizedStatus = match (strtoupper($data['status'])) {
@@ -264,14 +233,8 @@ class PythonIngestController extends Controller
             'SEND_FAILED' => Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']),
         };
-        
-        Log::info('[COMMAND_ACK] STEP 4: Status normalized', [
-            'original_status' => $data['status'],
-            'normalized_status' => $normalizedStatus,
-        ]);
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
-        Log::info('[COMMAND_ACK] STEP 5: Looking up command in database', ['cmd_id' => $data['cmd_id']]);
         $details = $data['details'] ?? [];
         $skipMessage = null;
         $command = null;
@@ -286,12 +249,6 @@ class PythonIngestController extends Controller
             if (! $command) {
                 return;
             }
-
-            Log::info('[COMMAND_ACK] STEP 5.1: Command found', [
-                'cmd_id' => $data['cmd_id'],
-                'command_id' => $command->id,
-                'current_status' => $command->status,
-            ]);
 
             $currentStatus = $command->status;
             $newStatus = $normalizedStatus;
@@ -372,11 +329,6 @@ class PythonIngestController extends Controller
                 $updates['failed_at'] = now();
             }
 
-            Log::info('[COMMAND_ACK] STEP 8: Updating command in database', [
-                'cmd_id' => $data['cmd_id'],
-                'updates' => $updates,
-            ]);
-
             $command->fill($updates);
             if ($command->isDirty()) {
                 $command->save();
@@ -391,7 +343,7 @@ class PythonIngestController extends Controller
         }, 3);
 
         if (! $command) {
-            Log::warning('[COMMAND_ACK] STEP 5.2: Command not found for cmd_id', [
+            Log::warning('Python ingest commandAck command not found', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
                 'normalized_status' => $normalizedStatus,
@@ -411,20 +363,9 @@ class PythonIngestController extends Controller
             ]);
         }
 
-        Log::info('[COMMAND_ACK] STEP 8.1: Command updated successfully', [
-            'cmd_id' => $data['cmd_id'],
-            'new_status' => $command->status,
-        ]);
-
         $zoneId = $command->zone_id;
         $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
         $message = $details['message'] ?? null;
-
-        Log::info('[COMMAND_ACK] STEP 9: Dispatching WebSocket event', [
-            'cmd_id' => $data['cmd_id'],
-            'normalized_status' => $eventStatus,
-            'zone_id' => $zoneId,
-        ]);
 
         if (in_array($eventStatus, [
             \App\Models\Command::STATUS_ERROR,
@@ -433,7 +374,6 @@ class PythonIngestController extends Controller
             \App\Models\Command::STATUS_TIMEOUT,
             \App\Models\Command::STATUS_SEND_FAILED,
         ], true)) {
-            Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
             event(new \App\Events\CommandFailed(
                 commandId: $command->cmd_id,
                 message: $message ?? 'Command failed',
@@ -442,7 +382,6 @@ class PythonIngestController extends Controller
                 zoneId: $zoneId
             ));
         } else {
-            Log::info('[COMMAND_ACK] STEP 9.2: Dispatching CommandStatusUpdated event');
             event(new \App\Events\CommandStatusUpdated(
                 commandId: $command->cmd_id,
                 status: $eventStatus,
@@ -451,10 +390,6 @@ class PythonIngestController extends Controller
                 zoneId: $zoneId
             ));
         }
-
-        Log::info('[COMMAND_ACK] STEP 10: Event dispatched, returning success');
-
-        Log::info('[COMMAND_ACK] STEP 11: Returning response');
         return Response::json(['status' => 'ok']);
     }
 

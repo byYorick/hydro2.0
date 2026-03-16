@@ -11,6 +11,7 @@ use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -208,7 +209,7 @@ class GrowCycleWizardControllerTest extends TestCase
      */
     private function createWizardChannels(DeviceNode $node): array
     {
-        return [
+        $channels = [
             'main_pump' => $this->createChannel($node, 'pump_main', 'pump'),
             'drain' => $this->createChannel($node, 'drain_main', 'valve'),
             'ph_acid_pump' => $this->createChannel($node, 'pump_acid', 'pump'),
@@ -218,6 +219,21 @@ class GrowCycleWizardControllerTest extends TestCase
             'ec_magnesium_pump' => $this->createChannel($node, 'pump_c', 'pump'),
             'ec_micro_pump' => $this->createChannel($node, 'pump_d', 'pump'),
         ];
+
+        $components = [
+            'ph_acid_pump' => 'ph_down',
+            'ph_base_pump' => 'ph_up',
+            'ec_npk_pump' => 'npk',
+            'ec_calcium_pump' => 'calcium',
+            'ec_magnesium_pump' => 'magnesium',
+            'ec_micro_pump' => 'micro',
+        ];
+
+        foreach ($components as $role => $component) {
+            $this->createPumpCalibration($channels[$role], $component, 1.25);
+        }
+
+        return $channels;
     }
 
     private function createChannel(DeviceNode $node, string $channel, string $metric): NodeChannel
@@ -229,6 +245,21 @@ class GrowCycleWizardControllerTest extends TestCase
             'metric' => $metric,
             'unit' => null,
             'config' => [],
+        ]);
+    }
+
+    private function createPumpCalibration(NodeChannel $channel, string $component, float $mlPerSec): void
+    {
+        DB::table('pump_calibrations')->insert([
+            'node_channel_id' => $channel->id,
+            'component' => $component,
+            'ml_per_sec' => $mlPerSec,
+            'source' => 'test_fixture',
+            'sample_count' => 1,
+            'valid_from' => now(),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

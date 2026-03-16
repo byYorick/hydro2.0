@@ -23,6 +23,7 @@ from test_ae3lite_zone_snapshot_read_model_integration import (
     _cleanup,
     _insert_greenhouse,
     _insert_grow_cycle,
+    _insert_process_calibrations,
     _insert_irrig_node,
     _insert_phase,
     _insert_profile,
@@ -200,6 +201,7 @@ async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, soluti
             )
     await _insert_ph_ec_support_nodes(zone_id=zone_id, greenhouse_id=greenhouse_id)
     await _insert_correction_config(zone_id)
+    await _insert_process_calibrations(zone_id)
     return greenhouse_id, zone_id
 
 

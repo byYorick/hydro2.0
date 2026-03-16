@@ -74,6 +74,29 @@ def _snapshot() -> ZoneSnapshot:
         telemetry_last={},
         pid_state={},
         pid_configs={},
+        process_calibrations={
+            "solution_fill": {
+                "transport_delay_sec": 6,
+                "settle_sec": 4,
+                "ec_gain_per_ml": 0.1,
+                "ph_up_gain_per_ml": 0.05,
+                "ph_down_gain_per_ml": -0.05,
+            },
+            "tank_recirc": {
+                "transport_delay_sec": 6,
+                "settle_sec": 4,
+                "ec_gain_per_ml": 0.1,
+                "ph_up_gain_per_ml": 0.05,
+                "ph_down_gain_per_ml": -0.05,
+            },
+            "irrigation": {
+                "transport_delay_sec": 6,
+                "settle_sec": 4,
+                "ec_gain_per_ml": 0.1,
+                "ph_up_gain_per_ml": 0.05,
+                "ph_down_gain_per_ml": -0.05,
+            },
+        },
         actuators=(
             ZoneActuatorRef(
                 node_uid="nd-irrig-1",

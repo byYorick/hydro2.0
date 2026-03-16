@@ -80,8 +80,6 @@ function createProps() {
       correctionMaxPhCorrectionAttempts: 5,
       correctionPrepareRecirculationMaxAttempts: 3,
       correctionPrepareRecirculationMaxCorrectionAttempts: 20,
-      correctionEcMixWaitSec: 120,
-      correctionPhMixWaitSec: 60,
       correctionStabilizationSec: 60,
       twoTankCleanFillStartSteps: 1,
       twoTankCleanFillStopSteps: 1,
@@ -113,7 +111,7 @@ function createProps() {
 }
 
 describe('ZoneAutomationEditWizard.vue', () => {
-  it('показывает пояснение про observe-window и compatibility bridge', async () => {
+  it('показывает пояснение про observe-window и отсутствие legacy wait state', async () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),
     })
@@ -124,7 +122,7 @@ describe('ZoneAutomationEditWizard.vue', () => {
 
     expect(wrapper.text()).not.toContain('Legacy fallback hold для EC')
     expect(wrapper.text()).toContain('Observe-window после дозы больше не редактируется в этом wizard')
-    expect(wrapper.text()).toContain('compatibility bridge')
+    expect(wrapper.text()).toContain('Legacy wait-поля больше не хранятся')
   })
 
   it('блокирует поле "Баков" для drip-системы', async () => {

@@ -243,7 +243,7 @@ actions:
             max_ph_correction_attempts: 3
             prepare_recirculation_timeout_sec: 240
             prepare_recirculation_max_attempts: 3
-            prepare_recirculation_max_correction_attempts: 32767
+            prepare_recirculation_max_correction_attempts: 20
           controllers:
             ec:
               kp: 12.0
@@ -262,13 +262,9 @@ actions:
               max_integral: 10.0
               min_interval_sec: 20
           dosing:
-            ec_dose_ml_per_mS_L: 2.0
-            ph_dose_ml_per_unit_L: 0.5
             max_ec_dose_ml: 20.0
             max_ph_dose_ml: 10.0
           timing:
-            ec_mix_wait_sec: 20
-            ph_mix_wait_sec: 20
             stabilization_sec: 10
         tank_recirc:
           retry:
@@ -276,7 +272,7 @@ actions:
             max_ph_correction_attempts: 10
             prepare_recirculation_timeout_sec: 300
             prepare_recirculation_max_attempts: 3
-            prepare_recirculation_max_correction_attempts: 32767
+            prepare_recirculation_max_correction_attempts: 20
           controllers:
             ec:
               kp: 18.0
@@ -295,13 +291,9 @@ actions:
               max_integral: 16.0
               min_interval_sec: 15
           dosing:
-            ec_dose_ml_per_mS_L: 2.5
-            ph_dose_ml_per_unit_L: 0.8
             max_ec_dose_ml: 30.0
             max_ph_dose_ml: 16.0
           timing:
-            ec_mix_wait_sec: 15
-            ph_mix_wait_sec: 15
             stabilization_sec: 10
     save: correction_config_update_response
 
@@ -664,13 +656,8 @@ actions:
               'correction', jsonb_build_object(
                 'dose_ec_channel', 'dose_ec_a',
                 'dose_ph_up_channel', 'dose_ph_up',
-                'dose_ph_down_channel', 'dose_ph_down',
-                'ec_dose_ml_per_mS_L', 4.0,
-                'ph_dose_ml_per_unit_L', 1.2,
-                'max_ec_dose_ml', 60.0,
+                'dose_ph_down_channel', 'dose_ph_down',                'max_ec_dose_ml', 60.0,
                 'max_ph_dose_ml', 40.0,
-                'ec_mix_wait_sec', 2,
-                'ph_mix_wait_sec', 2,
                 'stabilization_sec', 0,
                 'max_ec_correction_attempts', 8,
                 'max_ph_correction_attempts', 8,

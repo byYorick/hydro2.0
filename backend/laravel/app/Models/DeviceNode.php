@@ -66,13 +66,15 @@ class DeviceNode extends Model
 
         // Публикуем событие для новых нод, чтобы они появлялись в UI (unassigned list)
         static::created(function (DeviceNode $node) {
-            \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node created)', [
-                'node_id' => $node->id,
-                'uid' => $node->uid,
-                'zone_id' => $node->zone_id,
-                'pending_zone_id' => $node->pending_zone_id,
-                'lifecycle_state' => $node->lifecycle_state?->value,
-            ]);
+            if (! app()->environment('testing')) {
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node created)', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'zone_id' => $node->zone_id,
+                    'pending_zone_id' => $node->pending_zone_id,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                ]);
+            }
 
             \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
                 event(new NodeConfigUpdated($node));
@@ -94,53 +96,23 @@ class DeviceNode extends Model
             // НЕ отправляем событие если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
             $skipAlreadyAssigned = $node->lifecycleState() === NodeLifecycleState::ASSIGNED_TO_ZONE && $node->zone_id;
             
-            if ($isNewNode) {
-                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast on save (handled on create)', [
-                    'node_id' => $node->id,
-                    'uid' => $node->uid,
-                    'zone_id' => $node->zone_id,
-                    'pending_zone_id' => $node->pending_zone_id,
-                    'lifecycle_state' => $node->lifecycle_state?->value,
-                    'reason' => 'NodeConfigUpdated dispatched in created hook',
-                ]);
-            } elseif ($skipAlreadyAssigned) {
-                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast for already assigned node', [
-                    'node_id' => $node->id,
-                    'uid' => $node->uid,
-                    'zone_id' => $node->zone_id,
-                    'lifecycle_state' => $node->lifecycle_state?->value,
-                    'reason' => 'Node already assigned and configured',
-                ]);
-            } elseif ($shouldBroadcastOnAttach) {
+            if (! $isNewNode && ! $skipAlreadyAssigned && $shouldBroadcastOnAttach) {
                 // Отправляем событие только при привязке узла к зоне (изменение pending_zone_id)
-                \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node attached to zone)', [
-                    'node_id' => $node->id,
-                    'uid' => $node->uid,
-                    'pending_zone_id' => $node->pending_zone_id,
-                    'zone_id' => $node->zone_id,
-                    'lifecycle_state' => $node->lifecycle_state?->value,
-                    'reason' => 'pending_zone_id changed - node attached to zone',
-                ]);
+                if (! app()->environment('testing')) {
+                    \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node attached to zone)', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                        'pending_zone_id' => $node->pending_zone_id,
+                        'zone_id' => $node->zone_id,
+                        'lifecycle_state' => $node->lifecycle_state?->value,
+                        'reason' => 'pending_zone_id changed - node attached to zone',
+                    ]);
+                }
                 
                 // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
                 \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
                     event(new NodeConfigUpdated($node));
                 });
-            } else {
-                // Логируем, что событие не отправляется при других изменениях
-                $changedFields = ['zone_id', 'pending_zone_id', 'type', 'config', 'uid'];
-                $hasRelevantChanges = $node->wasChanged($changedFields);
-                
-                if ($hasRelevantChanges) {
-                    \Illuminate\Support\Facades\Log::debug('DeviceNode: Node update broadcast skipped (not a zone attachment)', [
-                        'node_id' => $node->id,
-                        'uid' => $node->uid,
-                        'changed_fields' => array_filter($changedFields, fn($field) => $node->wasChanged($field)),
-                        'pending_zone_id' => $node->pending_zone_id,
-                        'zone_id' => $node->zone_id,
-                        'reason' => 'Node update broadcast only happens when pending_zone_id changes (zone attachment)',
-                    ]);
-                }
             }
             
             // Очищаем кеш списка устройств при создании или обновлении ноды

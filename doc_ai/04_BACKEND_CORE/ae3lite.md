@@ -187,6 +187,8 @@ Correction runtime invariants:
 5. legacy piggyback `EC -> PH` без повторного observe-step запрещён;
 6. `3` consecutive `no-effect` для одного `pid_type` дают alert и fail-closed ветку текущего correction window;
 7. ordinary correction attempts и `no-effect` attempts считаются раздельно.
+8. legacy timing wait-поля и секция adaptive timing отсутствуют в runtime contract; окно наблюдения определяется только через `zone_process_calibrations.transport_delay_sec + settle_sec` и controller observe config.
+9. correction retry caps принимают только явные конечные значения внутри контрактных верхних границ; magic sentinel values не поддерживаются ни runtime, ни API.
 
 #### `PlannedCommand`
 

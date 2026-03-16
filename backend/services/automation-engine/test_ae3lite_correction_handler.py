@@ -71,7 +71,7 @@ RUNTIME = {
     "correction": {
         "max_ec_correction_attempts": 5,
         "max_ph_correction_attempts": 5,
-        "prepare_recirculation_max_correction_attempts": 32767,
+        "prepare_recirculation_max_correction_attempts": 20,
         "stabilization_sec": 60,
         "controllers": {
             "ec": {

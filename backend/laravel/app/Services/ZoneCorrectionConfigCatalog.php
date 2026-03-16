@@ -77,8 +77,6 @@ class ZoneCorrectionConfigCatalog
             'timing' => [
                 'sensor_mode_stabilization_time_sec' => 60,
                 'stabilization_sec' => 60,
-                'ec_mix_wait_sec' => 120,
-                'ph_mix_wait_sec' => 60,
                 'telemetry_max_age_sec' => 10,
                 'irr_state_max_age_sec' => 30,
                 'level_poll_interval_sec' => 60,
@@ -88,8 +86,6 @@ class ZoneCorrectionConfigCatalog
                 'dose_ec_channel' => 'dose_ec_a',
                 'dose_ph_up_channel' => 'dose_ph_up',
                 'dose_ph_down_channel' => 'dose_ph_down',
-                'ec_dose_ml_per_mS_L' => 1.0,
-                'ph_dose_ml_per_unit_L' => 0.5,
                 'max_ec_dose_ml' => 50.0,
                 'max_ph_dose_ml' => 20.0,
             ],
@@ -99,10 +95,6 @@ class ZoneCorrectionConfigCatalog
                 'prepare_recirculation_timeout_sec' => 1200,
                 'prepare_recirculation_max_attempts' => 3,
                 'prepare_recirculation_max_correction_attempts' => 20,
-            ],
-            'adaptive_mix_wait' => [
-                'enabled' => true,
-                'reference_volume_l' => 100.0,
             ],
             'tolerance' => [
                 'prepare_tolerance' => [
@@ -205,8 +197,6 @@ class ZoneCorrectionConfigCatalog
                 'fields' => [
                     self::field('timing.sensor_mode_stabilization_time_sec', 'Sensor mode stabilization', 'Ожидание после включения sensor mode.', 'integer', ['min' => 0, 'max' => 3600]),
                     self::field('timing.stabilization_sec', 'Correction stabilization', 'Ожидание перед первым corr_check.', 'integer', ['min' => 0, 'max' => 3600]),
-                    self::field('timing.ec_mix_wait_sec', 'EC mix wait', 'Legacy fallback wait для EC, если process calibration transport_delay/settle ещё не задана.', 'integer', ['min' => 1, 'max' => 3600, 'advanced_only' => true]),
-                    self::field('timing.ph_mix_wait_sec', 'pH mix wait', 'Legacy fallback wait для pH, если process calibration transport_delay/settle ещё не задана.', 'integer', ['min' => 1, 'max' => 3600, 'advanced_only' => true]),
                     self::field('timing.telemetry_max_age_sec', 'Telemetry max age', 'Максимальный возраст PH/EC telemetry для correction runtime.', 'integer', ['min' => 5, 'max' => 3600]),
                     self::field('timing.irr_state_max_age_sec', 'IRR state max age', 'Максимальный возраст снимка storage_state.', 'integer', ['min' => 5, 'max' => 3600, 'advanced_only' => true]),
                     self::field('timing.level_poll_interval_sec', 'Level poll interval', 'Интервал повторной проверки level sensors.', 'integer', ['min' => 5, 'max' => 3600, 'advanced_only' => true]),
@@ -219,8 +209,6 @@ class ZoneCorrectionConfigCatalog
                 'advanced_only' => false,
                 'fields' => [
                     self::field('dosing.solution_volume_l', 'Solution volume', 'Расчётный объём раствора для allocator/clamp расчётов.', 'number', ['min' => 1.0, 'max' => 10000.0, 'step' => 0.1]),
-                    self::field('dosing.ec_dose_ml_per_mS_L', 'EC sensitivity legacy', 'Legacy sensitivity field. Observation-driven runtime не использует его как fallback planner.', 'number', ['min' => 0.001, 'max' => 100.0, 'step' => 0.001, 'advanced_only' => true]),
-                    self::field('dosing.ph_dose_ml_per_unit_L', 'pH sensitivity legacy', 'Legacy sensitivity field. Observation-driven runtime не использует его как fallback planner.', 'number', ['min' => 0.001, 'max' => 50.0, 'step' => 0.001, 'advanced_only' => true]),
                     self::field('dosing.max_ec_dose_ml', 'Max EC dose clamp', 'Жёсткий верхний clamp EC-дозы до преобразования в pump pulse.', 'number', ['min' => 0.1, 'max' => 1000.0, 'step' => 0.1, 'advanced_only' => true]),
                     self::field('dosing.max_ph_dose_ml', 'Max pH dose clamp', 'Жёсткий верхний clamp pH-дозы до преобразования в pump pulse.', 'number', ['min' => 0.1, 'max' => 1000.0, 'step' => 0.1, 'advanced_only' => true]),
                     self::field('dosing.dose_ec_channel', 'EC channel', 'Имя актуатора EC-коррекции.', 'string', ['max_length' => 64, 'advanced_only' => true]),
@@ -234,27 +222,17 @@ class ZoneCorrectionConfigCatalog
                 'description' => 'Лимиты correction-loop и recirculation timeout windows.',
                 'advanced_only' => false,
                 'fields' => [
-                    self::field('retry.max_ec_correction_attempts', 'Max EC attempts', 'Лимит EC-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 32767]),
-                    self::field('retry.max_ph_correction_attempts', 'Max pH attempts', 'Лимит pH-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 32767]),
+                    self::field('retry.max_ec_correction_attempts', 'Max EC attempts', 'Лимит EC-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 500]),
+                    self::field('retry.max_ph_correction_attempts', 'Max pH attempts', 'Лимит pH-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 500]),
                     self::field('retry.prepare_recirculation_timeout_sec', 'Recirculation timeout', 'Длительность одного окна recirculation before retry.', 'integer', ['min' => 30, 'max' => 7200]),
                     self::field('retry.prepare_recirculation_max_attempts', 'Recirculation max windows', 'Сколько timeout-window допускается до alert/stop.', 'integer', ['min' => 1, 'max' => 10]),
                     self::field(
                         'retry.prepare_recirculation_max_correction_attempts',
                         'Recirculation correction cap',
-                        'Верхний guard для correction loop внутри одного recirculation window. Legacy sentinel 32767 допускается для обратной совместимости и нормализуется runtime-слоем.',
+                        'Верхний guard для correction loop внутри одного recirculation window.',
                         'integer',
-                        ['min' => 1, 'max' => 500, 'advanced_only' => true, 'legacy_sentinel_values' => [32767]]
+                        ['min' => 1, 'max' => 500, 'advanced_only' => true]
                     ),
-                ],
-            ],
-            [
-                'key' => 'adaptive_mix_wait',
-                'label' => 'Adaptive mix wait',
-                'description' => 'Legacy scaling для fallback mix-wait. Process calibration transport_delay/settle приоритетнее.',
-                'advanced_only' => true,
-                'fields' => [
-                    self::field('adaptive_mix_wait.enabled', 'Adaptive mix wait', 'Включает адаптивное масштабирование mix-wait по объёму.', 'boolean'),
-                    self::field('adaptive_mix_wait.reference_volume_l', 'Reference volume', 'Базовый объём раствора для расчёта коэффициента масштабирования.', 'number', ['min' => 1.0, 'max' => 10000.0, 'step' => 0.1]),
                 ],
             ],
             [
@@ -454,9 +432,6 @@ class ZoneCorrectionConfigCatalog
         if ($type === 'integer') {
             if (! is_int($value)) {
                 throw new InvalidArgumentException("Поле {$path} должно быть integer.");
-            }
-            if (isset($field['legacy_sentinel_values']) && in_array($value, $field['legacy_sentinel_values'], true)) {
-                return;
             }
             if (isset($field['min']) && $value < $field['min']) {
                 throw new InvalidArgumentException("Поле {$path} должно быть >= {$field['min']}.");

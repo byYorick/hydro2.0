@@ -66,8 +66,6 @@ function createForms(): ZoneAutomationForms {
       correctionMaxPhCorrectionAttempts: 5,
       correctionPrepareRecirculationMaxAttempts: 3,
       correctionPrepareRecirculationMaxCorrectionAttempts: 20,
-      correctionEcMixWaitSec: 120,
-      correctionPhMixWaitSec: 60,
       correctionStabilizationSec: 60,
       twoTankCleanFillStartSteps: 1,
       twoTankCleanFillStopSteps: 1,
@@ -215,8 +213,6 @@ describe('zoneAutomationFormLogic', () => {
                 max_ph_correction_attempts: 8,
                 prepare_recirculation_max_attempts: 4,
                 prepare_recirculation_max_correction_attempts: 150,
-                ec_mix_wait_sec: 90,
-                ph_mix_wait_sec: 55,
                 stabilization_sec: 45,
               },
               two_tank_commands: {
@@ -288,8 +284,6 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.correctionMaxPhCorrectionAttempts).toBe(8)
     expect(forms.waterForm.correctionPrepareRecirculationMaxAttempts).toBe(4)
     expect(forms.waterForm.correctionPrepareRecirculationMaxCorrectionAttempts).toBe(150)
-    expect(forms.waterForm.correctionEcMixWaitSec).toBe(90)
-    expect(forms.waterForm.correctionPhMixWaitSec).toBe(55)
     expect(forms.waterForm.correctionStabilizationSec).toBe(45)
     expect(forms.waterForm.twoTankCleanFillStartSteps).toBe(2)
     expect(forms.waterForm.twoTankCleanFillStopSteps).toBe(1)
@@ -328,8 +322,6 @@ describe('zoneAutomationFormLogic', () => {
     forms.waterForm.correctionMaxPhCorrectionAttempts = 13
     forms.waterForm.correctionPrepareRecirculationMaxAttempts = 6
     forms.waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = 200
-    forms.waterForm.correctionEcMixWaitSec = 95
-    forms.waterForm.correctionPhMixWaitSec = 70
     forms.waterForm.correctionStabilizationSec = 50
     forms.waterForm.twoTankCleanFillStartSteps = 2
     forms.waterForm.twoTankSolutionFillStartSteps = 4

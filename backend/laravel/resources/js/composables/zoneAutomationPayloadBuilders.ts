@@ -520,8 +520,6 @@ export function resetToRecommended(forms: ZoneAutomationForms): void {
   waterForm.correctionMaxPhCorrectionAttempts = 5
   waterForm.correctionPrepareRecirculationMaxAttempts = 3
   waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = 20
-  waterForm.correctionEcMixWaitSec = 120
-  waterForm.correctionPhMixWaitSec = 60
   waterForm.correctionStabilizationSec = 60
   waterForm.twoTankCleanFillStartSteps = 1
   waterForm.twoTankCleanFillStopSteps = 1

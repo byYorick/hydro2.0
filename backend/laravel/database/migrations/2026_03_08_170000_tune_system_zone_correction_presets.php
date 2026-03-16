@@ -43,10 +43,9 @@ return new class extends Migration
                             'ec' => $this->ecController(12.0, 0.08, 0.0, 0.12, 12.0, 150, 24.0, 4.0, 2),
                         ],
                         'runtime' => $this->runtimeConfig(1200, 1800, 1, 0.5),
-                        'timing' => $this->timingConfig(45, 45, 90, 60, 300, 30, 45),
-                        'dosing' => $this->dosingConfig(80.0, 0.8, 0.35, 12.0, 8.0),
+                        'timing' => $this->timingConfig(45, 45, 300, 30, 45),
+                        'dosing' => $this->dosingConfig(80.0, 12.0, 8.0),
                         'retry' => $this->retryConfig(5, 1500, 3, 20),
-                        'adaptive_mix_wait' => $this->adaptiveMixWaitConfig(100.0),
                         'tolerance' => $this->toleranceConfig(12.0, 20.0),
                         'safety' => $this->safetyConfig(),
                     ],
@@ -56,8 +55,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 16.0, 'min_interval_sec' => 90],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 75,
-                            'ph_mix_wait_sec' => 45,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 16.0,
@@ -70,8 +67,6 @@ return new class extends Migration
                             'ec' => ['deadband' => 0.10, 'max_dose_ml' => 8.0, 'min_interval_sec' => 180],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 120,
-                            'ph_mix_wait_sec' => 75,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 8.0,
@@ -100,10 +95,9 @@ return new class extends Migration
                             'ec' => $this->ecController(18.0, 0.15, 0.0, 0.10, 20.0, 90, 40.0, 6.0, 3),
                         ],
                         'runtime' => $this->runtimeConfig(1200, 1800, 1, 0.5),
-                        'timing' => $this->timingConfig(40, 40, 75, 45, 300, 30, 45),
-                        'dosing' => $this->dosingConfig(100.0, 1.0, 0.45, 20.0, 12.0),
+                        'timing' => $this->timingConfig(40, 40, 300, 30, 45),
+                        'dosing' => $this->dosingConfig(100.0, 20.0, 12.0),
                         'retry' => $this->retryConfig(5, 1200, 3, 20),
-                        'adaptive_mix_wait' => $this->adaptiveMixWaitConfig(100.0),
                         'tolerance' => $this->toleranceConfig(15.0, 25.0),
                         'safety' => $this->safetyConfig(),
                     ],
@@ -113,8 +107,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 24.0, 'min_interval_sec' => 60],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 60,
-                            'ph_mix_wait_sec' => 35,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 24.0,
@@ -127,8 +119,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 10.0, 'min_interval_sec' => 120],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 90,
-                            'ph_mix_wait_sec' => 55,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 10.0,
@@ -157,10 +147,9 @@ return new class extends Migration
                             'ec' => $this->ecController(32.0, 0.30, 0.0, 0.07, 36.0, 50, 80.0, 8.0, 4),
                         ],
                         'runtime' => $this->runtimeConfig(1200, 1800, 1, 0.5),
-                        'timing' => $this->timingConfig(30, 30, 45, 30, 240, 20, 30),
-                        'dosing' => $this->dosingConfig(100.0, 1.2, 0.6, 36.0, 18.0),
+                        'timing' => $this->timingConfig(30, 30, 240, 20, 30),
+                        'dosing' => $this->dosingConfig(100.0, 36.0, 18.0),
                         'retry' => $this->retryConfig(6, 900, 3, 20),
-                        'adaptive_mix_wait' => $this->adaptiveMixWaitConfig(100.0),
                         'tolerance' => $this->toleranceConfig(18.0, 28.0),
                         'safety' => $this->safetyConfig(),
                     ],
@@ -170,8 +159,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 42.0, 'min_interval_sec' => 35],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 35,
-                            'ph_mix_wait_sec' => 25,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 42.0,
@@ -184,8 +171,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 14.0, 'min_interval_sec' => 75],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 60,
-                            'ph_mix_wait_sec' => 40,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 14.0,
@@ -213,10 +198,9 @@ return new class extends Migration
                             'ec' => $this->ecController(8.0, 0.08, 0.0, 0.08, 6.0, 45, 12.0, 4.0, 2),
                         ],
                         'runtime' => $this->runtimeConfig(600, 900, 1, 0.5),
-                        'timing' => $this->timingConfig(20, 20, 30, 25, 180, 15, 20),
-                        'dosing' => $this->dosingConfig(20.0, 0.45, 0.18, 6.0, 4.0),
+                        'timing' => $this->timingConfig(20, 20, 180, 15, 20),
+                        'dosing' => $this->dosingConfig(20.0, 6.0, 4.0),
                         'retry' => $this->retryConfig(5, 600, 3, 20),
-                        'adaptive_mix_wait' => $this->adaptiveMixWaitConfig(20.0),
                         'tolerance' => $this->toleranceConfig(10.0, 16.0),
                         'safety' => $this->safetyConfig(),
                     ],
@@ -226,8 +210,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 8.0, 'min_interval_sec' => 35],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 25,
-                            'ph_mix_wait_sec' => 20,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 8.0,
@@ -240,8 +222,6 @@ return new class extends Migration
                             'ec' => ['max_dose_ml' => 4.0, 'min_interval_sec' => 75],
                         ],
                         'timing' => [
-                            'ec_mix_wait_sec' => 45,
-                            'ph_mix_wait_sec' => 30,
                         ],
                         'dosing' => [
                             'max_ec_dose_ml' => 4.0,
@@ -276,8 +256,8 @@ return new class extends Migration
                         'ec' => $this->ecController(18.0, 0.15, 0.0, 0.15, 30.0, 180, 60.0, 4.0, 2),
                     ],
                     'runtime' => $this->runtimeConfig(1200, 1800, 1, 0.5),
-                    'timing' => $this->timingConfig(75, 75, 150, 90, 300, 30, 60),
-                    'dosing' => $this->dosingConfig(100.0, 0.8, 0.35, 35.0, 15.0),
+                    'timing' => $this->timingConfig(75, 75, 300, 30, 60),
+                    'dosing' => $this->dosingConfig(100.0, 35.0, 15.0),
                     'retry' => $this->retryConfig(5, 1500, 3, 20),
                     'tolerance' => $this->toleranceConfig(12.0, 20.0),
                     'safety' => $this->safetyConfig(),
@@ -291,8 +271,8 @@ return new class extends Migration
                         'ec' => $this->ecController(30.0, 0.30, 0.0, 0.10, 50.0, 120, 100.0, 10.0, 3),
                     ],
                     'runtime' => $this->runtimeConfig(1200, 1800, 1, 0.5),
-                    'timing' => $this->timingConfig(60, 60, 120, 60, 300, 30, 60),
-                    'dosing' => $this->dosingConfig(100.0, 1.0, 0.5, 50.0, 20.0),
+                    'timing' => $this->timingConfig(60, 60, 300, 30, 60),
+                    'dosing' => $this->dosingConfig(100.0, 50.0, 20.0),
                     'retry' => $this->retryConfig(5, 1200, 3, 20),
                     'tolerance' => $this->toleranceConfig(15.0, 25.0),
                     'safety' => $this->safetyConfig(),
@@ -306,8 +286,8 @@ return new class extends Migration
                         'ec' => $this->ecController(45.0, 0.50, 0.0, 0.07, 75.0, 60, 140.0, 10.0, 4),
                     ],
                     'runtime' => $this->runtimeConfig(1200, 1800, 1, 0.5),
-                    'timing' => $this->timingConfig(45, 45, 90, 45, 240, 20, 45),
-                    'dosing' => $this->dosingConfig(100.0, 1.4, 0.8, 80.0, 30.0),
+                    'timing' => $this->timingConfig(45, 45, 240, 20, 45),
+                    'dosing' => $this->dosingConfig(100.0, 80.0, 30.0),
                     'retry' => $this->retryConfig(6, 900, 3, 20),
                     'tolerance' => $this->toleranceConfig(18.0, 28.0),
                     'safety' => $this->safetyConfig(),
@@ -321,8 +301,8 @@ return new class extends Migration
                         'ec' => $this->ecController(16.0, 0.12, 0.0, 0.08, 16.0, 45, 24.0, 4.0, 2),
                     ],
                     'runtime' => $this->runtimeConfig(600, 900, 1, 0.5),
-                    'timing' => $this->timingConfig(30, 30, 45, 30, 180, 15, 30),
-                    'dosing' => $this->dosingConfig(20.0, 0.55, 0.22, 20.0, 8.0),
+                    'timing' => $this->timingConfig(30, 30, 180, 15, 30),
+                    'dosing' => $this->dosingConfig(20.0, 20.0, 8.0),
                     'retry' => $this->retryConfig(5, 600, 3, 20),
                     'tolerance' => $this->toleranceConfig(10.0, 18.0),
                     'safety' => $this->safetyConfig(),
@@ -418,8 +398,6 @@ return new class extends Migration
     private function timingConfig(
         int $sensorModeStabilizationTimeSec,
         int $stabilizationSec,
-        int $ecMixWaitSec,
-        int $phMixWaitSec,
         int $telemetryMaxAgeSec,
         int $irrStateMaxAgeSec,
         int $levelPollIntervalSec,
@@ -427,8 +405,6 @@ return new class extends Migration
         return [
             'sensor_mode_stabilization_time_sec' => $sensorModeStabilizationTimeSec,
             'stabilization_sec' => $stabilizationSec,
-            'ec_mix_wait_sec' => $ecMixWaitSec,
-            'ph_mix_wait_sec' => $phMixWaitSec,
             'telemetry_max_age_sec' => $telemetryMaxAgeSec,
             'irr_state_max_age_sec' => $irrStateMaxAgeSec,
             'level_poll_interval_sec' => $levelPollIntervalSec,
@@ -437,8 +413,6 @@ return new class extends Migration
 
     private function dosingConfig(
         float $solutionVolumeL,
-        float $ecDoseMlPerMsL,
-        float $phDoseMlPerUnitL,
         float $maxEcDoseMl,
         float $maxPhDoseMl,
     ): array {
@@ -447,8 +421,6 @@ return new class extends Migration
             'dose_ec_channel' => 'dose_ec_a',
             'dose_ph_up_channel' => 'dose_ph_up',
             'dose_ph_down_channel' => 'dose_ph_down',
-            'ec_dose_ml_per_mS_L' => $ecDoseMlPerMsL,
-            'ph_dose_ml_per_unit_L' => $phDoseMlPerUnitL,
             'max_ec_dose_ml' => $maxEcDoseMl,
             'max_ph_dose_ml' => $maxPhDoseMl,
         ];
@@ -466,14 +438,6 @@ return new class extends Migration
             'prepare_recirculation_timeout_sec' => $prepareRecirculationTimeoutSec,
             'prepare_recirculation_max_attempts' => $prepareRecirculationMaxAttempts,
             'prepare_recirculation_max_correction_attempts' => $prepareRecirculationMaxCorrectionAttempts,
-        ];
-    }
-
-    private function adaptiveMixWaitConfig(float $referenceVolumeL): array
-    {
-        return [
-            'enabled' => true,
-            'reference_volume_l' => $referenceVolumeL,
         ];
     }
 

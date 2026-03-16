@@ -105,8 +105,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                 'timing' => [
                     'sensor_mode_stabilization_time_sec' => 25,
                     'stabilization_sec' => 25,
-                    'ec_mix_wait_sec' => 40,
-                    'ph_mix_wait_sec' => 25,
                     'telemetry_max_age_sec' => 180,
                     'irr_state_max_age_sec' => 15,
                     'level_poll_interval_sec' => 30,
@@ -116,8 +114,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                     'dose_ec_channel' => 'dose_ec_a',
                     'dose_ph_up_channel' => 'dose_ph_up',
                     'dose_ph_down_channel' => 'dose_ph_down',
-                    'ec_dose_ml_per_mS_L' => 0.5,
-                    'ph_dose_ml_per_unit_L' => 0.2,
                     'max_ec_dose_ml' => 18.0,
                     'max_ph_dose_ml' => 7.0,
                 ],
@@ -127,10 +123,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                     'prepare_recirculation_timeout_sec' => 480,
                     'prepare_recirculation_max_attempts' => 3,
                     'prepare_recirculation_max_correction_attempts' => 200,
-                ],
-                'adaptive_mix_wait' => [
-                    'enabled' => true,
-                    'reference_volume_l' => 20.0,
                 ],
                 'tolerance' => [
                     'prepare_tolerance' => ['ph_pct' => 10.0, 'ec_pct' => 16.0],
@@ -154,8 +146,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                         'solution_min_sensor_label' => 'level_solution_min',
                     ],
                     'timing' => [
-                        'ec_mix_wait_sec' => 55,
-                        'ph_mix_wait_sec' => 35,
                         'sensor_mode_stabilization_time_sec' => 25,
                         'stabilization_sec' => 25,
                         'telemetry_max_age_sec' => 180,
@@ -174,8 +164,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                         'dose_ec_channel' => 'dose_ec_a',
                         'dose_ph_up_channel' => 'dose_ph_up',
                         'dose_ph_down_channel' => 'dose_ph_down',
-                        'ec_dose_ml_per_mS_L' => 0.5,
-                        'ph_dose_ml_per_unit_L' => 0.2,
                         'max_ec_dose_ml' => 12.0,
                         'max_ph_dose_ml' => 5.0,
                     ],
@@ -232,10 +220,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
                         'safe_mode_on_no_effect' => true,
                         'block_on_active_no_effect_alert' => true,
                     ],
-                    'adaptive_mix_wait' => [
-                        'enabled' => true,
-                        'reference_volume_l' => 20.0,
-                    ],
                 ],
             ],
         ];
@@ -248,11 +232,6 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.resolved_config.base.runtime.clean_fill_timeout_sec', 600)
             ->assertJsonPath('data.resolved_config.phases.tank_recirc.retry.prepare_recirculation_timeout_sec', 540)
             ->assertJsonPath('data.resolved_config.base.retry.max_ec_correction_attempts', 4);
-
-        $this->assertSame(
-            20.0,
-            (float) data_get($response->json(), 'data.resolved_config.base.adaptive_mix_wait.reference_volume_l')
-        );
 
         $this->assertDatabaseHas('zone_correction_configs', [
             'zone_id' => $zone->id,
@@ -277,7 +256,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
         $response = $this->putJson("/api/zones/{$zone->id}/correction-config", [
             'phase_overrides' => [
                 'invalid_phase' => [
-                    'timing' => ['ec_mix_wait_sec' => 40],
+                    'timing' => ['telemetry_max_age_sec' => 40],
                 ],
             ],
         ]);
@@ -302,7 +281,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.resolved_config.meta.preset_slug', 'test-node');
     }
 
-    public function test_accepts_legacy_prepare_recirculation_correction_cap_sentinel(): void
+    public function test_rejects_prepare_recirculation_correction_cap_above_contract_maximum(): void
     {
         $zone = Zone::factory()->create();
         $preset = ZoneCorrectionPreset::query()->where('slug', 'test-node')->firstOrFail();
@@ -313,17 +292,36 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             'phase_overrides' => [
                 'solution_fill' => [
                     'retry' => [
-                        'prepare_recirculation_max_correction_attempts' => 32767,
+                        'prepare_recirculation_max_correction_attempts' => 501,
                     ],
                 ],
             ],
         ]);
 
-        $response->assertOk()
-            ->assertJsonPath(
-                'data.resolved_config.phases.solution_fill.retry.prepare_recirculation_max_correction_attempts',
-                32767
-            );
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Поле retry.prepare_recirculation_max_correction_attempts должно быть <= 500.');
+    }
+
+    public function test_rejects_phase_retry_attempt_caps_above_contract_maximum(): void
+    {
+        $zone = Zone::factory()->create();
+        $preset = ZoneCorrectionPreset::query()->where('slug', 'test-node')->firstOrFail();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'preset_id' => $preset->id,
+            'base_config' => [],
+            'phase_overrides' => [
+                'solution_fill' => [
+                    'retry' => [
+                        'max_ec_correction_attempts' => 501,
+                        'max_ph_correction_attempts' => 501,
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Поле retry.max_ec_correction_attempts должно быть <= 500.');
     }
 
     public function test_show_rejects_zone_pump_override_that_conflicts_with_current_system_defaults(): void

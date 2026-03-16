@@ -660,8 +660,8 @@
             <div class="rounded-2xl border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-xs text-[color:var(--text-muted)] md:col-span-2">
               Observe-window после дозы больше не редактируется в этом wizard и не публикуется в
               `diagnostics.execution.correction`. Production runtime использует `transport_delay_sec` / `settle_sec`
-              и observe-параметры из correction-config/process calibration. Старые поля `ec_mix_wait_sec` и
-              `ph_mix_wait_sec` читаются только как compatibility bridge при загрузке legacy-конфигов.
+              и observe-параметры из correction-config/process calibration. Legacy wait-поля больше не хранятся
+              во frontend form-state.
             </div>
             <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
               Обязательные типы нод для refill (CSV)
@@ -976,12 +976,6 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   ) {
     form.correctionPrepareRecirculationMaxCorrectionAttempts = 20
   }
-  if (form.correctionEcMixWaitSec === undefined || !Number.isFinite(Number(form.correctionEcMixWaitSec))) {
-    form.correctionEcMixWaitSec = 120
-  }
-  if (form.correctionPhMixWaitSec === undefined || !Number.isFinite(Number(form.correctionPhMixWaitSec))) {
-    form.correctionPhMixWaitSec = 60
-  }
   if (form.correctionStabilizationSec === undefined || !Number.isFinite(Number(form.correctionStabilizationSec))) {
     form.correctionStabilizationSec = 60
   }
@@ -1038,8 +1032,6 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
     1,
     500
   )
-  form.correctionEcMixWaitSec = clamp(Math.round(form.correctionEcMixWaitSec), 10, 3600)
-  form.correctionPhMixWaitSec = clamp(Math.round(form.correctionPhMixWaitSec), 10, 3600)
   form.correctionStabilizationSec = clamp(Math.round(form.correctionStabilizationSec), 0, 3600)
   form.twoTankCleanFillStartSteps = clamp(Math.round(form.twoTankCleanFillStartSteps), 1, 12)
   form.twoTankCleanFillStopSteps = clamp(Math.round(form.twoTankCleanFillStopSteps), 1, 12)

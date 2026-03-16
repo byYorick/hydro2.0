@@ -244,22 +244,6 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
       1,
       500
     ),
-    correctionEcMixWaitSec: clamp(
-      toRoundedNumber(
-        raw?.correctionEcMixWaitSec,
-        typeof fallback.correctionEcMixWaitSec === 'number' ? fallback.correctionEcMixWaitSec : 120
-      ),
-      10,
-      3600
-    ),
-    correctionPhMixWaitSec: clamp(
-      toRoundedNumber(
-        raw?.correctionPhMixWaitSec,
-        typeof fallback.correctionPhMixWaitSec === 'number' ? fallback.correctionPhMixWaitSec : 60
-      ),
-      10,
-      3600
-    ),
     correctionStabilizationSec: clamp(
       toRoundedNumber(
         raw?.correctionStabilizationSec,
@@ -427,8 +411,6 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
     correctionMaxPhCorrectionAttempts: 5,
     correctionPrepareRecirculationMaxAttempts: 3,
     correctionPrepareRecirculationMaxCorrectionAttempts: 20,
-    correctionEcMixWaitSec: 120,
-    correctionPhMixWaitSec: 60,
     correctionStabilizationSec: 60,
     twoTankCleanFillStartSteps: 1,
     twoTankCleanFillStopSteps: 1,

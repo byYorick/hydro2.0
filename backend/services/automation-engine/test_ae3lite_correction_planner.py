@@ -35,8 +35,6 @@ def _correction_config(*, ph_overrides=None, ec_overrides=None, dosing_overrides
         "dose_ec_channel": "dose_ec_a",
         "dose_ph_up_channel": "dose_ph_up",
         "dose_ph_down_channel": "dose_ph_down",
-        "ec_dose_ml_per_mS_L": 1.0,
-        "ph_dose_ml_per_unit_L": 0.5,
         "max_ec_dose_ml": 50.0,
         "max_ph_dose_ml": 20.0,
         "pump_calibration": {

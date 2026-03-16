@@ -24,8 +24,13 @@ trait RefreshDatabase
 
         while (true) {
             try {
-                $this->dropTimescaleHypertables();
-                $this->baseMigrateDatabases();
+                if (DB::connection()->getDriverName() === 'pgsql') {
+                    $this->resetPostgresTestingSchema();
+                    $this->artisan('migrate', $this->migrateUsing());
+                } else {
+                    $this->dropTimescaleHypertables();
+                    $this->baseMigrateDatabases();
+                }
 
                 return;
             } catch (Throwable $exception) {
@@ -40,6 +45,18 @@ trait RefreshDatabase
                 usleep($attempt * 250_000);
             }
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function migrateUsing(): array
+    {
+        $seeder = $this->seeder();
+
+        return $seeder
+            ? ['--seeder' => $seeder]
+            : ['--seed' => $this->shouldSeed()];
     }
 
     protected function assertSafeTestingDatabase(): void
@@ -145,6 +162,16 @@ trait RefreshDatabase
                 }
             }
         }
+    }
+
+    protected function resetPostgresTestingSchema(): void
+    {
+        DB::statement('DROP SCHEMA IF EXISTS public CASCADE');
+        DB::statement('CREATE SCHEMA public');
+        DB::statement('GRANT ALL ON SCHEMA public TO CURRENT_USER');
+        DB::statement('GRANT ALL ON SCHEMA public TO PUBLIC');
+        DB::disconnect();
+        DB::reconnect();
     }
 
     protected function isRetryableMigrationException(Throwable $exception): bool

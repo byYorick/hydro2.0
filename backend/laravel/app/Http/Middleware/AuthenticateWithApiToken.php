@@ -16,17 +16,6 @@ class AuthenticateWithApiToken
      */
     public function handle(Request $request, Closure $next)
     {
-        if (config('app.env') === 'testing' && str_starts_with($request->path(), 'api/zones')) {
-            $hdr = $request->header('Authorization');
-            $bearer = $request->bearerToken();
-            Log::warning('AuthenticateWithApiToken(debug): incoming api/zones request', [
-                'has_authorization_header' => $request->headers->has('Authorization'),
-                'authorization_header_prefix' => is_string($hdr) ? substr($hdr, 0, 24) : null,
-                'bearer_token_prefix' => is_string($bearer) ? substr($bearer, 0, 12) : null,
-                'web_check_before' => Auth::guard('web')->check(),
-            ]);
-        }
-
         /**
          * API routes are protected by the default "auth" middleware (web guard),
          * but we often authenticate via Sanctum bearer tokens.
@@ -91,15 +80,9 @@ class AuthenticateWithApiToken
 
                     // Обновляем last_used_at для отслеживания активности токена
                     $accessToken->forceFill(['last_used_at' => now()])->save();
-                    if (config('app.env') === 'testing' && str_starts_with($request->path(), 'api/zones')) {
-                        Log::warning('AuthenticateWithApiToken(debug): zones authenticated via token', [
-                            'user_id' => $user->id ?? null,
-                            'token_id' => $accessToken->id ?? null,
-                        ]);
-                    }
                 } else {
                     // Debug for E2E: token header exists but Sanctum cannot find it
-                    if (config('app.env') === 'testing') {
+                    if (! app()->environment('testing')) {
                         Log::warning('AuthenticateWithApiToken: Bearer token present but not recognized by Sanctum', [
                             'token_prefix' => substr($token, 0, 12),
                             'has_pipe' => str_contains($token, '|'),
@@ -110,7 +93,7 @@ class AuthenticateWithApiToken
                     }
                 }
             } else {
-                if (config('app.env') === 'testing') {
+                if (! app()->environment('testing')) {
                     Log::warning('AuthenticateWithApiToken: no bearer token found on request', [
                         'path' => $request->path(),
                         'method' => $request->method(),

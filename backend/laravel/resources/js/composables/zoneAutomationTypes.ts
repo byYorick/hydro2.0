@@ -57,8 +57,6 @@ export interface WaterFormState {
   correctionMaxPhCorrectionAttempts?: number
   correctionPrepareRecirculationMaxAttempts?: number
   correctionPrepareRecirculationMaxCorrectionAttempts?: number
-  correctionEcMixWaitSec?: number
-  correctionPhMixWaitSec?: number
   correctionStabilizationSec?: number
   twoTankCleanFillStartSteps?: number
   twoTankCleanFillStopSteps?: number

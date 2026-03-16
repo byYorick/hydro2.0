@@ -1770,7 +1770,22 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - `zone_correction_config_versions.resolved_config.pump_calibration` versioned вместе с остальным correction config.
 - AE3-Lite использует `resolved_config.pump_calibration` как canonical runtime source.
 
-### 16.5. Таблица `node_channels` (activity sync)
+### 16.5. Zone correction config: timing contract
+
+- `zone_correction_configs.base_config.timing` и `zone_correction_configs.resolved_config.timing`
+  больше не содержат legacy wait-поля correction timing.
+- `zone_correction_configs.base_config` больше не содержит секцию adaptive timing.
+- `zone_correction_configs.*.retry.prepare_recirculation_max_correction_attempts`
+  хранит только явный конечный лимит.
+- `zone_correction_configs.*.retry.max_ec_correction_attempts` и
+  `zone_correction_configs.*.retry.max_ph_correction_attempts`
+  тоже хранят только конечные значения внутри контрактной верхней границы.
+- stage-level wait в correction path задаётся только через `timing.stabilization_sec`.
+- observation hold-window для `EC`/`pH` задаётся только через
+  `zone_process_calibrations.transport_delay_sec` + `zone_process_calibrations.settle_sec`
+  и observe-параметры контроллеров.
+
+### 16.6. Таблица `node_channels` (activity sync)
 
 Добавлены поля:
 - `last_seen_at` — последнее подтверждённое присутствие канала в `config_report`.
@@ -1780,7 +1795,7 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - destructive-delete заменён на soft-deactivate (`is_active=false`) при explicit full-snapshot prune;
 - по умолчанию prune отключён для transport-safe поведения.
 
-### 16.6. Совместимость чтения
+### 16.7. Совместимость чтения
 
 - Automation-Engine читает runtime bounds из `zone_correction_configs.resolved_config.pump_calibration`.
 - Ручная pump calibration панели Laravel читает активную запись из `pump_calibrations`.

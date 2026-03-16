@@ -261,14 +261,14 @@ def test_build_correction_config_preserves_runtime_contract_fields() -> None:
                 "dosing": {"solution_volume_l": 88.0},
             },
             "phases": {
-                "solution_fill": {"timing": {"ec_mix_wait_sec": 31}},
+                "solution_fill": {"timing": {"stabilization_sec": 31}},
                 "tank_recirc": {"retry": {"prepare_recirculation_timeout_sec": 620}},
                 "irrigation": {"tolerance": {"prepare_tolerance": {"ph_pct": 10.5}}},
             },
             "meta": {"preset_slug": "balanced"},
         },
         "phase_overrides": {
-            "solution_fill": {"timing": {"ec_mix_wait_sec": 31}},
+            "solution_fill": {"timing": {"stabilization_sec": 31}},
             "tank_recirc": {"retry": {"prepare_recirculation_timeout_sec": 620}},
         },
     }
@@ -280,9 +280,9 @@ def test_build_correction_config_preserves_runtime_contract_fields() -> None:
     assert result["base"]["timing"]["telemetry_max_age_sec"] == 123
     assert result["base"]["retry"]["max_ec_correction_attempts"] == 6
     assert result["base"]["dosing"]["solution_volume_l"] == 88.0
-    assert result["phases"]["solution_fill"]["timing"]["ec_mix_wait_sec"] == 31
+    assert result["phases"]["solution_fill"]["timing"]["stabilization_sec"] == 31
     assert result["phases"]["tank_recirc"]["retry"]["prepare_recirculation_timeout_sec"] == 620
     assert result["phases"]["irrigation"]["tolerance"]["prepare_tolerance"]["ph_pct"] == 10.5
     assert result["meta"]["preset_slug"] == "balanced"
     assert result["meta"]["version"] == 9
-    assert result["meta"]["phase_overrides"]["solution_fill"]["timing"]["ec_mix_wait_sec"] == 31
+    assert result["meta"]["phase_overrides"]["solution_fill"]["timing"]["stabilization_sec"] == 31

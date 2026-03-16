@@ -93,8 +93,6 @@ return new class extends Migration
                     'timing' => [
                         'sensor_mode_stabilization_time_sec' => 75,
                         'stabilization_sec' => 75,
-                        'ec_mix_wait_sec' => 150,
-                        'ph_mix_wait_sec' => 90,
                         'telemetry_max_age_sec' => 300,
                         'irr_state_max_age_sec' => 30,
                         'level_poll_interval_sec' => 60,
@@ -104,8 +102,6 @@ return new class extends Migration
                         'dose_ec_channel' => 'dose_ec_a',
                         'dose_ph_up_channel' => 'dose_ph_up',
                         'dose_ph_down_channel' => 'dose_ph_down',
-                        'ec_dose_ml_per_mS_L' => 0.8,
-                        'ph_dose_ml_per_unit_L' => 0.35,
                         'max_ec_dose_ml' => 35.0,
                         'max_ph_dose_ml' => 15.0,
                     ],
@@ -115,10 +111,6 @@ return new class extends Migration
                         'prepare_recirculation_timeout_sec' => 1500,
                         'prepare_recirculation_max_attempts' => 3,
                         'prepare_recirculation_max_correction_attempts' => 20,
-                    ],
-                    'adaptive_mix_wait' => [
-                        'enabled' => true,
-                        'reference_volume_l' => 100.0,
                     ],
                     'tolerance' => [
                         'prepare_tolerance' => ['ph_pct' => 12.0, 'ec_pct' => 20.0],
@@ -169,8 +161,6 @@ return new class extends Migration
                     'timing' => [
                         'sensor_mode_stabilization_time_sec' => 60,
                         'stabilization_sec' => 60,
-                        'ec_mix_wait_sec' => 120,
-                        'ph_mix_wait_sec' => 60,
                         'telemetry_max_age_sec' => 300,
                         'irr_state_max_age_sec' => 30,
                         'level_poll_interval_sec' => 60,
@@ -180,8 +170,6 @@ return new class extends Migration
                         'dose_ec_channel' => 'dose_ec_a',
                         'dose_ph_up_channel' => 'dose_ph_up',
                         'dose_ph_down_channel' => 'dose_ph_down',
-                        'ec_dose_ml_per_mS_L' => 1.0,
-                        'ph_dose_ml_per_unit_L' => 0.5,
                         'max_ec_dose_ml' => 50.0,
                         'max_ph_dose_ml' => 20.0,
                     ],
@@ -191,10 +179,6 @@ return new class extends Migration
                         'prepare_recirculation_timeout_sec' => 1200,
                         'prepare_recirculation_max_attempts' => 3,
                         'prepare_recirculation_max_correction_attempts' => 20,
-                    ],
-                    'adaptive_mix_wait' => [
-                        'enabled' => true,
-                        'reference_volume_l' => 100.0,
                     ],
                     'tolerance' => [
                         'prepare_tolerance' => ['ph_pct' => 15.0, 'ec_pct' => 25.0],
@@ -245,8 +229,6 @@ return new class extends Migration
                     'timing' => [
                         'sensor_mode_stabilization_time_sec' => 45,
                         'stabilization_sec' => 45,
-                        'ec_mix_wait_sec' => 90,
-                        'ph_mix_wait_sec' => 45,
                         'telemetry_max_age_sec' => 240,
                         'irr_state_max_age_sec' => 20,
                         'level_poll_interval_sec' => 45,
@@ -256,8 +238,6 @@ return new class extends Migration
                         'dose_ec_channel' => 'dose_ec_a',
                         'dose_ph_up_channel' => 'dose_ph_up',
                         'dose_ph_down_channel' => 'dose_ph_down',
-                        'ec_dose_ml_per_mS_L' => 1.4,
-                        'ph_dose_ml_per_unit_L' => 0.8,
                         'max_ec_dose_ml' => 80.0,
                         'max_ph_dose_ml' => 30.0,
                     ],
@@ -267,10 +247,6 @@ return new class extends Migration
                         'prepare_recirculation_timeout_sec' => 900,
                         'prepare_recirculation_max_attempts' => 3,
                         'prepare_recirculation_max_correction_attempts' => 20,
-                    ],
-                    'adaptive_mix_wait' => [
-                        'enabled' => true,
-                        'reference_volume_l' => 100.0,
                     ],
                     'tolerance' => [
                         'prepare_tolerance' => ['ph_pct' => 18.0, 'ec_pct' => 28.0],
@@ -321,8 +297,6 @@ return new class extends Migration
                     'timing' => [
                         'sensor_mode_stabilization_time_sec' => 30,
                         'stabilization_sec' => 30,
-                        'ec_mix_wait_sec' => 45,
-                        'ph_mix_wait_sec' => 30,
                         'telemetry_max_age_sec' => 180,
                         'irr_state_max_age_sec' => 15,
                         'level_poll_interval_sec' => 30,
@@ -332,8 +306,6 @@ return new class extends Migration
                         'dose_ec_channel' => 'dose_ec_a',
                         'dose_ph_up_channel' => 'dose_ph_up',
                         'dose_ph_down_channel' => 'dose_ph_down',
-                        'ec_dose_ml_per_mS_L' => 0.55,
-                        'ph_dose_ml_per_unit_L' => 0.22,
                         'max_ec_dose_ml' => 20.0,
                         'max_ph_dose_ml' => 8.0,
                     ],
@@ -343,10 +315,6 @@ return new class extends Migration
                         'prepare_recirculation_timeout_sec' => 600,
                         'prepare_recirculation_max_attempts' => 3,
                         'prepare_recirculation_max_correction_attempts' => 20,
-                    ],
-                    'adaptive_mix_wait' => [
-                        'enabled' => true,
-                        'reference_volume_l' => 20.0,
                     ],
                     'tolerance' => [
                         'prepare_tolerance' => ['ph_pct' => 10.0, 'ec_pct' => 18.0],

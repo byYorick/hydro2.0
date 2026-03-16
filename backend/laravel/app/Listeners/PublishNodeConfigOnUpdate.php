@@ -40,14 +40,6 @@ class PublishNodeConfigOnUpdate
         $shouldPublishConfig = $node->pending_zone_id && !$node->zone_id;
         
         if (!$shouldPublishConfig) {
-            Log::debug('PublishNodeConfigOnUpdate: Skipping config publish (not a zone attachment)', [
-                'node_id' => $node->id,
-                'uid' => $node->uid,
-                'pending_zone_id' => $node->pending_zone_id,
-                'zone_id' => $node->zone_id,
-                'lifecycle_state' => $node->lifecycle_state?->value,
-                'reason' => 'Config publish only happens when node is attached to zone (pending_zone_id set, zone_id null)',
-            ]);
             return;
         }
         
@@ -57,12 +49,14 @@ class PublishNodeConfigOnUpdate
         // отдельный worker для config-publish не поднимается и задания зависали.
         PublishNodeConfigJob::dispatch($node->id);
         
-        Log::info('PublishNodeConfigOnUpdate: Dispatched config publish job (node attached to zone)', [
-            'node_id' => $node->id,
-            'uid' => $node->uid,
-            'pending_zone_id' => $node->pending_zone_id,
-            'zone_id' => $node->zone_id,
-            'lifecycle_state' => $node->lifecycle_state?->value,
-        ]);
+        if (! app()->environment('testing')) {
+            Log::info('PublishNodeConfigOnUpdate: Dispatched config publish job (node attached to zone)', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'pending_zone_id' => $node->pending_zone_id,
+                'zone_id' => $node->zone_id,
+                'lifecycle_state' => $node->lifecycle_state?->value,
+            ]);
+        }
     }
 }

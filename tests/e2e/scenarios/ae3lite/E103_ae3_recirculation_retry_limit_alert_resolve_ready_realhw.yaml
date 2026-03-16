@@ -202,7 +202,7 @@ actions:
           max_ph_correction_attempts: 3
           prepare_recirculation_timeout_sec: 120
           prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 32767
+          prepare_recirculation_max_correction_attempts: 20
         controllers:
           ec:
             kp: 12.0
@@ -221,13 +221,9 @@ actions:
             max_integral: 10.0
             min_interval_sec: 20
         dosing:
-          ec_dose_ml_per_mS_L: 2.0
-          ph_dose_ml_per_unit_L: 0.5
           max_ec_dose_ml: 20.0
           max_ph_dose_ml: 10.0
         timing:
-          ec_mix_wait_sec: 20
-          ph_mix_wait_sec: 20
           stabilization_sec: 10
       tank_recirc:
         retry:
@@ -235,7 +231,7 @@ actions:
           max_ph_correction_attempts: 10
           prepare_recirculation_timeout_sec: 30
           prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 32767
+          prepare_recirculation_max_correction_attempts: 20
         controllers:
           ec:
             kp: 18.0
@@ -254,13 +250,9 @@ actions:
             max_integral: 16.0
             min_interval_sec: 15
         dosing:
-          ec_dose_ml_per_mS_L: 2.5
-          ph_dose_ml_per_unit_L: 0.8
           max_ec_dose_ml: 30.0
           max_ph_dose_ml: 16.0
         timing:
-          ec_mix_wait_sec: 15
-          ph_mix_wait_sec: 15
           stabilization_sec: 10
   save: correction_config_update_response
 - step: upsert_irrig_channels
@@ -411,10 +403,7 @@ actions:
     \ 30,\n          'sensor_mode_stabilization_time_sec', 0\n        ),\n        'prepare_tolerance', jsonb_build_object(\n\
     \          'ph_pct', 5,\n          'ec_pct', 10\n        ),\n        'correction',\
     \ jsonb_build_object(\n          'dose_ec_channel', 'dose_ec_a',\n          'dose_ph_up_channel',\
-    \ 'dose_ph_up',\n          'dose_ph_down_channel', 'dose_ph_down',\n         \
-    \ 'ec_dose_ml_per_mS_L', 4.0,\n          'ph_dose_ml_per_unit_L', 1.2,\n     \
-    \     'max_ec_dose_ml', 60.0,\n          'max_ph_dose_ml', 40.0,\n          'ec_mix_wait_sec',\
-    \ 10,\n          'ph_mix_wait_sec', 10,\n          'stabilization_sec', 0,\n \
+    \ 'dose_ph_up',\n          'dose_ph_down_channel', 'dose_ph_down',\n          'max_ec_dose_ml', 60.0,\n          'max_ph_dose_ml', 40.0,\n          'stabilization_sec', 0,\n \
     \         'max_ec_correction_attempts', 8,\n          'max_ph_correction_attempts', 8,\n          'solution_volume_l', 20.0\n\
     \        ),\n        'two_tank_commands', jsonb_build_object(\n          'clean_fill_start',\
     \ jsonb_build_array(\n            jsonb_build_object(\n              'channel',\
@@ -976,7 +965,7 @@ actions:
           max_ph_correction_attempts: 3
           prepare_recirculation_timeout_sec: 240
           prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 32767
+          prepare_recirculation_max_correction_attempts: 20
         controllers:
           ec:
             kp: 12.0
@@ -995,13 +984,9 @@ actions:
             max_dose_ml: 10.0
             max_integral: 10.0
         dosing:
-          ec_dose_ml_per_mS_L: 2.0
-          ph_dose_ml_per_unit_L: 0.5
           max_ec_dose_ml: 20.0
           max_ph_dose_ml: 10.0
         timing:
-          ec_mix_wait_sec: 20
-          ph_mix_wait_sec: 20
           stabilization_sec: 10
       tank_recirc:
         retry:
@@ -1009,7 +994,7 @@ actions:
           max_ph_correction_attempts: 10
           prepare_recirculation_timeout_sec: 360
           prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 32767
+          prepare_recirculation_max_correction_attempts: 20
         controllers:
           ec:
             kp: 22.0
@@ -1028,13 +1013,9 @@ actions:
             max_dose_ml: 16.0
             max_integral: 16.0
         dosing:
-          ec_dose_ml_per_mS_L: 3.0
-          ph_dose_ml_per_unit_L: 0.8
           max_ec_dose_ml: 36.0
           max_ph_dose_ml: 16.0
         timing:
-          ec_mix_wait_sec: 15
-          ph_mix_wait_sec: 15
           stabilization_sec: 10
   capture_response: soften_correction_config_second_response
 - step: reset_test_node_state_second_run

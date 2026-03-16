@@ -226,6 +226,7 @@ import type { Device } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import { usePumpCalibration } from '@/composables/usePumpCalibration'
 import type { PumpCalibrationSettings } from '@/types/SystemSettings'
+import { computed } from 'vue'
 
 interface Props {
   show?: boolean
@@ -249,7 +250,21 @@ const emit = defineEmits<{
   (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
 
-const pumpSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
+const rawPumpSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
+const pumpSettings = computed<PumpCalibrationSettings>(() => ({
+  ml_per_sec_min: 0.001,
+  ml_per_sec_max: 1000,
+  min_dose_ms: 1,
+  calibration_duration_min_sec: 1,
+  calibration_duration_max_sec: 60,
+  quality_score_basic: 0.5,
+  quality_score_with_k: 0.8,
+  quality_score_legacy: 0.3,
+  age_warning_days: 30,
+  age_critical_days: 60,
+  default_run_duration_sec: 20,
+  ...(rawPumpSettings.value || {}),
+}))
 
 const {
   form,

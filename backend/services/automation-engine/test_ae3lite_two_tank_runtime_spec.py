@@ -32,6 +32,11 @@ def _snapshot(
     prepare_tolerance: dict[str, object] | None = None,
     process_calibrations: dict[str, object] | None = None,
 ) -> SimpleNamespace:
+    default_process_calibrations = {
+        "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
+        "tank_recirc": {"transport_delay_sec": 10, "settle_sec": 10},
+        "irrigation": {"transport_delay_sec": 10, "settle_sec": 10},
+    }
     return SimpleNamespace(
         workflow_phase="tank_filling",
         diagnostics_execution={
@@ -48,7 +53,7 @@ def _snapshot(
             "correction": correction,
         },
         targets={},
-        process_calibrations=process_calibrations if process_calibrations is not None else {},
+        process_calibrations=process_calibrations if process_calibrations is not None else default_process_calibrations,
         correction_config=correction_config if correction_config is not None else _minimal_zone_correction_config(),
     )
 
@@ -73,6 +78,12 @@ def test_resolve_target_bound_handles_zero_value() -> None:
             "correction": {},
         },
         targets={},
+        process_calibrations={
+            "tank_recirc": {
+                "transport_delay_sec": 10,
+                "settle_sec": 10,
+            }
+        },
         correction_config=_minimal_zone_correction_config(),
     )
     runtime = resolve_two_tank_runtime(snap)
@@ -100,25 +111,36 @@ def test_resolve_two_tank_runtime_uses_split_retry_contract() -> None:
     assert runtime["irr_state_wait_timeout_sec"] == 4.5
 
 
-def test_resolve_two_tank_runtime_normalizes_legacy_prepare_recirculation_attempts_sentinel() -> None:
+def test_resolve_two_tank_runtime_preserves_explicit_prepare_recirculation_attempt_cap() -> None:
     runtime = resolve_two_tank_runtime(
         _snapshot(
             correction={
-                "prepare_recirculation_max_correction_attempts": 32767,
+                "prepare_recirculation_max_correction_attempts": 200,
             }
         )
     )
 
-    assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 20
+    assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 200
 
 
-def test_resolve_two_tank_runtime_accepts_timeout_equal_to_mix_plus_stabilization() -> None:
-    """timeout == mix_wait + stabilization is the exact minimum — should pass.
+def test_resolve_two_tank_runtime_clamps_correction_attempt_caps_to_contract_maximum() -> None:
+    runtime = resolve_two_tank_runtime(
+        _snapshot(
+            correction={
+                "max_ec_correction_attempts": 999,
+                "max_ph_correction_attempts": 999,
+                "prepare_recirculation_max_correction_attempts": 999,
+            }
+        )
+    )
 
-    Note: prepare_recirculation_timeout_sec has a hard minimum of 30s enforced by
-    _resolve_int(..., minimum=30). To make mix+stab == timeout, we use mix=25, stab=10
-    so that needed=35 == timeout=35.
-    """
+    assert runtime["correction"]["max_ec_correction_attempts"] == 500
+    assert runtime["correction"]["max_ph_correction_attempts"] == 500
+    assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 500
+
+
+def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_stabilization() -> None:
+    """timeout == observe_window + stabilization is the exact minimum — should pass."""
     import types
     snap = types.SimpleNamespace(
         diagnostics_execution={
@@ -128,25 +150,27 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_mix_plus_stabilizatio
             "target_ph": 5.8,
             "target_ec": 2.2,
             "startup": {
-                "prepare_recirculation_timeout_sec": 35,  # exactly mix(25) + stab(10)
+                "prepare_recirculation_timeout_sec": 35,
             },
             "correction": {
-                "ec_mix_wait_sec": 25,
                 "stabilization_sec": 10,
             },
         },
         targets={},
         correction_config=_minimal_zone_correction_config(),
+        process_calibrations={
+            "tank_recirc": {
+                "transport_delay_sec": 15,
+                "settle_sec": 10,
+            }
+        },
     )
     runtime = resolve_two_tank_runtime(snap)
     assert runtime["prepare_recirculation_timeout_sec"] == 35
 
 
-def test_resolve_two_tank_runtime_raises_when_timeout_less_than_mix_plus_stabilization() -> None:
-    """timeout < mix_wait + stabilization is provably impossible — must raise PlannerConfigurationError.
-
-    After _resolve_int clamp, timeout=30 (minimum). mix=25, stab=10 → needed=35 > 30 → error.
-    """
+def test_resolve_two_tank_runtime_raises_when_timeout_less_than_observe_window_plus_stabilization() -> None:
+    """timeout < observe_window + stabilization is provably impossible — must raise PlannerConfigurationError."""
     import types
     snap = types.SimpleNamespace(
         diagnostics_execution={
@@ -156,15 +180,20 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_mix_plus_stabili
             "target_ph": 5.8,
             "target_ec": 2.2,
             "startup": {
-                "prepare_recirculation_timeout_sec": 30,  # clamped to 30, below mix(25)+stab(10)=35
+                "prepare_recirculation_timeout_sec": 30,
             },
             "correction": {
-                "ec_mix_wait_sec": 25,
                 "stabilization_sec": 10,
             },
         },
         targets={},
         correction_config=_minimal_zone_correction_config(),
+        process_calibrations={
+            "tank_recirc": {
+                "transport_delay_sec": 15,
+                "settle_sec": 10,
+            }
+        },
     )
     with pytest.raises(PlannerConfigurationError, match="prepare_recirculation_timeout_sec"):
         resolve_two_tank_runtime(snap)
@@ -174,7 +203,6 @@ def test_resolve_two_tank_runtime_prefers_process_hold_window_for_prepare_recirc
     runtime = resolve_two_tank_runtime(
         _snapshot(
             correction={
-                "ec_mix_wait_sec": 10,
                 "stabilization_sec": 10,
             },
             startup={
@@ -197,7 +225,6 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_process_hold_win
         resolve_two_tank_runtime(
             _snapshot(
                 correction={
-                    "ec_mix_wait_sec": 10,
                     "stabilization_sec": 10,
                 },
                 startup={
@@ -238,15 +265,11 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
     runtime = resolve_two_tank_runtime(
         _snapshot(
             correction={
-                "ec_mix_wait_sec": 120,
-                "ph_mix_wait_sec": 60,
                 "stabilization_sec": 60,
             },
             correction_config={
                 "base": {
                     "timing": {
-                        "ec_mix_wait_sec": 45,
-                        "ph_mix_wait_sec": 30,
                         "stabilization_sec": 20,
                     },
                     "retry": {
@@ -256,15 +279,11 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
                 "phases": {
                     "solution_fill": {
                         "timing": {
-                            "ec_mix_wait_sec": 20,
-                            "ph_mix_wait_sec": 20,
                             "stabilization_sec": 10,
                         }
                     },
                     "tank_recirc": {
                         "timing": {
-                            "ec_mix_wait_sec": 15,
-                            "ph_mix_wait_sec": 15,
                             "stabilization_sec": 10,
                         },
                         "retry": {
@@ -276,15 +295,11 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
                     "phase_overrides": {
                         "solution_fill": {
                             "timing": {
-                                "ec_mix_wait_sec": 20,
-                                "ph_mix_wait_sec": 20,
                                 "stabilization_sec": 10,
                             },
                         },
                         "tank_recirc": {
                             "timing": {
-                                "ec_mix_wait_sec": 15,
-                                "ph_mix_wait_sec": 15,
                                 "stabilization_sec": 10,
                             },
                             "retry": {
@@ -294,13 +309,18 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
                     }
                 },
             },
+            process_calibrations={
+                "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
+                "tank_recirc": {"transport_delay_sec": 15, "settle_sec": 15},
+                "irrigation": {"transport_delay_sec": 20, "settle_sec": 20},
+            },
         )
     )
 
-    assert runtime["correction"]["ec_mix_wait_sec"] == 20
-    assert runtime["correction"]["ph_mix_wait_sec"] == 20
-    assert runtime["correction_by_phase"]["tank_recirc"]["ec_mix_wait_sec"] == 15
-    assert runtime["correction_by_phase"]["tank_recirc"]["ph_mix_wait_sec"] == 15
+    assert runtime["correction"]["stabilization_sec"] == 10
+    assert runtime["correction_by_phase"]["tank_recirc"]["stabilization_sec"] == 10
+    assert "ec_mix_wait_sec" not in runtime["correction"]
+    assert "ph_mix_wait_sec" not in runtime["correction_by_phase"]["tank_recirc"]
     assert runtime["prepare_recirculation_timeout_sec"] == 360
 
 
@@ -308,8 +328,6 @@ def test_resolve_two_tank_runtime_prefers_correction_config_over_execution_defau
     runtime = resolve_two_tank_runtime(
         _snapshot(
             correction={
-                "ec_mix_wait_sec": 10,
-                "ph_mix_wait_sec": 10,
                 "max_ec_correction_attempts": 8,
                 "max_ph_correction_attempts": 8,
             },
@@ -321,8 +339,6 @@ def test_resolve_two_tank_runtime_prefers_correction_config_over_execution_defau
             correction_config={
                 "base": {
                     "timing": {
-                        "ec_mix_wait_sec": 30,
-                        "ph_mix_wait_sec": 25,
                         "level_poll_interval_sec": 20,
                     },
                     "retry": {
@@ -335,22 +351,22 @@ def test_resolve_two_tank_runtime_prefers_correction_config_over_execution_defau
                     },
                 },
                 "phases": {
-                    "solution_fill": {
-                        "timing": {
-                            "ec_mix_wait_sec": 25,
-                            "ph_mix_wait_sec": 20,
-                        },
-                    },
+                    "solution_fill": {"timing": {}},
                     "tank_recirc": {},
                     "irrigation": {},
                 },
                 "meta": {},
             },
+            process_calibrations={
+                "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
+                "tank_recirc": {"transport_delay_sec": 10, "settle_sec": 10},
+                "irrigation": {"transport_delay_sec": 10, "settle_sec": 10},
+            },
         )
     )
 
-    assert runtime["correction"]["ec_mix_wait_sec"] == 25
-    assert runtime["correction"]["ph_mix_wait_sec"] == 20
+    assert "ec_mix_wait_sec" not in runtime["correction"]
+    assert "ph_mix_wait_sec" not in runtime["correction"]
     assert runtime["correction"]["max_ec_correction_attempts"] == 5
     assert runtime["correction"]["max_ph_correction_attempts"] == 5
     assert runtime["solution_fill_timeout_sec"] == 900
@@ -361,7 +377,7 @@ def test_resolve_two_tank_runtime_prefers_correction_config_over_execution_defau
 def test_resolve_two_tank_runtime_prefers_correction_config_prepare_timeout_over_startup_default() -> None:
     runtime = resolve_two_tank_runtime(
         _snapshot(
-            correction={"ec_mix_wait_sec": 10, "stabilization_sec": 0},
+            correction={"stabilization_sec": 0},
             startup={"prepare_recirculation_timeout_sec": 30},
             correction_config={
                 "base": {
@@ -377,6 +393,12 @@ def test_resolve_two_tank_runtime_prefers_correction_config_prepare_timeout_over
                     }
                 },
             },
+            process_calibrations={
+                "tank_recirc": {
+                    "transport_delay_sec": 10,
+                    "settle_sec": 10,
+                }
+            },
         )
     )
 
@@ -386,7 +408,7 @@ def test_resolve_two_tank_runtime_prefers_correction_config_prepare_timeout_over
 def test_resolve_two_tank_runtime_exposes_process_calibrations_to_runtime() -> None:
     runtime = resolve_two_tank_runtime(
         _snapshot(
-            correction={"ec_mix_wait_sec": 10, "stabilization_sec": 0},
+            correction={"stabilization_sec": 0},
             process_calibrations={
                 "solution_fill": {
                     "ec_gain_per_ml": 0.25,
@@ -394,6 +416,7 @@ def test_resolve_two_tank_runtime_exposes_process_calibrations_to_runtime() -> N
                 },
                 "tank_recirc": {
                     "ph_down_gain_per_ml": 0.12,
+                    "transport_delay_sec": 15,
                     "settle_sec": 45,
                 },
             },
@@ -402,3 +425,18 @@ def test_resolve_two_tank_runtime_exposes_process_calibrations_to_runtime() -> N
 
     assert runtime["process_calibrations"]["solution_fill"]["ec_gain_per_ml"] == 0.25
     assert runtime["process_calibrations"]["tank_recirc"]["settle_sec"] == 45
+
+
+def test_resolve_two_tank_runtime_requires_process_hold_window_for_prepare_recirculation() -> None:
+    with pytest.raises(PlannerConfigurationError, match="transport_delay_sec and settle_sec"):
+        resolve_two_tank_runtime(
+            _snapshot(
+                correction={"stabilization_sec": 5},
+                startup={"prepare_recirculation_timeout_sec": 60},
+                process_calibrations={
+                    "tank_recirc": {
+                        "transport_delay_sec": 15,
+                    }
+                },
+            )
+        )

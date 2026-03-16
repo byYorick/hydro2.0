@@ -363,11 +363,13 @@ class ActiveTaskPoller
         }
 
         // Fallback: HTTP request to AE (for tasks created before intent_id was stored in details).
-        Log::debug('AE3 status poll via HTTP fallback (no intent_id in details)', [
-            'task_id' => $taskId,
-            'zone_id' => (int) $task->zone_id,
-            'schedule_key' => (string) $task->schedule_key,
-        ]);
+        if (! app()->environment('testing')) {
+            Log::debug('AE3 status poll via HTTP fallback (no intent_id in details)', [
+                'task_id' => $taskId,
+                'zone_id' => (int) $task->zone_id,
+                'schedule_key' => (string) $task->schedule_key,
+            ]);
+        }
 
         return $this->fetchAe3StatusViaHttp($task, $taskId, $cfg);
     }

@@ -24,8 +24,6 @@ class VerifyPythonServiceToken
     {
         // Сначала проверяем, авторизован ли пользователь через Sanctum
         if (Auth::guard('sanctum')->check()) {
-            Log::debug('Python service route accessed by authenticated user via Sanctum');
-
             return $next($request);
         }
 
@@ -99,9 +97,6 @@ class VerifyPythonServiceToken
             Auth::guard('sanctum')->setUser($serviceUser);
             Auth::guard('web')->setUser($serviceUser);
             $request->setUserResolver(static fn () => $serviceUser);
-            Log::debug('Python service token verified successfully, service user set', [
-                'user_id' => $serviceUser->id,
-            ]);
         } else {
             // Пользователь не найден, но токен валиден - разрешаем запрос для публичных эндпоинтов
             // Логируем только один раз, чтобы не засорять логи

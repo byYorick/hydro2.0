@@ -115,11 +115,11 @@ if not runtime_config.history_logger_api_token:
 
 ## 2. Логические ошибки и edge cases
 
-### 2.1 Hardcoded 32767 для `prepare_recirculation_max_correction_attempts`
+### 2.1 Legacy infinite sentinel для `prepare_recirculation_max_correction_attempts`
 
 **Файл:** `ae3lite/domain/services/cycle_start_planner.py:667`
 
-**Проблема:** Magic number 32767 как default для максимума попыток коррекции в prepare_recirculation. Фактически бесконечный цикл.
+**Проблема:** Magic sentinel как default для максимума попыток коррекции в prepare_recirculation. Фактически бесконечный цикл.
 
 **Исправление:** Заменить на разумный default (10-20) и вынести в `settings.py`.
 
@@ -302,12 +302,12 @@ Phase-specific значения для `tank_recirc` и `irrigation` не буд
 
 ### 7.1 Hardcoded defaults в `cycle_start_planner.py`
 
-**Файл:** `ae3lite/domain/services/cycle_start_planner.py:534-689`
+**Статус:** закрыто в AE3-Lite canonical runtime. Legacy sensitivity-поля удалены из active correction contract;
+дозирование опирается на process gain (`ec_gain_per_ml`, `ph_up_gain_per_ml`,
+`ph_down_gain_per_ml`) и stage clamps.
 
 Множество magic numbers без документации:
 ```python
-"ec_dose_ml_per_mS_L": ..., 1.0, 0.001, 100.0,
-"ph_dose_ml_per_unit_L": ..., 0.5, 0.001, 50.0,
 "max_ec_dose_ml": ..., 50.0, 1.0, 500.0,
 "max_ph_dose_ml": ..., 20.0, 0.5, 200.0,
 ```
@@ -361,7 +361,7 @@ lease_ttl_sec=max(30, int(os.getenv("AE_LEASE_TTL_SEC", "300"))),
 | 1.3 | Исправить off-by-one `>` → `>=` в correction attempt check | `correction.py:178` | Тривиальная |
 | 1.4 | Исправить `control_mode_snapshot` проверку `is not None` | `automation_task.py:70` | Тривиальная |
 | 1.5 | Добавить валидацию `history_logger_api_token` при старте | `config.py` | Тривиальная |
-| 1.6 | Заменить hardcoded 32767 на разумный default | `cycle_start_planner.py:667` | Тривиальная |
+| 1.6 | Удалить legacy infinite sentinel и оставить конечный contract cap | `cycle_start_planner.py:667` | Закрыто |
 
 ### Фаза 2: Наблюдаемость (2-3 дня)
 

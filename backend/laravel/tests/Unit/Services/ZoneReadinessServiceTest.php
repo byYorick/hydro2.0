@@ -87,12 +87,12 @@ class ZoneReadinessServiceTest extends TestCase
 
         $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
         $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
-        $this->createActuatorBinding($zone, $node, 'pump_acid', 'ph_acid_pump', 'Насос pH кислоты');
-        $this->createActuatorBinding($zone, $node, 'pump_base', 'ph_base_pump', 'Насос pH щёлочи');
-        $this->createActuatorBinding($zone, $node, 'pump_a', 'ec_npk_pump', 'Насос EC NPK');
-        $this->createActuatorBinding($zone, $node, 'pump_b', 'ec_calcium_pump', 'Насос EC Calcium');
-        $this->createActuatorBinding($zone, $node, 'pump_c', 'ec_magnesium_pump', 'Насос EC Magnesium');
-        $this->createActuatorBinding($zone, $node, 'pump_d', 'ec_micro_pump', 'Насос EC Micro');
+        $this->createActuatorBinding($zone, $node, 'pump_acid', 'ph_acid_pump', 'Насос pH кислоты', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_base', 'ph_base_pump', 'Насос pH щёлочи', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_a', 'ec_npk_pump', 'Насос EC NPK', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_b', 'ec_calcium_pump', 'Насос EC Calcium', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_c', 'ec_magnesium_pump', 'Насос EC Magnesium', withCalibration: true);
+        $this->createActuatorBinding($zone, $node, 'pump_d', 'ec_micro_pump', 'Насос EC Micro', withCalibration: true);
 
         $readiness = $this->service->checkZoneReadiness($zone);
 
@@ -273,7 +273,8 @@ class ZoneReadinessServiceTest extends TestCase
         string $channel,
         string $role,
         string $label,
-        string $ownerType = 'zone'
+        string $ownerType = 'zone',
+        bool $withCalibration = false
     ): void
     {
         $nodeChannel = NodeChannel::create([
@@ -282,7 +283,7 @@ class ZoneReadinessServiceTest extends TestCase
             'type' => 'actuator',
             'metric' => 'pump',
             'unit' => null,
-            'config' => [],
+            'config' => $withCalibration ? ['pump_calibration' => ['ml_per_sec' => 1.25]] : [],
         ]);
 
         $instance = InfrastructureInstance::query()->firstOrCreate(

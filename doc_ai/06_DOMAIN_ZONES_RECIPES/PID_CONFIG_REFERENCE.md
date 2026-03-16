@@ -87,10 +87,7 @@ duration_ms = dose_ml / ml_per_sec * 1000
   },
 
   "max_ec_dose_ml": 50.0,
-  "max_ph_dose_ml": 20.0,
-
-  "ec_dose_ml_per_mS_L": 1.0,
-  "ph_dose_ml_per_unit_L": 0.5
+  "max_ph_dose_ml": 20.0
 }
 ```
 
@@ -273,11 +270,10 @@ min_pulse_ml = ml_per_sec * (MIN_DOSE_MS / 1000)
 в баке `solution_volume_l` литров. Используется как делитель:
 `dose_ml = output_units / ec_gain_per_ml`.
 
-Observation-driven runtime больше не поддерживает planner fallback по
-`ec_dose_ml_per_mS_L` / `ph_dose_ml_per_unit_L`. Если для фазы отсутствует
-нужный process gain (`ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`)
-или не заданы `transport_delay_sec` / `settle_sec`, planner/handler работают
-fail-closed.
+Observation-driven runtime требует явные process gain:
+`ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`.
+Если для фазы отсутствует нужный gain или не заданы
+`transport_delay_sec` / `settle_sec`, planner/handler работают fail-closed.
 
 ### Observe-параметры
 

@@ -162,8 +162,6 @@ class TestAe3LiteRetryLimitRealHwScenarioContract(unittest.TestCase):
 
         self.assertEqual(retry_cfg.get("prepare_recirculation_timeout_sec"), 30)
         self.assertEqual(retry_cfg.get("prepare_recirculation_max_attempts"), 3)
-        self.assertEqual(timing_cfg.get("ec_mix_wait_sec"), 15)
-        self.assertEqual(timing_cfg.get("ph_mix_wait_sec"), 15)
         self.assertEqual(timing_cfg.get("stabilization_sec"), 10)
 
 
@@ -272,8 +270,8 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
 
         self.assertEqual(step.get("type"), "db.wait")
         query = str(step.get("query") or "")
-        self.assertIn("ph.last_value BETWEEN 4.90 AND 5.10", query)
-        self.assertIn("ec.last_value BETWEEN 2.35 AND 2.45", query)
+        self.assertIn("ph.last_value BETWEEN 4.90 AND 5.15", query)
+        self.assertIn("ec.last_value BETWEEN 2.30 AND 2.60", query)
         self.assertIn("ph.last_ts >= NOW() - INTERVAL '30 seconds'", query)
         self.assertNotIn("status IN ('pending', 'completed')", query)
 

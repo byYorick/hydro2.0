@@ -21,17 +21,18 @@ export function usePageProps<T extends Record<string, unknown>>(
   propKeys?: (keyof T)[]
 ): PagePropRefs<T> | ComputedRef<T> {
   const page = usePage<T>()
+  const pageProps = computed<Record<string, unknown>>(() => (page.props ?? {}) as Record<string, unknown>)
   
   if (!propKeys || propKeys.length === 0) {
     // Если ключи не указаны, возвращаем все props
-    return computed(() => page.props) as ComputedRef<T>
+    return pageProps as unknown as ComputedRef<T>
   }
   
   // Создаем объект с computed свойствами для каждого ключа
   const result: PagePropRefs<T> = {}
   
   propKeys.forEach(key => {
-    result[key] = computed(() => page.props[key as string]) as ComputedRef<T[typeof key]>
+    result[key] = computed(() => pageProps.value[key as string] as T[typeof key]) as ComputedRef<T[typeof key]>
   })
   
   return result
@@ -46,5 +47,5 @@ export function usePageProp<K extends string, T = unknown>(
   key: K
 ): ComputedRef<T> {
   const page = usePage()
-  return computed(() => page.props[key] as T)
+  return computed(() => ((page.props ?? {}) as Record<string, unknown>)[key] as T)
 }
