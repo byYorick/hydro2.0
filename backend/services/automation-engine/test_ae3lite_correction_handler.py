@@ -728,7 +728,7 @@ async def test_corr_check_uses_decision_window_grace_for_late_sample_and_reaches
     assert outcome.correction.ec_duration_ms > 0
 
 
-async def test_corr_check_unready_decision_window_fails_closed() -> None:
+async def test_corr_check_unready_decision_window_retries_with_delay() -> None:
     corr = _base_corr(corr_step="corr_check")
     task = _make_task(corr=corr)
     runtime = dict(RUNTIME)
@@ -772,12 +772,13 @@ async def test_corr_check_unready_decision_window_fails_closed() -> None:
     )
     handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
 
-    with pytest.raises(TaskExecutionError) as exc_info:
-        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
-    assert exc_info.value.code == "corr_decision_window_not_ready"
-    assert "PH=insufficient_samples" in str(exc_info.value)
-    assert "EC=insufficient_samples" in str(exc_info.value)
+    # Нестабильное окно решения — ретрай, не фейл
+    assert outcome.kind == "enter_correction"
+    assert outcome.due_delay_sec is not None and outcome.due_delay_sec >= 30.0
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_check"
 
 
 async def test_corr_check_no_pid_repo_does_not_crash():

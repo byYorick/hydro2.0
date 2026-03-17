@@ -165,9 +165,12 @@ class CorrectionHandler(BaseStageHandler):
             now=now,
         )
         if not ph["ready"] or not ec["ready"]:
-            raise TaskExecutionError(
-                "corr_decision_window_not_ready",
-                self._format_decision_window_error(ph=ph, ec=ec),
+            msg = self._format_decision_window_error(ph=ph, ec=ec)
+            _logger.warning("zone %s: %s — retrying in 30s", task.zone_id, msg)
+            return StageOutcome(
+                kind="enter_correction",
+                correction=corr,
+                due_delay_sec=30.0,
             )
 
         current_ph = float(ph["value"])

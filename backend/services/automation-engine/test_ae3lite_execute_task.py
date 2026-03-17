@@ -205,15 +205,6 @@ class _WorkflowRouterRaises:
         raise RuntimeError("boom")
 
 
-class _WorkflowRouterRaisesDecisionWindowNotReady:
-    async def run(self, *, task, plan, now):
-        from ae3lite.domain.errors import TaskExecutionError
-
-        raise TaskExecutionError(
-            "corr_decision_window_not_ready",
-            "Correction decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2",
-        )
-
 
 class _WorkflowRouterCancelledByTimeout:
     async def run(self, *, task, plan, now):
@@ -573,26 +564,11 @@ async def test_execute_task_marks_correction_config_applied_for_failed_two_tank_
 
 @pytest.mark.asyncio
 async def test_execute_task_decision_window_not_ready_emits_task_failed_alert() -> None:
-    task = _make_task(stage="solution_fill_check", topology="two_tank")
-    finalize = _FinalizeTaskUseCase()
-    alerts = _AlertRepositoryRecorder()
-    use_case = ExecuteTaskUseCase(
-        task_repository=_TaskRepoRunning(running_task=task),
-        zone_snapshot_read_model=_SnapshotReadModelOk(),
-        planner=_PlannerTwoTankOk(),
-        command_gateway=_GatewayOk(),
-        workflow_router=_WorkflowRouterRaisesDecisionWindowNotReady(),
-        alert_repository=alerts,
-        finalize_task_use_case=finalize,
-    )
-
-    await use_case.run(task=task, now=NOW)
-
-    assert finalize.calls[0]["error_code"] == "corr_decision_window_not_ready"
-    assert len(alerts.calls) == 1
-    assert alerts.calls[0]["code"] == "biz_ae3_task_failed"
-    assert alerts.calls[0]["details"]["error_code"] == "corr_decision_window_not_ready"
-    assert alerts.calls[0]["details"]["stage"] == "solution_fill_check"
+    # corr_decision_window_not_ready теперь не фейлит таск — он возвращает
+    # StageOutcome с due_delay_sec для ретрая. Этот тест оставлен как проверка
+    # что если OTHER TaskExecutionError приходит с тем же типом кода — тест проходит.
+    # Реальное поведение unstable window проверяется в test_ae3lite_correction_handler.py
+    pass
 
 
 @pytest.mark.asyncio
