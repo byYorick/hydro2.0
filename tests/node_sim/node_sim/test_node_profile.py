@@ -507,7 +507,7 @@ class TestNodeSimulator:
                 if self.actuator_type_requires_relay_type(actuator_type):
                     entry["relay_type"] = "NO"
                 entry["safe_limits"] = {
-                    "max_duration_ms": 10000,
+                    "max_duration_ms": 3600000,
                     "min_off_ms": 1000,
                     "fail_safe_mode": "NO",
                 }

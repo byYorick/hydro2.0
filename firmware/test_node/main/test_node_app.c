@@ -1672,7 +1672,7 @@ static esp_err_t publish_config_report_for_node(const virtual_node_t *node) {
                 );
             }
             if (safe_limits) {
-                cJSON_AddNumberToObject(safe_limits, "max_duration_ms", 10000);
+                cJSON_AddNumberToObject(safe_limits, "max_duration_ms", 3600000);
                 cJSON_AddNumberToObject(safe_limits, "min_off_ms", 1000);
                 cJSON_AddStringToObject(safe_limits, "fail_safe_mode", "NO");
                 cJSON_AddItemToObject(channel_json, "safe_limits", safe_limits);
