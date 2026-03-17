@@ -352,7 +352,7 @@ class ScheduleDispatcher
                     updated_at
                 )
                 VALUES (?, ?, ?::jsonb, ?, 'pending', ?, 0, 3, ?, ?)
-                ON CONFLICT (idempotency_key)
+                ON CONFLICT (zone_id, idempotency_key)
                 DO UPDATE SET
                     payload = EXCLUDED.payload,
                     not_before = EXCLUDED.not_before,

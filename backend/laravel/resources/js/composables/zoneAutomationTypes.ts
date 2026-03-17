@@ -40,7 +40,6 @@ export interface WaterFormState {
   drainTargetPercent: number
   diagnosticsEnabled: boolean
   diagnosticsIntervalMinutes: number
-  cycleStartWorkflowEnabled: boolean
   diagnosticsWorkflow?: 'startup' | 'cycle_start' | 'diagnostics'
   cleanTankFullThreshold: number
   refillDurationSeconds: number

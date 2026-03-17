@@ -162,6 +162,31 @@
         </div>
 
         <div
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+          data-testid="pump-calibration-readiness"
+        >
+          <div class="font-medium text-[color:var(--text-primary)]">
+            Влияние на correction runtime
+          </div>
+          <div class="mt-1">
+            Выбранный компонент относится к {{ currentPathLabel }}.
+          </div>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <span
+              v-for="item in currentPathStatuses"
+              :key="item.component"
+              class="inline-flex items-center rounded-full border px-2 py-1"
+              :class="item.calibrated ? 'border-[color:var(--accent-green)] text-[color:var(--accent-green)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
+            >
+              {{ item.label }}: {{ item.stateLabel }}
+            </span>
+          </div>
+          <div class="mt-2">
+            {{ currentPathSummary }}
+          </div>
+        </div>
+
+        <div
           v-if="estimatedK !== null"
           class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
         >
@@ -223,7 +248,7 @@ import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import { usePageProp } from '@/composables/usePageProps'
 import type { Device } from '@/types'
-import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
+import type { PumpCalibrationComponent, PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import { usePumpCalibration } from '@/composables/usePumpCalibration'
 import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 import { computed } from 'vue'
@@ -281,6 +306,76 @@ const {
   buildSavePayload,
   formatDateTime,
 } = usePumpCalibration(props)
+
+const pathDefinitions: Record<'ph' | 'ec', { label: string; components: PumpCalibrationComponent[] }> = {
+  ph: {
+    label: 'pH dosing path',
+    components: ['ph_up', 'ph_down'],
+  },
+  ec: {
+    label: 'EC dosing path',
+    components: ['npk', 'calcium', 'magnesium', 'micro'],
+  },
+}
+
+const componentLabels: Record<PumpCalibrationComponent, string> = {
+  npk: 'NPK',
+  calcium: 'Calcium',
+  magnesium: 'Magnesium',
+  micro: 'Micro',
+  ph_up: 'pH Up',
+  ph_down: 'pH Down',
+}
+
+const currentPathKey = computed<'ph' | 'ec'>(() => (form.component === 'ph_up' || form.component === 'ph_down' ? 'ph' : 'ec'))
+const currentPathLabel = computed(() => pathDefinitions[currentPathKey.value].label)
+
+function isChannelCalibrated(channelId: number | null | undefined): boolean {
+  if (!channelId) {
+    return false
+  }
+
+  const channel = channelById.value.get(channelId)
+  return Boolean(channel?.calibration && Number(channel.calibration.ml_per_sec) > 0)
+}
+
+const currentPathStatuses = computed(() => {
+  return pathDefinitions[currentPathKey.value].components.map((component) => {
+    const current = component === form.component
+    const mappedChannelId = current ? form.node_channel_id : autoComponentMap.value[component]
+    const calibrated = isChannelCalibrated(mappedChannelId)
+
+    return {
+      component,
+      label: componentLabels[component],
+      current,
+      calibrated,
+      stateLabel: calibrated
+        ? 'Откалиброван'
+        : (current ? 'Текущий выбор без сохранённой калибровки' : 'Нет калибровки'),
+    }
+  })
+})
+
+const currentPathSummary = computed(() => {
+  const missing = currentPathStatuses.value.filter((item) => !item.calibrated)
+  const currentSelected = currentPathStatuses.value.find((item) => item.current)
+
+  if (missing.length === 0) {
+    return `${currentPathLabel.value} уже закрыт полностью. Сохранение обновит существующую калибровку для выбранного компонента.`
+  }
+
+  if (currentSelected && !currentSelected.calibrated) {
+    const remaining = missing.filter((item) => !item.current)
+    if (remaining.length === 0) {
+      return `После сохранения этот компонент закроет последний пробел в ${currentPathLabel.value}.`
+    }
+
+    return `После сохранения этот компонент перестанет блокировать ${currentPathLabel.value}. Затем останутся: ${remaining.map((item) => item.label).join(', ')}.`
+  }
+
+  return `Даже после обновления выбранного канала в ${currentPathLabel.value} ещё не хватает: ${missing.map((item) => item.label).join(', ')}.`
+})
 
 function onStart(): void {
   const err = validateCommon()

@@ -34,6 +34,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.resolved_config.base', [])
             ->assertJsonPath('data.meta.defaults.controllers.ph.mode', 'cross_coupled_pi_d')
             ->assertJsonPath('data.meta.defaults.runtime.required_node_type', 'irrig')
+            ->assertJsonPath('data.meta.defaults.retry.telemetry_stale_retry_sec', 30)
             ->assertJsonFragment(['slug' => 'balanced']);
     }
 
@@ -51,7 +52,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Поле resolved_config.base.controllers обязательно.');
+            ->assertJsonPath('message', 'Поле dosing.dose_ec_channel обязательно.');
     }
 
     public function test_can_update_zone_correction_config_and_write_revision(): void
@@ -353,6 +354,31 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('message', 'Поле retry.prepare_recirculation_max_correction_attempts должно быть <= 500.');
     }
 
+    public function test_can_store_retry_delay_overrides_in_correction_config(): void
+    {
+        $zone = Zone::factory()->create();
+        $preset = ZoneCorrectionPreset::query()->where('slug', 'test-node')->firstOrFail();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'preset_id' => $preset->id,
+            'base_config' => [],
+            'phase_overrides' => [
+                'solution_fill' => [
+                    'retry' => [
+                        'telemetry_stale_retry_sec' => 17,
+                        'decision_window_retry_sec' => 19,
+                        'low_water_retry_sec' => 61,
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.resolved_config.phases.solution_fill.retry.telemetry_stale_retry_sec', 17)
+            ->assertJsonPath('data.resolved_config.phases.solution_fill.retry.decision_window_retry_sec', 19)
+            ->assertJsonPath('data.resolved_config.phases.solution_fill.retry.low_water_retry_sec', 61);
+    }
+
     public function test_rejects_phase_retry_attempt_caps_above_contract_maximum(): void
     {
         $zone = Zone::factory()->create();
@@ -396,6 +422,41 @@ class ZoneCorrectionConfigControllerTest extends TestCase
         $this->getJson("/api/zones/{$zone->id}/correction-config")
             ->assertStatus(422)
             ->assertJsonPath('message', 'Field pump_calibration.age_warning_days must be <= pump_calibration.age_critical_days.');
+    }
+
+    public function test_show_returns_stored_resolved_config_without_runtime_overlay_mutation(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'base_config' => [
+                'pump_calibration' => [
+                    'age_warning_days' => 40,
+                ],
+            ],
+            'phase_overrides' => [],
+        ])->assertOk();
+
+        $storedResolved = \App\Models\ZoneCorrectionConfig::query()
+            ->where('zone_id', $zone->id)
+            ->value('resolved_config');
+
+        $setting = SystemAutomationSetting::query()->firstWhere('namespace', 'pump_calibration');
+        $config = $setting->config;
+        $config['age_critical_days'] = 120;
+        $setting->update(['config' => $config]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/correction-config");
+
+        $response->assertOk()
+            ->assertJsonPath(
+                'data.resolved_config.pump_calibration.age_critical_days',
+                data_get($storedResolved, 'pump_calibration.age_critical_days')
+            )
+            ->assertJsonPath(
+                'data.resolved_config.pump_calibration.age_warning_days',
+                data_get($storedResolved, 'pump_calibration.age_warning_days')
+            );
     }
 
     public function test_service_ignores_nonexistent_updated_by_user(): void

@@ -1,7 +1,7 @@
 """Tests for the None-safe id extraction in compat_endpoints.py.
 
 ``bind_start_cycle_route`` builds 409 responses that include ``active_intent_id``
-and ``conflict_zone_id`` extracted via ``(lambda v: int(v) if v is not None else None)``.
+extracted via ``(lambda v: int(v) if v is not None else None)``.
 This ensures that a missing ``id`` key → None (not 0) and a present integer
 (including 0) is preserved correctly.
 """
@@ -139,62 +139,6 @@ class TestZoneBusyActiveIntentId:
             await endpoint(zone_id=7, request=_FAKE_REQUEST, req=req)
 
         assert exc.value.detail["active_status"] == "running"
-
-
-# ---------------------------------------------------------------------------
-# conflict_cross_zone — conflict_zone_id extraction
-# ---------------------------------------------------------------------------
-
-class TestConflictCrossZoneId:
-    async def test_conflict_zone_id_preserved_as_positive_int(self) -> None:
-        endpoint = _bind_with_claim(
-            {"decision": "conflict_cross_zone", "intent": {"id": 5, "zone_id": 99, "status": "running"}}
-        )
-        req = StartCycleRequest(idempotency_key=_idempotency_key())
-
-        with pytest.raises(HTTPException) as exc:
-            await endpoint(zone_id=7, request=_FAKE_REQUEST, req=req)
-
-        assert exc.value.status_code == 409
-        assert exc.value.detail["error"] == "start_cycle_idempotency_key_conflict"
-        assert exc.value.detail["conflict_zone_id"] == 99
-
-    async def test_conflict_zone_id_none_when_absent(self) -> None:
-        endpoint = _bind_with_claim(
-            {"decision": "conflict_cross_zone", "intent": {"id": 5, "status": "running"}}
-        )
-        req = StartCycleRequest(idempotency_key=_idempotency_key())
-
-        with pytest.raises(HTTPException) as exc:
-            await endpoint(zone_id=7, request=_FAKE_REQUEST, req=req)
-
-        assert exc.value.status_code == 409
-        assert exc.value.detail["conflict_zone_id"] is None
-
-    async def test_conflict_zone_id_zero_preserved(self) -> None:
-        """zone_id=0 must NOT become None — same None-safe lambda as active_intent_id."""
-        endpoint = _bind_with_claim(
-            {"decision": "conflict_cross_zone", "intent": {"id": 1, "zone_id": 0, "status": "running"}}
-        )
-        req = StartCycleRequest(idempotency_key=_idempotency_key())
-
-        with pytest.raises(HTTPException) as exc:
-            await endpoint(zone_id=7, request=_FAKE_REQUEST, req=req)
-
-        assert exc.value.status_code == 409
-        assert exc.value.detail["conflict_zone_id"] == 0
-
-    async def test_idempotency_key_echoed_in_conflict_response(self) -> None:
-        endpoint = _bind_with_claim(
-            {"decision": "conflict_cross_zone", "intent": {"id": 1, "zone_id": 8, "status": "running"}}
-        )
-        key = _idempotency_key("unique-key")
-        req = StartCycleRequest(idempotency_key=key)
-
-        with pytest.raises(HTTPException) as exc:
-            await endpoint(zone_id=7, request=_FAKE_REQUEST, req=req)
-
-        assert exc.value.detail["idempotency_key"] == key
 
 
 # ---------------------------------------------------------------------------

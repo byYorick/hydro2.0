@@ -41,6 +41,9 @@ export interface CorrectionRetryConfig {
   prepare_recirculation_timeout_sec: number
   prepare_recirculation_max_attempts: number
   prepare_recirculation_max_correction_attempts: number
+  telemetry_stale_retry_sec: number
+  decision_window_retry_sec: number
+  low_water_retry_sec: number
 }
 
 export interface ZoneCorrectionConfigPayload {

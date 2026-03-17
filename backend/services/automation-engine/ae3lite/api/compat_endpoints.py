@@ -141,16 +141,6 @@ def bind_start_cycle_route(
                     "active_status": str(intent_row.get("status") or "").strip().lower() or "running",
                 },
             )
-        if decision == "conflict_cross_zone":
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": "start_cycle_idempotency_key_conflict",
-                    "zone_id": zone_id,
-                    "conflict_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
-                    "idempotency_key": req.idempotency_key,
-                },
-            )
         if decision == "missing":
             raise HTTPException(
                 status_code=409,
@@ -190,16 +180,6 @@ def bind_start_cycle_route(
                     },
                 ) from exc
             if code == "start_cycle_intent_terminal":
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": code,
-                        "zone_id": zone_id,
-                        "idempotency_key": req.idempotency_key,
-                        **(details if isinstance(details, dict) else {}),
-                    },
-                ) from exc
-            if code == "start_cycle_idempotency_key_conflict":
                 raise HTTPException(
                     status_code=409,
                     detail={

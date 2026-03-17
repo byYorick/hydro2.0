@@ -8,6 +8,7 @@ use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use JsonException;
 
 class ZonePidLogController extends Controller
 {
@@ -70,8 +71,8 @@ class ZonePidLogController extends Controller
             ->get();
 
         // Преобразуем события в формат логов
-        $logs = $events->map(function ($event) {
-            $details = $event->details ?? [];
+        $logs = $events->map(function (ZoneEvent $event) {
+            $details = $this->normalizePayload($event);
 
             if ($event->type === 'PID_OUTPUT') {
                 return [
@@ -80,6 +81,7 @@ class ZonePidLogController extends Controller
                     'zone_state' => $details['zone_state'] ?? null,
                     'output' => $details['output'] ?? null,
                     'error' => $details['error'] ?? null,
+                    'integral_term' => $details['integral_term'] ?? null,
                     'dt_seconds' => $details['dt_seconds'] ?? null,
                     'current' => $details['current'] ?? null,
                     'target' => $details['target'] ?? null,
@@ -108,5 +110,32 @@ class ZonePidLogController extends Controller
                 'offset' => $offset,
             ],
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizePayload(ZoneEvent $event): array
+    {
+        if (is_array($event->payload_json)) {
+            return $event->payload_json;
+        }
+
+        $details = $event->getRawOriginal('details');
+        if (is_array($details)) {
+            return $details;
+        }
+
+        if (is_string($details) && $details !== '') {
+            try {
+                $decoded = json_decode($details, true, 512, JSON_THROW_ON_ERROR);
+
+                return is_array($decoded) ? $decoded : [];
+            } catch (JsonException) {
+                return [];
+            }
+        }
+
+        return [];
     }
 }

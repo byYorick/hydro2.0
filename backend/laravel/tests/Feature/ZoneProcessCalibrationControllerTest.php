@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneEvent;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\RefreshDatabase;
@@ -13,12 +14,14 @@ class ZoneProcessCalibrationControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    private User $user;
+
     protected function setUp(): void
     {
         parent::setUp();
 
-        $user = User::factory()->create(['role' => 'admin']);
-        Sanctum::actingAs($user);
+        $this->user = User::factory()->create(['role' => 'admin']);
+        Sanctum::actingAs($this->user);
     }
 
     public function test_can_get_empty_process_calibration_list(): void
@@ -81,6 +84,22 @@ class ZoneProcessCalibrationControllerTest extends TestCase
             'zone_id' => $zone->id,
             'type' => 'PROCESS_CALIBRATION_SAVED',
         ]);
+
+        $event = ZoneEvent::query()
+            ->where('zone_id', $zone->id)
+            ->where('type', 'PROCESS_CALIBRATION_SAVED')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($event);
+        $this->assertSame('tank_recirc', $event->payload_json['mode']);
+        $this->assertSame('hil_manual', $event->payload_json['source']);
+        $this->assertSame(20, $event->payload_json['transport_delay_sec']);
+        $this->assertSame(45, $event->payload_json['settle_sec']);
+        $this->assertSame(0.11, $event->payload_json['ec_gain_per_ml']);
+        $this->assertSame(0.08, $event->payload_json['ph_up_gain_per_ml']);
+        $this->assertSame(0.07, $event->payload_json['ph_down_gain_per_ml']);
+        $this->assertSame($this->user->id, $event->payload_json['updated_by'] ?? null);
     }
 
     public function test_upsert_normalizes_legacy_irrigating_alias_to_canonical_irrigation_mode(): void
@@ -145,6 +164,78 @@ class ZoneProcessCalibrationControllerTest extends TestCase
         ]);
     }
 
+    public function test_upsert_preserves_existing_gains_when_field_is_omitted(): void
+    {
+        $zone = Zone::factory()->create();
+        $now = now()->subMinute();
+
+        DB::table('zone_process_calibrations')->insert([
+            'zone_id' => $zone->id,
+            'mode' => 'tank_recirc',
+            'ec_gain_per_ml' => 0.15,
+            'ph_up_gain_per_ml' => 0.09,
+            'ph_down_gain_per_ml' => 0.08,
+            'transport_delay_sec' => 10,
+            'source' => 'old',
+            'valid_from' => $now,
+            'valid_to' => null,
+            'is_active' => true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/tank_recirc", [
+            'transport_delay_sec' => 12,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.ec_gain_per_ml', 0.15)
+            ->assertJsonPath('data.ph_up_gain_per_ml', 0.09)
+            ->assertJsonPath('data.ph_down_gain_per_ml', 0.08)
+            ->assertJsonPath('data.transport_delay_sec', 12);
+
+        $event = ZoneEvent::query()
+            ->where('zone_id', $zone->id)
+            ->where('type', 'PROCESS_CALIBRATION_SAVED')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($event);
+        $this->assertEquals(0.15, $event->payload_json['ec_gain_per_ml']);
+        $this->assertEquals(0.09, $event->payload_json['ph_up_gain_per_ml']);
+        $this->assertEquals(0.08, $event->payload_json['ph_down_gain_per_ml']);
+        $this->assertSame(10, $event->payload_json['previous']['transport_delay_sec']);
+        $this->assertSame(12, $event->payload_json['transport_delay_sec']);
+    }
+
+    public function test_rejects_null_primary_gain_payload(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/tank_recirc", [
+            'ph_down_gain_per_ml' => null,
+            'ec_gain_per_ml' => 0.10,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['ph_down_gain_per_ml']);
+    }
+
+    public function test_rejects_payload_without_any_primary_gain(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/tank_recirc", [
+            'transport_delay_sec' => 12,
+            'settle_sec' => 30,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'status' => 'error',
+            ]);
+    }
+
     public function test_can_get_process_calibration_by_mode(): void
     {
         $zone = Zone::factory()->create();
@@ -191,8 +282,12 @@ class ZoneProcessCalibrationControllerTest extends TestCase
         $zone = Zone::factory()->create();
 
         $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/generic", [
+            'ec_gain_per_ml' => 0,
+            'ph_up_gain_per_ml' => 6,
+            'ec_per_ph_ml' => 3,
             'confidence' => 2,
             'transport_delay_sec' => 7200,
+            'settle_sec' => 301,
             'meta' => [
                 'observe' => [
                     'window_min_samples' => 1,
@@ -203,8 +298,12 @@ class ZoneProcessCalibrationControllerTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors([
+                'ec_gain_per_ml',
+                'ph_up_gain_per_ml',
+                'ec_per_ph_ml',
                 'confidence',
                 'transport_delay_sec',
+                'settle_sec',
                 'meta.observe.window_min_samples',
                 'meta.observe.min_effect_fraction',
             ]);

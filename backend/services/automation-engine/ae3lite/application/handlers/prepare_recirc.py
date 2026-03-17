@@ -99,10 +99,14 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
         ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
+        per_pid_attempt_limit = max(ec_max_attempts, ph_max_attempts)
+        overall_attempt_limit = int(
+            correction_cfg.get("prepare_recirculation_max_correction_attempts", per_pid_attempt_limit)
+        )
         return CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
-            attempt=1,
-            max_attempts=int(correction_cfg.get("prepare_recirculation_max_correction_attempts", 20)),
+            attempt=0,
+            max_attempts=min(overall_attempt_limit, per_pid_attempt_limit),
             ec_attempt=0,
             ec_max_attempts=ec_max_attempts,
             ph_attempt=0,

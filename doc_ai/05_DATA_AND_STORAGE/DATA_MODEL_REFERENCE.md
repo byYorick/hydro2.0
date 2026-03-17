@@ -794,7 +794,7 @@ updated_at TIMESTAMPTZ NOT NULL
 
 Индексы:
 ```
-zone_automation_intents_idempotency_key_unique (idempotency_key) UNIQUE
+zone_automation_intents_zone_idempotency_unique (zone_id, idempotency_key) UNIQUE
 zone_automation_intents_zone_status_idx (zone_id, status)
 zone_automation_intents_status_not_before_idx (status, not_before)
 ```
@@ -828,7 +828,8 @@ Payload-contract (`payload` JSONB, wake-up only):
 
 Lifecycle:
 - `pending` -> `claimed` -> `running` -> `completed|failed|cancelled`
-- повторный `idempotency_key` возвращает deduplicated wake-up без повторного исполнения;
+- повторный `idempotency_key` в рамках той же `zone_id` возвращает deduplicated wake-up без повторного исполнения;
+- одинаковый `idempotency_key` допускается в разных зонах;
 - `failed` intent может быть re-claimed только при `retry_count < max_retries`;
 - stale `claimed` intent может быть re-claimed при
   `claimed_at <= now - AE_START_CYCLE_CLAIM_STALE_SEC` (default: 180 sec),
@@ -911,7 +912,7 @@ id BIGSERIAL PK
 zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
 task_type VARCHAR(64) NOT NULL         -- в v1 допустимо только cycle_start
 status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
-idempotency_key VARCHAR(191) UNIQUE NOT NULL
+idempotency_key VARCHAR(191) NOT NULL
 intent_source VARCHAR(64) NULL
 intent_trigger VARCHAR(64) NULL
 intent_id BIGINT NULL
@@ -950,6 +951,9 @@ corr_ph_node_uid VARCHAR(128) NULL
 corr_ph_channel VARCHAR(64) NULL
 corr_ph_duration_ms INTEGER NULL
 corr_wait_until TIMESTAMPTZ NULL
+corr_ec_component VARCHAR(100) NULL
+corr_ec_amount_ml NUMERIC(12,3) NULL
+corr_ph_amount_ml NUMERIC(12,3) NULL
 corr_ec_attempt SMALLINT NULL
 corr_ec_max_attempts SMALLINT NULL
 corr_ph_attempt SMALLINT NULL
@@ -961,6 +965,7 @@ control_mode_snapshot VARCHAR(16) NULL
 Ключевые индексы:
 ```
 ae_tasks_zone_status_idx (zone_id, status)
+ae_tasks_zone_idempotency_unique (zone_id, idempotency_key) UNIQUE
 ae_tasks_pending_idx (due_at, created_at) WHERE status='pending'
 ae_tasks_active_zone_unique (zone_id) UNIQUE WHERE status IN ('pending','claimed','running','waiting_command')
 ae_tasks_deadline_idx (stage_deadline_at) WHERE stage_deadline_at IS NOT NULL AND status IN ('running','waiting_command')
@@ -969,7 +974,8 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 
 Инварианты v1:
 - не более одной active task на зону;
-- `idempotency_key` уникален;
+- `idempotency_key` уникален только в рамках `zone_id`;
+- correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
 - `task_type='cycle_start'` фиксируется DB check constraint.
 - canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из legacy `payload`.
 
@@ -1085,6 +1091,12 @@ zone_events_zone_id_id_idx
   при длине >255 значение детерминированно усекается до 255 символов.
 - Для runtime invalidation effective targets используется событие
   `AUTOMATION_LOGIC_PROFILE_UPDATED` (source: upsert active automation profile).
+- Correction-runtime события (`CORRECTION_COMPLETE`, `CORRECTION_SKIPPED_COOLDOWN`,
+  `CORRECTION_SKIPPED_DEAD_ZONE`, `CORRECTION_SKIPPED_WATER_LEVEL`,
+  `CORRECTION_SKIPPED_FRESHNESS`, `CORRECTION_SKIPPED_WINDOW_NOT_READY`,
+  `CORRECTION_NO_EFFECT`, `CORRECTION_EXHAUSTED`)
+  обязаны использовать `payload_json` как canonical source и по возможности включать
+  `stage`, `workflow_phase`, `corr_step`, `attempt`, `ec_attempt`, `ph_attempt`.
 
 ---
 
@@ -1705,6 +1717,9 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - Поддерживаемые namespace:
   - `pump_calibration`
   - `sensor_calibration`
+  - `automation_defaults`
+  - `automation_command_templates`
+  - internal backend-owned: `pid_defaults_ph`, `pid_defaults_ec`
 - Для `pump_calibration` хранятся:
   - `ml_per_sec_min`, `ml_per_sec_max`
   - `min_dose_ms`
@@ -1717,6 +1732,26 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   - `ec_point_1_tds`, `ec_point_2_tds`
   - `reminder_days`, `critical_days`
   - `command_timeout_sec`
+- Для `automation_defaults` хранятся scalar/default значения для automation UI и
+  `GROWTH_CYCLE_CONFIG` сборки:
+  - рекомендуемые значения `climate_*`, `water_*`, `lighting_*`
+  - runtime defaults для startup/correction/recovery:
+    `water_startup_*`, `water_prepare_tolerance_*`,
+    `water_correction_*`, `water_irrigation_recovery_*`
+  - UI/runtime строки `water_refill_required_node_types_csv`,
+    `water_refill_preferred_channel`,
+    `water_startup_clean_max_sensor_label`,
+    `water_startup_solution_max_sensor_label`
+- Для `automation_command_templates` хранятся JSON-массивы relay-команд для
+  `two_tank_commands.*`:
+  - `clean_fill_start`, `clean_fill_stop`
+  - `solution_fill_start`, `solution_fill_stop`
+  - `prepare_recirculation_start`, `prepare_recirculation_stop`
+  - `irrigation_recovery_start`, `irrigation_recovery_stop`
+- Для `pid_defaults_ph` и `pid_defaults_ec` хранятся default PID configs для `ZonePidConfigService`
+  с тем же shape, что и `zone_pid_configs.config`.
+- `pid_defaults_*` не обязаны быть публично редактируемыми через общий System Settings UI,
+  но являются runtime source of truth и позволяют менять PID defaults без redeploy.
   - `ph_reference_min`, `ph_reference_max`
   - `ec_tds_reference_max`
 
@@ -1760,6 +1795,30 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - Политика версии:
   - новая калибровка деактивирует предыдущую (`is_active=false`, `valid_to=NOW()`),
   - актуальная калибровка выбирается по `is_active=true` и `valid_from DESC`.
+- Runtime constraint:
+  - `ml_per_sec` обязан попадать в диапазон `0.01 .. 100.0`;
+  - значение вне диапазона считается невалидной runtime-calibration и блокируется DB CHECK constraint.
+
+### 16.3.1. Таблица `zone_process_calibrations`
+
+- Назначение: process-gain и observation-window contract для in-flow correction runtime.
+- Ключевые поля:
+  - `zone_id` (FK -> `zones.id`)
+  - `mode` (`generic|solution_fill|tank_recirc|irrigation`)
+  - `ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`
+  - `ph_per_ec_ml`, `ec_per_ph_ml`
+  - `transport_delay_sec`, `settle_sec`
+  - `confidence`, `source`, `meta`
+  - `valid_from`, `valid_to`, `is_active`
+- Инварианты:
+  - в каждый момент времени допускается не более одной active calibration на пару `(zone_id, mode)`;
+  - canonical storage keys ограничены `generic|solution_fill|tank_recirc|irrigation`;
+  - runtime aliases нормализуются до canonical storage keys:
+    `tank_filling -> solution_fill`,
+    `prepare_recirculation -> tank_recirc`,
+    `irrigating|irrig_recirc -> irrigation`;
+  - primary gain-и не добираются runtime-ом из legacy/default источников;
+  - `transport_delay_sec` и `settle_sec` являются частью обязательного observe-window contract.
 
 ### 16.4. Zone correction config: pump calibration override
 
@@ -1776,10 +1835,15 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   больше не содержат legacy wait-поля correction timing.
 - `zone_correction_configs.base_config` больше не содержит секцию adaptive timing.
 - `zone_correction_configs.*.retry.prepare_recirculation_max_correction_attempts`
-  хранит только явный конечный лимит.
+  хранит только явный конечный лимит correction-loop внутри recirculation window;
+  если field не задан, runtime использует `max(max_ec_correction_attempts, max_ph_correction_attempts)`.
 - `zone_correction_configs.*.retry.max_ec_correction_attempts` и
   `zone_correction_configs.*.retry.max_ph_correction_attempts`
   тоже хранят только конечные значения внутри контрактной верхней границы.
+- `zone_correction_configs.*.retry.telemetry_stale_retry_sec`,
+  `zone_correction_configs.*.retry.decision_window_retry_sec` и
+  `zone_correction_configs.*.retry.low_water_retry_sec`
+  задают delay для временных retry-path в `corr_check`/`corr_wait_{ec|ph}`.
 - stage-level wait в correction path задаётся только через `timing.stabilization_sec`.
 - observation hold-window для `EC`/`pH` задаётся только через
   `zone_process_calibrations.transport_delay_sec` + `zone_process_calibrations.settle_sec`

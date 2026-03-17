@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
@@ -150,53 +150,134 @@ class CorrectionHandler(BaseStageHandler):
 
         ph_cfg = self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg)
         ec_cfg = self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg)
-        ph = await self._read_decision_metric(
-            zone_id=task.zone_id,
-            sensor_type="PH",
-            telemetry_max_age_sec=max_age,
-            config=ph_cfg,
-            now=now,
-        )
-        ec = await self._read_decision_metric(
-            zone_id=task.zone_id,
-            sensor_type="EC",
-            telemetry_max_age_sec=max_age,
-            config=ec_cfg,
-            now=now,
-        )
-        if not ph["ready"] or not ec["ready"]:
-            msg = self._format_decision_window_error(ph=ph, ec=ec)
-            _logger.warning("zone %s: %s — retrying in 30s", task.zone_id, msg)
+        try:
+            ph = await self._read_decision_metric(
+                zone_id=task.zone_id,
+                sensor_type="PH",
+                telemetry_max_age_sec=max_age,
+                config=ph_cfg,
+                now=now,
+            )
+            ec = await self._read_decision_metric(
+                zone_id=task.zone_id,
+                sensor_type="EC",
+                telemetry_max_age_sec=max_age,
+                config=ec_cfg,
+                now=now,
+            )
+        except TaskExecutionError as exc:
+            if exc.code != "corr_telemetry_stale":
+                raise
+            retry_delay_sec = self._correction_retry_delay_sec(
+                correction_cfg=correction_cfg,
+                key="telemetry_stale_retry_sec",
+                default=30.0,
+            )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_FRESHNESS",
+                task=task,
+                corr=corr,
+                payload={
+                    "sensor_scope": "decision_window",
+                    "reason": str(exc),
+                    "retry_after_sec": retry_delay_sec,
+                    "telemetry_max_age_sec": max_age,
+                },
+            )
+            _logger.warning(
+                "zone %s: telemetry stale during correction check; retrying in %.1fs",
+                task.zone_id,
+                retry_delay_sec,
+            )
             return StageOutcome(
                 kind="enter_correction",
                 correction=corr,
-                due_delay_sec=30.0,
+                due_delay_sec=retry_delay_sec,
+            )
+        if not ph["ready"] or not ec["ready"]:
+            msg = self._format_decision_window_error(ph=ph, ec=ec)
+            retry_delay_sec = self._correction_retry_delay_sec(
+                correction_cfg=correction_cfg,
+                key="decision_window_retry_sec",
+                default=30.0,
+            )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
+                task=task,
+                corr=corr,
+                payload={
+                    "sensor_scope": "decision_window",
+                    "reason": msg,
+                    "retry_after_sec": retry_delay_sec,
+                    "ph_reason": ph.get("reason"),
+                    "ph_sample_count": ph.get("sample_count"),
+                    "ph_slope": ph.get("slope"),
+                    "ec_reason": ec.get("reason"),
+                    "ec_sample_count": ec.get("sample_count"),
+                    "ec_slope": ec.get("slope"),
+                },
+            )
+            _logger.warning("zone %s: %s — retrying in %.1fs", task.zone_id, msg, retry_delay_sec)
+            return StageOutcome(
+                kind="enter_correction",
+                correction=corr,
+                due_delay_sec=retry_delay_sec,
             )
 
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
 
         if not math.isfinite(current_ph) or not math.isfinite(current_ec):
+            retry_delay_sec = self._correction_retry_delay_sec(
+                correction_cfg=correction_cfg,
+                key="decision_window_retry_sec",
+                default=30.0,
+            )
             _logger.warning(
-                "zone %s: non-finite telemetry value (ph=%s, ec=%s); retrying in 30s",
-                task.zone_id, current_ph, current_ec,
+                "zone %s: non-finite telemetry value (ph=%s, ec=%s); retrying in %.1fs",
+                task.zone_id, current_ph, current_ec, retry_delay_sec,
             )
             return StageOutcome(
                 kind="enter_correction",
                 correction=corr,
-                due_delay_sec=30.0,
+                due_delay_sec=retry_delay_sec,
             )
 
         wl_ok, wl_level = await check_water_level(task.zone_id)
         if not wl_ok:
+            retry_delay_sec = self._correction_retry_delay_sec(
+                correction_cfg=correction_cfg,
+                key="low_water_retry_sec",
+                default=60.0,
+            )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_WATER_LEVEL",
+                task=task,
+                corr=corr,
+                payload={
+                    "water_level_pct": (wl_level or 0.0) * 100.0,
+                    "retry_after_sec": retry_delay_sec,
+                    "current_ph": current_ph,
+                    "current_ec": current_ec,
+                    "target_ph": target_ph,
+                    "target_ec": target_ec,
+                    "target_ph_min": runtime.get("target_ph_min"),
+                    "target_ph_max": runtime.get("target_ph_max"),
+                    "target_ec_min": runtime.get("target_ec_min"),
+                    "target_ec_max": runtime.get("target_ec_max"),
+                },
+            )
             _logger.warning(
-                "zone %s: water level %.0f%% is below threshold; skipping correction",
-                task.zone_id, (wl_level or 0.0) * 100,
+                "zone %s: water level %.0f%% is below threshold; skipping correction for %.1fs",
+                task.zone_id, (wl_level or 0.0) * 100, retry_delay_sec,
             )
             return StageOutcome(
                 kind="enter_correction",
                 correction=corr,
-                due_delay_sec=60.0,
+                due_delay_sec=retry_delay_sec,
             )
 
         if self._planner.is_within_tolerance(
@@ -208,18 +289,20 @@ class CorrectionHandler(BaseStageHandler):
             ec_min=self._coerce_float(runtime.get("target_ec_min")),
             ec_max=self._coerce_float(runtime.get("target_ec_max")),
         ):
-            try:
-                await create_zone_event(task.zone_id, "CORRECTION_COMPLETE", {
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_COMPLETE",
+                task=task,
+                corr=corr,
+                payload={
                     "current_ph": current_ph, "current_ec": current_ec,
                     "target_ph": target_ph, "target_ec": target_ec,
                     "target_ph_min": runtime.get("target_ph_min"),
                     "target_ph_max": runtime.get("target_ph_max"),
                     "target_ec_min": runtime.get("target_ec_min"),
                     "target_ec_max": runtime.get("target_ec_max"),
-                    "attempt": corr.attempt,
-                })
-            except Exception:
-                _logger.warning("Failed to log CORRECTION_COMPLETE zone event", exc_info=True)
+                },
+            )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if corr.attempt >= corr.max_attempts:
@@ -254,15 +337,21 @@ class CorrectionHandler(BaseStageHandler):
         )
 
         if not dose_plan.needs_any and dose_plan.retry_after_sec:
-            try:
-                await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_COOLDOWN", {
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_COOLDOWN",
+                task=task,
+                corr=corr,
+                payload={
                     "current_ph": current_ph, "current_ec": current_ec,
                     "target_ph": target_ph, "target_ec": target_ec,
                     "retry_after_sec": dose_plan.retry_after_sec,
-                    "attempt": corr.attempt,
-                })
-            except Exception:
-                _logger.warning("Failed to log CORRECTION_SKIPPED_COOLDOWN zone event", exc_info=True)
+                    "target_ph_min": runtime.get("target_ph_min"),
+                    "target_ph_max": runtime.get("target_ph_max"),
+                    "target_ec_min": runtime.get("target_ec_min"),
+                    "target_ec_max": runtime.get("target_ec_max"),
+                },
+            )
             next_corr = replace(corr, corr_step="corr_check")
             return StageOutcome(
                 kind="enter_correction",
@@ -272,23 +361,37 @@ class CorrectionHandler(BaseStageHandler):
 
         if not dose_plan.needs_any:
             if dose_plan.dose_discarded_reason:
-                try:
-                    await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_DOSE_DISCARDED", {
+                await self._log_correction_event(
+                    zone_id=task.zone_id,
+                    event_type="CORRECTION_SKIPPED_DOSE_DISCARDED",
+                    task=task,
+                    corr=corr,
+                    payload={
                         "current_ph": current_ph, "current_ec": current_ec,
                         "target_ph": target_ph, "target_ec": target_ec,
                         "reason": dose_plan.dose_discarded_reason,
-                        "attempt": corr.attempt,
-                    })
-                except Exception:
-                    _logger.warning("Failed to log CORRECTION_SKIPPED_DOSE_DISCARDED zone event", exc_info=True)
-            try:
-                await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_DEAD_ZONE", {
+                        **(dict(dose_plan.dose_discarded_details) if isinstance(dose_plan.dose_discarded_details, Mapping) else {}),
+                        "target_ph_min": runtime.get("target_ph_min"),
+                        "target_ph_max": runtime.get("target_ph_max"),
+                        "target_ec_min": runtime.get("target_ec_min"),
+                        "target_ec_max": runtime.get("target_ec_max"),
+                    },
+                )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_DEAD_ZONE",
+                task=task,
+                corr=corr,
+                payload={
                     "current_ph": current_ph, "current_ec": current_ec,
                     "target_ph": target_ph, "target_ec": target_ec,
-                    "attempt": corr.attempt,
-                })
-            except Exception:
-                _logger.warning("Failed to log CORRECTION_SKIPPED_DEAD_ZONE zone event", exc_info=True)
+                    **(dict(dose_plan.dead_zone_details) if isinstance(dose_plan.dead_zone_details, Mapping) else {}),
+                    "target_ph_min": runtime.get("target_ph_min"),
+                    "target_ph_max": runtime.get("target_ph_max"),
+                    "target_ec_min": runtime.get("target_ec_min"),
+                    "target_ec_max": runtime.get("target_ec_max"),
+                },
+            )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
         if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
@@ -559,8 +662,12 @@ class CorrectionHandler(BaseStageHandler):
         stage = str(task.current_stage)
         topology = str(getattr(task, "topology", "") or "")
         CORRECTION_EXHAUSTED.labels(topology=topology, stage=stage).inc()
-        try:
-            await create_zone_event(task.zone_id, "CORRECTION_EXHAUSTED", {
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_EXHAUSTED",
+            task=task,
+            corr=corr,
+            payload={
                 "attempt": corr.attempt,
                 "max_attempts": corr.max_attempts,
                 "ec_attempt": corr.ec_attempt,
@@ -568,9 +675,8 @@ class CorrectionHandler(BaseStageHandler):
                 "ph_attempt": corr.ph_attempt,
                 "ph_max_attempts": corr.ph_max_attempts,
                 "stage": stage,
-            })
-        except Exception:
-            _logger.warning("Failed to log CORRECTION_EXHAUSTED zone event", exc_info=True)
+            },
+        )
         try:
             await send_infra_alert(
                 code="biz_correction_exhausted",
@@ -738,9 +844,35 @@ class CorrectionHandler(BaseStageHandler):
             telemetry_max_age_sec=int(runtime.get("telemetry_max_age_sec", 300)),
         )
         if not window["has_sensor"] or window["is_stale"]:
-            raise TaskExecutionError(
-                "corr_telemetry_stale",
-                f"{sensor_type} telemetry stale/unavailable during observation window",
+            retry_delay_sec = self._correction_retry_delay_sec(
+                correction_cfg=correction_cfg,
+                key="telemetry_stale_retry_sec",
+                default=30.0,
+            )
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_FRESHNESS",
+                task=task,
+                corr=corr,
+                payload={
+                    "pid_type": pid_type,
+                    "sensor_type": sensor_type,
+                    "sensor_scope": "observe_window",
+                    "reason": f"{sensor_type} telemetry stale/unavailable during observation window",
+                    "retry_after_sec": retry_delay_sec,
+                    "telemetry_max_age_sec": int(runtime.get("telemetry_max_age_sec", 300)),
+                },
+            )
+            _logger.warning(
+                "zone %s: %s telemetry stale/unavailable during observation window; retrying in %.1fs",
+                task.zone_id,
+                sensor_type,
+                retry_delay_sec,
+            )
+            return StageOutcome(
+                kind="enter_correction",
+                correction=corr,
+                due_delay_sec=retry_delay_sec,
             )
 
         summary = self._summarize_metric_window(
@@ -749,6 +881,23 @@ class CorrectionHandler(BaseStageHandler):
             stability_max_slope=float(observe_cfg["stability_max_slope"]),
         )
         if not summary["ready"]:
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_SKIPPED_WINDOW_NOT_READY",
+                task=task,
+                corr=corr,
+                payload={
+                    "pid_type": pid_type,
+                    "sensor_type": sensor_type,
+                    "sensor_scope": "observe_window",
+                    "reason": summary.get("reason"),
+                    "sample_count": len(window["samples"]) if isinstance(window.get("samples"), (list, tuple)) else None,
+                    "slope": summary.get("slope"),
+                    "retry_after_sec": int(observe_cfg["observe_poll_sec"]),
+                    "window_min_samples": int(observe_cfg["window_min_samples"]),
+                    "stability_max_slope": float(observe_cfg["stability_max_slope"]),
+                },
+            )
             return StageOutcome(
                 kind="enter_correction",
                 correction=corr,
@@ -792,6 +941,8 @@ class CorrectionHandler(BaseStageHandler):
                 baseline_value=float(baseline_value),
                 observed_value=observed_value,
                 expected_effect=expected_effect,
+                actual_effect=directional_effect,
+                no_effect_limit=int(observe_cfg["no_effect_limit"]),
             )
 
         # When the dose had a measurable effect, reset all attempt counters so
@@ -882,22 +1033,32 @@ class CorrectionHandler(BaseStageHandler):
         baseline_value: float,
         observed_value: float,
         expected_effect: float,
+        actual_effect: float,
+        no_effect_limit: int,
     ) -> StageOutcome:
-        try:
-            await create_zone_event(task.zone_id, "CORRECTION_NO_EFFECT", {
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_NO_EFFECT",
+            task=task,
+            corr=corr,
+            payload={
                 "pid_type": pid_type,
                 "baseline_value": baseline_value,
                 "observed_value": observed_value,
                 "expected_effect": expected_effect,
-                "attempt": corr.attempt,
-            })
-        except Exception:
-            _logger.warning("Failed to log CORRECTION_NO_EFFECT zone event", exc_info=True)
+                "actual_effect": actual_effect,
+                "threshold_effect": expected_effect * 0.25,
+                "no_effect_limit": no_effect_limit,
+            },
+        )
         try:
             await send_infra_alert(
                 code=f"biz_{pid_type}_correction_no_effect",
                 alert_type="AE3 Correction No Effect",
-                message=f"{pid_type.upper()} correction produced no observable response three times in a row.",
+                message=(
+                    f"{pid_type.upper()} correction produced no observable response "
+                    f"{no_effect_limit} times in a row."
+                ),
                 severity="error",
                 zone_id=int(task.zone_id),
                 service="automation-engine",
@@ -908,6 +1069,8 @@ class CorrectionHandler(BaseStageHandler):
                     "baseline_value": baseline_value,
                     "observed_value": observed_value,
                     "expected_effect": expected_effect,
+                    "actual_effect": actual_effect,
+                    "no_effect_limit": no_effect_limit,
                 },
             )
         except Exception:
@@ -928,6 +1091,40 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
             )
         return self._transition_to_deactivate_or_return(corr=corr, success=False)
+
+    async def _log_correction_event(
+        self,
+        *,
+        zone_id: int,
+        event_type: str,
+        task: Any | None = None,
+        corr: CorrectionState | None = None,
+        payload: Mapping[str, Any] | None = None,
+    ) -> None:
+        event_payload: dict[str, Any] = dict(payload or {})
+        if task is not None:
+            stage = str(getattr(task, "current_stage", "") or "").strip()
+            workflow = getattr(task, "workflow", None)
+            workflow_phase = str(getattr(workflow, "workflow_phase", "") or "").strip()
+            topology = str(getattr(task, "topology", "") or "").strip()
+            if stage:
+                event_payload.setdefault("stage", stage)
+            if workflow_phase:
+                event_payload.setdefault("workflow_phase", workflow_phase)
+            if topology:
+                event_payload.setdefault("topology", topology)
+        if corr is not None:
+            if corr.corr_step:
+                event_payload.setdefault("corr_step", corr.corr_step)
+            event_payload.setdefault("attempt", corr.attempt)
+            event_payload.setdefault("ec_attempt", corr.ec_attempt)
+            event_payload.setdefault("ph_attempt", corr.ph_attempt)
+            event_payload.setdefault("ec_max_attempts", corr.ec_max_attempts)
+            event_payload.setdefault("ph_max_attempts", corr.ph_max_attempts)
+        try:
+            await create_zone_event(zone_id, event_type, event_payload)
+        except Exception:
+            _logger.warning("Failed to log %s zone event", event_type, exc_info=True)
 
     def _build_sensor_mode_commands(
         self, *, plan: Any, cmd: str, params: Mapping[str, Any],
@@ -992,4 +1189,18 @@ class CorrectionHandler(BaseStageHandler):
     def _normalize_timestamp(self, value: datetime | None) -> datetime | None:
         if value is None:
             return None
-        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
+
+    def _correction_retry_delay_sec(
+        self,
+        *,
+        correction_cfg: Mapping[str, Any],
+        key: str,
+        default: float,
+    ) -> float:
+        raw = correction_cfg.get(key)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return default
+        return value if value > 0 else default

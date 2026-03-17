@@ -63,7 +63,11 @@ class ZoneCorrectionConfigService
         if (! is_array($resolvedConfig) || array_is_list($resolvedConfig)) {
             $resolvedConfig = [];
         }
-        $resolvedConfig['pump_calibration'] = $this->resolvePumpCalibrationConfig($pumpDefaults, $pumpOverride);
+        if ($pumpOverride !== []) {
+            // Validate the stored zone-level diff against current system defaults
+            // without mutating the resolved_config payload returned from the DB.
+            $this->resolvePumpCalibrationConfig($pumpDefaults, $pumpOverride);
+        }
 
         return [
             'id' => $config->id,
@@ -313,13 +317,16 @@ class ZoneCorrectionConfigService
     private function normalizeStoredOverride(array $referenceBase, array $candidate): array
     {
         unset($candidate['pump_calibration']);
-        try {
+
+        if ($this->hasCompleteOverrideContract($referenceBase, $candidate)) {
             ZoneCorrectionConfigCatalog::validateFragment($candidate, false);
+
             return ZoneCorrectionConfigCatalog::diff($referenceBase, $candidate);
-        } catch (\InvalidArgumentException) {
-            ZoneCorrectionConfigCatalog::validateFragment($candidate, true);
-            return $candidate;
         }
+
+        ZoneCorrectionConfigCatalog::validateFragment($candidate, true);
+
+        return $candidate;
     }
 
     private function normalizeStoredPhaseOverrides(
@@ -397,5 +404,32 @@ class ZoneCorrectionConfigService
         SystemAutomationSettingsCatalog::validate('pump_calibration', $resolved, false);
 
         return $resolved;
+    }
+
+    private function hasCompleteOverrideContract(array $referenceBase, array $candidate): bool
+    {
+        foreach ($referenceBase as $key => $referenceValue) {
+            if (! array_key_exists($key, $candidate)) {
+                return false;
+            }
+
+            if (
+                is_array($referenceValue)
+                && ! array_is_list($referenceValue)
+                && ! is_array($candidate[$key])
+            ) {
+                return false;
+            }
+
+            if (
+                is_array($referenceValue)
+                && ! array_is_list($referenceValue)
+                && ! $this->hasCompleteOverrideContract($referenceValue, $candidate[$key])
+            ) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

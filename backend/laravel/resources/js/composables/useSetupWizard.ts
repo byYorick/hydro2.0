@@ -157,7 +157,7 @@ export function useSetupWizard() {
     drainTargetPercent: 20,
     diagnosticsEnabled: true,
     diagnosticsIntervalMinutes: 15,
-    cycleStartWorkflowEnabled: true,
+    diagnosticsWorkflow: 'startup',
     cleanTankFullThreshold: 0.95,
     refillDurationSeconds: 30,
     refillTimeoutSeconds: 600,

@@ -2,8 +2,10 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\SystemAutomationSetting;
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneEvent;
 use App\Models\ZonePidConfig;
 use App\Services\ZonePidConfigService;
 use Tests\RefreshDatabase;
@@ -76,6 +78,17 @@ class ZonePidConfigServiceTest extends TestCase
             'zone_id' => $zone->id,
             'type' => 'PID_CONFIG_UPDATED',
         ]);
+
+        $event = ZoneEvent::query()
+            ->where('zone_id', $zone->id)
+            ->where('type', 'PID_CONFIG_UPDATED')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($event);
+        $this->assertSame('ph', $event->payload_json['type'] ?? null);
+        $this->assertSame($user->id, $event->payload_json['updated_by'] ?? null);
+        $this->assertEquals(6.0, $event->payload_json['new_config']['target'] ?? null);
     }
 
     public function test_create_or_update_updates_existing_config(): void
@@ -119,6 +132,44 @@ class ZonePidConfigServiceTest extends TestCase
         $this->assertEquals(1.6, $config['target']);
         $this->assertArrayHasKey('zone_coeffs', $config);
         $this->assertEquals(100.0, $config['max_integral']);
+    }
+
+    public function test_get_default_config_prefers_system_automation_settings_namespace(): void
+    {
+        $model = SystemAutomationSetting::query()->firstWhere('namespace', 'pid_defaults_ph');
+        $this->assertNotNull($model);
+
+        $config = $model->config;
+        $config['target'] = 6.2;
+        $config['zone_coeffs']['close']['kp'] = 7.5;
+        $model->update(['config' => $config]);
+
+        $resolved = $this->service->getDefaultConfig('ph');
+
+        $this->assertSame(6.2, $resolved['target']);
+        $this->assertSame(7.5, $resolved['zone_coeffs']['close']['kp']);
+    }
+
+    public function test_serialize_config_returns_explicit_api_payload(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create();
+        $config = ZonePidConfig::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'ph',
+            'updated_by' => $user->id,
+            'updated_at' => now(),
+            'config' => ['target' => 6.0],
+        ]);
+
+        $payload = $this->service->serializeConfig($config);
+
+        $this->assertSame($config->id, $payload['id']);
+        $this->assertSame($zone->id, $payload['zone_id']);
+        $this->assertSame('ph', $payload['type']);
+        $this->assertSame($user->id, $payload['updated_by']);
+        $this->assertFalse($payload['is_default']);
+        $this->assertEquals(6.0, $payload['config']['target']);
     }
 
     public function test_validate_config_throws_exception_for_invalid_zones(): void

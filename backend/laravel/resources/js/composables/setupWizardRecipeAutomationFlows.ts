@@ -5,6 +5,8 @@ import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import { useAutomationCommandTemplates } from './useAutomationCommandTemplates'
+import { useAutomationDefaults } from './useAutomationDefaults'
 import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
 import type {
   Plant,
@@ -79,6 +81,8 @@ function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
 }
 
 export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecipeAutomationFlowsOptions) {
+  const automationDefaults = useAutomationDefaults()
+  const automationCommandTemplates = useAutomationCommandTemplates()
   const {
     api,
     loading,
@@ -247,6 +251,9 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
         climateForm,
         waterForm,
         lightingForm,
+      }, {
+        automationDefaults: automationDefaults.value,
+        automationCommandTemplates: automationCommandTemplates.value,
       })
       await api.post(`/zones/${selectedZone.value.id}/automation-logic-profile`, {
         mode: 'setup',

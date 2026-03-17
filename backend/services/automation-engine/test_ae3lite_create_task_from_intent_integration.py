@@ -119,6 +119,44 @@ async def test_create_task_from_intent_deduplicates_same_idempotency_key() -> No
 
 
 @pytest.mark.asyncio
+async def test_create_task_from_intent_allows_same_idempotency_key_in_other_zone() -> None:
+    prefix = f"ae3-xzone-{uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=PgAutomationTaskRepository(),
+        zone_lease_repository=PgZoneLeaseRepository(),
+        legacy_intent_mapper=LegacyIntentMapper(),
+    )
+
+    try:
+        first_zone_id = await _insert_zone(f"{prefix}-a")
+        second_zone_id = await _insert_zone(f"{prefix}-b")
+
+        first = await use_case.run(
+            zone_id=first_zone_id,
+            source="laravel_scheduler",
+            idempotency_key="shared-idem-key",
+            intent_row=_intent_row(first_zone_id, prefix),
+            now=now,
+        )
+        second = await use_case.run(
+            zone_id=second_zone_id,
+            source="laravel_scheduler",
+            idempotency_key="shared-idem-key",
+            intent_row=_intent_row(second_zone_id, prefix),
+            now=now + timedelta(seconds=1),
+        )
+
+        assert first.created is True
+        assert second.created is True
+        assert first.task.zone_id == first_zone_id
+        assert second.task.zone_id == second_zone_id
+        assert first.task.id != second.task.id
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
 async def test_create_task_from_intent_rejects_active_zone_lease() -> None:
     prefix = f"ae3-create-task-lease-{uuid4().hex}"
     now = datetime.now(timezone.utc).replace(tzinfo=None)

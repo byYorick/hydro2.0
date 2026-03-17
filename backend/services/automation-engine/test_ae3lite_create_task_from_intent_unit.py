@@ -92,8 +92,8 @@ class _TaskRepo:
         self._conn = conn
         self.calls: list[tuple[str, object]] = []
 
-    async def get_by_idempotency_key(self, *, idempotency_key: str):
-        self.calls.append(("get_by_idempotency_key", idempotency_key))
+    async def get_by_idempotency_key(self, *, zone_id: int, idempotency_key: str):
+        self.calls.append(("get_by_idempotency_key", zone_id, idempotency_key))
         return None
 
     async def get_active_for_zone_with_conn(self, *, zone_id: int, conn):

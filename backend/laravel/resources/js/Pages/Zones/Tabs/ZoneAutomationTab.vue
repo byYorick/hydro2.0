@@ -112,19 +112,64 @@
 
       <!-- Аккордеон 2: Коррекция и калибровка -->
       <ZoneAutomationAccordionSection title="Коррекция и калибровка">
-        <section class="grid gap-4 xl:grid-cols-2">
-          <PidConfigForm
+        <section class="space-y-4">
+          <div>
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Correction runtime
+            </div>
+            <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              Готовность runtime, tuning PID и process calibration для in-flow correction.
+            </div>
+          </div>
+
+          <CorrectionRuntimeReadinessCard
             :zone-id="Number(zoneId)"
-            @saved="onPidSaved"
+            @focus-process-calibration="scrollToSection('zone-process-calibration-panel')"
+            @open-pump-calibration="emit('open-pump-calibration')"
           />
-          <RelayAutotuneTrigger :zone-id="Number(zoneId)" />
+          <section class="grid gap-4 xl:grid-cols-2">
+            <PidConfigForm
+              :zone-id="Number(zoneId)"
+              @saved="onPidSaved"
+            />
+            <RelayAutotuneTrigger :zone-id="Number(zoneId)" />
+          </section>
+          <div id="zone-process-calibration-panel">
+            <ProcessCalibrationPanel :zone-id="Number(zoneId)" />
+          </div>
         </section>
-        <ZonePumpCalibrationSettingsCard :zone-id="Number(zoneId)" />
-        <PumpCalibrationsPanel :zone-id="Number(zoneId)" />
-        <SensorCalibrationStatus
-          :zone-id="Number(zoneId)"
-          :settings="sensorCalibrationSettings"
-        />
+
+        <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
+          <div>
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Калибровка дозирования
+            </div>
+            <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              Статус и история pump calibration. Runtime bounds и zone override вынесены в настройки Automation Engine ниже.
+            </div>
+          </div>
+
+          <PumpCalibrationsPanel
+            :zone-id="Number(zoneId)"
+            @open-pump-calibration="emit('open-pump-calibration')"
+          />
+        </section>
+
+        <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
+          <div>
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Калибровка сенсоров
+            </div>
+            <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              Отдельный контур pH/EC sensor calibration и его история.
+            </div>
+          </div>
+
+          <SensorCalibrationStatus
+            :zone-id="Number(zoneId)"
+            :settings="sensorCalibrationSettings"
+          />
+        </section>
       </ZoneAutomationAccordionSection>
 
       <!-- Аккордеон 3: Настройки Automation Engine -->
@@ -136,30 +181,60 @@
         </template>
 
         <p class="text-xs text-[color:var(--text-dim)]">
-          Фактические параметры payload: `attempts`, `retries`, `timeouts`, `intervals`, `thresholds`.
+          Здесь только low-level runtime параметры AE и zone-level override, которые не должны дублировать верхнеуровневый профиль зоны.
         </p>
 
-        <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-          <template
-            v-for="item in automationEngineKeySettings"
-            :key="item.key"
+        <section class="space-y-4">
+          <div
+            v-for="group in automationEngineSettingGroups"
+            :key="group.key"
+            class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
           >
-            <dt class="text-xs text-[color:var(--text-muted)]">
-              {{ item.label }}
-            </dt>
-            <dd class="space-y-1">
-              <div class="text-sm font-mono text-[color:var(--text-primary)] break-all">
-                {{ formatAutomationEngineSettingValue(item) }}
+            <div>
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                {{ group.label }}
               </div>
-              <p
-                v-if="item.description"
-                class="text-xs text-[color:var(--text-dim)]"
+              <div class="text-xs text-[color:var(--text-dim)] mt-1">
+                {{ group.description }}
+              </div>
+            </div>
+
+            <dl class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+              <template
+                v-for="item in group.items"
+                :key="item.key"
               >
-                {{ item.description }}
-              </p>
-            </dd>
-          </template>
-        </dl>
+                <dt class="text-xs text-[color:var(--text-muted)]">
+                  {{ item.label }}
+                </dt>
+                <dd class="space-y-1">
+                  <div class="text-sm font-mono text-[color:var(--text-primary)] break-all">
+                    {{ formatAutomationEngineSettingValue(item) }}
+                  </div>
+                  <p
+                    v-if="item.description"
+                    class="text-xs text-[color:var(--text-dim)]"
+                  >
+                    {{ item.description }}
+                  </p>
+                </dd>
+              </template>
+            </dl>
+          </div>
+        </section>
+
+        <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
+          <div>
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Zone runtime overrides
+            </div>
+            <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              Zone-level override системных порогов pump calibration для runtime planner.
+            </div>
+          </div>
+
+          <ZonePumpCalibrationSettingsCard :zone-id="Number(zoneId)" />
+        </section>
 
         <div class="flex flex-wrap items-center gap-2">
           <Button
@@ -254,12 +329,16 @@ import ZoneAutomationAccordionSection from '@/Components/ZoneAutomationAccordion
 import ZoneAutomationOpsPanel from '@/Components/ZoneAutomationOpsPanel.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import CorrectionRuntimeReadinessCard from '@/Components/CorrectionRuntimeReadinessCard.vue'
 import PidConfigForm from '@/Components/PidConfigForm.vue'
+import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
 import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
 import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
 import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
 import ZonePumpCalibrationSettingsCard from '@/Components/ZonePumpCalibrationSettingsCard.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
+import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
+import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
 import { usePageProp } from '@/composables/usePageProps'
 import type {
@@ -290,6 +369,7 @@ interface AutomationEngineSettingItem {
 
 interface AutomationEngineSettingDescriptor {
   key: string
+  group: 'startup' | 'correction' | 'solution_change'
   label: string
   unit?: string
   description: string
@@ -298,136 +378,139 @@ interface AutomationEngineSettingDescriptor {
 const automationEngineSettingDescriptors: AutomationEngineSettingDescriptor[] = [
   {
     key: 'subsystems.diagnostics.execution.workflow',
+    group: 'startup',
     label: 'diagnostics.workflow',
     description: 'Режим запуска диагностики: startup (2 бака), cycle_start (3 бака) или diagnostics (только диагностика).',
   },
   {
-    key: 'subsystems.diagnostics.execution.interval_sec',
-    label: 'diagnostics.interval_sec',
-    unit: 'sec',
-    description: 'Период выполнения диагностического цикла и проверки условий.',
-  },
-  {
     key: 'subsystems.diagnostics.execution.refill.duration_sec',
+    group: 'startup',
     label: 'refill.duration_sec',
     unit: 'sec',
     description: 'Рабочая длительность импульса долива/набора при диагностике.',
   },
   {
     key: 'subsystems.diagnostics.execution.refill.timeout_sec',
+    group: 'startup',
     label: 'refill.timeout_sec',
     unit: 'sec',
     description: 'Максимальное время ожидания завершения refill до фиксации timeout.',
   },
   {
     key: 'subsystems.diagnostics.execution.startup.clean_fill_timeout_sec',
+    group: 'startup',
     label: 'startup.clean_fill_timeout_sec',
     unit: 'sec',
     description: 'Таймаут фазы заполнения бака чистой водой в startup.',
   },
   {
     key: 'subsystems.diagnostics.execution.startup.solution_fill_timeout_sec',
+    group: 'startup',
     label: 'startup.solution_fill_timeout_sec',
     unit: 'sec',
     description: 'Таймаут фазы заполнения бака раствором в startup.',
   },
   {
     key: 'subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec',
+    group: 'startup',
     label: 'startup.prepare_recirculation_timeout_sec',
     unit: 'sec',
     description: 'Таймаут подготовки рециркуляции перед переходом в рабочий режим.',
   },
   {
     key: 'subsystems.diagnostics.execution.startup.clean_fill_retry_cycles',
+    group: 'startup',
     label: 'startup.clean_fill_retry_cycles',
     description: 'Количество разрешённых повторов clean_fill при неуспешном наборе.',
   },
   {
     key: 'subsystems.diagnostics.execution.irrigation_recovery.max_continue_attempts',
+    group: 'startup',
     label: 'irrigation_recovery.max_continue_attempts',
     description: 'Максимум попыток продолжить полив в сценарии recovery.',
   },
   {
     key: 'subsystems.diagnostics.execution.irrigation_recovery.timeout_sec',
+    group: 'startup',
     label: 'irrigation_recovery.timeout_sec',
     unit: 'sec',
     description: 'Таймаут сценария восстановления irrigation_recovery.',
   },
   {
     key: 'subsystems.diagnostics.execution.prepare_tolerance.ec_pct',
+    group: 'startup',
     label: 'prepare_tolerance.ec_pct',
     unit: '%',
     description: 'Допуск по EC для признания фазы подготовки раствора успешной.',
   },
   {
     key: 'subsystems.diagnostics.execution.prepare_tolerance.ph_pct',
+    group: 'startup',
     label: 'prepare_tolerance.ph_pct',
     unit: '%',
     description: 'Допуск по pH для признания фазы подготовки раствора успешной.',
   },
   {
     key: 'subsystems.diagnostics.execution.correction.max_ec_correction_attempts',
+    group: 'correction',
     label: 'correction.max_ec_correction_attempts',
     description: 'Максимум попыток EC-коррекции в одном correction cycle.',
   },
   {
     key: 'subsystems.diagnostics.execution.correction.max_ph_correction_attempts',
+    group: 'correction',
     label: 'correction.max_ph_correction_attempts',
     description: 'Максимум попыток pH-коррекции в одном correction cycle.',
   },
   {
     key: 'subsystems.diagnostics.execution.correction.prepare_recirculation_max_attempts',
+    group: 'correction',
     label: 'correction.prepare_recirculation_max_attempts',
     description: 'Сколько окон рециркуляции допускается до terminal fail.',
   },
   {
     key: 'subsystems.diagnostics.execution.correction.prepare_recirculation_max_correction_attempts',
+    group: 'correction',
     label: 'correction.prepare_recirculation_max_correction_attempts',
     description: 'Верхний общий лимит шагов коррекции внутри окон рециркуляции.',
   },
   {
     key: 'subsystems.diagnostics.execution.correction.stabilization_sec',
+    group: 'correction',
     label: 'correction.stabilization_sec',
     unit: 'sec',
     description: 'Stage-level stabilization перед первым corr_check; не заменяет observe-window после дозы.',
   },
   {
-    key: 'subsystems.irrigation.execution.interval_sec',
-    label: 'irrigation.interval_sec',
-    unit: 'sec',
-    description: 'Период запуска полива в рабочем цикле.',
-  },
-  {
-    key: 'subsystems.irrigation.execution.duration_sec',
-    label: 'irrigation.duration_sec',
-    unit: 'sec',
-    description: 'Длительность одного поливочного импульса.',
-  },
-  {
-    key: 'subsystems.climate.execution.interval_sec',
-    label: 'climate.interval_sec',
-    unit: 'sec',
-    description: 'Период пересчёта климатического контура.',
-  },
-  {
-    key: 'subsystems.lighting.execution.interval_sec',
-    label: 'lighting.interval_sec',
-    unit: 'sec',
-    description: 'Период проверки и применения режима досветки.',
-  },
-  {
     key: 'subsystems.solution_change.execution.interval_sec',
+    group: 'solution_change',
     label: 'solution_change.interval_sec',
     unit: 'sec',
     description: 'Период запуска процедуры полной смены раствора.',
   },
   {
     key: 'subsystems.solution_change.execution.duration_sec',
+    group: 'solution_change',
     label: 'solution_change.duration_sec',
     unit: 'sec',
     description: 'Длительность одного цикла смены раствора.',
   },
 ]
+
+const automationEngineSettingGroupMeta: Record<AutomationEngineSettingDescriptor['group'], { label: string; description: string }> = {
+  startup: {
+    label: 'Startup, refill и recovery',
+    description: 'Низкоуровневые лимиты фаз запуска, refill и recovery-path, которые не являются частью пользовательского профиля климата/полива.',
+  },
+  correction: {
+    label: 'Correction loop guards',
+    description: 'Лимиты correction cycle и stage-level guard-параметры AE.',
+  },
+  solution_change: {
+    label: 'Solution change runtime',
+    description: 'Периодичность и длительность процедуры полной смены раствора.',
+  },
+}
 
 function readByPath(source: unknown, path: string): unknown {
   if (!source || typeof source !== 'object') {
@@ -469,7 +552,12 @@ function formatAutomationEngineSettingValue(item: AutomationEngineSettingItem): 
 }
 
 const props = defineProps<ZoneAutomationTabProps>()
+const emit = defineEmits<{
+  (e: 'open-pump-calibration'): void
+}>()
 const sensorCalibrationSettings = usePageProp<'sensorCalibrationSettings', SensorCalibrationSettings>('sensorCalibrationSettings')
+const automationDefaults = useAutomationDefaults()
+const automationCommandTemplates = useAutomationCommandTemplates()
 
 const {
   role,
@@ -548,12 +636,29 @@ const automationEngineRuntimePayload = computed(() => {
       waterForm,
       lightingForm,
     },
-    { includeSystemType: !isSystemTypeLocked.value }
+    {
+      includeSystemType: !isSystemTypeLocked.value,
+      automationDefaults: automationDefaults.value,
+      automationCommandTemplates: automationCommandTemplates.value,
+    }
   )
 })
 const automationEngineRuntimePayloadPretty = computed(() => {
   return JSON.stringify(automationEngineRuntimePayload.value, null, 2)
 })
+
+function scrollToSection(id: string): void {
+  if (typeof document === 'undefined') {
+    return
+  }
+
+  const element = document.getElementById(id)
+  if (!element) {
+    return
+  }
+
+  element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 const automationEngineKeySettings = computed<AutomationEngineSettingItem[]>(() => {
   const payload = automationEngineRuntimePayload.value
   return automationEngineSettingDescriptors
@@ -565,6 +670,19 @@ const automationEngineKeySettings = computed<AutomationEngineSettingItem[]>(() =
       value: readByPath(payload, descriptor.key),
     }))
     .filter((item) => item.value !== null && item.value !== undefined)
+})
+const automationEngineSettingGroups = computed(() => {
+  return (Object.keys(automationEngineSettingGroupMeta) as Array<AutomationEngineSettingDescriptor['group']>)
+    .map((groupKey) => ({
+      key: groupKey,
+      label: automationEngineSettingGroupMeta[groupKey].label,
+      description: automationEngineSettingGroupMeta[groupKey].description,
+      items: automationEngineKeySettings.value.filter((item) => {
+        const descriptor = automationEngineSettingDescriptors.find((candidate) => candidate.key === item.key)
+        return descriptor?.group === groupKey
+      }),
+    }))
+    .filter((group) => group.items.length > 0)
 })
 
 const automationStateMetaLabel = computed(() => {

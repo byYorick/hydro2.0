@@ -95,6 +95,9 @@ class ZoneCorrectionConfigCatalog
                 'prepare_recirculation_timeout_sec' => 1200,
                 'prepare_recirculation_max_attempts' => 3,
                 'prepare_recirculation_max_correction_attempts' => 20,
+                'telemetry_stale_retry_sec' => 30,
+                'decision_window_retry_sec' => 30,
+                'low_water_retry_sec' => 60,
             ],
             'tolerance' => [
                 'prepare_tolerance' => [
@@ -232,6 +235,27 @@ class ZoneCorrectionConfigCatalog
                         'Верхний guard для correction loop внутри одного recirculation window.',
                         'integer',
                         ['min' => 1, 'max' => 500, 'advanced_only' => true]
+                    ),
+                    self::field(
+                        'retry.telemetry_stale_retry_sec',
+                        'Telemetry stale retry',
+                        'Через сколько секунд повторять corr_check/corr_wait, если telemetry временно stale/unavailable.',
+                        'integer',
+                        ['min' => 1, 'max' => 3600, 'advanced_only' => true]
+                    ),
+                    self::field(
+                        'retry.decision_window_retry_sec',
+                        'Decision window retry',
+                        'Через сколько секунд повторять corr_check, если decision-window ещё не готово или содержит non-finite value.',
+                        'integer',
+                        ['min' => 1, 'max' => 3600, 'advanced_only' => true]
+                    ),
+                    self::field(
+                        'retry.low_water_retry_sec',
+                        'Low water retry',
+                        'Через сколько секунд повторять corr_check, если correction временно заблокирован по low-water guard.',
+                        'integer',
+                        ['min' => 1, 'max' => 3600, 'advanced_only' => true]
                     ),
                 ],
             ],

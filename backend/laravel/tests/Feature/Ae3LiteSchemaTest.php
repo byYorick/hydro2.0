@@ -67,7 +67,7 @@ class Ae3LiteSchemaTest extends TestCase
         $this->assertSame(2, DB::table('ae_tasks')->where('zone_id', $zone->id)->count());
     }
 
-    public function test_ae3lite_idempotency_key_is_unique(): void
+    public function test_ae3lite_idempotency_key_is_unique_per_zone(): void
     {
         $zone = Zone::factory()->create(['status' => 'online']);
         $idempotencyKey = 'ae3:start:'.$zone->id.':dup';
@@ -77,6 +77,18 @@ class Ae3LiteSchemaTest extends TestCase
         $this->assertInsertFails(function () use ($zone, $idempotencyKey): void {
             $this->insertTask($zone->id, 'failed', $idempotencyKey);
         }, 'duplicate');
+    }
+
+    public function test_ae3lite_same_idempotency_key_can_be_reused_in_different_zones(): void
+    {
+        $firstZone = Zone::factory()->create(['status' => 'online']);
+        $secondZone = Zone::factory()->create(['status' => 'online']);
+        $idempotencyKey = 'shared-key';
+
+        $this->insertTask($firstZone->id, 'pending', $idempotencyKey);
+        $this->insertTask($secondZone->id, 'pending', $idempotencyKey);
+
+        $this->assertSame(2, DB::table('ae_tasks')->where('idempotency_key', $idempotencyKey)->count());
     }
 
     public function test_ae3lite_command_step_is_unique_per_task(): void

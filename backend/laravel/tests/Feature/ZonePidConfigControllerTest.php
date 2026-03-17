@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Zone;
+use App\Models\ZoneEvent;
 use App\Models\ZonePidConfig;
 use Tests\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -140,6 +141,40 @@ class ZonePidConfigControllerTest extends TestCase
         $this->assertEquals(0.3, $pidConfig->config['dead_zone']);
     }
 
+    public function test_show_returns_serialized_pid_config_payload(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create();
+        $pidConfig = ZonePidConfig::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'ph',
+            'updated_by' => $user->id,
+            'updated_at' => now(),
+            'config' => [
+                'target' => 6.0,
+                'dead_zone' => 0.2,
+                'close_zone' => 0.5,
+                'far_zone' => 1.0,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 10.0, 'ki' => 0.0, 'kd' => 0.0],
+                    'far' => ['kp' => 12.0, 'ki' => 0.0, 'kd' => 0.0],
+                ],
+                'max_output' => 50.0,
+                'min_interval_ms' => 60000,
+                'max_integral' => 20.0,
+            ],
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/pid-configs/ph");
+
+        $response->assertOk()
+            ->assertJsonPath('data.id', $pidConfig->id)
+            ->assertJsonPath('data.zone_id', $zone->id)
+            ->assertJsonPath('data.type', 'ph')
+            ->assertJsonPath('data.updated_by', $user->id)
+            ->assertJsonPath('data.is_default', false);
+    }
+
     public function test_validates_pid_config_fields(): void
     {
         $zone = Zone::factory()->create();
@@ -223,6 +258,16 @@ class ZonePidConfigControllerTest extends TestCase
             'zone_id' => $zone->id,
             'type' => 'PID_CONFIG_UPDATED',
         ]);
+
+        $event = ZoneEvent::query()
+            ->where('zone_id', $zone->id)
+            ->where('type', 'PID_CONFIG_UPDATED')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($event);
+        $this->assertSame('ph', $event->payload_json['type'] ?? null);
+        $this->assertSame($user->id, $event->payload_json['updated_by'] ?? null);
     }
 
     public function test_rejects_invalid_type(): void

@@ -5,6 +5,13 @@ import type { useZones } from "@/composables/useZones";
 import { logger } from "@/utils/logger";
 import { TOAST_TIMEOUT } from "@/constants/timeouts";
 import { extractSetupWizardErrorDetails, extractSetupWizardErrorMessage } from "@/composables/setupWizardErrors";
+import { useAutomationCommandTemplates } from "@/composables/useAutomationCommandTemplates";
+import {
+  createDefaultClimateForm as createAutomationDefaultClimateForm,
+  createDefaultLightingForm as createAutomationDefaultLightingForm,
+  createDefaultWaterForm as createAutomationDefaultWaterForm,
+  useAutomationDefaults,
+} from "@/composables/useAutomationDefaults";
 import { applyAutomationFromRecipe, syncSystemToTankLayout, validateForms } from "@/composables/zoneAutomationFormLogic";
 import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationPayloadBuilders";
 import type { ClimateFormState, IrrigationSystem, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
@@ -141,76 +148,6 @@ function getNowLocalDatetimeValue(): string {
   const now = new Date();
   const offsetMs = now.getTimezoneOffset() * 60_000;
   return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function createDefaultClimateForm(): ClimateFormState {
-  return {
-    enabled: false,
-    dayTemp: 23,
-    nightTemp: 20,
-    dayHumidity: 65,
-    nightHumidity: 70,
-    intervalMinutes: 5,
-    dayStart: "07:00",
-    nightStart: "19:00",
-    ventMinPercent: 15,
-    ventMaxPercent: 85,
-    useExternalTelemetry: true,
-    outsideTempMin: 4,
-    outsideTempMax: 34,
-    outsideHumidityMax: 90,
-    manualOverrideEnabled: true,
-    overrideMinutes: 30,
-  };
-}
-
-function createDefaultWaterForm(): WaterFormState {
-  return {
-    systemType: "drip",
-    tanksCount: 2,
-    cleanTankFillL: 20,
-    nutrientTankTargetL: 15,
-    irrigationBatchL: 2,
-    intervalMinutes: 30,
-    durationSeconds: 120,
-    fillTemperatureC: 20,
-    fillWindowStart: "00:00",
-    fillWindowEnd: "23:59",
-    targetPh: 5.8,
-    targetEc: 1.2,
-    phPct: 5,
-    ecPct: 10,
-    valveSwitching: true,
-    correctionDuringIrrigation: true,
-    enableDrainControl: false,
-    drainTargetPercent: 20,
-    diagnosticsEnabled: true,
-    diagnosticsIntervalMinutes: 15,
-    cycleStartWorkflowEnabled: true,
-    cleanTankFullThreshold: 0.95,
-    refillDurationSeconds: 120,
-    refillTimeoutSeconds: 900,
-    refillRequiredNodeTypes: "irrig",
-    refillPreferredChannel: "",
-    solutionChangeEnabled: false,
-    solutionChangeIntervalMinutes: 720,
-    solutionChangeDurationSeconds: 120,
-    manualIrrigationSeconds: 120,
-  };
-}
-
-function createDefaultLightingForm(): LightingFormState {
-  return {
-    enabled: false,
-    luxDay: 12000,
-    luxNight: 0,
-    hoursOn: 16,
-    intervalMinutes: 30,
-    scheduleStart: "06:00",
-    scheduleEnd: "22:00",
-    manualIntensity: 0,
-    manualDurationHours: 1,
-  };
 }
 
 function createDefaultForm(zoneId?: number): WizardFormState {
@@ -498,6 +435,8 @@ export function useGrowthCycleWizard({
   showToast,
   fetchZones,
 }: UseGrowthCycleWizardOptions) {
+  const automationDefaults = useAutomationDefaults();
+  const automationCommandTemplates = useAutomationCommandTemplates();
   const currentStep = ref(0);
   const recipeMode = ref<"select" | "create">("select");
   const loading = ref(false);
@@ -507,9 +446,9 @@ export function useGrowthCycleWizard({
 
   const form = ref<WizardFormState>(createDefaultForm(props.zoneId));
 
-  const climateForm = ref<ClimateFormState>(createDefaultClimateForm());
-  const waterForm = ref<WaterFormState>(createDefaultWaterForm());
-  const lightingForm = ref<LightingFormState>(createDefaultLightingForm());
+  const climateForm = ref<ClimateFormState>(createAutomationDefaultClimateForm(automationDefaults.value));
+  const waterForm = ref<WaterFormState>(createAutomationDefaultWaterForm(automationDefaults.value));
+  const lightingForm = ref<LightingFormState>(createAutomationDefaultLightingForm(automationDefaults.value));
   const draftWasLoaded = ref(false);
   const draftFormsHydrated = ref(false);
   const isInitializingWizard = ref(false);
@@ -1115,17 +1054,17 @@ export function useGrowthCycleWizard({
       }
 
       if (draft.climateForm) {
-        climateForm.value = { ...createDefaultClimateForm(), ...draft.climateForm };
+        climateForm.value = { ...createAutomationDefaultClimateForm(automationDefaults.value), ...draft.climateForm };
         hasLoadedForms = true;
       }
 
       if (draft.waterForm) {
-        waterForm.value = { ...createDefaultWaterForm(), ...draft.waterForm };
+        waterForm.value = { ...createAutomationDefaultWaterForm(automationDefaults.value), ...draft.waterForm };
         hasLoadedForms = true;
       }
 
       if (draft.lightingForm) {
-        lightingForm.value = { ...createDefaultLightingForm(), ...draft.lightingForm };
+        lightingForm.value = { ...createAutomationDefaultLightingForm(automationDefaults.value), ...draft.lightingForm };
         hasLoadedForms = true;
       }
 
@@ -1389,6 +1328,9 @@ export function useGrowthCycleWizard({
         climateForm: climateForm.value,
         waterForm: waterForm.value,
         lightingForm: lightingForm.value,
+      }, {
+        automationDefaults: automationDefaults.value,
+        automationCommandTemplates: automationCommandTemplates.value,
       });
       await saveAutomationProfile(zoneId, (configPayload.subsystems || {}) as Record<string, unknown>);
     } catch (err: unknown) {
@@ -1456,9 +1398,9 @@ export function useGrowthCycleWizard({
     validationErrors.value = [];
     form.value = createDefaultForm(props.zoneId);
 
-    climateForm.value = createDefaultClimateForm();
-    waterForm.value = createDefaultWaterForm();
-    lightingForm.value = createDefaultLightingForm();
+    climateForm.value = createAutomationDefaultClimateForm(automationDefaults.value);
+    waterForm.value = createAutomationDefaultWaterForm(automationDefaults.value);
+    lightingForm.value = createAutomationDefaultLightingForm(automationDefaults.value);
     draftWasLoaded.value = false;
     draftFormsHydrated.value = false;
     isInitializingWizard.value = false;
@@ -1555,6 +1497,9 @@ export function useGrowthCycleWizard({
           waterForm.value.tanksCount = 2;
         }
         waterForm.value.enableDrainControl = false;
+        if (waterForm.value.diagnosticsWorkflow === "cycle_start") {
+          waterForm.value.diagnosticsWorkflow = "startup";
+        }
         return;
       }
 
@@ -1563,6 +1508,11 @@ export function useGrowthCycleWizard({
       }
       if (normalizedTanksCount === 2) {
         waterForm.value.enableDrainControl = false;
+        if (waterForm.value.diagnosticsWorkflow === "cycle_start") {
+          waterForm.value.diagnosticsWorkflow = "startup";
+        }
+      } else if (waterForm.value.diagnosticsWorkflow === "startup") {
+        waterForm.value.diagnosticsWorkflow = "cycle_start";
       }
     },
   );

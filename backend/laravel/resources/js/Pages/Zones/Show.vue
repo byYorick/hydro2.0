@@ -64,6 +64,7 @@
         :targets="targets"
         :telemetry="telemetry"
         :active-grow-cycle="activeGrowCycle"
+        @open-pump-calibration="openPumpCalibrationModal"
       />
       <ZoneEventsTab
         v-else-if="activeTab === 'events'"

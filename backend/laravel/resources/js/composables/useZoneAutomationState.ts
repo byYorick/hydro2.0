@@ -1,5 +1,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
+import {
+  createDefaultClimateForm,
+  createDefaultLightingForm,
+  createDefaultWaterForm,
+  FALLBACK_AUTOMATION_DEFAULTS,
+  useAutomationDefaults,
+} from '@/composables/useAutomationDefaults'
 import { logger } from '@/utils/logger'
 import type { ZoneTargets as ZoneTargetsType } from '@/types'
 import {
@@ -19,6 +26,7 @@ import {
   type AutomationLogicMode,
 } from '@/composables/zoneAutomationUtils'
 import type { PredictionTargets, ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
+import type { AutomationDefaultsSettings } from '@/types/SystemSettings'
 import type { ToastVariant } from '@/composables/useToast'
 
 // ─── Private sanitize helpers ─────────────────────────────────────────────────
@@ -86,7 +94,13 @@ function sanitizeClimateForm(raw: Partial<ClimateFormState> | undefined, fallbac
   }
 }
 
-function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: WaterFormState): WaterFormState {
+function sanitizeWaterForm(
+  raw: Partial<WaterFormState> | undefined,
+  fallback: WaterFormState,
+  defaults: AutomationDefaultsSettings = FALLBACK_AUTOMATION_DEFAULTS,
+): WaterFormState {
+  const legacyRaw = raw as (Partial<WaterFormState> & { cycleStartWorkflowEnabled?: unknown }) | undefined
+  const legacyFallback = fallback as WaterFormState & { cycleStartWorkflowEnabled?: boolean }
   const systemType = toIrrigationSystem(raw?.systemType, fallback.systemType)
   const tanksRaw = toRoundedNumber(raw?.tanksCount, fallback.tanksCount)
   const tanksCount = tanksRaw === 3 ? 3 : 2
@@ -99,7 +113,7 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
   const diagnosticsWorkflow =
     rawWorkflow === 'startup' || rawWorkflow === 'cycle_start' || rawWorkflow === 'diagnostics'
       ? rawWorkflow
-      : toBoolean(raw?.cycleStartWorkflowEnabled, fallback.cycleStartWorkflowEnabled)
+      : toBoolean(legacyRaw?.cycleStartWorkflowEnabled, legacyFallback.cycleStartWorkflowEnabled ?? false)
         ? (tanksCount === 2 ? 'startup' : 'cycle_start')
         : 'diagnostics'
   const fallbackStepCount = (value: unknown, defaultValue: number): number => {
@@ -141,7 +155,6 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
       1,
       1440
     ),
-    cycleStartWorkflowEnabled: toBoolean(raw?.cycleStartWorkflowEnabled, fallback.cycleStartWorkflowEnabled),
     diagnosticsWorkflow,
     cleanTankFullThreshold: clamp(toNumber(raw?.cleanTankFullThreshold, fallback.cleanTankFullThreshold), 0.05, 1),
     refillDurationSeconds: clamp(toRoundedNumber(raw?.refillDurationSeconds, fallback.refillDurationSeconds), 1, 3600),
@@ -149,7 +162,9 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     startupCleanFillTimeoutSeconds: clamp(
       toRoundedNumber(
         raw?.startupCleanFillTimeoutSeconds,
-        typeof fallback.startupCleanFillTimeoutSeconds === 'number' ? fallback.startupCleanFillTimeoutSeconds : 900
+        typeof fallback.startupCleanFillTimeoutSeconds === 'number'
+          ? fallback.startupCleanFillTimeoutSeconds
+          : defaults.water_startup_clean_fill_timeout_sec
       ),
       30,
       86400
@@ -157,7 +172,9 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     startupSolutionFillTimeoutSeconds: clamp(
       toRoundedNumber(
         raw?.startupSolutionFillTimeoutSeconds,
-        typeof fallback.startupSolutionFillTimeoutSeconds === 'number' ? fallback.startupSolutionFillTimeoutSeconds : 1350
+        typeof fallback.startupSolutionFillTimeoutSeconds === 'number'
+          ? fallback.startupSolutionFillTimeoutSeconds
+          : defaults.water_startup_solution_fill_timeout_sec
       ),
       30,
       86400
@@ -167,7 +184,7 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
         raw?.startupPrepareRecirculationTimeoutSeconds,
         typeof fallback.startupPrepareRecirculationTimeoutSeconds === 'number'
           ? fallback.startupPrepareRecirculationTimeoutSeconds
-          : 900
+          : defaults.water_startup_prepare_recirculation_timeout_sec
       ),
       30,
       86400
@@ -175,7 +192,9 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     startupCleanFillRetryCycles: clamp(
       toRoundedNumber(
         raw?.startupCleanFillRetryCycles,
-        typeof fallback.startupCleanFillRetryCycles === 'number' ? fallback.startupCleanFillRetryCycles : 1
+        typeof fallback.startupCleanFillRetryCycles === 'number'
+          ? fallback.startupCleanFillRetryCycles
+          : defaults.water_startup_clean_fill_retry_cycles
       ),
       0,
       20
@@ -185,7 +204,7 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
         raw?.irrigationRecoveryMaxContinueAttempts,
         typeof fallback.irrigationRecoveryMaxContinueAttempts === 'number'
           ? fallback.irrigationRecoveryMaxContinueAttempts
-          : 5
+          : defaults.water_irrigation_recovery_max_continue_attempts
       ),
       1,
       30
@@ -193,25 +212,39 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     irrigationRecoveryTimeoutSeconds: clamp(
       toRoundedNumber(
         raw?.irrigationRecoveryTimeoutSeconds,
-        typeof fallback.irrigationRecoveryTimeoutSeconds === 'number' ? fallback.irrigationRecoveryTimeoutSeconds : 600
+        typeof fallback.irrigationRecoveryTimeoutSeconds === 'number'
+          ? fallback.irrigationRecoveryTimeoutSeconds
+          : defaults.water_irrigation_recovery_timeout_sec
       ),
       30,
       86400
     ),
     prepareToleranceEcPct: clamp(
-      toNumber(raw?.prepareToleranceEcPct, typeof fallback.prepareToleranceEcPct === 'number' ? fallback.prepareToleranceEcPct : 25),
+      toNumber(
+        raw?.prepareToleranceEcPct,
+        typeof fallback.prepareToleranceEcPct === 'number'
+          ? fallback.prepareToleranceEcPct
+          : defaults.water_prepare_tolerance_ec_pct
+      ),
       0.1,
       100
     ),
     prepareTolerancePhPct: clamp(
-      toNumber(raw?.prepareTolerancePhPct, typeof fallback.prepareTolerancePhPct === 'number' ? fallback.prepareTolerancePhPct : 15),
+      toNumber(
+        raw?.prepareTolerancePhPct,
+        typeof fallback.prepareTolerancePhPct === 'number'
+          ? fallback.prepareTolerancePhPct
+          : defaults.water_prepare_tolerance_ph_pct
+      ),
       0.1,
       100
     ),
     correctionMaxEcCorrectionAttempts: clamp(
       toRoundedNumber(
         raw?.correctionMaxEcCorrectionAttempts,
-        typeof fallback.correctionMaxEcCorrectionAttempts === 'number' ? fallback.correctionMaxEcCorrectionAttempts : 5
+        typeof fallback.correctionMaxEcCorrectionAttempts === 'number'
+          ? fallback.correctionMaxEcCorrectionAttempts
+          : defaults.water_correction_max_ec_attempts
       ),
       1,
       50
@@ -219,7 +252,9 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     correctionMaxPhCorrectionAttempts: clamp(
       toRoundedNumber(
         raw?.correctionMaxPhCorrectionAttempts,
-        typeof fallback.correctionMaxPhCorrectionAttempts === 'number' ? fallback.correctionMaxPhCorrectionAttempts : 5
+        typeof fallback.correctionMaxPhCorrectionAttempts === 'number'
+          ? fallback.correctionMaxPhCorrectionAttempts
+          : defaults.water_correction_max_ph_attempts
       ),
       1,
       50
@@ -229,7 +264,7 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
         raw?.correctionPrepareRecirculationMaxAttempts,
         typeof fallback.correctionPrepareRecirculationMaxAttempts === 'number'
           ? fallback.correctionPrepareRecirculationMaxAttempts
-          : 3
+          : defaults.water_correction_prepare_recirculation_max_attempts
       ),
       1,
       50
@@ -239,7 +274,7 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
         raw?.correctionPrepareRecirculationMaxCorrectionAttempts,
         typeof fallback.correctionPrepareRecirculationMaxCorrectionAttempts === 'number'
           ? fallback.correctionPrepareRecirculationMaxCorrectionAttempts
-          : 20
+          : defaults.water_correction_prepare_recirculation_max_correction_attempts
       ),
       1,
       500
@@ -247,34 +282,52 @@ function sanitizeWaterForm(raw: Partial<WaterFormState> | undefined, fallback: W
     correctionStabilizationSec: clamp(
       toRoundedNumber(
         raw?.correctionStabilizationSec,
-        typeof fallback.correctionStabilizationSec === 'number' ? fallback.correctionStabilizationSec : 60
+        typeof fallback.correctionStabilizationSec === 'number'
+          ? fallback.correctionStabilizationSec
+          : defaults.water_correction_stabilization_sec
       ),
       0,
       3600
     ),
-    twoTankCleanFillStartSteps: sanitizeStepCount(raw?.twoTankCleanFillStartSteps, fallback.twoTankCleanFillStartSteps, 1),
-    twoTankCleanFillStopSteps: sanitizeStepCount(raw?.twoTankCleanFillStopSteps, fallback.twoTankCleanFillStopSteps, 1),
-    twoTankSolutionFillStartSteps: sanitizeStepCount(raw?.twoTankSolutionFillStartSteps, fallback.twoTankSolutionFillStartSteps, 3),
-    twoTankSolutionFillStopSteps: sanitizeStepCount(raw?.twoTankSolutionFillStopSteps, fallback.twoTankSolutionFillStopSteps, 3),
+    twoTankCleanFillStartSteps: sanitizeStepCount(
+      raw?.twoTankCleanFillStartSteps,
+      fallback.twoTankCleanFillStartSteps,
+      defaults.water_two_tank_clean_fill_start_steps
+    ),
+    twoTankCleanFillStopSteps: sanitizeStepCount(
+      raw?.twoTankCleanFillStopSteps,
+      fallback.twoTankCleanFillStopSteps,
+      defaults.water_two_tank_clean_fill_stop_steps
+    ),
+    twoTankSolutionFillStartSteps: sanitizeStepCount(
+      raw?.twoTankSolutionFillStartSteps,
+      fallback.twoTankSolutionFillStartSteps,
+      defaults.water_two_tank_solution_fill_start_steps
+    ),
+    twoTankSolutionFillStopSteps: sanitizeStepCount(
+      raw?.twoTankSolutionFillStopSteps,
+      fallback.twoTankSolutionFillStopSteps,
+      defaults.water_two_tank_solution_fill_stop_steps
+    ),
     twoTankPrepareRecirculationStartSteps: sanitizeStepCount(
       raw?.twoTankPrepareRecirculationStartSteps,
       fallback.twoTankPrepareRecirculationStartSteps,
-      3
+      defaults.water_two_tank_prepare_recirculation_start_steps
     ),
     twoTankPrepareRecirculationStopSteps: sanitizeStepCount(
       raw?.twoTankPrepareRecirculationStopSteps,
       fallback.twoTankPrepareRecirculationStopSteps,
-      3
+      defaults.water_two_tank_prepare_recirculation_stop_steps
     ),
     twoTankIrrigationRecoveryStartSteps: sanitizeStepCount(
       raw?.twoTankIrrigationRecoveryStartSteps,
       fallback.twoTankIrrigationRecoveryStartSteps,
-      4
+      defaults.water_two_tank_irrigation_recovery_start_steps
     ),
     twoTankIrrigationRecoveryStopSteps: sanitizeStepCount(
       raw?.twoTankIrrigationRecoveryStopSteps,
       fallback.twoTankIrrigationRecoveryStopSteps,
-      3
+      defaults.water_two_tank_irrigation_recovery_stop_steps
     ),
     refillRequiredNodeTypes:
       typeof raw?.refillRequiredNodeTypes === 'string' && raw.refillRequiredNodeTypes.trim() !== ''
@@ -336,6 +389,7 @@ export interface ZoneAutomationStateDeps {
 
 export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: ZoneAutomationStateDeps) {
   const page = usePage<{ auth?: { user?: { role?: string } } }>()
+  const automationDefaults = useAutomationDefaults()
   const { sendZoneCommand, showToast } = deps
 
   // ─── Role / permissions ────────────────────────────────────────────────────
@@ -354,91 +408,9 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
   })
 
   // ─── Forms ─────────────────────────────────────────────────────────────────
-  const climateForm = reactive<ClimateFormState>({
-    enabled: true,
-    dayTemp: 23,
-    nightTemp: 20,
-    dayHumidity: 62,
-    nightHumidity: 70,
-    intervalMinutes: 5,
-    dayStart: '07:00',
-    nightStart: '19:00',
-    ventMinPercent: 15,
-    ventMaxPercent: 85,
-    useExternalTelemetry: true,
-    outsideTempMin: 4,
-    outsideTempMax: 34,
-    outsideHumidityMax: 90,
-    manualOverrideEnabled: true,
-    overrideMinutes: 30,
-  })
-
-  const waterForm = reactive<WaterFormState>({
-    systemType: 'drip' as IrrigationSystem,
-    tanksCount: 2,
-    cleanTankFillL: 300,
-    nutrientTankTargetL: 280,
-    irrigationBatchL: 20,
-    intervalMinutes: 30,
-    durationSeconds: 120,
-    fillTemperatureC: 20,
-    fillWindowStart: '05:00',
-    fillWindowEnd: '07:00',
-    targetPh: 5.8,
-    targetEc: 1.6,
-    phPct: 5,
-    ecPct: 10,
-    valveSwitching: true,
-    correctionDuringIrrigation: true,
-    enableDrainControl: false,
-    drainTargetPercent: 20,
-    diagnosticsEnabled: true,
-    diagnosticsIntervalMinutes: 15,
-    cycleStartWorkflowEnabled: true,
-    diagnosticsWorkflow: 'startup',
-    cleanTankFullThreshold: 0.95,
-    refillDurationSeconds: 30,
-    refillTimeoutSeconds: 600,
-    startupCleanFillTimeoutSeconds: 900,
-    startupSolutionFillTimeoutSeconds: 1350,
-    startupPrepareRecirculationTimeoutSeconds: 900,
-    startupCleanFillRetryCycles: 1,
-    irrigationRecoveryMaxContinueAttempts: 5,
-    irrigationRecoveryTimeoutSeconds: 600,
-    prepareToleranceEcPct: 25,
-    prepareTolerancePhPct: 15,
-    correctionMaxEcCorrectionAttempts: 5,
-    correctionMaxPhCorrectionAttempts: 5,
-    correctionPrepareRecirculationMaxAttempts: 3,
-    correctionPrepareRecirculationMaxCorrectionAttempts: 20,
-    correctionStabilizationSec: 60,
-    twoTankCleanFillStartSteps: 1,
-    twoTankCleanFillStopSteps: 1,
-    twoTankSolutionFillStartSteps: 3,
-    twoTankSolutionFillStopSteps: 3,
-    twoTankPrepareRecirculationStartSteps: 3,
-    twoTankPrepareRecirculationStopSteps: 3,
-    twoTankIrrigationRecoveryStartSteps: 4,
-    twoTankIrrigationRecoveryStopSteps: 3,
-    refillRequiredNodeTypes: 'irrig,climate,light',
-    refillPreferredChannel: 'fill_valve',
-    solutionChangeEnabled: false,
-    solutionChangeIntervalMinutes: 180,
-    solutionChangeDurationSeconds: 120,
-    manualIrrigationSeconds: 90,
-  })
-
-  const lightingForm = reactive<LightingFormState>({
-    enabled: true,
-    luxDay: 18000,
-    luxNight: 0,
-    hoursOn: 16,
-    intervalMinutes: 30,
-    scheduleStart: '06:00',
-    scheduleEnd: '22:00',
-    manualIntensity: 75,
-    manualDurationHours: 4,
-  })
+  const climateForm = reactive<ClimateFormState>(createDefaultClimateForm(automationDefaults.value))
+  const waterForm = reactive<WaterFormState>(createDefaultWaterForm(automationDefaults.value))
+  const lightingForm = reactive<LightingFormState>(createDefaultLightingForm(automationDefaults.value))
 
   const quickActions = reactive({
     irrigation: false,
@@ -539,7 +511,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
         Object.assign(climateForm, sanitizeClimateForm(parsed.climate, climateForm))
       }
       if (parsed.water) {
-        Object.assign(waterForm, sanitizeWaterForm(parsed.water, waterForm))
+        Object.assign(waterForm, sanitizeWaterForm(parsed.water, waterForm, automationDefaults.value))
       }
       if (parsed.lighting) {
         Object.assign(lightingForm, sanitizeLightingForm(parsed.lighting, lightingForm))
@@ -580,7 +552,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
 
   // ─── Quick actions ─────────────────────────────────────────────────────────
   function resetToRecommended(): void {
-    resetFormsToRecommended({ climateForm, waterForm, lightingForm })
+    resetFormsToRecommended({ climateForm, waterForm, lightingForm }, automationDefaults.value)
   }
 
   async function withQuickAction(key: keyof typeof quickActions, callback: () => Promise<void>): Promise<void> {

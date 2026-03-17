@@ -1,4 +1,6 @@
 import { logger } from '@/utils/logger'
+import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
+import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import {
   applyAutomationFromRecipe,
   buildGrowthCycleConfigPayload,
@@ -96,6 +98,8 @@ export function useZoneAutomationApi(
   state: ZoneAutomationApiState,
   deps: ZoneAutomationApiDeps
 ) {
+  const automationDefaults = useAutomationDefaults()
+  const automationCommandTemplates = useAutomationCommandTemplates()
   const { get, post, showToast, sendZoneCommand } = deps
   const {
     climateForm,
@@ -217,7 +221,7 @@ export function useZoneAutomationApi(
     const includeTargets = options?.includeTargets ?? true
     isHydratingProfile.value = true
     try {
-      resetFormsToRecommended({ climateForm, waterForm, lightingForm })
+      resetFormsToRecommended({ climateForm, waterForm, lightingForm }, automationDefaults.value)
       lastAppliedAt.value = null
       lastAutomationLogicSyncAt.value = null
       automationLogicMode.value = 'working'
@@ -250,7 +254,11 @@ export function useZoneAutomationApi(
     try {
       const payload = buildGrowthCycleConfigPayload(
         { climateForm, waterForm, lightingForm },
-        { includeSystemType: !isSystemTypeLocked.value }
+        {
+          includeSystemType: !isSystemTypeLocked.value,
+          automationDefaults: automationDefaults.value,
+          automationCommandTemplates: automationCommandTemplates.value,
+        }
       )
       const payloadRecord = asRecord(payload)
       const subsystems = asRecord(payloadRecord?.subsystems ?? null)

@@ -22,7 +22,7 @@ class PgAutomationTaskRepository:
 
     # ── Reads ───────────────────────────────────────────────────────
 
-    async def get_by_idempotency_key(self, *, idempotency_key: str) -> Optional[AutomationTask]:
+    async def get_by_idempotency_key(self, *, zone_id: int, idempotency_key: str) -> Optional[AutomationTask]:
         normalized_key = str(idempotency_key or "").strip()
         if normalized_key == "":
             return None
@@ -33,9 +33,11 @@ class PgAutomationTaskRepository:
                 """
                 SELECT *
                 FROM ae_tasks
-                WHERE idempotency_key = $1
+                WHERE zone_id = $1
+                  AND idempotency_key = $2
                 LIMIT 1
                 """,
+                zone_id,
                 normalized_key,
             )
         return AutomationTask.from_row(row) if row is not None else None

@@ -51,14 +51,11 @@ class CreateTaskFromIntentUseCase:
             raise TaskCreateError("start_cycle_missing_idempotency_key", "idempotency_key is required")
 
         # Fast path: check idempotency without lock
-        existing_task = await self._task_repository.get_by_idempotency_key(idempotency_key=normalized_key)
+        existing_task = await self._task_repository.get_by_idempotency_key(
+            zone_id=zone_id,
+            idempotency_key=normalized_key,
+        )
         if existing_task is not None:
-            if existing_task.zone_id != zone_id:
-                raise TaskCreateError(
-                    "start_cycle_idempotency_key_conflict",
-                    f"idempotency_key={normalized_key} already belongs to zone_id={existing_task.zone_id}",
-                    details={"conflict_zone_id": existing_task.zone_id},
-                )
             return TaskCreationResult(task=existing_task, created=False)
         if not allow_create:
             raise TaskCreateError(
@@ -147,8 +144,11 @@ class CreateTaskFromIntentUseCase:
                     return TaskCreationResult(task=created_task, created=True)
 
         # INSERT returned None (UNIQUE conflict on idempotency_key from concurrent req)
-        deduplicated_task = await self._task_repository.get_by_idempotency_key(idempotency_key=normalized_key)
-        if deduplicated_task is not None and deduplicated_task.zone_id == zone_id:
+        deduplicated_task = await self._task_repository.get_by_idempotency_key(
+            zone_id=zone_id,
+            idempotency_key=normalized_key,
+        )
+        if deduplicated_task is not None:
             return TaskCreationResult(task=deduplicated_task, created=False)
 
         raise TaskCreateError("ae3_task_create_failed", f"Unable to create canonical task for zone_id={zone_id}")

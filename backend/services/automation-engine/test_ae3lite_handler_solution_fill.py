@@ -238,6 +238,9 @@ async def test_filling_targets_not_reached_enters_correction() -> None:
     assert outcome.kind == "enter_correction"
     assert outcome.correction is not None
     assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.attempt == 0
+    assert outcome.correction.ec_attempt == 0
+    assert outcome.correction.ph_attempt == 0
     assert outcome.correction.return_stage_success == "solution_fill_check"
     assert outcome.correction.return_stage_fail == "solution_fill_check"
 

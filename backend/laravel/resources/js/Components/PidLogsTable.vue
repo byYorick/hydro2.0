@@ -78,74 +78,79 @@
             </tr>
           </thead>
           <tbody>
-            <tr
+            <template
               v-for="log in logs"
               :key="log.id"
-              class="border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)]"
             >
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                {{ new Date(log.created_at).toLocaleString('ru-RU') }}
-              </td>
-              <td class="py-2 px-3">
-                <Badge
-                  :variant="
-                    log.type === 'config_updated'
-                      ? 'info'
-                      : log.zone_state === 'far'
-                        ? 'warning'
-                        : 'neutral'
-                  "
-                  class="text-xs"
+              <tr class="border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)]">
+                <td class="py-2 px-3 text-[color:var(--text-primary)]">
+                  {{ new Date(log.created_at).toLocaleString('ru-RU') }}
+                </td>
+                <td class="py-2 px-3">
+                  <Badge
+                    :variant="badgeVariant(log)"
+                    class="text-xs"
+                  >
+                    {{ badgeLabel(log) }}
+                  </Badge>
+                </td>
+                <td class="py-2 px-3 text-[color:var(--text-primary)]">
+                  <span class="text-xs">
+                    {{ contextLabel(log) }}
+                  </span>
+                </td>
+                <td class="py-2 px-3 text-[color:var(--text-primary)]">
+                  <span v-if="typeof log.output === 'number'">{{ log.output.toFixed(2) }}</span>
+                  <span
+                    v-else
+                    class="text-[color:var(--text-dim)]"
+                  >-</span>
+                </td>
+                <td class="py-2 px-3 text-[color:var(--text-primary)]">
+                  <span
+                    v-if="typeof log.error === 'number'"
+                    :class="getErrorClass(log.error)"
+                  >
+                    {{ log.error.toFixed(3) }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-[color:var(--text-dim)]"
+                  >-</span>
+                </td>
+                <td class="py-2 px-3 text-[color:var(--text-primary)]">
+                  <span v-if="typeof log.current === 'number'">{{ log.current.toFixed(2) }}</span>
+                  <span
+                    v-else
+                    class="text-[color:var(--text-dim)]"
+                  >-</span>
+                </td>
+                <td class="py-2 px-3 text-[color:var(--text-primary)]">
+                  <span v-if="typeof log.target === 'number'">{{ log.target.toFixed(2) }}</span>
+                  <span
+                    v-else-if="typeof log.new_config?.target === 'number'"
+                  >
+                    {{ log.new_config.target.toFixed(2) }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-[color:var(--text-dim)]"
+                  >-</span>
+                </td>
+              </tr>
+              <tr
+                v-if="isConfigUpdated(log)"
+                class="border-b border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+              >
+                <td class="py-2 px-3"></td>
+                <td
+                  colspan="6"
+                  class="py-2 px-3 text-xs text-[color:var(--text-dim)]"
                 >
-                  {{ log.type === 'config_updated' ? 'Config' : log.type.toUpperCase() }}
-                </Badge>
-              </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span
-                  v-if="log.zone_state"
-                  class="text-xs"
-                >
-                  {{ log.zone_state }}
-                </span>
-                <span
-                  v-else
-                  class="text-xs text-[color:var(--text-dim)]"
-                >-</span>
-              </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span v-if="log.output !== undefined">{{ log.output.toFixed(2) }}</span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
-              </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span
-                  v-if="log.error !== undefined"
-                  :class="getErrorClass(log.error)"
-                >
-                  {{ log.error.toFixed(3) }}
-                </span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
-              </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span v-if="log.current !== undefined">{{ log.current.toFixed(2) }}</span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
-              </td>
-              <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span v-if="log.target !== undefined">{{ log.target.toFixed(2) }}</span>
-                <span
-                  v-else
-                  class="text-[color:var(--text-dim)]"
-                >-</span>
-              </td>
-            </tr>
+                  {{ configSummary(log) }}
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -212,6 +217,65 @@ function getErrorClass(error: number): string {
   if (absError > 1.0) return 'text-[color:var(--accent-red)]'
   if (absError > 0.5) return 'text-[color:var(--accent-amber)]'
   return 'text-[color:var(--text-primary)]'
+}
+
+function isConfigUpdated(log: PidLog): boolean {
+  return log.type === 'config_updated'
+}
+
+function badgeVariant(log: PidLog): 'info' | 'warning' | 'neutral' {
+  if (isConfigUpdated(log)) {
+    return 'info'
+  }
+
+  return log.zone_state === 'far' ? 'warning' : 'neutral'
+}
+
+function badgeLabel(log: PidLog): string {
+  if (isConfigUpdated(log)) {
+    return `Config ${String(log.pid_type || '').toUpperCase() || 'PID'}`
+  }
+
+  return String(log.type || 'PID').toUpperCase()
+}
+
+function contextLabel(log: PidLog): string {
+  if (isConfigUpdated(log)) {
+    if (log.updated_by) {
+      return `updated_by #${log.updated_by}`
+    }
+
+    return `PID ${String(log.pid_type || '').toUpperCase() || 'unknown'}`
+  }
+
+  return log.zone_state || '-'
+}
+
+function configSummary(log: PidLog): string {
+  if (!isConfigUpdated(log)) {
+    return ''
+  }
+
+  const parts: string[] = []
+  if (typeof log.old_config?.target === 'number' && typeof log.new_config?.target === 'number') {
+    parts.push(`target ${log.old_config.target.toFixed(2)} → ${log.new_config.target.toFixed(2)}`)
+  } else if (typeof log.new_config?.target === 'number') {
+    parts.push(`target ${log.new_config.target.toFixed(2)}`)
+  }
+
+  if (typeof log.new_config?.max_output === 'number') {
+    parts.push(`max dose ${log.new_config.max_output.toFixed(1)} мл`)
+  }
+
+  if (typeof log.new_config?.min_interval_ms === 'number') {
+    parts.push(`interval ${(log.new_config.min_interval_ms / 1000).toFixed(0)} сек`)
+  }
+
+  if (typeof log.new_config?.max_integral === 'number') {
+    parts.push(`max integral ${log.new_config.max_integral.toFixed(1)}`)
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : 'Параметры конфига обновлены.'
 }
 
 async function loadLogs(newOffset: number = 0) {

@@ -333,394 +333,287 @@
           </div>
         </div>
 
-        <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
-          <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
-            Диагностика и startup runtime
-          </h4>
-          <details class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
-            <summary class="cursor-pointer text-xs font-semibold text-[color:var(--text-primary)]">
-              Подробное описание параметров AE (на русском)
-            </summary>
-            <dl class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs">
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  diagnostics.workflow
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Выбирает сценарий старта: `startup` для 2 баков, `cycle_start` для 3 баков, `diagnostics` только диагностика.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  diagnostics.interval_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Период запуска диагностики и проверок в рантайме.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  refill.duration_sec / refill.timeout_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Длительность одной попытки refill и общий таймаут ожидания её завершения.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  startup.*_timeout_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Лимиты времени для фаз clean_fill, solution_fill и prepare_recirculation в startup.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  startup.clean_fill_retry_cycles
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Сколько раз можно повторить clean_fill, если фаза не завершилась успешно.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  irrigation_recovery.max_continue_attempts / timeout_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Сколько попыток recovery допускается и сколько максимум длится recovery-сценарий.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  prepare_tolerance.ec_pct / ph_pct
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Допуски по EC/pH, при которых подготовка раствора считается достаточной для продолжения.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  correction.max_ec_correction_attempts / max_ph_correction_attempts
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Лимиты количества попыток дозирования EC и pH в одном цикле коррекции.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  correction.prepare_recirculation_max_attempts / prepare_recirculation_max_correction_attempts
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Лимит окон рециркуляции до terminal fail и общий лимит шагов коррекции внутри окон.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  correction.stabilization_sec + process calibration observe window
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Stage-level stabilization перед первым corr_check и observe-window после дозы, который задаётся
-                  через process calibration / correction-config, а не через legacy waits в diagnostics execution.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  irrigation.interval_sec / duration_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Период поливов и длительность одного поливочного импульса.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  climate.interval_sec / lighting.interval_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Частота пересчёта климата и частота применения правил досветки.
-                </dd>
-              </div>
-              <div>
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  solution_change.interval_sec / duration_sec
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Период и длительность цикла полной смены раствора.
-                </dd>
-              </div>
-              <div class="md:col-span-2">
-                <dt class="font-mono text-[color:var(--text-primary)]">
-                  refill.required_node_types / refill.channel
-                </dt>
-                <dd class="text-[color:var(--text-dim)]">
-                  Какие типы нод обязательны для refill и через какой канал отправлять команду refill.
-                </dd>
-              </div>
-            </dl>
-          </details>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Диагностика
-              <select
-                v-model="draftWaterForm.diagnosticsEnabled"
-                class="input-select mt-1 w-full"
-              >
-                <option :value="true">Включена</option>
-                <option :value="false">Выключена</option>
-              </select>
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Интервал диагностики (мин)
-              <input
-                v-model.number="draftWaterForm.diagnosticsIntervalMinutes"
-                type="number"
-                min="1"
-                max="1440"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Режим диагностики (diagnostics.workflow)
-              <select
-                v-model="draftWaterForm.diagnosticsWorkflow"
-                class="input-select mt-1 w-full"
-              >
-                <option value="startup">startup</option>
-                <option
-                  value="cycle_start"
-                  :disabled="draftWaterForm.tanksCount === 2"
-                >
-                  cycle_start
-                </option>
-                <option value="diagnostics">diagnostics</option>
-              </select>
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Порог полного бака (0..1)
-              <input
-                v-model.number="draftWaterForm.cleanTankFullThreshold"
-                type="number"
-                min="0.05"
-                max="1"
-                step="0.01"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Длительность refill (сек)
-              <input
-                v-model.number="draftWaterForm.refillDurationSeconds"
-                type="number"
-                min="1"
-                max="3600"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Таймаут refill (сек)
-              <input
-                v-model.number="draftWaterForm.refillTimeoutSeconds"
-                type="number"
-                min="30"
-                max="86400"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Таймаут набора чистой воды (startup.clean_fill_timeout_sec)
-              <input
-                v-model.number="draftWaterForm.startupCleanFillTimeoutSeconds"
-                type="number"
-                min="30"
-                max="86400"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Таймаут набора раствора (startup.solution_fill_timeout_sec)
-              <input
-                v-model.number="draftWaterForm.startupSolutionFillTimeoutSeconds"
-                type="number"
-                min="30"
-                max="86400"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Таймаут рециркуляции подготовки (startup.prepare_recirculation_timeout_sec)
-              <input
-                v-model.number="draftWaterForm.startupPrepareRecirculationTimeoutSeconds"
-                type="number"
-                min="30"
-                max="86400"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Повторы clean_fill (startup.clean_fill_retry_cycles)
-              <input
-                v-model.number="draftWaterForm.startupCleanFillRetryCycles"
-                type="number"
-                min="0"
-                max="20"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Лимит продолжений recovery (irrigation_recovery.max_continue_attempts)
-              <input
-                v-model.number="draftWaterForm.irrigationRecoveryMaxContinueAttempts"
-                type="number"
-                min="1"
-                max="30"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Таймаут recovery (irrigation_recovery.timeout_sec)
-              <input
-                v-model.number="draftWaterForm.irrigationRecoveryTimeoutSeconds"
-                type="number"
-                min="30"
-                max="86400"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Допуск EC подготовки (prepare_tolerance.ec_pct)
-              <input
-                v-model.number="draftWaterForm.prepareToleranceEcPct"
-                type="number"
-                min="0.1"
-                max="100"
-                step="0.1"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Допуск pH подготовки (prepare_tolerance.ph_pct)
-              <input
-                v-model.number="draftWaterForm.prepareTolerancePhPct"
-                type="number"
-                min="0.1"
-                max="100"
-                step="0.1"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Лимит попыток EC-коррекции (correction.max_ec_correction_attempts)
-              <input
-                v-model.number="draftWaterForm.correctionMaxEcCorrectionAttempts"
-                type="number"
-                min="1"
-                max="50"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Лимит попыток pH-коррекции (correction.max_ph_correction_attempts)
-              <input
-                v-model.number="draftWaterForm.correctionMaxPhCorrectionAttempts"
-                type="number"
-                min="1"
-                max="50"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Лимит окон рециркуляции (correction.prepare_recirculation_max_attempts)
-              <input
-                v-model.number="draftWaterForm.correctionPrepareRecirculationMaxAttempts"
-                type="number"
-                min="1"
-                max="50"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Общий лимит correction-шагов (correction.prepare_recirculation_max_correction_attempts)
-              <input
-                v-model.number="draftWaterForm.correctionPrepareRecirculationMaxCorrectionAttempts"
-                type="number"
-                min="1"
-                max="500"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Stage stabilization (correction.stabilization_sec)
-              <input
-                v-model.number="draftWaterForm.correctionStabilizationSec"
-                type="number"
-                min="0"
-                max="3600"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <div class="rounded-2xl border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-xs text-[color:var(--text-muted)] md:col-span-2">
+        <details class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
+          <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
+            Advanced runtime Automation Engine
+          </summary>
+          <div class="mt-3 space-y-4">
+            <div class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2 text-xs text-[color:var(--text-dim)]">
+              В этом блоке только low-level runtime guards и execution limits AE. Большинство сценариев настройки зоны
+              их не требует: основные цели, объёмы и интервалы остаются выше в водном профиле.
+            </div>
+
+            <div class="rounded-2xl border border-amber-200/60 bg-amber-50/70 px-3 py-2 text-xs text-[color:var(--text-muted)]">
               Observe-window после дозы больше не редактируется в этом wizard и не публикуется в
               `diagnostics.execution.correction`. Production runtime использует `transport_delay_sec` / `settle_sec`
               и observe-параметры из correction-config/process calibration. Legacy wait-поля больше не хранятся
               во frontend form-state.
             </div>
-            <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
-              Обязательные типы нод для refill (CSV)
-              <input
-                v-model="draftWaterForm.refillRequiredNodeTypes"
-                type="text"
-                class="input-field mt-1 w-full"
-                placeholder="irrig,climate,light"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Канал refill
-              <input
-                v-model="draftWaterForm.refillPreferredChannel"
-                type="text"
-                class="input-field mt-1 w-full"
-                placeholder="fill_valve"
-              />
-            </label>
-          </div>
-        </div>
 
-        <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
-          <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
-            Смена раствора
-          </h4>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Активна
-              <select
-                v-model="draftWaterForm.solutionChangeEnabled"
-                class="input-select mt-1 w-full"
-              >
-                <option :value="true">Включена</option>
-                <option :value="false">Выключена</option>
-              </select>
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Интервал (мин)
-              <input
-                v-model.number="draftWaterForm.solutionChangeIntervalMinutes"
-                type="number"
-                min="1"
-                max="1440"
-                class="input-field mt-1 w-full"
-              />
-            </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
-              Длительность (сек)
-              <input
-                v-model.number="draftWaterForm.solutionChangeDurationSeconds"
-                type="number"
-                min="1"
-                max="86400"
-                class="input-field mt-1 w-full"
-              />
-            </label>
+            <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
+              <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                Startup, refill и recovery
+              </h4>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Диагностика
+                  <select
+                    v-model="draftWaterForm.diagnosticsEnabled"
+                    class="input-select mt-1 w-full"
+                  >
+                    <option :value="true">Включена</option>
+                    <option :value="false">Выключена</option>
+                  </select>
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Интервал диагностики (мин)
+                  <input
+                    v-model.number="draftWaterForm.diagnosticsIntervalMinutes"
+                    type="number"
+                    min="1"
+                    max="1440"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Режим диагностики (diagnostics.workflow)
+                  <select
+                    v-model="draftWaterForm.diagnosticsWorkflow"
+                    class="input-select mt-1 w-full"
+                  >
+                    <option value="startup">startup</option>
+                    <option
+                      value="cycle_start"
+                      :disabled="draftWaterForm.tanksCount === 2"
+                    >
+                      cycle_start
+                    </option>
+                    <option value="diagnostics">diagnostics</option>
+                  </select>
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Порог полного бака (0..1)
+                  <input
+                    v-model.number="draftWaterForm.cleanTankFullThreshold"
+                    type="number"
+                    min="0.05"
+                    max="1"
+                    step="0.01"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Длительность refill (сек)
+                  <input
+                    v-model.number="draftWaterForm.refillDurationSeconds"
+                    type="number"
+                    min="1"
+                    max="3600"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Таймаут refill (сек)
+                  <input
+                    v-model.number="draftWaterForm.refillTimeoutSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Таймаут набора чистой воды (startup.clean_fill_timeout_sec)
+                  <input
+                    v-model.number="draftWaterForm.startupCleanFillTimeoutSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Таймаут набора раствора (startup.solution_fill_timeout_sec)
+                  <input
+                    v-model.number="draftWaterForm.startupSolutionFillTimeoutSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Таймаут рециркуляции подготовки (startup.prepare_recirculation_timeout_sec)
+                  <input
+                    v-model.number="draftWaterForm.startupPrepareRecirculationTimeoutSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Повторы clean_fill (startup.clean_fill_retry_cycles)
+                  <input
+                    v-model.number="draftWaterForm.startupCleanFillRetryCycles"
+                    type="number"
+                    min="0"
+                    max="20"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Лимит продолжений recovery (irrigation_recovery.max_continue_attempts)
+                  <input
+                    v-model.number="draftWaterForm.irrigationRecoveryMaxContinueAttempts"
+                    type="number"
+                    min="1"
+                    max="30"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Таймаут recovery (irrigation_recovery.timeout_sec)
+                  <input
+                    v-model.number="draftWaterForm.irrigationRecoveryTimeoutSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
+                  Обязательные типы нод для refill (CSV)
+                  <input
+                    v-model="draftWaterForm.refillRequiredNodeTypes"
+                    type="text"
+                    class="input-field mt-1 w-full"
+                    placeholder="irrig,climate,light"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Канал refill
+                  <input
+                    v-model="draftWaterForm.refillPreferredChannel"
+                    type="text"
+                    class="input-field mt-1 w-full"
+                    placeholder="fill_valve"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
+              <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                Correction guards и solution change
+              </h4>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Допуск EC подготовки (prepare_tolerance.ec_pct)
+                  <input
+                    v-model.number="draftWaterForm.prepareToleranceEcPct"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Допуск pH подготовки (prepare_tolerance.ph_pct)
+                  <input
+                    v-model.number="draftWaterForm.prepareTolerancePhPct"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Лимит попыток EC-коррекции (correction.max_ec_correction_attempts)
+                  <input
+                    v-model.number="draftWaterForm.correctionMaxEcCorrectionAttempts"
+                    type="number"
+                    min="1"
+                    max="50"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Лимит попыток pH-коррекции (correction.max_ph_correction_attempts)
+                  <input
+                    v-model.number="draftWaterForm.correctionMaxPhCorrectionAttempts"
+                    type="number"
+                    min="1"
+                    max="50"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Лимит окон рециркуляции (correction.prepare_recirculation_max_attempts)
+                  <input
+                    v-model.number="draftWaterForm.correctionPrepareRecirculationMaxAttempts"
+                    type="number"
+                    min="1"
+                    max="50"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Общий лимит correction-шагов (correction.prepare_recirculation_max_correction_attempts)
+                  <input
+                    v-model.number="draftWaterForm.correctionPrepareRecirculationMaxCorrectionAttempts"
+                    type="number"
+                    min="1"
+                    max="500"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Stage stabilization (correction.stabilization_sec)
+                  <input
+                    v-model.number="draftWaterForm.correctionStabilizationSec"
+                    type="number"
+                    min="0"
+                    max="3600"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Смена раствора
+                  <select
+                    v-model="draftWaterForm.solutionChangeEnabled"
+                    class="input-select mt-1 w-full"
+                  >
+                    <option :value="true">Включена</option>
+                    <option :value="false">Выключена</option>
+                  </select>
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Интервал смены раствора (мин)
+                  <input
+                    v-model.number="draftWaterForm.solutionChangeIntervalMinutes"
+                    type="number"
+                    min="1"
+                    max="1440"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Длительность смены раствора (сек)
+                  <input
+                    v-model.number="draftWaterForm.solutionChangeDurationSeconds"
+                    type="number"
+                    min="1"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+              </div>
+            </div>
           </div>
-        </div>
+        </details>
 
         <p
           v-if="isSystemTypeLocked"
@@ -878,6 +771,7 @@
 import { reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
 import { clamp, resetToRecommended as resetFormsToRecommended, syncSystemToTankLayout, validateForms } from '@/composables/zoneAutomationFormLogic'
 import type {
   ClimateFormState,
@@ -906,6 +800,7 @@ const emit = defineEmits<{
 }>()
 
 const props = defineProps<Props>()
+const automationDefaults = useAutomationDefaults()
 
 const steps = [
   { id: 1, label: 'Климат' },
@@ -924,96 +819,95 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
     form.diagnosticsWorkflow === 'cycle_start' ||
     form.diagnosticsWorkflow === 'diagnostics'
     ? form.diagnosticsWorkflow
-    : form.cycleStartWorkflowEnabled
-      ? (form.tanksCount === 2 ? 'startup' : 'cycle_start')
-      : 'diagnostics'
+    : (form.tanksCount === 2 ? 'startup' : 'cycle_start')
 
   if (form.startupCleanFillTimeoutSeconds === undefined || !Number.isFinite(Number(form.startupCleanFillTimeoutSeconds))) {
-    form.startupCleanFillTimeoutSeconds = 900
+    form.startupCleanFillTimeoutSeconds = automationDefaults.value.water_startup_clean_fill_timeout_sec
   }
   if (form.startupSolutionFillTimeoutSeconds === undefined || !Number.isFinite(Number(form.startupSolutionFillTimeoutSeconds))) {
-    form.startupSolutionFillTimeoutSeconds = 1350
+    form.startupSolutionFillTimeoutSeconds = automationDefaults.value.water_startup_solution_fill_timeout_sec
   }
   if (
     form.startupPrepareRecirculationTimeoutSeconds === undefined ||
     !Number.isFinite(Number(form.startupPrepareRecirculationTimeoutSeconds))
   ) {
-    form.startupPrepareRecirculationTimeoutSeconds = 900
+    form.startupPrepareRecirculationTimeoutSeconds = automationDefaults.value.water_startup_prepare_recirculation_timeout_sec
   }
   if (form.startupCleanFillRetryCycles === undefined || !Number.isFinite(Number(form.startupCleanFillRetryCycles))) {
-    form.startupCleanFillRetryCycles = 1
+    form.startupCleanFillRetryCycles = automationDefaults.value.water_startup_clean_fill_retry_cycles
   }
   if (
     form.irrigationRecoveryMaxContinueAttempts === undefined ||
     !Number.isFinite(Number(form.irrigationRecoveryMaxContinueAttempts))
   ) {
-    form.irrigationRecoveryMaxContinueAttempts = 5
+    form.irrigationRecoveryMaxContinueAttempts = automationDefaults.value.water_irrigation_recovery_max_continue_attempts
   }
   if (form.irrigationRecoveryTimeoutSeconds === undefined || !Number.isFinite(Number(form.irrigationRecoveryTimeoutSeconds))) {
-    form.irrigationRecoveryTimeoutSeconds = 600
+    form.irrigationRecoveryTimeoutSeconds = automationDefaults.value.water_irrigation_recovery_timeout_sec
   }
   if (form.prepareToleranceEcPct === undefined || !Number.isFinite(Number(form.prepareToleranceEcPct))) {
-    form.prepareToleranceEcPct = 25
+    form.prepareToleranceEcPct = automationDefaults.value.water_prepare_tolerance_ec_pct
   }
   if (form.prepareTolerancePhPct === undefined || !Number.isFinite(Number(form.prepareTolerancePhPct))) {
-    form.prepareTolerancePhPct = 15
+    form.prepareTolerancePhPct = automationDefaults.value.water_prepare_tolerance_ph_pct
   }
   if (form.correctionMaxEcCorrectionAttempts === undefined || !Number.isFinite(Number(form.correctionMaxEcCorrectionAttempts))) {
-    form.correctionMaxEcCorrectionAttempts = 5
+    form.correctionMaxEcCorrectionAttempts = automationDefaults.value.water_correction_max_ec_attempts
   }
   if (form.correctionMaxPhCorrectionAttempts === undefined || !Number.isFinite(Number(form.correctionMaxPhCorrectionAttempts))) {
-    form.correctionMaxPhCorrectionAttempts = 5
+    form.correctionMaxPhCorrectionAttempts = automationDefaults.value.water_correction_max_ph_attempts
   }
   if (
     form.correctionPrepareRecirculationMaxAttempts === undefined ||
     !Number.isFinite(Number(form.correctionPrepareRecirculationMaxAttempts))
   ) {
-    form.correctionPrepareRecirculationMaxAttempts = 3
+    form.correctionPrepareRecirculationMaxAttempts = automationDefaults.value.water_correction_prepare_recirculation_max_attempts
   }
   if (
     form.correctionPrepareRecirculationMaxCorrectionAttempts === undefined ||
     !Number.isFinite(Number(form.correctionPrepareRecirculationMaxCorrectionAttempts))
   ) {
-    form.correctionPrepareRecirculationMaxCorrectionAttempts = 20
+    form.correctionPrepareRecirculationMaxCorrectionAttempts =
+      automationDefaults.value.water_correction_prepare_recirculation_max_correction_attempts
   }
   if (form.correctionStabilizationSec === undefined || !Number.isFinite(Number(form.correctionStabilizationSec))) {
-    form.correctionStabilizationSec = 60
+    form.correctionStabilizationSec = automationDefaults.value.water_correction_stabilization_sec
   }
   if (form.twoTankCleanFillStartSteps === undefined || !Number.isFinite(Number(form.twoTankCleanFillStartSteps))) {
-    form.twoTankCleanFillStartSteps = 1
+    form.twoTankCleanFillStartSteps = automationDefaults.value.water_two_tank_clean_fill_start_steps
   }
   if (form.twoTankCleanFillStopSteps === undefined || !Number.isFinite(Number(form.twoTankCleanFillStopSteps))) {
-    form.twoTankCleanFillStopSteps = 1
+    form.twoTankCleanFillStopSteps = automationDefaults.value.water_two_tank_clean_fill_stop_steps
   }
   if (form.twoTankSolutionFillStartSteps === undefined || !Number.isFinite(Number(form.twoTankSolutionFillStartSteps))) {
-    form.twoTankSolutionFillStartSteps = 3
+    form.twoTankSolutionFillStartSteps = automationDefaults.value.water_two_tank_solution_fill_start_steps
   }
   if (form.twoTankSolutionFillStopSteps === undefined || !Number.isFinite(Number(form.twoTankSolutionFillStopSteps))) {
-    form.twoTankSolutionFillStopSteps = 3
+    form.twoTankSolutionFillStopSteps = automationDefaults.value.water_two_tank_solution_fill_stop_steps
   }
   if (
     form.twoTankPrepareRecirculationStartSteps === undefined ||
     !Number.isFinite(Number(form.twoTankPrepareRecirculationStartSteps))
   ) {
-    form.twoTankPrepareRecirculationStartSteps = 3
+    form.twoTankPrepareRecirculationStartSteps = automationDefaults.value.water_two_tank_prepare_recirculation_start_steps
   }
   if (
     form.twoTankPrepareRecirculationStopSteps === undefined ||
     !Number.isFinite(Number(form.twoTankPrepareRecirculationStopSteps))
   ) {
-    form.twoTankPrepareRecirculationStopSteps = 3
+    form.twoTankPrepareRecirculationStopSteps = automationDefaults.value.water_two_tank_prepare_recirculation_stop_steps
   }
   if (
     form.twoTankIrrigationRecoveryStartSteps === undefined ||
     !Number.isFinite(Number(form.twoTankIrrigationRecoveryStartSteps))
   ) {
-    form.twoTankIrrigationRecoveryStartSteps = 4
+    form.twoTankIrrigationRecoveryStartSteps = automationDefaults.value.water_two_tank_irrigation_recovery_start_steps
   }
   if (
     form.twoTankIrrigationRecoveryStopSteps === undefined ||
     !Number.isFinite(Number(form.twoTankIrrigationRecoveryStopSteps))
   ) {
-    form.twoTankIrrigationRecoveryStopSteps = 3
+    form.twoTankIrrigationRecoveryStopSteps = automationDefaults.value.water_two_tank_irrigation_recovery_stop_steps
   }
 
   form.startupCleanFillTimeoutSeconds = clamp(Math.round(form.startupCleanFillTimeoutSeconds), 30, 86400)
@@ -1049,8 +943,6 @@ function syncWorkflowByTopology(form: WaterFormState): void {
   } else if (form.tanksCount === 3 && form.diagnosticsWorkflow === 'startup') {
     form.diagnosticsWorkflow = 'cycle_start'
   }
-
-  form.cycleStartWorkflowEnabled = form.diagnosticsWorkflow !== 'diagnostics'
 }
 
 function syncDraftFromProps(): void {
@@ -1100,7 +992,7 @@ function resetDraft(): void {
     climateForm: draftClimateForm,
     waterForm: draftWaterForm,
     lightingForm: draftLightingForm,
-  })
+  }, automationDefaults.value)
   normalizeWaterRuntimeFields(draftWaterForm)
   syncWorkflowByTopology(draftWaterForm)
   step.value = 1

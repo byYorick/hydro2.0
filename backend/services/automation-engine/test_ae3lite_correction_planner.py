@@ -816,6 +816,55 @@ def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:
     assert slow.pid_state_updates["ec"]["prev_derivative"] > fast.pid_state_updates["ec"]["prev_derivative"]
 
 
+def test_build_dose_plan_first_pid_tick_without_last_measurement_at_keeps_derivative_zero() -> None:
+    """Первый PID tick без timestamp не должен генерировать D-spike."""
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 12, 9, 0, 0)
+
+    plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=5.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 0.0,
+                "ki": 0.0,
+                "kd": 10.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 50.0,
+            }
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={
+            "ec": {
+                "integral": 0.0,
+                "prev_error": 5.0,
+                "prev_derivative": 1.0,
+                # last_measurement_at intentionally missing: this is the first wallclock-aware tick
+            }
+        },
+        now=now,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "ec_npk_pump",
+                "calibration": {"ml_per_sec": 1.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert plan.needs_ec is False
+    assert plan.ec_duration_ms == 0
+    assert plan.pid_state_updates["ec"]["prev_derivative"] == 0.0
+
+
 def test_pid_integral_accumulates_over_time() -> None:
     """Regression: PID integral must grow each call via gap*dt accumulation.
 
@@ -1132,14 +1181,52 @@ def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
 
     # 0.002ml / 1.0 ml_per_sec = 2ms < 50ms → должен быть warning
     with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.correction_planner"):
-        duration_ms, reason = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0}, _correction_config())
+        duration_ms, reason, details = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0}, _correction_config())
 
     assert duration_ms == 0
     assert reason == "below_min_dose_ms"
+    assert details["computed_duration_ms"] == 2
+    assert details["min_dose_ms"] == 50
     assert any("below minimum" in record.message or "Dose discarded" in record.message
                for record in caplog.records), (
         "Expected warning log for sub-minimum dose, got none"
     )
+
+
+def test_build_dose_plan_exposes_dead_zone_details_and_discarded_payload() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.98,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=15.0,
+        ec_tolerance_pct=1.0,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0},
+            dosing_overrides={"pump_calibration": {"min_dose_ms": 50, "ml_per_sec_min": 0.01, "ml_per_sec_max": 100.0}},
+        ),
+        workflow_phase="tank_filling",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 0.2}},
+        ec_component_policy={"solution_fill": {"npk": 1.0}},
+        ec_actuator=None,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "ec_npk_pump",
+                "calibration": {"ml_per_sec": 10.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_any is False
+    assert dose_plan.dose_discarded_reason == "below_min_dose_ms"
+    assert dose_plan.dose_discarded_details["computed_duration_ms"] == 10
+    assert dose_plan.dead_zone_details["ec_gap"] == pytest.approx(0.02)
+    assert dose_plan.dead_zone_details["ec_deadband"] == pytest.approx(0.0)
 
 
 # ── Фаза 4: Тест вынесенной phase_utils ──────────────────────────────────────

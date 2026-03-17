@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\SystemAutomationSetting;
 use App\Models\ZoneEvent;
 use App\Models\ZonePidConfig;
 use Illuminate\Support\Facades\DB;
@@ -9,6 +10,22 @@ use Illuminate\Support\Facades\Log;
 
 class ZonePidConfigService
 {
+    /**
+     * @return array<string, mixed>
+     */
+    public function serializeConfig(ZonePidConfig $config): array
+    {
+        return [
+            'id' => $config->id,
+            'zone_id' => $config->zone_id,
+            'type' => $config->type,
+            'config' => $config->config ?? [],
+            'updated_by' => $config->updated_by,
+            'updated_at' => optional($config->updated_at)->toISOString(),
+            'is_default' => false,
+        ];
+    }
+
     /**
      * Получить конфиг PID для зоны и типа
      */
@@ -49,7 +66,7 @@ class ZonePidConfigService
             ZoneEvent::create([
                 'zone_id' => $zoneId,
                 'type' => 'PID_CONFIG_UPDATED',
-                'details' => [
+                'payload_json' => [
                     'type' => $type,
                     'old_config' => $oldConfig,
                     'new_config' => $config,
@@ -69,55 +86,27 @@ class ZonePidConfigService
 
     /**
      * Получить дефолтный конфиг для типа
-     * Значения соответствуют AutomationSettings из Python-сервиса
+     * Значения берутся из system_automation_settings с fallback на встроенные каталожные defaults.
      */
     public function getDefaultConfig(string $type): array
     {
-        if ($type === 'ph') {
-            return [
-                'target' => 5.8,
-                'dead_zone' => 0.05,
-                'close_zone' => 0.3,
-                'far_zone' => 1.0,
-                'zone_coeffs' => [
-                    'close' => [
-                        'kp' => 5.0,
-                        'ki' => 0.05,
-                        'kd' => 0.0,
-                    ],
-                    'far' => [
-                        'kp' => 8.0,
-                        'ki' => 0.02,
-                        'kd' => 0.0,
-                    ],
-                ],
-                'max_output' => 20.0,
-                'min_interval_ms' => 90000,
-                'max_integral' => 20.0,
-            ];
-        } else { // ec
-            return [
-                'target' => 1.6,
-                'dead_zone' => 0.1,
-                'close_zone' => 0.5,
-                'far_zone' => 1.5,
-                'zone_coeffs' => [
-                    'close' => [
-                        'kp' => 30.0,
-                        'ki' => 0.3,
-                        'kd' => 0.0,
-                    ],
-                    'far' => [
-                        'kp' => 50.0,
-                        'ki' => 0.1,
-                        'kd' => 0.0,
-                    ],
-                ],
-                'max_output' => 50.0,
-                'min_interval_ms' => 120000,
-                'max_integral' => 100.0,
-            ];
+        $namespace = $this->defaultNamespace($type);
+
+        try {
+            $config = SystemAutomationSetting::forNamespace($namespace);
+        } catch (\RuntimeException) {
+            return $this->catalogDefaultConfig($type);
         }
+
+        if (! $this->isValidDefaultConfig($config)) {
+            Log::warning('PID default config is invalid, falling back to catalog defaults', [
+                'namespace' => $namespace,
+            ]);
+
+            return $this->catalogDefaultConfig($type);
+        }
+
+        return $config;
     }
 
     /**
@@ -167,5 +156,53 @@ class ZonePidConfigService
         }
 
         return $result;
+    }
+
+    private function defaultNamespace(string $type): string
+    {
+        return $type === 'ph' ? 'pid_defaults_ph' : 'pid_defaults_ec';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function catalogDefaultConfig(string $type): array
+    {
+        return SystemAutomationSettingsCatalog::defaults($this->defaultNamespace($type));
+    }
+
+    private function isValidDefaultConfig(mixed $config): bool
+    {
+        if (! is_array($config) || array_is_list($config)) {
+            return false;
+        }
+
+        foreach ([
+            'target',
+            'dead_zone',
+            'close_zone',
+            'far_zone',
+            'max_output',
+            'min_interval_ms',
+            'max_integral',
+        ] as $key) {
+            if (! array_key_exists($key, $config)) {
+                return false;
+            }
+        }
+
+        foreach (['close', 'far'] as $zone) {
+            $coeffs = $config['zone_coeffs'][$zone] ?? null;
+            if (! is_array($coeffs) || array_is_list($coeffs)) {
+                return false;
+            }
+            foreach (['kp', 'ki', 'kd'] as $key) {
+                if (! array_key_exists($key, $coeffs)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 }

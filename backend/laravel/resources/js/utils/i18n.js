@@ -52,6 +52,7 @@ export function classifyEventKind(kind) {
     kind === 'RELAY_AUTOTUNE_COMPLETE' ||
     kind === 'RELAY_AUTOTUNE_COMPLETED' ||
     kind === 'PUMP_CALIBRATION_SAVED' ||
+    kind === 'PROCESS_CALIBRATION_SAVED' ||
     kind === 'DOSING'
   ) return 'ACTION'
 
@@ -61,6 +62,7 @@ export function classifyEventKind(kind) {
     kind === 'PID_CONFIG_UPDATED' ||
     kind === 'CORRECTION_STATE_TRANSITION' ||
     kind.startsWith('CORRECTION_SKIPPED_') ||
+    kind === 'CORRECTION_SKIPPED_WINDOW_NOT_READY' ||
     kind === 'PH_CORRECTION_SKIPPED' ||
     kind === 'EC_CORRECTION_SKIPPED' ||
     kind.endsWith('_CORRECTION_SKIPPED') ||
@@ -73,6 +75,7 @@ export function classifyEventKind(kind) {
   if (
     kind === 'EQUIPMENT_ANOMALY_BLOCKED' ||
     kind === 'EQUIPMENT_ANOMALY_RELEASED' ||
+    kind === 'CORRECTION_NO_EFFECT' ||
     kind === 'PUMP_CALIBRATION_STALE' ||
     kind === 'RELAY_AUTOTUNE_TIMEOUT' ||
     kind.endsWith('_DOSING_BLOCKED_ANOMALY') ||
@@ -168,11 +171,14 @@ export function translateEventKind(kind) {
     // Пропуски коррекции
     'CORRECTION_SKIPPED_DEAD_ZONE': 'Коррекция: мёртвая зона PID',
     'CORRECTION_SKIPPED_COOLDOWN': 'Коррекция: кулдаун PID',
+    'CORRECTION_SKIPPED_DOSE_DISCARDED': 'Коррекция: доза отброшена',
     'CORRECTION_SKIPPED_MISSING_ACTUATOR': 'Коррекция: нет насоса',
     'CORRECTION_SKIPPED_NO_CALIBRATION': 'Коррекция: нет калибровки',
     'CORRECTION_SKIPPED_WATER_LEVEL': 'Коррекция: мало воды',
     'CORRECTION_SKIPPED_FRESHNESS': 'Коррекция: устаревшие данные',
+    'CORRECTION_SKIPPED_WINDOW_NOT_READY': 'Коррекция: окно наблюдения не готово',
     'CORRECTION_SKIPPED_ANOMALY_BLOCK': 'Коррекция: аномалия оборудования',
+    'CORRECTION_NO_EFFECT': 'Коррекция: нет наблюдаемого эффекта',
     'PH_CORRECTION_SKIPPED': 'Коррекция pH: пропуск',
     'EC_CORRECTION_SKIPPED': 'Коррекция EC: пропуск',
     'PH_CORRECTION_SKIPPED_STALE_DATA': 'Коррекция pH: устаревшие данные',
@@ -190,6 +196,7 @@ export function translateEventKind(kind) {
 
     // Калибровки
     'PUMP_CALIBRATION_SAVED': 'Калибровка насоса сохранена',
+    'PROCESS_CALIBRATION_SAVED': 'Калибровка процесса сохранена',
     'PUMP_CALIBRATION_STALE': 'Калибровка насоса устарела',
 
     // Equipment anomaly

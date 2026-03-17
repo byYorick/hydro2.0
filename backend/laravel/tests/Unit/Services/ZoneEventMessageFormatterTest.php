@@ -200,6 +200,69 @@ class ZoneEventMessageFormatterTest extends TestCase
         $this->assertSame('Автотюнинг завершён: Kp=6.700, Ki=0.1100 (3 циклов)', $message);
     }
 
+    public function test_format_correction_skipped_water_level_contains_retry_context(): void
+    {
+        $message = $this->formatter->format('CORRECTION_SKIPPED_WATER_LEVEL', [
+            'water_level_pct' => 12.0,
+            'retry_after_sec' => 60,
+        ]);
+
+        $this->assertSame('Коррекция: мало воды (уровень 12.0%, повтор через 60 с)', $message);
+    }
+
+    public function test_format_correction_skipped_dose_discarded_contains_runtime_details(): void
+    {
+        $message = $this->formatter->format('CORRECTION_SKIPPED_DOSE_DISCARDED', [
+            'reason' => 'below_min_dose_ms',
+            'computed_duration_ms' => 10,
+            'min_dose_ms' => 50,
+            'dose_ml' => 0.1,
+            'ml_per_sec' => 10.0,
+        ]);
+
+        $this->assertSame(
+            'Коррекция: доза отброшена (below_min_dose_ms, 10мс < 50мс, доза 0.1000 мл, насос 10.0000 мл/с)',
+            $message
+        );
+    }
+
+    public function test_format_correction_skipped_freshness_contains_scope_and_retry(): void
+    {
+        $message = $this->formatter->format('CORRECTION_SKIPPED_FRESHNESS', [
+            'sensor_scope' => 'observe_window',
+            'sensor_type' => 'EC',
+            'retry_after_sec' => 30,
+        ]);
+
+        $this->assertSame('Коррекция: устаревшие данные (observe window, EC, повтор через 30 с)', $message);
+    }
+
+    public function test_format_correction_skipped_window_not_ready_contains_reason_and_retry(): void
+    {
+        $message = $this->formatter->format('CORRECTION_SKIPPED_WINDOW_NOT_READY', [
+            'sensor_scope' => 'decision_window',
+            'reason' => 'Correction decision window not ready: PH=insufficient_samples,samples=2',
+            'retry_after_sec' => 30,
+        ]);
+
+        $this->assertSame(
+            'Коррекция: окно наблюдения не готово (decision window, Correction decision window not ready: PH=insufficient_samples,samples=2, повтор через 30 с)',
+            $message
+        );
+    }
+
+    public function test_format_correction_no_effect_contains_threshold_details(): void
+    {
+        $message = $this->formatter->format('CORRECTION_NO_EFFECT', [
+            'pid_type' => 'ec',
+            'actual_effect' => 0.02,
+            'threshold_effect' => 0.1,
+            'no_effect_limit' => 3,
+        ]);
+
+        $this->assertSame('Коррекция: нет наблюдаемого эффекта (EC, эффект 0.0200 < 0.1000, лимит 3)', $message);
+    }
+
     public function test_format_ec_dosing_with_full_payload(): void
     {
         $message = $this->formatter->format('EC_DOSING', [
@@ -309,5 +372,25 @@ class ZoneEventMessageFormatterTest extends TestCase
         $message = $this->formatter->format('PH_CORRECTED', []);
 
         $this->assertStringContainsString('pH', $message);
+    }
+
+    public function test_format_process_calibration_saved_includes_mode_window_and_gains(): void
+    {
+        $message = $this->formatter->format('PROCESS_CALIBRATION_SAVED', [
+            'mode' => 'tank_recirc',
+            'transport_delay_sec' => 20,
+            'settle_sec' => 45,
+            'confidence' => 0.91,
+            'ec_gain_per_ml' => 0.11,
+            'ph_up_gain_per_ml' => 0.08,
+            'ph_down_gain_per_ml' => 0.07,
+        ]);
+
+        $this->assertStringContainsString('Process calibration обновлена (tank_recirc)', $message);
+        $this->assertStringContainsString('окно 20+45 сек', $message);
+        $this->assertStringContainsString('confidence 0.91', $message);
+        $this->assertStringContainsString('EC=0.110', $message);
+        $this->assertStringContainsString('pH+=0.080', $message);
+        $this->assertStringContainsString('pH-=0.070', $message);
     }
 }

@@ -87,6 +87,7 @@ describe('useGrowthCycleWizard', () => {
     waterForm.systemType = 'substrate_trays'
     waterForm.tanksCount = 3
     waterForm.enableDrainControl = true
+    waterForm.diagnosticsWorkflow = 'cycle_start'
     await nextTick()
 
     waterForm.systemType = 'drip'
@@ -94,6 +95,19 @@ describe('useGrowthCycleWizard', () => {
 
     expect(waterForm.tanksCount).toBe(2)
     expect(waterForm.enableDrainControl).toBe(false)
+    expect(waterForm.diagnosticsWorkflow).toBe('startup')
+  })
+
+  it('нормализует diagnosticsWorkflow при смене топологии на 3 бака', async () => {
+    const { wizard } = mountWizardHarness()
+    const waterForm = wizard.waterForm.value
+
+    waterForm.systemType = 'substrate_trays'
+    waterForm.tanksCount = 3
+    waterForm.diagnosticsWorkflow = 'startup'
+    await nextTick()
+
+    expect(waterForm.diagnosticsWorkflow).toBe('cycle_start')
   })
 
   it('блокирует переход со шага автоматики при невалидных vent границах', async () => {

@@ -53,6 +53,8 @@ class DosePlan:
 
     retry_after_sec: Optional[int] = None
     dose_discarded_reason: str = ""
+    dose_discarded_details: Mapping[str, Any] = field(default_factory=dict)
+    dead_zone_details: Mapping[str, Any] = field(default_factory=dict)
     pid_state_updates: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -188,12 +190,14 @@ class CorrectionPlanner:
         ec_amount_ml = 0.0
         ec_duration_ms = 0
         ec_discarded_reason = ""
+        ec_discarded_details: Mapping[str, Any] = {}
 
         ph_node_uid = ""
         ph_channel = ""
         ph_amount_ml = 0.0
         ph_duration_ms = 0
         ph_discarded_reason = ""
+        ph_discarded_details: Mapping[str, Any] = {}
 
         if ec_needs:
             ec_retry_after = _retry_after(
@@ -232,7 +236,9 @@ class CorrectionPlanner:
                 )
                 if ec_pid_update:
                     pid_updates["ec"] = ec_pid_update
-                ec_duration_ms, ec_discarded_reason = _dose_ml_to_ms(ec_amount_ml, calibration, correction_config)
+                ec_duration_ms, ec_discarded_reason, ec_discarded_details = _dose_ml_to_ms(
+                    ec_amount_ml, calibration, correction_config,
+                )
                 ec_needs = ec_duration_ms > 0
             else:
                 ec_needs = False
@@ -276,7 +282,9 @@ class CorrectionPlanner:
                 )
                 if ph_pid_update:
                     pid_updates["ph"] = ph_pid_update
-                ph_duration_ms, ph_discarded_reason = _dose_ml_to_ms(ph_amount_ml, calibration, correction_config)
+                ph_duration_ms, ph_discarded_reason, ph_discarded_details = _dose_ml_to_ms(
+                    ph_amount_ml, calibration, correction_config,
+                )
                 ph_needs_up = ph_needs_up and ph_duration_ms > 0
                 ph_needs_down = ph_needs_down and ph_duration_ms > 0
             else:
@@ -296,6 +304,15 @@ class CorrectionPlanner:
             ph_retry_after = None
 
         retry_after = _min_positive(ec_retry_after, ph_retry_after)
+        dead_zone_details = {
+            "ec_gap": round(ec_gap, 6),
+            "ec_deadband": round(ec_deadband, 6),
+            "ph_up_gap": round(ph_up_gap, 6),
+            "ph_down_gap": round(ph_down_gap, 6),
+            "ph_deadband": round(ph_deadband, 6),
+            "ph_has_explicit_window": ph_has_explicit_window,
+            "ec_has_explicit_window": ec_has_explicit_window,
+        }
         return DosePlan(
             needs_ec=ec_needs,
             ec_component=ec_component_name,
@@ -313,6 +330,8 @@ class CorrectionPlanner:
             ph_retry_after_sec=ph_retry_after,
             retry_after_sec=retry_after,
             dose_discarded_reason=ec_discarded_reason or ph_discarded_reason,
+            dose_discarded_details=ec_discarded_details or ph_discarded_details,
+            dead_zone_details=dead_zone_details,
             pid_state_updates=pid_updates,
         )
 
@@ -575,7 +594,7 @@ def _dose_ml_to_ms(
     dose_ml: float,
     calibration: Mapping[str, Any],
     correction_config: Mapping[str, Any],
-) -> tuple[int, str]:
+) -> tuple[int, str, Mapping[str, Any]]:
     pump_calibration = correction_config.get("pump_calibration")
     if not isinstance(pump_calibration, Mapping):
         raise PlannerConfigurationError(
@@ -610,7 +629,7 @@ def _dose_ml_to_ms(
         )
     duration_ms = int(dose_ml / ml_per_sec * 1000)
     if duration_ms <= 0:
-        return (0, "")
+        return (0, "", {})
     if duration_ms < min_dose_ms:
         _logger.warning(
             "Dose discarded: computed duration %dms is below minimum %dms "
@@ -621,8 +640,17 @@ def _dose_ml_to_ms(
             dose_ml,
             ml_per_sec,
         )
-        return (0, "below_min_dose_ms")
-    return (duration_ms, "")
+        return (
+            0,
+            "below_min_dose_ms",
+            {
+                "computed_duration_ms": duration_ms,
+                "min_dose_ms": min_dose_ms,
+                "dose_ml": round(dose_ml, 4),
+                "ml_per_sec": ml_per_sec,
+            },
+        )
+    return (duration_ms, "", {})
 
 
 def _to_utc_naive(value: datetime) -> datetime:

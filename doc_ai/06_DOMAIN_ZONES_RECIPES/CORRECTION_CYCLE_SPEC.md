@@ -154,6 +154,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Обязательные правила:
 - `transport_delay_sec` и `settle_sec` берутся из `zone_process_calibrations`;
+- runtime phase нормализуется к canonical process-calibration key:
+  `tank_filling -> solution_fill`,
+  `prepare_recirculation -> tank_recirc`,
+  `irrigating|irrig_recirc -> irrigation`;
 - если process calibration отсутствует, новый in-flow correction path идёт fail-closed;
 - `zone_correction_configs.resolved_config` считается полным runtime-контрактом:
   если обязательный correction/runtime/tolerance/controller parameter отсутствует,
@@ -161,8 +165,17 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   legacy `diagnostics.execution.*`;
 - `telemetry_max_age_sec` должен быть согласован с фактической частотой telemetry;
 - для production in-flow режима ожидается telemetry cadence порядка `2 сек`;
-- если в `corr_check` нельзя собрать устойчивое decision-window (`insufficient_samples` / `unstable`),
-  correction path идёт fail-closed с ошибкой task execution, а не в silent retry loop;
+- если в `corr_check` или `corr_wait_{ec|ph}` telemetry временно stale/unavailable,
+  correction path не падает сразу, а перепланирует тот же шаг с retry delay
+  `retry.telemetry_stale_retry_sec`;
+- если decision-window ещё не готово (`insufficient_samples` / `unstable`) или пришло non-finite значение,
+  correction path перепланирует повторную проверку в рамках текущего stage/window
+  через `retry.decision_window_retry_sec`, без silent success;
+- если correction временно заблокирован по low-water guard, повторная проверка идёт через
+  `retry.low_water_retry_sec`;
+- retry из `min_interval_sec`, stale telemetry и unready decision-window не образует автономный бесконечный loop:
+  correction sub-machine всегда ограничен parent stage deadline, а для `prepare_recirculation`
+  ещё и `prepare_recirculation_max_attempts` на уровне окон;
 - `EC` и `pH` имеют отдельные `no_effect_count`, отдельные process gains и отдельные observation thresholds.
 
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)
@@ -210,7 +223,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
    - Automation-engine → MQTT: stop circulation_pump
    - Automation-engine → MQTT: deactivate ph_node, ec_node
 6. Внутри каждого window используются независимые лимиты `max_ec_correction_attempts` и `max_ph_correction_attempts`
-   плюс верхний guard `prepare_recirculation_max_correction_attempts`
+   плюс верхний guard `prepare_recirculation_max_correction_attempts`;
+   если верхний guard не задан, runtime использует `max(max_ec_correction_attempts, max_ph_correction_attempts)`,
+   но никогда не превышает соответствующие per-PID лимиты
 7. Если текущий window исчерпан без достижения targets:
    - остановить recirculation
    - перезапустить следующий window, пока не исчерпан `prepare_recirculation_max_attempts`
@@ -804,12 +819,20 @@ void handle_system_command(const char* cmd, cJSON* params) {
 
 ### 9.1. Создаваемые события
 
-`CorrectionHandler` создаёт записи в `zone_events` при каждом дозировании:
+`CorrectionHandler` создаёт записи в `zone_events` как для дозирования, так и для fail-closed / retry наблюдаемости:
 
-| Тип события    | Шаг            | Когда создаётся                               |
-|----------------|----------------|-----------------------------------------------|
-| `EC_DOSING`    | `corr_dose_ec` | После успешной отправки команды насосу EC     |
-| `PH_CORRECTED` | `corr_dose_ph` | После успешной отправки команды насосу pH     |
+| Тип события                      | Шаг/контекст        | Когда создаётся                                                      |
+|----------------------------------|---------------------|----------------------------------------------------------------------|
+| `EC_DOSING`                      | `corr_dose_ec`      | После успешной отправки команды насосу EC                            |
+| `PH_CORRECTED`                   | `corr_dose_ph`      | После успешной отправки команды насосу pH                            |
+| `CORRECTION_COMPLETE`            | `corr_check`        | Когда `pH/EC` вошли в целевое окно                                   |
+| `CORRECTION_SKIPPED_COOLDOWN`    | `corr_check`        | Когда PID-контур ещё в `min_interval_sec` и доза откладывается       |
+| `CORRECTION_SKIPPED_DEAD_ZONE`   | `corr_check`        | Когда planner не видит допустимой дозы вне deadband                  |
+| `CORRECTION_SKIPPED_WATER_LEVEL` | `corr_check`        | Когда correction пропущен из-за низкого уровня воды                  |
+| `CORRECTION_SKIPPED_FRESHNESS`   | `corr_check`/observe| Когда decision/observe window не может использовать свежую телеметрию |
+| `CORRECTION_SKIPPED_WINDOW_NOT_READY` | `corr_check`/observe | Когда окно наблюдения ещё не прошло `window_min_samples/stability` |
+| `CORRECTION_NO_EFFECT`           | `corr_wait_ec/ph`   | Когда достигнут `no_effect_consecutive_limit` и correction fail-closed |
+| `CORRECTION_EXHAUSTED`           | любой correction    | Когда исчерпаны configured attempts и runtime уходит в fail-closed   |
 
 ### 9.2. Структура payload
 
@@ -844,6 +867,68 @@ void handle_system_command(const char* cmd, cJSON* params) {
 }
 ```
 
+**CORRECTION_SKIPPED_FRESHNESS:**
+```json
+{
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "corr_step": "corr_check",
+  "sensor_scope": "decision_window",
+  "sensor_type": "EC",
+  "reason": "EC telemetry stale/unavailable during observation window",
+  "retry_after_sec": 30.0,
+  "attempt": 2
+}
+```
+
+**CORRECTION_SKIPPED_WATER_LEVEL:**
+```json
+{
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "corr_step": "corr_check",
+  "water_level_pct": 12.0,
+  "retry_after_sec": 60.0,
+  "current_ph": 6.3,
+  "current_ec": 1.1,
+  "target_ph": 6.0,
+  "target_ec": 2.0,
+  "attempt": 2
+}
+```
+
+**CORRECTION_NO_EFFECT:**
+```json
+{
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "corr_step": "corr_wait_ec",
+  "pid_type": "ec",
+  "baseline_value": 1.0,
+  "observed_value": 1.02,
+  "expected_effect": 0.4,
+  "actual_effect": 0.02,
+  "threshold_effect": 0.1,
+  "no_effect_limit": 3,
+  "attempt": 2
+}
+```
+
+**CORRECTION_SKIPPED_WINDOW_NOT_READY:**
+```json
+{
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "corr_step": "corr_wait_ec",
+  "sensor_scope": "observe_window",
+  "sensor_type": "EC",
+  "pid_type": "ec",
+  "reason": "insufficient_samples",
+  "sample_count": 2,
+  "retry_after_sec": 2
+}
+```
+
 ### 9.3. Источник current_ph / current_ec
 
 Значения `current_ph` и `current_ec` берутся **из таблицы `pid_state`** (метод `PgPidStateRepository.read_measured_value`), а не из `plan.runtime`.
@@ -853,6 +938,18 @@ void handle_system_command(const char* cmd, cJSON* params) {
 ### 9.4. Обработка ошибок логирования
 
 Ошибки создания событий логируются как WARNING (`_logger.warning`), но **не прерывают** выполнение шага коррекции. Это намеренно — ошибки логирования не должны влиять на бизнес-логику дозирования.
+
+### 9.5. Канонический context payload
+
+Для correction-runtime событий `payload_json` обязан по возможности включать:
+- `stage`
+- `workflow_phase`
+- `corr_step`
+- `attempt`
+- `ec_attempt`
+- `ph_attempt`
+
+Это требуется для Laravel/UI diagnostics и для безопасной отладки fail-closed веток без чтения raw `ae_tasks`.
 
 ---
 

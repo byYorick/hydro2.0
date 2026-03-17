@@ -56,10 +56,16 @@ class ZoneEventMessageFormatter
             'CORRECTION_EXHAUSTED' => $this->formatCorrectionExhausted($payload),
             'CORRECTION_SKIPPED_DEAD_ZONE' => $this->formatCorrectionSkippedDeadZone($payload),
             'CORRECTION_SKIPPED_COOLDOWN' => $this->formatCorrectionSkippedCooldown($payload),
+            'CORRECTION_SKIPPED_DOSE_DISCARDED' => $this->formatCorrectionSkippedDoseDiscarded($payload),
+            'CORRECTION_SKIPPED_WATER_LEVEL' => $this->formatCorrectionSkippedWaterLevel($payload),
+            'CORRECTION_SKIPPED_FRESHNESS' => $this->formatCorrectionSkippedFreshness($payload),
+            'CORRECTION_SKIPPED_WINDOW_NOT_READY' => $this->formatCorrectionSkippedWindowNotReady($payload),
+            'CORRECTION_NO_EFFECT' => $this->formatCorrectionNoEffect($payload),
             'RELAY_AUTOTUNE_COMPLETE', 'RELAY_AUTOTUNE_COMPLETED' => $this->formatRelayAutotuneComplete($payload),
             'PUMP_CALIBRATION_SAVED' => $this->formatPumpCalibrationSaved($payload),
             'PUMP_CALIBRATION_FINISHED' => $this->formatPumpCalibrationFinished($payload),
             'PUMP_CALIBRATION_RUN_SKIPPED' => $this->formatPumpCalibrationRunSkipped($payload),
+            'PROCESS_CALIBRATION_SAVED' => $this->formatProcessCalibrationSaved($payload),
             'IRR_STATE_SNAPSHOT' => $this->formatIrrStateSnapshot($payload),
             'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
             'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
@@ -617,6 +623,56 @@ class ZoneEventMessageFormatter
         return 'Конфиг PID обновлён';
     }
 
+    private function formatProcessCalibrationSaved(array $details): string
+    {
+        $mode = $this->toStringOrNull($details['mode'] ?? null) ?? 'unknown';
+        $window = $this->formatObserveWindow($details);
+        $confidence = $this->toFloatOrNull($details['confidence'] ?? null);
+
+        $parts = ["Process calibration обновлена ({$mode})"];
+        if ($window !== null) {
+            $parts[] = "окно {$window}";
+        }
+        if ($confidence !== null) {
+            $parts[] = sprintf('confidence %.2f', $confidence);
+        }
+
+        $gains = [];
+        foreach ([
+            'ec_gain_per_ml' => 'EC',
+            'ph_up_gain_per_ml' => 'pH+',
+            'ph_down_gain_per_ml' => 'pH-',
+        ] as $key => $label) {
+            $value = $this->toFloatOrNull($details[$key] ?? null);
+            if ($value !== null) {
+                $gains[] = sprintf('%s=%.3f', $label, $value);
+            }
+        }
+        if ($gains !== []) {
+            $parts[] = implode(', ', $gains);
+        }
+
+        return implode(': ', array_filter([
+            array_shift($parts),
+            implode(', ', $parts),
+        ]));
+    }
+
+    private function formatObserveWindow(array $details): ?string
+    {
+        $transport = $this->toFloatOrNull($details['transport_delay_sec'] ?? null);
+        $settle = $this->toFloatOrNull($details['settle_sec'] ?? null);
+
+        if ($transport === null && $settle === null) {
+            return null;
+        }
+
+        $transportLabel = $transport !== null ? sprintf('%.0f', $transport) : '0';
+        $settleLabel = $settle !== null ? sprintf('%.0f', $settle) : '0';
+
+        return "{$transportLabel}+{$settleLabel} сек";
+    }
+
     private function formatCorrectionStateTransition(array $details): string
     {
         $from = $this->toStringOrNull($details['from_state'] ?? null);
@@ -657,18 +713,26 @@ class ZoneEventMessageFormatter
     {
         $attempt = isset($details['attempt']) && is_numeric($details['attempt']) ? (int) $details['attempt'] : null;
         $maxAttempts = isset($details['max_attempts']) && is_numeric($details['max_attempts']) ? (int) $details['max_attempts'] : null;
+        $stage = $this->toStringOrNull($details['stage'] ?? null);
 
         if ($attempt !== null && $maxAttempts !== null) {
-            return "Коррекция: исчерпаны попытки ({$attempt}/{$maxAttempts})";
+            $message = "Коррекция: исчерпаны попытки ({$attempt}/{$maxAttempts})";
+
+            return $stage !== null ? "{$message} [{$stage}]" : $message;
         }
 
-        return 'Коррекция: все попытки исчерпаны';
+        return $stage !== null ? "Коррекция: все попытки исчерпаны [{$stage}]" : 'Коррекция: все попытки исчерпаны';
     }
 
     private function formatCorrectionSkippedDeadZone(array $details): string
     {
         $currentPh = $this->toFloatOrNull($details['current_ph'] ?? null);
         $currentEc = $this->toFloatOrNull($details['current_ec'] ?? null);
+        $ecGap = $this->toFloatOrNull($details['ec_gap'] ?? null);
+        $ecDeadband = $this->toFloatOrNull($details['ec_deadband'] ?? null);
+        $phUpGap = $this->toFloatOrNull($details['ph_up_gap'] ?? null);
+        $phDownGap = $this->toFloatOrNull($details['ph_down_gap'] ?? null);
+        $phDeadband = $this->toFloatOrNull($details['ph_deadband'] ?? null);
 
         $parts = [];
         if ($currentPh !== null) {
@@ -676,6 +740,15 @@ class ZoneEventMessageFormatter
         }
         if ($currentEc !== null) {
             $parts[] = sprintf('EC %.2f мС/см', $currentEc);
+        }
+        if ($ecGap !== null && $ecDeadband !== null) {
+            $parts[] = sprintf('EC gap %.4f <= deadband %.4f', $ecGap, $ecDeadband);
+        }
+        if ($phUpGap !== null && $phDeadband !== null) {
+            $parts[] = sprintf('pH+ gap %.4f <= deadband %.4f', $phUpGap, $phDeadband);
+        }
+        if ($phDownGap !== null && $phDeadband !== null) {
+            $parts[] = sprintf('pH- gap %.4f <= deadband %.4f', $phDownGap, $phDeadband);
         }
 
         return 'Коррекция: мёртвая зона PID'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
@@ -699,6 +772,112 @@ class ZoneEventMessageFormatter
         }
 
         return 'Коррекция: кулдаун PID'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionSkippedDoseDiscarded(array $details): string
+    {
+        $reason = $this->toStringOrNull($details['reason'] ?? null);
+        $durationMs = $this->toFloatOrNull($details['computed_duration_ms'] ?? null);
+        $minDoseMs = $this->toFloatOrNull($details['min_dose_ms'] ?? null);
+        $doseMl = $this->toFloatOrNull($details['dose_ml'] ?? null);
+        $mlPerSec = $this->toFloatOrNull($details['ml_per_sec'] ?? null);
+
+        $parts = [];
+        if ($reason !== null) {
+            $parts[] = $reason;
+        }
+        if ($durationMs !== null && $minDoseMs !== null) {
+            $parts[] = sprintf('%dмс < %dмс', (int) $durationMs, (int) $minDoseMs);
+        }
+        if ($doseMl !== null) {
+            $parts[] = sprintf('доза %.4f мл', $doseMl);
+        }
+        if ($mlPerSec !== null) {
+            $parts[] = sprintf('насос %.4f мл/с', $mlPerSec);
+        }
+
+        return 'Коррекция: доза отброшена'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionSkippedWaterLevel(array $details): string
+    {
+        $waterLevelPct = $this->toFloatOrNull($details['water_level_pct'] ?? null);
+        $retryAfterSec = $this->toFloatOrNull($details['retry_after_sec'] ?? null);
+
+        $parts = [];
+        if ($waterLevelPct !== null) {
+            $parts[] = sprintf('уровень %.1f%%', $waterLevelPct);
+        }
+        if ($retryAfterSec !== null) {
+            $parts[] = sprintf('повтор через %d с', (int) $retryAfterSec);
+        }
+
+        return 'Коррекция: мало воды'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionSkippedFreshness(array $details): string
+    {
+        $sensorScope = $this->toStringOrNull($details['sensor_scope'] ?? null);
+        $sensorType = $this->toStringOrNull($details['sensor_type'] ?? null);
+        $retryAfterSec = $this->toFloatOrNull($details['retry_after_sec'] ?? null);
+
+        $parts = [];
+        if ($sensorScope !== null) {
+            $parts[] = $sensorScope === 'observe_window' ? 'observe window' : 'decision window';
+        }
+        if ($sensorType !== null) {
+            $parts[] = strtoupper($sensorType);
+        }
+        if ($retryAfterSec !== null) {
+            $parts[] = sprintf('повтор через %d с', (int) $retryAfterSec);
+        }
+
+        return 'Коррекция: устаревшие данные'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionSkippedWindowNotReady(array $details): string
+    {
+        $sensorScope = $this->toStringOrNull($details['sensor_scope'] ?? null);
+        $sensorType = $this->toStringOrNull($details['sensor_type'] ?? null);
+        $retryAfterSec = $this->toFloatOrNull($details['retry_after_sec'] ?? null);
+        $reason = $this->toStringOrNull($details['reason'] ?? null);
+
+        $parts = [];
+        if ($sensorScope !== null) {
+            $parts[] = $sensorScope === 'observe_window' ? 'observe window' : 'decision window';
+        }
+        if ($sensorType !== null) {
+            $parts[] = strtoupper($sensorType);
+        }
+        if ($reason !== null) {
+            $parts[] = $reason;
+        }
+        if ($retryAfterSec !== null) {
+            $parts[] = sprintf('повтор через %d с', (int) $retryAfterSec);
+        }
+
+        return 'Коррекция: окно наблюдения не готово'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionNoEffect(array $details): string
+    {
+        $pidType = $this->toStringOrNull($details['pid_type'] ?? null);
+        $actualEffect = $this->toFloatOrNull($details['actual_effect'] ?? null);
+        $thresholdEffect = $this->toFloatOrNull($details['threshold_effect'] ?? null);
+        $limit = isset($details['no_effect_limit']) && is_numeric($details['no_effect_limit']) ? (int) $details['no_effect_limit'] : null;
+
+        $parts = [];
+        if ($pidType !== null) {
+            $parts[] = strtoupper($pidType);
+        }
+        if ($actualEffect !== null && $thresholdEffect !== null) {
+            $parts[] = sprintf('эффект %.4f < %.4f', $actualEffect, $thresholdEffect);
+        }
+        if ($limit !== null) {
+            $parts[] = sprintf('лимит %d', $limit);
+        }
+
+        return 'Коррекция: нет наблюдаемого эффекта'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
     }
 
     private function formatRelayAutotuneComplete(array $details): string

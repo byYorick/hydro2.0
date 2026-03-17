@@ -2,9 +2,9 @@
   <AppLayout>
     <div class="space-y-4">
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-        <h1 class="text-lg font-semibold">Настройки калибровки</h1>
+        <h1 class="text-lg font-semibold">Системные настройки автоматики</h1>
         <p class="text-sm text-[color:var(--text-dim)] mt-1">
-          Системный source of truth для `pump_calibration` и `sensor_calibration`.
+          Системный source of truth для calibration и automation defaults.
         </p>
       </div>
 
@@ -30,7 +30,24 @@
             <label class="block text-xs font-medium text-[color:var(--text-muted)]">
               {{ field.label }}
             </label>
+            <label
+              v-if="field.type === 'boolean'"
+              class="flex items-center gap-2 rounded-xl border border-[color:var(--border-muted)] px-3 py-2 text-sm"
+            >
+              <input
+                v-model="draft[field.path]"
+                type="checkbox"
+              />
+              <span>{{ field.description }}</span>
+            </label>
+            <textarea
+              v-else-if="field.type === 'json'"
+              v-model="draft[field.path]"
+              rows="8"
+              class="input-field w-full font-mono text-xs"
+            />
             <input
+              v-else
               v-model="draft[field.path]"
               :type="field.type === 'string' ? 'text' : 'number'"
               :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
@@ -79,25 +96,39 @@ const { getAll, updateNamespace, resetNamespace } = useSystemSettings()
 const { showToast } = useToast()
 
 const payloads = ref<Record<string, SettingsNamespacePayload>>({})
-const activeNamespace = ref<'pump_calibration' | 'sensor_calibration'>('pump_calibration')
+const activeNamespace = ref<string>('pump_calibration')
 const loading = ref(false)
-const draft = ref<Record<string, string | number | undefined>>({})
+const draft = ref<Record<string, string | number | boolean | undefined>>({})
 
-const namespaces = computed<Array<'pump_calibration' | 'sensor_calibration'>>(
-  () => Object.keys(payloads.value) as Array<'pump_calibration' | 'sensor_calibration'>,
-)
+const namespaces = computed<string[]>(() => Object.keys(payloads.value))
 const activePayload = computed(() => payloads.value[activeNamespace.value] || null)
 const activeFields = computed<SystemSettingsField[]>(() => activePayload.value?.meta.field_catalog.flatMap((section) => section.fields) || [])
 
 function syncDraft(): void {
   if (!activePayload.value) return
-  draft.value = { ...(activePayload.value.config as Record<string, string | number | undefined>) }
+  const current = activePayload.value.config as Record<string, unknown>
+  const nextDraft: Record<string, string | number | boolean | undefined> = {}
+  activeFields.value.forEach((field) => {
+    const raw = current[field.path]
+    nextDraft[field.path] = field.type === 'json'
+      ? JSON.stringify(raw ?? [], null, 2)
+      : raw as string | number | boolean | undefined
+  })
+  draft.value = nextDraft
 }
 
 function normalizeDraft(): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   activeFields.value.forEach((field) => {
     const raw = draft.value[field.path]
+    if (field.type === 'boolean') {
+      result[field.path] = Boolean(raw)
+      return
+    }
+    if (field.type === 'json') {
+      result[field.path] = JSON.parse(String(raw ?? '[]'))
+      return
+    }
     if (field.type === 'integer') {
       result[field.path] = Math.trunc(Number(raw))
       return
@@ -123,6 +154,8 @@ async function save(): Promise<void> {
     payloads.value[activeNamespace.value] = updated
     syncDraft()
     showToast('Настройки сохранены', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Не удалось сохранить настройки', 'error')
   } finally {
     loading.value = false
   }

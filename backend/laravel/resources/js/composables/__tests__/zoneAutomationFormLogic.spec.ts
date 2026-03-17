@@ -49,7 +49,6 @@ function createForms(): ZoneAutomationForms {
       drainTargetPercent: 20,
       diagnosticsEnabled: true,
       diagnosticsIntervalMinutes: 15,
-      cycleStartWorkflowEnabled: true,
       diagnosticsWorkflow: 'startup',
       cleanTankFullThreshold: 0.95,
       refillDurationSeconds: 30,
@@ -267,7 +266,6 @@ describe('zoneAutomationFormLogic', () => {
 
     expect(forms.waterForm.diagnosticsEnabled).toBe(false)
     expect(forms.waterForm.diagnosticsIntervalMinutes).toBe(30)
-    expect(forms.waterForm.cycleStartWorkflowEnabled).toBe(true)
     expect(forms.waterForm.diagnosticsWorkflow).toBe('cycle_start')
     expect(forms.waterForm.cleanTankFullThreshold).toBe(0.91)
     expect(forms.waterForm.refillDurationSeconds).toBe(40)

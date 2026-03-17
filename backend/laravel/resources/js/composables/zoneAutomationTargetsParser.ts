@@ -463,7 +463,6 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     diagnosticsWorkflow === 'diagnostics'
   ) {
     waterForm.diagnosticsWorkflow = diagnosticsWorkflow
-    waterForm.cycleStartWorkflowEnabled = diagnosticsWorkflow === 'cycle_start' || diagnosticsWorkflow === 'startup'
   }
 
   const cleanTankThreshold = readNumber(

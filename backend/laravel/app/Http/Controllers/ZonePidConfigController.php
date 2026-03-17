@@ -44,7 +44,7 @@ class ZonePidConfigController extends Controller
         $result = [];
         foreach (['ph', 'ec'] as $type) {
             if (isset($configs[$type])) {
-                $result[$type] = $configs[$type];
+                $result[$type] = $this->pidConfigService->serializeConfig($configs[$type]);
             } else {
                 $result[$type] = [
                     'type' => $type,
@@ -105,7 +105,7 @@ class ZonePidConfigController extends Controller
 
         return response()->json([
             'status' => 'ok',
-            'data' => $config,
+            'data' => $this->pidConfigService->serializeConfig($config),
         ]);
     }
 
@@ -155,7 +155,7 @@ class ZonePidConfigController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $pidConfig,
+                'data' => $this->pidConfigService->serializeConfig($pidConfig),
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json([

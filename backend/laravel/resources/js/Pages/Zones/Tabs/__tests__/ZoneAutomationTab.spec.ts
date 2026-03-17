@@ -45,6 +45,16 @@ vi.mock('@/Components/AIPredictionsSection.vue', () => ({
 vi.mock('@/Components/PidConfigForm.vue', () => ({
   default: { name: 'PidConfigForm', template: '<div />' },
 }))
+vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
+  default: {
+    name: 'CorrectionRuntimeReadinessCard',
+    emits: ['focus-process-calibration', 'open-pump-calibration'],
+    template: '<div><button data-testid="mock-open-pump" @click="$emit(\'open-pump-calibration\')" /></div>',
+  },
+}))
+vi.mock('@/Components/ProcessCalibrationPanel.vue', () => ({
+  default: { name: 'ProcessCalibrationPanel', template: '<div />' },
+}))
 vi.mock('@/Components/RelayAutotuneTrigger.vue', () => ({
   default: { name: 'RelayAutotuneTrigger', template: '<div />' },
 }))
@@ -61,7 +71,11 @@ vi.mock('@/Components/ZoneAutomationAccordionSection.vue', () => ({
   },
 }))
 vi.mock('@/Components/PumpCalibrationsPanel.vue', () => ({
-  default: { name: 'PumpCalibrationsPanel', template: '<div />' },
+  default: {
+    name: 'PumpCalibrationsPanel',
+    emits: ['open-pump-calibration'],
+    template: '<div><button data-testid="mock-open-pump-panel" @click="$emit(\'open-pump-calibration\')" /></div>',
+  },
 }))
 vi.mock('@/Components/SensorCalibrationStatus.vue', () => ({
   default: { name: 'SensorCalibrationStatus', template: '<div />' },
@@ -954,5 +968,39 @@ describe('ZoneAutomationTab.vue', () => {
     expect(manualStepButton).toBeTruthy()
     expect(manualStepButton!.attributes('disabled')).toBeDefined()
     expect(wrapper.text()).not.toContain('Старт рециркуляции полива')
+  })
+
+  it('пробрасывает запрос на открытие pump calibration modal', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+    await wrapper.find('[data-testid="mock-open-pump"]').trigger('click')
+
+    expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
+  })
+
+  it('пробрасывает запрос на открытие pump calibration modal из панели насосов', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+    await wrapper.find('[data-testid="mock-open-pump-panel"]').trigger('click')
+
+    expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
   })
 })

@@ -296,7 +296,7 @@ class GrowCycleService
                 'created_at' => $now,
                 'updated_at' => $now,
             ]],
-            ['idempotency_key'],
+            ['zone_id', 'idempotency_key'],
             [
                 'zone_id',
                 'intent_type',
@@ -308,6 +308,7 @@ class GrowCycleService
         );
 
         $intentExists = DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
             ->where('idempotency_key', $idempotencyKey)
             ->exists();
 

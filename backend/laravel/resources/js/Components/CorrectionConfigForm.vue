@@ -125,6 +125,12 @@
                 <div class="text-sm font-medium">{{ section.label }}</div>
                 <div class="text-xs text-[color:var(--text-dim)] mt-1">{{ section.description }}</div>
               </div>
+              <div
+                v-if="sectionRuntimeNote(section.key, baseForm)"
+                class="rounded-lg border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-3 py-2 text-[11px] text-[color:var(--badge-info-text)]"
+              >
+                {{ sectionRuntimeNote(section.key, baseForm) }}
+              </div>
               <div class="grid gap-4 md:grid-cols-2">
                 <div v-for="field in visibleFields(section.fields)" :key="`base-${field.path}`" class="space-y-1.5">
                   <label class="block text-xs font-medium text-[color:var(--text-muted)]">{{ field.label }}</label>
@@ -177,6 +183,94 @@
             </div>
 
             <div
+              class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
+              data-testid="phase-effective-preview"
+            >
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div class="text-sm font-medium">Effective preview: {{ selectedPhase }}</div>
+                  <div class="text-xs text-[color:var(--text-dim)] mt-1">
+                    Что реально уходит в runtime для выбранной фазы и где phase config отходит от base.
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2 text-[11px]">
+                  <span class="rounded-full bg-[color:var(--surface-muted)] px-2.5 py-1">
+                    Overrides: {{ phaseOverrideStats.overrideCount }}
+                  </span>
+                  <span class="rounded-full bg-[color:var(--surface-muted)] px-2.5 py-1">
+                    Sections: {{ phaseOverrideStats.sectionCount }}
+                  </span>
+                  <span
+                    v-if="phaseOverrideStats.hiddenOverrideCount > 0"
+                    class="rounded-full border border-[color:var(--border-muted)] px-2.5 py-1 text-[color:var(--text-dim)]"
+                  >
+                    Hidden advanced: {{ phaseOverrideStats.hiddenOverrideCount }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="grid gap-3 xl:grid-cols-3">
+                <div
+                  v-for="group in effectivePreviewGroups"
+                  :key="group.key"
+                  class="rounded-xl bg-[color:var(--surface-muted)] px-3 py-3"
+                >
+                  <div class="text-xs font-medium text-[color:var(--text-muted)]">{{ group.label }}</div>
+                  <dl class="mt-3 space-y-2">
+                    <div
+                      v-for="item in group.items"
+                      :key="item.path"
+                      class="flex items-start justify-between gap-3 text-sm"
+                    >
+                      <dt class="text-[color:var(--text-dim)]">{{ item.label }}</dt>
+                      <dd class="text-right font-medium">
+                        <div>{{ item.value }}</div>
+                        <div v-if="item.overridden" class="text-[11px] font-normal text-[color:var(--text-dim)]">
+                          base {{ item.baseValue }}
+                        </div>
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+
+              <div
+                v-if="phaseOverrideSections.length === 0"
+                class="rounded-lg border border-dashed border-[color:var(--border-muted)] px-3 py-3 text-xs text-[color:var(--text-dim)]"
+              >
+                Для этой фазы используется base config без phase override diff.
+              </div>
+
+              <div v-else class="space-y-3">
+                <div
+                  v-for="section in phaseOverrideSections"
+                  :key="section.key"
+                  class="rounded-xl border border-[color:var(--border-muted)] px-3 py-3"
+                >
+                  <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="text-xs font-medium">{{ section.label }}</div>
+                    <div class="text-[11px] text-[color:var(--text-dim)]">
+                      {{ section.totalOverrideCount }} override
+                      <span v-if="section.totalOverrideCount !== 1">s</span>
+                    </div>
+                  </div>
+
+                  <ul class="mt-3 space-y-2 text-sm">
+                    <li v-for="field in section.fields" :key="field.path" class="rounded-lg bg-[color:var(--surface-muted)] px-3 py-2">
+                      <span class="font-medium">{{ field.label }}:</span>
+                      {{ field.effectiveValue }}
+                      <span class="text-[11px] text-[color:var(--text-dim)]"> · base {{ field.baseValue }}</span>
+                    </li>
+                  </ul>
+
+                  <div v-if="section.hiddenOverrideCount > 0" class="mt-3 text-[11px] text-[color:var(--text-dim)]">
+                    И ещё {{ section.hiddenOverrideCount }} hidden advanced override.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div
               v-for="section in visibleSections"
               :key="`phase-${selectedPhase}-${section.key}`"
               class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
@@ -184,6 +278,12 @@
               <div>
                 <div class="text-sm font-medium">{{ section.label }}</div>
                 <div class="text-xs text-[color:var(--text-dim)] mt-1">{{ section.description }}</div>
+              </div>
+              <div
+                v-if="sectionRuntimeNote(section.key, activePhaseForm)"
+                class="rounded-lg border border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] px-3 py-2 text-[11px] text-[color:var(--badge-info-text)]"
+              >
+                {{ sectionRuntimeNote(section.key, activePhaseForm) }}
               </div>
               <div class="grid gap-4 md:grid-cols-2">
                 <div v-for="field in visibleFields(section.fields)" :key="`phase-${selectedPhase}-${field.path}`" class="space-y-1.5">
@@ -296,6 +396,65 @@ const newPresetDescription = ref('')
 const selectedPreset = computed(() => presets.value.find((item) => item.id === selectedPresetId.value) ?? null)
 const visibleSections = computed(() => sections.value.filter((section) => advancedMode.value || !section.advanced_only))
 const activePhaseForm = computed<Record<string, unknown>>(() => phaseForms.value[selectedPhase.value])
+const phaseOverrideSections = computed(() => {
+  return sections.value
+    .map((section) => {
+      const changedFields = section.fields.filter((field) => !areLeafValuesEqual(getByPath(baseForm.value, field.path), getByPath(activePhaseForm.value, field.path)))
+      const visibleChangedFields = changedFields.filter((field) => advancedMode.value || !field.advanced_only)
+
+      return {
+        key: section.key,
+        label: section.label,
+        totalOverrideCount: changedFields.length,
+        hiddenOverrideCount: changedFields.length - visibleChangedFields.length,
+        fields: visibleChangedFields.map((field) => ({
+          path: field.path,
+          label: field.label,
+          effectiveValue: formatFieldValue(field, getByPath(activePhaseForm.value, field.path)),
+          baseValue: formatFieldValue(field, getByPath(baseForm.value, field.path)),
+        })),
+      }
+    })
+    .filter((section) => section.totalOverrideCount > 0)
+})
+const phaseOverrideStats = computed(() => ({
+  overrideCount: phaseOverrideSections.value.reduce((sum, section) => sum + section.totalOverrideCount, 0),
+  sectionCount: phaseOverrideSections.value.length,
+  hiddenOverrideCount: phaseOverrideSections.value.reduce((sum, section) => sum + section.hiddenOverrideCount, 0),
+}))
+const effectivePreviewGroups = computed(() => [
+  {
+    key: 'controllers.ph',
+    label: 'pH controller',
+    items: [
+      createPreviewItem('controllers.ph.kp', 'Kp', 'number'),
+      createPreviewItem('controllers.ph.ki', 'Ki', 'number'),
+      createPreviewItem('controllers.ph.deadband', 'Deadband', 'number'),
+      createPreviewItem('controllers.ph.max_dose_ml', 'Max dose ml', 'number'),
+      createPreviewItem('controllers.ph.min_interval_sec', 'Min interval sec', 'integer'),
+    ],
+  },
+  {
+    key: 'controllers.ec',
+    label: 'EC controller',
+    items: [
+      createPreviewItem('controllers.ec.kp', 'Kp', 'number'),
+      createPreviewItem('controllers.ec.ki', 'Ki', 'number'),
+      createPreviewItem('controllers.ec.deadband', 'Deadband', 'number'),
+      createPreviewItem('controllers.ec.max_dose_ml', 'Max dose ml', 'number'),
+      createPreviewItem('controllers.ec.min_interval_sec', 'Min interval sec', 'integer'),
+    ],
+  },
+  {
+    key: 'retry',
+    label: 'Retry and windows',
+    items: [
+      createPreviewItem('retry.telemetry_stale_retry_sec', 'Telemetry stale retry', 'integer'),
+      createPreviewItem('retry.decision_window_retry_sec', 'Decision window retry', 'integer'),
+      createPreviewItem('retry.low_water_retry_sec', 'Low water retry', 'integer'),
+    ],
+  },
+])
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -314,6 +473,85 @@ function formatDate(value?: string | null): string {
 
 function visibleFields(fields: CorrectionCatalogField[]): CorrectionCatalogField[] {
   return fields.filter((field) => advancedMode.value || !field.advanced_only)
+}
+
+function formatPercent(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—'
+  }
+
+  return `${Math.round(value * 100)}%`
+}
+
+function formatInteger(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—'
+  }
+
+  return String(Math.round(value))
+}
+
+function formatNumber(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '—'
+  }
+
+  return new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(value)
+}
+
+function areLeafValuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function formatFieldValue(
+  field: Pick<CorrectionCatalogField, 'type'>,
+  value: unknown,
+): string {
+  if (field.type === 'boolean') {
+    return typeof value === 'boolean' ? (value ? 'On' : 'Off') : '—'
+  }
+
+  if (field.type === 'integer') {
+    return formatInteger(value)
+  }
+
+  if (field.type === 'number') {
+    return formatNumber(value)
+  }
+
+  if (field.type === 'string' || field.type === 'enum') {
+    return typeof value === 'string' && value.trim() !== '' ? value : '—'
+  }
+
+  return '—'
+}
+
+function createPreviewItem(
+  path: string,
+  label: string,
+  type: CorrectionCatalogField['type'],
+): {
+  path: string
+  label: string
+  value: string
+  baseValue: string
+  overridden: boolean
+} {
+  const meta = sections.value.flatMap((section) => section.fields).find((field) => field.path === path)
+  const field = meta ?? { path, label, description: '', type }
+  const effectiveValue = getByPath(activePhaseForm.value, path)
+  const baseValue = getByPath(baseForm.value, path)
+
+  return {
+    path,
+    label,
+    value: formatFieldValue(field, effectiveValue),
+    baseValue: formatFieldValue(field, baseValue),
+    overridden: !areLeafValuesEqual(effectiveValue, baseValue),
+  }
 }
 
 function getByPath(target: Record<string, unknown>, path: string): unknown {
@@ -354,6 +592,21 @@ function normalizeScalar(field: CorrectionCatalogField, raw: string): string | n
 function handleScalarInput(target: Record<string, unknown>, field: CorrectionCatalogField, event: Event): void {
   const element = event.target as HTMLInputElement
   setByPath(target, field.path, normalizeScalar(field, element.value))
+}
+
+function sectionRuntimeNote(sectionKey: string, target: Record<string, unknown>): string | null {
+  if (sectionKey !== 'controllers.ph' && sectionKey !== 'controllers.ec') {
+    return null
+  }
+
+  const controller = sectionKey.endsWith('.ph') ? 'pH' : 'EC'
+  const prefix = `controllers.${controller === 'pH' ? 'ph' : 'ec'}.observe`
+  const decisionWindow = formatInteger(getByPath(target, `${prefix}.decision_window_sec`))
+  const observePoll = formatInteger(getByPath(target, `${prefix}.observe_poll_sec`))
+  const minEffectFraction = formatPercent(getByPath(target, `${prefix}.min_effect_fraction`))
+  const noEffectLimit = formatInteger(getByPath(target, `${prefix}.no_effect_consecutive_limit`))
+
+  return `${controller} observe-loop: после дозы runtime сначала ждёт окно из Process Calibration (transport_delay_sec + settle_sec), затем набирает decision window ${decisionWindow} сек и повторяет observe-check каждые ${observePoll} сек. Эффект ниже ${minEffectFraction} считается no-effect; после ${noEffectLimit} подряд no-effect correction идёт в fail-closed при включённом safety guard.`
 }
 
 function splitPresetConfig(raw: Record<string, unknown> | undefined): { base: Record<string, unknown>; phases: Record<CorrectionPhase, Record<string, unknown>> } {

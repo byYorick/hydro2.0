@@ -25,6 +25,8 @@ class SystemAutomationSettingsControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.pump_calibration.namespace', 'pump_calibration')
             ->assertJsonPath('data.sensor_calibration.namespace', 'sensor_calibration')
+            ->assertJsonPath('data.automation_defaults.namespace', 'automation_defaults')
+            ->assertJsonPath('data.automation_command_templates.namespace', 'automation_command_templates')
             ->assertJsonPath('data.pump_calibration.config.default_run_duration_sec', 20);
     }
 
@@ -75,6 +77,52 @@ class SystemAutomationSettingsControllerTest extends TestCase
             ],
         ])->assertStatus(422)
             ->assertJsonPath('message', 'Field sensor_calibration.reminder_days must be <= sensor_calibration.critical_days.');
+    }
+
+    public function test_update_merges_automation_defaults_config(): void
+    {
+        $response = $this->putJson('/api/system/automation-settings/automation_defaults', [
+            'config' => [
+                'water_startup_clean_fill_timeout_sec' => 1500,
+                'water_refill_required_node_types_csv' => 'irrig,climate',
+                'climate_enabled' => false,
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.config.water_startup_clean_fill_timeout_sec', 1500)
+            ->assertJsonPath('data.config.water_refill_required_node_types_csv', 'irrig,climate')
+            ->assertJsonPath('data.config.climate_enabled', false)
+            ->assertJsonPath('data.config.water_startup_solution_fill_timeout_sec', 1800);
+    }
+
+    public function test_update_rejects_inconsistent_automation_defaults_config(): void
+    {
+        $this->putJson('/api/system/automation-settings/automation_defaults', [
+            'config' => [
+                'water_irrigation_recovery_target_tolerance_ec_pct' => 30,
+            ],
+        ])->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'Field automation_defaults.water_irrigation_recovery_target_tolerance_ec_pct must be <= automation_defaults.water_irrigation_recovery_degraded_tolerance_ec_pct.'
+            );
+    }
+
+    public function test_update_merges_automation_command_templates_config(): void
+    {
+        $response = $this->putJson('/api/system/automation-settings/automation_command_templates', [
+            'config' => [
+                'clean_fill_start' => [
+                    ['channel' => 'valve_clean_fill', 'cmd' => 'set_relay', 'params' => ['state' => true]],
+                    ['channel' => 'pump_aux', 'cmd' => 'set_relay', 'params' => ['state' => true]],
+                ],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.config.clean_fill_start.1.channel', 'pump_aux')
+            ->assertJsonPath('data.config.solution_fill_start.0.channel', 'valve_clean_supply');
     }
 
     public function test_non_admin_cannot_update(): void

@@ -187,7 +187,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
         return CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
-            attempt=1,
+            attempt=0,
             max_attempts=max(ec_max_attempts, ph_max_attempts),
             ec_attempt=0,
             ec_max_attempts=ec_max_attempts,

@@ -35,6 +35,9 @@ def _minimal_zone_correction_config() -> dict[str, object]:
                 "prepare_recirculation_timeout_sec": 1200,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
+                "telemetry_stale_retry_sec": 30,
+                "decision_window_retry_sec": 30,
+                "low_water_retry_sec": 60,
             },
             "dosing": {
                 "solution_volume_l": 100.0,
@@ -271,6 +274,29 @@ def test_resolve_two_tank_runtime_preserves_explicit_prepare_recirculation_attem
     )
 
     assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 200
+
+
+def test_resolve_two_tank_runtime_includes_configurable_retry_delays() -> None:
+    runtime = resolve_two_tank_runtime(
+        _snapshot(
+            correction={},
+            correction_config={
+                "phases": {
+                    "solution_fill": {
+                        "retry": {
+                            "telemetry_stale_retry_sec": 17,
+                            "decision_window_retry_sec": 19,
+                            "low_water_retry_sec": 61,
+                        },
+                    },
+                },
+            },
+        )
+    )
+
+    assert runtime["correction"]["telemetry_stale_retry_sec"] == 17
+    assert runtime["correction"]["decision_window_retry_sec"] == 19
+    assert runtime["correction"]["low_water_retry_sec"] == 61
 
 
 def test_resolve_two_tank_runtime_rejects_correction_attempt_caps_above_contract_maximum() -> None:

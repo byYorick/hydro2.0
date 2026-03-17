@@ -63,7 +63,6 @@ function createProps() {
       drainTargetPercent: 20,
       diagnosticsEnabled: true,
       diagnosticsIntervalMinutes: 15,
-      cycleStartWorkflowEnabled: true,
       diagnosticsWorkflow: 'startup',
       cleanTankFullThreshold: 0.95,
       refillDurationSeconds: 30,
@@ -121,8 +120,10 @@ describe('ZoneAutomationEditWizard.vue', () => {
     await nextButton!.trigger('click')
 
     expect(wrapper.text()).not.toContain('Legacy fallback hold для EC')
+    expect(wrapper.text()).toContain('Advanced runtime Automation Engine')
     expect(wrapper.text()).toContain('Observe-window после дозы больше не редактируется в этом wizard')
     expect(wrapper.text()).toContain('Legacy wait-поля больше не хранятся')
+    expect(wrapper.text()).not.toContain('Подробное описание параметров AE (на русском)')
   })
 
   it('блокирует поле "Баков" для drip-системы', async () => {

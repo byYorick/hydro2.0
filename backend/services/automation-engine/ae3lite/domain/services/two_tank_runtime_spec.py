@@ -294,6 +294,9 @@ _REQUIRED_ZONE_CORRECTION_TEMPLATE: dict[str, Any] = {
         "prepare_recirculation_timeout_sec": 0,
         "prepare_recirculation_max_attempts": 0,
         "prepare_recirculation_max_correction_attempts": 0,
+        "telemetry_stale_retry_sec": 0,
+        "decision_window_retry_sec": 0,
+        "low_water_retry_sec": 0,
     },
     "tolerance": {
         "prepare_tolerance": {
@@ -697,6 +700,24 @@ def _build_correction_cfg(
             path="retry.prepare_recirculation_max_correction_attempts",
             minimum=1,
             maximum=_MAX_CORRECTION_ATTEMPTS,
+        ),
+        "telemetry_stale_retry_sec": _require_int(
+            retry_cfg.get("telemetry_stale_retry_sec"),
+            path="retry.telemetry_stale_retry_sec",
+            minimum=1,
+            maximum=3600,
+        ),
+        "decision_window_retry_sec": _require_int(
+            retry_cfg.get("decision_window_retry_sec"),
+            path="retry.decision_window_retry_sec",
+            minimum=1,
+            maximum=3600,
+        ),
+        "low_water_retry_sec": _require_int(
+            retry_cfg.get("low_water_retry_sec"),
+            path="retry.low_water_retry_sec",
+            minimum=1,
+            maximum=3600,
         ),
         "solution_volume_l": _require_float(
             dosing_cfg.get("solution_volume_l"),

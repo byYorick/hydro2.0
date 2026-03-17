@@ -419,11 +419,17 @@
             <label class="text-xs text-[color:var(--text-muted)]">
               Workflow запуска
               <select
-                v-model="waterForm.cycleStartWorkflowEnabled"
+                v-model="waterForm.diagnosticsWorkflow"
                 class="input-select mt-1 w-full"
               >
-                <option :value="true">cycle_start</option>
-                <option :value="false">diagnostics</option>
+                <option value="startup">startup</option>
+                <option
+                  value="cycle_start"
+                  :disabled="tanksCount === 2"
+                >
+                  cycle_start
+                </option>
+                <option value="diagnostics">diagnostics</option>
               </select>
             </label>
             <label class="text-xs text-[color:var(--text-muted)]">

@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\SystemAutomationSetting;
+use App\Services\SystemAutomationSettingsCatalog;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -34,6 +36,20 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'automationDefaults' => static function (): array {
+                try {
+                    return SystemAutomationSetting::forNamespace('automation_defaults');
+                } catch (\RuntimeException) {
+                    return SystemAutomationSettingsCatalog::defaults('automation_defaults');
+                }
+            },
+            'automationCommandTemplates' => static function (): array {
+                try {
+                    return SystemAutomationSetting::forNamespace('automation_command_templates');
+                } catch (\RuntimeException) {
+                    return SystemAutomationSettingsCatalog::defaults('automation_command_templates');
+                }
+            },
         ];
     }
 }

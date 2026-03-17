@@ -9,7 +9,7 @@ Outcomes:
 6. IRR state stale after wait → fail-closed → TaskExecutionError (irr_state_stale)
 7. PH/EC telemetry unavailable → TaskExecutionError
 8. stage_def on_corr_success/fail overrides used in correction state
-9. correction state uses prepare_recirculation_max_correction_attempts
+9. correction state caps total attempts by per-PID retry limits
 """
 from __future__ import annotations
 
@@ -287,6 +287,9 @@ async def test_targets_not_reached_enters_correction() -> None:
     assert outcome.kind == "enter_correction"
     assert outcome.correction is not None
     assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.attempt == 0
+    assert outcome.correction.ec_attempt == 0
+    assert outcome.correction.ph_attempt == 0
     assert outcome.correction.activated_here is False
     assert outcome.correction.return_stage_success == "prepare_recirculation_stop_to_ready"
     assert outcome.correction.return_stage_fail == "prepare_recirculation_window_exhausted"
@@ -319,11 +322,13 @@ async def test_manual_prepare_recirculation_stop_transitions_to_ready() -> None:
 
 
 @pytest.mark.asyncio
-async def test_correction_state_uses_max_correction_attempts() -> None:
-    """prepare_recirculation_max_correction_attempts is used for correction state."""
+async def test_correction_state_caps_total_attempts_by_pid_limits() -> None:
+    """prepare_recirculation should not exceed per-PID retry limits."""
     handler = _make_handler(monitor=_Monitor(ph=4.0))
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
-    assert outcome.correction.max_attempts == 20
+    assert outcome.correction.max_attempts == 3
+    assert outcome.correction.ec_max_attempts == 3
+    assert outcome.correction.ph_max_attempts == 3
 
 
 # ── 4. IRR state probe mismatch ───────────────────────────────────────────────

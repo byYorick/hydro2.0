@@ -184,7 +184,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
 | GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler (`dispatches`, `cycle_duration`, `active_tasks`); `counter`/`histogram` читаются из персистентных aggregate tables, а не из `scheduler_logs` |
-| GET | /api/system/automation-settings | auth:sanctum (admin) | Список системных automation settings namespaces (`pump_calibration`, `sensor_calibration`) |
+| GET | /api/system/automation-settings | auth:sanctum (admin) | Список системных automation settings namespaces (`pump_calibration`, `sensor_calibration`, `automation_defaults`, `automation_command_templates`) |
 | GET | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Получить config и field catalog namespace |
 | PUT | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Частично обновить namespace через merge с defaults |
 | POST | /api/system/automation-settings/{namespace}/reset | auth:sanctum (admin) | Сбросить namespace к catalog defaults |

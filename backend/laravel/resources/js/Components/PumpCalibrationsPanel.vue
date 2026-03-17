@@ -3,12 +3,21 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between gap-2">
         <div class="text-sm font-semibold">Калибровки насосов</div>
-        <Badge
-          v-if="hasUncalibrated"
-          variant="warning"
-        >
-          {{ uncalibratedCount }} без калибровки
-        </Badge>
+        <div class="flex items-center gap-2">
+          <Badge
+            v-if="hasUncalibrated"
+            variant="warning"
+          >
+            {{ uncalibratedCount }} без калибровки
+          </Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            @click="emit('open-pump-calibration')"
+          >
+            Открыть Pump Calibration
+          </Button>
+        </div>
       </div>
 
       <div
@@ -54,29 +63,44 @@
             </span>
           </div>
 
+          <div class="rounded-lg bg-[color:var(--bg-elevated)] px-3 py-2 text-xs text-[color:var(--text-dim)]">
+            <div class="font-medium text-[color:var(--text-primary)]">
+              {{ pump.ml_per_sec ? `Текущая скорость: ${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Скорость ещё не сохранена' }}
+            </div>
+            <div class="mt-1">
+              Рабочий диапазон системы: {{ formatMlPerSec(pumpSettings.ml_per_sec_min) }}-{{ formatMlPerSec(pumpSettings.ml_per_sec_max) }} мл/с.
+              Ручное редактирование из списка убрано, чтобы не дублировать Pump Calibration modal.
+            </div>
+          </div>
+
           <div class="flex flex-wrap items-center gap-2">
-            <input
-              v-model.number="editValues[pump.node_channel_id]"
-              type="number"
-              step="0.01"
-              :min="settings.ml_per_sec_min"
-              :max="settings.ml_per_sec_max"
-              class="input-field w-28"
-              placeholder="мл/сек"
-            />
-            <span class="text-xs text-[color:var(--text-dim)]">мл/с</span>
             <Button
               size="sm"
-              variant="outline"
-              :disabled="Boolean(saving[pump.node_channel_id])"
-              @click="savePumpCalibration(pump)"
+              variant="secondary"
+              @click="emit('open-pump-calibration')"
             >
-              {{ saving[pump.node_channel_id] ? 'Сохранение...' : 'Сохранить' }}
+              {{ pump.ml_per_sec ? 'Перекалибровать' : 'Калибровать' }}
             </Button>
           </div>
 
           <div
-            v-if="Number(pump.calibration_age_days) > settings.age_warning_days"
+            v-if="historyByRole[pump.role]"
+            class="rounded-lg bg-[color:var(--bg-elevated)] px-3 py-2 text-xs text-[color:var(--text-dim)]"
+          >
+            <div class="font-medium text-[color:var(--text-primary)]">
+              {{ historyByRole[pump.role]?.message }}
+            </div>
+            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+              <span>Время: {{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}</span>
+              <span>Источник: {{ historyByRole[pump.role]?.source ?? 'не задан' }}</span>
+              <span v-if="historyByRole[pump.role]?.mlPerSec !== null">
+                Скорость: {{ formatMlPerSec(historyByRole[pump.role]!.mlPerSec!) }} мл/с
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days"
             class="text-xs text-[color:var(--badge-warning-text)]"
           >
             Калибровка устарела ({{ pump.calibration_age_days }} дн)
@@ -97,38 +121,57 @@ import { computed, onMounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
+import { useApi } from '@/composables/useApi'
 import { usePageProp } from '@/composables/usePageProps'
 import { usePidConfig } from '@/composables/usePidConfig'
 import type { PumpCalibration } from '@/types/PidConfig'
 import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
+interface ZoneApiEvent {
+  event_id?: number
+  id?: number
+  type?: string
+  created_at?: string | null
+  occurred_at?: string | null
+  message?: string | null
+  payload?: Record<string, unknown> | null
+  details?: Record<string, unknown> | null
+}
+
+interface PumpCalibrationHistoryItem {
+  id: number
+  role: string
+  message: string
+  occurredAt: string | null
+  source: string | null
+  mlPerSec: number | null
+}
+
 const props = defineProps<{ zoneId: number }>()
+const emit = defineEmits<{
+  (e: 'open-pump-calibration'): void
+}>()
 
 const calibrations = ref<PumpCalibration[]>([])
 const loading = ref(true)
-const editValues = ref<Record<number, number>>({})
-const saving = ref<Record<number, boolean>>({})
+const historyEvents = ref<PumpCalibrationHistoryItem[]>([])
 
-const { getPumpCalibrations, updatePumpCalibration } = usePidConfig()
+const { api } = useApi()
+const { getPumpCalibrations } = usePidConfig()
 const settings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
+const pumpSettings = computed<PumpCalibrationSettings>(() => settings.value)
 
 const hasUncalibrated = computed(() => calibrations.value.some((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0))
 const uncalibratedCount = computed(() => calibrations.value.filter((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0).length)
+const historyByRole = computed<Record<string, PumpCalibrationHistoryItem>>(() => {
+  return historyEvents.value.reduce<Record<string, PumpCalibrationHistoryItem>>((acc, item) => {
+    if (!acc[item.role] || acc[item.role].id < item.id) {
+      acc[item.role] = item
+    }
 
-function getDefaultMlPerSec(component: string): number {
-  const defaults: Record<string, number> = {
-    ph_down: 0.5,
-    ph_up: 0.5,
-    acid: 0.5,
-    base: 0.5,
-    npk: 1.0,
-    calcium: 1.0,
-    magnesium: 0.8,
-    micro: 0.8,
-  }
-
-  return defaults[component] ?? 1.0
-}
+    return acc
+  }, {})
+})
 
 function roleShortLabel(role: string): string {
   const labels: Record<string, string> = {
@@ -169,44 +212,88 @@ function formatCalibrationSource(source: string | null, validFrom: string | null
   return `${source} (${date})`
 }
 
-function setSaving(channelId: number, value: boolean): void {
-  saving.value = {
-    ...saving.value,
-    [channelId]: value,
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return 'не задано'
   }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return 'не задано'
+  }
+
+  return date.toLocaleString('ru-RU')
+}
+
+function toPayloadRecord(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+
+  return raw as Record<string, unknown>
+}
+
+function parseNumeric(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function toHistoryItem(raw: ZoneApiEvent): PumpCalibrationHistoryItem | null {
+  if (raw.type !== 'PUMP_CALIBRATION_SAVED') {
+    return null
+  }
+
+  const payload = toPayloadRecord(raw.payload ?? raw.details)
+  const role = typeof payload?.role === 'string' ? payload.role : null
+  const id = Number(raw.event_id ?? raw.id)
+
+  if (!role || !Number.isInteger(id) || id <= 0) {
+    return null
+  }
+
+  return {
+    id,
+    role,
+    message: typeof raw.message === 'string' && raw.message.trim() !== '' ? raw.message : 'Калибровка насоса сохранена',
+    occurredAt: raw.occurred_at ?? raw.created_at ?? null,
+    source: typeof payload?.source === 'string' ? payload.source : null,
+    mlPerSec: parseNumeric(payload?.ml_per_sec),
+  }
+}
+
+async function loadHistory(): Promise<void> {
+  const response = await api.get<{ status: string; data: ZoneApiEvent[] }>(`/api/zones/${props.zoneId}/events`, {
+    params: {
+      limit: 80,
+    },
+  })
+
+  historyEvents.value = Array.isArray(response.data.data)
+    ? response.data.data
+      .map((item) => toHistoryItem(item))
+      .filter((item): item is PumpCalibrationHistoryItem => item !== null)
+      .sort((left, right) => right.id - left.id)
+    : []
 }
 
 async function loadCalibrations(): Promise<void> {
   loading.value = true
   try {
-    calibrations.value = await getPumpCalibrations(props.zoneId)
-    const nextValues: Record<number, number> = {}
-    calibrations.value.forEach((pump) => {
-      nextValues[pump.node_channel_id] = pump.ml_per_sec ?? getDefaultMlPerSec(pump.component)
-    })
-    editValues.value = nextValues
+    const [pumps] = await Promise.all([
+      getPumpCalibrations(props.zoneId),
+      loadHistory(),
+    ])
+    calibrations.value = pumps
   } finally {
     loading.value = false
-  }
-}
-
-async function savePumpCalibration(pump: PumpCalibration): Promise<void> {
-  const channelId = pump.node_channel_id
-  const mlPerSec = Number(editValues.value[channelId])
-  if (
-    !Number.isFinite(mlPerSec)
-    || mlPerSec < settings.value.ml_per_sec_min
-    || mlPerSec > settings.value.ml_per_sec_max
-  ) {
-    return
-  }
-
-  setSaving(channelId, true)
-  try {
-    await updatePumpCalibration(props.zoneId, channelId, { ml_per_sec: mlPerSec })
-    await loadCalibrations()
-  } finally {
-    setSaving(channelId, false)
   }
 }
 
