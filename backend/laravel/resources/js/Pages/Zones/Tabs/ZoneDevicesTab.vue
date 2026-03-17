@@ -29,6 +29,9 @@
       />
     </div>
     <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+      <ZoneBindingsPanel :zone-id="zone.id" />
+    </div>
+    <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
       <AutomationEngine :zone-id="zone.id" />
     </div>
   </div>
@@ -39,6 +42,7 @@ import Button from '@/Components/Button.vue'
 import AutomationEngine from '@/Components/AutomationEngine.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
+import ZoneBindingsPanel from '@/Components/Infrastructure/ZoneBindingsPanel.vue'
 import type { Device, Zone } from '@/types'
 
 interface Props {
