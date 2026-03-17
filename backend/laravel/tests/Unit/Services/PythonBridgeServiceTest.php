@@ -301,29 +301,30 @@ class PythonBridgeServiceTest extends TestCase
         });
     }
 
-    public function test_send_growth_cycle_config_ignores_incompatible_actuator_channels(): void
+    public function test_send_growth_cycle_config_accepts_actuator_system_channel(): void
     {
         $zone = Zone::factory()->create();
 
-        $incompatibleNode = DeviceNode::factory()->create([
+        // Nodes with system channels (ACTUATOR type — как репортят реальные ноды)
+        $nodeWithActuatorSystem = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'uid' => 'nd-ph-1',
             'status' => 'ONLINE',
         ]);
         NodeChannel::create([
-            'node_id' => $incompatibleNode->id,
+            'node_id' => $nodeWithActuatorSystem->id,
             'channel' => 'system',
             'type' => 'ACTUATOR',
             'metric' => null,
         ]);
 
-        $compatibleNode = DeviceNode::factory()->create([
+        $nodeWithDefaultChannel = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'uid' => 'nd-service-1',
             'status' => 'ONLINE',
         ]);
         NodeChannel::create([
-            'node_id' => $compatibleNode->id,
+            'node_id' => $nodeWithDefaultChannel->id,
             'channel' => 'default',
             'type' => 'SERVICE',
             'metric' => null,
@@ -339,33 +340,35 @@ class PythonBridgeServiceTest extends TestCase
 
         $this->assertNotEmpty($cmdId);
 
-        Http::assertSent(function ($request) use ($zone, $compatibleNode) {
+        // nd-ph-1 (lower id) has system channel → selected first (system ordered before default)
+        Http::assertSent(function ($request) use ($zone, $nodeWithActuatorSystem) {
             $data = $request->data();
 
             return str_contains($request->url(), "zones/{$zone->id}/commands")
-                && ($data['node_uid'] ?? null) === $compatibleNode->uid
-                && ($data['channel'] ?? null) === 'default';
+                && ($data['node_uid'] ?? null) === $nodeWithActuatorSystem->uid
+                && ($data['channel'] ?? null) === 'system';
         });
     }
 
-    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_compatible_service_channels(): void
+    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_system_or_default_channel(): void
     {
         $zone = Zone::factory()->create();
 
-        $incompatibleNode = DeviceNode::factory()->create([
+        // Нода с каналами без 'system' или 'default'
+        $nodeWithoutSystemChannel = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'uid' => 'nd-ph-1',
             'status' => 'ONLINE',
         ]);
         NodeChannel::create([
-            'node_id' => $incompatibleNode->id,
-            'channel' => 'system',
+            'node_id' => $nodeWithoutSystemChannel->id,
+            'channel' => 'pump_acid',
             'type' => 'ACTUATOR',
             'metric' => null,
         ]);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/No compatible SERVICE system\/default channel is assigned to zone/');
+        $this->expectExceptionMessageMatches("/No node with a 'system' or 'default' channel is assigned to zone/");
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'GROWTH_CYCLE_CONFIG',
