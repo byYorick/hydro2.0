@@ -301,6 +301,10 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function hasKeys(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length > 0
+}
+
 function formatDate(value?: string | null): string {
   if (!value) {
     return '—'
@@ -385,11 +389,15 @@ function applyPayload(payload: ZoneCorrectionConfigPayload): void {
   lastAppliedAt.value = payload.last_applied_at ?? null
   lastAppliedVersion.value = payload.last_applied_version ?? null
   selectedPresetId.value = payload.preset?.id ?? null
-  baseForm.value = clone(payload.resolved_config.base ?? payload.meta.defaults ?? {})
+  const resolvedBase = hasKeys(payload.resolved_config.base)
+    ? payload.resolved_config.base
+    : (payload.meta.defaults ?? {})
+  const resolvedPhases = payload.resolved_config.phases ?? {}
+  baseForm.value = clone(resolvedBase)
   phaseForms.value = {
-    solution_fill: clone(payload.resolved_config.phases.solution_fill ?? payload.resolved_config.base ?? payload.meta.defaults ?? {}),
-    tank_recirc: clone(payload.resolved_config.phases.tank_recirc ?? payload.resolved_config.base ?? payload.meta.defaults ?? {}),
-    irrigation: clone(payload.resolved_config.phases.irrigation ?? payload.resolved_config.base ?? payload.meta.defaults ?? {}),
+    solution_fill: clone(hasKeys(resolvedPhases.solution_fill) ? resolvedPhases.solution_fill : resolvedBase),
+    tank_recirc: clone(hasKeys(resolvedPhases.tank_recirc) ? resolvedPhases.tank_recirc : resolvedBase),
+    irrigation: clone(hasKeys(resolvedPhases.irrigation) ? resolvedPhases.irrigation : resolvedBase),
   }
 }
 

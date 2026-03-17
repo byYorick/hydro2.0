@@ -261,6 +261,17 @@ class ZoneCorrectionConfigCatalog
     public static function merge(array $base, array $override): array
     {
         foreach ($override as $key => $value) {
+            // Empty JSON objects are decoded as [] in PHP; for object-like branches this means
+            // "no override", not "erase the entire subtree".
+            if (
+                $value === []
+                && isset($base[$key])
+                && is_array($base[$key])
+                && ! array_is_list($base[$key])
+            ) {
+                continue;
+            }
+
             if (is_array($value) && isset($base[$key]) && is_array($base[$key]) && ! array_is_list($value) && ! array_is_list($base[$key])) {
                 $base[$key] = self::merge($base[$key], $value);
                 continue;
@@ -358,7 +369,7 @@ class ZoneCorrectionConfigCatalog
         if (! is_array($base) || array_is_list($base)) {
             throw new InvalidArgumentException('resolved_config.base должен быть объектом.');
         }
-        self::validateFragment($base, true, 'base');
+        self::validateFragment($base, true);
         self::validateRequiredBranches(self::defaults(), $base, 'resolved_config.base');
 
         $phases = $resolved['phases'] ?? null;
@@ -371,7 +382,7 @@ class ZoneCorrectionConfigCatalog
             if (! is_array($phaseConfig) || array_is_list($phaseConfig)) {
                 throw new InvalidArgumentException("resolved_config.phases.{$phase} должен быть объектом.");
             }
-            self::validateFragment($phaseConfig, true, $phase);
+            self::validateFragment($phaseConfig, true);
             self::validateRequiredBranches(self::defaults(), $phaseConfig, "resolved_config.phases.{$phase}");
         }
     }

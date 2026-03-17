@@ -121,6 +121,30 @@ async def _insert_ph_ec_support_nodes(*, zone_id: int, greenhouse_id: int) -> No
             sensor_id,
             5.8 if sensor_type == "PH" else 1.4,
         )
+        await execute(
+            """
+            INSERT INTO telemetry_samples (sensor_id, zone_id, ts, value, quality, created_at)
+            VALUES
+                ($1, $2, NOW() - INTERVAL '4 seconds', $3, 'GOOD', NOW()),
+                ($1, $2, NOW() - INTERVAL '2 seconds', $3, 'GOOD', NOW()),
+                ($1, $2, NOW(), $3, 'GOOD', NOW())
+            """,
+            sensor_id,
+            zone_id,
+            5.8 if sensor_type == "PH" else 1.4,
+        )
+        await execute(
+            """
+            INSERT INTO zone_pid_configs (zone_id, type, config, updated_at)
+            VALUES ($1, $2, $3::jsonb, NOW())
+            ON CONFLICT (zone_id, type) DO UPDATE
+            SET config = EXCLUDED.config,
+                updated_at = EXCLUDED.updated_at
+            """,
+            zone_id,
+            node_type,
+            {"kp": 1.2 if node_type == "ph" else 1.5, "ki": 0.4 if node_type == "ph" else 0.3, "kd": 0.1 if node_type == "ph" else 0.0},
+        )
 
 
 async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, solution_full: bool) -> tuple[int, int]:

@@ -496,7 +496,7 @@ def _require_int(raw_value: Any, *, path: str, minimum: int, maximum: int | None
     if value < minimum:
         raise PlannerConfigurationError(f"correction_config field {path} must be >= {minimum}, got {value}")
     if maximum is not None and value > maximum:
-        return int(maximum)
+        raise PlannerConfigurationError(f"correction_config field {path} must be <= {maximum}, got {value}")
     return int(value)
 
 

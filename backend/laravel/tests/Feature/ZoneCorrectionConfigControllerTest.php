@@ -51,7 +51,7 @@ class ZoneCorrectionConfigControllerTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Поле resolved_config.base.controllers.ph.mode обязательно.');
+            ->assertJsonPath('message', 'Поле resolved_config.base.controllers обязательно.');
     }
 
     public function test_can_update_zone_correction_config_and_write_revision(): void
@@ -295,7 +295,41 @@ class ZoneCorrectionConfigControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.preset.slug', 'test-node')
             ->assertJsonPath('data.version', 2)
-            ->assertJsonPath('data.resolved_config.meta.preset_slug', 'test-node');
+            ->assertJsonPath('data.resolved_config.meta.preset_slug', 'test-node')
+            ->assertJsonPath('data.resolved_config.phases.solution_fill.timing.stabilization_sec', 20)
+            ->assertJsonPath('data.resolved_config.phases.tank_recirc.timing.sensor_mode_stabilization_time_sec', 20);
+    }
+
+    public function test_rejects_incomplete_legacy_preset_without_default_substitution(): void
+    {
+        $zone = Zone::factory()->create();
+        $preset = ZoneCorrectionPreset::query()->create([
+            'slug' => 'legacy-partial',
+            'name' => 'Legacy Partial',
+            'scope' => 'custom',
+            'is_locked' => false,
+            'is_active' => true,
+            'description' => 'Preset with incomplete base contract',
+            'config' => [
+                'base' => [
+                    'dosing' => [
+                        'solution_volume_l' => 18.0,
+                    ],
+                ],
+                'phases' => [
+                    'solution_fill' => [],
+                    'tank_recirc' => [],
+                    'irrigation' => [],
+                ],
+            ],
+        ]);
+
+        $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'preset_id' => $preset->id,
+            'base_config' => [],
+            'phase_overrides' => [],
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'Поле resolved_config.base.controllers обязательно.');
     }
 
     public function test_rejects_prepare_recirculation_correction_cap_above_contract_maximum(): void

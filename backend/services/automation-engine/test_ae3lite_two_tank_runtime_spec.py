@@ -273,20 +273,17 @@ def test_resolve_two_tank_runtime_preserves_explicit_prepare_recirculation_attem
     assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 200
 
 
-def test_resolve_two_tank_runtime_clamps_correction_attempt_caps_to_contract_maximum() -> None:
-    runtime = resolve_two_tank_runtime(
-        _snapshot(
-            correction={
-                "max_ec_correction_attempts": 999,
-                "max_ph_correction_attempts": 999,
-                "prepare_recirculation_max_correction_attempts": 999,
-            }
+def test_resolve_two_tank_runtime_rejects_correction_attempt_caps_above_contract_maximum() -> None:
+    with pytest.raises(PlannerConfigurationError, match="retry.max_ec_correction_attempts must be <= 500"):
+        resolve_two_tank_runtime(
+            _snapshot(
+                correction={
+                    "max_ec_correction_attempts": 999,
+                    "max_ph_correction_attempts": 999,
+                    "prepare_recirculation_max_correction_attempts": 999,
+                }
+            )
         )
-    )
-
-    assert runtime["correction"]["max_ec_correction_attempts"] == 500
-    assert runtime["correction"]["max_ph_correction_attempts"] == 500
-    assert runtime["correction"]["prepare_recirculation_max_correction_attempts"] == 500
 
 
 def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_stabilization() -> None:
@@ -299,16 +296,17 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_s
             "required_node_types": ["irrig"],
             "target_ph": 5.8,
             "target_ec": 2.2,
-            "startup": {
-                "prepare_recirculation_timeout_sec": 35,
-            },
-            "correction": {
-                "stabilization_sec": 10,
-            },
+            "startup": {},
+            "correction": {},
         },
         targets={},
         pid_configs=_minimal_pid_configs(),
-        correction_config=_minimal_zone_correction_config(),
+        correction_config=_with_legacy_runtime_overrides(
+            correction_config={},
+            correction={"stabilization_sec": 10},
+            startup={"prepare_recirculation_timeout_sec": 35},
+            prepare_tolerance=None,
+        ),
         process_calibrations={
             "tank_recirc": {
                 "transport_delay_sec": 15,
@@ -330,16 +328,17 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_observe_window_p
             "required_node_types": ["irrig"],
             "target_ph": 5.8,
             "target_ec": 2.2,
-            "startup": {
-                "prepare_recirculation_timeout_sec": 30,
-            },
-            "correction": {
-                "stabilization_sec": 10,
-            },
+            "startup": {},
+            "correction": {},
         },
         targets={},
         pid_configs=_minimal_pid_configs(),
-        correction_config=_minimal_zone_correction_config(),
+        correction_config=_with_legacy_runtime_overrides(
+            correction_config={},
+            correction={"stabilization_sec": 10},
+            startup={"prepare_recirculation_timeout_sec": 30},
+            prepare_tolerance=None,
+        ),
         process_calibrations={
             "tank_recirc": {
                 "transport_delay_sec": 15,

@@ -569,10 +569,13 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         await execute(
             """
             INSERT INTO zone_pid_configs (zone_id, type, config, updated_at)
-            VALUES ($1, 'ph', $2::jsonb, NOW())
+            VALUES
+                ($1, 'ph', $2::jsonb, NOW()),
+                ($1, 'ec', $3::jsonb, NOW())
             """,
             zone_id,
             {"kp": 1.2, "ki": 0.4, "kd": 0.1},
+            {"kp": 1.5, "ki": 0.3, "kd": 0.0},
         )
 
         node_channel_ids: dict[str, int] = {}

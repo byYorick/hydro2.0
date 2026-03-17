@@ -135,10 +135,9 @@ class ZoneCorrectionConfigService
             [$baseConfigWithoutPump, $pumpOverride] = $this->splitPumpCalibrationOverride($baseConfig);
             SystemAutomationSettingsCatalog::validate('pump_calibration', $pumpOverride, true);
             [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->config);
-            $presetBase = ZoneCorrectionConfigCatalog::merge(
-                ZoneCorrectionConfigCatalog::defaults(),
-                $presetBaseConfig
-            );
+            $presetBase = is_array($presetBaseConfig) && ! array_is_list($presetBaseConfig)
+                ? $presetBaseConfig
+                : [];
             $storedBaseConfig = $this->normalizeStoredOverride($presetBase, $baseConfigWithoutPump);
             if ($pumpOverride !== []) {
                 $storedBaseConfig['pump_calibration'] = SystemAutomationSettingsCatalog::diff(
@@ -160,7 +159,9 @@ class ZoneCorrectionConfigService
                 baseConfig: $storedBaseConfig,
                 phaseOverrides: $storedPhaseOverrides,
             );
-            ZoneCorrectionConfigCatalog::validateResolvedConfig($resolved);
+            if ($preset !== null || $this->hasNonPumpCorrectionData($storedBaseConfig, $storedPhaseOverrides)) {
+                ZoneCorrectionConfigCatalog::validateResolvedConfig($resolved);
+            }
 
             $config->fill([
                 'preset_id' => $preset?->id,
@@ -196,7 +197,9 @@ class ZoneCorrectionConfigService
     ): array {
         [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->config);
         [$baseConfigWithoutPump, $pumpOverride] = $this->splitPumpCalibrationOverride($baseConfig);
-        $resolvedBase = is_array($presetBaseConfig) && ! array_is_list($presetBaseConfig) ? $presetBaseConfig : [];
+        $resolvedBase = is_array($presetBaseConfig) && ! array_is_list($presetBaseConfig)
+            ? $presetBaseConfig
+            : [];
         $resolvedBase = ZoneCorrectionConfigCatalog::merge($resolvedBase, $baseConfigWithoutPump);
         $resolvedPumpCalibration = $this->resolvePumpCalibrationConfig(
             SystemAutomationSetting::forNamespace('pump_calibration'),
@@ -221,6 +224,24 @@ class ZoneCorrectionConfigService
                 'preset_name' => $preset?->name,
             ],
         ];
+    }
+
+    private function hasNonPumpCorrectionData(array $baseConfig, array $phaseOverrides): bool
+    {
+        $baseWithoutPump = $baseConfig;
+        unset($baseWithoutPump['pump_calibration']);
+
+        if ($baseWithoutPump !== []) {
+            return true;
+        }
+
+        foreach ($phaseOverrides as $override) {
+            if (is_array($override) && $override !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function ensureDefaultForZone(int $zoneId): void

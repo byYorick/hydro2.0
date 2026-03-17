@@ -38,8 +38,11 @@ class ZoneCorrectionPresetControllerTest extends TestCase
 
         $this->assertNotNull($preset);
         $this->assertSame('cross_coupled_pi_d', data_get($preset, 'config.base.controllers.ph.mode'));
+        $this->assertSame(0.35, (float) data_get($preset, 'config.base.controllers.ph.derivative_filter_alpha'));
         $this->assertSame(4.0, (float) data_get($preset, 'config.phases.tank_recirc.dosing.max_ec_dose_ml'));
         $this->assertSame(8.0, (float) data_get($preset, 'config.phases.solution_fill.dosing.max_ec_dose_ml'));
+        $this->assertSame(20, (int) data_get($preset, 'config.phases.solution_fill.timing.stabilization_sec'));
+        $this->assertSame('irrig', data_get($preset, 'config.phases.irrigation.runtime.required_node_type'));
     }
 
     public function test_can_create_and_delete_custom_preset_with_phase_package(): void
