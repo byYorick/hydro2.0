@@ -391,7 +391,8 @@ async def test_corr_wait_ec_observes_response_and_returns_to_check():
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_check"
-    assert outcome.correction.attempt == 3
+    assert outcome.correction.attempt == 0   # reaction detected → counters reset
+    assert outcome.correction.ec_attempt == 0
     assert outcome.correction.needs_ec is False
     assert pid_repo.feedforward_cleared == [60]
 
@@ -426,7 +427,8 @@ async def test_corr_wait_ph_observes_response_and_clears_dose_plan():
     assert outcome.kind == "enter_correction"
     c = outcome.correction
     assert c.corr_step == "corr_check"
-    assert c.attempt == 3  # bumped
+    assert c.attempt == 0    # reaction detected → counters reset
+    assert c.ph_attempt == 0
     assert c.needs_ec is False
     assert c.ec_node_uid is None
     assert c.needs_ph_up is False
@@ -870,3 +872,95 @@ async def test_corr_check_ok_water_level_allows_correction(monkeypatch):
 
     # Нормальный уровень воды → не задержка 60s, а нормальный выход (success)
     assert not (outcome.kind == "enter_correction" and outcome.due_delay_sec == 60.0)
+
+
+# ---------------------------------------------------------------------------
+# Attempt reset on reaction / accumulation on no-reaction
+# ---------------------------------------------------------------------------
+
+async def test_corr_wait_ec_reaction_detected_resets_all_attempt_counters():
+    """После дозы EC с измеримой реакцией все счётчики попыток должны сброситься в 0.
+
+    Это позволяет циклу коррекции работать неограниченно долго, пока дозирующее
+    оборудование даёт отклик. Счётчик no_effect_count (отдельный) накапливается
+    только при отсутствии реакции и вызывает алерт после no_effect_limit раз.
+    """
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=4,
+        ec_attempt=3,
+        ph_attempt=2,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 1,
+        }
+    }
+    task = _make_task(corr=corr)
+    # EC jump 1.0 → 1.45: effect = 0.45, expected = 0.2 * 2.0 = 0.4, fraction = 0.25 → has effect
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.40},
+        {"ts": NOW, "value": 1.45},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    c = outcome.correction
+    assert c.corr_step == "corr_check"
+    assert c.attempt == 0     # сброшен
+    assert c.ec_attempt == 0  # сброшен
+    assert c.ph_attempt == 0  # сброшен
+
+
+async def test_corr_wait_ec_no_reaction_increments_attempt_counter():
+    """При отсутствии реакции счётчик attempt должен накапливаться (не сбрасываться).
+
+    Когда attempt достигнет max_attempts, сработает exhausted-алерт.
+    """
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=1,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 0,
+        }
+    }
+    task = _make_task(corr=corr)
+    # EC barely moves 1.0 → 1.01: effect = 0.01, expected = 0.4, fraction = 0.25 → no effect
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.00},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.01},
+        {"ts": NOW, "value": 1.01},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    c = outcome.correction
+    assert c.corr_step == "corr_check"
+    assert c.attempt == 2     # накоплен (1 + 1)
+    assert c.ec_attempt == 1  # не изменился (не сброшен)

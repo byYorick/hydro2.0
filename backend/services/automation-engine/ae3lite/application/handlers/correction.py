@@ -791,10 +791,25 @@ class CorrectionHandler(BaseStageHandler):
                 expected_effect=expected_effect,
             )
 
+        # When the dose had a measurable effect, reset all attempt counters so
+        # the correction cycle can continue indefinitely as long as the dosing
+        # hardware keeps responding.  Only consecutive no-reaction doses count
+        # toward exhaustion (tracked via no_effect_count → no_effect_limit).
+        if is_no_effect:
+            next_attempt = corr.attempt + 1
+            next_ec_attempt = corr.ec_attempt
+            next_ph_attempt = corr.ph_attempt
+        else:
+            next_attempt = 0
+            next_ec_attempt = 0
+            next_ph_attempt = 0
+
         next_corr = replace(
             corr,
             corr_step="corr_check",
-            attempt=corr.attempt + 1,
+            attempt=next_attempt,
+            ec_attempt=next_ec_attempt,
+            ph_attempt=next_ph_attempt,
             wait_until=None,
             needs_ec=False,
             ec_node_uid=None,
