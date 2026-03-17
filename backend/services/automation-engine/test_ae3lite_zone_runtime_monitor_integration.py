@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -146,7 +146,7 @@ async def test_read_metric_window_returns_recent_samples_for_sensor() -> None:
         result = await monitor.read_metric_window(
             zone_id=zone_id,
             sensor_type="EC",
-            since_ts=datetime.utcnow() - timedelta(seconds=5),
+            since_ts=datetime.now(timezone.utc) - timedelta(seconds=5),
             telemetry_max_age_sec=10,
         )
 
@@ -155,5 +155,75 @@ async def test_read_metric_window_returns_recent_samples_for_sensor() -> None:
         assert result["is_stale"] is False
         assert len(result["samples"]) == 2
         assert [round(sample["value"], 2) for sample in result["samples"]] == [1.25, 1.40]
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_metric_window_keeps_latest_samples_when_limit_exceeded() -> None:
+    prefix = f"ae3-metric-window-limit-{uuid4().hex[:8]}"
+    monitor = PgZoneRuntimeMonitor()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+
+        sensor_rows = await fetch(
+            """
+            INSERT INTO sensors (
+                greenhouse_id, zone_id, scope, type, label, unit, is_active, created_at, updated_at
+            )
+            VALUES ($1, $2, 'inside', 'PH', 'ph', 'pH', TRUE, NOW(), NOW())
+            RETURNING id
+            """,
+            greenhouse_id,
+            zone_id,
+        )
+        sensor_id = int(sensor_rows[0]["id"])
+
+        await execute(
+            """
+            INSERT INTO telemetry_samples (sensor_id, ts, zone_id, value, quality, created_at)
+            SELECT
+                $1,
+                NOW() - (($2 - gs.idx) * INTERVAL '1 second'),
+                $3,
+                gs.idx::numeric / 10.0,
+                'GOOD',
+                NOW()
+            FROM generate_series(1, $2) AS gs(idx)
+            """,
+            sensor_id,
+            80,
+            zone_id,
+        )
+        await execute(
+            """
+            INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+            VALUES ($1, 8.0, NOW(), 'GOOD', NOW())
+            ON CONFLICT (sensor_id)
+            DO UPDATE SET
+                last_value = EXCLUDED.last_value,
+                last_ts = EXCLUDED.last_ts,
+                last_quality = EXCLUDED.last_quality,
+                updated_at = EXCLUDED.updated_at
+            """,
+            sensor_id,
+        )
+
+        result = await monitor.read_metric_window(
+            zone_id=zone_id,
+            sensor_type="PH",
+            since_ts=datetime.now(timezone.utc) - timedelta(seconds=90),
+            telemetry_max_age_sec=10,
+            limit=64,
+        )
+
+        assert result["has_sensor"] is True
+        assert result["is_stale"] is False
+        assert len(result["samples"]) == 64
+        assert round(result["samples"][0]["value"], 1) == 1.7
+        assert round(result["samples"][-1]["value"], 1) == 8.0
     finally:
         await _cleanup(prefix)

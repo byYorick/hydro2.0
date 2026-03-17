@@ -155,8 +155,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Обязательные правила:
 - `transport_delay_sec` и `settle_sec` берутся из `zone_process_calibrations`;
 - если process calibration отсутствует, новый in-flow correction path идёт fail-closed;
+- `zone_correction_configs.resolved_config` считается полным runtime-контрактом:
+  если обязательный correction/runtime/tolerance/controller parameter отсутствует,
+  correction path идёт fail-closed и не добирает значение из seed/default или
+  legacy `diagnostics.execution.*`;
 - `telemetry_max_age_sec` должен быть согласован с фактической частотой telemetry;
 - для production in-flow режима ожидается telemetry cadence порядка `2 сек`;
+- если в `corr_check` нельзя собрать устойчивое decision-window (`insufficient_samples` / `unstable`),
+  correction path идёт fail-closed с ошибкой task execution, а не в silent retry loop;
 - `EC` и `pH` имеют отдельные `no_effect_count`, отдельные process gains и отдельные observation thresholds.
 
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)

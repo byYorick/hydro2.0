@@ -13,9 +13,94 @@ from ae3lite.domain.services import CycleStartPlanner
 def _minimal_zone_correction_config() -> dict:
     return {
         "base": {
-            "timing": {},
-            "retry": {},
-            "dosing": {},
+            "runtime": {
+                "required_node_type": "irrig",
+                "clean_fill_timeout_sec": 1200,
+                "solution_fill_timeout_sec": 1800,
+                "clean_fill_retry_cycles": 1,
+                "level_switch_on_threshold": 0.5,
+                "clean_max_sensor_label": "level_clean_max",
+                "clean_min_sensor_label": "level_clean_min",
+                "solution_max_sensor_label": "level_solution_max",
+                "solution_min_sensor_label": "level_solution_min",
+            },
+            "timing": {
+                "sensor_mode_stabilization_time_sec": 60,
+                "stabilization_sec": 60,
+                "telemetry_max_age_sec": 60,
+                "irr_state_max_age_sec": 30,
+                "level_poll_interval_sec": 10,
+            },
+            "retry": {
+                "max_ec_correction_attempts": 5,
+                "max_ph_correction_attempts": 5,
+                "prepare_recirculation_timeout_sec": 1200,
+                "prepare_recirculation_max_attempts": 3,
+                "prepare_recirculation_max_correction_attempts": 20,
+            },
+            "dosing": {
+                "solution_volume_l": 100.0,
+                "dose_ec_channel": "ec_npk_pump",
+                "dose_ph_up_channel": "ph_base_pump",
+                "dose_ph_down_channel": "ph_acid_pump",
+                "max_ec_dose_ml": 50.0,
+                "max_ph_dose_ml": 20.0,
+            },
+            "tolerance": {
+                "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
+            },
+            "controllers": {
+                "ph": {
+                    "mode": "cross_coupled_pi_d",
+                    "kp": 5.0,
+                    "ki": 0.05,
+                    "kd": 0.0,
+                    "derivative_filter_alpha": 0.35,
+                    "deadband": 0.05,
+                    "max_dose_ml": 20.0,
+                    "min_interval_sec": 90,
+                    "max_integral": 20.0,
+                    "anti_windup": {"enabled": True},
+                    "overshoot_guard": {"enabled": True, "hard_min": 4.0, "hard_max": 9.0},
+                    "no_effect": {"enabled": True, "max_count": 3},
+                    "observe": {
+                        "telemetry_period_sec": 2,
+                        "window_min_samples": 3,
+                        "decision_window_sec": 6,
+                        "observe_poll_sec": 2,
+                        "min_effect_fraction": 0.25,
+                        "stability_max_slope": 0.02,
+                        "no_effect_consecutive_limit": 3,
+                    },
+                },
+                "ec": {
+                    "mode": "supervisory_allocator",
+                    "kp": 30.0,
+                    "ki": 0.3,
+                    "kd": 0.0,
+                    "derivative_filter_alpha": 0.35,
+                    "deadband": 0.1,
+                    "max_dose_ml": 50.0,
+                    "min_interval_sec": 120,
+                    "max_integral": 100.0,
+                    "anti_windup": {"enabled": True},
+                    "overshoot_guard": {"enabled": True, "hard_min": 0.0, "hard_max": 10.0},
+                    "no_effect": {"enabled": True, "max_count": 3},
+                    "observe": {
+                        "telemetry_period_sec": 2,
+                        "window_min_samples": 3,
+                        "decision_window_sec": 6,
+                        "observe_poll_sec": 2,
+                        "min_effect_fraction": 0.25,
+                        "stability_max_slope": 0.05,
+                        "no_effect_consecutive_limit": 3,
+                    },
+                },
+            },
+            "safety": {
+                "safe_mode_on_no_effect": True,
+                "block_on_active_no_effect_alert": True,
+            },
         },
         "phases": {
             "solution_fill": {},
@@ -23,6 +108,13 @@ def _minimal_zone_correction_config() -> dict:
             "irrigation": {},
         },
         "meta": {},
+    }
+
+
+def _minimal_pid_configs() -> dict:
+    return {
+        "ph": {"config": {"kp": 1.0, "ki": 0.1, "kd": 0.0}},
+        "ec": {"config": {"kp": 1.0, "ki": 0.1, "kd": 0.0}},
     }
 
 
@@ -73,7 +165,7 @@ def _snapshot() -> ZoneSnapshot:
         },
         telemetry_last={},
         pid_state={},
-        pid_configs={},
+        pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "solution_fill": {
                 "transport_delay_sec": 6,
@@ -401,6 +493,45 @@ def test_cycle_start_planner_allows_uncalibrated_unused_ec_backup_channels() -> 
     correction_actuators = plan.runtime["correction"]["actuators"]
     assert correction_actuators["ec"]["channel"] == "pump_a"
     assert correction_actuators["ec_actuators"]["pump_b"]["channel"] == "pump_b"
+
+
+def test_cycle_start_planner_fails_closed_when_pid_configs_missing_preflight() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "pid_configs": {},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+
+    with pytest.raises(PlannerConfigurationError) as exc:
+        planner.build(task=_task(now), snapshot=snapshot)
+
+    assert getattr(exc.value, "code", None) == "zone_pid_config_missing_critical"
 
 
 def test_cycle_start_planner_rejects_unsupported_schema_version() -> None:

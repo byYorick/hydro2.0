@@ -17,7 +17,7 @@ Protocol (per CORRECTION_CYCLE_SPEC.md):
 from __future__ import annotations
 
 import logging
-from statistics import median
+import math
 from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Optional
@@ -28,10 +28,10 @@ from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
-from ae3lite.domain.services.phase_utils import normalize_phase_key
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_EXHAUSTED
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
+from common.water_flow import check_water_level
 
 _logger = logging.getLogger(__name__)
 
@@ -165,23 +165,45 @@ class CorrectionHandler(BaseStageHandler):
             now=now,
         )
         if not ph["ready"] or not ec["ready"]:
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
-                due_delay_sec=max(float(ph["retry_after_sec"]), float(ec["retry_after_sec"])),
+            raise TaskExecutionError(
+                "corr_decision_window_not_ready",
+                self._format_decision_window_error(ph=ph, ec=ec),
             )
 
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
 
+        if not math.isfinite(current_ph) or not math.isfinite(current_ec):
+            _logger.warning(
+                "zone %s: non-finite telemetry value (ph=%s, ec=%s); retrying in 30s",
+                task.zone_id, current_ph, current_ec,
+            )
+            return StageOutcome(
+                kind="enter_correction",
+                correction=corr,
+                due_delay_sec=30.0,
+            )
+
+        wl_ok, wl_level = await check_water_level(task.zone_id)
+        if not wl_ok:
+            _logger.warning(
+                "zone %s: water level %.0f%% is below threshold; skipping correction",
+                task.zone_id, (wl_level or 0.0) * 100,
+            )
+            return StageOutcome(
+                kind="enter_correction",
+                correction=corr,
+                due_delay_sec=60.0,
+            )
+
         if self._planner.is_within_tolerance(
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
             ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
-            ph_min=self._float_or_none(runtime.get("target_ph_min")),
-            ph_max=self._float_or_none(runtime.get("target_ph_max")),
-            ec_min=self._float_or_none(runtime.get("target_ec_min")),
-            ec_max=self._float_or_none(runtime.get("target_ec_max")),
+            ph_min=self._coerce_float(runtime.get("target_ph_min")),
+            ph_max=self._coerce_float(runtime.get("target_ph_max")),
+            ec_min=self._coerce_float(runtime.get("target_ec_min")),
+            ec_max=self._coerce_float(runtime.get("target_ec_max")),
         ):
             try:
                 await create_zone_event(task.zone_id, "CORRECTION_COMPLETE", {
@@ -212,10 +234,10 @@ class CorrectionHandler(BaseStageHandler):
             ec_component_policy=correction_cfg.get("ec_component_policy"),
             pid_state=pid_state,
             now=now,
-            ph_min=self._float_or_none(runtime.get("target_ph_min")),
-            ph_max=self._float_or_none(runtime.get("target_ph_max")),
-            ec_min=self._float_or_none(runtime.get("target_ec_min")),
-            ec_max=self._float_or_none(runtime.get("target_ec_max")),
+            ph_min=self._coerce_float(runtime.get("target_ph_min")),
+            ph_max=self._coerce_float(runtime.get("target_ph_max")),
+            ec_min=self._coerce_float(runtime.get("target_ec_min")),
+            ec_max=self._coerce_float(runtime.get("target_ec_max")),
             ec_actuator=actuators.get("ec"),
             ec_actuators=actuators.get("ec_actuators"),
             ph_up_actuator=actuators.get("ph_up"),
@@ -246,6 +268,16 @@ class CorrectionHandler(BaseStageHandler):
             )
 
         if not dose_plan.needs_any:
+            if dose_plan.dose_discarded_reason:
+                try:
+                    await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_DOSE_DISCARDED", {
+                        "current_ph": current_ph, "current_ec": current_ec,
+                        "target_ph": target_ph, "target_ec": target_ec,
+                        "reason": dose_plan.dose_discarded_reason,
+                        "attempt": corr.attempt,
+                    })
+                except Exception:
+                    _logger.warning("Failed to log CORRECTION_SKIPPED_DOSE_DISCARDED zone event", exc_info=True)
             try:
                 await create_zone_event(task.zone_id, "CORRECTION_SKIPPED_DEAD_ZONE", {
                     "current_ph": current_ph, "current_ec": current_ec,
@@ -600,118 +632,6 @@ class CorrectionHandler(BaseStageHandler):
             )
         return None
 
-    def _process_cfg_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
-        process_calibrations = runtime.get("process_calibrations")
-        if not isinstance(process_calibrations, Mapping):
-            return {}
-        phase_key = normalize_phase_key(getattr(task.workflow, "workflow_phase", None))
-        process_cfg = process_calibrations.get(phase_key)
-        return process_cfg if isinstance(process_cfg, Mapping) else {}
-
-    def _observation_config(
-        self,
-        *,
-        kind: str,
-        correction_cfg: Mapping[str, Any],
-        process_cfg: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
-        controller_cfg = controllers.get(kind) if isinstance(controllers.get(kind), Mapping) else {}
-        controller_observe_cfg = (
-            controller_cfg.get("observe") if isinstance(controller_cfg.get("observe"), Mapping) else {}
-        )
-        process_meta = process_cfg.get("meta") if isinstance(process_cfg.get("meta"), Mapping) else {}
-        observe_cfg = process_meta.get("observe") if isinstance(process_meta.get("observe"), Mapping) else {}
-
-        telemetry_period_sec = max(
-            1,
-            int(
-                observe_cfg.get("telemetry_period_sec")
-                or controller_observe_cfg.get("telemetry_period_sec")
-                or controller_cfg.get("telemetry_period_sec")
-                or 2
-            ),
-        )
-        window_min_samples = max(
-            2,
-            int(
-                observe_cfg.get("window_min_samples")
-                or controller_observe_cfg.get("window_min_samples")
-                or controller_cfg.get("window_min_samples")
-                or 3
-            ),
-        )
-        decision_window_sec = max(
-            telemetry_period_sec * window_min_samples,
-            int(
-                observe_cfg.get("decision_window_sec")
-                or controller_observe_cfg.get("decision_window_sec")
-                or controller_cfg.get("decision_window_sec")
-                or 0
-            ),
-        )
-        transport_delay_sec = int(
-            process_cfg.get("transport_delay_sec")
-            or controller_observe_cfg.get("transport_delay_sec")
-            or controller_cfg.get("transport_delay_sec")
-            or 0
-        )
-        settle_sec = int(
-            process_cfg.get("settle_sec")
-            or controller_observe_cfg.get("settle_sec")
-            or controller_cfg.get("settle_sec")
-            or 0
-        )
-        if transport_delay_sec <= 0 or settle_sec <= 0:
-            raise TaskExecutionError(
-                "corr_process_calibration_missing",
-                f"Process calibration transport_delay_sec/settle_sec is required for {kind}",
-            )
-        return {
-            "transport_delay_sec": transport_delay_sec,
-            "settle_sec": settle_sec,
-            "hold_window_sec": transport_delay_sec + settle_sec,
-            "telemetry_period_sec": telemetry_period_sec,
-            "window_min_samples": window_min_samples,
-            "decision_window_sec": decision_window_sec,
-            "observe_poll_sec": max(
-                1,
-                int(
-                    observe_cfg.get("observe_poll_sec")
-                    or controller_observe_cfg.get("observe_poll_sec")
-                    or controller_cfg.get("observe_poll_sec")
-                    or telemetry_period_sec
-                ),
-            ),
-            "min_effect_fraction": max(
-                0.01,
-                float(
-                    observe_cfg.get("min_effect_fraction")
-                    or controller_observe_cfg.get("min_effect_fraction")
-                    or controller_cfg.get("min_effect_fraction")
-                    or 0.25
-                ),
-            ),
-            "stability_max_slope": max(
-                0.0001,
-                float(
-                    observe_cfg.get("stability_max_slope")
-                    or controller_observe_cfg.get("stability_max_slope")
-                    or controller_cfg.get("stability_max_slope")
-                    or (0.02 if kind == "ph" else 0.05)
-                ),
-            ),
-            "no_effect_limit": max(
-                1,
-                int(
-                    observe_cfg.get("no_effect_consecutive_limit")
-                    or controller_observe_cfg.get("no_effect_consecutive_limit")
-                    or controller_cfg.get("no_effect_consecutive_limit")
-                    or 3
-                ),
-            ),
-        }
-
     async def _read_decision_metric(
         self,
         *,
@@ -721,7 +641,7 @@ class CorrectionHandler(BaseStageHandler):
         config: Mapping[str, Any],
         now: datetime,
     ) -> Mapping[str, Any]:
-        since_ts = now - timedelta(seconds=int(config["decision_window_sec"]))
+        since_ts = self._decision_window_since_ts(now=now, config=config)
         window = await self._runtime_monitor.read_metric_window(
             zone_id=zone_id,
             sensor_type=sensor_type,
@@ -739,13 +659,40 @@ class CorrectionHandler(BaseStageHandler):
             stability_max_slope=float(config["stability_max_slope"]),
         )
         if not summary["ready"]:
-            return {"ready": False, "retry_after_sec": int(config["observe_poll_sec"])}
+            return {
+                "ready": False,
+                "reason": str(summary.get("reason") or "unknown"),
+                "sample_count": int(len(window["samples"])),
+                "slope": summary.get("slope"),
+                "latest_sample_ts": window.get("latest_sample_ts"),
+            }
         return {
             "ready": True,
             "value": summary["value"],
             "sample_count": summary["sample_count"],
             "slope": summary["slope"],
         }
+
+    def _format_decision_window_error(
+        self,
+        *,
+        ph: Mapping[str, Any],
+        ec: Mapping[str, Any],
+    ) -> str:
+        details: list[str] = []
+        for sensor_type, metric in (("PH", ph), ("EC", ec)):
+            if metric.get("ready"):
+                continue
+            parts = [f"{sensor_type}={str(metric.get('reason') or 'unknown')}"]
+            sample_count = metric.get("sample_count")
+            if sample_count is not None:
+                parts.append(f"samples={sample_count}")
+            slope = metric.get("slope")
+            if slope is not None:
+                parts.append(f"slope={float(slope):.4f}")
+            details.append(",".join(parts))
+        reason = "; ".join(details) if details else "decision window unavailable"
+        return f"Correction decision window not ready: {reason}"
 
     async def _run_wait_observe(
         self,
@@ -864,34 +811,6 @@ class CorrectionHandler(BaseStageHandler):
         )
         return StageOutcome(kind="enter_correction", correction=next_corr)
 
-    def _summarize_metric_window(
-        self,
-        *,
-        samples: Any,
-        window_min_samples: int,
-        stability_max_slope: float,
-    ) -> dict[str, Any]:
-        sample_list = list(samples) if isinstance(samples, (list, tuple)) else []
-        if len(sample_list) < window_min_samples:
-            return {"ready": False, "reason": "insufficient_samples"}
-        values = [float(item["value"]) for item in sample_list if item.get("value") is not None]
-        if len(values) < window_min_samples:
-            return {"ready": False, "reason": "insufficient_values"}
-        first_ts = sample_list[0].get("ts")
-        last_ts = sample_list[-1].get("ts")
-        slope = 0.0
-        if isinstance(first_ts, datetime) and isinstance(last_ts, datetime) and last_ts > first_ts:
-            dt = max(1.0, (last_ts - first_ts).total_seconds())
-            slope = (float(sample_list[-1]["value"]) - float(sample_list[0]["value"])) / dt
-        if abs(slope) > stability_max_slope:
-            return {"ready": False, "reason": "unstable", "slope": slope}
-        return {
-            "ready": True,
-            "value": float(median(values)),
-            "sample_count": len(values),
-            "slope": slope,
-        }
-
     def _expected_effect(
         self,
         *,
@@ -900,13 +819,13 @@ class CorrectionHandler(BaseStageHandler):
         process_cfg: Mapping[str, Any],
     ) -> float:
         if pid_type == "ec":
-            gain = self._float_or_none(process_cfg.get("ec_gain_per_ml"))
+            gain = self._coerce_float(process_cfg.get("ec_gain_per_ml"))
             amount_ml = corr.ec_amount_ml
         elif corr.needs_ph_up:
-            gain = self._float_or_none(process_cfg.get("ph_up_gain_per_ml"))
+            gain = self._coerce_float(process_cfg.get("ph_up_gain_per_ml"))
             amount_ml = corr.ph_amount_ml
         else:
-            gain = self._float_or_none(process_cfg.get("ph_down_gain_per_ml"))
+            gain = self._coerce_float(process_cfg.get("ph_down_gain_per_ml"))
             amount_ml = corr.ph_amount_ml
         if gain is None or gain <= 0 or amount_ml is None or amount_ml <= 0:
             raise TaskExecutionError(
@@ -930,7 +849,7 @@ class CorrectionHandler(BaseStageHandler):
         return max(0.0, baseline_value - observed_value)
 
     def _expected_cross_coupling_ph(self, *, corr: CorrectionState, process_cfg: Mapping[str, Any]) -> float:
-        gain = self._float_or_none(process_cfg.get("ph_per_ec_ml"))
+        gain = self._coerce_float(process_cfg.get("ph_per_ec_ml"))
         if gain is None or corr.ec_amount_ml is None:
             return 0.0
         return float(gain) * float(corr.ec_amount_ml)
@@ -1037,20 +956,20 @@ class CorrectionHandler(BaseStageHandler):
         """
         if not updates or self._pid_state_repository is None:
             return
-        await self._pid_state_repository.upsert_states(
-            zone_id=int(zone_id),
-            now=now,
-            updates=[
-                {"pid_type": pid_type, **state_dict}
-                for pid_type, state_dict in updates.items()
-            ],
-        )
-
-    def _float_or_none(self, value: Any) -> float | None:
         try:
-            return None if value is None else float(value)
-        except (TypeError, ValueError):
-            return None
+            await self._pid_state_repository.upsert_states(
+                zone_id=int(zone_id),
+                now=now,
+                updates=[
+                    {"pid_type": pid_type, **state_dict}
+                    for pid_type, state_dict in updates.items()
+                ],
+            )
+        except Exception:
+            _logger.warning(
+                "Failed to persist PID state for zone %s; controller memory not updated",
+                zone_id, exc_info=True,
+            )
 
     def _normalize_timestamp(self, value: datetime | None) -> datetime | None:
         if value is None:

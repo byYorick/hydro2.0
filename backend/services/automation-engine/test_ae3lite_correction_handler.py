@@ -17,6 +17,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
+import math
 import pytest
 
 from ae3lite.application.handlers.correction import CorrectionHandler
@@ -97,6 +98,20 @@ RUNTIME = {
 
 _SENSOR_CMD = PlannedCommand(step_no=1, node_uid="sensor-1", channel="sensor_mode",
                               payload={"cmd": "activate_sensor_mode", "params": {}})
+
+
+@pytest.fixture(autouse=True)
+def _mock_check_water_level(monkeypatch):
+    """По умолчанию уровень воды OK для всех тестов handler'а.
+
+    check_water_level делает реальный DB-запрос. Мокируем на уровне модуля,
+    чтобы не ломать unit-тесты. Конкретные тесты могут переопределить через
+    собственный monkeypatch.setattr(...).
+    """
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.check_water_level",
+        AsyncMock(return_value=(True, 1.0)),
+    )
 
 
 def _make_task(
@@ -539,6 +554,48 @@ async def test_corr_check_persists_pid_state_updates_when_dose_needed():
     task = _make_task(corr=corr)
     runtime = dict(RUNTIME)
     runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0,
+            "ki": 0.1,
+            "kd": 0.0,
+            "deadband": 0.0,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {
+                "observe_poll_sec": 2,
+                "window_min_samples": 3,
+                "decision_window_sec": 6,
+                "min_effect_fraction": 0.25,
+                "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2,
+                "no_effect_consecutive_limit": 3,
+            },
+        },
+        "ph": {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.05,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {
+                "observe_poll_sec": 2,
+                "window_min_samples": 3,
+                "decision_window_sec": 6,
+                "min_effect_fraction": 0.25,
+                "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2,
+                "no_effect_consecutive_limit": 3,
+            },
+        },
+    }
     runtime["correction"]["actuators"] = {
         "ec": {
             "node_uid": "ec-node",
@@ -573,6 +630,154 @@ async def test_corr_check_persists_pid_state_updates_when_dose_needed():
     assert "ec" in pid_types_saved
 
 
+async def test_corr_check_uses_decision_window_grace_for_late_sample_and_reaches_dose_step(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A fresh but slightly late telemetry cadence must not block dosing with only 2 samples in a strict 6s window."""
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    runtime = dict(RUNTIME)
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0,
+            "ki": 0.1,
+            "kd": 0.0,
+            "deadband": 0.0,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {
+                "observe_poll_sec": 2,
+                "window_min_samples": 3,
+                "decision_window_sec": 6,
+                "min_effect_fraction": 0.25,
+                "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2,
+                "no_effect_consecutive_limit": 3,
+            },
+        },
+        "ph": {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.05,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {
+                "observe_poll_sec": 2,
+                "window_min_samples": 3,
+                "decision_window_sec": 6,
+                "min_effect_fraction": 0.25,
+                "stability_max_slope": 0.05,
+                "telemetry_period_sec": 2,
+                "no_effect_consecutive_limit": 3,
+            },
+        },
+    }
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 200,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+    runtime["correction_by_phase"] = dict(runtime.get("correction_by_phase") or {})
+    runtime["correction_by_phase"]["solution_fill"] = dict(runtime["correction"])
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=0.5,
+        ph_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 6.0},
+            {"ts": NOW - timedelta(seconds=5), "value": 6.0},
+            {"ts": NOW - timedelta(seconds=3), "value": 6.0},
+        ],
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 0.5},
+            {"ts": NOW - timedelta(seconds=5), "value": 0.5},
+            {"ts": NOW - timedelta(seconds=3), "value": 0.5},
+        ],
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_dose_ec"
+    assert outcome.correction.needs_ec is True
+    assert outcome.correction.ec_duration_ms is not None
+    assert outcome.correction.ec_duration_ms > 0
+
+
+async def test_corr_check_unready_decision_window_fails_closed() -> None:
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    runtime = dict(RUNTIME)
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {
+                "observe_poll_sec": 2,
+                "window_min_samples": 3,
+                "decision_window_sec": 6,
+                "telemetry_period_sec": 2,
+                "stability_max_slope": 0.05,
+            },
+        },
+        "ph": {
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {
+                "observe_poll_sec": 2,
+                "window_min_samples": 3,
+                "decision_window_sec": 6,
+                "telemetry_period_sec": 2,
+                "stability_max_slope": 0.05,
+            },
+        },
+    }
+    runtime["correction_by_phase"] = {"solution_fill": dict(runtime["correction"])}
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=0.5,
+        ph_samples=[
+            {"ts": NOW - timedelta(seconds=5), "value": 6.0},
+            {"ts": NOW - timedelta(seconds=3), "value": 6.0},
+        ],
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=5), "value": 0.5},
+            {"ts": NOW - timedelta(seconds=3), "value": 0.5},
+        ],
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert exc_info.value.code == "corr_decision_window_not_ready"
+    assert "PH=insufficient_samples" in str(exc_info.value)
+    assert "EC=insufficient_samples" in str(exc_info.value)
+
+
 async def test_corr_check_no_pid_repo_does_not_crash():
     """corr_check must not fail when pid_state_repository is None (backward compat)."""
     corr = _base_corr(corr_step="corr_check")
@@ -583,3 +788,85 @@ async def test_corr_check_no_pid_repo_does_not_crash():
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
     # Should succeed regardless (no crash when repo is None)
     assert outcome.kind in {"enter_correction", "exit_correction"}
+
+
+# ── Баг #4: проверка NaN/Inf телеметрии ──────────────────────────────────────
+
+
+async def test_corr_check_non_finite_ph_retries_in_30s(monkeypatch):
+    """NaN в pH-телеметрии должен вызывать retry через 30s, не исключение."""
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=math.nan, ec=2.0)
+    handler = _make_handler(monitor=monitor)
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.due_delay_sec == 30.0
+
+
+async def test_corr_check_non_finite_ec_retries_in_30s(monkeypatch):
+    """Inf в EC-телеметрии должен вызывать retry через 30s, не исключение."""
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=math.inf)
+    handler = _make_handler(monitor=monitor)
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.due_delay_sec == 30.0
+
+
+# ── Баг #5: проверка уровня воды перед коррекцией ────────────────────────────
+
+
+async def test_corr_check_low_water_level_skips_correction_60s(monkeypatch):
+    """Низкий уровень воды должен пропускать коррекцию с задержкой 60s."""
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)  # явно вне допуска
+    handler = _make_handler(monitor=monitor)
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.check_water_level",
+        AsyncMock(return_value=(False, 0.0)),
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.due_delay_sec == 60.0
+
+
+async def test_corr_check_ok_water_level_allows_correction(monkeypatch):
+    """Нормальный уровень воды не блокирует коррекцию — тест продолжается до tolerance-check."""
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)  # within tolerance
+    handler = _make_handler(monitor=monitor)
+    # autouse fixture уже мокирует check_water_level → (True, 1.0)
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    # Нормальный уровень воды → не задержка 60s, а нормальный выход (success)
+    assert not (outcome.kind == "enter_correction" and outcome.due_delay_sec == 60.0)

@@ -312,6 +312,9 @@ class ExecuteTaskUseCase:
             if str(error_code).strip().lower() == "zone_dosing_calibration_missing_critical":
                 alert_code = "biz_zone_dosing_calibration_missing"
                 alert_severity = "critical"
+            if str(error_code).strip().lower() == "zone_pid_config_missing_critical":
+                alert_code = "biz_zone_pid_config_missing"
+                alert_severity = "critical"
 
             await repository.create_or_update_active(
                 zone_id=zone_id,

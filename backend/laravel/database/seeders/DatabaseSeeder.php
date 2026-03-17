@@ -39,6 +39,7 @@ class DatabaseSeeder extends Seeder
                 ExtendedRecipesCyclesSeeder::class,
                 ExtendedGrowStagesSeeder::class,
                 ExtendedZonePidConfigsSeeder::class,
+                ZoneProcessCalibrationDefaultsSeeder::class,
                 ExtendedPlantsSeeder::class,
                 ExtendedAutomationProfilesSeeder::class,
             ],

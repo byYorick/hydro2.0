@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from ae3lite.domain.errors import SnapshotBuildError
@@ -247,6 +249,28 @@ def test_build_pid_state_preserves_wallclock_runtime_fields() -> None:
     assert result["ph"]["feedforward_bias"] == 0.07
     assert result["ph"]["no_effect_count"] == 2
     assert result["ph"]["last_correction_kind"] == "ec"
+
+
+def test_build_pid_state_normalizes_aware_datetimes_to_naive_utc() -> None:
+    read_model = PgZoneSnapshotReadModel()
+    ts = datetime(2026, 3, 17, 12, 37, 31, tzinfo=timezone.utc)
+
+    result = read_model._build_pid_state(
+        [
+            {
+                "pid_type": "ec",
+                "last_dose_at": ts,
+                "hold_until": ts,
+                "last_measurement_at": ts,
+                "updated_at": ts,
+            }
+        ]
+    )
+
+    assert result["ec"]["last_dose_at"] == ts.replace(tzinfo=None)
+    assert result["ec"]["hold_until"] == ts.replace(tzinfo=None)
+    assert result["ec"]["last_measurement_at"] == ts.replace(tzinfo=None)
+    assert result["ec"]["updated_at"] == ts.replace(tzinfo=None)
 
 
 def test_build_correction_config_preserves_runtime_contract_fields() -> None:

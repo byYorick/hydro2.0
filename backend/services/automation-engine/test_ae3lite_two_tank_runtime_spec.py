@@ -11,9 +11,94 @@ from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runti
 def _minimal_zone_correction_config() -> dict[str, object]:
     return {
         "base": {
-            "timing": {},
-            "retry": {},
-            "dosing": {},
+            "runtime": {
+                "required_node_type": "irrig",
+                "clean_fill_timeout_sec": 1200,
+                "solution_fill_timeout_sec": 1800,
+                "clean_fill_retry_cycles": 1,
+                "level_switch_on_threshold": 0.5,
+                "clean_max_sensor_label": "level_clean_max",
+                "clean_min_sensor_label": "level_clean_min",
+                "solution_max_sensor_label": "level_solution_max",
+                "solution_min_sensor_label": "level_solution_min",
+            },
+            "timing": {
+                "sensor_mode_stabilization_time_sec": 60,
+                "stabilization_sec": 60,
+                "telemetry_max_age_sec": 60,
+                "irr_state_max_age_sec": 30,
+                "level_poll_interval_sec": 10,
+            },
+            "retry": {
+                "max_ec_correction_attempts": 5,
+                "max_ph_correction_attempts": 5,
+                "prepare_recirculation_timeout_sec": 1200,
+                "prepare_recirculation_max_attempts": 3,
+                "prepare_recirculation_max_correction_attempts": 20,
+            },
+            "dosing": {
+                "solution_volume_l": 100.0,
+                "dose_ec_channel": "ec_npk_pump",
+                "dose_ph_up_channel": "ph_base_pump",
+                "dose_ph_down_channel": "ph_acid_pump",
+                "max_ec_dose_ml": 50.0,
+                "max_ph_dose_ml": 20.0,
+            },
+            "tolerance": {
+                "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
+            },
+            "controllers": {
+                "ph": {
+                    "mode": "cross_coupled_pi_d",
+                    "kp": 5.0,
+                    "ki": 0.05,
+                    "kd": 0.0,
+                    "derivative_filter_alpha": 0.35,
+                    "deadband": 0.05,
+                    "max_dose_ml": 20.0,
+                    "min_interval_sec": 90,
+                    "max_integral": 20.0,
+                    "anti_windup": {"enabled": True},
+                    "overshoot_guard": {"enabled": True, "hard_min": 4.0, "hard_max": 9.0},
+                    "no_effect": {"enabled": True, "max_count": 3},
+                    "observe": {
+                        "telemetry_period_sec": 2,
+                        "window_min_samples": 3,
+                        "decision_window_sec": 6,
+                        "observe_poll_sec": 2,
+                        "min_effect_fraction": 0.25,
+                        "stability_max_slope": 0.02,
+                        "no_effect_consecutive_limit": 3,
+                    },
+                },
+                "ec": {
+                    "mode": "supervisory_allocator",
+                    "kp": 30.0,
+                    "ki": 0.3,
+                    "kd": 0.0,
+                    "derivative_filter_alpha": 0.35,
+                    "deadband": 0.1,
+                    "max_dose_ml": 50.0,
+                    "min_interval_sec": 120,
+                    "max_integral": 100.0,
+                    "anti_windup": {"enabled": True},
+                    "overshoot_guard": {"enabled": True, "hard_min": 0.0, "hard_max": 10.0},
+                    "no_effect": {"enabled": True, "max_count": 3},
+                    "observe": {
+                        "telemetry_period_sec": 2,
+                        "window_min_samples": 3,
+                        "decision_window_sec": 6,
+                        "observe_poll_sec": 2,
+                        "min_effect_fraction": 0.25,
+                        "stability_max_slope": 0.05,
+                        "no_effect_consecutive_limit": 3,
+                    },
+                },
+            },
+            "safety": {
+                "safe_mode_on_no_effect": True,
+                "block_on_active_no_effect_alert": True,
+            },
         },
         "phases": {
             "solution_fill": {},
@@ -22,6 +107,63 @@ def _minimal_zone_correction_config() -> dict[str, object]:
         },
         "meta": {},
     }
+
+
+def _minimal_pid_configs() -> dict[str, object]:
+    return {
+        "ph": {"config": {"kp": 1.0, "ki": 0.1, "kd": 0.0}},
+        "ec": {"config": {"kp": 1.0, "ki": 0.1, "kd": 0.0}},
+    }
+
+
+def _merge_recursive(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+    merged = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _merge_recursive(current, value)
+            continue
+        merged[key] = value
+    return merged
+
+
+def _with_legacy_runtime_overrides(
+    *,
+    correction_config: dict[str, object],
+    correction: dict[str, object],
+    startup: dict[str, object] | None,
+    prepare_tolerance: dict[str, object] | None,
+) -> dict[str, object]:
+    merged = _merge_recursive(_minimal_zone_correction_config(), correction_config)
+    if correction_config:
+        return merged
+
+    dosing = merged["base"]["dosing"]
+    retry = merged["base"]["retry"]
+    timing = merged["base"]["timing"]
+    tolerance_cfg = merged["base"]["tolerance"]["prepare_tolerance"]
+    runtime_cfg = merged["base"]["runtime"]
+
+    for key, value in correction.items():
+        if key in {"max_ec_correction_attempts", "max_ph_correction_attempts", "prepare_recirculation_max_attempts", "prepare_recirculation_max_correction_attempts"}:
+            retry[key] = value
+        elif key in {"max_ec_dose_ml", "max_ph_dose_ml", "solution_volume_l", "dose_ec_channel", "dose_ph_up_channel", "dose_ph_down_channel"}:
+            dosing[key] = value
+        elif key == "stabilization_sec":
+            timing[key] = value
+
+    for key, value in (startup or {}).items():
+        if key in {"clean_fill_timeout_sec", "solution_fill_timeout_sec", "clean_fill_retry_cycles", "level_switch_on_threshold", "clean_max_sensor_label", "clean_min_sensor_label", "solution_max_sensor_label", "solution_min_sensor_label"}:
+            runtime_cfg[key] = value
+        elif key in {"telemetry_max_age_sec", "irr_state_max_age_sec", "level_poll_interval_sec", "sensor_mode_stabilization_time_sec"}:
+            timing[key] = value
+        elif key in {"prepare_recirculation_timeout_sec"}:
+            retry[key] = value
+
+    for key, value in (prepare_tolerance or {}).items():
+        tolerance_cfg[key] = value
+
+    return merged
 
 
 def _snapshot(
@@ -37,6 +179,12 @@ def _snapshot(
         "tank_recirc": {"transport_delay_sec": 10, "settle_sec": 10},
         "irrigation": {"transport_delay_sec": 10, "settle_sec": 10},
     }
+    effective_correction_config = _with_legacy_runtime_overrides(
+        correction_config=correction_config if correction_config is not None else {},
+        correction=correction,
+        startup=startup,
+        prepare_tolerance=prepare_tolerance,
+    )
     return SimpleNamespace(
         workflow_phase="tank_filling",
         diagnostics_execution={
@@ -53,8 +201,9 @@ def _snapshot(
             "correction": correction,
         },
         targets={},
+        pid_configs=_minimal_pid_configs(),
         process_calibrations=process_calibrations if process_calibrations is not None else default_process_calibrations,
-        correction_config=correction_config if correction_config is not None else _minimal_zone_correction_config(),
+        correction_config=effective_correction_config,
     )
 
 
@@ -78,6 +227,7 @@ def test_resolve_target_bound_handles_zero_value() -> None:
             "correction": {},
         },
         targets={},
+        pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "tank_recirc": {
                 "transport_delay_sec": 10,
@@ -157,6 +307,7 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_s
             },
         },
         targets={},
+        pid_configs=_minimal_pid_configs(),
         correction_config=_minimal_zone_correction_config(),
         process_calibrations={
             "tank_recirc": {
@@ -187,6 +338,7 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_observe_window_p
             },
         },
         targets={},
+        pid_configs=_minimal_pid_configs(),
         correction_config=_minimal_zone_correction_config(),
         process_calibrations={
             "tank_recirc": {
@@ -254,6 +406,7 @@ def test_resolve_two_tank_runtime_raises_when_zone_correction_config_missing() -
             "correction": {},
         },
         targets={},
+        pid_configs=_minimal_pid_configs(),
         correction_config=None,
     )
     with pytest.raises(PlannerConfigurationError) as exc_info:
@@ -322,6 +475,67 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
     assert "ec_mix_wait_sec" not in runtime["correction"]
     assert "ph_mix_wait_sec" not in runtime["correction_by_phase"]["tank_recirc"]
     assert runtime["prepare_recirculation_timeout_sec"] == 360
+
+
+def test_resolve_two_tank_runtime_raises_when_zone_pid_configs_missing() -> None:
+    snap = SimpleNamespace(
+        zone_id=188,
+        workflow_phase="tank_filling",
+        diagnostics_execution={
+            "workflow": "cycle_start",
+            "topology": "two_tank_drip_substrate_trays",
+            "required_node_types": ["irrig"],
+            "target_ph": 5.8,
+            "target_ec": 2.2,
+            "startup": {},
+            "correction": {},
+        },
+        targets={},
+        pid_configs={},
+        process_calibrations={
+            "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
+            "tank_recirc": {"transport_delay_sec": 10, "settle_sec": 10},
+            "irrigation": {"transport_delay_sec": 10, "settle_sec": 10},
+        },
+        correction_config=_minimal_zone_correction_config(),
+    )
+
+    with pytest.raises(PlannerConfigurationError) as exc_info:
+        resolve_two_tank_runtime(snap)
+
+    assert getattr(exc_info.value, "code", "") == "zone_pid_config_missing_critical"
+
+
+def test_resolve_two_tank_runtime_raises_when_zone_correction_field_missing() -> None:
+    correction_config = _minimal_zone_correction_config()
+    del correction_config["base"]["dosing"]["max_ec_dose_ml"]
+
+    snap = SimpleNamespace(
+        zone_id=188,
+        workflow_phase="tank_filling",
+        diagnostics_execution={
+            "workflow": "cycle_start",
+            "topology": "two_tank_drip_substrate_trays",
+            "required_node_types": ["irrig"],
+            "target_ph": 5.8,
+            "target_ec": 2.2,
+            "startup": {},
+            "correction": {},
+        },
+        targets={},
+        pid_configs=_minimal_pid_configs(),
+        process_calibrations={
+            "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
+            "tank_recirc": {"transport_delay_sec": 10, "settle_sec": 10},
+            "irrigation": {"transport_delay_sec": 10, "settle_sec": 10},
+        },
+        correction_config=correction_config,
+    )
+
+    with pytest.raises(PlannerConfigurationError, match="max_ec_dose_ml") as exc_info:
+        resolve_two_tank_runtime(snap)
+
+    assert getattr(exc_info.value, "code", "") == "zone_correction_config_missing_critical"
 
 
 def test_resolve_two_tank_runtime_prefers_correction_config_over_execution_defaults() -> None:

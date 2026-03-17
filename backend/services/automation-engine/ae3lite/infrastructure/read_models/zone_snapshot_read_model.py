@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -19,6 +20,12 @@ from .effective_targets_sql_utils import (
 
 class PgZoneSnapshotReadModel:
     """Loads a consistent immutable ZoneSnapshot from PostgreSQL."""
+
+    @staticmethod
+    def _normalize_timestamp(value: Any) -> Any:
+        if not isinstance(value, datetime):
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
 
     async def load(self, *, zone_id: int) -> ZoneSnapshot:
         pool = await get_pool()
@@ -514,16 +521,16 @@ class PgZoneSnapshotReadModel:
                 "prev_error": self._to_float(row.get("prev_error")),
                 "prev_derivative": self._to_float(row.get("prev_derivative")),
                 "last_output_ms": int(row.get("last_output_ms") or 0),
-                "last_dose_at": row.get("last_dose_at"),
-                "hold_until": row.get("hold_until"),
-                "last_measurement_at": row.get("last_measurement_at"),
+                "last_dose_at": self._normalize_timestamp(row.get("last_dose_at")),
+                "hold_until": self._normalize_timestamp(row.get("hold_until")),
+                "last_measurement_at": self._normalize_timestamp(row.get("last_measurement_at")),
                 "last_measured_value": self._to_float(row.get("last_measured_value")),
                 "feedforward_bias": self._to_float(row.get("feedforward_bias")),
                 "no_effect_count": int(row.get("no_effect_count") or 0),
                 "last_correction_kind": row.get("last_correction_kind"),
                 "stats": row.get("stats"),
                 "current_zone": row.get("current_zone"),
-                "updated_at": row.get("updated_at"),
+                "updated_at": self._normalize_timestamp(row.get("updated_at")),
             }
         return result
 

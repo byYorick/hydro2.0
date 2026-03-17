@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+from statistics import median
 from time import monotonic
 from typing import Any, Mapping, Optional, Sequence
 
@@ -195,25 +196,31 @@ class BaseStageHandler:
 
     # ── PH/EC target evaluation ─────────────────────────────────────
 
-    async def _targets_reached(self, *, task: Any, plan: Any) -> bool:
+    async def _targets_reached(self, *, task: Any, plan: Any, now: datetime) -> bool:
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         max_age = int(runtime.get("telemetry_max_age_sec") or 300)
-        ph = await self._runtime_monitor.read_metric(
-            zone_id=task.zone_id, sensor_type="PH", telemetry_max_age_sec=max_age,
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        ph = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="PH",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
         )
-        ec = await self._runtime_monitor.read_metric(
-            zone_id=task.zone_id, sensor_type="EC", telemetry_max_age_sec=max_age,
+        ec = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="EC",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
         )
-        if not ph["has_value"] or not ec["has_value"]:
-            raise TaskExecutionError(
-                "two_tank_prepare_targets_unavailable",
-                "PH/EC telemetry unavailable for target evaluation",
-            )
-        if ph["is_stale"] or ec["is_stale"]:
-            raise TaskExecutionError(
-                "two_tank_prepare_targets_stale",
-                "PH/EC telemetry stale for target evaluation",
-            )
+        if not ph["ready"] or not ec["ready"]:
+            return False
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_target = float(runtime["target_ph"])
         ec_target = float(runtime["target_ec"])
@@ -232,6 +239,54 @@ class BaseStageHandler:
             ec_min = ec_target - ec_tol
             ec_max = ec_target + ec_tol
         return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
+
+    async def _read_target_metric_window(
+        self,
+        *,
+        zone_id: int,
+        sensor_type: str,
+        telemetry_max_age_sec: int,
+        config: Mapping[str, Any],
+        unavailable_error: str,
+        stale_error: str,
+        now: datetime,
+    ) -> Mapping[str, Any]:
+        since_ts = self._decision_window_since_ts(now=now, config=config)
+        window = await self._runtime_monitor.read_metric_window(
+            zone_id=zone_id,
+            sensor_type=sensor_type,
+            since_ts=since_ts,
+            telemetry_max_age_sec=telemetry_max_age_sec,
+        )
+        if not window["has_sensor"]:
+            raise TaskExecutionError(
+                unavailable_error,
+                f"{sensor_type} telemetry unavailable for target evaluation",
+            )
+        if window["is_stale"]:
+            raise TaskExecutionError(
+                stale_error,
+                f"{sensor_type} telemetry stale for target evaluation",
+            )
+        summary = self._summarize_metric_window(
+            samples=window["samples"],
+            window_min_samples=int(config["window_min_samples"]),
+            stability_max_slope=float(config["stability_max_slope"]),
+        )
+        if not summary["ready"]:
+            return {"ready": False, "reason": summary.get("reason")}
+        return {
+            "ready": True,
+            "value": summary["value"],
+            "sample_count": summary["sample_count"],
+            "slope": summary["slope"],
+        }
+
+    def _decision_window_since_ts(self, *, now: datetime, config: Mapping[str, Any]) -> datetime:
+        # Include one telemetry period of slack so a late but still-fresh sample
+        # does not collapse a 3-sample window into 2 samples on real hardware.
+        lookback_sec = int(config["decision_window_sec"]) + int(config.get("telemetry_period_sec", 0) or 0)
+        return now - timedelta(seconds=max(1, lookback_sec))
 
     def _prepare_tolerance_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
         tolerance_by_phase = runtime.get("prepare_tolerance_by_phase")
@@ -258,6 +313,146 @@ class BaseStageHandler:
                 return generic_cfg
         correction = runtime.get("correction")
         return correction if isinstance(correction, Mapping) else {}
+
+    def _process_cfg_for_task(self, *, task: Any, runtime: Mapping[str, Any]) -> Mapping[str, Any]:
+        process_calibrations = runtime.get("process_calibrations")
+        if not isinstance(process_calibrations, Mapping):
+            return {}
+        phase_key = self._runtime_phase_key(task=task)
+        process_cfg = process_calibrations.get(phase_key)
+        return process_cfg if isinstance(process_cfg, Mapping) else {}
+
+    def _observation_config(
+        self,
+        *,
+        kind: str,
+        correction_cfg: Mapping[str, Any],
+        process_cfg: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
+        controller_cfg = controllers.get(kind) if isinstance(controllers.get(kind), Mapping) else {}
+        controller_observe_cfg = (
+            controller_cfg.get("observe") if isinstance(controller_cfg.get("observe"), Mapping) else {}
+        )
+        process_meta = process_cfg.get("meta") if isinstance(process_cfg.get("meta"), Mapping) else {}
+        observe_cfg = process_meta.get("observe") if isinstance(process_meta.get("observe"), Mapping) else {}
+
+        telemetry_period_sec = max(
+            1,
+            int(
+                observe_cfg.get("telemetry_period_sec")
+                or controller_observe_cfg.get("telemetry_period_sec")
+                or controller_cfg.get("telemetry_period_sec")
+                or 2
+            ),
+        )
+        window_min_samples = max(
+            2,
+            int(
+                observe_cfg.get("window_min_samples")
+                or controller_observe_cfg.get("window_min_samples")
+                or controller_cfg.get("window_min_samples")
+                or 3
+            ),
+        )
+        decision_window_sec = max(
+            telemetry_period_sec * window_min_samples,
+            int(
+                observe_cfg.get("decision_window_sec")
+                or controller_observe_cfg.get("decision_window_sec")
+                or controller_cfg.get("decision_window_sec")
+                or 0
+            ),
+        )
+        transport_delay_sec = int(
+            process_cfg.get("transport_delay_sec")
+            or controller_observe_cfg.get("transport_delay_sec")
+            or controller_cfg.get("transport_delay_sec")
+            or 0
+        )
+        settle_sec = int(
+            process_cfg.get("settle_sec")
+            or controller_observe_cfg.get("settle_sec")
+            or controller_cfg.get("settle_sec")
+            or 0
+        )
+        if transport_delay_sec <= 0 or settle_sec <= 0:
+            raise TaskExecutionError(
+                "corr_process_calibration_missing",
+                f"Process calibration transport_delay_sec/settle_sec is required for {kind}",
+            )
+        return {
+            "transport_delay_sec": transport_delay_sec,
+            "settle_sec": settle_sec,
+            "hold_window_sec": transport_delay_sec + settle_sec,
+            "telemetry_period_sec": telemetry_period_sec,
+            "window_min_samples": window_min_samples,
+            "decision_window_sec": decision_window_sec,
+            "observe_poll_sec": max(
+                1,
+                int(
+                    observe_cfg.get("observe_poll_sec")
+                    or controller_observe_cfg.get("observe_poll_sec")
+                    or controller_cfg.get("observe_poll_sec")
+                    or telemetry_period_sec
+                ),
+            ),
+            "min_effect_fraction": max(
+                0.01,
+                float(
+                    observe_cfg.get("min_effect_fraction")
+                    or controller_observe_cfg.get("min_effect_fraction")
+                    or controller_cfg.get("min_effect_fraction")
+                    or 0.25
+                ),
+            ),
+            "stability_max_slope": max(
+                0.0001,
+                float(
+                    observe_cfg.get("stability_max_slope")
+                    or controller_observe_cfg.get("stability_max_slope")
+                    or controller_cfg.get("stability_max_slope")
+                    or (0.02 if kind == "ph" else 0.05)
+                ),
+            ),
+            "no_effect_limit": max(
+                1,
+                int(
+                    observe_cfg.get("no_effect_consecutive_limit")
+                    or controller_observe_cfg.get("no_effect_consecutive_limit")
+                    or controller_cfg.get("no_effect_consecutive_limit")
+                    or 3
+                ),
+            ),
+        }
+
+    def _summarize_metric_window(
+        self,
+        *,
+        samples: Any,
+        window_min_samples: int,
+        stability_max_slope: float,
+    ) -> dict[str, Any]:
+        sample_list = list(samples) if isinstance(samples, (list, tuple)) else []
+        if len(sample_list) < window_min_samples:
+            return {"ready": False, "reason": "insufficient_samples"}
+        values = [float(item["value"]) for item in sample_list if item.get("value") is not None]
+        if len(values) < window_min_samples:
+            return {"ready": False, "reason": "insufficient_values"}
+        first_ts = sample_list[0].get("ts")
+        last_ts = sample_list[-1].get("ts")
+        slope = 0.0
+        if isinstance(first_ts, datetime) and isinstance(last_ts, datetime) and last_ts > first_ts:
+            dt = max(1.0, (last_ts - first_ts).total_seconds())
+            slope = (float(sample_list[-1]["value"]) - float(sample_list[0]["value"])) / dt
+        if abs(slope) > stability_max_slope:
+            return {"ready": False, "reason": "unstable", "slope": slope}
+        return {
+            "ready": True,
+            "value": float(median(values)),
+            "sample_count": len(values),
+            "slope": slope,
+        }
 
     def _runtime_phase_key(self, *, task: Any) -> str:
         workflow = getattr(task, "workflow", None)

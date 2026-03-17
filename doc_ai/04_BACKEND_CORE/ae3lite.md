@@ -338,6 +338,10 @@ Planner:
 3. Если snapshot не может быть собран консистентно, task завершается fail-closed.
 4. Hardcoded default targets запрещены.
 5. Stale critical telemetry должна приводить к fail-closed.
+6. `zone_correction_configs.resolved_config` для AE3 correction runtime считается полным обязательным контрактом:
+   отсутствие required field в `runtime/timing/dosing/retry/tolerance/controllers/safety`
+   должно приводить к fail-closed, без silent fallback на catalog defaults или legacy
+   `diagnostics.execution.*`.
 
 ---
 

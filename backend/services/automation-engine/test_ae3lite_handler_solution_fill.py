@@ -42,6 +42,12 @@ _RUNTIME = {
         "max_ph_correction_attempts": 3,
         "stabilization_sec": 90,
     },
+    "process_calibrations": {
+        "solution_fill": {
+            "transport_delay_sec": 4,
+            "settle_sec": 4,
+        },
+    },
 }
 
 _GOOD_IRR = {
@@ -85,8 +91,12 @@ class _Monitor:
         level_stale: bool = False,
         ph: float = 5.8,
         ec: float = 1.4,
+        ph_samples: list[float] | None = None,
+        ec_samples: list[float] | None = None,
         has_ph: bool = True,
         has_ec: bool = True,
+        ph_stale: bool = False,
+        ec_stale: bool = False,
         irr_state: dict | None = None,
     ) -> None:
         self._level_call = 0
@@ -96,8 +106,23 @@ class _Monitor:
         self._level_stale = level_stale
         self._ph = {"has_value": has_ph, "is_stale": False, "value": ph}
         self._ec = {"has_value": has_ec, "is_stale": False, "value": ec}
+        self._ph_window = self._build_window(values=ph_samples if ph_samples is not None else [ph] * 3)
+        self._ec_window = self._build_window(values=ec_samples if ec_samples is not None else [ec] * 3)
+        self._ph_window_state = {"has_sensor": has_ph, "is_stale": ph_stale, "samples": self._ph_window}
+        self._ec_window_state = {"has_sensor": has_ec, "is_stale": ec_stale, "samples": self._ec_window}
         self._irr = irr_state if irr_state is not None else dict(_GOOD_IRR)
         self._irr_reads = 0
+
+    @staticmethod
+    def _build_window(*, values: list[float]) -> tuple[dict[str, Any], ...]:
+        sample_count = len(values)
+        return tuple(
+            {
+                "ts": NOW - timedelta(seconds=(sample_count - index)),
+                "value": value,
+            }
+            for index, value in enumerate(values, start=1)
+        )
 
     async def read_level_switch(self, *, sensor_labels: Any, **_kw: Any) -> dict:
         self._level_call += 1
@@ -110,6 +135,21 @@ class _Monitor:
 
     async def read_metric(self, *, sensor_type: str, **_kw: Any) -> dict:
         return self._ph if sensor_type == "PH" else self._ec
+
+    async def read_metric_window(
+        self,
+        *,
+        sensor_type: str,
+        **_kw: Any,
+    ) -> dict:
+        state = self._ph_window_state if sensor_type == "PH" else self._ec_window_state
+        return {
+            "has_sensor": state["has_sensor"],
+            "has_samples": bool(state["samples"]),
+            "is_stale": state["is_stale"],
+            "samples": state["samples"],
+            "latest_sample_ts": state["samples"][-1]["ts"] if state["samples"] else None,
+        }
 
 
 class _Gateway:
@@ -164,6 +204,21 @@ async def test_tank_full_targets_within_tolerance() -> None:
     m = _Monitor(max_triggered=True, min_triggered=True, ph=6.5, ec=1.7)
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert outcome.next_stage == "solution_fill_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_tank_full_uses_window_median_not_single_latest_sample() -> None:
+    m = _Monitor(
+        max_triggered=True,
+        min_triggered=True,
+        ph=5.8,
+        ec=1.4,
+        ph_samples=[4.0, 4.1, 5.8],
+        ec_samples=[1.4, 1.4, 1.4],
+    )
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
 
 
 # ── 2. Tank full + targets not reached → stop to prepare ─────────────────────
@@ -255,6 +310,33 @@ async def test_deadline_exceeded_transitions_to_timeout() -> None:
 async def test_still_filling_targets_reached_returns_poll() -> None:
     m = _Monitor(max_triggered=False, min_triggered=False, ph=5.8, ec=1.4)
     outcome = await _handler(m).run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 10
+
+
+@pytest.mark.asyncio
+async def test_still_filling_targets_reached_uses_window_grace_for_late_sample() -> None:
+    m = _Monitor(
+        max_triggered=False,
+        min_triggered=False,
+        ph=5.8,
+        ec=1.4,
+        ph_samples=[5.8, 5.8, 5.8],
+        ec_samples=[1.4, 1.4, 1.4],
+    )
+    m._ph_window_state["samples"] = (
+        {"ts": NOW - timedelta(seconds=7), "value": 5.8},
+        {"ts": NOW - timedelta(seconds=5), "value": 5.8},
+        {"ts": NOW - timedelta(seconds=3), "value": 5.8},
+    )
+    m._ec_window_state["samples"] = (
+        {"ts": NOW - timedelta(seconds=7), "value": 1.4},
+        {"ts": NOW - timedelta(seconds=5), "value": 1.4},
+        {"ts": NOW - timedelta(seconds=3), "value": 1.4},
+    )
+
+    outcome = await _handler(m).run(task=_make_task(deadline=FUTURE), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
     assert outcome.kind == "poll"
     assert outcome.due_delay_sec == 10
 

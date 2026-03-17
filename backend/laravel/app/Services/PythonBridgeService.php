@@ -55,10 +55,10 @@ class PythonBridgeService
             if (! $resolved) {
                 $this->markCommandFailed(
                     $command,
-                    "No nodes with system/default channel are assigned to zone {$zone->id}. GROWTH_CYCLE_CONFIG cannot be published."
+                    "No compatible SERVICE system/default channel is assigned to zone {$zone->id}. GROWTH_CYCLE_CONFIG cannot be published."
                 );
                 throw new \InvalidArgumentException(
-                    "No nodes with system/default channel are assigned to zone {$zone->id}. Attach at least one compatible node before applying GROWTH_CYCLE_CONFIG."
+                    "No compatible SERVICE system/default channel is assigned to zone {$zone->id}. Attach at least one compatible node before applying GROWTH_CYCLE_CONFIG."
                 );
             }
 
@@ -371,9 +371,11 @@ class PythonBridgeService
         /** @var NodeChannel|null $channel */
         $channel = $node->channels
             ->first(function (NodeChannel $channel): bool {
-                $normalized = strtolower(trim((string) $channel->channel));
+                $normalizedChannel = strtolower(trim((string) $channel->channel));
+                $normalizedType = strtoupper(trim((string) $channel->type));
 
-                return in_array($normalized, ['system', 'default'], true);
+                return in_array($normalizedChannel, ['system', 'default'], true)
+                    && $normalizedType === 'SERVICE';
             });
 
         return $channel?->channel;

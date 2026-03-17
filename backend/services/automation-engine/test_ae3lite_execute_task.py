@@ -146,6 +146,14 @@ class _PlannerMissingDosingCalibrationCritical:
         )
 
 
+class _PlannerMissingPidConfigCritical:
+    def build(self, *, task, snapshot):
+        raise PlannerConfigurationError(
+            "Zone 99 missing required zone_pid_configs for pid_type=ec, ph; fail-closed for critical correction parameters",
+            code="zone_pid_config_missing_critical",
+        )
+
+
 class _GatewayOk:
     async def run_batch(self, *, task, commands, now, **kwargs):
         return {"success": True, "task": task}
@@ -195,6 +203,16 @@ class _WorkflowRouterPending:
 class _WorkflowRouterRaises:
     async def run(self, *, task, plan, now):
         raise RuntimeError("boom")
+
+
+class _WorkflowRouterRaisesDecisionWindowNotReady:
+    async def run(self, *, task, plan, now):
+        from ae3lite.domain.errors import TaskExecutionError
+
+        raise TaskExecutionError(
+            "corr_decision_window_not_ready",
+            "Correction decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2",
+        )
 
 
 class _WorkflowRouterCancelledByTimeout:
@@ -434,6 +452,37 @@ async def test_execute_task_missing_dosing_calibration_emits_blocking_alert_and_
 
 
 @pytest.mark.asyncio
+async def test_execute_task_missing_pid_config_emits_blocking_alert_and_shutdown() -> None:
+    task = _make_task(stage="startup", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerMissingPidConfigCritical(),
+        command_gateway=gateway,
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "zone_pid_config_missing_critical"
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_zone_pid_config_missing"
+    assert alerts.calls[0]["severity"] == "critical"
+    assert alerts.calls[0]["details"]["error_code"] == "zone_pid_config_missing_critical"
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
+    assert all(
+        command.payload.get("params", {}).get("state") is False
+        for command in gateway.calls[0]["commands"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_execute_task_skips_fail_safe_shutdown_when_task_was_cleaned_up() -> None:
     task = _make_task(stage="startup", topology="two_tank")
     finalize = _FinalizeTaskUseCase()
@@ -520,6 +569,30 @@ async def test_execute_task_marks_correction_config_applied_for_failed_two_tank_
 
     assert result.status == "failed"
     assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_decision_window_not_ready_emits_task_failed_alert() -> None:
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterRaisesDecisionWindowNotReady(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "corr_decision_window_not_ready"
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_ae3_task_failed"
+    assert alerts.calls[0]["details"]["error_code"] == "corr_decision_window_not_ready"
+    assert alerts.calls[0]["details"]["stage"] == "solution_fill_check"
 
 
 @pytest.mark.asyncio

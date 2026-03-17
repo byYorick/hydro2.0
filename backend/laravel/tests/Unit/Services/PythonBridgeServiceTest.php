@@ -217,7 +217,7 @@ class PythonBridgeServiceTest extends TestCase
         NodeChannel::create([
             'node_id' => $offlineNode->id,
             'channel' => 'default',
-            'type' => 'ACTUATOR',
+            'type' => 'SERVICE',
             'metric' => null,
         ]);
 
@@ -229,7 +229,7 @@ class PythonBridgeServiceTest extends TestCase
         NodeChannel::create([
             'node_id' => $onlineNode->id,
             'channel' => 'default',
-            'type' => 'ACTUATOR',
+            'type' => 'SERVICE',
             'metric' => null,
         ]);
 
@@ -301,12 +301,71 @@ class PythonBridgeServiceTest extends TestCase
         });
     }
 
-    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_nodes(): void
+    public function test_send_growth_cycle_config_ignores_incompatible_actuator_channels(): void
     {
         $zone = Zone::factory()->create();
 
+        $incompatibleNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-ph-1',
+            'status' => 'ONLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $incompatibleNode->id,
+            'channel' => 'system',
+            'type' => 'ACTUATOR',
+            'metric' => null,
+        ]);
+
+        $compatibleNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-service-1',
+            'status' => 'ONLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $compatibleNode->id,
+            'channel' => 'default',
+            'type' => 'SERVICE',
+            'metric' => null,
+        ]);
+
+        $cmdId = $this->service->sendZoneCommand($zone, [
+            'type' => 'GROWTH_CYCLE_CONFIG',
+            'params' => [
+                'mode' => 'adjust',
+                'profile_mode' => 'setup',
+            ],
+        ]);
+
+        $this->assertNotEmpty($cmdId);
+
+        Http::assertSent(function ($request) use ($zone, $compatibleNode) {
+            $data = $request->data();
+
+            return str_contains($request->url(), "zones/{$zone->id}/commands")
+                && ($data['node_uid'] ?? null) === $compatibleNode->uid
+                && ($data['channel'] ?? null) === 'default';
+        });
+    }
+
+    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_compatible_service_channels(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $incompatibleNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-ph-1',
+            'status' => 'ONLINE',
+        ]);
+        NodeChannel::create([
+            'node_id' => $incompatibleNode->id,
+            'channel' => 'system',
+            'type' => 'ACTUATOR',
+            'metric' => null,
+        ]);
+
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/No nodes with system\/default channel are assigned to zone/');
+        $this->expectExceptionMessageMatches('/No compatible SERVICE system\/default channel is assigned to zone/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'GROWTH_CYCLE_CONFIG',

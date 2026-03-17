@@ -1126,15 +1126,16 @@ def test_dose_ml_to_ms_raises_on_ml_per_sec_too_high() -> None:
 
 
 def test_dose_ml_to_ms_logs_warning_on_silent_drop(caplog) -> None:
-    """Дозы ниже _MIN_DOSE_MS=50ms должны давать warning-лог, не молча отбрасываться."""
+    """Дозы ниже _MIN_DOSE_MS=50ms должны давать warning-лог и возвращать reason="below_min_dose_ms"."""
     import logging
     from ae3lite.domain.services.correction_planner import _dose_ml_to_ms
 
     # 0.002ml / 1.0 ml_per_sec = 2ms < 50ms → должен быть warning
     with caplog.at_level(logging.WARNING, logger="ae3lite.domain.services.correction_planner"):
-        result = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0}, _correction_config())
+        duration_ms, reason = _dose_ml_to_ms(0.002, {"ml_per_sec": 1.0}, _correction_config())
 
-    assert result == 0
+    assert duration_ms == 0
+    assert reason == "below_min_dose_ms"
     assert any("below minimum" in record.message or "Dose discarded" in record.message
                for record in caplog.records), (
         "Expected warning log for sub-minimum dose, got none"

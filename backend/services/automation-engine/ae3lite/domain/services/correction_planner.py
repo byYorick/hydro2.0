@@ -52,6 +52,7 @@ class DosePlan:
     ph_retry_after_sec: Optional[int] = None
 
     retry_after_sec: Optional[int] = None
+    dose_discarded_reason: str = ""
     pid_state_updates: Mapping[str, Any] = field(default_factory=dict)
 
     @property
@@ -186,11 +187,13 @@ class CorrectionPlanner:
         ec_channel = ""
         ec_amount_ml = 0.0
         ec_duration_ms = 0
+        ec_discarded_reason = ""
 
         ph_node_uid = ""
         ph_channel = ""
         ph_amount_ml = 0.0
         ph_duration_ms = 0
+        ph_discarded_reason = ""
 
         if ec_needs:
             ec_retry_after = _retry_after(
@@ -229,7 +232,7 @@ class CorrectionPlanner:
                 )
                 if ec_pid_update:
                     pid_updates["ec"] = ec_pid_update
-                ec_duration_ms = _dose_ml_to_ms(ec_amount_ml, calibration, correction_config)
+                ec_duration_ms, ec_discarded_reason = _dose_ml_to_ms(ec_amount_ml, calibration, correction_config)
                 ec_needs = ec_duration_ms > 0
             else:
                 ec_needs = False
@@ -273,7 +276,7 @@ class CorrectionPlanner:
                 )
                 if ph_pid_update:
                     pid_updates["ph"] = ph_pid_update
-                ph_duration_ms = _dose_ml_to_ms(ph_amount_ml, calibration, correction_config)
+                ph_duration_ms, ph_discarded_reason = _dose_ml_to_ms(ph_amount_ml, calibration, correction_config)
                 ph_needs_up = ph_needs_up and ph_duration_ms > 0
                 ph_needs_down = ph_needs_down and ph_duration_ms > 0
             else:
@@ -309,6 +312,7 @@ class CorrectionPlanner:
             ph_duration_ms=ph_duration_ms,
             ph_retry_after_sec=ph_retry_after,
             retry_after_sec=retry_after,
+            dose_discarded_reason=ec_discarded_reason or ph_discarded_reason,
             pid_state_updates=pid_updates,
         )
 
@@ -571,7 +575,7 @@ def _dose_ml_to_ms(
     dose_ml: float,
     calibration: Mapping[str, Any],
     correction_config: Mapping[str, Any],
-) -> int:
+) -> tuple[int, str]:
     pump_calibration = correction_config.get("pump_calibration")
     if not isinstance(pump_calibration, Mapping):
         raise PlannerConfigurationError(
@@ -606,7 +610,7 @@ def _dose_ml_to_ms(
         )
     duration_ms = int(dose_ml / ml_per_sec * 1000)
     if duration_ms <= 0:
-        return 0
+        return (0, "")
     if duration_ms < min_dose_ms:
         _logger.warning(
             "Dose discarded: computed duration %dms is below minimum %dms "
@@ -617,8 +621,8 @@ def _dose_ml_to_ms(
             dose_ml,
             ml_per_sec,
         )
-        return 0
-    return duration_ms
+        return (0, "below_min_dose_ms")
+    return (duration_ms, "")
 
 
 def _to_utc_naive(value: datetime) -> datetime:

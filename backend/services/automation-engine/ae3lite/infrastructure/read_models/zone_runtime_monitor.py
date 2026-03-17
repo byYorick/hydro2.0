@@ -11,6 +11,11 @@ from common.db import get_pool
 class PgZoneRuntimeMonitor:
     """Reads fresh telemetry and irr-state snapshots during AE3 execution."""
 
+    def _normalize_timestamp(self, value: Optional[datetime]) -> Optional[datetime]:
+        if value is None:
+            return None
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+
     def _normalize_labels(self, labels: Sequence[str]) -> list[str]:
         result: list[str] = []
         for item in labels:
@@ -150,6 +155,7 @@ class PgZoneRuntimeMonitor:
         telemetry_max_age_sec: int,
         limit: int = 64,
     ) -> Mapping[str, Any]:
+        normalized_since_ts = self._normalize_timestamp(since_ts)
         sensor_row = await self._read_metric_sensor(zone_id=zone_id, sensor_type=sensor_type)
         if sensor_row is None:
             return {
@@ -167,14 +173,18 @@ class PgZoneRuntimeMonitor:
             rows = await conn.fetch(
                 """
                 SELECT ts, value
-                FROM telemetry_samples
-                WHERE sensor_id = $1
-                  AND ts >= $2
+                FROM (
+                    SELECT ts, value, id
+                    FROM telemetry_samples
+                    WHERE sensor_id = $1
+                      AND ts >= $2
+                    ORDER BY ts DESC, id DESC
+                    LIMIT $3
+                ) recent
                 ORDER BY ts ASC, id ASC
-                LIMIT $3
                 """,
                 int(sensor_row["sensor_id"]),
-                since_ts,
+                normalized_since_ts,
                 max(1, int(limit)),
             )
 

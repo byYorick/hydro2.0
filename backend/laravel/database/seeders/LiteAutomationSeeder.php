@@ -47,6 +47,7 @@ class LiteAutomationSeeder extends Seeder
 
         $this->createInfrastructure($zones, $zoneNodes);
         $this->seedPumpCalibrations($zoneNodes);
+        $this->call(ZoneProcessCalibrationDefaultsSeeder::class);
 
         [$plant, $revision] = $this->createRecipe();
         $cycles = $this->createCycles($zones, $revision, $plant->id);

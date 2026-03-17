@@ -68,7 +68,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 stage_retry_count=task.workflow.stage_retry_count + 1,
             )
 
-        if await self._targets_reached(task=task, plan=plan):
+        if await self._targets_reached(task=task, plan=plan, now=now):
             _logger.debug("prepare_recirculation_check: targets reached zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",

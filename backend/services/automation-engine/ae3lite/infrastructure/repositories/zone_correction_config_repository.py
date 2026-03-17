@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from common.db import execute
+
+_logger = logging.getLogger(__name__)
 
 _SQL_MARK_APPLIED = """
     UPDATE zone_correction_configs
@@ -30,10 +33,16 @@ class PgZoneCorrectionConfigRepository:
         return normalized.replace(microsecond=0)
 
     async def mark_applied(self, *, zone_id: int, version: int, now: datetime) -> None:
-        await execute(
+        tag = await execute(
             _SQL_MARK_APPLIED,
             int(zone_id),
             int(version),
             self._normalize_applied_at(now),
             self._normalize_updated_at(now),
         )
+        if tag == "UPDATE 0":
+            _logger.debug(
+                "mark_applied: no rows updated (zone_id=%d, version=%d) "
+                "— already applied or version mismatch",
+                zone_id, version,
+            )

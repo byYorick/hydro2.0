@@ -352,6 +352,30 @@ class ZoneCorrectionConfigCatalog
         ];
     }
 
+    public static function validateResolvedConfig(array $resolved): void
+    {
+        $base = $resolved['base'] ?? null;
+        if (! is_array($base) || array_is_list($base)) {
+            throw new InvalidArgumentException('resolved_config.base должен быть объектом.');
+        }
+        self::validateFragment($base, true, 'base');
+        self::validateRequiredBranches(self::defaults(), $base, 'resolved_config.base');
+
+        $phases = $resolved['phases'] ?? null;
+        if (! is_array($phases) || array_is_list($phases)) {
+            throw new InvalidArgumentException('resolved_config.phases должен быть объектом.');
+        }
+
+        foreach (self::PHASES as $phase) {
+            $phaseConfig = $phases[$phase] ?? null;
+            if (! is_array($phaseConfig) || array_is_list($phaseConfig)) {
+                throw new InvalidArgumentException("resolved_config.phases.{$phase} должен быть объектом.");
+            }
+            self::validateFragment($phaseConfig, true, $phase);
+            self::validateRequiredBranches(self::defaults(), $phaseConfig, "resolved_config.phases.{$phase}");
+        }
+    }
+
     private static function field(string $path, string $label, string $description, string $type, array $extra = []): array
     {
         return array_merge([

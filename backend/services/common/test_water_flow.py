@@ -800,6 +800,58 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
 
 
 @pytest.mark.asyncio
+async def test_calibrate_pump_skip_run_with_actual_ml_does_not_emit_skipped_event():
+    channel_info = {
+        "channel_id": 25,
+        "channel": "pump_d",
+        "config": {},
+        "node_id": 15,
+        "node_uid": "nd-ec-d",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+         patch("common.water_flow.fetch") as mock_fetch, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.execute", new_callable=AsyncMock), \
+         patch("common.water_flow.create_zone_event", new_callable=AsyncMock) as mock_event, \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep"):
+        mock_settings.return_value = {
+            "calibration_duration_min_sec": 1, "calibration_duration_max_sec": 120,
+            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
+            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
+        }
+        mock_fetch.return_value = [channel_info]
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.patch.return_value = mock_response
+        mock_httpx_client.return_value = mock_http_client
+
+        result = await calibrate_pump(
+            zone_id=1,
+            node_channel_id=25,
+            duration_sec=1,
+            actual_ml=0.8,
+            component="micro",
+            skip_run=True,
+            gh_uid="gh-1",
+        )
+
+        assert result["success"] is True
+        assert result["status"] == "calibrated"
+        mock_send.assert_not_called()
+
+        event_types = [call.args[1] for call in mock_event.await_args_list]
+        assert "PUMP_CALIBRATION_RUN_SKIPPED" not in event_types
+        assert "PUMP_CALIBRATION_FINISHED" in event_types
+
+
+@pytest.mark.asyncio
 async def test_calibrate_pump_accepts_ph_component_alias():
     channel_info = {
         "channel_id": 23,

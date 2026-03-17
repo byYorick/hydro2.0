@@ -206,8 +206,105 @@ async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, soluti
 
 
 async def _insert_correction_config(zone_id: int) -> None:
-    """Insert a minimal zone_correction_config so resolve_two_tank_runtime does not fail-closed."""
-    minimal_cfg = {"base": {"runtime": {}, "timing": {}, "retry": {}, "correction": {}}}
+    """Insert a complete zone_correction_config fixture for fail-closed runtime validation."""
+    minimal_cfg = {
+        "base": {
+            "runtime": {
+                "required_node_type": "irrig",
+                "clean_fill_timeout_sec": 1200,
+                "solution_fill_timeout_sec": 1800,
+                "clean_fill_retry_cycles": 1,
+                "level_switch_on_threshold": 0.5,
+                "clean_max_sensor_label": "level_clean_max",
+                "clean_min_sensor_label": "level_clean_min",
+                "solution_max_sensor_label": "level_solution_max",
+                "solution_min_sensor_label": "level_solution_min",
+            },
+            "timing": {
+                "sensor_mode_stabilization_time_sec": 60,
+                "stabilization_sec": 60,
+                "telemetry_max_age_sec": 60,
+                "irr_state_max_age_sec": 30,
+                "level_poll_interval_sec": 10,
+            },
+            "retry": {
+                "max_ec_correction_attempts": 5,
+                "max_ph_correction_attempts": 5,
+                "prepare_recirculation_timeout_sec": 1200,
+                "prepare_recirculation_max_attempts": 3,
+                "prepare_recirculation_max_correction_attempts": 20,
+            },
+            "dosing": {
+                "solution_volume_l": 100.0,
+                "dose_ec_channel": "ec_npk_pump",
+                "dose_ph_up_channel": "ph_base_pump",
+                "dose_ph_down_channel": "ph_acid_pump",
+                "max_ec_dose_ml": 50.0,
+                "max_ph_dose_ml": 20.0,
+            },
+            "tolerance": {
+                "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
+            },
+            "controllers": {
+                "ph": {
+                    "mode": "cross_coupled_pi_d",
+                    "kp": 5.0,
+                    "ki": 0.05,
+                    "kd": 0.0,
+                    "derivative_filter_alpha": 0.35,
+                    "deadband": 0.05,
+                    "max_dose_ml": 20.0,
+                    "min_interval_sec": 90,
+                    "max_integral": 20.0,
+                    "anti_windup": {"enabled": True},
+                    "overshoot_guard": {"enabled": True, "hard_min": 4.0, "hard_max": 9.0},
+                    "no_effect": {"enabled": True, "max_count": 3},
+                    "observe": {
+                        "telemetry_period_sec": 2,
+                        "window_min_samples": 3,
+                        "decision_window_sec": 6,
+                        "observe_poll_sec": 2,
+                        "min_effect_fraction": 0.25,
+                        "stability_max_slope": 0.02,
+                        "no_effect_consecutive_limit": 3,
+                    },
+                },
+                "ec": {
+                    "mode": "supervisory_allocator",
+                    "kp": 30.0,
+                    "ki": 0.3,
+                    "kd": 0.0,
+                    "derivative_filter_alpha": 0.35,
+                    "deadband": 0.1,
+                    "max_dose_ml": 50.0,
+                    "min_interval_sec": 120,
+                    "max_integral": 100.0,
+                    "anti_windup": {"enabled": True},
+                    "overshoot_guard": {"enabled": True, "hard_min": 0.0, "hard_max": 10.0},
+                    "no_effect": {"enabled": True, "max_count": 3},
+                    "observe": {
+                        "telemetry_period_sec": 2,
+                        "window_min_samples": 3,
+                        "decision_window_sec": 6,
+                        "observe_poll_sec": 2,
+                        "min_effect_fraction": 0.25,
+                        "stability_max_slope": 0.05,
+                        "no_effect_consecutive_limit": 3,
+                    },
+                },
+            },
+            "safety": {
+                "safe_mode_on_no_effect": True,
+                "block_on_active_no_effect_alert": True,
+            },
+        },
+        "phases": {
+            "solution_fill": {},
+            "tank_recirc": {},
+            "irrigation": {},
+        },
+        "meta": {},
+    }
     await execute(
         """
         INSERT INTO zone_correction_configs (

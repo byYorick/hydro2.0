@@ -48,7 +48,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         )
 
         if pending_manual_step == "solution_fill_stop":
-            if await self._should_finish_to_ready(task=task, plan=plan):
+            if await self._should_finish_to_ready(task=task, plan=plan, now=now):
                 return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_ready")
             return StageOutcome(kind="transition", next_stage="solution_fill_stop_to_prepare")
         if control_mode == "manual":
@@ -77,7 +77,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 min_stale_error="two_tank_solution_min_level_stale",
             )
 
-            if await self._targets_reached(task=task, plan=plan):
+            if await self._targets_reached(task=task, plan=plan, now=now):
                 _logger.debug("solution_fill_check: targets reached, stopping fill zone_id=%s", task.zone_id)
                 return StageOutcome(
                     kind="transition",
@@ -120,7 +120,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 _logger.warning("Failed to send solution_fill_timeout alert zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
-        if await self._targets_reached(task=task, plan=plan):
+        if await self._targets_reached(task=task, plan=plan, now=now):
             return StageOutcome(
                 kind="poll",
                 due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
@@ -150,7 +150,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         )
         return StageOutcome(kind="enter_correction", correction=corr)
 
-    async def _should_finish_to_ready(self, *, task: Any, plan: Any) -> bool:
+    async def _should_finish_to_ready(self, *, task: Any, plan: Any, now: datetime) -> bool:
         runtime = plan.runtime
         solution_max = await self._read_level(
             task=task,
@@ -171,7 +171,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             min_unavailable_error="two_tank_solution_min_level_unavailable",
             min_stale_error="two_tank_solution_min_level_stale",
         )
-        return await self._targets_reached(task=task, plan=plan)
+        return await self._targets_reached(task=task, plan=plan, now=now)
 
     def _build_correction_state(
         self,

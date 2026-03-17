@@ -46,6 +46,12 @@ RUNTIME = {
         "prepare_recirculation_max_attempts": 3,
         "stabilization_sec": 60,
     },
+    "process_calibrations": {
+        "tank_recirc": {
+            "transport_delay_sec": 4,
+            "settle_sec": 4,
+        },
+    },
 }
 
 
@@ -92,20 +98,56 @@ class _Monitor:
         *,
         ph: float = 5.8,
         ec: float = 1.4,
+        ph_samples: list[float] | None = None,
+        ec_samples: list[float] | None = None,
         has_ph: bool = True,
         has_ec: bool = True,
+        ph_stale: bool = False,
+        ec_stale: bool = False,
         irr_state: dict | None = None,
         irr_states: list[dict] | None = None,
     ) -> None:
         self._ph = {"has_value": has_ph, "is_stale": False, "value": ph}
         self._ec = {"has_value": has_ec, "is_stale": False, "value": ec}
+        self._ph_window = self._build_window(values=ph_samples if ph_samples is not None else [ph] * 3)
+        self._ec_window = self._build_window(values=ec_samples if ec_samples is not None else [ec] * 3)
+        self._ph_window_state = {"has_sensor": has_ph, "is_stale": ph_stale, "samples": self._ph_window}
+        self._ec_window_state = {"has_sensor": has_ec, "is_stale": ec_stale, "samples": self._ec_window}
         # irr_states list is consumed sequentially; falls back to irr_state after exhausted
         self._irr_states: list[dict] = list(irr_states) if irr_states else []
         self._irr_state = irr_state if irr_state is not None else dict(_IRR_MATCH)
         self.irr_reads = 0
 
+    @staticmethod
+    def _build_window(*, values: list[float]) -> tuple[dict[str, Any], ...]:
+        sample_count = len(values)
+        return tuple(
+            {
+                "ts": NOW - timedelta(seconds=(sample_count - index)),
+                "value": value,
+            }
+            for index, value in enumerate(values, start=1)
+        )
+
     async def read_metric(self, *, zone_id: int, sensor_type: str, telemetry_max_age_sec: int) -> dict:
         return self._ph if sensor_type == "PH" else self._ec
+
+    async def read_metric_window(
+        self,
+        *,
+        zone_id: int,
+        sensor_type: str,
+        since_ts: datetime,
+        telemetry_max_age_sec: int,
+    ) -> dict:
+        state = self._ph_window_state if sensor_type == "PH" else self._ec_window_state
+        return {
+            "has_sensor": state["has_sensor"],
+            "has_samples": bool(state["samples"]),
+            "is_stale": state["is_stale"],
+            "samples": state["samples"],
+            "latest_sample_ts": state["samples"][-1]["ts"] if state["samples"] else None,
+        }
 
     async def read_latest_irr_state(self, **_kw: Any) -> dict:
         self.irr_reads += 1
@@ -191,6 +233,45 @@ async def test_targets_reached_transitions_to_stop_ready() -> None:
 async def test_targets_reached_within_tolerance() -> None:
     """target_ph=5.8 tol=15% → [4.93, 6.67]; ph=6.0 ec=1.2 → within bounds."""
     handler = _make_handler(monitor=_Monitor(ph=6.0, ec=1.2))
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_targets_use_window_median_not_single_latest_sample() -> None:
+    handler = _make_handler(
+        monitor=_Monitor(
+            ph=5.8,
+            ec=1.4,
+            ph_samples=[4.0, 4.1, 5.8],
+            ec_samples=[1.4, 1.4, 1.4],
+        )
+    )
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "enter_correction"
+
+
+@pytest.mark.asyncio
+async def test_targets_reached_uses_window_grace_for_late_sample() -> None:
+    late_samples = [
+        {"ts": NOW - timedelta(seconds=7), "value": 5.8},
+        {"ts": NOW - timedelta(seconds=5), "value": 5.8},
+        {"ts": NOW - timedelta(seconds=3), "value": 5.8},
+    ]
+    handler = _make_handler(
+        monitor=_Monitor(
+            ph=5.8,
+            ec=1.4,
+            ph_samples=[sample["value"] for sample in late_samples],
+            ec_samples=[1.4, 1.4, 1.4],
+        )
+    )
+    handler._runtime_monitor._ph_window_state["samples"] = tuple(late_samples)
+    handler._runtime_monitor._ec_window_state["samples"] = tuple(
+        {"ts": NOW - timedelta(seconds=offset), "value": 1.4}
+        for offset in (7, 5, 3)
+    )
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_stop_to_ready"

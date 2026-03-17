@@ -1045,17 +1045,22 @@ async def calibrate_pump(
         )
         await asyncio.sleep(duration_sec + 1)
     else:
-        await create_zone_event(
-            zone_id,
-            "PUMP_CALIBRATION_RUN_SKIPPED",
-            {
-                "node_channel_id": node_channel_id,
-                "node_uid": node_uid,
-                "channel": channel,
-                "duration_sec": duration_sec,
-                "component": normalized_component,
-            },
-        )
+        # skip_run используется и для чистого пропуска физического запуска, и для
+        # второго шага UX "сохранить измеренный объём после уже выполненного прогона".
+        # Во втором случае actual_ml уже передан, поэтому RUN_SKIPPED не создаём:
+        # насос реально работал на шаге 1.
+        if actual_ml is None:
+            await create_zone_event(
+                zone_id,
+                "PUMP_CALIBRATION_RUN_SKIPPED",
+                {
+                    "node_channel_id": node_channel_id,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "duration_sec": duration_sec,
+                    "component": normalized_component,
+                },
+            )
 
     if actual_ml is None:
         return {

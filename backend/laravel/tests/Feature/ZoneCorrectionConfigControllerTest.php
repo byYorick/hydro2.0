@@ -31,10 +31,27 @@ class ZoneCorrectionConfigControllerTest extends TestCase
             ->assertJsonPath('data.zone_id', $zone->id)
             ->assertJsonPath('data.version', 1)
             ->assertJsonPath('data.meta.phases.0', 'solution_fill')
-            ->assertJsonPath('data.resolved_config.base.controllers.ph.mode', 'cross_coupled_pi_d')
-            ->assertJsonPath('data.resolved_config.base.runtime.required_node_type', 'irrig')
-            ->assertJsonPath('data.resolved_config.base.retry.prepare_recirculation_max_correction_attempts', 20)
+            ->assertJsonPath('data.resolved_config.base', [])
+            ->assertJsonPath('data.meta.defaults.controllers.ph.mode', 'cross_coupled_pi_d')
+            ->assertJsonPath('data.meta.defaults.runtime.required_node_type', 'irrig')
             ->assertJsonFragment(['slug' => 'balanced']);
+    }
+
+    public function test_rejects_partial_zone_correction_config_without_complete_contract(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $response = $this->putJson("/api/zones/{$zone->id}/correction-config", [
+            'base_config' => [
+                'dosing' => [
+                    'solution_volume_l' => 18.0,
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Поле resolved_config.base.controllers.ph.mode обязательно.');
     }
 
     public function test_can_update_zone_correction_config_and_write_revision(): void

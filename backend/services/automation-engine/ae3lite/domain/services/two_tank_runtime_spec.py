@@ -44,14 +44,7 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
 
 def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     execution = snapshot.diagnostics_execution if isinstance(snapshot.diagnostics_execution, Mapping) else {}
-    startup = execution.get("startup") if isinstance(execution.get("startup"), Mapping) else {}
     commands_cfg = execution.get("two_tank_commands") if isinstance(execution.get("two_tank_commands"), Mapping) else {}
-    execution_prepare_tolerance = (
-        execution.get("prepare_tolerance") if isinstance(execution.get("prepare_tolerance"), Mapping) else {}
-    )
-    execution_correction_cfg = (
-        execution.get("correction") if isinstance(execution.get("correction"), Mapping) else {}
-    )
     zone_id = int(getattr(snapshot, "zone_id", 0) or 0)
     resolved_cfg = getattr(snapshot, "correction_config", None)
     if not isinstance(resolved_cfg, Mapping) or not resolved_cfg:
@@ -66,16 +59,16 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             f"Zone {zone_id} has empty correction_config(base/phases); fail-closed for critical dosing parameters",
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
+    _require_pid_configs(snapshot=snapshot, zone_id=zone_id)
     resolved_meta_cfg = _to_mapping(resolved_cfg.get("meta"))
     resolved_pump_calibration_cfg = _to_mapping(resolved_cfg.get("pump_calibration"))
-    phase_overrides_cfg = _to_mapping(resolved_meta_cfg.get("phase_overrides"))
-    solution_fill_overrides = _to_mapping(phase_overrides_cfg.get("solution_fill"))
-    tank_recirc_overrides = _to_mapping(phase_overrides_cfg.get("tank_recirc"))
-    irrigation_overrides = _to_mapping(phase_overrides_cfg.get("irrigation"))
-
     solution_fill_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("solution_fill")))
     tank_recirc_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("tank_recirc")))
     irrigation_cfg = _merge_recursive(resolved_base_cfg, _to_mapping(resolved_phases_cfg.get("irrigation")))
+    _require_zone_correction_contract(zone_id=zone_id, config=resolved_base_cfg, config_name="base")
+    _require_zone_correction_contract(zone_id=zone_id, config=solution_fill_cfg, config_name="phases.solution_fill")
+    _require_zone_correction_contract(zone_id=zone_id, config=tank_recirc_cfg, config_name="phases.tank_recirc")
+    _require_zone_correction_contract(zone_id=zone_id, config=irrigation_cfg, config_name="phases.irrigation")
     active_phase_key = _normalize_phase_key(getattr(snapshot, "workflow_phase", None))
     active_phase_cfg = {
         "solution_fill": solution_fill_cfg,
@@ -91,31 +84,19 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     recirc_retry_cfg = _to_mapping(tank_recirc_cfg.get("retry"))
 
     correction_by_phase = {
-        "solution_fill": _build_correction_cfg(solution_fill_cfg, execution_correction_cfg, solution_fill_overrides, resolved_pump_calibration_cfg),
-        "tank_recirc": _build_correction_cfg(tank_recirc_cfg, execution_correction_cfg, tank_recirc_overrides, resolved_pump_calibration_cfg),
-        "irrigation": _build_correction_cfg(irrigation_cfg, execution_correction_cfg, irrigation_overrides, resolved_pump_calibration_cfg),
+        "solution_fill": _build_correction_cfg(solution_fill_cfg, resolved_pump_calibration_cfg),
+        "tank_recirc": _build_correction_cfg(tank_recirc_cfg, resolved_pump_calibration_cfg),
+        "irrigation": _build_correction_cfg(irrigation_cfg, resolved_pump_calibration_cfg),
         "generic": _build_correction_cfg(
             active_phase_cfg,
-            execution_correction_cfg,
-            _to_mapping(phase_overrides_cfg.get(active_phase_key)),
             resolved_pump_calibration_cfg,
         ),
     }
     prepare_tolerance_by_phase = {
-        "solution_fill": _build_prepare_tolerance_cfg(
-            solution_fill_cfg, execution_prepare_tolerance, solution_fill_overrides
-        ),
-        "tank_recirc": _build_prepare_tolerance_cfg(
-            tank_recirc_cfg, execution_prepare_tolerance, tank_recirc_overrides
-        ),
-        "irrigation": _build_prepare_tolerance_cfg(
-            irrigation_cfg, execution_prepare_tolerance, irrigation_overrides
-        ),
-        "generic": _build_prepare_tolerance_cfg(
-            active_phase_cfg,
-            execution_prepare_tolerance,
-            _to_mapping(phase_overrides_cfg.get(active_phase_key)),
-        ),
+        "solution_fill": _build_prepare_tolerance_cfg(solution_fill_cfg),
+        "tank_recirc": _build_prepare_tolerance_cfg(tank_recirc_cfg),
+        "irrigation": _build_prepare_tolerance_cfg(irrigation_cfg),
+        "generic": _build_prepare_tolerance_cfg(active_phase_cfg),
     }
 
     default_correction_cfg = (
@@ -130,160 +111,93 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     )
 
     required_node_types = _normalize_required_node_types(
-        startup.get("required_node_types") or execution.get("required_node_types")
+        _first_non_null(
+            fill_runtime_cfg.get("required_node_types"),
+            fill_runtime_cfg.get("required_node_type"),
+        )
     )
     if not required_node_types:
-        required_node_types = _normalize_required_node_types(
-            _first_non_null(
-                fill_runtime_cfg.get("required_node_types"),
-                fill_runtime_cfg.get("required_node_type"),
-                base_runtime_cfg.get("required_node_types"),
-                base_runtime_cfg.get("required_node_type"),
-            )
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} correction_config.base/phases.solution_fill.runtime.required_node_type is required"
         )
     target_ph = _resolve_target(snapshot.targets, execution, "ph")
     target_ec = _resolve_target(snapshot.targets, execution, "ec")
     runtime: dict[str, Any] = {
         "required_node_types": required_node_types,
-        "clean_fill_timeout_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("clean_fill_timeout_sec"),
-                phase_value=fill_runtime_cfg.get("clean_fill_timeout_sec"),
-                base_value=base_runtime_cfg.get("clean_fill_timeout_sec"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "runtime", "clean_fill_timeout_sec"),
-            ),
-            1200,
-            30,
+        "clean_fill_timeout_sec": _require_int(
+            fill_runtime_cfg.get("clean_fill_timeout_sec"),
+            path="correction_config.base/phases.solution_fill.runtime.clean_fill_timeout_sec",
+            minimum=30,
         ),
-        "solution_fill_timeout_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("solution_fill_timeout_sec"),
-                phase_value=fill_runtime_cfg.get("solution_fill_timeout_sec"),
-                base_value=base_runtime_cfg.get("solution_fill_timeout_sec"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "runtime", "solution_fill_timeout_sec"),
-            ),
-            1800,
-            30,
+        "solution_fill_timeout_sec": _require_int(
+            fill_runtime_cfg.get("solution_fill_timeout_sec"),
+            path="correction_config.base/phases.solution_fill.runtime.solution_fill_timeout_sec",
+            minimum=30,
         ),
-        "prepare_recirculation_timeout_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("prepare_recirculation_timeout_sec"),
-                phase_value=recirc_retry_cfg.get("prepare_recirculation_timeout_sec"),
-                base_value=base_retry_cfg.get("prepare_recirculation_timeout_sec"),
-                prefer_phase=_has_nested_override(
-                    tank_recirc_overrides, "retry", "prepare_recirculation_timeout_sec"
-                ),
-            ),
-            1200,
-            30,
+        "prepare_recirculation_timeout_sec": _require_int(
+            recirc_retry_cfg.get("prepare_recirculation_timeout_sec"),
+            path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_timeout_sec",
+            minimum=30,
         ),
-        "level_poll_interval_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("level_poll_interval_sec"),
-                phase_value=fill_timing_cfg.get("level_poll_interval_sec"),
-                base_value=base_timing_cfg.get("level_poll_interval_sec"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "timing", "level_poll_interval_sec"),
-            ),
-            10,
-            5,
+        "level_poll_interval_sec": _require_int(
+            fill_timing_cfg.get("level_poll_interval_sec"),
+            path="correction_config.base/phases.solution_fill.timing.level_poll_interval_sec",
+            minimum=5,
         ),
-        "clean_fill_retry_cycles": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("clean_fill_retry_cycles"),
-                phase_value=fill_runtime_cfg.get("clean_fill_retry_cycles"),
-                base_value=base_runtime_cfg.get("clean_fill_retry_cycles"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "runtime", "clean_fill_retry_cycles"),
-            ),
-            1,
-            0,
+        "clean_fill_retry_cycles": _require_int(
+            fill_runtime_cfg.get("clean_fill_retry_cycles"),
+            path="correction_config.base/phases.solution_fill.runtime.clean_fill_retry_cycles",
+            minimum=0,
         ),
-        "level_switch_on_threshold": _resolve_float(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("level_switch_on_threshold"),
-                phase_value=fill_runtime_cfg.get("level_switch_on_threshold"),
-                base_value=base_runtime_cfg.get("level_switch_on_threshold"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "runtime", "level_switch_on_threshold"),
-            ),
-            0.5,
-            0.0,
-            1.0,
+        "level_switch_on_threshold": _require_float(
+            fill_runtime_cfg.get("level_switch_on_threshold"),
+            path="correction_config.base/phases.solution_fill.runtime.level_switch_on_threshold",
+            minimum=0.0,
+            maximum=1.0,
         ),
-        "telemetry_max_age_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("telemetry_max_age_sec"),
-                phase_value=fill_timing_cfg.get("telemetry_max_age_sec"),
-                base_value=base_timing_cfg.get("telemetry_max_age_sec"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "timing", "telemetry_max_age_sec"),
-            ),
-            60,
-            5,
+        "telemetry_max_age_sec": _require_int(
+            fill_timing_cfg.get("telemetry_max_age_sec"),
+            path="correction_config.base/phases.solution_fill.timing.telemetry_max_age_sec",
+            minimum=5,
         ),
-        "irr_state_max_age_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("irr_state_max_age_sec"),
-                phase_value=fill_timing_cfg.get("irr_state_max_age_sec"),
-                base_value=base_timing_cfg.get("irr_state_max_age_sec"),
-                prefer_phase=_has_nested_override(solution_fill_overrides, "timing", "irr_state_max_age_sec"),
-            ),
-            30,
-            5,
+        "irr_state_max_age_sec": _require_int(
+            fill_timing_cfg.get("irr_state_max_age_sec"),
+            path="correction_config.base/phases.solution_fill.timing.irr_state_max_age_sec",
+            minimum=5,
         ),
-        "irr_state_wait_timeout_sec": _resolve_float(startup.get("irr_state_wait_timeout_sec"), 5.0, 0.0, 30.0),
-        "sensor_mode_stabilization_time_sec": _resolve_int(
-            _prefer_phase_runtime_value(
-                startup_value=startup.get("sensor_mode_stabilization_time_sec"),
-                phase_value=fill_timing_cfg.get("sensor_mode_stabilization_time_sec"),
-                base_value=base_timing_cfg.get("sensor_mode_stabilization_time_sec"),
-                prefer_phase=_has_nested_override(
-                    solution_fill_overrides, "timing", "sensor_mode_stabilization_time_sec"
-                ),
-            ),
-            60,
-            0,
+        "irr_state_wait_timeout_sec": _resolve_float(execution.get("startup", {}).get("irr_state_wait_timeout_sec"), 5.0, 0.0, 30.0),
+        "sensor_mode_stabilization_time_sec": _require_int(
+            fill_timing_cfg.get("sensor_mode_stabilization_time_sec"),
+            path="correction_config.base/phases.solution_fill.timing.sensor_mode_stabilization_time_sec",
+            minimum=0,
         ),
-        "clean_max_sensor_labels": _normalize_labels(
+        "clean_max_sensor_labels": _require_labels(
             _first_non_null(
-                startup.get("clean_max_sensor_labels"),
-                startup.get("clean_max_sensor_label"),
                 fill_runtime_cfg.get("clean_max_sensor_labels"),
                 fill_runtime_cfg.get("clean_max_sensor_label"),
-                base_runtime_cfg.get("clean_max_sensor_labels"),
-                base_runtime_cfg.get("clean_max_sensor_label"),
             ),
-            ("level_clean_max",),
+            path="correction_config.base/phases.solution_fill.runtime.clean_max_sensor_label",
         ),
-        "clean_min_sensor_labels": _normalize_labels(
+        "clean_min_sensor_labels": _require_labels(
             _first_non_null(
-                startup.get("clean_min_sensor_labels"),
-                startup.get("clean_min_sensor_label"),
                 fill_runtime_cfg.get("clean_min_sensor_labels"),
                 fill_runtime_cfg.get("clean_min_sensor_label"),
-                base_runtime_cfg.get("clean_min_sensor_labels"),
-                base_runtime_cfg.get("clean_min_sensor_label"),
             ),
-            ("level_clean_min",),
+            path="correction_config.base/phases.solution_fill.runtime.clean_min_sensor_label",
         ),
-        "solution_max_sensor_labels": _normalize_labels(
+        "solution_max_sensor_labels": _require_labels(
             _first_non_null(
-                startup.get("solution_max_sensor_labels"),
-                startup.get("solution_max_sensor_label"),
                 fill_runtime_cfg.get("solution_max_sensor_labels"),
                 fill_runtime_cfg.get("solution_max_sensor_label"),
-                base_runtime_cfg.get("solution_max_sensor_labels"),
-                base_runtime_cfg.get("solution_max_sensor_label"),
             ),
-            ("level_solution_max",),
+            path="correction_config.base/phases.solution_fill.runtime.solution_max_sensor_label",
         ),
-        "solution_min_sensor_labels": _normalize_labels(
+        "solution_min_sensor_labels": _require_labels(
             _first_non_null(
-                startup.get("solution_min_sensor_labels"),
-                startup.get("solution_min_sensor_label"),
                 fill_runtime_cfg.get("solution_min_sensor_labels"),
                 fill_runtime_cfg.get("solution_min_sensor_label"),
-                base_runtime_cfg.get("solution_min_sensor_labels"),
-                base_runtime_cfg.get("solution_min_sensor_label"),
             ),
-            ("level_solution_min",),
+            path="correction_config.base/phases.solution_fill.runtime.solution_min_sensor_label",
         ),
         "target_ph": target_ph,
         "target_ec": target_ec,
@@ -306,9 +220,6 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "correction_by_phase": correction_by_phase,
         "command_specs": {},
     }
-    if not runtime["required_node_types"]:
-        runtime["required_node_types"] = ["irrig"]
-
     _validate_prepare_recirculation_timing(runtime)
 
     for plan_name in (
@@ -325,6 +236,164 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             default_node_types=runtime["required_node_types"],
         )
     return runtime
+
+
+def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
+    pid_configs = getattr(snapshot, "pid_configs", None)
+    if not isinstance(pid_configs, Mapping):
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} has no pid_configs mapping; fail-closed for critical correction parameters",
+            code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
+        )
+
+    missing_types: list[str] = []
+    for pid_type in ("ph", "ec"):
+        entry = pid_configs.get(pid_type)
+        config = entry.get("config") if isinstance(entry, Mapping) else None
+        if not isinstance(config, Mapping) or not config:
+            missing_types.append(pid_type)
+
+    if missing_types:
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} missing required zone_pid_configs for pid_type={', '.join(sorted(missing_types))}; "
+            "fail-closed for critical correction parameters",
+            code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
+        )
+
+
+_REQUIRED_ZONE_CORRECTION_TEMPLATE: dict[str, Any] = {
+    "runtime": {
+        "required_node_type": "",
+        "clean_fill_timeout_sec": 0,
+        "solution_fill_timeout_sec": 0,
+        "clean_fill_retry_cycles": 0,
+        "level_switch_on_threshold": 0.0,
+        "clean_max_sensor_label": "",
+        "clean_min_sensor_label": "",
+        "solution_max_sensor_label": "",
+        "solution_min_sensor_label": "",
+    },
+    "timing": {
+        "sensor_mode_stabilization_time_sec": 0,
+        "stabilization_sec": 0,
+        "telemetry_max_age_sec": 0,
+        "irr_state_max_age_sec": 0,
+        "level_poll_interval_sec": 0,
+    },
+    "dosing": {
+        "solution_volume_l": 0.0,
+        "dose_ec_channel": "",
+        "dose_ph_up_channel": "",
+        "dose_ph_down_channel": "",
+        "max_ec_dose_ml": 0.0,
+        "max_ph_dose_ml": 0.0,
+    },
+    "retry": {
+        "max_ec_correction_attempts": 0,
+        "max_ph_correction_attempts": 0,
+        "prepare_recirculation_timeout_sec": 0,
+        "prepare_recirculation_max_attempts": 0,
+        "prepare_recirculation_max_correction_attempts": 0,
+    },
+    "tolerance": {
+        "prepare_tolerance": {
+            "ph_pct": 0.0,
+            "ec_pct": 0.0,
+        },
+    },
+    "controllers": {
+        "ph": {
+            "mode": "",
+            "kp": 0.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "derivative_filter_alpha": 0.0,
+            "deadband": 0.0,
+            "max_dose_ml": 0.0,
+            "min_interval_sec": 0,
+            "max_integral": 0.0,
+            "anti_windup": {"enabled": False},
+            "overshoot_guard": {"enabled": False, "hard_min": 0.0, "hard_max": 0.0},
+            "no_effect": {"enabled": False, "max_count": 0},
+            "observe": {
+                "telemetry_period_sec": 0,
+                "window_min_samples": 0,
+                "decision_window_sec": 0,
+                "observe_poll_sec": 0,
+                "min_effect_fraction": 0.0,
+                "stability_max_slope": 0.0,
+                "no_effect_consecutive_limit": 0,
+            },
+        },
+        "ec": {
+            "mode": "",
+            "kp": 0.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "derivative_filter_alpha": 0.0,
+            "deadband": 0.0,
+            "max_dose_ml": 0.0,
+            "min_interval_sec": 0,
+            "max_integral": 0.0,
+            "anti_windup": {"enabled": False},
+            "overshoot_guard": {"enabled": False, "hard_min": 0.0, "hard_max": 0.0},
+            "no_effect": {"enabled": False, "max_count": 0},
+            "observe": {
+                "telemetry_period_sec": 0,
+                "window_min_samples": 0,
+                "decision_window_sec": 0,
+                "observe_poll_sec": 0,
+                "min_effect_fraction": 0.0,
+                "stability_max_slope": 0.0,
+                "no_effect_consecutive_limit": 0,
+            },
+        },
+    },
+    "safety": {
+        "safe_mode_on_no_effect": False,
+        "block_on_active_no_effect_alert": False,
+    },
+}
+
+
+def _require_zone_correction_contract(*, zone_id: int, config: Mapping[str, Any], config_name: str) -> None:
+    missing_paths = _collect_missing_paths(config=config, template=_REQUIRED_ZONE_CORRECTION_TEMPLATE)
+    if missing_paths:
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} correction_config.{config_name} missing required fields: {', '.join(missing_paths)}; "
+            "fail-closed for critical correction parameters",
+            code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+        )
+
+
+def _collect_missing_paths(*, config: Mapping[str, Any], template: Mapping[str, Any], prefix: str = "") -> list[str]:
+    missing: list[str] = []
+    for key, expected in template.items():
+        path = f"{prefix}.{key}" if prefix else str(key)
+        if key not in config:
+            missing.append(path)
+            continue
+        actual = config.get(key)
+        if isinstance(expected, Mapping):
+            if not isinstance(actual, Mapping):
+                missing.append(path)
+                continue
+            missing.extend(_collect_missing_paths(config=actual, template=expected, prefix=path))
+    return missing
+
+    missing_types: list[str] = []
+    for pid_type in ("ph", "ec"):
+        entry = pid_configs.get(pid_type)
+        config = entry.get("config") if isinstance(entry, Mapping) else None
+        if not isinstance(config, Mapping) or not config:
+            missing_types.append(pid_type)
+
+    if missing_types:
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} missing required zone_pid_configs for pid_type={', '.join(sorted(missing_types))}; "
+            "fail-closed for critical correction parameters",
+            code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
+        )
 
 
 def _validate_prepare_recirculation_timing(runtime: dict[str, Any]) -> None:
@@ -392,6 +461,13 @@ def _normalize_labels(raw_value: Any, default_labels: Sequence[str]) -> list[str
     return result
 
 
+def _require_labels(raw_value: Any, *, path: str) -> list[str]:
+    labels = _normalize_labels(raw_value, ())
+    if labels:
+        return labels
+    raise PlannerConfigurationError(f"Missing required correction_config field: {path}")
+
+
 def _resolve_int(raw_value: Any, default: int, minimum: int) -> int:
     try:
         value = int(raw_value)
@@ -410,6 +486,37 @@ def _resolve_float(raw_value: Any, default: float, minimum: float, maximum: floa
     except (TypeError, ValueError):
         value = default
     return max(float(minimum), min(float(maximum), value))
+
+
+def _require_int(raw_value: Any, *, path: str, minimum: int, maximum: int | None = None) -> int:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise PlannerConfigurationError(f"Missing or invalid correction_config field: {path}") from None
+    if value < minimum:
+        raise PlannerConfigurationError(f"correction_config field {path} must be >= {minimum}, got {value}")
+    if maximum is not None and value > maximum:
+        return int(maximum)
+    return int(value)
+
+
+def _require_float(raw_value: Any, *, path: str, minimum: float, maximum: float | None = None) -> float:
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        raise PlannerConfigurationError(f"Missing or invalid correction_config field: {path}") from None
+    if value < minimum:
+        raise PlannerConfigurationError(f"correction_config field {path} must be >= {minimum}, got {value}")
+    if maximum is not None and value > maximum:
+        raise PlannerConfigurationError(f"correction_config field {path} must be <= {maximum}, got {value}")
+    return value
+
+
+def _require_str(raw_value: Any, *, path: str) -> str:
+    value = str(raw_value or "").strip().lower()
+    if value:
+        return value
+    raise PlannerConfigurationError(f"Missing required correction_config field: {path}")
 
 
 def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> int:
@@ -536,199 +643,89 @@ def _first_non_null(*values: Any) -> Any:
     return None
 
 
-def _prefer_phase_runtime_value(
-    *,
-    startup_value: Any,
-    phase_value: Any,
-    base_value: Any,
-    prefer_phase: bool = False,
-) -> Any:
-    if prefer_phase and phase_value is not None:
-        return phase_value
-    return _first_non_null(phase_value, base_value, startup_value)
-
-
-def _has_nested_override(raw_value: Mapping[str, Any], *path: str) -> bool:
-    if not path:
-        return False
-    current: Any = raw_value
-    for index, key in enumerate(path):
-        if not isinstance(current, Mapping) or key not in current:
-            return False
-        if index == len(path) - 1:
-            return True
-        current = current.get(key)
-    return False
-
-
-def _choose_phase_or_execution(*, phase_value: Any, execution_value: Any, prefer_phase: bool) -> Any:
-    if prefer_phase and phase_value is not None:
-        return phase_value
-    return _first_non_null(phase_value, execution_value)
-
-
 def _build_correction_cfg(
     phase_cfg: Mapping[str, Any],
-    execution_correction_cfg: Mapping[str, Any],
-    phase_override_cfg: Mapping[str, Any],
     pump_calibration_cfg: Mapping[str, Any],
 ) -> dict[str, Any]:
     timing_cfg = _to_mapping(phase_cfg.get("timing"))
     dosing_cfg = _to_mapping(phase_cfg.get("dosing"))
     retry_cfg = _to_mapping(phase_cfg.get("retry"))
-    phase_controllers = _normalize_controllers(phase_cfg.get("controllers"))
-    execution_controllers = _normalize_controllers(execution_correction_cfg.get("controllers"))
-    if _has_nested_override(phase_override_cfg, "controllers"):
-        controllers_cfg = _merge_recursive(execution_controllers, phase_controllers)
-    else:
-        controllers_cfg = _merge_recursive(phase_controllers, execution_controllers)
+    controllers_cfg = _normalize_controllers(phase_cfg.get("controllers"))
 
     return {
-        "dose_ec_channel": str(
-            _first_non_null(
-                _choose_phase_or_execution(
-                    phase_value=dosing_cfg.get("dose_ec_channel"),
-                    execution_value=execution_correction_cfg.get("dose_ec_channel"),
-                    prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "dose_ec_channel"),
-                ),
-                "ec_npk_pump",
-            )
-        ).strip().lower(),
-        "dose_ph_up_channel": str(
-            _first_non_null(
-                _choose_phase_or_execution(
-                    phase_value=dosing_cfg.get("dose_ph_up_channel"),
-                    execution_value=execution_correction_cfg.get("dose_ph_up_channel"),
-                    prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "dose_ph_up_channel"),
-                ),
-                "ph_base_pump",
-            )
-        ).strip().lower(),
-        "dose_ph_down_channel": str(
-            _first_non_null(
-                _choose_phase_or_execution(
-                    phase_value=dosing_cfg.get("dose_ph_down_channel"),
-                    execution_value=execution_correction_cfg.get("dose_ph_down_channel"),
-                    prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "dose_ph_down_channel"),
-                ),
-                "ph_acid_pump",
-            )
-        ).strip().lower(),
-        "max_ec_dose_ml": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=dosing_cfg.get("max_ec_dose_ml"),
-                execution_value=execution_correction_cfg.get("max_ec_dose_ml"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "max_ec_dose_ml"),
-            ),
-            50.0,
-            1.0,
-            500.0,
+        "dose_ec_channel": _require_str(dosing_cfg.get("dose_ec_channel"), path="dosing.dose_ec_channel"),
+        "dose_ph_up_channel": _require_str(dosing_cfg.get("dose_ph_up_channel"), path="dosing.dose_ph_up_channel"),
+        "dose_ph_down_channel": _require_str(
+            dosing_cfg.get("dose_ph_down_channel"), path="dosing.dose_ph_down_channel"
         ),
-        "max_ph_dose_ml": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=dosing_cfg.get("max_ph_dose_ml"),
-                execution_value=execution_correction_cfg.get("max_ph_dose_ml"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "max_ph_dose_ml"),
-            ),
-            20.0,
-            0.5,
-            200.0,
+        "max_ec_dose_ml": _require_float(
+            dosing_cfg.get("max_ec_dose_ml"),
+            path="dosing.max_ec_dose_ml",
+            minimum=1.0,
+            maximum=500.0,
         ),
-        "stabilization_sec": _resolve_int(
-            _choose_phase_or_execution(
-                phase_value=timing_cfg.get("stabilization_sec"),
-                execution_value=execution_correction_cfg.get("stabilization_sec"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "timing", "stabilization_sec"),
-            ),
-            60,
-            0,
+        "max_ph_dose_ml": _require_float(
+            dosing_cfg.get("max_ph_dose_ml"),
+            path="dosing.max_ph_dose_ml",
+            minimum=0.5,
+            maximum=200.0,
         ),
-        "max_ec_correction_attempts": _resolve_bounded_int(
-            _choose_phase_or_execution(
-                phase_value=retry_cfg.get("max_ec_correction_attempts"),
-                execution_value=execution_correction_cfg.get("max_ec_correction_attempts"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "retry", "max_ec_correction_attempts"),
-            ),
-            5,
-            1,
-            _MAX_CORRECTION_ATTEMPTS,
+        "stabilization_sec": _require_int(
+            timing_cfg.get("stabilization_sec"),
+            path="timing.stabilization_sec",
+            minimum=0,
         ),
-        "max_ph_correction_attempts": _resolve_bounded_int(
-            _choose_phase_or_execution(
-                phase_value=retry_cfg.get("max_ph_correction_attempts"),
-                execution_value=execution_correction_cfg.get("max_ph_correction_attempts"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "retry", "max_ph_correction_attempts"),
-            ),
-            5,
-            1,
-            _MAX_CORRECTION_ATTEMPTS,
+        "max_ec_correction_attempts": _require_int(
+            retry_cfg.get("max_ec_correction_attempts"),
+            path="retry.max_ec_correction_attempts",
+            minimum=1,
+            maximum=_MAX_CORRECTION_ATTEMPTS,
         ),
-        "prepare_recirculation_max_attempts": _resolve_int(
-            _choose_phase_or_execution(
-                phase_value=retry_cfg.get("prepare_recirculation_max_attempts"),
-                execution_value=execution_correction_cfg.get("prepare_recirculation_max_attempts"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "retry", "prepare_recirculation_max_attempts"),
-            ),
-            3,
-            1,
+        "max_ph_correction_attempts": _require_int(
+            retry_cfg.get("max_ph_correction_attempts"),
+            path="retry.max_ph_correction_attempts",
+            minimum=1,
+            maximum=_MAX_CORRECTION_ATTEMPTS,
         ),
-        "prepare_recirculation_max_correction_attempts": _resolve_prepare_recirculation_max_correction_attempts(
-            _choose_phase_or_execution(
-                phase_value=retry_cfg.get("prepare_recirculation_max_correction_attempts"),
-                execution_value=execution_correction_cfg.get("prepare_recirculation_max_correction_attempts"),
-                prefer_phase=_has_nested_override(
-                    phase_override_cfg, "retry", "prepare_recirculation_max_correction_attempts"
-                ),
-            )
+        "prepare_recirculation_max_attempts": _require_int(
+            retry_cfg.get("prepare_recirculation_max_attempts"),
+            path="retry.prepare_recirculation_max_attempts",
+            minimum=1,
         ),
-        "solution_volume_l": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=dosing_cfg.get("solution_volume_l"),
-                execution_value=execution_correction_cfg.get("solution_volume_l"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "dosing", "solution_volume_l"),
-            ),
-            100.0,
-            1.0,
-            10000.0,
+        "prepare_recirculation_max_correction_attempts": _require_int(
+            retry_cfg.get("prepare_recirculation_max_correction_attempts"),
+            path="retry.prepare_recirculation_max_correction_attempts",
+            minimum=1,
+            maximum=_MAX_CORRECTION_ATTEMPTS,
+        ),
+        "solution_volume_l": _require_float(
+            dosing_cfg.get("solution_volume_l"),
+            path="dosing.solution_volume_l",
+            minimum=1.0,
+            maximum=10000.0,
         ),
         "controllers": controllers_cfg,
         "pump_calibration": dict(pump_calibration_cfg),
-        "ec_component_policy": _normalize_component_policy(
-            _choose_phase_or_execution(
-                phase_value=phase_cfg.get("ec_component_policy"),
-                execution_value=execution_correction_cfg.get("ec_component_policy"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "ec_component_policy"),
-            )
-        ),
+        "ec_component_policy": _normalize_component_policy(phase_cfg.get("ec_component_policy")),
         "actuators": {},
     }
 
 
 def _build_prepare_tolerance_cfg(
     phase_cfg: Mapping[str, Any],
-    execution_prepare_tolerance: Mapping[str, Any],
-    phase_override_cfg: Mapping[str, Any],
 ) -> dict[str, Any]:
     phase_tolerance = _to_mapping(_to_mapping(phase_cfg.get("tolerance")).get("prepare_tolerance"))
     return {
-        "ph_pct": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=phase_tolerance.get("ph_pct"),
-                execution_value=execution_prepare_tolerance.get("ph_pct"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "tolerance", "prepare_tolerance", "ph_pct"),
-            ),
-            15.0,
-            0.1,
-            100.0,
+        "ph_pct": _require_float(
+            phase_tolerance.get("ph_pct"),
+            path="tolerance.prepare_tolerance.ph_pct",
+            minimum=0.1,
+            maximum=100.0,
         ),
-        "ec_pct": _resolve_float(
-            _choose_phase_or_execution(
-                phase_value=phase_tolerance.get("ec_pct"),
-                execution_value=execution_prepare_tolerance.get("ec_pct"),
-                prefer_phase=_has_nested_override(phase_override_cfg, "tolerance", "prepare_tolerance", "ec_pct"),
-            ),
-            25.0,
-            0.1,
-            100.0,
+        "ec_pct": _require_float(
+            phase_tolerance.get("ec_pct"),
+            path="tolerance.prepare_tolerance.ec_pct",
+            minimum=0.1,
+            maximum=100.0,
         ),
     }
