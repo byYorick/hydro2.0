@@ -13,6 +13,7 @@ Goal: a reproducible local bootstrap so an agent can start the system and spot r
 ```bash
 make up
 make migrate
+make refresh
 make seed
 make reset-db
 make test
@@ -31,7 +32,8 @@ make logs SERVICE=laravel TAIL=300
 ## What each target does
 
 - `make up`: start the dev stack using `backend/docker-compose.dev.yml`
-- `make migrate`: run Laravel migrations in the dev stack
+- `make migrate`: run Laravel migrations in the dev stack, then seed dev bootstrap users and default configs
+- `make refresh`: fully reset the dev stack, remove service images and volumes, pull fresh images, rebuild project images with `--pull --no-cache`, force-recreate containers, then leave only `admin` and `agronomist` accounts in the DB
 - `make seed`: run Laravel seeders in the dev stack
 - `make reset-db`: reset DB (migrate:fresh --seed) in the dev stack
 - `make test`: run PHP (phpunit) and Python (pytest) tests via containers
@@ -39,6 +41,8 @@ make logs SERVICE=laravel TAIL=300
 - `make smoke`: run a short end-to-end smoke (telemetry -> DB, command -> MQTT)
 - `make logs-core`: stream logs for core services (`laravel`, `automation-engine`, `history-logger`, `mqtt-bridge`)
 - `make logs SERVICE=<service> TAIL=<n>`: stream logs for any service from compose
+
+Warning: `make refresh` removes local Docker volumes and service images for the dev stack, including PostgreSQL data.
 
 ## Debug shortcuts
 

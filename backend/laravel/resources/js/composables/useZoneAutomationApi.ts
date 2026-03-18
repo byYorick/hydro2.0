@@ -9,6 +9,7 @@ import {
   type ClimateFormState,
   type LightingFormState,
   type WaterFormState,
+  type ZoneClimateFormState,
 } from '@/composables/zoneAutomationFormLogic'
 import { normalizeAutomationLogicMode, parseIsoDate, type AutomationLogicMode } from '@/composables/zoneAutomationUtils'
 import type { Ref, ComputedRef } from 'vue'
@@ -73,6 +74,7 @@ export interface ZoneAutomationApiState {
   climateForm: ClimateFormState
   waterForm: WaterFormState
   lightingForm: LightingFormState
+  zoneClimateForm: ZoneClimateFormState
   isApplyingProfile: Ref<boolean>
   isHydratingProfile: Ref<boolean>
   isSyncingAutomationLogicProfile: Ref<boolean>
@@ -105,6 +107,7 @@ export function useZoneAutomationApi(
     climateForm,
     waterForm,
     lightingForm,
+    zoneClimateForm,
     isApplyingProfile,
     isHydratingProfile,
     isSyncingAutomationLogicProfile,
@@ -167,6 +170,7 @@ export function useZoneAutomationApi(
       },
       { climateForm, waterForm, lightingForm }
     )
+    zoneClimateForm.enabled = Boolean(asRecord(subsystems.zone_climate)?.enabled ?? false)
 
     const syncedAt = parseIsoDate(selectedEntry.updated_at ?? null)
     lastAutomationLogicSyncAt.value = syncedAt ? syncedAt.toISOString() : null
@@ -222,6 +226,7 @@ export function useZoneAutomationApi(
     isHydratingProfile.value = true
     try {
       resetFormsToRecommended({ climateForm, waterForm, lightingForm }, automationDefaults.value)
+      zoneClimateForm.enabled = false
       lastAppliedAt.value = null
       lastAutomationLogicSyncAt.value = null
       automationLogicMode.value = 'working'
@@ -253,9 +258,10 @@ export function useZoneAutomationApi(
 
     try {
       const payload = buildGrowthCycleConfigPayload(
-        { climateForm, waterForm, lightingForm },
+        { climateForm, waterForm, lightingForm, zoneClimateForm },
         {
           includeSystemType: !isSystemTypeLocked.value,
+          includeClimateSubsystem: false,
           automationDefaults: automationDefaults.value,
           automationCommandTemplates: automationCommandTemplates.value,
         }

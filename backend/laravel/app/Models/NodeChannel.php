@@ -6,6 +6,7 @@ use App\Events\NodeConfigUpdated;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class NodeChannel extends Model
 {
@@ -40,6 +41,11 @@ class NodeChannel extends Model
         return $this->belongsTo(DeviceNode::class, 'node_id');
     }
 
+    public function channelBindings(): HasMany
+    {
+        return $this->hasMany(ChannelBinding::class, 'node_channel_id');
+    }
+
     /**
      * Boot the model.
      */
@@ -72,4 +78,3 @@ class NodeChannel extends Model
         });
     }
 }
-

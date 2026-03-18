@@ -85,10 +85,15 @@ export interface LightingFormState {
   manualDurationHours: number
 }
 
+export interface ZoneClimateFormState {
+  enabled: boolean
+}
+
 export interface ZoneAutomationForms {
   climateForm: ClimateFormState
   waterForm: WaterFormState
   lightingForm: LightingFormState
+  zoneClimateForm?: ZoneClimateFormState
 }
 
 // ─── Zone Automation Tab types ────────────────────────────────────────────────

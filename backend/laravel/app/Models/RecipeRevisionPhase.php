@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Arr;
 
 class RecipeRevisionPhase extends Model
 {
@@ -182,6 +183,35 @@ class RecipeRevisionPhase extends Model
             $targets['ec'] = [
                 'min' => $ecMin,
                 'max' => $ecMax,
+            ];
+        }
+
+        if ($this->temp_air_target !== null) {
+            $targets['temp_air'] = (float) $this->temp_air_target;
+        }
+
+        if ($this->humidity_target !== null) {
+            $targets['humidity_air'] = (float) $this->humidity_target;
+        }
+
+        if ($this->lighting_photoperiod_hours !== null) {
+            $targets['light_hours'] = $this->lighting_photoperiod_hours;
+        }
+
+        if ($this->irrigation_interval_sec !== null) {
+            $targets['irrigation_interval_sec'] = $this->irrigation_interval_sec;
+        }
+
+        if ($this->irrigation_duration_sec !== null) {
+            $targets['irrigation_duration_sec'] = $this->irrigation_duration_sec;
+        }
+
+        $systemType = Arr::get($this->extensions ?? [], 'subsystems.irrigation.targets.system_type')
+            ?? Arr::get($this->extensions ?? [], 'subsystems.irrigation.execution.system_type');
+        if ($this->irrigation_mode !== null || $systemType !== null) {
+            $targets['irrigation'] = [
+                'mode' => $this->irrigation_mode,
+                'system_type' => $systemType,
             ];
         }
 

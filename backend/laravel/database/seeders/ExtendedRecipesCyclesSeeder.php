@@ -12,6 +12,7 @@ use App\Models\NutrientProduct;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
+use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -1524,7 +1525,22 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             $mistMode = 'NORMAL';
         }
 
-        $extensions = $this->buildPhaseExtensions($phaseData);
+        $extensions = CanonicalRecipePhaseSupport::mergeExtensions(
+            $this->buildPhaseExtensions($phaseData),
+            $irrigationMode,
+            CanonicalRecipePhaseSupport::buildDayNight(
+                $tempTarget,
+                $tempTarget,
+                $humidityTarget,
+                $humidityTarget,
+                $phTarget,
+                $phTarget,
+                $ecTarget,
+                $ecTarget,
+                $phaseData['lighting_start_time'] ?? $lighting['start_time'] ?? null,
+                $phaseData['lighting_photoperiod_hours'] ?? $lighting['photoperiod_hours'] ?? null
+            )
+        );
 
         return [
             'stage_template_id' => $stageTemplate?->id,

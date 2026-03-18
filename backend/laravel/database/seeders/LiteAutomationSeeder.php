@@ -26,6 +26,7 @@ use App\Models\ZoneAutomationLogicProfile;
 use App\Models\ZoneEvent;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
+use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -650,10 +651,11 @@ class LiteAutomationSeeder extends Seeder
                 'temp_air_target' => 22.0,
                 'humidity_target' => 70.0,
                 'co2_target' => 800,
-                'extensions' => [
-                    'day_target' => ['temp_air' => 22.0, 'humidity' => 68],
-                    'night_target' => ['temp_air' => 20.0, 'humidity' => 72],
-                ],
+                'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                    null,
+                    'RECIRC',
+                    CanonicalRecipePhaseSupport::buildDayNight(22.0, 20.0, 68.0, 72.0, 6.0, 5.9, 1.0, 0.9, '06:00:00', 16.0)
+                ),
             ]
         );
 
@@ -677,10 +679,11 @@ class LiteAutomationSeeder extends Seeder
                 'temp_air_target' => 24.0,
                 'humidity_target' => 65.0,
                 'co2_target' => 900,
-                'extensions' => [
-                    'day_target' => ['temp_air' => 24.0, 'humidity' => 63],
-                    'night_target' => ['temp_air' => 21.0, 'humidity' => 68],
-                ],
+                'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                    null,
+                    'RECIRC',
+                    CanonicalRecipePhaseSupport::buildDayNight(24.0, 21.0, 63.0, 68.0, 6.1, 5.9, 1.6, 1.4, '05:00:00', 18.0)
+                ),
             ]
         );
 

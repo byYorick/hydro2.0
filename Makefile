@@ -2,6 +2,8 @@ SHELL := /bin/bash
 
 PROJECT_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BACKEND_COMPOSE_FILE := backend/docker-compose.dev.yml
+MIGRATE_SEEDER_CLASS ?= DevBootstrapSeeder
+REFRESH_SEEDER_CLASS ?= StartUsersSeeder
 
 DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then echo docker-compose; else echo "docker compose"; fi)
 
@@ -10,7 +12,8 @@ help:
 	@echo "hydro2.0 - targets:"
 	@echo "  up             - start dev stack (backend/docker-compose.dev.yml)"
 	@echo "  down           - stop dev stack"
-	@echo "  migrate        - run Laravel migrations"
+	@echo "  migrate        - run Laravel migrations and dev bootstrap seeders"
+	@echo "  refresh        - full clean dev refresh with only admin/agronomist accounts in DB"
 	@echo "  seed           - run Laravel seeders"
 	@echo "  reset-db       - reset DB (migrate:fresh --seed)"
 	@echo "  test           - run PHP (phpunit) and Python (pytest) tests"
@@ -37,9 +40,20 @@ up:
 down:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) down
 
+.PHONY: refresh
+refresh:
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) down -v --remove-orphans --rmi all
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) pull --ignore-pull-failures
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) build --pull --no-cache
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --force-recreate --renew-anon-volumes
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate --force
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan db:seed --class=$(REFRESH_SEEDER_CLASS) --force
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan tinker --execute="DB::table('system_automation_settings')->delete();"
+
 .PHONY: migrate
 migrate: up
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate --force
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan db:seed --class=$(MIGRATE_SEEDER_CLASS) --force
 
 .PHONY: seed
 seed: up

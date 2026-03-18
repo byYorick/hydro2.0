@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Services\RecipeRevisionPhaseService;
+use App\Support\Recipes\RecipePhasePayloadNormalizer;
+use App\Support\Recipes\RecipePhaseRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +16,8 @@ use Symfony\Component\HttpFoundation\Response;
 class RecipeRevisionPhaseController extends Controller
 {
     public function __construct(
-        private RecipeRevisionPhaseService $phaseService
+        private RecipeRevisionPhaseService $phaseService,
+        private RecipePhasePayloadNormalizer $payloadNormalizer,
     ) {
     }
 
@@ -32,54 +35,8 @@ class RecipeRevisionPhaseController extends Controller
             ], 401);
         }
 
-        $data = $request->validate([
-            'stage_template_id' => ['nullable', 'integer', 'exists:grow_stage_templates,id'],
-            'phase_index' => ['nullable', 'integer', 'min:0'],
-            'name' => ['required', 'string', 'max:255'],
-            // Обязательные параметры (MVP)
-            'ph_target' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            'ph_min' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            'ph_max' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            'ec_target' => ['nullable', 'numeric', 'min:0'],
-            'ec_min' => ['nullable', 'numeric', 'min:0'],
-            'ec_max' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_program_code' => ['nullable', 'string', 'max:64'],
-            'nutrient_mode' => ['nullable', 'string', 'in:ratio_ec_pid,delta_ec_by_k,dose_ml_l_only'],
-            'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_calcium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_magnesium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_micro_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_npk_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_calcium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_magnesium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_micro_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_npk_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_calcium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_magnesium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_micro_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_dose_delay_sec' => ['nullable', 'integer', 'min:0', 'max:3600'],
-            'nutrient_ec_stop_tolerance' => ['nullable', 'numeric', 'min:0', 'max:5'],
-            'nutrient_solution_volume_l' => ['nullable', 'numeric', 'min:0.1', 'max:100000'],
-            'irrigation_mode' => ['nullable', 'string', 'in:SUBSTRATE,RECIRC'],
-            'irrigation_interval_sec' => ['nullable', 'integer', 'min:0'],
-            'irrigation_duration_sec' => ['nullable', 'integer', 'min:0'],
-            // Опциональные параметры
-            'lighting_photoperiod_hours' => ['nullable', 'integer', 'min:0', 'max:24'],
-            'lighting_start_time' => ['nullable', 'date_format:H:i:s'],
-            'mist_interval_sec' => ['nullable', 'integer', 'min:0'],
-            'mist_duration_sec' => ['nullable', 'integer', 'min:0'],
-            'mist_mode' => ['nullable', 'string', 'in:NORMAL,SPRAY'],
-            'temp_air_target' => ['nullable', 'numeric'],
-            'humidity_target' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'co2_target' => ['nullable', 'integer', 'min:0'],
-            'progress_model' => ['nullable', 'string', 'in:TIME,TIME_WITH_TEMP_CORRECTION,GDD,DLI'],
-            'duration_hours' => ['nullable', 'integer', 'min:0'],
-            'duration_days' => ['nullable', 'integer', 'min:0'],
-            'base_temp_c' => ['nullable', 'numeric'],
-            'target_gdd' => ['nullable', 'numeric', 'min:0'],
-            'dli_target' => ['nullable', 'numeric', 'min:0'],
-            'extensions' => ['nullable', 'array'],
-        ]);
+        $data = $request->validate(RecipePhaseRules::store());
+        $data = $this->payloadNormalizer->normalizeForWrite($data);
         $this->validateNutritionRatioSum($data);
 
         try {
@@ -121,53 +78,8 @@ class RecipeRevisionPhaseController extends Controller
             ], 401);
         }
 
-        $data = $request->validate([
-            'stage_template_id' => ['nullable', 'integer', 'exists:grow_stage_templates,id'],
-            'phase_index' => ['nullable', 'integer', 'min:0'],
-            'name' => ['sometimes', 'required', 'string', 'max:255'],
-            // Все параметры опциональны при обновлении
-            'ph_target' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            'ph_min' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            'ph_max' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            'ec_target' => ['nullable', 'numeric', 'min:0'],
-            'ec_min' => ['nullable', 'numeric', 'min:0'],
-            'ec_max' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_program_code' => ['nullable', 'string', 'max:64'],
-            'nutrient_mode' => ['nullable', 'string', 'in:ratio_ec_pid,delta_ec_by_k,dose_ml_l_only'],
-            'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_calcium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_magnesium_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_micro_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'nutrient_npk_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_calcium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_magnesium_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_micro_dose_ml_l' => ['nullable', 'numeric', 'min:0'],
-            'nutrient_npk_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_calcium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_magnesium_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_micro_product_id' => ['nullable', 'integer', 'exists:nutrient_products,id'],
-            'nutrient_dose_delay_sec' => ['nullable', 'integer', 'min:0', 'max:3600'],
-            'nutrient_ec_stop_tolerance' => ['nullable', 'numeric', 'min:0', 'max:5'],
-            'nutrient_solution_volume_l' => ['nullable', 'numeric', 'min:0.1', 'max:100000'],
-            'irrigation_mode' => ['nullable', 'string', 'in:SUBSTRATE,RECIRC'],
-            'irrigation_interval_sec' => ['nullable', 'integer', 'min:0'],
-            'irrigation_duration_sec' => ['nullable', 'integer', 'min:0'],
-            'lighting_photoperiod_hours' => ['nullable', 'integer', 'min:0', 'max:24'],
-            'lighting_start_time' => ['nullable', 'date_format:H:i:s'],
-            'mist_interval_sec' => ['nullable', 'integer', 'min:0'],
-            'mist_duration_sec' => ['nullable', 'integer', 'min:0'],
-            'mist_mode' => ['nullable', 'string', 'in:NORMAL,SPRAY'],
-            'temp_air_target' => ['nullable', 'numeric'],
-            'humidity_target' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'co2_target' => ['nullable', 'integer', 'min:0'],
-            'progress_model' => ['nullable', 'string', 'in:TIME,TIME_WITH_TEMP_CORRECTION,GDD,DLI'],
-            'duration_hours' => ['nullable', 'integer', 'min:0'],
-            'duration_days' => ['nullable', 'integer', 'min:0'],
-            'base_temp_c' => ['nullable', 'numeric'],
-            'target_gdd' => ['nullable', 'numeric', 'min:0'],
-            'dli_target' => ['nullable', 'numeric', 'min:0'],
-            'extensions' => ['nullable', 'array'],
-        ]);
+        $data = $request->validate(RecipePhaseRules::update());
+        $data = $this->payloadNormalizer->normalizeForWrite($data);
         $this->validateNutritionRatioSum($data, $recipeRevisionPhase);
 
         try {

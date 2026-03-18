@@ -89,6 +89,7 @@ export interface Node {
     type?: string
     metric?: string | null
     unit?: string | null
+    binding_role?: string | null
   }>
 }
 
@@ -99,6 +100,9 @@ export interface SetupWizardDeviceAssignments {
   accumulation: number | null
   climate: number | null
   light: number | null
+  co2_sensor: number | null
+  co2_actuator: number | null
+  root_vent_actuator: number | null
 }
 
 export interface RecipePhaseTargets {

@@ -1,4 +1,4 @@
-import { mount, flushPromises } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiGetMock = vi.hoisted(() => vi.fn())
@@ -62,19 +62,29 @@ describe('PlantCreateModal', () => {
     apiPostMock.mockReset()
     routerReloadMock.mockReset()
 
-    apiGetMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-        data: {
-          substrate_type: [{ id: 'coco', label: 'Кокос' }],
-          growing_system: [
-            { id: 'nft', label: 'NFT', uses_substrate: false },
-            { id: 'drip', label: 'Капельный полив', uses_substrate: true },
-          ],
-          photoperiod_preset: [],
-          seasonality: [],
-        },
-      },
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/plant-taxonomies') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              substrate_type: [{ id: 'coco', label: 'Кокос' }],
+              growing_system: [
+                { id: 'nft', label: 'NFT', uses_substrate: false },
+                { id: 'drip', label: 'Капельный полив', uses_substrate: true },
+              ],
+              photoperiod_preset: [],
+              seasonality: [],
+            },
+          },
+        })
+      }
+
+      if (url === '/nutrient-products') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
     })
   })
 
@@ -97,24 +107,16 @@ describe('PlantCreateModal', () => {
     expect(wrapper.find('#plant-substrate').exists()).toBe(true)
   })
 
-  it('создает рецепт с ревизией и фазами полного цикла', async () => {
-    apiPostMock.mockImplementation((url: string) => {
-      if (url === '/plants') {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 10, name: 'Салат' } } })
-      }
-      if (url === '/recipes') {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 20 } } })
-      }
-      if (url === '/recipes/20/revisions') {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 30 } } })
-      }
-      if (url.startsWith('/recipe-revisions/30/phases')) {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 1 } } })
-      }
-      if (url === '/recipe-revisions/30/publish') {
-        return Promise.resolve({ data: { status: 'ok' } })
-      }
-      return Promise.resolve({ data: { status: 'ok' } })
+  it('создает растение и рецепт через атомарный backend flow', async () => {
+    apiPostMock.mockResolvedValue({
+      data: {
+        status: 'ok',
+        data: {
+          plant: { id: 10, name: 'Салат' },
+          recipe: { id: 20, name: 'Салат — полный цикл' },
+          revision: { id: 30 },
+        },
+      },
     })
 
     const wrapper = mount(PlantCreateModal, {
@@ -129,20 +131,36 @@ describe('PlantCreateModal', () => {
     await nextButton?.trigger('click')
     await flushPromises()
 
-    const createButton = wrapper.findAll('button').find((button) => button.text().includes('Создать культуру и рецепт'))
-    await createButton?.trigger('click')
+    const submitButton = wrapper.findAll('button').find((button) => button.text().includes('Создать культуру и рецепт'))
+    await submitButton?.trigger('click')
     await flushPromises()
 
-    const phaseCalls = apiPostMock.mock.calls.filter(([url]) => url === '/recipe-revisions/30/phases')
-    expect(phaseCalls.length).toBeGreaterThanOrEqual(3)
-    expect(phaseCalls[0]?.[1]).toEqual(expect.objectContaining({
+    expect(apiPostMock).toHaveBeenCalledWith('/plants/with-recipe', expect.objectContaining({
+      plant: expect.objectContaining({
+        name: 'Салат',
+        growing_system: 'nft',
+      }),
+      recipe: expect.objectContaining({
+        name: 'Салат — полный цикл',
+        phases: expect.any(Array),
+      }),
+    }))
+
+    const payload = apiPostMock.mock.calls[0]?.[1]
+    expect(payload.recipe.phases).toHaveLength(1)
+    expect(payload.recipe.phases[0]).toEqual(expect.objectContaining({
       extensions: expect.objectContaining({
         day_night: expect.any(Object),
+        subsystems: expect.objectContaining({
+          irrigation: expect.objectContaining({
+            targets: expect.objectContaining({
+              system_type: 'drip',
+            }),
+          }),
+        }),
       }),
-      lighting_start_time: expect.any(String),
-      lighting_photoperiod_hours: expect.any(Number),
     }))
-    expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/30/publish')
+    expect(routerReloadMock).toHaveBeenCalledWith({ only: ['plants'] })
   })
 
   it('требует выбор системы выращивания перед переходом к шагу рецепта', async () => {

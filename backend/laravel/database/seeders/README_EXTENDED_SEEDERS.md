@@ -7,6 +7,7 @@
 Профиль задается через `HYDRO_SEED_PROFILE` (см. `backend/laravel/config/hydro.php`).
 
 - `lite` (по умолчанию): быстрый, облегченный набор данных.
+- `dev-bootstrap`: dev bootstrap без demo-набора, только пользователи и дефолтные конфиги.
 - `start`: только стартовые пользователи.
 - `full`: полный исторический набор групп `DatabaseSeeder`.
 
@@ -33,6 +34,7 @@
 ## Матрица использования
 
 - Локальная разработка UI/API: `lite`
+- `make migrate` и первичный локальный bootstrap без demo-данных: `dev-bootstrap`
 - Быстрый ручной smoke: `lite`
 - Только доступы/логин: `start`
 - Глубокая нагрузочная проверка legacy-набором: `full`
@@ -52,13 +54,19 @@ php artisan migrate:fresh --seed
 HYDRO_SEED_PROFILE=start php artisan db:seed
 ```
 
-### 3) Полный legacy-набор
+### 3) Dev bootstrap: пользователи + дефолтные конфиги
+
+```bash
+HYDRO_SEED_PROFILE=dev-bootstrap php artisan db:seed
+```
+
+### 4) Полный legacy-набор
 
 ```bash
 HYDRO_SEED_PROFILE=full php artisan migrate:fresh --seed
 ```
 
-### 4) Явный запуск lite
+### 5) Явный запуск lite
 
 ```bash
 HYDRO_SEED_PROFILE=lite php artisan db:seed

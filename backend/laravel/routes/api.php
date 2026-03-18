@@ -6,6 +6,7 @@ use App\Http\Controllers\AlertStreamController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelBindingController;
 use App\Http\Controllers\E2EAuthController;
+use App\Http\Controllers\GreenhouseAutomationLogicProfileController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
@@ -135,6 +136,7 @@ Route::middleware([
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);
     Route::get('greenhouses/{greenhouse}/dashboard', [GreenhouseController::class, 'dashboard']);
+    Route::get('greenhouses/{greenhouse}/automation-logic-profile', [GreenhouseAutomationLogicProfileController::class, 'show']);
     Route::get('zones', [ZoneController::class, 'index']);
     Route::get('zones/{zone}', [ZoneController::class, 'show']);
     Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
@@ -182,6 +184,7 @@ Route::middleware([
     Route::get('plant-taxonomies', [PlantController::class, 'taxonomies']);
     Route::get('plants', [PlantController::class, 'index']);
     Route::post('plants', [PlantController::class, 'store']);
+    Route::post('plants/with-recipe', [PlantController::class, 'storeWithRecipe']);
     Route::get('plants/{plant}', [PlantController::class, 'show']);
     Route::put('plants/{plant}', [PlantController::class, 'update']);
     Route::delete('plants/{plant}', [PlantController::class, 'destroy']);
@@ -197,6 +200,7 @@ Route::middleware([
         Route::put('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::patch('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::delete('greenhouses/{greenhouse}', [GreenhouseController::class, 'destroy']);
+        Route::post('greenhouses/{greenhouse}/automation-logic-profile', [GreenhouseAutomationLogicProfileController::class, 'upsert']);
 
         // Zones
         Route::post('zones', [ZoneController::class, 'store']);
@@ -302,6 +306,8 @@ Route::middleware([
         Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);
         Route::post('setup-wizard/validate-devices', [SetupWizardController::class, 'validateDevices']);
         Route::post('setup-wizard/apply-device-bindings', [SetupWizardController::class, 'applyDeviceBindings']);
+        Route::post('setup-wizard/validate-greenhouse-climate-devices', [SetupWizardController::class, 'validateGreenhouseClimateDevices']);
+        Route::post('setup-wizard/apply-greenhouse-climate-bindings', [SetupWizardController::class, 'applyGreenhouseClimateBindings']);
 
         // AI endpoints (operator+)
         Route::post('ai/predict', [AiController::class, 'predict']);

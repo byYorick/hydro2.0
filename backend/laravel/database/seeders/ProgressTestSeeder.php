@@ -10,6 +10,7 @@ use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
+use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
 
 /**
@@ -115,6 +116,9 @@ class ProgressTestSeeder extends Seeder
         ];
 
         foreach ($phases as $phaseData) {
+            $phTarget = (($phaseData['ph_min'] ?? 0) + ($phaseData['ph_max'] ?? 0)) / 2;
+            $ecTarget = (($phaseData['ec_min'] ?? 0) + ($phaseData['ec_max'] ?? 0)) / 2;
+
             RecipeRevisionPhase::firstOrCreate(
                 [
                     'recipe_revision_id' => $revision->id,
@@ -122,6 +126,26 @@ class ProgressTestSeeder extends Seeder
                 ],
                 array_merge($phaseData, [
                     'recipe_revision_id' => $revision->id,
+                    'ph_target' => $phTarget,
+                    'ec_target' => $ecTarget,
+                    'irrigation_mode' => 'SUBSTRATE',
+                    'lighting_start_time' => '06:00:00',
+                    'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                        null,
+                        'SUBSTRATE',
+                        CanonicalRecipePhaseSupport::buildDayNight(
+                            $phaseData['temp_air_target'] ?? null,
+                            $phaseData['temp_air_target'] ?? null,
+                            $phaseData['humidity_target'] ?? null,
+                            $phaseData['humidity_target'] ?? null,
+                            $phTarget,
+                            $phTarget,
+                            $ecTarget,
+                            $ecTarget,
+                            '06:00:00',
+                            null
+                        )
+                    ),
                 ])
             );
         }

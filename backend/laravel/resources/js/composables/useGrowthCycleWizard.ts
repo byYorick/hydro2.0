@@ -13,6 +13,7 @@ import {
   useAutomationDefaults,
 } from "@/composables/useAutomationDefaults";
 import { applyAutomationFromRecipe, syncSystemToTankLayout, validateForms } from "@/composables/zoneAutomationFormLogic";
+import { resolveRecipePhaseSystemType } from "@/composables/recipeSystemType";
 import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationPayloadBuilders";
 import type { ClimateFormState, IrrigationSystem, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
 import type { PumpCalibrationComponent } from "@/types/Calibration";
@@ -84,6 +85,7 @@ interface WizardRecipePhase {
   humidity_target?: number | null;
   lighting_photoperiod_hours?: number | null;
   lighting_start_time?: string | null;
+  extensions?: Record<string, unknown> | null;
 }
 
 
@@ -269,24 +271,6 @@ function normalizeDatetimeLocal(value: string | null | undefined): string | null
   }
 
   return parsed.toISOString().slice(0, 16);
-}
-
-function normalizeSystemType(value: unknown, fallback: IrrigationSystem): IrrigationSystem {
-  const raw = String(value || "").trim().toLowerCase();
-
-  if (raw === "substrate" || raw === "substrate_trays") {
-    return "substrate_trays";
-  }
-
-  if (raw === "recirc" || raw === "nft") {
-    return "nft";
-  }
-
-  if (raw === "drip") {
-    return "drip";
-  }
-
-  return fallback;
 }
 
 function isValidHHMM(value: string): boolean {
@@ -663,7 +647,7 @@ export function useGrowthCycleWizard({
   }
 
   function syncFormsFromRecipePhase(phase: WizardRecipePhase): void {
-    const systemType = normalizeSystemType(phase.irrigation_mode, waterForm.value.systemType);
+    const systemType = resolveRecipePhaseSystemType(phase, waterForm.value.systemType);
     waterForm.value.systemType = systemType;
     waterForm.value.tanksCount = systemType === "nft" ? 0 : 2;
 

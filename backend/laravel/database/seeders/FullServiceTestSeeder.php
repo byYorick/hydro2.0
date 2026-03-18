@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Services\GrowCycleService;
+use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -449,6 +450,24 @@ class FullServiceTestSeeder extends Seeder
                     'ec_min' => $phaseData['ec_min'],
                     'ec_max' => $phaseData['ec_max'],
                     'ec_target' => $ecTarget,
+                    'irrigation_mode' => 'SUBSTRATE',
+                    'lighting_start_time' => '06:00:00',
+                    'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                        null,
+                        'SUBSTRATE',
+                        CanonicalRecipePhaseSupport::buildDayNight(
+                            null,
+                            null,
+                            null,
+                            null,
+                            $phTarget,
+                            $phTarget,
+                            $ecTarget,
+                            $ecTarget,
+                            '06:00:00',
+                            null
+                        )
+                    ),
                 ]
             );
         }
@@ -501,6 +520,24 @@ class FullServiceTestSeeder extends Seeder
                     'ec_min' => $phaseData['ec_min'],
                     'ec_max' => $phaseData['ec_max'],
                     'ec_target' => $ecTarget,
+                    'irrigation_mode' => 'SUBSTRATE',
+                    'lighting_start_time' => '06:00:00',
+                    'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                        null,
+                        'SUBSTRATE',
+                        CanonicalRecipePhaseSupport::buildDayNight(
+                            null,
+                            null,
+                            null,
+                            null,
+                            $phTarget,
+                            $phTarget,
+                            $ecTarget,
+                            $ecTarget,
+                            '06:00:00',
+                            null
+                        )
+                    ),
                 ]
             );
         }

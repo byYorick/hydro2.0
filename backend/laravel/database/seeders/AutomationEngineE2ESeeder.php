@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
+use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -290,6 +291,13 @@ class AutomationEngineE2ESeeder extends Seeder
                 'ec_max' => 1.2,
                 'temp_air_target' => 22.0,
                 'humidity_target' => 70.0,
+                'irrigation_mode' => 'SUBSTRATE',
+                'lighting_start_time' => '06:00:00',
+                'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                    null,
+                    'SUBSTRATE',
+                    CanonicalRecipePhaseSupport::buildDayNight(22.0, 22.0, 70.0, 70.0, 6.0, 6.0, 1.0, 1.0, '06:00:00', null)
+                ),
             ]
         );
 
@@ -310,6 +318,13 @@ class AutomationEngineE2ESeeder extends Seeder
                 'ec_max' => 1.8,
                 'temp_air_target' => 24.0,
                 'humidity_target' => 65.0,
+                'irrigation_mode' => 'SUBSTRATE',
+                'lighting_start_time' => '06:00:00',
+                'extensions' => CanonicalRecipePhaseSupport::mergeExtensions(
+                    null,
+                    'SUBSTRATE',
+                    CanonicalRecipePhaseSupport::buildDayNight(24.0, 24.0, 65.0, 65.0, 6.0, 6.0, 1.5, 1.5, '06:00:00', null)
+                ),
             ]
         );
 

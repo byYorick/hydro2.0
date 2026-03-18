@@ -18,6 +18,7 @@ import {
   type IrrigationSystem,
   type LightingFormState,
   type WaterFormState,
+  type ZoneClimateFormState,
 } from '@/composables/zoneAutomationFormLogic'
 import {
   toFiniteNumber,
@@ -411,6 +412,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
   const climateForm = reactive<ClimateFormState>(createDefaultClimateForm(automationDefaults.value))
   const waterForm = reactive<WaterFormState>(createDefaultWaterForm(automationDefaults.value))
   const lightingForm = reactive<LightingFormState>(createDefaultLightingForm(automationDefaults.value))
+  const zoneClimateForm = reactive<ZoneClimateFormState>({ enabled: false })
 
   const quickActions = reactive({
     irrigation: false,
@@ -479,6 +481,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
       climate: { ...climateForm },
       water: { ...waterForm },
       lighting: { ...lightingForm },
+      zoneClimate: { ...zoneClimateForm },
       automationLogicMode: automationLogicMode.value,
       lastAutomationLogicSyncAt: lastAutomationLogicSyncAt.value,
       lastAppliedAt: lastAppliedAt.value,
@@ -502,6 +505,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
         climate?: Partial<ClimateFormState>
         water?: Partial<WaterFormState>
         lighting?: Partial<LightingFormState>
+        zoneClimate?: Partial<ZoneClimateFormState>
         automationLogicMode?: string
         lastAutomationLogicSyncAt?: string | null
         lastAppliedAt?: string | null
@@ -515,6 +519,9 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
       }
       if (parsed.lighting) {
         Object.assign(lightingForm, sanitizeLightingForm(parsed.lighting, lightingForm))
+      }
+      if (parsed.zoneClimate) {
+        zoneClimateForm.enabled = toBoolean(parsed.zoneClimate.enabled, zoneClimateForm.enabled)
       }
       automationLogicMode.value = normalizeAutomationLogicMode(parsed.automationLogicMode, automationLogicMode.value)
 
@@ -537,6 +544,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
   watch(climateForm, saveProfileToStorage, { deep: true })
   watch(waterForm, saveProfileToStorage, { deep: true })
   watch(lightingForm, saveProfileToStorage, { deep: true })
+  watch(zoneClimateForm, saveProfileToStorage, { deep: true })
   watch(automationLogicMode, saveProfileToStorage)
   watch(lastAutomationLogicSyncAt, saveProfileToStorage)
   watch(lastAppliedAt, saveProfileToStorage)
@@ -553,6 +561,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
   // ─── Quick actions ─────────────────────────────────────────────────────────
   function resetToRecommended(): void {
     resetFormsToRecommended({ climateForm, waterForm, lightingForm }, automationDefaults.value)
+    zoneClimateForm.enabled = false
   }
 
   async function withQuickAction(key: keyof typeof quickActions, callback: () => Promise<void>): Promise<void> {
@@ -635,6 +644,7 @@ export function useZoneAutomationState(props: ZoneAutomationTabProps, deps: Zone
     climateForm,
     waterForm,
     lightingForm,
+    zoneClimateForm,
     quickActions,
     // Flags (public)
     isApplyingProfile,

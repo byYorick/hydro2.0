@@ -59,6 +59,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     climateForm: state.climateForm,
     waterForm: state.waterForm,
     lightingForm: state.lightingForm,
+    zoneClimateForm: state.zoneClimateForm,
     quickActions: state.quickActions,
     isApplyingProfile: state.isApplyingProfile,
     isSyncingAutomationLogicProfile: state.isSyncingAutomationLogicProfile,

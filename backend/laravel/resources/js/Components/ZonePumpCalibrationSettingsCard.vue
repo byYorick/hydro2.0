@@ -39,7 +39,7 @@
             :min="field.min"
             :max="field.max"
             class="input-field w-full"
-            :placeholder="`Система: ${systemSettings[field.path as keyof PumpCalibrationSettings]}`"
+            :placeholder="`Система: ${resolvedSystemSettings[field.path as keyof PumpCalibrationSettings]}`"
             @input="updateField(field.path, ($event.target as HTMLInputElement).value)"
           />
           <div class="text-[11px] text-[color:var(--text-dim)]">
@@ -97,6 +97,20 @@ const { api } = useApi()
 const { showToast } = useToast()
 const systemSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
 
+const DEFAULT_PUMP_SETTINGS: PumpCalibrationSettings = {
+  ml_per_sec_min: 0.001,
+  ml_per_sec_max: 20,
+  min_dose_ms: 50,
+  calibration_duration_min_sec: 10,
+  calibration_duration_max_sec: 120,
+  quality_score_basic: 70,
+  quality_score_with_k: 85,
+  quality_score_legacy: 60,
+  age_warning_days: 30,
+  age_critical_days: 60,
+  default_run_duration_sec: 30,
+}
+
 const loading = ref(true)
 const saving = ref(false)
 const baseConfig = ref<Record<string, unknown>>({})
@@ -104,6 +118,11 @@ const phaseOverrides = ref<Record<string, unknown>>({})
 const presetId = ref<number | null>(null)
 const overrideConfig = ref<Partial<PumpCalibrationSettings>>({})
 const fields = ref<SystemSettingsField[]>([])
+
+const resolvedSystemSettings = computed<PumpCalibrationSettings>(() => ({
+  ...DEFAULT_PUMP_SETTINGS,
+  ...(systemSettings.value ?? {}),
+}))
 
 const hasOverrides = computed(() => Object.keys(overrideConfig.value).length > 0)
 
@@ -121,7 +140,7 @@ function stringValue(path: string): string {
 
 function effectiveValue(path: string): string {
   const override = overrideConfig.value[path as keyof PumpCalibrationSettings]
-  return String(override ?? systemSettings.value[path as keyof PumpCalibrationSettings])
+  return String(override ?? resolvedSystemSettings.value[path as keyof PumpCalibrationSettings])
 }
 
 function updateField(path: string, rawValue: string): void {

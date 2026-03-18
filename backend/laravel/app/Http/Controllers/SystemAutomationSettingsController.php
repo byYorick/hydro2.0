@@ -44,14 +44,13 @@ class SystemAutomationSettingsController extends Controller
             $merged = SystemAutomationSettingsCatalog::merge($current, $validated);
             SystemAutomationSettingsCatalog::validate($namespace, $merged, false);
 
-            $model = SystemAutomationSetting::query()->firstWhere('namespace', $namespace);
-            if (! $model) {
-                abort(404, "Namespace {$namespace} not found");
-            }
-            $model->fill([
-                'config' => $merged,
-                'updated_by' => $request->user()?->id,
-            ])->save();
+            SystemAutomationSetting::query()->updateOrCreate(
+                ['namespace' => $namespace],
+                [
+                    'config' => $merged,
+                    'updated_by' => $request->user()?->id,
+                ],
+            );
 
             return response()->json([
                 'status' => 'ok',
@@ -68,15 +67,13 @@ class SystemAutomationSettingsController extends Controller
     public function reset(Request $request, string $namespace): JsonResponse
     {
         $this->ensureNamespaceExists($namespace);
-        $model = SystemAutomationSetting::query()->firstWhere('namespace', $namespace);
-        if (! $model) {
-            abort(404, "Namespace {$namespace} not found");
-        }
-
-        $model->fill([
-            'config' => SystemAutomationSettingsCatalog::defaults($namespace),
-            'updated_by' => $request->user()?->id,
-        ])->save();
+        SystemAutomationSetting::query()->updateOrCreate(
+            ['namespace' => $namespace],
+            [
+                'config' => SystemAutomationSettingsCatalog::defaults($namespace),
+                'updated_by' => $request->user()?->id,
+            ],
+        );
 
         return response()->json([
             'status' => 'ok',

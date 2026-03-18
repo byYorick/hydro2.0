@@ -93,6 +93,14 @@ class DatabaseSeeder extends Seeder
         $seedProfile = $seedProfile ? strtolower($seedProfile) : 'full';
         $this->command->info("🧩 Профиль сидеров: {$seedProfile}");
 
+        if ($seedProfile === 'dev-bootstrap') {
+            $this->command->info('⚡ Запуск dev bootstrap сидеров (пользователи и дефолтные конфиги)');
+            $this->call(DevBootstrapSeeder::class);
+            $this->command->info('✅ Dev bootstrap сидеры выполнены');
+
+            return;
+        }
+
         if ($seedProfile === 'start') {
             $this->command->info('⚡ Запуск стартовых сидеров (только админ и агроном)');
             $this->call(StartUsersSeeder::class);

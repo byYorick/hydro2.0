@@ -70,36 +70,10 @@ class RecipeRevisionService
 
         // Клонируем фазы
         foreach ($sourceRevision->phases as $sourcePhase) {
-            $newPhase = $newRevision->phases()->create([
-                'stage_template_id' => $sourcePhase->stage_template_id,
-                'phase_index' => $sourcePhase->phase_index,
-                'name' => $sourcePhase->name,
-                // Копируем все параметры
-                'ph_target' => $sourcePhase->ph_target,
-                'ph_min' => $sourcePhase->ph_min,
-                'ph_max' => $sourcePhase->ph_max,
-                'ec_target' => $sourcePhase->ec_target,
-                'ec_min' => $sourcePhase->ec_min,
-                'ec_max' => $sourcePhase->ec_max,
-                'irrigation_mode' => $sourcePhase->irrigation_mode,
-                'irrigation_interval_sec' => $sourcePhase->irrigation_interval_sec,
-                'irrigation_duration_sec' => $sourcePhase->irrigation_duration_sec,
-                'lighting_photoperiod_hours' => $sourcePhase->lighting_photoperiod_hours,
-                'lighting_start_time' => $sourcePhase->lighting_start_time,
-                'mist_interval_sec' => $sourcePhase->mist_interval_sec,
-                'mist_duration_sec' => $sourcePhase->mist_duration_sec,
-                'mist_mode' => $sourcePhase->mist_mode,
-                'temp_air_target' => $sourcePhase->temp_air_target,
-                'humidity_target' => $sourcePhase->humidity_target,
-                'co2_target' => $sourcePhase->co2_target,
-                'progress_model' => $sourcePhase->progress_model,
-                'duration_hours' => $sourcePhase->duration_hours,
-                'duration_days' => $sourcePhase->duration_days,
-                'base_temp_c' => $sourcePhase->base_temp_c,
-                'target_gdd' => $sourcePhase->target_gdd,
-                'dli_target' => $sourcePhase->dli_target,
-                'extensions' => $sourcePhase->extensions,
-            ]);
+            $phasePayload = $sourcePhase->only($sourcePhase->getFillable());
+            unset($phasePayload['recipe_revision_id']);
+
+            $newPhase = $newRevision->phases()->create($phasePayload);
 
             // Клонируем подшаги
             foreach ($sourcePhase->steps as $sourceStep) {
@@ -158,4 +132,3 @@ class RecipeRevisionService
         return $revision->fresh();
     }
 }
-

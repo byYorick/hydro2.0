@@ -103,8 +103,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправка низкоуровневых команд |
 | PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
-| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация обязательных ролей шага `4. Устройства` |
-| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка ролей (`main_pump`, `drain`, `ph_*`, `ec_*`, `vent/heater/light`) к каналам выбранных нод |
+| GET | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum | Получить greenhouse climate profile и greenhouse bindings |
+| POST | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum (operator/admin/agronomist/engineer) | Сохранить greenhouse-owned automation profile (`climate`) |
+| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация unified шага `4. Автоматизация и устройства зоны` |
+| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод |
+| POST | /api/setup-wizard/validate-greenhouse-climate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация greenhouse climate nodes для шага `1. Теплица` |
+| POST | /api/setup-wizard/apply-greenhouse-climate-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка greenhouse roles (`climate_sensor`, `weather_station_sensor`, `vent_actuator`, `fan_actuator`) |
 
 ---
 
@@ -129,6 +133,20 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/recipe-revisions/{id}/phases | auth:sanctum (operator/admin/agronomist/engineer) | Добавить фазу ревизии |
 | PATCH | /api/recipe-revision-phases/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить фазу ревизии |
 | DELETE| /api/recipe-revision-phases/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить фазу ревизии |
+
+### Атомарное создание культуры и рецепта
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------|------|------------------------------------|
+| POST | /api/plants/with-recipe | auth:sanctum (operator/admin/agronomist/engineer) | Атомарно создать `plant + recipe + draft revision + phases + publish` |
+
+Канонический write-contract для phase payload в этом и обычных recipe endpoints:
+
+- flat поля `recipe_revision_phases`;
+- `extensions.day_night`;
+- `extensions.subsystems.irrigation.targets.system_type`.
+
+Legacy `extensions.day_target/night_target` больше не используется.
 
 ---
 

@@ -2,7 +2,6 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
-
 const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPostMock = vi.hoisted(() => vi.fn())
 const apiPatchMock = vi.hoisted(() => vi.fn())
@@ -30,11 +29,74 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
-vi.mock('@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue', () => ({
+vi.mock('@/Components/GreenhouseClimateConfiguration.vue', () => ({
   default: {
-    name: 'ZoneAutomationEditWizard',
-    props: ['open'],
-    template: '<div v-if="open" data-test="automation-configurator-stub">automation-configurator</div>',
+    name: 'GreenhouseClimateConfiguration',
+    props: ['enabled', 'applying'],
+    emits: ['update:enabled', 'apply'],
+    template: `
+      <div data-test="greenhouse-climate-stub">
+        <label>
+          Управлять климатом
+          <input
+            data-test="greenhouse-climate-toggle"
+            :checked="enabled"
+            type="checkbox"
+            @change="$emit('update:enabled', $event.target.checked)"
+          />
+        </label>
+        <button data-test="apply-greenhouse-climate" @click="$emit('apply')">save greenhouse climate</button>
+      </div>
+    `,
+  },
+}))
+
+vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
+  default: {
+    name: 'ZoneAutomationProfileSections',
+    props: ['assignments', 'lightingForm', 'zoneClimateForm'],
+    template: `
+      <div data-test="zone-automation-sections">
+        <label>
+          Управлять освещением
+          <input
+            data-test="lighting-toggle"
+            :checked="lightingForm.enabled"
+            type="checkbox"
+            @change="lightingForm.enabled = $event.target.checked"
+          />
+        </label>
+        <label>
+          Управлять климатом зоны
+          <input
+            data-test="zone-climate-toggle"
+            :checked="zoneClimateForm.enabled"
+            type="checkbox"
+            @change="zoneClimateForm.enabled = $event.target.checked"
+          />
+        </label>
+        <select data-test="irrigation-select" :value="assignments.irrigation ?? ''" @change="assignments.irrigation = Number($event.target.value) || null">
+          <option value="">none</option>
+          <option value="101">irrig</option>
+        </select>
+        <select data-test="ph-select" :value="assignments.ph_correction ?? ''" @change="assignments.ph_correction = Number($event.target.value) || null">
+          <option value="">none</option>
+          <option value="102">ph</option>
+        </select>
+        <select data-test="ec-select" :value="assignments.ec_correction ?? ''" @change="assignments.ec_correction = Number($event.target.value) || null">
+          <option value="">none</option>
+          <option value="104">ec</option>
+        </select>
+        <select data-test="light-select" :value="assignments.light ?? ''" @change="assignments.light = Number($event.target.value) || null">
+          <option value="">none</option>
+          <option value="105">light</option>
+        </select>
+        <select data-test="co2-sensor-select" :value="assignments.co2_sensor ?? ''" @change="assignments.co2_sensor = Number($event.target.value) || null">
+          <option value="">none</option>
+          <option value="106">co2</option>
+        </select>
+      </div>
+    `,
   },
 }))
 
@@ -47,6 +109,7 @@ vi.mock('@inertiajs/vue3', () => ({
           role: roleState.role,
         },
       },
+      sensorCalibrationSettings: null,
     },
   }),
   router: {
@@ -82,6 +145,7 @@ vi.mock('@/composables/useToast', () => ({
 vi.mock('@/utils/logger', () => ({
   logger: {
     error: vi.fn(),
+    warn: vi.fn(),
   },
 }))
 
@@ -100,6 +164,80 @@ vi.mock('@/composables/useErrorHandler', () => ({
 
 import Wizard from '../Wizard.vue'
 
+function mockDefaultGet(url: string) {
+  if (url === '/api/plants') {
+    return Promise.resolve({
+      data: {
+        status: 'ok',
+        data: [{ id: 5, name: 'Tomato' }],
+      },
+    })
+  }
+
+  if (url === '/api/recipes') {
+    return Promise.resolve({
+      data: {
+        status: 'ok',
+        data: [{
+          id: 30,
+          name: 'Tomato recipe',
+          plants: [{ id: 5, name: 'Tomato' }],
+          phases: [{
+            phase_index: 0,
+            ph_target: 5.9,
+            ec_target: 1.7,
+            irrigation_mode: 'RECIRC',
+            extensions: {
+              subsystems: {
+                irrigation: {
+                  targets: {
+                    system_type: 'substrate_trays',
+                  },
+                },
+              },
+            },
+          }],
+        }],
+      },
+    })
+  }
+
+  if (url === '/api/nodes') {
+    return Promise.resolve({
+      data: {
+        status: 'ok',
+        data: [
+          { id: 101, uid: 'nd-irrig-1', type: 'irrig', channels: [{ channel: 'pump_irrigation' }] },
+          { id: 102, uid: 'nd-ph-1', type: 'ph', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
+          { id: 104, uid: 'nd-ec-1', type: 'ec', channels: [{ channel: 'pump_a' }, { channel: 'ec_sensor' }] },
+          { id: 105, uid: 'nd-light-1', type: 'light', channels: [{ channel: 'light_main' }] },
+          { id: 106, uid: 'nd-co2-1', type: 'climate', channels: [{ channel: 'co2_ppm' }] },
+        ],
+      },
+    })
+  }
+
+  return Promise.resolve({
+    data: {
+      status: 'ok',
+      data: [],
+    },
+  })
+}
+
+async function createGreenhouseAndZone(wrapper: ReturnType<typeof mount>) {
+  await wrapper.find('[data-test="toggle-greenhouse-create"]').trigger('click')
+  await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
+  await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
+  await flushPromises()
+
+  await wrapper.find('[data-test="toggle-zone-create"]').trigger('click')
+  await flushPromises()
+  await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
+  await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
+  await flushPromises()
+}
+
 describe('Setup/Wizard.vue', () => {
   beforeEach(() => {
     roleState.role = 'agronomist'
@@ -113,18 +251,24 @@ describe('Setup/Wizard.vue', () => {
     canAssignToZoneMock.mockResolvedValue(true)
     getStateLabelMock.mockReturnValue('Зарегистрирован')
 
-    apiGetMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-        data: [],
-      },
-    })
+    apiGetMock.mockImplementation((url: string) => mockDefaultGet(url))
 
-    apiPostMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-        data: { id: 1 },
-      },
+    apiPostMock.mockImplementation((url: string) => {
+      if (url === '/api/greenhouses') {
+        return Promise.resolve({
+          data: { status: 'ok', data: { id: 10, uid: 'gh-main', name: 'Main GH' } },
+        })
+      }
+
+      if (url === '/api/zones') {
+        return Promise.resolve({
+          data: { status: 'ok', data: { id: 20, name: 'Zone A', greenhouse_id: 10 } },
+        })
+      }
+
+      return Promise.resolve({
+        data: { status: 'ok', data: { id: 99 } },
+      })
     })
 
     apiPatchMock.mockImplementation((url: string) => {
@@ -143,7 +287,7 @@ describe('Setup/Wizard.vue', () => {
     })
   })
 
-  it('рендерит заголовок и шаги мастера', async () => {
+  it('рендерит заголовок и новый набор шагов мастера', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
@@ -151,19 +295,18 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('1. Теплица')
     expect(wrapper.text()).toContain('2. Зона')
     expect(wrapper.text()).toContain('3. Культура и рецепт')
-    expect(wrapper.text()).toContain('4. Устройства')
-    expect(wrapper.text()).toContain('5. Логика автоматики')
-    expect(wrapper.text()).toContain('6. Запуск и контроль')
+    expect(wrapper.text()).toContain('4. Автоматизация и устройства зоны')
+    expect(wrapper.text()).toContain('5. Запуск')
+    expect(wrapper.text()).not.toContain('6. Запуск и контроль')
   })
 
-  it('открывает конфигуратор логики в шаге автоматики', async () => {
+  it('показывает inline-блок климата после выбора теплицы', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    expect(wrapper.find('[data-test="automation-configurator-stub"]').exists()).toBe(false)
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Открыть конфигуратор'))?.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="automation-configurator-stub"]').exists()).toBe(true)
+    await createGreenhouseAndZone(wrapper)
+
+    expect(wrapper.find('[data-test="greenhouse-climate-stub"]').exists()).toBe(true)
   })
 
   it('показывает режим только для просмотра для оператора', async () => {
@@ -174,138 +317,75 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('Режим только для просмотра')
   })
 
-  it('создает теплицу в режиме create', async () => {
-    apiPostMock.mockResolvedValueOnce({
-      data: {
-        status: 'ok',
-        data: { id: 10, uid: 'gh-main', name: 'Main GH' },
-      },
-    })
-
+  it('создаёт теплицу в режиме create', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    const createToggle = wrapper.find('[data-test="toggle-greenhouse-create"]')
-    expect(createToggle).toBeTruthy()
-    await createToggle.trigger('click')
-
-    const greenhouseNameInput = wrapper.find('input[placeholder="Название теплицы"]')
-    expect(greenhouseNameInput.exists()).toBe(true)
-    await greenhouseNameInput.setValue('Main GH')
-
-    const createButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))
-    expect(createButton).toBeTruthy()
-    await createButton?.trigger('click')
-
+    await wrapper.find('[data-test="toggle-greenhouse-create"]').trigger('click')
+    await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
     await flushPromises()
-
-    expect(wrapper.find('input[placeholder="Название теплицы"]').exists()).toBe(false)
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/greenhouses',
       expect.objectContaining({
         name: 'Main GH',
       }),
-      undefined
+      undefined,
     )
   })
 
-  it('применяет логику автоматики через команду зоны', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/plants') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [{ id: 5, name: 'Tomato' }],
-          },
-        })
-      }
-
-      if (url === '/api/recipes') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [{
-              id: 30,
-              name: 'Tomato recipe',
-              plants: [{ id: 5, name: 'Tomato' }],
-              phases: [{ phase_index: 0, ph_target: 5.9, ec_target: 1.7, irrigation_mode: 'RECIRC' }],
-            }],
-          },
-        })
-      }
-
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-
-    apiPostMock
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 10, uid: 'gh-main', name: 'Main GH' },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          status: 'ok',
-          data: { id: 99 },
-        },
-      })
-
+  it('сохраняет unified шаг зоны: bindings + automation profile + команду', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    const createToggle = wrapper.find('[data-test="toggle-greenhouse-create"]')
-    await createToggle.trigger('click')
-
-    const greenhouseNameInput = wrapper.find('input[placeholder="Название теплицы"]')
-    await greenhouseNameInput.setValue('Main GH')
-
-    const createGreenhouseButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))
-    await createGreenhouseButton?.trigger('click')
-    await flushPromises()
-
-    const openZoneCreateButton = wrapper.find('[data-test="toggle-zone-create"]')
-    expect(openZoneCreateButton).toBeTruthy()
-    await openZoneCreateButton.trigger('click')
-    await flushPromises()
-
-    const zoneNameInput = wrapper.find('input[placeholder="Название зоны"]')
-    expect(zoneNameInput.exists()).toBe(true)
-    await zoneNameInput.setValue('Zone A')
-
-    const createZoneButton = wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))
-    expect(createZoneButton).toBeTruthy()
-    await createZoneButton?.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('input[placeholder="Название зоны"]').exists()).toBe(false)
+    await createGreenhouseAndZone(wrapper)
 
     const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
-    expect(plantSelect).toBeTruthy()
     await plantSelect?.setValue('5')
     await flushPromises()
-
-    const applyAutomationButton = wrapper.findAll('button').find((btn) => btn.text().includes('Применить логику автоматики'))
-    expect(applyAutomationButton).toBeTruthy()
-    await applyAutomationButton?.trigger('click')
     await flushPromises()
+
+    expect(wrapper.text()).toContain('Используется рецепт: Tomato recipe')
+
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(false)
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Сохранить автоматику и устройства зоны'))?.trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/setup-wizard/validate-devices',
+      expect.objectContaining({
+        zone_id: 20,
+        assignments: expect.objectContaining({
+          irrigation: 101,
+          accumulation: 101,
+          ph_correction: 102,
+          ec_correction: 104,
+        }),
+      }),
+      undefined,
+    )
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/automation-logic-profile',
       expect.objectContaining({
         mode: 'setup',
         activate: true,
-        subsystems: expect.any(Object),
+        subsystems: expect.objectContaining({
+          lighting: expect.objectContaining({ enabled: false }),
+        }),
       }),
-      undefined
+      undefined,
     )
+
+    const automationCall = apiPostMock.mock.calls.find(([url]) => url === '/api/zones/20/automation-logic-profile')
+    expect(automationCall?.[1]?.subsystems?.climate).toBeUndefined()
+    expect(automationCall?.[1]?.subsystems?.irrigation?.execution?.system_type).toBe('substrate_trays')
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/commands',
@@ -316,108 +396,43 @@ describe('Setup/Wizard.vue', () => {
           profile_mode: 'setup',
         }),
       }),
-      undefined
+      undefined,
     )
   })
 
-  it('отправляет флаги управления климатом и светом из переключателей', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/plants') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [{ id: 5, name: 'Tomato' }],
-          },
-        })
-      }
-
-      if (url === '/api/recipes') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [{
-              id: 30,
-              name: 'Tomato recipe',
-              plants: [{ id: 5, name: 'Tomato' }],
-              phases: [{ phase_index: 0, ph_target: 5.9, ec_target: 1.7, irrigation_mode: 'RECIRC' }],
-            }],
-          },
-        })
-      }
-
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-
-    apiPostMock
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 10, uid: 'gh-main', name: 'Main GH' },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          status: 'ok',
-          data: { id: 99 },
-        },
-      })
-
+  it('отправляет флаги света и zone climate из объединённого шага', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
-    const createToggle = wrapper.find('[data-test="toggle-greenhouse-create"]')
-    await createToggle.trigger('click')
-    await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
-    await flushPromises()
-
-    await wrapper.find('[data-test="toggle-zone-create"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
-    await flushPromises()
+    await createGreenhouseAndZone(wrapper)
 
     const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
-    expect(plantSelect).toBeTruthy()
     await plantSelect?.setValue('5')
     await flushPromises()
+    await flushPromises()
 
-    const climateToggle = wrapper.findAll('label').find((item) => item.text().includes('Управлять климатом'))
-    const lightingToggle = wrapper.findAll('label').find((item) => item.text().includes('Управлять освещением'))
-    await climateToggle?.find('input').setValue(false)
-    await lightingToggle?.find('input').setValue(false)
+    expect(wrapper.text()).toContain('Используется рецепт: Tomato recipe')
 
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Применить логику автоматики'))?.trigger('click')
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(false)
+    await wrapper.find('[data-test="zone-climate-toggle"]').setValue(true)
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await wrapper.find('[data-test="co2-sensor-select"]').setValue('106')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Сохранить автоматику и устройства зоны'))?.trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/automation-logic-profile',
       expect.objectContaining({
-        mode: 'setup',
-        activate: true,
         subsystems: expect.objectContaining({
-          climate: expect.objectContaining({ enabled: false }),
           lighting: expect.objectContaining({ enabled: false }),
+          zone_climate: expect.objectContaining({ enabled: true }),
         }),
       }),
-      undefined
-    )
-
-    expect(apiPostMock).toHaveBeenCalledWith(
-      '/api/zones/20/commands',
-      expect.objectContaining({
-        params: expect.objectContaining({
-          mode: 'adjust',
-          profile_mode: 'setup',
-        }),
-      }),
-      undefined
+      undefined,
     )
   })
 
@@ -430,130 +445,21 @@ describe('Setup/Wizard.vue', () => {
     expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('обновляет список доступных нод по кнопке Обновить', async () => {
+  it('обновляет список доступных нод по кнопке "Обновить ноды"', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
+    await createGreenhouseAndZone(wrapper)
 
     apiGetMock.mockClear()
 
-    const refreshNodesButton = wrapper.findAll('button').find((btn) => btn.text().includes('Обновить'))
-    expect(refreshNodesButton).toBeTruthy()
-    await refreshNodesButton?.trigger('click')
+    await wrapper.findAll('button').find((btn) => btn.text().includes('Обновить ноды'))?.trigger('click')
     await flushPromises()
 
-    expect(apiGetMock).toHaveBeenCalledWith('/api/nodes', { params: { unassigned: true } })
-  })
-
-  it('перед привязкой нод вызывает серверную валидацию обязательных ролей', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/nodes') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [
-              { id: 101, uid: 'nd-test-irrig-1', type: 'irrig', channels: [{ channel: 'pump_irrigation' }] },
-              { id: 102, uid: 'nd-test-ph-1', type: 'ph', channels: [{ channel: 'pump_acid' }, { channel: 'ph_sensor' }] },
-              { id: 104, uid: 'nd-test-ec-1', type: 'ec', channels: [{ channel: 'pump_a' }, { channel: 'ec_sensor' }] },
-            ],
-          },
-        })
-      }
-
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-
-    apiPostMock
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 10, uid: 'gh-main', name: 'Main GH' },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          status: 'ok',
-          data: { validated: true },
-        },
-      })
-
-    apiPatchMock.mockImplementation((url: string) => {
-      const nodeId = Number(url.split('/').pop())
-      return Promise.resolve({
-        data: {
-          status: 'ok',
-          data: {
-            id: Number.isFinite(nodeId) ? nodeId : 0,
-            zone_id: 20,
-            pending_zone_id: null,
-            lifecycle_state: 'ASSIGNED_TO_ZONE',
-          },
-        },
-      })
-    })
-
-    const wrapper = mount(Wizard)
-    await flushPromises()
-
-    await wrapper.find('[data-test="toggle-greenhouse-create"]').trigger('click')
-    await wrapper.find('input[placeholder="Название теплицы"]').setValue('Main GH')
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать теплицу'))?.trigger('click')
-    await flushPromises()
-
-    await wrapper.find('[data-test="toggle-zone-create"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('input[placeholder="Название зоны"]').setValue('Zone A')
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Создать зону'))?.trigger('click')
-    await flushPromises()
-
-    const irrigationSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите общий узел полива/накопления'))
-    const phCorrectionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции pH'))
-    const ecCorrectionSelect = wrapper.findAll('select').find((item) => item.text().includes('Выберите узел коррекции EC'))
-
-    expect(irrigationSelect).toBeTruthy()
-    expect(phCorrectionSelect).toBeTruthy()
-    expect(ecCorrectionSelect).toBeTruthy()
-
-    await irrigationSelect?.setValue('101')
-    await phCorrectionSelect?.setValue('102')
-    await ecCorrectionSelect?.setValue('104')
-
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Привязать ноды зоны'))?.trigger('click')
-    await flushPromises()
-
-    expect(apiPostMock).toHaveBeenCalledWith(
-      '/api/setup-wizard/validate-devices',
-      expect.objectContaining({
+    expect(apiGetMock).toHaveBeenCalledWith('/api/nodes', {
+      params: {
         zone_id: 20,
-        assignments: expect.objectContaining({
-          irrigation: 101,
-          ph_correction: 102,
-          ec_correction: 104,
-          accumulation: 101,
-        }),
-      }),
-      undefined
-    )
-
-    expect(apiPostMock).toHaveBeenCalledWith(
-      '/api/setup-wizard/apply-device-bindings',
-      expect.objectContaining({
-        zone_id: 20,
-        assignments: expect.objectContaining({
-          irrigation: 101,
-          ph_correction: 102,
-          ec_correction: 104,
-          accumulation: 101,
-        }),
-      }),
-      undefined
-    )
-
-    expect(apiPatchMock).toHaveBeenCalledTimes(3)
+        include_unassigned: true,
+      },
+    })
   })
 })

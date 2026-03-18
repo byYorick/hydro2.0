@@ -189,4 +189,31 @@ describe('useGrowthCycleWizard', () => {
     expect(showToast).toHaveBeenCalledTimes(1)
     expect(showToast.mock.calls[0][0]).toContain('Заполните калибровки насосов')
   })
+
+  it('берет system_type из recipe phase и не подменяет drip на substrate_trays', async () => {
+    const { wizard } = mountWizardHarness()
+
+    wizard.selectedRecipe.value = {
+      id: 10,
+      published_revisions: [{
+        id: 55,
+        phases: [{
+          irrigation_mode: 'SUBSTRATE',
+          extensions: {
+            subsystems: {
+              irrigation: {
+                targets: {
+                  system_type: 'drip',
+                },
+              },
+            },
+          },
+        }],
+      }],
+    } as any
+    wizard.selectedRevisionId.value = 55
+    await nextTick()
+
+    expect(wizard.waterForm.value.systemType).toBe('drip')
+  })
 })

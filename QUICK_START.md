@@ -29,8 +29,14 @@
 ### Backend (Laravel + Python-сервисы)
 
 ```bash
-cd backend
-docker compose -f docker-compose.dev.yml up -d --build
+make up
+```
+
+Для полного чистого dev-refresh с удалением volume, сервисных image и пересборкой без cache.
+После `refresh` в local dev в БД остаются только `admin@example.com` и `agronomist@example.com`:
+
+```bash
+make refresh
 ```
 
 Сервисы:

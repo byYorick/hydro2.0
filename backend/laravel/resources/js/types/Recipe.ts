@@ -35,11 +35,39 @@ export interface NutrientProduct {
   updated_at?: string
 }
 
+export interface RecipePhaseDayNightExtensions {
+  ph?: { day?: number | null; night?: number | null } | null
+  ec?: { day?: number | null; night?: number | null } | null
+  temperature?: { day?: number | null; night?: number | null } | null
+  humidity?: { day?: number | null; night?: number | null } | null
+  lighting?: { day_start_time?: string | null; day_hours?: number | null } | null
+}
+
+export interface RecipePhaseExtensions {
+  day_night?: RecipePhaseDayNightExtensions | null
+  subsystems?: {
+    irrigation?: {
+      targets?: {
+        system_type?: string | null
+      } | null
+      execution?: {
+        system_type?: string | null
+      } | null
+    } | null
+  } | null
+}
+
 /**
  * Фаза рецепта
  */
 export interface RecipePhase {
   id: number
+  stage_template_id?: number | null
+  stage_template?: {
+    id: number
+    code?: string | null
+    name?: string | null
+  } | null
   phase_index: number
   name: string
   duration_hours: number
@@ -55,6 +83,8 @@ export interface RecipePhase {
   temp_air_target?: number | null
   humidity_target?: number | null
   lighting_photoperiod_hours?: number | null
+  lighting_start_time?: string | null
+  irrigation_mode?: string | null
   irrigation_interval_sec?: number | null
   irrigation_duration_sec?: number | null
   nutrient_program_code?: string | null
@@ -74,6 +104,7 @@ export interface RecipePhase {
   nutrient_dose_delay_sec?: number | null
   nutrient_ec_stop_tolerance?: number | string | null
   nutrient_solution_volume_l?: number | string | null
+  extensions?: RecipePhaseExtensions | null
   created_at?: string
   updated_at?: string
 }

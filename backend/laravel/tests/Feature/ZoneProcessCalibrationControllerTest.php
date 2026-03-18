@@ -263,6 +263,127 @@ class ZoneProcessCalibrationControllerTest extends TestCase
             ->assertJsonPath('data.confidence', 0.75);
     }
 
+    public function test_index_normalizes_legacy_alias_modes_from_database(): void
+    {
+        $zone = Zone::factory()->create();
+        $now = now();
+
+        DB::table('zone_process_calibrations')->insert([
+            [
+                'zone_id' => $zone->id,
+                'mode' => 'tank_filling',
+                'ec_gain_per_ml' => 0.10,
+                'transport_delay_sec' => 15,
+                'settle_sec' => 30,
+                'confidence' => 0.75,
+                'source' => 'legacy-fill',
+                'valid_from' => $now->copy()->subMinutes(2),
+                'valid_to' => null,
+                'is_active' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'zone_id' => $zone->id,
+                'mode' => 'irrigating',
+                'ec_gain_per_ml' => 0.22,
+                'transport_delay_sec' => 18,
+                'settle_sec' => 40,
+                'confidence' => 0.84,
+                'source' => 'legacy-irrigating',
+                'valid_from' => $now->copy()->subMinute(),
+                'valid_to' => null,
+                'is_active' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/process-calibrations");
+
+        $response->assertOk()
+            ->assertJsonFragment([
+                'mode' => 'solution_fill',
+                'source' => 'legacy-fill',
+            ])
+            ->assertJsonFragment([
+                'mode' => 'irrigation',
+                'source' => 'legacy-irrigating',
+            ]);
+    }
+
+    public function test_show_resolves_legacy_alias_record_via_canonical_mode(): void
+    {
+        $zone = Zone::factory()->create();
+
+        DB::table('zone_process_calibrations')->insert([
+            'zone_id' => $zone->id,
+            'mode' => 'prepare_recirculation',
+            'ec_gain_per_ml' => 0.13,
+            'transport_delay_sec' => 17,
+            'settle_sec' => 32,
+            'confidence' => 0.81,
+            'source' => 'legacy-recirc',
+            'valid_from' => now()->subMinute(),
+            'valid_to' => null,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/process-calibrations/tank_recirc");
+
+        $response->assertOk()
+            ->assertJsonPath('data.mode', 'tank_recirc')
+            ->assertJsonPath('data.source', 'legacy-recirc')
+            ->assertJsonPath('data.transport_delay_sec', 17);
+    }
+
+    public function test_upsert_deactivates_legacy_alias_profile_for_same_canonical_mode(): void
+    {
+        $zone = Zone::factory()->create();
+        $now = now()->subMinute();
+
+        DB::table('zone_process_calibrations')->insert([
+            'zone_id' => $zone->id,
+            'mode' => 'irrig_recirc',
+            'ec_gain_per_ml' => 0.14,
+            'transport_delay_sec' => 16,
+            'settle_sec' => 28,
+            'confidence' => 0.66,
+            'source' => 'legacy-irrig-recirc',
+            'valid_from' => $now,
+            'valid_to' => null,
+            'is_active' => true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $response = $this->putJson("/api/zones/{$zone->id}/process-calibrations/irrigation", [
+            'ec_gain_per_ml' => 0.19,
+            'transport_delay_sec' => 21,
+            'settle_sec' => 35,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.mode', 'irrigation')
+            ->assertJsonPath('data.transport_delay_sec', 21);
+
+        $this->assertDatabaseHas('zone_process_calibrations', [
+            'zone_id' => $zone->id,
+            'mode' => 'irrig_recirc',
+            'source' => 'legacy-irrig-recirc',
+            'is_active' => false,
+        ]);
+        $this->assertDatabaseHas('zone_process_calibrations', [
+            'zone_id' => $zone->id,
+            'mode' => 'irrigation',
+            'ec_gain_per_ml' => 0.19,
+            'transport_delay_sec' => 21,
+            'is_active' => true,
+        ]);
+    }
+
     public function test_rejects_invalid_process_calibration_mode(): void
     {
         $zone = Zone::factory()->create();

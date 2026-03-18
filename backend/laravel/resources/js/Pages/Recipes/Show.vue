@@ -76,16 +76,21 @@
       </Card>
       <Card>
         <div class="text-sm font-semibold mb-2">
-          Цели по умолчанию
+          Сводка по фазам
         </div>
-        <div class="text-sm text-[color:var(--text-muted)]">
-          Температура: 22–24°C
-        </div>
-        <div class="text-sm text-[color:var(--text-muted)]">
-          Влажность: 50–60%
-        </div>
-        <div class="text-sm text-[color:var(--text-muted)]">
-          Свет: 16ч
+        <div class="space-y-2 text-sm text-[color:var(--text-muted)]">
+          <div>
+            Температура: {{ summary.temperature }}
+          </div>
+          <div>
+            Влажность: {{ summary.humidity }}
+          </div>
+          <div>
+            Свет: {{ summary.lighting }}
+          </div>
+          <div>
+            Полив: {{ summary.irrigation }}
+          </div>
         </div>
       </Card>
     </div>
@@ -141,6 +146,28 @@ const recipe = computed(() => (recipeProp.value || {}) as Recipe)
 const sortedPhases = computed<RecipePhaseWithNutrition[]>(() => {
   const phases = (recipe.value.phases || []) as RecipePhaseWithNutrition[]
   return [...phases].sort((a, b) => (a.phase_index || 0) - (b.phase_index || 0))
+})
+
+const summary = computed(() => {
+  const phases = sortedPhases.value
+  const formatRange = (values: Array<number | null | undefined>, suffix: string): string => {
+    const normalized = values
+      .map((value) => (value === null || value === undefined ? null : Number(value)))
+      .filter((value): value is number => Number.isFinite(value))
+    if (normalized.length === 0) {
+      return '-'
+    }
+    const min = Math.min(...normalized)
+    const max = Math.max(...normalized)
+    return min === max ? `${min}${suffix}` : `${min}–${max}${suffix}`
+  }
+
+  return {
+    temperature: formatRange(phases.map((phase) => phase.temp_air_target ?? phase.targets?.temp_air), '°C'),
+    humidity: formatRange(phases.map((phase) => phase.humidity_target ?? phase.targets?.humidity_air), '%'),
+    lighting: formatRange(phases.map((phase) => phase.lighting_photoperiod_hours ?? phase.targets?.light_hours), ' ч'),
+    irrigation: formatRange(phases.map((phase) => phase.irrigation_interval_sec ?? phase.targets?.irrigation_interval_sec), ' сек'),
+  }
 })
 
 function formatDuration(hours: number | null | undefined): string {

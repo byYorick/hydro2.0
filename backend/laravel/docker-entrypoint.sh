@@ -24,6 +24,9 @@ fi
 
 # Wait for database to be ready (dev + testing)
 if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testing" ]; then
+    AUTO_SEED_ON_BOOT="${LARAVEL_AUTO_SEED_ON_BOOT:-1}"
+    ENSURE_E2E_USER_ON_BOOT="${LARAVEL_ENSURE_E2E_USER_ON_BOOT:-0}"
+
     echo "Waiting for database connection..."
     max_attempts=30
     attempt=0
@@ -63,7 +66,7 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
 
         # Check if seeders need to run (only if no users exist)
         USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
-        if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
+        if [ "$AUTO_SEED_ON_BOOT" = "1" ] && { [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; }; then
             echo "No users found, running database seeders..."
             if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --force 2>/dev/null; then
                 echo "✓ Seeders completed successfully"
@@ -71,19 +74,25 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
             else
                 echo "⚠ Seeding failed (some data may have been created), continuing..."
             fi
+        elif [ "$AUTO_SEED_ON_BOOT" != "1" ]; then
+            echo "✓ Auto seed on boot disabled, skipping entrypoint seeders"
         else
             echo "✓ Database already seeded ($USER_COUNT users found), skipping seeders"
         fi
 
-        # Ensure a stable E2E user for runner login (token will be minted via /api/auth/login)
-        echo "Ensuring E2E user exists..."
-        php artisan tinker --execute="
-            \$user = \\App\\Models\\User::updateOrCreate(
-                ['email' => 'e2e@example.com'],
-                ['name' => 'E2E', 'password' => bcrypt('e2e'), 'role' => 'operator']
-            );
-            echo 'OK';
-        " >/dev/null 2>&1 || echo "⚠ Failed to ensure E2E user, continuing..."
+        # Ensure a stable E2E user only when explicitly requested or in testing/e2e env.
+        if [ "$ENSURE_E2E_USER_ON_BOOT" = "1" ] || [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then
+            echo "Ensuring E2E user exists..."
+            php artisan tinker --execute="
+                \$user = \\App\\Models\\User::updateOrCreate(
+                    ['email' => 'e2e@example.com'],
+                    ['name' => 'E2E', 'password' => bcrypt('e2e'), 'role' => 'operator']
+                );
+                echo 'OK';
+            " >/dev/null 2>&1 || echo "⚠ Failed to ensure E2E user, continuing..."
+        else
+            echo "✓ E2E bootstrap on boot disabled for local dev"
+        fi
 
         # В testing окружении всегда прогоняем E2E сидер (он идемпотентный)
         if [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then

@@ -30,7 +30,6 @@
         @select-mode="onControlModeSelect"
         @run-manual-step="runManualStep"
         @manual-irrigation="runManualIrrigation"
-        @manual-climate="runManualClimate"
         @manual-lighting="runManualLighting"
         @manual-ph="runManualPh"
         @manual-ec="runManualEc"
@@ -42,9 +41,9 @@
           :can-configure-automation="canConfigureAutomation"
           :telemetry-label="telemetryLabel"
           :water-topology-label="waterTopologyLabel"
-          :climate-form="climateForm"
           :water-form="waterForm"
           :lighting-form="lightingForm"
+          :zone-climate-enabled="zoneClimateForm.enabled"
           @edit="showEditWizard = true"
         />
 
@@ -112,64 +111,11 @@
 
       <!-- Аккордеон 2: Коррекция и калибровка -->
       <ZoneAutomationAccordionSection title="Коррекция и калибровка">
-        <section class="space-y-4">
-          <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Correction runtime
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              Готовность runtime, tuning PID и process calibration для in-flow correction.
-            </div>
-          </div>
-
-          <CorrectionRuntimeReadinessCard
-            :zone-id="Number(zoneId)"
-            @focus-process-calibration="scrollToSection('zone-process-calibration-panel')"
-            @open-pump-calibration="emit('open-pump-calibration')"
-          />
-          <section class="grid gap-4 xl:grid-cols-2">
-            <PidConfigForm
-              :zone-id="Number(zoneId)"
-              @saved="onPidSaved"
-            />
-            <RelayAutotuneTrigger :zone-id="Number(zoneId)" />
-          </section>
-          <div id="zone-process-calibration-panel">
-            <ProcessCalibrationPanel :zone-id="Number(zoneId)" />
-          </div>
-        </section>
-
-        <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
-          <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Калибровка дозирования
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              Статус и история pump calibration. Runtime bounds и zone override вынесены в настройки Automation Engine ниже.
-            </div>
-          </div>
-
-          <PumpCalibrationsPanel
-            :zone-id="Number(zoneId)"
-            @open-pump-calibration="emit('open-pump-calibration')"
-          />
-        </section>
-
-        <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
-          <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Калибровка сенсоров
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              Отдельный контур pH/EC sensor calibration и его история.
-            </div>
-          </div>
-
-          <SensorCalibrationStatus
-            :zone-id="Number(zoneId)"
-            :settings="sensorCalibrationSettings"
-          />
-        </section>
+        <ZoneCorrectionCalibrationStack
+          :zone-id="Number(zoneId)"
+          :sensor-calibration-settings="sensorCalibrationSettings"
+          @open-pump-calibration="emit('open-pump-calibration')"
+        />
       </ZoneAutomationAccordionSection>
 
       <!-- Аккордеон 3: Настройки Automation Engine -->
@@ -222,20 +168,6 @@
             </dl>
           </div>
         </section>
-
-        <section class="space-y-4 border-t border-[color:var(--border-muted)] pt-4">
-          <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Zone runtime overrides
-            </div>
-            <div class="text-xs text-[color:var(--text-dim)] mt-1">
-              Zone-level override системных порогов pump calibration для runtime planner.
-            </div>
-          </div>
-
-          <ZonePumpCalibrationSettingsCard :zone-id="Number(zoneId)" />
-        </section>
-
         <div class="flex flex-wrap items-center gap-2">
           <Button
             v-if="canConfigureAutomation"
@@ -310,6 +242,7 @@
         :climate-form="climateForm"
         :water-form="waterForm"
         :lighting-form="lightingForm"
+        :zone-climate-form="zoneClimateForm"
         :is-applying="isApplyingProfile"
         :is-system-type-locked="isSystemTypeLocked"
         @close="showEditWizard = false"
@@ -325,17 +258,11 @@ import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProfileCard from '@/Components/AutomationProfileCard.vue'
 import AutomationSchedulerDevCard from '@/Components/AutomationSchedulerDevCard.vue'
 import AutomationWorkflowCard from '@/Components/AutomationWorkflowCard.vue'
+import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationAccordionSection from '@/Components/ZoneAutomationAccordionSection.vue'
 import ZoneAutomationOpsPanel from '@/Components/ZoneAutomationOpsPanel.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import CorrectionRuntimeReadinessCard from '@/Components/CorrectionRuntimeReadinessCard.vue'
-import PidConfigForm from '@/Components/PidConfigForm.vue'
-import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
-import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
-import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
-import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
-import ZonePumpCalibrationSettingsCard from '@/Components/ZonePumpCalibrationSettingsCard.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
@@ -350,13 +277,13 @@ import type {
 } from '@/composables/zoneAutomationTypes'
 import { useZoneAutomationTab } from '@/composables/useZoneAutomationTab'
 import type { AutomationState } from '@/types/Automation'
-import type { PidConfigWithMeta } from '@/types/PidConfig'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
 interface ZoneAutomationWizardApplyPayload {
   climateForm: ClimateFormState
   waterForm: WaterFormState
   lightingForm: LightingFormState
+  zoneClimateForm: { enabled: boolean }
 }
 
 interface AutomationEngineSettingItem {
@@ -567,6 +494,7 @@ const {
   climateForm,
   waterForm,
   lightingForm,
+  zoneClimateForm,
   quickActions,
   isApplyingProfile,
   isSyncingAutomationLogicProfile,
@@ -579,7 +507,6 @@ const {
   applyAutomationProfile,
   resetToRecommended,
   runManualIrrigation,
-  runManualClimate,
   runManualLighting,
   runManualPh,
   runManualEc,
@@ -635,9 +562,11 @@ const automationEngineRuntimePayload = computed(() => {
       climateForm,
       waterForm,
       lightingForm,
+      zoneClimateForm,
     },
     {
       includeSystemType: !isSystemTypeLocked.value,
+      includeClimateSubsystem: false,
       automationDefaults: automationDefaults.value,
       automationCommandTemplates: automationCommandTemplates.value,
     }
@@ -646,19 +575,6 @@ const automationEngineRuntimePayload = computed(() => {
 const automationEngineRuntimePayloadPretty = computed(() => {
   return JSON.stringify(automationEngineRuntimePayload.value, null, 2)
 })
-
-function scrollToSection(id: string): void {
-  if (typeof document === 'undefined') {
-    return
-  }
-
-  const element = document.getElementById(id)
-  if (!element) {
-    return
-  }
-
-  element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
 const automationEngineKeySettings = computed<AutomationEngineSettingItem[]>(() => {
   const payload = automationEngineRuntimePayload.value
   return automationEngineSettingDescriptors
@@ -702,15 +618,12 @@ async function onApplyFromWizard(payload: ZoneAutomationWizardApplyPayload): Pro
   Object.assign(climateForm, payload.climateForm)
   Object.assign(waterForm, payload.waterForm)
   Object.assign(lightingForm, payload.lightingForm)
+  Object.assign(zoneClimateForm, payload.zoneClimateForm)
 
   const success = await applyAutomationProfile()
   if (success) {
     showEditWizard.value = false
   }
-}
-
-function onPidSaved(_config: PidConfigWithMeta): void {
-  void fetchRecentSchedulerTasks()
 }
 
 async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<void> {

@@ -6,10 +6,10 @@
           профиль управления
         </p>
         <h2 class="text-xl font-semibold mt-1 text-[color:var(--text-primary)]">
-          Климат, вода и досветка
+          Вода, коррекция, zone climate и досветка
         </h2>
         <p class="text-sm text-[color:var(--text-muted)] mt-1 max-w-3xl">
-          Значения на карточках берутся из активного рецепта/таргетов. Редактирование доступно через мастер.
+          Общий климат теплицы вынесен на уровень теплицы. Здесь показывается профиль зоны и её опциональные подсистемы.
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -31,9 +31,9 @@
 
     <div class="ui-kpi-grid md:grid-cols-2 xl:grid-cols-4 mt-4">
       <article class="ui-kpi-card">
-        <div class="ui-kpi-label">Форточки</div>
-        <div class="ui-kpi-value !text-lg">{{ climateForm.ventMinPercent }}-{{ climateForm.ventMaxPercent }}%</div>
-        <div class="ui-kpi-hint">Диапазон открытия · каждые {{ climateForm.intervalMinutes }} мин</div>
+        <div class="ui-kpi-label">Zone climate</div>
+        <div class="ui-kpi-value !text-lg">{{ zoneClimateEnabled ? 'enabled' : 'disabled' }}</div>
+        <div class="ui-kpi-hint">CO2 и прикорневая вентиляция</div>
       </article>
 
       <article class="ui-kpi-card">
@@ -70,15 +70,15 @@
 import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
-import type { ClimateFormState, LightingFormState, WaterFormState } from '@/composables/zoneAutomationTypes'
+import type { LightingFormState, WaterFormState } from '@/composables/zoneAutomationTypes'
 
 interface Props {
   canConfigureAutomation: boolean
   telemetryLabel: string
   waterTopologyLabel: string
-  climateForm: ClimateFormState
   waterForm: WaterFormState
   lightingForm: LightingFormState
+  zoneClimateEnabled?: boolean
 }
 
 const props = defineProps<Props>()

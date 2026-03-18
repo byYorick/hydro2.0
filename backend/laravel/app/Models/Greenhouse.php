@@ -53,5 +53,9 @@ class Greenhouse extends Model
         return $this->morphMany(InfrastructureInstance::class, 'owner')
             ->where('owner_type', 'greenhouse');
     }
-}
 
+    public function automationLogicProfiles(): HasMany
+    {
+        return $this->hasMany(GreenhouseAutomationLogicProfile::class);
+    }
+}

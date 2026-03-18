@@ -32,6 +32,7 @@ interface SetupWizardDataFlowsOptions {
   availablePlants: Ref<Plant[]>
   availableRecipes: Ref<Recipe[]>
   availableNodes: Ref<Node[]>
+  greenhouseClimateNodes: Ref<Node[]>
   selectedGreenhouseId: Ref<number | null>
   selectedZoneId: Ref<number | null>
   selectedPlantId: Ref<number | null>
@@ -54,6 +55,7 @@ export type SetupWizardDataFlowActions = SetupWizardDataLoaderActions & {
   selectPlant: () => void
   attachNodesToZone: (assignments?: SetupWizardDeviceAssignments | null) => Promise<void>
   isNodeAttachedToCurrentZone: (nodeId: number) => boolean
+  syncAttachedNodesToCurrentZone: (nodeIds: number[]) => void
 }
 
 export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions): SetupWizardDataFlowActions {
@@ -67,7 +69,10 @@ export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions)
     availablePlants: options.availablePlants,
     availableRecipes: options.availableRecipes,
     availableNodes: options.availableNodes,
+    greenhouseClimateNodes: options.greenhouseClimateNodes,
     selectedGreenhouse: options.selectedGreenhouse,
+    selectedZone: options.selectedZone,
+    selectedZoneId: options.selectedZoneId,
   })
 
   const commands = createSetupWizardEntityCommands({

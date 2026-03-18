@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Plant;
+use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
@@ -119,6 +122,77 @@ class PlantsTest extends TestCase
             'wholesale_price' => 40,
             'retail_price' => 60,
         ]);
+    }
+
+    public function test_admin_can_create_plant_with_recipe_atomically(): void
+    {
+        $user = $this->makeUser();
+
+        $payload = [
+            'plant' => [
+                'name' => 'Салат атомарный',
+                'species' => 'Lactuca sativa',
+                'growing_system' => 'drip',
+                'substrate_type' => 'coco',
+            ],
+            'recipe' => [
+                'name' => 'Салат атомарный — полный цикл',
+                'description' => 'Создано в одном запросе',
+                'revision_description' => 'Initial revision from test',
+                'phases' => [
+                    [
+                        'phase_index' => 0,
+                        'name' => 'Старт',
+                        'duration_hours' => 72,
+                        'ph_target' => 5.8,
+                        'ph_min' => 5.7,
+                        'ph_max' => 5.9,
+                        'ec_target' => 1.4,
+                        'ec_min' => 1.3,
+                        'ec_max' => 1.5,
+                        'temp_air_target' => 23,
+                        'humidity_target' => 62,
+                        'lighting_photoperiod_hours' => 16,
+                        'lighting_start_time' => '06:00:00',
+                        'irrigation_mode' => 'SUBSTRATE',
+                        'irrigation_interval_sec' => 900,
+                        'irrigation_duration_sec' => 15,
+                        'extensions' => [
+                            'day_night' => [
+                                'ph' => ['day' => 5.8, 'night' => 5.8],
+                                'ec' => ['day' => 1.4, 'night' => 1.4],
+                                'temperature' => ['day' => 23, 'night' => 21],
+                                'humidity' => ['day' => 62, 'night' => 66],
+                                'lighting' => ['day_start_time' => '06:00:00', 'day_hours' => 16],
+                            ],
+                            'subsystems' => [
+                                'irrigation' => [
+                                    'targets' => [
+                                        'system_type' => 'drip',
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)->postJson('/api/plants/with-recipe', $payload);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.plant.name', 'Салат атомарный')
+            ->assertJsonPath('data.recipe.name', 'Салат атомарный — полный цикл');
+
+        $plant = Plant::query()->where('name', 'Салат атомарный')->firstOrFail();
+        $recipe = Recipe::query()->where('name', 'Салат атомарный — полный цикл')->firstOrFail();
+        $revision = RecipeRevision::query()->where('recipe_id', $recipe->id)->firstOrFail();
+        $phase = RecipeRevisionPhase::query()->where('recipe_revision_id', $revision->id)->firstOrFail();
+
+        $this->assertDatabaseHas('plants', ['id' => $plant->id, 'growing_system' => 'drip']);
+        $this->assertDatabaseHas('recipe_revisions', ['id' => $revision->id, 'status' => 'PUBLISHED']);
+        $this->assertSame('drip', data_get($phase->extensions, 'subsystems.irrigation.targets.system_type'));
+        $this->assertSame('06:00:00', data_get($phase->extensions, 'day_night.lighting.day_start_time'));
     }
 
     public function test_profitability_endpoint_returns_data(): void

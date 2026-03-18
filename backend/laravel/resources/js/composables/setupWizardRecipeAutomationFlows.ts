@@ -8,6 +8,7 @@ import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel
 import { useAutomationCommandTemplates } from './useAutomationCommandTemplates'
 import { useAutomationDefaults } from './useAutomationDefaults'
 import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
+import { resolveRecipePhaseSystemType } from './recipeSystemType'
 import type {
   Plant,
   Recipe,
@@ -20,6 +21,7 @@ import type {
   ClimateFormState,
   LightingFormState,
   WaterFormState,
+  ZoneClimateFormState,
 } from './zoneAutomationTypes'
 import {
   addRecipePhase as appendRecipePhase,
@@ -45,6 +47,7 @@ interface SetupWizardRecipeAutomationFlowsOptions {
   climateForm: ClimateFormState
   waterForm: WaterFormState
   lightingForm: LightingFormState
+  zoneClimateForm: ZoneClimateFormState
   selectedZone: Ref<Zone | null>
   selectedZoneActiveCycleStatus: ComputedRef<string | null>
   selectedZoneHasActiveCycle: ComputedRef<boolean>
@@ -61,15 +64,7 @@ function toNumberOrNull(value: unknown): number | null {
 }
 
 function resolveSystemTypeFromPhase(phase: RecipePhase | undefined, current: WaterFormState['systemType']): WaterFormState['systemType'] {
-  const rawMode = phase?.irrigation_mode?.toString().toUpperCase() ?? ''
-  if (rawMode === 'SUBSTRATE') {
-    return 'substrate_trays'
-  }
-  if (rawMode === 'RECIRC') {
-    return 'nft'
-  }
-
-  return current
+  return resolveRecipePhaseSystemType(phase, current)
 }
 
 function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
@@ -97,6 +92,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     climateForm,
     waterForm,
     lightingForm,
+    zoneClimateForm,
     selectedZone,
     selectedZoneActiveCycleStatus,
     selectedZoneHasActiveCycle,
@@ -226,23 +222,23 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     showToast('Рецепт выбран', 'success', TOAST_TIMEOUT.NORMAL)
   }
 
-  async function applyAutomation(): Promise<void> {
+  async function applyAutomation(): Promise<boolean> {
     if (!canConfigure.value || !selectedZone.value?.id) {
-      return
+      return false
     }
 
     if (!selectedRecipe.value?.id) {
       await ensureRecipeForPlant(true)
       if (!selectedRecipe.value?.id) {
         showToast('Не удалось найти рецепт для выбранной культуры. Выберите культуру или создайте рецепт.', 'warning', TOAST_TIMEOUT.NORMAL)
-        return
+        return false
       }
     }
 
     const validationError = validateForms({ climateForm, waterForm })
     if (validationError) {
       showToast(validationError, 'error', TOAST_TIMEOUT.NORMAL)
-      return
+      return false
     }
 
     loading.stepAutomation = true
@@ -251,7 +247,9 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
         climateForm,
         waterForm,
         lightingForm,
+        zoneClimateForm,
       }, {
+        includeClimateSubsystem: false,
         automationDefaults: automationDefaults.value,
         automationCommandTemplates: automationCommandTemplates.value,
       })
@@ -271,9 +269,11 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
 
       automationAppliedAt.value = new Date().toISOString()
       showToast('Логика автоматики применена', 'success', TOAST_TIMEOUT.NORMAL)
+      return true
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to apply automation profile', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось применить логику автоматики'), 'error', TOAST_TIMEOUT.NORMAL)
+      return false
     } finally {
       loading.stepAutomation = false
     }

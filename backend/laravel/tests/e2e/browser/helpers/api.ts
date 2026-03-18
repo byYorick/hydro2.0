@@ -29,6 +29,51 @@ export interface TestRecipePhase {
   };
 }
 
+function buildCanonicalTestRecipePhasePayload(phase: TestRecipePhase): Record<string, any> {
+  const phTarget = phase.targets.ph ?? null
+  const ecTarget = phase.targets.ec ?? null
+  const tempAirTarget = phase.targets.temp_air ?? null
+  const humidityTarget = phase.targets.humidity_air ?? null
+  const lightHours = phase.targets.light_hours ?? null
+  const irrigationInterval = phase.targets.irrigation_interval_sec ?? null
+  const irrigationDuration = phase.targets.irrigation_duration_sec ?? null
+
+  return {
+    phase_index: phase.phase_index,
+    name: phase.name,
+    duration_hours: phase.duration_hours,
+    ph_target: phTarget,
+    ph_min: phTarget !== null ? phTarget - 0.2 : null,
+    ph_max: phTarget !== null ? phTarget + 0.2 : null,
+    ec_target: ecTarget,
+    ec_min: ecTarget !== null ? ecTarget - 0.2 : null,
+    ec_max: ecTarget !== null ? ecTarget + 0.2 : null,
+    temp_air_target: tempAirTarget,
+    humidity_target: humidityTarget,
+    lighting_photoperiod_hours: lightHours,
+    lighting_start_time: '06:00:00',
+    irrigation_mode: 'SUBSTRATE',
+    irrigation_interval_sec: irrigationInterval,
+    irrigation_duration_sec: irrigationDuration,
+    extensions: {
+      day_night: {
+        ph: { day: phTarget, night: phTarget },
+        ec: { day: ecTarget, night: ecTarget },
+        temperature: { day: tempAirTarget, night: tempAirTarget },
+        humidity: { day: humidityTarget, night: humidityTarget },
+        lighting: { day_start_time: '06:00:00', day_hours: lightHours },
+      },
+      subsystems: {
+        irrigation: {
+          targets: {
+            system_type: 'drip',
+          },
+        },
+      },
+    },
+  };
+}
+
 export interface TestZone {
   id: number;
   name: string;
@@ -248,44 +293,10 @@ export class APITestHelper {
     // Создаем фазы ревизии, если они указаны
     if (phases && phases.length > 0) {
       for (const phase of phases) {
-        const phasePayload: any = {
-          phase_index: phase.phase_index,
-          name: phase.name,
-          duration_hours: phase.duration_hours,
-        };
-
-        // Преобразуем targets в новую структуру (колонки вместо JSON)
-        if (phase.targets.ph !== undefined) {
-          phasePayload.ph_target = phase.targets.ph;
-          phasePayload.ph_min = phase.targets.ph - 0.2;
-          phasePayload.ph_max = phase.targets.ph + 0.2;
-        }
-        if (phase.targets.ec !== undefined) {
-          phasePayload.ec_target = phase.targets.ec;
-          phasePayload.ec_min = phase.targets.ec - 0.2;
-          phasePayload.ec_max = phase.targets.ec + 0.2;
-        }
-        if (phase.targets.temp_air !== undefined) {
-          phasePayload.temp_air_target = phase.targets.temp_air;
-        }
-        if (phase.targets.humidity_air !== undefined) {
-          phasePayload.humidity_target = phase.targets.humidity_air;
-        }
-        if (phase.targets.light_hours !== undefined) {
-          phasePayload.lighting_photoperiod_hours = phase.targets.light_hours;
-        }
-        if (phase.targets.irrigation_interval_sec !== undefined) {
-          phasePayload.irrigation_interval_sec = phase.targets.irrigation_interval_sec;
-        }
-        if (phase.targets.irrigation_duration_sec !== undefined) {
-          phasePayload.irrigation_duration_sec = phase.targets.irrigation_duration_sec;
-        }
-        phasePayload.irrigation_mode = 'SUBSTRATE';
-
         await this.postWithRetry(
           `${baseURL}/api/recipe-revisions/${revision.id}/phases`,
           'create recipe revision phase',
-          phasePayload,
+          buildCanonicalTestRecipePhasePayload(phase),
           5
         );
       }

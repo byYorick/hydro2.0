@@ -17,9 +17,29 @@ vi.mock('@/Components/Button.vue', () => ({
   },
 }))
 
+vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
+  default: {
+    name: 'ZoneAutomationProfileSections',
+    props: ['waterForm', 'lightingForm', 'zoneClimateForm', 'isSystemTypeLocked'],
+    template: `
+      <div>
+        <div>Полив и накопление</div>
+        <div>Коррекция</div>
+        <div>Zone climate</div>
+        <div>Свет</div>
+        <input
+          data-test="tanks-input"
+          :disabled="isSystemTypeLocked || waterForm.systemType === 'drip'"
+          :value="waterForm.tanksCount"
+        />
+      </div>
+    `,
+  },
+}))
+
 import ZoneAutomationEditWizard from '../ZoneAutomationEditWizard.vue'
 
-function createProps() {
+function createProps(overrides: Record<string, unknown> = {}) {
   return {
     open: true,
     isApplying: false,
@@ -44,7 +64,7 @@ function createProps() {
     },
     waterForm: {
       systemType: 'drip',
-      tanksCount: 2,
+      tanksCount: 3,
       cleanTankFillL: 300,
       nutrientTankTargetL: 280,
       irrigationBatchL: 20,
@@ -59,7 +79,7 @@ function createProps() {
       ecPct: 10,
       valveSwitching: true,
       correctionDuringIrrigation: true,
-      enableDrainControl: false,
+      enableDrainControl: true,
       drainTargetPercent: 20,
       diagnosticsEnabled: true,
       diagnosticsIntervalMinutes: 15,
@@ -84,10 +104,6 @@ function createProps() {
       twoTankCleanFillStopSteps: 1,
       twoTankSolutionFillStartSteps: 3,
       twoTankSolutionFillStopSteps: 3,
-      twoTankPrepareRecirculationStartSteps: 3,
-      twoTankPrepareRecirculationStopSteps: 3,
-      twoTankIrrigationRecoveryStartSteps: 4,
-      twoTankIrrigationRecoveryStopSteps: 3,
       refillRequiredNodeTypes: 'irrig,climate,light',
       refillPreferredChannel: 'fill_valve',
       solutionChangeEnabled: false,
@@ -106,36 +122,33 @@ function createProps() {
       manualIntensity: 75,
       manualDurationHours: 4,
     },
+    zoneClimateForm: {
+      enabled: true,
+    },
+    ...overrides,
   }
 }
 
 describe('ZoneAutomationEditWizard.vue', () => {
-  it('показывает пояснение про observe-window и отсутствие legacy wait state', async () => {
+  it('показывает новый текст и секции вместо legacy wizard steps', () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),
     })
 
-    const nextButton = wrapper.findAll('button').find((button) => button.text() === 'Далее')
-    expect(nextButton).toBeTruthy()
-    await nextButton!.trigger('click')
-
-    expect(wrapper.text()).not.toContain('Legacy fallback hold для EC')
-    expect(wrapper.text()).toContain('Advanced runtime Automation Engine')
-    expect(wrapper.text()).toContain('Observe-window после дозы больше не редактируется в этом wizard')
-    expect(wrapper.text()).toContain('Legacy wait-поля больше не хранятся')
-    expect(wrapper.text()).not.toContain('Подробное описание параметров AE (на русском)')
+    expect(wrapper.text()).toContain('Общий климат теплицы редактируется на уровне теплицы')
+    expect(wrapper.text()).toContain('Полив и накопление')
+    expect(wrapper.text()).toContain('Коррекция')
+    expect(wrapper.text()).toContain('Zone climate')
+    expect(wrapper.text()).toContain('Свет')
+    expect(wrapper.text()).not.toContain('Observe-window после дозы')
   })
 
-  it('блокирует поле "Баков" для drip-системы', async () => {
+  it('блокирует поле "Баков" для drip-системы', () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),
     })
 
-    const nextButton = wrapper.findAll('button').find((button) => button.text() === 'Далее')
-    expect(nextButton).toBeTruthy()
-    await nextButton!.trigger('click')
-
-    const tanksInput = wrapper.find('input[min="2"][max="3"]')
+    const tanksInput = wrapper.find('[data-test="tanks-input"]')
     expect(tanksInput.exists()).toBe(true)
     expect(tanksInput.attributes('disabled')).toBeDefined()
   })
@@ -144,15 +157,6 @@ describe('ZoneAutomationEditWizard.vue', () => {
     const wrapper = mount(ZoneAutomationEditWizard, {
       props: createProps(),
     })
-
-    const vm = wrapper.vm as any
-    vm.draftWaterForm.systemType = 'drip'
-    vm.draftWaterForm.tanksCount = 3
-    vm.draftWaterForm.enableDrainControl = true
-
-    const nextButtons = () => wrapper.findAll('button').filter((button) => button.text() === 'Далее')
-    await nextButtons()[0].trigger('click')
-    await nextButtons()[0].trigger('click')
 
     const saveButton = wrapper.findAll('button').find((button) => button.text() === 'Сохранить')
     expect(saveButton).toBeTruthy()
@@ -164,5 +168,6 @@ describe('ZoneAutomationEditWizard.vue', () => {
     expect(payload.waterForm.systemType).toBe('drip')
     expect(payload.waterForm.tanksCount).toBe(2)
     expect(payload.waterForm.enableDrainControl).toBe(false)
+    expect(payload.zoneClimateForm.enabled).toBe(true)
   })
 })

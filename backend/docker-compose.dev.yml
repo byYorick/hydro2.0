@@ -71,6 +71,8 @@ services:
       - APP_ENV=local
       - APP_DEBUG=true
       - APP_DEBUG_MODE=true
+      - LARAVEL_AUTO_SEED_ON_BOOT=0
+      - LARAVEL_ENSURE_E2E_USER_ON_BOOT=0
       # Разделяем кеши bootstrap между dev и e2e, чтобы не было перекрестного DB_HOST
       - APP_CONFIG_CACHE=/tmp/laravel-config-local.php
       - APP_SERVICES_CACHE=/tmp/laravel-services-local.php

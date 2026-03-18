@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
+use App\Http\Requests\SetupWizardGreenhouseClimateDevicesRequest;
 use App\Http\Requests\SetupWizardValidateDevicesRequest;
 use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Models\InfrastructureInstance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -22,7 +24,17 @@ class SetupWizardController extends Controller
     /**
      * @var array<int, string>
      */
-    private const ALL_ASSIGNMENT_ROLES = ['irrigation', 'ph_correction', 'ec_correction', 'accumulation', 'climate', 'light'];
+    private const ALL_ASSIGNMENT_ROLES = [
+        'irrigation',
+        'ph_correction',
+        'ec_correction',
+        'accumulation',
+        'climate',
+        'light',
+        'co2_sensor',
+        'co2_actuator',
+        'root_vent_actuator',
+    ];
 
     /**
      * Серверная валидация обязательного набора устройств для шага 4 мастера настройки.
@@ -111,6 +123,9 @@ class SetupWizardController extends Controller
                 }
 
                 $channelId = $this->findFirstMatchingActuatorChannelId($node, $spec['channel_candidates']);
+                if (($spec['direction'] ?? 'actuator') === 'sensor') {
+                    $channelId = $this->findFirstMatchingChannelId($node, $spec['channel_candidates'], 'sensor');
+                }
                 if ($channelId === null) {
                     if ($spec['required']) {
                         throw ValidationException::withMessages([
@@ -150,7 +165,7 @@ class SetupWizardController extends Controller
                     ['node_channel_id' => $channelId],
                     [
                         'infrastructure_instance_id' => $instance->id,
-                        'direction' => 'actuator',
+                        'direction' => $spec['direction'] ?? 'actuator',
                         'role' => $spec['binding_role'],
                     ]
                 );
@@ -176,6 +191,98 @@ class SetupWizardController extends Controller
                     'ec_correction' => (int) $assignments['ec_correction'],
                     'accumulation' => (int) $assignments['accumulation'],
                 ],
+                'applied_bindings' => $appliedBindings,
+            ],
+        ]);
+    }
+
+    public function validateGreenhouseClimateDevices(SetupWizardGreenhouseClimateDevicesRequest $request): JsonResponse
+    {
+        [$greenhouse, $nodesByRole, $enabled] = $this->resolveGreenhouseClimateBindings($request);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'validated' => true,
+                'enabled' => $enabled,
+                'greenhouse_id' => $greenhouse->id,
+                'roles' => [
+                    'climate_sensors' => array_values($nodesByRole['climate_sensor']->keys()->all()),
+                    'weather_station_sensors' => array_values($nodesByRole['weather_station_sensor']->keys()->all()),
+                    'vent_actuators' => array_values($nodesByRole['vent_actuator']->keys()->all()),
+                    'fan_actuators' => array_values($nodesByRole['fan_actuator']->keys()->all()),
+                ],
+            ],
+        ]);
+    }
+
+    public function applyGreenhouseClimateBindings(SetupWizardGreenhouseClimateDevicesRequest $request): JsonResponse
+    {
+        [$greenhouse, $nodesByRole, $enabled] = $this->resolveGreenhouseClimateBindings($request);
+
+        $appliedBindings = [];
+
+        DB::transaction(function () use ($greenhouse, $nodesByRole, &$appliedBindings): void {
+            foreach ($this->greenhouseClimateBindingSpecs() as $spec) {
+                $role = $spec['binding_role'];
+                $nodes = $nodesByRole[$role] ?? collect();
+
+                $this->deleteBindingsByRoleForOwner('greenhouse', (int) $greenhouse->id, $role);
+
+                foreach ($nodes as $node) {
+                    if (! $node instanceof DeviceNode) {
+                        continue;
+                    }
+
+                    $channelIds = $this->findMatchingChannelIds(
+                        $node,
+                        $spec['channel_candidates'],
+                        $spec['direction']
+                    );
+
+                    if ($channelIds === []) {
+                        throw ValidationException::withMessages([
+                            $role => ["Для роли {$this->roleLabel($role)} не найден подходящий канал на узле {$node->uid}."],
+                        ]);
+                    }
+
+                    $instance = InfrastructureInstance::query()->create([
+                        'owner_type' => 'greenhouse',
+                        'owner_id' => $greenhouse->id,
+                        'label' => "{$spec['label']} · {$node->uid}",
+                        'asset_type' => $spec['asset_type'],
+                        'required' => (bool) $spec['required'],
+                    ]);
+
+                    foreach ($channelIds as $channelId) {
+                        ChannelBinding::query()->updateOrCreate(
+                            ['node_channel_id' => $channelId],
+                            [
+                                'infrastructure_instance_id' => $instance->id,
+                                'direction' => $spec['direction'],
+                                'role' => $role,
+                            ]
+                        );
+
+                        $appliedBindings[] = [
+                            'binding_role' => $role,
+                            'node_id' => (int) $node->id,
+                            'node_uid' => (string) $node->uid,
+                            'channel_id' => (int) $channelId,
+                        ];
+                    }
+                }
+            }
+
+            $this->cleanupEmptyInfrastructureInstances('greenhouse', (int) $greenhouse->id);
+        });
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'validated' => true,
+                'enabled' => $enabled,
+                'greenhouse_id' => $greenhouse->id,
                 'applied_bindings' => $appliedBindings,
             ],
         ]);
@@ -294,7 +401,8 @@ class SetupWizardController extends Controller
      *   label:string,
      *   asset_type:string,
      *   required:bool,
-     *   channel_candidates:array<int, string>
+     *   channel_candidates:array<int, string>,
+     *   direction:string
      * }>
      */
     private function bindingSpecs(): array
@@ -307,6 +415,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_main', 'main_pump', 'pump_irrigation', 'valve_irrigation', 'pump_in'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'irrigation',
@@ -315,6 +424,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'DRAIN',
                 'required' => true,
                 'channel_candidates' => ['drain', 'drain_main', 'drain_valve', 'valve_solution_supply', 'valve_solution_fill', 'valve_irrigation'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'ph_correction',
@@ -323,6 +433,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_acid', 'ph_acid_pump'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'ph_correction',
@@ -331,6 +442,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_base', 'ph_base_pump'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'ec_correction',
@@ -339,6 +451,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_a', 'ec_npk_pump'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'ec_correction',
@@ -347,6 +460,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_b', 'ec_calcium_pump'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'ec_correction',
@@ -355,6 +469,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_c', 'ec_magnesium_pump'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'ec_correction',
@@ -363,6 +478,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'PUMP',
                 'required' => true,
                 'channel_candidates' => ['pump_d', 'ec_micro_pump'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'climate',
@@ -371,6 +487,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'FAN',
                 'required' => false,
                 'channel_candidates' => ['vent', 'vent_drive', 'vent_window_pct', 'fan', 'fan_air'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'climate',
@@ -379,6 +496,7 @@ class SetupWizardController extends Controller
                 'asset_type' => 'HEATER',
                 'required' => false,
                 'channel_candidates' => ['heater', 'heater_air'],
+                'direction' => 'actuator',
             ],
             [
                 'assignment_role' => 'light',
@@ -387,6 +505,87 @@ class SetupWizardController extends Controller
                 'asset_type' => 'LIGHT',
                 'required' => false,
                 'channel_candidates' => ['light', 'light_main', 'white_light', 'uv_light'],
+                'direction' => 'actuator',
+            ],
+            [
+                'assignment_role' => 'co2_sensor',
+                'binding_role' => 'co2_sensor',
+                'label' => 'Датчик CO2 зоны',
+                'asset_type' => 'OTHER',
+                'required' => false,
+                'channel_candidates' => ['co2_ppm'],
+                'direction' => 'sensor',
+            ],
+            [
+                'assignment_role' => 'co2_actuator',
+                'binding_role' => 'co2_actuator',
+                'label' => 'CO2 инжектор зоны',
+                'asset_type' => 'CO2_INJECTOR',
+                'required' => false,
+                'channel_candidates' => ['co2_inject'],
+                'direction' => 'actuator',
+            ],
+            [
+                'assignment_role' => 'root_vent_actuator',
+                'binding_role' => 'root_vent_actuator',
+                'label' => 'Прикорневая вентиляция',
+                'asset_type' => 'FAN',
+                'required' => false,
+                'channel_candidates' => ['root_vent', 'fan_root'],
+                'direction' => 'actuator',
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int, array{
+     *   request_key:string,
+     *   binding_role:string,
+     *   label:string,
+     *   asset_type:string,
+     *   required:bool,
+     *   channel_candidates:array<int, string>,
+     *   direction:string
+     * }>
+     */
+    private function greenhouseClimateBindingSpecs(): array
+    {
+        return [
+            [
+                'request_key' => 'climate_sensors',
+                'binding_role' => 'climate_sensor',
+                'label' => 'Климат-сенсор',
+                'asset_type' => 'OTHER',
+                'required' => true,
+                'channel_candidates' => ['temp_air', 'humidity_air', 'co2_ppm'],
+                'direction' => 'sensor',
+            ],
+            [
+                'request_key' => 'weather_station_sensors',
+                'binding_role' => 'weather_station_sensor',
+                'label' => 'Метеостанция',
+                'asset_type' => 'OTHER',
+                'required' => false,
+                'channel_candidates' => ['outdoor_temp', 'outdoor_humidity', 'wind_speed', 'rain', 'pressure'],
+                'direction' => 'sensor',
+            ],
+            [
+                'request_key' => 'vent_actuators',
+                'binding_role' => 'vent_actuator',
+                'label' => 'Привод форточек',
+                'asset_type' => 'VENT',
+                'required' => false,
+                'channel_candidates' => ['vent_drive', 'vent_window_pct'],
+                'direction' => 'actuator',
+            ],
+            [
+                'request_key' => 'fan_actuators',
+                'binding_role' => 'fan_actuator',
+                'label' => 'Вентилятор',
+                'asset_type' => 'FAN',
+                'required' => false,
+                'channel_candidates' => ['fan_air'],
+                'direction' => 'actuator',
             ],
         ];
     }
@@ -396,7 +595,27 @@ class SetupWizardController extends Controller
      */
     private function findFirstMatchingActuatorChannelId(DeviceNode $node, array $candidates): ?int
     {
+        return $this->findFirstMatchingChannelId($node, $candidates, 'actuator');
+    }
+
+    /**
+     * @param  array<int, string>  $candidates
+     */
+    private function findFirstMatchingChannelId(DeviceNode $node, array $candidates, string $direction): ?int
+    {
+        $matches = $this->findMatchingChannelIds($node, $candidates, $direction);
+
+        return $matches[0] ?? null;
+    }
+
+    /**
+     * @param  array<int, string>  $candidates
+     * @return array<int, int>
+     */
+    private function findMatchingChannelIds(DeviceNode $node, array $candidates, string $direction): array
+    {
         $normalizedCandidates = array_map(static fn (string $channel): string => strtolower($channel), $candidates);
+        $matches = [];
 
         foreach ($node->channels as $channel) {
             $name = strtolower((string) ($channel->channel ?? ''));
@@ -405,24 +624,38 @@ class SetupWizardController extends Controller
             }
 
             $type = strtolower((string) ($channel->type ?? ''));
-            if ($type !== '' && $type !== 'actuator') {
+            if ($type !== '' && $type !== strtolower($direction)) {
                 continue;
             }
 
-            return (int) $channel->id;
+            $matches[] = (int) $channel->id;
         }
 
-        return null;
+        return array_values(array_unique($matches));
     }
 
     private function deleteBindingsByRole(int $zoneId, string $bindingRole): void
     {
+        $this->deleteBindingsByRoleForOwner('zone', $zoneId, $bindingRole);
+    }
+
+    private function deleteBindingsByRoleForOwner(string $ownerType, int $ownerId, string $bindingRole): void
+    {
         ChannelBinding::query()
             ->where('role', $bindingRole)
-            ->whereHas('infrastructureInstance', function ($query) use ($zoneId) {
-                $query->where('owner_type', 'zone')
-                    ->where('owner_id', $zoneId);
+            ->whereHas('infrastructureInstance', function ($query) use ($ownerType, $ownerId) {
+                $query->where('owner_type', $ownerType)
+                    ->where('owner_id', $ownerId);
             })
+            ->delete();
+    }
+
+    private function cleanupEmptyInfrastructureInstances(string $ownerType, int $ownerId): void
+    {
+        InfrastructureInstance::query()
+            ->where('owner_type', $ownerType)
+            ->where('owner_id', $ownerId)
+            ->doesntHave('channelBindings')
             ->delete();
     }
 
@@ -482,6 +715,41 @@ class SetupWizardController extends Controller
                 || $this->hasAnyChannel($channels, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main']);
         }
 
+        if ($role === 'co2_sensor') {
+            return $type === 'climate'
+                || $this->hasAnyChannel($channels, ['co2_ppm']);
+        }
+
+        if ($role === 'co2_actuator') {
+            return $type === 'climate'
+                || $this->hasAnyChannel($channels, ['co2_inject']);
+        }
+
+        if ($role === 'root_vent_actuator') {
+            return $type === 'climate'
+                || $this->hasAnyChannel($channels, ['root_vent', 'fan_root']);
+        }
+
+        if ($role === 'climate_sensor') {
+            return $type === 'climate'
+                || $this->hasAnyChannel($channels, ['temp_air', 'humidity_air', 'co2_ppm']);
+        }
+
+        if ($role === 'weather_station_sensor') {
+            return $type === 'weather'
+                || $this->hasAnyChannel($channels, ['outdoor_temp', 'outdoor_humidity', 'wind_speed', 'rain', 'pressure']);
+        }
+
+        if ($role === 'vent_actuator') {
+            return $type === 'climate'
+                || $this->hasAnyChannel($channels, ['vent_drive', 'vent_window_pct']);
+        }
+
+        if ($role === 'fan_actuator') {
+            return $type === 'climate'
+                || $this->hasAnyChannel($channels, ['fan_air']);
+        }
+
         return false;
     }
 
@@ -510,7 +778,107 @@ class SetupWizardController extends Controller
             'accumulation' => 'накопительный узел (общий с поливом)',
             'climate' => 'климат',
             'light' => 'свет',
+            'co2_sensor' => 'датчик CO2 зоны',
+            'co2_actuator' => 'CO2 инжектор зоны',
+            'root_vent_actuator' => 'прикорневая вентиляция',
+            'climate_sensor' => 'климат-сенсор теплицы',
+            'weather_station_sensor' => 'метеостанция',
+            'vent_actuator' => 'привод форточек',
+            'fan_actuator' => 'вентилятор теплицы',
             default => $role,
         };
+    }
+
+    /**
+     * @return array{0: Greenhouse, 1: array<string, Collection<int, DeviceNode>>, 2: bool}
+     */
+    private function resolveGreenhouseClimateBindings(SetupWizardGreenhouseClimateDevicesRequest $request): array
+    {
+        $validated = $request->validated();
+        $user = $request->user();
+        if (! $user) {
+            abort(401, 'Unauthorized');
+        }
+
+        $greenhouse = Greenhouse::query()->findOrFail((int) $validated['greenhouse_id']);
+        if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+            abort(403, 'Forbidden: Access denied to target greenhouse');
+        }
+
+        $enabled = (bool) ($validated['enabled'] ?? true);
+        $roleToNodeIds = [
+            'climate_sensor' => array_values(array_unique(array_map('intval', $validated['climate_sensors'] ?? []))),
+            'weather_station_sensor' => array_values(array_unique(array_map('intval', $validated['weather_station_sensors'] ?? []))),
+            'vent_actuator' => array_values(array_unique(array_map('intval', $validated['vent_actuators'] ?? []))),
+            'fan_actuator' => array_values(array_unique(array_map('intval', $validated['fan_actuators'] ?? []))),
+        ];
+
+        if ($enabled && $roleToNodeIds['climate_sensor'] === []) {
+            throw ValidationException::withMessages([
+                'climate_sensors' => ['Нужен хотя бы один климатический сенсор теплицы.'],
+            ]);
+        }
+
+        if ($enabled && $roleToNodeIds['vent_actuator'] === [] && $roleToNodeIds['fan_actuator'] === []) {
+            throw ValidationException::withMessages([
+                'vent_actuators' => ['Нужен хотя бы один actuator: форточки или вентилятор.'],
+                'fan_actuators' => ['Нужен хотя бы один actuator: форточки или вентилятор.'],
+            ]);
+        }
+
+        $allNodeIds = [];
+        foreach ($roleToNodeIds as $nodeIds) {
+            foreach ($nodeIds as $nodeId) {
+                $allNodeIds[] = $nodeId;
+            }
+        }
+        $allNodeIds = array_values(array_unique($allNodeIds));
+
+        $nodes = DeviceNode::query()
+            ->with(['channels', 'zone:id,greenhouse_id'])
+            ->whereIn('id', $allNodeIds)
+            ->get()
+            ->keyBy('id');
+
+        if ($nodes->count() !== count($allNodeIds)) {
+            throw ValidationException::withMessages([
+                'greenhouse_id' => ['Часть выбранных узлов не найдена. Обновите список устройств и повторите попытку.'],
+            ]);
+        }
+
+        $nodesByRole = [];
+        foreach ($roleToNodeIds as $role => $nodeIds) {
+            $nodesByRole[$role] = collect();
+
+            foreach ($nodeIds as $nodeId) {
+                $node = $nodes->get($nodeId);
+                if (! $node instanceof DeviceNode) {
+                    continue;
+                }
+
+                if (! ZoneAccessHelper::canAccessNode($user, $node)) {
+                    throw ValidationException::withMessages([
+                        $role => ["Нет доступа к узлу #{$nodeId}."],
+                    ]);
+                }
+
+                $nodeGreenhouseId = (int) ($node->zone?->greenhouse_id ?? 0);
+                if ($node->zone_id !== null && $nodeGreenhouseId !== (int) $greenhouse->id) {
+                    throw ValidationException::withMessages([
+                        $role => ["Узел {$node->uid} уже относится к другой теплице."],
+                    ]);
+                }
+
+                if (! $this->matchesRole($node, $role)) {
+                    throw ValidationException::withMessages([
+                        $role => ["Узел {$node->uid} не подходит для роли {$this->roleLabel($role)}."],
+                    ]);
+                }
+
+                $nodesByRole[$role]->put((int) $node->id, $node);
+            }
+        }
+
+        return [$greenhouse, $nodesByRole, $enabled];
     }
 }

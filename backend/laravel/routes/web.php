@@ -4,6 +4,7 @@ use App\Http\Controllers\CycleCenterController;
 use App\Http\Controllers\NutrientProductController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RecipePageController;
 use App\Models\Alert;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
@@ -625,6 +626,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
         return Inertia::render('Setup/Wizard', [
             'auth' => ['user' => ['role' => $user->role ?? 'admin']],
+            'sensorCalibrationSettings' => SystemAutomationSetting::forNamespace('sensor_calibration'),
         ]);
     })->name('setup.wizard')->middleware('role:admin,agronomist');
 
@@ -1408,97 +1410,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
         })->name('devices.show');
     });
 
-    Route::prefix('recipes')->group(function () {
-        Route::get('/create', function () {
-            return Inertia::render('Recipes/Edit', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => null,
-            ]);
-        })->name('recipes.create');
-
-        Route::get('/', function () {
-            $cacheKey = 'recipes_list_'.auth()->id();
-            $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
-                return Recipe::query()
-                    ->select(['id', 'name', 'description'])
-                    ->with(['revisions.phases'])
-                    ->get()
-                    ->map(function ($recipe) {
-                        $phasesCount = $recipe->revisions->sum(function ($revision) {
-                            return $revision->phases->count();
-                        });
-
-                        return [
-                            'id' => $recipe->id,
-                            'name' => $recipe->name,
-                            'description' => $recipe->description,
-                            'phases_count' => $phasesCount,
-                        ];
-                    });
-            });
-
-            return Inertia::render('Recipes/Index', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipes' => $recipes,
-            ]);
-        })->name('recipes.index');
-
-        Route::get('/{recipeId}', function (int $recipeId) {
-            $recipe = Recipe::query()
-                ->with([
-                    'latestPublishedRevision.phases.npkProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.calciumProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.magnesiumProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.microProduct:id,manufacturer,name,component',
-                ])
-                ->findOrFail($recipeId);
-
-            $recipeArray = $recipe->toArray();
-            $recipeArray['phases'] = $recipe->latestPublishedRevision?->phases?->toArray() ?? [];
-            $recipeArray['published_revision_id'] = $recipe->latestPublishedRevision?->id;
-
-            return Inertia::render('Recipes/Show', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipeArray,
-            ]);
-        })->name('recipes.show');
-
-        Route::get('/create', function () {
-            $recipe = new \App\Models\Recipe;
-            $recipe->phases = [];
-
-            return Inertia::render('Recipes/Edit', [
-                'recipe' => $recipe,
-            ]);
-        })->name('recipes.create');
-
-        Route::get('/{recipeId}/edit', function (int $recipeId) {
-            $recipe = Recipe::query()
-                ->with([
-                    'latestDraftRevision.phases.npkProduct:id,manufacturer,name,component',
-                    'latestDraftRevision.phases.calciumProduct:id,manufacturer,name,component',
-                    'latestDraftRevision.phases.magnesiumProduct:id,manufacturer,name,component',
-                    'latestDraftRevision.phases.microProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.npkProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.calciumProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.magnesiumProduct:id,manufacturer,name,component',
-                    'latestPublishedRevision.phases.microProduct:id,manufacturer,name,component',
-                ])
-                ->findOrFail($recipeId);
-
-            $phases = $recipe->latestDraftRevision?->phases
-                ?? $recipe->latestPublishedRevision?->phases
-                ?? collect();
-            $recipeArray = $recipe->toArray();
-            $recipeArray['phases'] = $phases->toArray();
-            $recipeArray['draft_revision_id'] = $recipe->latestDraftRevision?->id;
-            $recipeArray['published_revision_id'] = $recipe->latestPublishedRevision?->id;
-
-            return Inertia::render('Recipes/Edit', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipeArray,
-            ]);
-        })->name('recipes.edit');
+    Route::prefix('recipes')->controller(RecipePageController::class)->group(function () {
+        Route::get('/', 'index')->name('recipes.index');
+        Route::get('/create', 'create')->name('recipes.create');
+        Route::get('/{recipe}', 'show')->name('recipes.show');
+        Route::get('/{recipe}/edit', 'edit')->name('recipes.edit');
     });
 
     Route::get('/alerts', function () {

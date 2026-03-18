@@ -10,6 +10,9 @@ Recipe Engine — это подсистема, которая управляет
 - ✅ Центр истины — `GrowCycle` вместо `Zone`
 - ✅ Цели хранятся по колонкам, а не в JSON
 - ✅ Единый контракт через `EffectiveTargetsService`
+- ✅ Канонический phase write-contract: flat columns + `extensions.day_night` + `extensions.subsystems.irrigation.targets.system_type`
+- ✅ `targets` на выдаче — derived compatibility/view helper, а не source of truth
+- ✅ `PlantCreateModal` больше не оркестрирует `plant -> recipe -> revision -> phases` на фронте; используется атомарный backend flow
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -43,6 +46,22 @@ Recipe Engine отвечает за:
 9. `GrowCycleTransition` — история переходов
 
 **Ключевой принцип:** Рецепты версионируются, активный цикл использует зафиксированную ревизию.
+
+### 2.1. Канонический контракт `RecipeRevisionPhase`
+
+Primary write-shape:
+
+- flat поля таблицы `recipe_revision_phases`;
+- `extensions.day_night`;
+- `extensions.subsystems.irrigation.targets.system_type`.
+
+Read-shape для API/Inertia:
+
+- те же flat поля;
+- `extensions` как есть;
+- derived `targets` для UI/read-model совместимости.
+
+Legacy `extensions.day_target/night_target` больше не записываются. Если такие данные встречаются в старых строках, они нормализуются в presenter layer до `extensions.day_night`.
 
 **Пример структуры RecipeRevisionPhase:**
 ```sql

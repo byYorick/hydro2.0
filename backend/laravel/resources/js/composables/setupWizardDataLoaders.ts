@@ -30,7 +30,15 @@ interface SetupWizardDataLoadersOptions {
   availablePlants: Ref<Plant[]>
   availableRecipes: Ref<Recipe[]>
   availableNodes: Ref<Node[]>
+  greenhouseClimateNodes: Ref<Node[]>
   selectedGreenhouse: Ref<Greenhouse | null>
+  selectedZone: Ref<Zone | null>
+  selectedZoneId: Ref<number | null>
+}
+
+interface SetupWizardNodeLoadOptions {
+  greenhouseId?: number | null
+  includeUnassigned?: boolean
 }
 
 export interface SetupWizardDataLoaderActions {
@@ -40,6 +48,7 @@ export interface SetupWizardDataLoaderActions {
   loadPlants: () => Promise<void>
   loadRecipes: () => Promise<void>
   loadAvailableNodes: () => Promise<void>
+  loadGreenhouseClimateNodes: (options?: SetupWizardNodeLoadOptions) => Promise<void>
 }
 
 export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOptions): SetupWizardDataLoaderActions {
@@ -53,7 +62,10 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
     availablePlants,
     availableRecipes,
     availableNodes,
+    greenhouseClimateNodes,
     selectedGreenhouse,
+    selectedZone,
+    selectedZoneId,
   } = options
 
   async function loadGreenhouseTypes(): Promise<void> {
@@ -134,8 +146,14 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
   async function loadAvailableNodes(): Promise<void> {
     loading.nodes = true
     try {
+      const zoneId = selectedZone.value?.id ?? selectedZoneId.value ?? null
       const response = await api.get('/nodes', {
-        params: { unassigned: true },
+        params: zoneId
+          ? {
+            zone_id: zoneId,
+            include_unassigned: true,
+          }
+          : { unassigned: true },
       })
 
       availableNodes.value = extractCollection<Node>(response.data)
@@ -148,6 +166,32 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
     }
   }
 
+  async function loadGreenhouseClimateNodes(options?: SetupWizardNodeLoadOptions): Promise<void> {
+    const greenhouseId = options?.greenhouseId ?? selectedGreenhouse.value?.id ?? null
+    if (!greenhouseId) {
+      greenhouseClimateNodes.value = []
+      return
+    }
+
+    loading.nodes = true
+    try {
+      const response = await api.get('/nodes', {
+        params: {
+          greenhouse_id: greenhouseId,
+          include_unassigned: options?.includeUnassigned ?? true,
+        },
+      })
+
+      greenhouseClimateNodes.value = extractCollection<Node>(response.data)
+    } catch (error) {
+      logger.error('[Setup/Wizard] Failed to load greenhouse climate nodes', { error })
+      showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить greenhouse climate узлы'), 'error', TOAST_TIMEOUT.NORMAL)
+      greenhouseClimateNodes.value = []
+    } finally {
+      loading.nodes = false
+    }
+  }
+
   return {
     loadGreenhouseTypes,
     loadGreenhouses,
@@ -155,5 +199,6 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
     loadPlants,
     loadRecipes,
     loadAvailableNodes,
+    loadGreenhouseClimateNodes,
   }
 }

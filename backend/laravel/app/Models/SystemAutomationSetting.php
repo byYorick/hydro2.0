@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SystemAutomationSettingsCatalog;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -31,9 +32,7 @@ class SystemAutomationSetting extends Model
                     ->value('config');
 
                 if (! is_array($config)) {
-                    throw new \RuntimeException(
-                        "system_automation_settings namespace '{$namespace}' not found"
-                    );
+                    return SystemAutomationSettingsCatalog::defaults($namespace);
                 }
 
                 return $config;

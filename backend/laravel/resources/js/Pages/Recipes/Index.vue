@@ -13,27 +13,30 @@
             Управление рецептами выращивания и фазами для автоматических циклов.
           </p>
         </div>
-        <Button
+        <Link
           v-if="canConfigureRecipes"
-          size="sm"
-          variant="primary"
-          @click="openRecipeWizard"
+          href="/recipes/create"
         >
-          <svg
-            class="w-4 h-4 mr-2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+          <Button
+            size="sm"
+            variant="primary"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-          Новый рецепт
-        </Button>
+            <svg
+              class="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            Новый рецепт
+          </Button>
+        </Link>
       </div>
       <div class="ui-kpi-grid grid-cols-2 xl:grid-cols-4">
         <div class="ui-kpi-card">
@@ -160,24 +163,15 @@
         :total="filtered.length"
       />
     </div>
-
-    <!-- Мастер создания рецепта -->
-    <RecipeCreateWizard
-      :show="showRecipeWizard"
-      @close="closeRecipeWizard"
-      @created="onRecipeCreated"
-    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Link, usePage, router } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
-import RecipeCreateWizard from '@/Components/RecipeCreateWizard.vue'
 import Pagination from '@/Components/Pagination.vue'
-import { useSimpleModal } from '@/composables/useModal'
 import type { Recipe } from '@/types'
 
 const page = usePage<{ recipes?: Recipe[]; auth?: { user?: { role?: string } } }>()
@@ -189,13 +183,6 @@ const canConfigureRecipes = computed(() => {
 const query = ref<string>('')
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
-
-const { isOpen: showRecipeWizard, open: openRecipeWizard, close: closeRecipeWizard } = useSimpleModal()
-
-function onRecipeCreated(_recipe: Recipe): void {
-  // Обновляем страницу для отображения нового рецепта
-  router.reload({ only: ['recipes'] })
-}
 
 // Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
 const queryLower = computed(() => query.value.toLowerCase())

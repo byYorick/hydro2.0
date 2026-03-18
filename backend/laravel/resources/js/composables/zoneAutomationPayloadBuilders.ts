@@ -92,12 +92,15 @@ export function buildGrowthCycleConfigPayload(
   forms: ZoneAutomationForms,
   options?: {
     includeSystemType?: boolean
+    includeClimateSubsystem?: boolean
     automationDefaults?: AutomationDefaultsSettings
     automationCommandTemplates?: AutomationCommandTemplatesSettings
   }
 ): Record<string, unknown> {
   const { climateForm, waterForm, lightingForm } = forms
+  const zoneClimateForm = forms.zoneClimateForm ?? { enabled: false }
   const includeSystemType = options?.includeSystemType ?? true
+  const includeClimateSubsystem = options?.includeClimateSubsystem ?? true
   const automationDefaults = options?.automationDefaults ?? FALLBACK_AUTOMATION_DEFAULTS
   const automationCommandTemplates = options?.automationCommandTemplates ?? FALLBACK_AUTOMATION_COMMAND_TEMPLATES
   const phTarget = clamp(normalizeNumber(waterForm.targetPh, 5.8), 4, 9)
@@ -343,7 +346,7 @@ export function buildGrowthCycleConfigPayload(
     diagnosticsExecution.topology = 'three_tank_drip_substrate_trays'
   }
 
-  return {
+  const payload = {
     mode: 'adjust',
     subsystems: {
       ph: {
@@ -389,51 +392,6 @@ export function buildGrowthCycleConfigPayload(
             },
         }
       },
-      climate: {
-        enabled: climateForm.enabled,
-        execution: {
-          interval_sec: climateIntervalSec,
-          temperature: {
-            day: clamp(climateForm.dayTemp, 10, 35),
-            night: clamp(climateForm.nightTemp, 10, 35),
-          },
-          humidity: {
-            day: clamp(climateForm.dayHumidity, 30, 90),
-            night: clamp(climateForm.nightHumidity, 30, 90),
-          },
-          vent_control: {
-            role: 'vent',
-            min_open_percent: clamp(Math.round(climateForm.ventMinPercent), 0, 100),
-            max_open_percent: clamp(Math.round(climateForm.ventMaxPercent), 0, 100),
-          },
-          external_guard: {
-            enabled: climateForm.useExternalTelemetry,
-            temp_min: climateForm.outsideTempMin,
-            temp_max: climateForm.outsideTempMax,
-            humidity_max: climateForm.outsideHumidityMax,
-          },
-          limits: {
-            strong_wind_mps: 10,
-            low_outside_temp_c: clamp(climateForm.outsideTempMin, -30, 45),
-          },
-          schedule: [
-            {
-              start: climateForm.dayStart,
-              end: climateForm.nightStart,
-              profile: 'day',
-            },
-            {
-              start: climateForm.nightStart,
-              end: climateForm.dayStart,
-              profile: 'night',
-            },
-          ],
-          manual_override: {
-            enabled: climateForm.manualOverrideEnabled,
-            timeout_minutes: clamp(Math.round(climateForm.overrideMinutes), 5, 120),
-          },
-        }
-      },
       lighting: {
         enabled: lightingForm.enabled,
         execution: {
@@ -459,6 +417,10 @@ export function buildGrowthCycleConfigPayload(
           },
         }
       },
+      zone_climate: {
+        enabled: zoneClimateForm.enabled,
+        execution: {},
+      },
       diagnostics: {
         enabled: waterForm.diagnosticsEnabled,
         execution: {
@@ -477,6 +439,56 @@ export function buildGrowthCycleConfigPayload(
       },
     },
   }
+
+  if (includeClimateSubsystem) {
+    ;(payload.subsystems as Record<string, unknown>).climate = {
+      enabled: climateForm.enabled,
+      execution: {
+        interval_sec: climateIntervalSec,
+        temperature: {
+          day: clamp(climateForm.dayTemp, 10, 35),
+          night: clamp(climateForm.nightTemp, 10, 35),
+        },
+        humidity: {
+          day: clamp(climateForm.dayHumidity, 30, 90),
+          night: clamp(climateForm.nightHumidity, 30, 90),
+        },
+        vent_control: {
+          role: 'vent',
+          min_open_percent: clamp(Math.round(climateForm.ventMinPercent), 0, 100),
+          max_open_percent: clamp(Math.round(climateForm.ventMaxPercent), 0, 100),
+        },
+        external_guard: {
+          enabled: climateForm.useExternalTelemetry,
+          temp_min: climateForm.outsideTempMin,
+          temp_max: climateForm.outsideTempMax,
+          humidity_max: climateForm.outsideHumidityMax,
+        },
+        limits: {
+          strong_wind_mps: 10,
+          low_outside_temp_c: clamp(climateForm.outsideTempMin, -30, 45),
+        },
+        schedule: [
+          {
+            start: climateForm.dayStart,
+            end: climateForm.nightStart,
+            profile: 'day',
+          },
+          {
+            start: climateForm.nightStart,
+            end: climateForm.dayStart,
+            profile: 'night',
+          },
+        ],
+        manual_override: {
+          enabled: climateForm.manualOverrideEnabled,
+          timeout_minutes: clamp(Math.round(climateForm.overrideMinutes), 5, 120),
+        },
+      },
+    }
+  }
+
+  return payload
 }
 
 export function resetToRecommended(

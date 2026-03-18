@@ -7,6 +7,7 @@ use App\Http\Requests\PublishNodeConfigRequest;
 use App\Jobs\PublishNodeConfigJob;
 use App\Http\Requests\UpdateNodeRequest;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
@@ -40,10 +41,12 @@ class NodeController extends Controller
         // Валидация query параметров
         $validated = $request->validate([
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
+            'greenhouse_id' => ['nullable', 'integer', 'exists:greenhouses,id'],
             'status' => ['nullable', 'string'],
             'search' => ['nullable', 'string', 'max:255'],
             'new_only' => ['nullable', 'string', 'in:true,false,1,0'],
             'unassigned' => ['nullable', 'string', 'in:true,false,1,0'],
+            'include_unassigned' => ['nullable', 'string', 'in:true,false,1,0'],
         ]);
 
         // Преобразуем строковые boolean значения
@@ -52,6 +55,9 @@ class NodeController extends Controller
         }
         if (isset($validated['unassigned'])) {
             $validated['unassigned'] = filter_var($validated['unassigned'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (isset($validated['include_unassigned'])) {
+            $validated['include_unassigned'] = filter_var($validated['include_unassigned'], FILTER_VALIDATE_BOOLEAN);
         }
 
         // Получаем доступные ноды для пользователя
@@ -82,7 +88,42 @@ class NodeController extends Controller
                     'message' => 'Forbidden: Access denied to this zone',
                 ], 403);
             }
-            $query->where('zone_id', $validated['zone_id']);
+            $includeUnassigned = (bool) ($validated['include_unassigned'] ?? false);
+            if ($includeUnassigned) {
+                $query->where(function ($scopedQuery) use ($validated) {
+                    $scopedQuery
+                        ->where('zone_id', $validated['zone_id'])
+                        ->orWhereNull('zone_id');
+                });
+            } else {
+                $query->where('zone_id', $validated['zone_id']);
+            }
+        }
+        if (isset($validated['greenhouse_id'])) {
+            $greenhouse = Greenhouse::query()->findOrFail((int) $validated['greenhouse_id']);
+            if (! $user->isAdmin() && ! \App\Helpers\ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to this greenhouse',
+                ], 403);
+            }
+
+            $includeUnassigned = (bool) ($validated['include_unassigned'] ?? false);
+            $query->where(function ($scopedQuery) use ($greenhouse, $includeUnassigned) {
+                $scopedQuery
+                    ->whereHas('zone', function ($zoneQuery) use ($greenhouse) {
+                        $zoneQuery->where('greenhouse_id', $greenhouse->id);
+                    })
+                    ->orWhereHas('channels.channelBindings.infrastructureInstance', function ($bindingQuery) use ($greenhouse) {
+                        $bindingQuery
+                            ->where('owner_type', 'greenhouse')
+                            ->where('owner_id', $greenhouse->id);
+                    });
+
+                if ($includeUnassigned) {
+                    $scopedQuery->orWhereNull('zone_id');
+                }
+            });
         }
         if (isset($validated['status'])) {
             $query->where('status', $validated['status']);

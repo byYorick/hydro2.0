@@ -10,8 +10,8 @@
             <h1 class="text-2xl font-semibold text-[color:var(--text-primary)]">
               {{ greenhouse.name }}
             </h1>
-            <p class="text-sm text-[color:var(--text-muted)] max-w-2xl mt-1">
-              {{ greenhouse.description || 'Информационная панель по текущему состоянию теплицы и прикрепленным зонам.' }}
+            <p class="mt-1 max-w-2xl text-sm text-[color:var(--text-muted)]">
+              {{ greenhouse.description || 'Информационная панель по текущему состоянию теплицы и прикреплённым зонам.' }}
             </p>
           </div>
           <div class="flex items-center gap-3">
@@ -64,17 +64,10 @@
               Управление теплицей
             </h2>
             <p class="text-xs text-[color:var(--text-dim)]">
-              Климат и обслуживание оборудования.
+              Общий климат теплицы и обслуживание оборудования.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              :disabled="!canOperateGreenhouse || climateSubmitting"
-              @click="openClimateModal"
-            >
-              Управление климатом
-            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -93,35 +86,28 @@
             </Button>
           </div>
         </div>
+
+        <GreenhouseClimateConfiguration
+          :enabled="greenhouseClimateEnabled"
+          :climate-form="climateForm"
+          :bindings="greenhouseClimateBindings"
+          :available-nodes="availableNodes"
+          :can-configure="canOperateGreenhouse"
+          :applying="climateSubmitting"
+          :show-apply-button="true"
+          apply-label="Сохранить климат теплицы"
+          @update:enabled="greenhouseClimateEnabled = $event"
+          @apply="saveGreenhouseClimate"
+        />
+
         <div class="text-xs text-[color:var(--text-dim)]">
-          Климат применится ко всем {{ climateZoneIds.length }} зонам теплицы.
-          В обслуживании сейчас {{ maintenanceExitTargets.length }} / {{ climateNodes.length }} климат-узлов.
-          <span v-if="!canOperateGreenhouse">
-            Доступно только для ролей «оператор», «агроном», «админ».
-          </span>
+          <span v-if="lastClimateSavedAt">Профиль обновлён: {{ formatTime(lastClimateSavedAt) }}</span>
+          <span v-else>Профиль климата ещё не сохранён</span>
+          <span class="ml-3">Runtime dispatcher климата теплицы пока в разработке, но profile и bindings уже сохраняются.</span>
         </div>
-        <div
-          v-if="climateFailures.length > 0"
-          data-testid="climate-failures"
-          class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3 text-xs text-[color:var(--badge-danger-text)]"
-        >
-          <div class="font-semibold">
-            Ошибки применения климата
-          </div>
-          <div class="mt-1 text-[color:var(--text-muted)]">
-            Не удалось отправить команды для {{ climateFailures.length }} зон.
-          </div>
-          <div class="mt-2 space-y-1">
-            <div
-              v-for="failure in climateFailures"
-              :key="failure.zoneId"
-              data-testid="climate-failure-item"
-              class="flex items-start gap-2"
-            >
-              <span class="font-semibold">{{ failure.zoneName }}</span>
-              <span>— {{ failure.reason }}</span>
-            </div>
-          </div>
+
+        <div class="text-xs text-[color:var(--text-dim)]">
+          В обслуживании сейчас {{ maintenanceExitTargets.length }} / {{ climateNodes.length }} climate/weather нод.
         </div>
       </section>
 
@@ -143,7 +129,7 @@
               @click="openZoneWizardGuarded()"
             >
               <svg
-                class="w-4 h-4 mr-1"
+                class="mr-1 h-4 w-4"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -206,7 +192,7 @@
             <div class="text-xs text-[color:var(--text-muted)]">
               Фаза {{ cycle.phaseIndex }} · Прогресс {{ cycle.progress.toFixed(1) }}%
             </div>
-            <div class="h-2 rounded-full bg-[color:var(--border-muted)] overflow-hidden">
+            <div class="h-2 overflow-hidden rounded-full bg-[color:var(--border-muted)]">
               <div
                 class="h-full rounded-full bg-[linear-gradient(90deg,var(--accent-green),var(--accent-cyan))] transition-all"
                 :style="{ width: `${Math.min(Math.max(cycle.progress, 0), 100)}%` }"
@@ -267,21 +253,11 @@
       </section>
     </div>
 
-    <!-- Мастер создания зоны -->
     <ZoneCreateWizard
       :show="showZoneWizard"
       :greenhouse-id="greenhouse.id"
       @close="closeZoneWizard"
       @created="onZoneCreated"
-    />
-
-    <ZoneActionModal
-      v-if="climateModalOpen"
-      :show="climateModalOpen"
-      action-type="FORCE_CLIMATE"
-      :zone-id="climateZoneIds[0] || 0"
-      @close="climateModalOpen = false"
-      @submit="onClimateSubmit"
     />
 
     <ConfirmModal
@@ -299,29 +275,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
-import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import MetricCard from '@/Components/MetricCard.vue'
-import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
-import ZoneCreateWizard from '@/Components/ZoneCreateWizard.vue'
-import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import Button from '@/Components/Button.vue'
+import Card from '@/Components/Card.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
-import { formatTime } from '@/utils/formatTime'
-import { logger } from '@/utils/logger'
-import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
-import { useSimpleModal } from '@/composables/useModal'
-import { useCommands } from '@/composables/useCommands'
-import { useApi } from '@/composables/useApi'
-import { useToast } from '@/composables/useToast'
+import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfiguration.vue'
+import MetricCard from '@/Components/MetricCard.vue'
+import ZoneCreateWizard from '@/Components/ZoneCreateWizard.vue'
+import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { useApi } from '@/composables/useApi'
+import { useSimpleModal } from '@/composables/useModal'
+import { useToast } from '@/composables/useToast'
+import { applyAutomationFromRecipe, buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
+import { extractCollection } from '@/composables/setupWizardCollection'
+import { formatTime } from '@/utils/formatTime'
+import { extractData } from '@/utils/apiHelpers'
+import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
+import type { ClimateFormState, LightingFormState, WaterFormState, ZoneClimateFormState } from '@/composables/zoneAutomationTypes'
 import type { Zone } from '@/types'
 import type { Device } from '@/types'
 import type { ZoneTelemetry } from '@/types'
-import type { CommandParams } from '@/types'
 
 interface Props {
   greenhouse: {
@@ -358,7 +335,28 @@ interface PageProps {
   [key: string]: unknown
 }
 
+interface GreenhouseClimateBindingsState {
+  climate_sensors: number[]
+  weather_station_sensors: number[]
+  vent_actuators: number[]
+  fan_actuators: number[]
+}
+
+interface GreenhouseAutomationLogicProfileEntry {
+  mode: string
+  is_active: boolean
+  subsystems?: Record<string, unknown>
+  updated_at?: string | null
+}
+
+interface GreenhouseAutomationLogicProfilesResponse {
+  active_mode?: string | null
+  profiles?: Record<string, GreenhouseAutomationLogicProfileEntry>
+  bindings?: Partial<GreenhouseClimateBindingsState>
+}
+
 type MaintenanceTargetState = 'MAINTENANCE' | 'ACTIVE'
+type GreenhouseNodeOption = Device & { channels?: Array<{ channel?: string; type?: string }> }
 
 const props = withDefaults(defineProps<Props>(), {
   zones: () => [],
@@ -373,21 +371,288 @@ const props = withDefaults(defineProps<Props>(), {
 
 const page = usePage<PageProps>()
 const role = computed(() => page.props.auth?.user?.role ?? 'viewer')
-const canConfigureGreenhouse = computed(() => (
-  role.value === 'agronomist'
-  || role.value === 'admin'
-))
-const canOperateGreenhouse = computed(() => (
-  role.value === 'agronomist'
-  || role.value === 'admin'
-  || role.value === 'operator'
-))
+const canConfigureGreenhouse = computed(() => role.value === 'agronomist' || role.value === 'admin')
+const canOperateGreenhouse = computed(() => role.value === 'agronomist' || role.value === 'admin' || role.value === 'operator')
 
 const { showToast } = useToast()
-const { api } = useApi()
-const { sendZoneCommand } = useCommands()
-
+const { api } = useApi(showToast)
 const { isOpen: showZoneWizard, open: openZoneWizard, close: closeZoneWizard } = useSimpleModal()
+
+const climateSubmitting = ref(false)
+const lastClimateSavedAt = ref<string | null>(null)
+const greenhouseClimateEnabled = ref(false)
+const availableNodes = ref<GreenhouseNodeOption[]>([])
+const managedGreenhouseNodes = ref<GreenhouseNodeOption[]>([])
+const greenhouseClimateBindings = reactive<GreenhouseClimateBindingsState>({
+  climate_sensors: [],
+  weather_station_sensors: [],
+  vent_actuators: [],
+  fan_actuators: [],
+})
+
+const climateForm = reactive<ClimateFormState>({
+  enabled: true,
+  dayTemp: 23,
+  nightTemp: 20,
+  dayHumidity: 62,
+  nightHumidity: 70,
+  intervalMinutes: 5,
+  dayStart: '07:00',
+  nightStart: '19:00',
+  ventMinPercent: 15,
+  ventMaxPercent: 85,
+  useExternalTelemetry: true,
+  outsideTempMin: 4,
+  outsideTempMax: 34,
+  outsideHumidityMax: 90,
+  manualOverrideEnabled: true,
+  overrideMinutes: 30,
+})
+
+const maintenanceSubmitting = ref(false)
+const maintenanceModal = reactive({
+  open: false,
+  targetState: 'MAINTENANCE' as MaintenanceTargetState,
+})
+
+const waterForm = reactive<WaterFormState>({
+  systemType: 'drip',
+  tanksCount: 2,
+  cleanTankFillL: 300,
+  nutrientTankTargetL: 280,
+  irrigationBatchL: 20,
+  intervalMinutes: 30,
+  durationSeconds: 120,
+  fillTemperatureC: 20,
+  fillWindowStart: '05:00',
+  fillWindowEnd: '07:00',
+  targetPh: 5.8,
+  targetEc: 1.6,
+  phPct: 5,
+  ecPct: 10,
+  valveSwitching: true,
+  correctionDuringIrrigation: true,
+  prepareToleranceEcPct: 10,
+  prepareTolerancePhPct: 5,
+  correctionMaxEcCorrectionAttempts: 8,
+  correctionMaxPhCorrectionAttempts: 8,
+  correctionPrepareRecirculationMaxAttempts: 6,
+  correctionPrepareRecirculationMaxCorrectionAttempts: 24,
+  correctionStabilizationSec: 30,
+  enableDrainControl: false,
+  drainTargetPercent: 20,
+  diagnosticsEnabled: true,
+  diagnosticsIntervalMinutes: 15,
+  diagnosticsWorkflow: 'startup',
+  cleanTankFullThreshold: 0.95,
+  refillDurationSeconds: 30,
+  refillTimeoutSeconds: 600,
+  refillRequiredNodeTypes: 'irrig,climate,light',
+  refillPreferredChannel: 'fill_valve',
+  startupCleanFillTimeoutSeconds: 1800,
+  startupSolutionFillTimeoutSeconds: 1800,
+  startupPrepareRecirculationTimeoutSeconds: 900,
+  startupCleanFillRetryCycles: 2,
+  irrigationRecoveryMaxContinueAttempts: 3,
+  irrigationRecoveryTimeoutSeconds: 600,
+  solutionChangeEnabled: false,
+  solutionChangeIntervalMinutes: 180,
+  solutionChangeDurationSeconds: 120,
+  manualIrrigationSeconds: 90,
+  twoTankCleanFillStartSteps: 1,
+  twoTankCleanFillStopSteps: 1,
+  twoTankSolutionFillStartSteps: 1,
+  twoTankSolutionFillStopSteps: 1,
+})
+
+const lightingForm = reactive<LightingFormState>({
+  enabled: false,
+  luxDay: 18000,
+  luxNight: 0,
+  hoursOn: 16,
+  intervalMinutes: 30,
+  scheduleStart: '06:00',
+  scheduleEnd: '22:00',
+  manualIntensity: 75,
+  manualDurationHours: 4,
+})
+
+const zoneClimateForm = reactive<ZoneClimateFormState>({ enabled: false })
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  return value as Record<string, unknown>
+}
+
+function toNodeIdArray(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return Array.from(new Set(
+    value
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item > 0)
+  ))
+}
+
+function resolveProfileEntry(data: GreenhouseAutomationLogicProfilesResponse | null): GreenhouseAutomationLogicProfileEntry | null {
+  const profiles = asRecord(data?.profiles ?? null)
+  if (!profiles) {
+    return null
+  }
+
+  const activeMode = typeof data?.active_mode === 'string' ? data.active_mode : null
+  const preferredModes = [activeMode, 'setup', 'working'].filter((value): value is string => Boolean(value))
+
+  for (const mode of preferredModes) {
+    const rawEntry = asRecord(profiles[mode])
+    if (!rawEntry) {
+      continue
+    }
+
+    return {
+      mode: typeof rawEntry.mode === 'string' ? rawEntry.mode : mode,
+      is_active: typeof rawEntry.is_active === 'boolean' ? rawEntry.is_active : mode === activeMode,
+      subsystems: asRecord(rawEntry.subsystems ?? null) ?? undefined,
+      updated_at: typeof rawEntry.updated_at === 'string' ? rawEntry.updated_at : null,
+    }
+  }
+
+  return null
+}
+
+function buildGreenhouseClimateSubsystem(): Record<string, unknown> {
+  const payload = buildGrowthCycleConfigPayload(
+    {
+      climateForm,
+      waterForm,
+      lightingForm,
+      zoneClimateForm,
+    },
+    {
+      includeClimateSubsystem: true,
+    }
+  )
+  const subsystems = asRecord(payload.subsystems ?? null)
+  const climate = asRecord(subsystems?.climate ?? null)
+
+  return {
+    climate: {
+      enabled: greenhouseClimateEnabled.value,
+      execution: asRecord(climate?.execution ?? null) ?? {},
+    },
+  }
+}
+
+async function loadAvailableNodes(): Promise<void> {
+  try {
+    const response = await api.get('/nodes', {
+      params: {
+        greenhouse_id: props.greenhouse.id,
+        include_unassigned: true,
+      },
+    })
+    availableNodes.value = extractCollection<GreenhouseNodeOption>(response.data)
+  } catch {
+    showToast('Не удалось загрузить список нод теплицы.', 'warning', TOAST_TIMEOUT.NORMAL)
+  }
+}
+
+async function loadManagedGreenhouseNodes(): Promise<void> {
+  try {
+    const response = await api.get('/nodes', {
+      params: {
+        greenhouse_id: props.greenhouse.id,
+      },
+    })
+    managedGreenhouseNodes.value = extractCollection<GreenhouseNodeOption>(response.data)
+  } catch {
+    showToast('Не удалось загрузить управляемые greenhouse climate ноды.', 'warning', TOAST_TIMEOUT.NORMAL)
+  }
+}
+
+async function loadGreenhouseClimate(): Promise<void> {
+  try {
+    const response = await api.get(`/greenhouses/${props.greenhouse.id}/automation-logic-profile`)
+    const payload = extractData<GreenhouseAutomationLogicProfilesResponse>(response.data)
+    const entry = resolveProfileEntry(payload ?? null)
+    const bindings = asRecord(payload?.bindings ?? null)
+
+    greenhouseClimateBindings.climate_sensors = toNodeIdArray(bindings?.climate_sensors)
+    greenhouseClimateBindings.weather_station_sensors = toNodeIdArray(bindings?.weather_station_sensors)
+    greenhouseClimateBindings.vent_actuators = toNodeIdArray(bindings?.vent_actuators)
+    greenhouseClimateBindings.fan_actuators = toNodeIdArray(bindings?.fan_actuators)
+
+    if (!entry?.subsystems) {
+      return
+    }
+
+    const climateSubsystem = asRecord(entry.subsystems.climate ?? null)
+    greenhouseClimateEnabled.value = Boolean(climateSubsystem?.enabled ?? false)
+    lastClimateSavedAt.value = typeof entry.updated_at === 'string' ? entry.updated_at : null
+
+    applyAutomationFromRecipe(
+      {
+        extensions: {
+          subsystems: {
+            climate: climateSubsystem ?? {},
+          },
+        },
+      },
+      {
+        climateForm,
+        waterForm,
+        lightingForm,
+        zoneClimateForm,
+      }
+    )
+  } catch {
+    showToast('Не удалось загрузить климат теплицы.', 'warning', TOAST_TIMEOUT.NORMAL)
+  }
+}
+
+async function saveGreenhouseClimate(): Promise<void> {
+  if (!canOperateGreenhouse.value || climateSubmitting.value) {
+    return
+  }
+
+  climateSubmitting.value = true
+  try {
+    const bindingsPayload = {
+      greenhouse_id: props.greenhouse.id,
+      enabled: greenhouseClimateEnabled.value,
+      climate_sensors: [...greenhouseClimateBindings.climate_sensors],
+      weather_station_sensors: [...greenhouseClimateBindings.weather_station_sensors],
+      vent_actuators: [...greenhouseClimateBindings.vent_actuators],
+      fan_actuators: [...greenhouseClimateBindings.fan_actuators],
+    }
+
+    if (greenhouseClimateEnabled.value) {
+      await api.post('/setup-wizard/validate-greenhouse-climate-devices', bindingsPayload)
+    }
+
+    await api.post('/setup-wizard/apply-greenhouse-climate-bindings', bindingsPayload)
+    const response = await api.post(`/greenhouses/${props.greenhouse.id}/automation-logic-profile`, {
+      mode: 'setup',
+      activate: true,
+      subsystems: buildGreenhouseClimateSubsystem(),
+    })
+
+    const payload = extractData<GreenhouseAutomationLogicProfilesResponse>(response.data)
+    const entry = resolveProfileEntry(payload ?? null)
+    lastClimateSavedAt.value = typeof entry?.updated_at === 'string' ? entry.updated_at : new Date().toISOString()
+    showToast('Климат теплицы сохранён.', 'success', TOAST_TIMEOUT.NORMAL)
+    await loadGreenhouseClimate()
+  } catch {
+    showToast('Не удалось сохранить климат теплицы.', 'error', TOAST_TIMEOUT.NORMAL)
+  } finally {
+    climateSubmitting.value = false
+  }
+}
 
 function openZoneWizardGuarded(): void {
   if (!canConfigureGreenhouse.value) {
@@ -399,7 +664,6 @@ function openZoneWizardGuarded(): void {
 }
 
 function onZoneCreated(_zone: Zone): void {
-  // Обновляем страницу для отображения новой зоны
   router.reload({ only: ['zones'] })
 }
 
@@ -407,6 +671,7 @@ const cycles = computed(() => {
   if (!props.zones || !Array.isArray(props.zones)) {
     return []
   }
+
   return props.zones
     .filter((zone) => zone.activeGrowCycle || (zone.cycles && zone.cycles.length > 0))
     .map((zone) => {
@@ -419,8 +684,7 @@ const cycles = computed(() => {
         const phaseIndex = activeGrowCycle
           ? (currentPhase?.phase_index ?? 0) + 1
           : (legacyCycle?.current_phase_index ?? 0) + 1
-        
-        // Вычисляем прогресс фазы
+
         let progress = 0
         const phaseDurationHours = activeGrowCycle
           ? (currentPhase?.duration_hours ?? ((currentPhase?.duration_days || 0) * 24))
@@ -429,11 +693,7 @@ const cycles = computed(() => {
         const phaseStartCandidate = activeGrowCycle?.phase_started_at || activeGrowCycle?.started_at || legacyCycle?.started_at
 
         if (phaseDurationHours && phaseStartCandidate) {
-          progress = calculateProgressFromDuration(
-            phaseStartCandidate,
-            phaseDurationHours,
-            null
-          ) ?? 0
+          progress = calculateProgressFromDuration(phaseStartCandidate, phaseDurationHours, null) ?? 0
         }
 
         return {
@@ -445,6 +705,7 @@ const cycles = computed(() => {
           progress,
         }
       }
+
       return {
         zone_id: zone.id,
         zone,
@@ -457,32 +718,20 @@ const cycles = computed(() => {
 })
 
 const activeCyclesCount = computed(() => cycles.value.length)
-
 const nodes = computed(() => props.nodes || [])
 const zones = computed(() => props.zones || [])
-const nodeSummary = computed(() => props.nodeSummary || {
-  online: 0,
-  offline: 0,
-  total: 0,
-})
-
+const nodeSummary = computed(() => props.nodeSummary || { online: 0, offline: 0, total: 0 })
 const activeAlerts = computed(() => props.activeAlerts ?? 0)
 
-const climateModalOpen = ref(false)
-const climateSubmitting = ref(false)
-const climateFailures = ref<Array<{ zoneId: number; zoneName: string; reason: string }>>([])
-const climateZoneIds = computed(() => zones.value.map(zone => zone.id))
-
-const climateNodes = computed(() => nodes.value.filter(node => node.type === 'climate'))
-
-const maintenanceSubmitting = ref(false)
-const maintenanceModal = reactive({
-  open: false,
-  targetState: 'MAINTENANCE' as MaintenanceTargetState,
+const climateNodes = computed(() => {
+  return managedGreenhouseNodes.value.filter((node) => {
+    const type = String(node.type ?? '').toLowerCase()
+    return type === 'climate' || type === 'weather'
+  })
 })
 
 const maintenanceEnterTargets = computed(() => {
-  const allowedStates = new Set(['ASSIGNED_TO_ZONE', 'ACTIVE', 'DEGRADED'])
+  const allowedStates = new Set(['ASSIGNED_TO_ZONE', 'ACTIVE', 'DEGRADED', 'REGISTERED_BACKEND'])
   return climateNodes.value.filter((node) => {
     if (!node.lifecycle_state || node.lifecycle_state === 'MAINTENANCE') {
       return false
@@ -491,9 +740,7 @@ const maintenanceEnterTargets = computed(() => {
   })
 })
 
-const maintenanceExitTargets = computed(() => {
-  return climateNodes.value.filter(node => node.lifecycle_state === 'MAINTENANCE')
-})
+const maintenanceExitTargets = computed(() => climateNodes.value.filter((node) => node.lifecycle_state === 'MAINTENANCE'))
 
 const maintenanceTargets = computed(() => {
   return maintenanceModal.targetState === 'MAINTENANCE'
@@ -510,88 +757,14 @@ const maintenanceModalTitle = computed(() => {
 const maintenanceModalMessage = computed(() => {
   const total = maintenanceTargets.value.length
   if (maintenanceModal.targetState === 'MAINTENANCE') {
-    return `Перевести в обслуживание ${total} климат-узлов теплицы? Узлы перейдут в offline.`
+    return `Перевести в обслуживание ${total} climate/weather нод теплицы?`
   }
-  return `Завершить обслуживание для ${total} климат-узлов и вернуть их в активный режим?`
+
+  return `Завершить обслуживание для ${total} climate/weather нод и вернуть их в активный режим?`
 })
 
-const maintenanceModalConfirmText = computed(() => {
-  return maintenanceModal.targetState === 'MAINTENANCE' ? 'В обслуживание' : 'Завершить'
-})
-
-const maintenanceModalConfirmVariant = computed(() => {
-  return maintenanceModal.targetState === 'MAINTENANCE' ? 'warning' : 'primary'
-})
-
-function openClimateModal(): void {
-  if (!canOperateGreenhouse.value) {
-    showToast('Управление климатом доступно только оператору и агроному.', 'warning', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  if (climateZoneIds.value.length === 0) {
-    showToast('Нет зон в этой теплице.', 'warning', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  climateFailures.value = []
-  climateModalOpen.value = true
-}
-
-function resolveClimateError(error: unknown): string {
-  const payload = error as { response?: { data?: { message?: string } }; message?: string }
-  return payload?.response?.data?.message || payload?.message || 'Неизвестная ошибка'
-}
-
-async function onClimateSubmit({ params }: { params: CommandParams }): Promise<void> {
-  if (climateSubmitting.value) return
-
-  const zoneIds = climateZoneIds.value
-  if (zoneIds.length === 0) {
-    showToast('Нет зон для управления климатом.', 'warning', TOAST_TIMEOUT.NORMAL)
-    return
-  }
-
-  climateSubmitting.value = true
-  climateFailures.value = []
-
-  try {
-    const results = await Promise.allSettled(
-      zoneIds.map(zoneId => sendZoneCommand(zoneId, 'FORCE_CLIMATE', params))
-    )
-    const successCount = results.filter(result => result.status === 'fulfilled').length
-    const failedCount = results.length - successCount
-    const failures: Array<{ zoneId: number; zoneName: string; reason: string }> = []
-
-    results.forEach((result) => {
-      if (result.status === 'rejected') {
-        logger.warn('[Greenhouses/Show] Climate command failed', result.reason)
-      }
-    })
-    results.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        const zoneId = zoneIds[index]
-        const zoneName = zones.value.find(zone => zone.id === zoneId)?.name || `Зона ${zoneId}`
-        failures.push({
-          zoneId,
-          zoneName,
-          reason: resolveClimateError(result.reason),
-        })
-      }
-    })
-    climateFailures.value = failures
-
-    if (successCount && failedCount === 0) {
-      showToast(`Климат применён для ${successCount} зон.`, 'success', TOAST_TIMEOUT.NORMAL)
-    } else if (successCount && failedCount > 0) {
-      showToast(`Климат применён для ${successCount} зон, ошибок: ${failedCount}.`, 'warning', TOAST_TIMEOUT.LONG)
-    } else {
-      showToast('Не удалось применить климат для выбранных зон.', 'error', TOAST_TIMEOUT.LONG)
-    }
-  } finally {
-    climateSubmitting.value = false
-  }
-}
+const maintenanceModalConfirmText = computed(() => maintenanceModal.targetState === 'MAINTENANCE' ? 'В обслуживание' : 'Завершить')
+const maintenanceModalConfirmVariant = computed(() => maintenanceModal.targetState === 'MAINTENANCE' ? 'warning' : 'primary')
 
 function openMaintenanceModal(targetState: MaintenanceTargetState): void {
   if (!canConfigureGreenhouse.value) {
@@ -614,35 +787,29 @@ function closeMaintenanceModal(): void {
 }
 
 async function confirmMaintenance(): Promise<void> {
-  if (maintenanceSubmitting.value) return
+  if (maintenanceSubmitting.value) {
+    return
+  }
 
   const targetState = maintenanceModal.targetState
   const targets = maintenanceTargets.value
 
   if (targets.length === 0) {
-    showToast('Нет узлов для выполнения операции.', 'warning', TOAST_TIMEOUT.NORMAL)
     maintenanceModal.open = false
     return
   }
 
   maintenanceSubmitting.value = true
-
   try {
     const results = await Promise.allSettled(
-      targets.map(node => api.post(`/api/nodes/${node.id}/lifecycle/transition`, {
+      targets.map((node) => api.post(`/nodes/${node.id}/lifecycle/transition`, {
         target_state: targetState,
         reason: `Greenhouse ${props.greenhouse.name}: ${targetState === 'MAINTENANCE' ? 'maintenance' : 'resume'}`,
       }))
     )
-    const successCount = results.filter(result => result.status === 'fulfilled').length
+    const successCount = results.filter((result) => result.status === 'fulfilled').length
     const failedCount = results.length - successCount
     const actionLabel = targetState === 'MAINTENANCE' ? 'в обслуживание' : 'в активный режим'
-
-    results.forEach((result) => {
-      if (result.status === 'rejected') {
-        logger.warn('[Greenhouses/Show] Maintenance transition failed', result.reason)
-      }
-    })
 
     if (successCount && failedCount === 0) {
       showToast(`Узлы переведены ${actionLabel}: ${successCount}.`, 'success', TOAST_TIMEOUT.NORMAL)
@@ -655,6 +822,18 @@ async function confirmMaintenance(): Promise<void> {
     maintenanceSubmitting.value = false
     maintenanceModal.open = false
     router.reload({ only: ['nodes', 'nodeSummary'] })
+    await Promise.all([
+      loadAvailableNodes(),
+      loadManagedGreenhouseNodes(),
+    ])
   }
 }
+
+onMounted(async () => {
+  await Promise.all([
+    loadAvailableNodes(),
+    loadManagedGreenhouseNodes(),
+    loadGreenhouseClimate(),
+  ])
+})
 </script>

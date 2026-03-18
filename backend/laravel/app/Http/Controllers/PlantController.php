@@ -4,22 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StorePlantPriceRequest;
 use App\Http\Requests\StorePlantRequest;
+use App\Http\Requests\StorePlantWithRecipeRequest;
 use App\Http\Requests\UpdatePlantTaxonomyRequest;
 use App\Http\Requests\UpdatePlantRequest;
 use App\Models\Plant;
+use App\Services\PlantRecipeOrchestrationService;
 use App\Services\Profitability\ProfitabilityCalculator;
+use App\Support\Plants\PlantPayloadPreparer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PlantController extends Controller
 {
-    public function __construct(private readonly ProfitabilityCalculator $profitability) {}
+    public function __construct(
+        private readonly ProfitabilityCalculator $profitability,
+        private readonly PlantPayloadPreparer $plantPayloadPreparer,
+        private readonly PlantRecipeOrchestrationService $plantRecipeOrchestrationService,
+    ) {}
 
     public function index(Request $request): Response|JsonResponse
     {
@@ -146,7 +151,7 @@ class PlantController extends Controller
             unset($validated['scientific_name']);
         }
 
-        $payload = $this->preparePayload($validated);
+        $payload = $this->plantPayloadPreparer->prepare($validated);
         $plant = Plant::create($payload);
 
         // Если это API запрос, возвращаем JSON
@@ -169,7 +174,7 @@ class PlantController extends Controller
 
     public function update(UpdatePlantRequest $request, Plant $plant): RedirectResponse
     {
-        $payload = $this->preparePayload($request->validated(), $plant);
+        $payload = $this->plantPayloadPreparer->prepare($request->validated(), $plant);
         $plant->update($payload);
 
         return back()->with('flash', [
@@ -186,34 +191,35 @@ class PlantController extends Controller
         ]);
     }
 
-    private function preparePayload(array $input, ?Plant $plant = null): array
+    public function storeWithRecipe(StorePlantWithRecipeRequest $request): JsonResponse
     {
-        $payload = $input;
-        $payload['slug'] = $input['slug']
-            ?? $plant?->slug
-            ?? Str::slug($input['name'].'-'.Str::random(4));
-
-        $payload['environment_requirements'] = $this->sanitizeEnvironment(
-            Arr::get($input, 'environment_requirements')
+        $validated = $request->validated();
+        $result = $this->plantRecipeOrchestrationService->createPlantWithRecipe(
+            $validated['plant'],
+            $validated['recipe'],
+            $validated['recipe']['phases'],
+            (int) $request->user()->id,
         );
 
-        if (empty($payload['environment_requirements'])) {
-            $payload['environment_requirements'] = null;
-        }
-
-        if (empty($payload['growth_phases'])) {
-            $payload['growth_phases'] = null;
-        }
-
-        if (empty($payload['recommended_recipes'])) {
-            $payload['recommended_recipes'] = null;
-        }
-
-        if (empty($payload['metadata'])) {
-            $payload['metadata'] = null;
-        }
-
-        return $payload;
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'plant' => [
+                    'id' => $result['plant']->id,
+                    'name' => $result['plant']->name,
+                    'slug' => $result['plant']->slug,
+                ],
+                'recipe' => [
+                    'id' => $result['recipe']->id,
+                    'name' => $result['recipe']->name,
+                    'description' => $result['recipe']->description,
+                ],
+                'revision' => [
+                    'id' => $result['revision']->id,
+                    'status' => $result['revision']->status,
+                ],
+            ],
+        ], 201);
     }
 
     public function storePriceVersion(StorePlantPriceRequest $request, Plant $plant): RedirectResponse
@@ -281,43 +287,6 @@ class PlantController extends Controller
                 'items' => $taxonomies[$taxonomy],
             ],
         ]);
-    }
-
-    private function sanitizeEnvironment(mixed $value): ?array
-    {
-        if (! is_array($value)) {
-            return null;
-        }
-
-        $normalized = [];
-        foreach ($value as $metric => $range) {
-            if (! is_array($range)) {
-                continue;
-            }
-
-            $min = $this->nullableFloat($range['min'] ?? null);
-            $max = $this->nullableFloat($range['max'] ?? null);
-
-            if ($min === null && $max === null) {
-                continue;
-            }
-
-            $normalized[$metric] = [
-                'min' => $min,
-                'max' => $max,
-            ];
-        }
-
-        return empty($normalized) ? null : $normalized;
-    }
-
-    private function nullableFloat(mixed $value): ?float
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        return is_numeric($value) ? (float) $value : null;
     }
 
     private function loadTaxonomies(): array

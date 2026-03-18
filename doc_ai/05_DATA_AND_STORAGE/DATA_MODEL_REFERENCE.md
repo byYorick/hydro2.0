@@ -1589,6 +1589,19 @@ zone 1—1 ae_zone_leases
 
 Источник runtime-настроек фронтового конфигуратора: `zone_automation_logic_profiles.subsystems`.
 
+Актуальная ownership-модель:
+
+- `zone_automation_logic_profiles` хранит только zonal profile:
+  - `ph`
+  - `ec`
+  - `irrigation`
+  - `lighting`
+  - `diagnostics`
+  - `solution_change`
+  - optional `zone_climate`
+- общий climate теплицы вынесен из zonal profile в отдельную таблицу
+  `greenhouse_automation_logic_profiles`.
+
 При формировании runtime DTO применяется приоритет:
 
 `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode runtime)`.
@@ -1604,10 +1617,9 @@ zone 1—1 ae_zone_leases
 - `subsystems.irrigation.execution.duration_seconds` -> `targets.irrigation.duration_sec`
 - `subsystems.irrigation.execution.system_type` -> `targets.irrigation.system_type`
 - `subsystems.irrigation.execution.*` -> `targets.irrigation.execution.*`
-- `subsystems.climate.execution.interval_sec` -> `targets.ventilation.interval_sec`
-- `subsystems.climate.execution.*` -> `targets.ventilation.execution.*`
 - `subsystems.lighting.execution.interval_sec` -> `targets.lighting.interval_sec`
 - `subsystems.lighting.execution.*` -> `targets.lighting.execution.*`
+- `subsystems.zone_climate.execution.*` -> zonal climate extensions для CO2/root-vent runtime
 - `subsystems.solution_change.execution.interval_sec` -> `targets.solution_change.interval_sec`
 - `subsystems.solution_change.execution.duration_sec` -> `targets.solution_change.duration_sec`
 - `subsystems.solution_change.execution.*` -> `targets.solution_change.execution.*`
@@ -1631,6 +1643,36 @@ zone 1—1 ae_zone_leases
 - при `enabled=true` выставляется `targets.<task>.execution.force_skip=false`
 
 Runtime-снимок подсистем отражается в `zone_automation_state` для UI/диагностики.
+
+### 13.3. Runtime-конфиг greenhouse climate (`greenhouse_automation_logic_profiles`)
+
+Назначение таблицы: хранить greenhouse-owned profile общего климата теплицы.
+
+Ключевые поля:
+
+- `greenhouse_id`
+- `mode: \"setup\"|\"working\"`
+- `subsystems`
+- `command_plans`
+- `is_active`
+- `created_by`
+- `updated_by`
+- `created_at`
+- `updated_at`
+
+Ограничение v1:
+
+- поддерживается только subsystem `climate`;
+- runtime-dispatch ещё не активирован, но таблица уже является source of truth для UI и дальнейшего rollout.
+
+Связанные bindings не хранятся в самой таблице. Они описываются через:
+
+- `infrastructure_instances.owner_type = 'greenhouse'`
+- `channel_bindings.role in ('climate_sensor', 'weather_station_sensor', 'vent_actuator', 'fan_actuator')`
+
+Zonal climate bindings аналогично остаются zone-owned:
+
+- `channel_bindings.role in ('co2_sensor', 'co2_actuator', 'root_vent_actuator')`
 
 Ручные override-действия (`fill_clean_tank`, `prepare_solution`, `recirculate_solution`, `resume_irrigation`)
 обязаны фиксироваться в `zone_events` и lifecycle `zone_automation_intents`.

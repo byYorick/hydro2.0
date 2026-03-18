@@ -61,14 +61,6 @@
           <Button
             size="sm"
             variant="secondary"
-            :disabled="!canOperateAutomation || quickActions.climate"
-            @click="$emit('manual-climate')"
-          >
-            {{ quickActions.climate ? 'Отправка...' : 'Применить климат' }}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
             :disabled="!canOperateAutomation || quickActions.lighting"
             @click="$emit('manual-lighting')"
           >
@@ -142,7 +134,6 @@ type ModeValue = 'auto' | 'semi' | 'manual'
 
 interface QuickActionsState {
   irrigation: boolean
-  climate: boolean
   lighting: boolean
   ph: boolean
   ec: boolean
@@ -164,7 +155,6 @@ const props = defineProps<Props>()
 
 defineEmits<{
   (e: 'manual-irrigation'): void
-  (e: 'manual-climate'): void
   (e: 'manual-lighting'): void
   (e: 'manual-ph'): void
   (e: 'manual-ec'): void

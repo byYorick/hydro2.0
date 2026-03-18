@@ -3,6 +3,7 @@ export type {
   IrrigationSystem,
   LightingFormState,
   WaterFormState,
+  ZoneClimateFormState,
   ZoneAutomationForms,
 } from './zoneAutomationTypes'
 

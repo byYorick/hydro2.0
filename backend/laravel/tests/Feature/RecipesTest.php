@@ -60,8 +60,33 @@ class RecipesTest extends TestCase
             'recipe_id' => $recipe->id,
             'status' => 'PUBLISHED',
         ]);
-        RecipeRevisionPhase::factory()->count(2)->create([
+        RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'temp_air_target' => 23.0,
+            'humidity_target' => 62.0,
+            'lighting_photoperiod_hours' => 16,
+            'lighting_start_time' => '06:00:00',
+            'irrigation_mode' => 'SUBSTRATE',
+            'irrigation_interval_sec' => 900,
+            'irrigation_duration_sec' => 15,
+            'extensions' => [
+                'day_night' => [
+                    'temperature' => ['day' => 23.0, 'night' => 21.0],
+                    'humidity' => ['day' => 62.0, 'night' => 66.0],
+                ],
+                'subsystems' => [
+                    'irrigation' => [
+                        'targets' => [
+                            'system_type' => 'drip',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 1,
         ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
@@ -70,7 +95,12 @@ class RecipesTest extends TestCase
         $resp->assertOk()
             ->assertJsonPath('data.id', $recipe->id)
             ->assertJsonPath('data.name', $recipe->name)
-            ->assertJsonCount(2, 'data.phases');
+            ->assertJsonCount(2, 'data.phases')
+            ->assertJsonPath('data.phases.0.targets.temp_air', 23.0)
+            ->assertJsonPath('data.phases.0.targets.humidity_air', 62.0)
+            ->assertJsonPath('data.phases.0.targets.irrigation.mode', 'SUBSTRATE')
+            ->assertJsonPath('data.phases.0.targets.irrigation.system_type', 'drip')
+            ->assertJsonPath('data.phases.0.extensions.day_night.temperature.day', 23.0);
     }
 
     public function test_update_recipe(): void
@@ -135,10 +165,34 @@ class RecipesTest extends TestCase
                 'duration_hours' => 24,
                 'ph_min' => 5.6,
                 'ph_max' => 6.0,
+                'ec_min' => 1.2,
+                'ec_max' => 1.6,
+                'lighting_start_time' => '06:00:00',
+                'irrigation_mode' => 'SUBSTRATE',
+                'extensions' => [
+                    'day_target' => [
+                        'temp_air' => 24.0,
+                        'humidity' => 60.0,
+                    ],
+                    'night_target' => [
+                        'temp_air' => 20.0,
+                        'humidity' => 70.0,
+                    ],
+                    'subsystems' => [
+                        'irrigation' => [
+                            'targets' => [
+                                'system_type' => 'drip',
+                            ],
+                        ],
+                    ],
+                ],
             ]);
 
         $resp->assertCreated()
-            ->assertJsonPath('data.name', 'Phase 1');
+            ->assertJsonPath('data.name', 'Phase 1')
+            ->assertJsonPath('data.extensions.day_night.temperature.day', 24.0)
+            ->assertJsonPath('data.extensions.day_night.humidity.night', 70.0)
+            ->assertJsonPath('data.extensions.subsystems.irrigation.targets.system_type', 'drip');
         $this->assertDatabaseHas('recipe_revision_phases', [
             'recipe_revision_id' => $revision->id,
             'name' => 'Phase 1',

@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -31,17 +32,28 @@ class ZoneProcessCalibrationController extends Controller
     {
         $this->authorizeZoneAccess($request, $zone);
 
-        $latestIds = ZoneProcessCalibration::query()
-            ->selectRaw('MAX(id) as id')
+        $rows = ZoneProcessCalibration::query()
             ->where('zone_id', $zone->id)
             ->where('is_active', true)
-            ->groupBy('mode');
-
-        $rows = ZoneProcessCalibration::query()
-            ->whereIn('id', $latestIds)
-            ->orderByRaw("CASE WHEN mode = 'generic' THEN 1 ELSE 0 END")
+            ->where('valid_from', '<=', now())
+            ->where(function (Builder $query): void {
+                $query->whereNull('valid_to')->orWhere('valid_to', '>', now());
+            })
             ->orderByDesc('valid_from')
+            ->orderByDesc('id')
             ->get()
+            ->values()
+            ->reduce(function (\Illuminate\Support\Collection $carry, ZoneProcessCalibration $item) {
+                $normalizedMode = $this->normalizeMode((string) $item->mode);
+                if ($normalizedMode === null || $carry->has($normalizedMode)) {
+                    return $carry;
+                }
+
+                $carry->put($normalizedMode, $item);
+
+                return $carry;
+            }, collect())
+            ->sortBy(fn (ZoneProcessCalibration $item): int => $this->normalizeMode((string) $item->mode) === 'generic' ? 1 : 0)
             ->values()
             ->map(fn (ZoneProcessCalibration $item) => $this->serializeCalibration($item));
 
@@ -65,13 +77,14 @@ class ZoneProcessCalibrationController extends Controller
 
         $calibration = ZoneProcessCalibration::query()
             ->where('zone_id', $zone->id)
-            ->where('mode', $normalizedMode)
+            ->whereIn('mode', $this->equivalentModes($normalizedMode))
             ->where('is_active', true)
             ->where('valid_from', '<=', now())
             ->where(function ($query): void {
                 $query->whereNull('valid_to')->orWhere('valid_to', '>', now());
             })
             ->orderByDesc('valid_from')
+            ->orderByDesc('id')
             ->first();
 
         if (! $calibration) {
@@ -119,7 +132,7 @@ class ZoneProcessCalibrationController extends Controller
             $calibration = DB::transaction(function () use ($zone, $normalizedMode, $payload, $now, $current, $userId) {
                 ZoneProcessCalibration::query()
                     ->where('zone_id', $zone->id)
-                    ->where('mode', $normalizedMode)
+                    ->whereIn('mode', $this->equivalentModes($normalizedMode))
                     ->where('is_active', true)
                     ->update([
                         'is_active' => false,
@@ -203,6 +216,19 @@ class ZoneProcessCalibrationController extends Controller
     }
 
     /**
+     * @return list<string>
+     */
+    private function equivalentModes(string $mode): array
+    {
+        return match ($mode) {
+            'solution_fill' => ['solution_fill', 'tank_filling'],
+            'tank_recirc' => ['tank_recirc', 'prepare_recirculation'],
+            'irrigation' => ['irrigation', 'irrigating', 'irrig_recirc'],
+            default => [$mode],
+        };
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function serializeCalibration(ZoneProcessCalibration $calibration): array
@@ -210,7 +236,7 @@ class ZoneProcessCalibrationController extends Controller
         return [
             'id' => $calibration->id,
             'zone_id' => $calibration->zone_id,
-            'mode' => $calibration->mode,
+            'mode' => $this->normalizeMode((string) $calibration->mode) ?? $calibration->mode,
             'ec_gain_per_ml' => $calibration->ec_gain_per_ml,
             'ph_up_gain_per_ml' => $calibration->ph_up_gain_per_ml,
             'ph_down_gain_per_ml' => $calibration->ph_down_gain_per_ml,
@@ -232,8 +258,12 @@ class ZoneProcessCalibrationController extends Controller
     {
         return ZoneProcessCalibration::query()
             ->where('zone_id', $zoneId)
-            ->where('mode', $mode)
+            ->whereIn('mode', $this->equivalentModes($mode))
             ->where('is_active', true)
+            ->where('valid_from', '<=', now())
+            ->where(function (Builder $query): void {
+                $query->whereNull('valid_to')->orWhere('valid_to', '>', now());
+            })
             ->orderByDesc('valid_from')
             ->orderByDesc('id')
             ->first();

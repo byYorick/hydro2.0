@@ -41,6 +41,7 @@ export interface SetupWizardPlantNodeCommandActions {
   selectPlant: () => void
   attachNodesToZone: (assignments?: SetupWizardDeviceAssignments | null) => Promise<void>
   isNodeAttachedToCurrentZone: (nodeId: number) => boolean
+  syncAttachedNodesToCurrentZone: (nodeIds: number[]) => void
 }
 
 export function canSelectPlant(canConfigure: boolean, selectedPlantId: number | null): boolean {
@@ -65,6 +66,9 @@ const DEVICE_ROLE_LABELS: Record<keyof SetupWizardDeviceAssignments, string> = {
   accumulation: 'накопительный узел',
   climate: 'климат',
   light: 'свет',
+  co2_sensor: 'датчик CO2',
+  co2_actuator: 'CO2 actuator',
+  root_vent_actuator: 'прикорневая вентиляция',
 }
 
 function sleep(ms: number): Promise<void> {
@@ -149,6 +153,25 @@ export function createSetupWizardPlantNodeCommands(
     }
 
     return attachedNodeIds.has(nodeId)
+  }
+
+  function syncAttachedNodesToCurrentZone(nodeIds: number[]): void {
+    const currentZoneId = selectedZone.value?.id ?? null
+    attachedNodeIds.clear()
+    attachedZoneId = currentZoneId
+
+    if (!currentZoneId) {
+      attachedNodesCount.value = 0
+      return
+    }
+
+    nodeIds
+      .filter((nodeId) => Number.isInteger(nodeId) && nodeId > 0)
+      .forEach((nodeId) => {
+        attachedNodeIds.add(nodeId)
+      })
+
+    attachedNodesCount.value = attachedNodeIds.size
   }
 
   function getNodeLabel(nodeId: number): string {
@@ -461,5 +484,6 @@ export function createSetupWizardPlantNodeCommands(
     selectPlant,
     attachNodesToZone,
     isNodeAttachedToCurrentZone,
+    syncAttachedNodesToCurrentZone,
   }
 }

@@ -4,6 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiGetMock = vi.hoisted(() => vi.fn())
 const getPumpCalibrationsMock = vi.hoisted(() => vi.fn())
 const updatePumpCalibrationMock = vi.hoisted(() => vi.fn())
+const pumpSettingsState = vi.hoisted(() => ({
+  value: {
+    ml_per_sec_min: 0.01,
+    ml_per_sec_max: 20,
+    age_warning_days: 30,
+  } as Record<string, number> | undefined,
+}))
 
 vi.mock('@/Components/Card.vue', () => ({
   default: {
@@ -46,11 +53,7 @@ vi.mock('@/composables/usePidConfig', () => ({
 
 vi.mock('@/composables/usePageProps', () => ({
   usePageProp: () => ({
-    value: {
-      ml_per_sec_min: 0.01,
-      ml_per_sec_max: 20,
-      age_warning_days: 30,
-    },
+    value: pumpSettingsState.value,
   }),
 }))
 
@@ -61,6 +64,11 @@ describe('PumpCalibrationsPanel.vue', () => {
     apiGetMock.mockReset()
     getPumpCalibrationsMock.mockReset()
     updatePumpCalibrationMock.mockReset()
+    pumpSettingsState.value = {
+      ml_per_sec_min: 0.01,
+      ml_per_sec_max: 20,
+      age_warning_days: 30,
+    }
 
     getPumpCalibrationsMock.mockResolvedValue([
       {
@@ -144,5 +152,17 @@ describe('PumpCalibrationsPanel.vue', () => {
     await calibrateButton!.trigger('click')
 
     expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
+  })
+
+  it('не падает без pumpCalibrationSettings в page props', async () => {
+    pumpSettingsState.value = undefined
+
+    const wrapper = mount(PumpCalibrationsPanel, {
+      props: { zoneId: 7 },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Рабочий диапазон системы: 0-20 мл/с')
   })
 })

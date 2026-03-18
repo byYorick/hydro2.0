@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Recipe;
 use App\Services\RecipeService;
+use App\Support\Recipes\RecipeAggregatePresenter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -11,7 +12,8 @@ use Illuminate\Http\Response;
 class RecipeController extends Controller
 {
     public function __construct(
-        private RecipeService $recipeService
+        private RecipeService $recipeService,
+        private RecipeAggregatePresenter $presenter,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -39,24 +41,9 @@ class RecipeController extends Controller
 
         $items = $query->latest('id')->paginate(25);
 
-        $items->getCollection()->transform(function (Recipe $recipe) {
-            $published = $recipe->latestPublishedRevision;
-            $draft = $recipe->latestDraftRevision;
-            $revisionForCount = $published ?? $draft;
-
-            return [
-                'id' => $recipe->id,
-                'name' => $recipe->name,
-                'description' => $recipe->description,
-                'phases_count' => $revisionForCount?->phases?->count() ?? 0,
-                'latest_published_revision_id' => $published?->id,
-                'latest_draft_revision_id' => $draft?->id,
-                'plants' => $recipe->plants->map(fn ($plant) => [
-                    'id' => $plant->id,
-                    'name' => $plant->name,
-                ]),
-            ];
-        });
+        $items->setCollection(
+            $items->getCollection()->map(fn (Recipe $recipe) => $this->presenter->presentListItem($recipe))
+        );
 
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
@@ -82,18 +69,12 @@ class RecipeController extends Controller
             'plants:id,name',
         ]);
 
-        $recipeArray = $recipe->toArray();
-        $recipeArray['latest_published_revision_id'] = $recipe->latestPublishedRevision?->id;
-        $recipeArray['latest_draft_revision_id'] = $recipe->latestDraftRevision?->id;
-        $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray()
-            ?? $recipe->latestPublishedRevision?->phases?->toArray()
-            ?? [];
-        $recipeArray['plants'] = $recipe->plants->map(fn ($plant) => [
-            'id' => $plant->id,
-            'name' => $plant->name,
-        ])->toArray();
+        $recipe->loadMissing([
+            'latestDraftRevision.phases.stageTemplate',
+            'latestPublishedRevision.phases.stageTemplate',
+        ]);
 
-        return response()->json(['status' => 'ok', 'data' => $recipeArray]);
+        return response()->json(['status' => 'ok', 'data' => $this->presenter->presentDetail($recipe)]);
     }
 
     /**

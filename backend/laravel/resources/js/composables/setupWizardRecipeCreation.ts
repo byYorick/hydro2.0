@@ -1,4 +1,5 @@
 import { extractData } from '@/utils/apiHelpers'
+import { buildRecipePhasePayload, createDefaultRecipePhase, mapSimpleRecipePhaseToForm } from '@/composables/recipeEditorShared'
 import type { Recipe, RecipeFormState } from './setupWizardTypes'
 
 export interface SetupWizardRecipeApiClient {
@@ -29,18 +30,19 @@ export function addRecipePhase(recipeForm: RecipeFormState): void {
     ? Math.max(...recipeForm.phases.map((phase) => phase.phase_index))
     : -1
 
+  const phase = createDefaultRecipePhase(maxIndex + 1)
   recipeForm.phases.push({
-    phase_index: maxIndex + 1,
-    name: `Фаза ${maxIndex + 2}`,
-    duration_hours: 72,
+    phase_index: phase.phase_index,
+    name: phase.name,
+    duration_hours: phase.duration_hours,
     targets: {
-      ph: 5.8,
-      ec: 1.6,
-      temp_air: 23,
-      humidity_air: 62,
-      light_hours: 16,
-      irrigation_interval_sec: 900,
-      irrigation_duration_sec: 15,
+      ph: phase.ph_min,
+      ec: phase.ec_min,
+      temp_air: phase.temp_air_target ?? 23,
+      humidity_air: phase.humidity_target ?? 62,
+      light_hours: phase.lighting_photoperiod_hours ?? 16,
+      irrigation_interval_sec: phase.irrigation_interval_sec ?? 900,
+      irrigation_duration_sec: phase.irrigation_duration_sec ?? 15,
     },
   })
 }
@@ -86,22 +88,10 @@ export async function createRecipeForPlant(options: CreateRecipeForPlantOptions)
   }
 
   for (const phase of recipeForm.phases) {
-    await api.post(`/recipe-revisions/${revisionId}/phases`, {
-      phase_index: phase.phase_index,
-      name: phase.name || `Фаза ${phase.phase_index + 1}`,
-      duration_hours: phase.duration_hours,
-      ph_target: phase.targets.ph,
-      ph_min: phase.targets.ph,
-      ph_max: phase.targets.ph,
-      ec_target: phase.targets.ec,
-      ec_min: phase.targets.ec,
-      ec_max: phase.targets.ec,
-      temp_air_target: phase.targets.temp_air,
-      humidity_target: phase.targets.humidity_air,
-      lighting_photoperiod_hours: phase.targets.light_hours,
-      irrigation_interval_sec: phase.targets.irrigation_interval_sec,
-      irrigation_duration_sec: phase.targets.irrigation_duration_sec,
-    })
+    await api.post(
+      `/recipe-revisions/${revisionId}/phases`,
+      buildRecipePhasePayload(mapSimpleRecipePhaseToForm(phase))
+    )
   }
 
   await api.post(`/recipe-revisions/${revisionId}/publish`)

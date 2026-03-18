@@ -88,6 +88,24 @@ class RecipeRevisionControllerTest extends TestCase
             'stage_template_id' => $template->id,
             'phase_index' => 0,
             'name' => 'Test Phase 1',
+            'lighting_start_time' => '06:00:00',
+            'nutrient_program_code' => 'TEST_PROGRAM',
+            'nutrient_npk_ratio_pct' => 44,
+            'nutrient_calcium_ratio_pct' => 36,
+            'nutrient_magnesium_ratio_pct' => 17,
+            'nutrient_micro_ratio_pct' => 3,
+            'extensions' => [
+                'day_night' => [
+                    'lighting' => ['day_start_time' => '06:00:00', 'day_hours' => 16],
+                ],
+                'subsystems' => [
+                    'irrigation' => [
+                        'targets' => [
+                            'system_type' => 'drip',
+                        ],
+                    ],
+                ],
+            ],
         ]);
         RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $sourceRevision->id,
@@ -123,6 +141,10 @@ class RecipeRevisionControllerTest extends TestCase
             ->where('status', 'DRAFT')
             ->first();
         $this->assertEquals(2, $newRevision->phases()->count());
+        $clonedPhase = $newRevision->phases()->orderBy('phase_index')->first();
+        $this->assertSame('TEST_PROGRAM', $clonedPhase?->nutrient_program_code);
+        $this->assertSame('06:00:00', $clonedPhase?->lighting_start_time);
+        $this->assertSame('drip', data_get($clonedPhase?->extensions, 'subsystems.irrigation.targets.system_type'));
     }
 
     #[Test]

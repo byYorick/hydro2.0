@@ -74,6 +74,15 @@ WebSocket → обновление данных зон / нод / алертов
 10. **Profile** (`/profile`) – профиль пользователя
 11. **Setup** (`/setup/wizard`) – мастер первоначальной настройки
 
+## 3.0a. Recipes (`/recipes`, `/recipes/create`, `/recipes/{id}/edit`)
+
+Canonical recipe UX:
+
+- `Recipes/Edit`, `RecipeCreateWizard` и recipe-step в `PlantCreateModal` используют один shared `RecipeEditor`;
+- primary source of truth в UI: flat phase fields + `extensions.day_night` + `extensions.subsystems.irrigation.targets.system_type`;
+- `targets` используется только как derived read-helper;
+- `PlantCreateModal` не создаёт `plant -> recipe -> revision -> phases` последовательностью запросов с фронта, а вызывает атомарный backend endpoint `POST /api/plants/with-recipe`.
+
 ---
 
 # 3. Подробное описание экранов
@@ -99,6 +108,37 @@ WebSocket → обновление данных зон / нод / алертов
 - Последние события (Events)
 - Проблемные зоны
 - Список теплиц
+
+---
+
+## 3.0. Setup Wizard (`/setup/wizard`)
+
+Текущий мастер запуска состоит из 5 шагов:
+
+1. `Теплица`
+2. `Зона`
+3. `Культура и рецепт`
+4. `Автоматизация и устройства зоны`
+5. `Запуск`
+
+Новый canonical UX:
+
+- общий климат теплицы редактируется только на уровне теплицы;
+- в шаге `1. Теплица` есть inline-toggle `Управлять климатом`;
+- при включении шага климата сначала выбираются greenhouse climate nodes, затем сохраняется profile;
+- шаг `4. Автоматизация и устройства зоны` объединяет старые шаги `Устройства` и `Логика автоматики`;
+- внутри шага `4` секции всегда идут в порядке:
+  - `Полив и накопление`
+  - `Коррекция`
+  - `Zone climate`
+  - `Свет`
+- correction/calibration stack не дублируется вручную, а переиспользуется тем же shared-блоком, что и на `Zone Detail`.
+
+Экран `Greenhouses/Show.vue` теперь использует ту же greenhouse-climate форму, что и setup wizard:
+
+- legacy modal массовой отправки `FORCE_CLIMATE` по зонам удалён;
+- greenhouse climate сохраняется как отдельный greenhouse profile + greenhouse bindings;
+- runtime dispatcher для greenhouse climate остаётся `WIP`, но UI уже редактирует и показывает сохранённый профиль.
 
 ---
 
