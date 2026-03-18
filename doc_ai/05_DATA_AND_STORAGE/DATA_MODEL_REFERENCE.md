@@ -1807,8 +1807,8 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   - `mode` (`generic|solution_fill|tank_recirc|irrigation`)
   - `ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`
   - `ph_per_ec_ml`, `ec_per_ph_ml`
-  - `transport_delay_sec`, `settle_sec`
-  - `confidence`, `source`, `meta`
+  - `transport_delay_sec`, `settle_sec` (DB default: `0`)
+  - `confidence` (DB default: `1.00`), `source`, `meta`
   - `valid_from`, `valid_to`, `is_active`
 - Инварианты:
   - в каждый момент времени допускается не более одной active calibration на пару `(zone_id, mode)`;
