@@ -18,6 +18,19 @@ test.describe('Grow Cycle Recipe', () => {
     await page.fill(`[data-testid="${TEST_IDS.RECIPE_NAME_INPUT}"]`, `Test Recipe ${Date.now()}`);
     await page.fill(`[data-testid="${TEST_IDS.RECIPE_DESCRIPTION_INPUT}"]`, 'Test recipe description');
 
+    const plantSelect = page.locator('#recipe-plant');
+    if (await plantSelect.count() > 0) {
+      const options = await plantSelect.locator('option').evaluateAll((elements) =>
+        elements
+          .map((element) => ({ value: (element as HTMLOptionElement).value, disabled: (element as HTMLOptionElement).disabled }))
+          .filter((option) => option.value && !option.disabled)
+      );
+
+      if (options.length > 0) {
+        await plantSelect.selectOption(options[0].value);
+      }
+    }
+
     // Сохраняем рецепт (кнопка может быть без data-testid, ищем по тексту)
     const saveButton = page.locator('button:has-text("Сохранить")').or(page.locator('button[type="submit"]'));
     await saveButton.click();

@@ -9,6 +9,7 @@
  * - Запуск цикла выращивания
  */
 import { useApi } from './useApi'
+import { buildRecipePhasePayload, mapSimpleRecipePhaseToForm } from '@/composables/recipeEditorShared'
 import type { GrowCycleWizardData } from './useWizardValidation'
 
 export interface CreateGreenhouseRequest {
@@ -138,25 +139,23 @@ export function useWizardApi() {
     }
 
     for (const [index, phase] of data.phases.entries()) {
-      const phTarget = typeof phase.targets?.ph === 'number' ? phase.targets.ph : null
-      const phMin = typeof phase.targets?.ph?.min === 'number' ? phase.targets.ph.min : phTarget
-      const phMax = typeof phase.targets?.ph?.max === 'number' ? phase.targets.ph.max : phTarget
-
-      const ecTarget = typeof phase.targets?.ec === 'number' ? phase.targets.ec : null
-      const ecMin = typeof phase.targets?.ec?.min === 'number' ? phase.targets.ec.min : ecTarget
-      const ecMax = typeof phase.targets?.ec?.max === 'number' ? phase.targets.ec.max : ecTarget
-
-      await api.post(`/recipe-revisions/${revision.id}/phases`, {
-        phase_index: index,
-        name: phase.name,
-        duration_hours: phase.duration_hours,
-        ph_target: phTarget,
-        ph_min: phMin,
-        ph_max: phMax,
-        ec_target: ecTarget,
-        ec_min: ecMin,
-        ec_max: ecMax,
-      })
+      await api.post(
+        `/recipe-revisions/${revision.id}/phases`,
+        buildRecipePhasePayload(mapSimpleRecipePhaseToForm({
+          phase_index: index,
+          name: phase.name,
+          duration_hours: phase.duration_hours,
+          targets: {
+            ph: typeof phase.targets?.ph === 'number' ? phase.targets.ph : 5.8,
+            ec: typeof phase.targets?.ec === 'number' ? phase.targets.ec : 1.6,
+            temp_air: typeof phase.targets?.temp_air === 'number' ? phase.targets.temp_air : 23,
+            humidity_air: typeof phase.targets?.humidity_air === 'number' ? phase.targets.humidity_air : 62,
+            light_hours: typeof phase.targets?.light_hours === 'number' ? phase.targets.light_hours : 16,
+            irrigation_interval_sec: typeof phase.targets?.irrigation_interval_sec === 'number' ? phase.targets.irrigation_interval_sec : 900,
+            irrigation_duration_sec: typeof phase.targets?.irrigation_duration_sec === 'number' ? phase.targets.irrigation_duration_sec : 15,
+          },
+        }))
+      )
     }
 
     await api.post(`/recipe-revisions/${revision.id}/publish`)
