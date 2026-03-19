@@ -55,6 +55,7 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
   default: {
     name: 'ZoneAutomationProfileSections',
     props: ['assignments', 'lightingForm', 'zoneClimateForm'],
+    emits: ['save-section'],
     template: `
       <div data-test="zone-automation-sections">
         <label>
@@ -95,6 +96,10 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
           <option value="">none</option>
           <option value="106">co2</option>
         </select>
+        <button data-test="save-section-required-devices" @click="$emit('save-section', 'required_devices')">save required</button>
+        <button data-test="save-section-water-contour" @click="$emit('save-section', 'water_contour')">save contour</button>
+        <button data-test="save-section-lighting" @click="$emit('save-section', 'lighting')">save lighting</button>
+        <button data-test="save-section-zone-climate" @click="$emit('save-section', 'zone_climate')">save zone climate</button>
       </div>
     `,
   },
@@ -335,7 +340,7 @@ describe('Setup/Wizard.vue', () => {
     )
   })
 
-  it('сохраняет unified шаг зоны: bindings + automation profile + команду', async () => {
+  it('сохраняет обязательные устройства отдельной секцией', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
@@ -354,7 +359,7 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="ec-select"]').setValue('104')
     await flushPromises()
 
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Сохранить автоматику и устройства зоны'))?.trigger('click')
+    await wrapper.find('[data-test="save-section-required-devices"]').trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
@@ -370,6 +375,29 @@ describe('Setup/Wizard.vue', () => {
       }),
       undefined,
     )
+  })
+
+  it('сохраняет секцию профиля зоны: automation profile + команду', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await createGreenhouseAndZone(wrapper)
+
+    const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
+    await plantSelect?.setValue('5')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Используется рецепт: Tomato recipe')
+
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(false)
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await flushPromises()
+
+    await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
+    await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/automation-logic-profile',
@@ -400,7 +428,7 @@ describe('Setup/Wizard.vue', () => {
     )
   })
 
-  it('отправляет флаги света и zone climate из объединённого шага', async () => {
+  it('отправляет флаги света и zone climate из секции профиля', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
@@ -421,7 +449,7 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="co2-sensor-select"]').setValue('106')
     await flushPromises()
 
-    await wrapper.findAll('button').find((btn) => btn.text().includes('Сохранить автоматику и устройства зоны'))?.trigger('click')
+    await wrapper.find('[data-test="save-section-zone-climate"]').trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
@@ -430,6 +458,52 @@ describe('Setup/Wizard.vue', () => {
         subsystems: expect.objectContaining({
           lighting: expect.objectContaining({ enabled: false }),
           zone_climate: expect.objectContaining({ enabled: true }),
+        }),
+      }),
+      undefined,
+    )
+  })
+
+  it('снимает optional bindings при выключении света и климата зоны', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await createGreenhouseAndZone(wrapper)
+
+    const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
+    await plantSelect?.setValue('5')
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(true)
+    await wrapper.find('[data-test="zone-climate-toggle"]').setValue(true)
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await wrapper.find('[data-test="light-select"]').setValue('105')
+    await wrapper.find('[data-test="co2-sensor-select"]').setValue('106')
+    await flushPromises()
+
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(false)
+    await wrapper.find('[data-test="zone-climate-toggle"]').setValue(false)
+    await flushPromises()
+
+    await wrapper.find('[data-test="save-section-lighting"]').trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/setup-wizard/apply-device-bindings',
+      expect.objectContaining({
+        zone_id: 20,
+        assignments: expect.objectContaining({
+          irrigation: 101,
+          accumulation: 101,
+          ph_correction: 102,
+          ec_correction: 104,
+          light: null,
+          co2_sensor: null,
+          co2_actuator: null,
+          root_vent_actuator: null,
         }),
       }),
       undefined,

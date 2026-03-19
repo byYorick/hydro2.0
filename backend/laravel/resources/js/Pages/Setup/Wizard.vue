@@ -365,7 +365,7 @@
 
         <template v-else>
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
-            Климат теплицы вынесен в шаг 1. Здесь сохраняется только профиль зоны: полив, коррекция, zone climate и свет.
+            Климат теплицы вынесен в шаг 1. Здесь настройки сохраняются по секциям, но применяются в общий профиль зоны: устройства, водный контур, полив, коррекция, свет и климат зоны.
           </div>
 
           <ZoneAutomationProfileSections
@@ -385,8 +385,12 @@
             :show-correction-calibration-stack="Boolean(selectedZone?.id && sensorCalibrationSettings)"
             :zone-id="selectedZone?.id ?? null"
             :sensor-calibration-settings="sensorCalibrationSettings"
+            :show-section-save-buttons="true"
+            :save-disabled="loading.stepDevices || loading.stepAutomation"
+            :saving-section="savingAutomationSection"
             @bind-devices="attachZoneDevicesOnly"
             @refresh-nodes="refreshAvailableNodes"
+            @save-section="saveAutomationSection"
           />
 
           <div
@@ -404,6 +408,9 @@
             <span v-else-if="stepZoneAutomationDone" class="text-[color:var(--badge-success-text)]">
               Профиль зоны и bindings сохранены
             </span>
+            <span v-else>
+              Сохраните обязательные устройства и хотя бы одну секцию профиля.
+            </span>
             <Button
               size="sm"
               variant="secondary"
@@ -411,13 +418,6 @@
               @click="refreshAvailableNodes"
             >
               {{ loading.nodes ? 'Обновление...' : 'Обновить ноды' }}
-            </Button>
-            <Button
-              size="sm"
-              :disabled="!canConfigure || !stepZoneDone || loading.stepDevices || loading.stepAutomation"
-              @click="saveZoneAutomationAndDevices"
-            >
-              {{ loading.stepDevices || loading.stepAutomation ? 'Сохранение...' : 'Сохранить автоматику и устройства зоны' }}
             </Button>
           </div>
 
@@ -488,6 +488,7 @@ import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
+import type { ZoneAutomationSectionSaveKey } from '@/Components/ZoneAutomationProfileSections.vue'
 
 const page = usePage<{ sensorCalibrationSettings?: SensorCalibrationSettings | null }>()
 
@@ -548,12 +549,42 @@ const {
   refreshAvailableNodes,
   applyGreenhouseClimate,
   saveZoneAutomationAndDevices,
+  applyAutomation,
   openCycleWizard,
   formatDateTime,
 } = useSetupWizard()
 
 const showPlantCreateWizard = ref(false)
 const sensorCalibrationSettings = computed(() => page.props.sensorCalibrationSettings ?? null)
+const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
+
+async function saveAutomationSection(section: ZoneAutomationSectionSaveKey): Promise<void> {
+  if (!canConfigure.value || !selectedZone.value?.id) {
+    return
+  }
+
+  savingAutomationSection.value = section
+  try {
+    if (section === 'required_devices') {
+      await attachZoneDevicesOnly(['irrigation', 'ph_correction', 'ec_correction'])
+      return
+    }
+
+    if (section === 'lighting') {
+      await saveZoneAutomationAndDevices()
+      return
+    }
+
+    if (section === 'zone_climate') {
+      await saveZoneAutomationAndDevices()
+      return
+    }
+
+    await applyAutomation()
+  } finally {
+    savingAutomationSection.value = null
+  }
+}
 
 function handlePlantCreated(plant: { id?: number; name?: string } | null): void {
   showPlantCreateWizard.value = false

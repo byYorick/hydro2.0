@@ -791,15 +791,28 @@ export function useSetupWizard() {
     }
   }
 
-  function buildZoneAssignmentsPayload(): SetupWizardDeviceAssignments {
-    const irrigationId = typeof deviceAssignments.irrigation === 'number'
-      ? deviceAssignments.irrigation
+  function normalizeZoneAssignmentsPayload(
+    payload: SetupWizardDeviceAssignments
+  ): SetupWizardDeviceAssignments {
+    const irrigationId = typeof payload.irrigation === 'number'
+      ? payload.irrigation
       : null
 
     return {
-      ...deviceAssignments,
+      ...payload,
       accumulation: irrigationId,
+      light: automationLightingForm.enabled ? payload.light : null,
+      co2_sensor: zoneClimateForm.enabled ? payload.co2_sensor : null,
+      co2_actuator: zoneClimateForm.enabled ? payload.co2_actuator : null,
+      root_vent_actuator: zoneClimateForm.enabled ? payload.root_vent_actuator : null,
     }
+  }
+
+  function buildZoneAssignmentsPayload(): SetupWizardDeviceAssignments {
+    return normalizeZoneAssignmentsPayload({
+      ...deviceAssignments,
+      accumulation: null,
+    })
   }
 
   function buildPartialZoneAssignmentsPayload(
@@ -825,11 +838,7 @@ export function useSetupWizard() {
       payload[role] = deviceAssignments[role]
     })
 
-    if (normalizedRoles.has('irrigation') && typeof payload.irrigation === 'number') {
-      payload.accumulation = payload.irrigation
-    }
-
-    return payload
+    return normalizeZoneAssignmentsPayload(payload)
   }
 
   async function saveZoneAutomationAndDevices(): Promise<boolean> {
