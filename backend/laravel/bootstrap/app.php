@@ -189,7 +189,12 @@ return Application::configure(basePath: dirname(__DIR__))
             
             // Для веб-роутов возвращаем стандартный ответ
             return response()->view('errors.429', [
+                'correlation_id' => $generateCorrelationId(),
                 'retry_after' => $retryAfter,
+                'message' => 'Слишком много запросов. Попробуйте еще раз позже.',
+                'exception' => app()->environment(['local', 'testing', 'development']) ? get_class($e) : null,
+                'file' => app()->environment(['local', 'testing', 'development']) ? $e->getFile() : null,
+                'line' => app()->environment(['local', 'testing', 'development']) ? $e->getLine() : null,
             ], 429)->withHeaders([
                 'Retry-After' => $retryAfter,
             ]);
@@ -411,9 +416,23 @@ return Application::configure(basePath: dirname(__DIR__))
                 }
 
                 // Для обычных веб-запросов возвращаем дружелюбную страницу ошибки
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
+                    return response()->view('errors.404', [
+                        'correlation_id' => $correlationId,
+                        'message' => $isDev ? $e->getMessage() : null,
+                        'exception' => $isDev ? get_class($e) : null,
+                        'file' => $isDev ? $e->getFile() : null,
+                        'line' => $isDev ? $e->getLine() : null,
+                    ], 404);
+                }
+
                 if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                     return response()->view('errors.404', [
                         'correlation_id' => $correlationId,
+                        'message' => $isDev ? $e->getMessage() : null,
+                        'exception' => $isDev ? get_class($e) : null,
+                        'file' => $isDev ? $e->getFile() : null,
+                        'line' => $isDev ? $e->getLine() : null,
                     ], 404);
                 }
 
@@ -427,6 +446,9 @@ return Application::configure(basePath: dirname(__DIR__))
                     return response()->view('errors.403', [
                         'correlation_id' => $correlationId,
                         'message' => 'Доступ запрещен.',
+                        'exception' => $isDev ? get_class($e) : null,
+                        'file' => $isDev ? $e->getFile() : null,
+                        'line' => $isDev ? $e->getLine() : null,
                     ], 403);
                 }
 

@@ -1,6 +1,35 @@
 #!/bin/bash
 set -e
 
+ensure_laravel_writable_dirs() {
+    local writable_dirs=(
+        /app/bootstrap/cache
+        /app/storage
+        /app/storage/framework
+        /app/storage/framework/cache
+        /app/storage/framework/cache/data
+        /app/storage/framework/sessions
+        /app/storage/framework/views
+        /app/storage/logs
+    )
+
+    mkdir -p "${writable_dirs[@]}" 2>/dev/null || true
+
+    if id application >/dev/null 2>&1; then
+        chown -R application:application "${writable_dirs[@]}" 2>/dev/null || true
+        if [ -d /app/storage/framework/views ]; then
+            find /app/storage/framework/views -type f -exec chown application:application {} + 2>/dev/null || true
+        fi
+    fi
+
+    chmod -R ug+rwX,o+rX "${writable_dirs[@]}" 2>/dev/null || true
+    if [ -d /app/storage/framework/views ]; then
+        find /app/storage/framework/views -type f -exec chmod ug+rw,o+r {} + 2>/dev/null || true
+    fi
+}
+
+ensure_laravel_writable_dirs
+
 # Create .env file from .env.example if it doesn't exist
 if [ ! -f /app/.env ] && [ -f /app/.env.example ]; then
     echo "Creating .env file from .env.example..."
@@ -135,6 +164,9 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
     fi
 fi
 
+# Re-apply writable permissions after any cache/config changes and before runtime starts.
+ensure_laravel_writable_dirs
+
 # Add VITE_* environment variables to .env file if they exist in environment
 # This ensures Vite can access them during build
 if [ -f /app/.env ]; then
@@ -188,6 +220,9 @@ if [ -f /app/.env ]; then
         echo "VITE_WS_TLS=false" >> /app/.env
     fi
 fi
+
+# Final permission pass for bind-mounted volumes before handing control to nginx/php-fpm.
+ensure_laravel_writable_dirs
 
 # Configure PHP based on environment
 if [ "${APP_ENV:-production}" = "local" ]; then
