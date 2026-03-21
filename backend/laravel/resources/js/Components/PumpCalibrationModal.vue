@@ -5,7 +5,7 @@
     size="large"
     @close="$emit('close')"
   >
-    <div class="space-y-4">
+    <div class="pump-calibration-modal space-y-4">
       <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]">
         <div>1. Запустите насос на заданное время и измерьте фактический объём.</div>
         <div>2. Для ΔEC-калибровки укажите объём тестового бака и EC до/после дозы (опционально).</div>
@@ -22,7 +22,10 @@
 
       <template v-else>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('component')"
+          >
             Компонент
             <select
               v-model="form.component"
@@ -39,7 +42,10 @@
             </select>
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('node_channel_id')"
+          >
             Канал помпы
             <select
               v-model.number="form.node_channel_id"
@@ -56,7 +62,10 @@
             </select>
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('duration_sec')"
+          >
             Время запуска (сек)
             <input
               v-model.number="form.duration_sec"
@@ -69,7 +78,10 @@
             />
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('actual_ml')"
+          >
             Фактический объём (мл)
             <input
               v-model.number="form.actual_ml"
@@ -82,7 +94,10 @@
             />
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('test_volume_l')"
+          >
             Объём теста (л)
             <input
               v-model.number="form.test_volume_l"
@@ -95,7 +110,10 @@
             />
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('ec_before_ms')"
+          >
             EC до дозы (mS/cm)
             <input
               v-model.number="form.ec_before_ms"
@@ -108,7 +126,10 @@
             />
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('ec_after_ms')"
+          >
             EC после дозы (mS/cm)
             <input
               v-model.number="form.ec_after_ms"
@@ -121,7 +142,10 @@
             />
           </label>
 
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('temperature_c')"
+          >
             Температура (°C, опц.)
             <input
               v-model.number="form.temperature_c"
@@ -275,6 +299,21 @@ const emit = defineEmits<{
   (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
 
+const FIELD_HELP: Record<string, string> = {
+  component: 'Какой dosing-компонент калибруется. От выбора зависит correction path и проверка готовности runtime.',
+  node_channel_id: 'Конкретный actuator channel, на который будет отправлена команда запуска насоса и в который сохранится новая калибровка.',
+  duration_sec: 'Сколько секунд крутить насос при тестовом запуске. По измеренному объёму рассчитывается ml_per_sec.',
+  actual_ml: 'Фактически измеренный объём после тестового прогона. Это основной источник расчёта скорости насоса.',
+  test_volume_l: 'Объём тестового бака для расчёта EC-коэффициента k. Нужен только для ΔEC-калибровки.',
+  ec_before_ms: 'EC раствора до дозы. Вместе с объёмом бака и EC после дозы позволяет оценить коэффициент k.',
+  ec_after_ms: 'EC раствора после дозы. Используется для вычисления k, если заполнены остальные тестовые данные.',
+  temperature_c: 'Температура раствора во время теста. Сейчас хранится как метаданные для повторяемости калибровки.',
+}
+
+function fieldHelp(key: string): string {
+  return FIELD_HELP[key] ?? 'Параметр pump calibration.'
+}
+
 const rawPumpSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
 const pumpSettings = computed<PumpCalibrationSettings>(() => ({
   ml_per_sec_min: 0.001,
@@ -405,3 +444,19 @@ function onSave(): void {
   emit('save', buildSavePayload())
 }
 </script>
+
+<style scoped>
+.pump-calibration-modal :deep(label.text-xs) {
+  display: grid;
+  gap: 0.32rem;
+  line-height: 1.35;
+}
+
+.pump-calibration-modal :deep(.input-field),
+.pump-calibration-modal :deep(.input-select) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+</style>

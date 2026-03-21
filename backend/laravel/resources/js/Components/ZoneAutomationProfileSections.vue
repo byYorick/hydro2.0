@@ -1,6 +1,9 @@
 <template>
-  <div class="space-y-4">
-    <section class="rounded-xl border border-[color:var(--border-muted)]">
+  <div class="zone-automation-profile-sections space-y-4">
+    <section
+      v-if="showRequiredDevicesSection"
+      class="rounded-xl border border-[color:var(--border-muted)]"
+    >
       <details open class="group">
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
@@ -22,7 +25,10 @@
             class="grid grid-cols-1 gap-3 xl:grid-cols-3"
           >
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.irrigation')"
+              >
                 Узел полива
                 <select
                   v-model.number="assignments.irrigation"
@@ -67,7 +73,10 @@
             </div>
 
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.ph_correction')"
+              >
                 Узел коррекции pH
                 <select
                   v-model.number="assignments.ph_correction"
@@ -112,7 +121,10 @@
             </div>
 
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.ec_correction')"
+              >
                 Узел коррекции EC
                 <select
                   v-model.number="assignments.ec_correction"
@@ -180,7 +192,10 @@
       </details>
     </section>
 
-    <section class="rounded-xl border border-[color:var(--border-muted)]">
+    <section
+      v-if="showWaterContourSection"
+      class="rounded-xl border border-[color:var(--border-muted)]"
+    >
       <details open class="group">
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
@@ -198,7 +213,10 @@
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.systemType')"
+            >
               Тип системы
               <select
                 v-model="waterForm.systemType"
@@ -211,7 +229,10 @@
               </select>
             </label>
 
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.tanksCount')"
+            >
               Количество баков
               <input
                 v-model.number="waterForm.tanksCount"
@@ -223,7 +244,10 @@
               />
             </label>
 
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.enableDrainControl')"
+            >
               Контроль дренажа
               <select
                 v-model="waterForm.enableDrainControl"
@@ -235,7 +259,10 @@
               </select>
             </label>
 
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.drainTargetPercent')"
+            >
               Цель по дренажу (%)
               <input
                 v-model.number="waterForm.drainTargetPercent"
@@ -262,7 +289,10 @@
 
             <div class="mt-3 space-y-4">
               <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <label class="text-xs text-[color:var(--text-muted)]">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.valveSwitching')"
+                >
                   Переключение клапанов
                   <select
                     v-model="waterForm.valveSwitching"
@@ -283,7 +313,10 @@
                   Relay-шаги 2-баковой схемы
                 </h5>
                 <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankCleanFillStartSteps')"
+                  >
                     Clean fill start steps
                     <input
                       v-model.number="waterForm.twoTankCleanFillStartSteps"
@@ -294,7 +327,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankCleanFillStopSteps')"
+                  >
                     Clean fill stop steps
                     <input
                       v-model.number="waterForm.twoTankCleanFillStopSteps"
@@ -305,7 +341,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankSolutionFillStartSteps')"
+                  >
                     Solution fill start steps
                     <input
                       v-model.number="waterForm.twoTankSolutionFillStartSteps"
@@ -316,7 +355,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankSolutionFillStopSteps')"
+                  >
                     Solution fill stop steps
                     <input
                       v-model.number="waterForm.twoTankSolutionFillStopSteps"
@@ -327,7 +369,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankPrepareRecirculationStartSteps')"
+                  >
                     Prepare recirculation start
                     <input
                       v-model.number="waterForm.twoTankPrepareRecirculationStartSteps"
@@ -338,7 +383,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankPrepareRecirculationStopSteps')"
+                  >
                     Prepare recirculation stop
                     <input
                       v-model.number="waterForm.twoTankPrepareRecirculationStopSteps"
@@ -349,7 +397,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankIrrigationRecoveryStartSteps')"
+                  >
                     Irrigation recovery start
                     <input
                       v-model.number="waterForm.twoTankIrrigationRecoveryStartSteps"
@@ -360,7 +411,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.twoTankIrrigationRecoveryStopSteps')"
+                  >
                     Irrigation recovery stop
                     <input
                       v-model.number="waterForm.twoTankIrrigationRecoveryStopSteps"
@@ -394,7 +448,10 @@
       </details>
     </section>
 
-    <section class="rounded-xl border border-[color:var(--border-muted)]">
+    <section
+      v-if="showIrrigationSection"
+      class="rounded-xl border border-[color:var(--border-muted)]"
+    >
       <details open class="group">
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
@@ -412,7 +469,10 @@
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.intervalMinutes')"
+            >
               Интервал полива (мин)
               <input
                 v-model.number="waterForm.intervalMinutes"
@@ -423,7 +483,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.durationSeconds')"
+            >
               Длительность полива (сек)
               <input
                 v-model.number="waterForm.durationSeconds"
@@ -434,7 +497,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.irrigationBatchL')"
+            >
               Порция полива (л)
               <input
                 v-model.number="waterForm.irrigationBatchL"
@@ -445,7 +511,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.fillTemperatureC')"
+            >
               Температура набора (°C)
               <input
                 v-model.number="waterForm.fillTemperatureC"
@@ -456,7 +525,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.cleanTankFillL')"
+            >
               Объём чистого бака (л)
               <input
                 v-model.number="waterForm.cleanTankFillL"
@@ -467,7 +539,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.nutrientTankTargetL')"
+            >
               Объём бака раствора (л)
               <input
                 v-model.number="waterForm.nutrientTankTargetL"
@@ -478,7 +553,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.fillWindowStart')"
+            >
               Окно набора воды: от
               <input
                 v-model="waterForm.fillWindowStart"
@@ -487,7 +565,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.fillWindowEnd')"
+            >
               Окно набора воды: до
               <input
                 v-model="waterForm.fillWindowEnd"
@@ -509,7 +590,10 @@
                   Диагностика и refill
                 </h5>
                 <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.diagnosticsEnabled')"
+                  >
                     Диагностика
                     <select
                       v-model="waterForm.diagnosticsEnabled"
@@ -520,7 +604,10 @@
                       <option :value="false">Выключена</option>
                     </select>
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.diagnosticsIntervalMinutes')"
+                  >
                     Интервал диагностики (мин)
                     <input
                       v-model.number="waterForm.diagnosticsIntervalMinutes"
@@ -531,7 +618,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.diagnosticsWorkflow')"
+                  >
                     Режим диагностики
                     <select
                       v-model="waterForm.diagnosticsWorkflow"
@@ -548,7 +638,10 @@
                       <option value="diagnostics">diagnostics</option>
                     </select>
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.cleanTankFullThreshold')"
+                  >
                     Порог полного бака (0..1)
                     <input
                       v-model.number="waterForm.cleanTankFullThreshold"
@@ -560,7 +653,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.refillDurationSeconds')"
+                  >
                     Длительность refill (сек)
                     <input
                       v-model.number="waterForm.refillDurationSeconds"
@@ -571,7 +667,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.refillTimeoutSeconds')"
+                  >
                     Таймаут refill (сек)
                     <input
                       v-model.number="waterForm.refillTimeoutSeconds"
@@ -582,7 +681,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)] md:col-span-2"
+                    :title="fieldHelp('water.refillRequiredNodeTypes')"
+                  >
                     Обязательные типы нод для refill
                     <input
                       v-model="waterForm.refillRequiredNodeTypes"
@@ -591,7 +693,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.refillPreferredChannel')"
+                  >
                     Канал refill
                     <input
                       v-model="waterForm.refillPreferredChannel"
@@ -608,7 +713,10 @@
                   Startup и recovery
                 </h5>
                 <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.startupCleanFillTimeoutSeconds')"
+                  >
                     Таймаут набора чистой воды
                     <input
                       v-model.number="waterForm.startupCleanFillTimeoutSeconds"
@@ -619,7 +727,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.startupSolutionFillTimeoutSeconds')"
+                  >
                     Таймаут набора раствора
                     <input
                       v-model.number="waterForm.startupSolutionFillTimeoutSeconds"
@@ -630,7 +741,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.startupPrepareRecirculationTimeoutSeconds')"
+                  >
                     Таймаут подготовки рециркуляции
                     <input
                       v-model.number="waterForm.startupPrepareRecirculationTimeoutSeconds"
@@ -641,7 +755,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.startupCleanFillRetryCycles')"
+                  >
                     Повторы clean fill
                     <input
                       v-model.number="waterForm.startupCleanFillRetryCycles"
@@ -652,7 +769,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationRecoveryMaxContinueAttempts')"
+                  >
                     Лимит recovery-continue
                     <input
                       v-model.number="waterForm.irrigationRecoveryMaxContinueAttempts"
@@ -663,7 +783,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationRecoveryTimeoutSeconds')"
+                  >
                     Таймаут recovery
                     <input
                       v-model.number="waterForm.irrigationRecoveryTimeoutSeconds"
@@ -674,7 +797,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.manualIrrigationSeconds')"
+                  >
                     Ручной полив (сек)
                     <input
                       v-model.number="waterForm.manualIrrigationSeconds"
@@ -693,7 +819,10 @@
                   Плановая смена раствора
                 </h5>
                 <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.solutionChangeEnabled')"
+                  >
                     Смена раствора
                     <select
                       v-model="waterForm.solutionChangeEnabled"
@@ -704,7 +833,10 @@
                       <option :value="false">Выключена</option>
                     </select>
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.solutionChangeIntervalMinutes')"
+                  >
                     Интервал смены (мин)
                     <input
                       v-model.number="waterForm.solutionChangeIntervalMinutes"
@@ -715,7 +847,10 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label class="text-xs text-[color:var(--text-muted)]">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.solutionChangeDurationSeconds')"
+                  >
                     Длительность смены (сек)
                     <input
                       v-model.number="waterForm.solutionChangeDurationSeconds"
@@ -749,7 +884,10 @@
       </details>
     </section>
 
-    <section class="rounded-xl border border-[color:var(--border-muted)]">
+    <section
+      v-if="showSolutionCorrectionSection"
+      class="rounded-xl border border-[color:var(--border-muted)]"
+    >
       <details open class="group">
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
@@ -767,7 +905,10 @@
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.targetPh')"
+            >
               Целевой pH
               <input
                 v-model.number="waterForm.targetPh"
@@ -779,7 +920,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.targetEc')"
+            >
               Целевой EC
               <input
                 v-model.number="waterForm.targetEc"
@@ -791,7 +935,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('water.correctionDuringIrrigation')"
+            >
               Коррекция во время полива
               <select
                 v-model="waterForm.correctionDuringIrrigation"
@@ -810,7 +957,10 @@
             </summary>
 
             <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.prepareToleranceEcPct')"
+              >
                 Допуск EC подготовки (%)
                 <input
                   v-model.number="waterForm.prepareToleranceEcPct"
@@ -822,7 +972,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.prepareTolerancePhPct')"
+              >
                 Допуск pH подготовки (%)
                 <input
                   v-model.number="waterForm.prepareTolerancePhPct"
@@ -834,7 +987,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionMaxEcCorrectionAttempts')"
+              >
                 Лимит попыток EC-коррекции
                 <input
                   v-model.number="waterForm.correctionMaxEcCorrectionAttempts"
@@ -845,7 +1001,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionMaxPhCorrectionAttempts')"
+              >
                 Лимит попыток pH-коррекции
                 <input
                   v-model.number="waterForm.correctionMaxPhCorrectionAttempts"
@@ -856,7 +1015,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionPrepareRecirculationMaxAttempts')"
+              >
                 Лимит окон рециркуляции
                 <input
                   v-model.number="waterForm.correctionPrepareRecirculationMaxAttempts"
@@ -867,7 +1029,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionPrepareRecirculationMaxCorrectionAttempts')"
+              >
                 Лимит correction-шагов
                 <input
                   v-model.number="waterForm.correctionPrepareRecirculationMaxCorrectionAttempts"
@@ -878,7 +1043,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionStabilizationSec')"
+              >
                 Stabilization (sec)
                 <input
                   v-model.number="waterForm.correctionStabilizationSec"
@@ -920,8 +1088,11 @@
       </details>
     </section>
 
-    <section class="rounded-xl border border-[color:var(--border-muted)]">
-      <details :open="lightingForm.enabled" class="group">
+    <section
+      v-if="showLightingSection"
+      class="rounded-xl border border-[color:var(--border-muted)]"
+    >
+      <details :open="showLightingEnableToggle ? lightingForm.enabled : true" class="group">
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -937,8 +1108,14 @@
         </summary>
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
-          <div class="flex items-center justify-end">
-            <label class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
+          <div
+            v-if="showLightingEnableToggle"
+            class="flex items-center justify-end"
+          >
+            <label
+              class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('lighting.enabled')"
+            >
               <input
                 v-model="lightingForm.enabled"
                 type="checkbox"
@@ -949,11 +1126,21 @@
           </div>
 
           <div
+            v-else-if="!lightingForm.enabled"
+            class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
+          >
+            Подсистема освещения выключена в профиле автоматики. Включите её на шаге 5, затем вернитесь сюда для привязки ноды.
+          </div>
+
+          <div
             v-if="lightingForm.enabled && showNodeBindings && assignments"
             class="grid grid-cols-1 gap-3 xl:grid-cols-2"
           >
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.light')"
+              >
                 Нода света
                 <select
                   v-model.number="assignments.light"
@@ -999,10 +1186,13 @@
           </div>
 
           <div
-            v-if="lightingForm.enabled"
+            v-if="lightingForm.enabled && showLightingConfigFields"
             class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
           >
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('lighting.luxDay')"
+            >
               Освещённость днём (lux)
               <input
                 v-model.number="lightingForm.luxDay"
@@ -1013,7 +1203,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('lighting.luxNight')"
+            >
               Освещённость ночью (lux)
               <input
                 v-model.number="lightingForm.luxNight"
@@ -1024,7 +1217,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('lighting.hoursOn')"
+            >
               Часов света
               <input
                 v-model.number="lightingForm.hoursOn"
@@ -1036,7 +1232,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('lighting.scheduleStart')"
+            >
               Начало
               <input
                 v-model="lightingForm.scheduleStart"
@@ -1045,7 +1244,10 @@
                 :disabled="!canConfigure"
               />
             </label>
-            <label class="text-xs text-[color:var(--text-muted)]">
+            <label
+              class="text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('lighting.scheduleEnd')"
+            >
               Конец
               <input
                 v-model="lightingForm.scheduleEnd"
@@ -1057,7 +1259,7 @@
           </div>
 
           <details
-            v-if="lightingForm.enabled"
+            v-if="lightingForm.enabled && showLightingConfigFields"
             class="rounded-xl border border-[color:var(--border-muted)] p-3"
           >
             <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
@@ -1065,7 +1267,10 @@
             </summary>
 
             <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('lighting.intervalMinutes')"
+              >
                 Интервал досветки (мин)
                 <input
                   v-model.number="lightingForm.intervalMinutes"
@@ -1076,7 +1281,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('lighting.manualIntensity')"
+              >
                 Интенсивность ручного режима (%)
                 <input
                   v-model.number="lightingForm.manualIntensity"
@@ -1087,7 +1295,10 @@
                   :disabled="!canConfigure"
                 />
               </label>
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('lighting.manualDurationHours')"
+              >
                 Ручной режим (ч)
                 <input
                   v-model.number="lightingForm.manualDurationHours"
@@ -1106,7 +1317,11 @@
             v-if="showSectionSaveButtons"
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
-            <span>Сохраняет изменения этой секции в общем профиле зоны.</span>
+            <span>
+              {{ showLightingConfigFields
+                ? 'Сохраняет изменения этой секции в общем профиле зоны.'
+                : 'Сохраняет binding устройств для секции освещения.' }}
+            </span>
             <Button
               size="sm"
               :disabled="!canSaveLightingSection"
@@ -1120,8 +1335,11 @@
       </details>
     </section>
 
-    <section class="rounded-xl border border-[color:var(--border-muted)]">
-      <details :open="zoneClimateForm.enabled" class="group">
+    <section
+      v-if="showZoneClimateSection"
+      class="rounded-xl border border-[color:var(--border-muted)]"
+    >
+      <details :open="showZoneClimateEnableToggle ? zoneClimateForm.enabled : true" class="group">
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -1137,8 +1355,14 @@
         </summary>
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
-          <div class="flex items-center justify-end">
-            <label class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
+          <div
+            v-if="showZoneClimateEnableToggle"
+            class="flex items-center justify-end"
+          >
+            <label
+              class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]"
+              :title="fieldHelp('zoneClimate.enabled')"
+            >
               <input
                 v-model="zoneClimateForm.enabled"
                 type="checkbox"
@@ -1149,11 +1373,21 @@
           </div>
 
           <div
+            v-else-if="!zoneClimateForm.enabled"
+            class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
+          >
+            Zone climate выключен в профиле автоматики. Включите его на шаге 5, затем вернитесь сюда для привязки CO2 и root-vent устройств.
+          </div>
+
+          <div
             v-if="zoneClimateForm.enabled && showNodeBindings && assignments"
             class="grid grid-cols-1 gap-3 xl:grid-cols-3"
           >
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.co2_sensor')"
+              >
                 Датчик CO2
                 <select
                   v-model.number="assignments.co2_sensor"
@@ -1198,7 +1432,10 @@
             </div>
 
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.co2_actuator')"
+              >
                 CO2 actuator
                 <select
                   v-model.number="assignments.co2_actuator"
@@ -1243,7 +1480,10 @@
             </div>
 
             <div class="grid grid-cols-1 gap-2 items-end">
-              <label class="text-xs text-[color:var(--text-muted)]">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('device.root_vent_actuator')"
+              >
                 Прикорневая вентиляция
                 <select
                   v-model.number="assignments.root_vent_actuator"
@@ -1292,7 +1532,11 @@
             v-if="showSectionSaveButtons"
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
-            <span>Сохраняет изменения этой секции в общем профиле зоны.</span>
+            <span>
+              {{ showZoneClimateConfigFields
+                ? 'Сохраняет изменения этой секции в общем профиле зоны.'
+                : 'Сохраняет binding устройств для секции климата зоны.' }}
+            </span>
             <Button
               size="sm"
               :disabled="!canSaveZoneClimateSection"
@@ -1368,6 +1612,16 @@ const props = withDefaults(defineProps<{
   showSectionSaveButtons?: boolean
   saveDisabled?: boolean
   savingSection?: ZoneAutomationSectionSaveKey | null
+  showRequiredDevicesSection?: boolean
+  showWaterContourSection?: boolean
+  showIrrigationSection?: boolean
+  showSolutionCorrectionSection?: boolean
+  showLightingSection?: boolean
+  showLightingEnableToggle?: boolean
+  showLightingConfigFields?: boolean
+  showZoneClimateSection?: boolean
+  showZoneClimateEnableToggle?: boolean
+  showZoneClimateConfigFields?: boolean
 }>(), {
   canConfigure: true,
   isSystemTypeLocked: false,
@@ -1386,6 +1640,16 @@ const props = withDefaults(defineProps<{
   showSectionSaveButtons: false,
   saveDisabled: false,
   savingSection: null,
+  showRequiredDevicesSection: true,
+  showWaterContourSection: true,
+  showIrrigationSection: true,
+  showSolutionCorrectionSection: true,
+  showLightingSection: true,
+  showLightingEnableToggle: true,
+  showLightingConfigFields: true,
+  showZoneClimateSection: true,
+  showZoneClimateEnableToggle: true,
+  showZoneClimateConfigFields: true,
 })
 
 const emit = defineEmits<{
@@ -1393,6 +1657,79 @@ const emit = defineEmits<{
   (e: 'refresh-nodes'): void
   (e: 'save-section', section: ZoneAutomationSectionSaveKey): void
 }>()
+
+const FIELD_HELP: Record<string, string> = {
+  'device.irrigation': 'Основная нода полива зоны. Через неё runtime ожидает каналы запуска полива и refill/flow-команды для водного узла.',
+  'device.ph_correction': 'Нода pH-коррекции. Должна содержать pH sensor и/или dosing channels для кислотной или щелочной коррекции.',
+  'device.ec_correction': 'Нода EC-коррекции. Используется для EC sensor и дозирующих насосов удобрений в контуре correction runtime.',
+  'device.light': 'Нода освещения, к которой будут привязаны команды досветки и ручного lighting override.',
+  'device.co2_sensor': 'Источник телеметрии CO2 для zonal climate. От этой ноды зависит измерение ppm внутри зоны.',
+  'device.co2_actuator': 'Исполнитель подачи CO2. Нужен, если zonal climate должен управлять инжекцией CO2 в этой зоне.',
+  'device.root_vent_actuator': 'Исполнитель прикорневой вентиляции или локального airflow для zonal climate зоны.',
+  'water.systemType': 'Базовая гидравлическая схема зоны. От system type зависят допустимые targets, tank layout и runtime command plans.',
+  'water.tanksCount': 'Количество баков в контуре. 2 бака включают чистую воду и раствор, 3 бака добавляют отдельный дренажный контур.',
+  'water.enableDrainControl': 'Включает контроль процента дренажа. Имеет смысл только для 3-баковой схемы с отдельным drain контуром.',
+  'water.drainTargetPercent': 'Целевой процент дренажа относительно подачи. Используется как ориентир для режима с drain control.',
+  'water.valveSwitching': 'Разрешает relay-командам переключать клапаны между фазами clean fill, solution fill и recirculation.',
+  'water.twoTankCleanFillStartSteps': 'Сколько relay-step команд отправлять на старте clean fill в 2-баковой схеме.',
+  'water.twoTankCleanFillStopSteps': 'Сколько relay-step команд отправлять на остановке clean fill в 2-баковой схеме.',
+  'water.twoTankSolutionFillStartSteps': 'Количество relay-step команд для старта solution fill в 2-баковой схеме.',
+  'water.twoTankSolutionFillStopSteps': 'Количество relay-step команд для остановки solution fill в 2-баковой схеме.',
+  'water.twoTankPrepareRecirculationStartSteps': 'Количество relay-step команд для входа в prepare recirculation в 2-баковой схеме.',
+  'water.twoTankPrepareRecirculationStopSteps': 'Количество relay-step команд для выхода из prepare recirculation в 2-баковой схеме.',
+  'water.twoTankIrrigationRecoveryStartSteps': 'Количество relay-step команд для старта recovery после полива в 2-баковой схеме.',
+  'water.twoTankIrrigationRecoveryStopSteps': 'Количество relay-step команд для завершения recovery после полива в 2-баковой схеме.',
+  'water.intervalMinutes': 'Период между штатными поливами. Чем меньше интервал, тем чаще scheduler будет инициировать irrigation workflow.',
+  'water.durationSeconds': 'Длительность одного поливочного окна. Это прямое время работы исполнительного контура полива.',
+  'water.irrigationBatchL': 'Целевой объём одной порции полива. Используется как агрономический ориентир при настройке цикла.',
+  'water.fillTemperatureC': 'Желаемая температура воды на стадии заполнения бака. Нужна как target для приготовления раствора.',
+  'water.cleanTankFillL': 'Рабочий объём чистого бака, который runtime стремится набрать перед приготовлением раствора.',
+  'water.nutrientTankTargetL': 'Целевой объём бака раствора после подготовки nutrient mix.',
+  'water.fillWindowStart': 'Начало разрешённого окна, в которое системе можно запускать набор воды.',
+  'water.fillWindowEnd': 'Конец разрешённого окна набора воды. Вне окна runtime не должен инициировать fill workflow.',
+  'water.diagnosticsEnabled': 'Разрешает автоматические diagnostic/workflow проверки водного контура перед стартом или по расписанию.',
+  'water.diagnosticsIntervalMinutes': 'Как часто запускать diagnostic workflow, если он разрешён для зоны.',
+  'water.diagnosticsWorkflow': 'Какой режим diagnostic workflow использовать: при старте, на старте цикла или как отдельную диагностику.',
+  'water.cleanTankFullThreshold': 'Порог заполнения чистого бака в долях от 0 до 1, после которого бак считается полным.',
+  'water.refillDurationSeconds': 'Штатная длительность одной refill-команды, если требуется дозаполнение чистого бака.',
+  'water.refillTimeoutSeconds': 'Максимальное время ожидания завершения refill workflow до признания таймаута.',
+  'water.refillRequiredNodeTypes': 'CSV-список типов нод, которые обязаны быть доступны для refill workflow.',
+  'water.refillPreferredChannel': 'Предпочтительный channel/alias, который runtime будет использовать для refill-команды.',
+  'water.startupCleanFillTimeoutSeconds': 'Fail-closed таймаут на набор чистой воды при startup workflow.',
+  'water.startupSolutionFillTimeoutSeconds': 'Fail-closed таймаут на набор раствора при startup workflow.',
+  'water.startupPrepareRecirculationTimeoutSeconds': 'Максимальное время ожидания стадии prepare recirculation до аварийного завершения.',
+  'water.startupCleanFillRetryCycles': 'Сколько раз startup workflow может повторить clean fill перед отказом.',
+  'water.irrigationRecoveryMaxContinueAttempts': 'Максимум продолжений recovery-окна после полива, если targets ещё не достигнуты.',
+  'water.irrigationRecoveryTimeoutSeconds': 'Общий таймаут recovery-фазы после полива.',
+  'water.manualIrrigationSeconds': 'Стандартная длительность ручного полива из UI, если оператор запускает irrigation вручную.',
+  'water.solutionChangeEnabled': 'Включает плановую замену раствора по расписанию, отдельную от обычного поливочного цикла.',
+  'water.solutionChangeIntervalMinutes': 'Интервал между плановыми заменами раствора, если этот режим включён.',
+  'water.solutionChangeDurationSeconds': 'Сколько длится одно окно плановой смены раствора.',
+  'water.targetPh': 'Основной target pH для готового раствора. Используется при merge effective targets и correction runtime.',
+  'water.targetEc': 'Основной target EC для готового раствора. Используется planner-ом для nutrient correction.',
+  'water.correctionDuringIrrigation': 'Разрешает correction runtime работать прямо во время irrigation path, а не только до него.',
+  'water.prepareToleranceEcPct': 'Допустимое отклонение EC при подготовке раствора перед тем, как runtime признает target достигнутым.',
+  'water.prepareTolerancePhPct': 'Допустимое отклонение pH при подготовке раствора перед завершением correction step.',
+  'water.correctionMaxEcCorrectionAttempts': 'Максимум dosing-попыток EC-коррекции в одном correction window.',
+  'water.correctionMaxPhCorrectionAttempts': 'Максимум dosing-попыток pH-коррекции в одном correction window.',
+  'water.correctionPrepareRecirculationMaxAttempts': 'Сколько recirculation-окон runtime может открыть при неуспешной коррекции.',
+  'water.correctionPrepareRecirculationMaxCorrectionAttempts': 'Жёсткий лимит внутренних correction-шагов до fail-closed остановки.',
+  'water.correctionStabilizationSec': 'Дополнительное время ожидания после дозы, чтобы измерения стабилизировались перед следующим решением.',
+  'lighting.enabled': 'Включает подсистему досветки для зоны и делает lighting configuration частью профиля автоматики.',
+  'lighting.luxDay': 'Целевая освещённость днём, которой runtime должен придерживаться в дневном окне.',
+  'lighting.luxNight': 'Целевая освещённость ночью. Обычно 0, если ночью досветка не нужна.',
+  'lighting.hoursOn': 'Суммарная желаемая длительность света в сутки.',
+  'lighting.scheduleStart': 'Время старта дневного lighting window.',
+  'lighting.scheduleEnd': 'Время завершения lighting window.',
+  'lighting.intervalMinutes': 'Частота пересчёта и обновления lighting automation в минутах.',
+  'lighting.manualIntensity': 'Интенсивность в процентах для ручного режима досветки.',
+  'lighting.manualDurationHours': 'Длительность ручного lighting override в часах.',
+  'zoneClimate.enabled': 'Включает отдельный zonal climate subsystem для CO2 и прикорневой вентиляции.',
+}
+
+function fieldHelp(key: string): string {
+  return FIELD_HELP[key] ?? 'Параметр профиля автоматики зоны.'
+}
 
 function canBindSelected(value: number | null | undefined): boolean {
   return (
@@ -1539,3 +1876,24 @@ const canSaveZoneClimateSection = computed(() => {
   return baseSaveAllowed.value && hasZoneClimateBinding.value
 })
 </script>
+
+<style scoped>
+.zone-automation-profile-sections :deep(label.text-xs) {
+  display: grid;
+  gap: 0.32rem;
+  line-height: 1.35;
+}
+
+.zone-automation-profile-sections :deep(.input-field),
+.zone-automation-profile-sections :deep(.input-select) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+
+.zone-automation-profile-sections :deep(input[type='checkbox']) {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+</style>

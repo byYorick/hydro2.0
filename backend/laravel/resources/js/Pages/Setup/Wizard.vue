@@ -6,7 +6,7 @@
           Мастер настройки системы
         </h1>
         <p class="mt-2 text-sm text-[color:var(--text-muted)]">
-          Пошаговая настройка теплицы, зоны, культуры и единого профиля автоматики.
+          Пошаговая настройка теплицы, зоны, культуры, устройств нод, профиля автоматики и калибровки.
         </p>
 
         <div class="mt-4 h-2 overflow-hidden rounded-full bg-[color:var(--border-muted)]">
@@ -32,7 +32,7 @@
         <h2 class="mb-3 text-sm font-semibold text-[color:var(--text-primary)]">
           Сценарий запуска
         </h2>
-        <ul class="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <ul class="grid gap-2 md:grid-cols-2 xl:grid-cols-7">
           <li
             v-for="step in stepItems"
             :key="step.id"
@@ -349,10 +349,10 @@
       <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            4. Автоматизация и устройства зоны
+            4. Устройства нод зоны
           </h3>
-          <Badge :variant="stepZoneAutomationDone ? 'success' : 'neutral'">
-            {{ stepZoneAutomationDone ? 'Готово' : 'Не настроено' }}
+          <Badge :variant="stepZoneDevicesDone ? 'success' : 'neutral'">
+            {{ stepZoneDevicesDone ? 'Готово' : 'Не настроено' }}
           </Badge>
         </div>
 
@@ -365,7 +365,7 @@
 
         <template v-else>
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
-            Климат теплицы вынесен в шаг 1. Здесь настройки сохраняются по секциям, но применяются в общий профиль зоны: устройства, водный контур, полив, коррекция, свет и климат зоны.
+            На этом шаге привязываются обязательные ноды зоны и optional bindings для света и zonal climate. Параметры автоматики редактируются на следующем шаге.
           </div>
 
           <ZoneAutomationProfileSections
@@ -382,15 +382,19 @@
             :refreshing-nodes="loading.nodes"
             :available-nodes="availableNodes"
             :assignments="deviceAssignments"
-            :show-correction-calibration-stack="Boolean(selectedZone?.id && sensorCalibrationSettings)"
-            :zone-id="selectedZone?.id ?? null"
-            :sensor-calibration-settings="sensorCalibrationSettings"
             :show-section-save-buttons="true"
             :save-disabled="loading.stepDevices || loading.stepAutomation"
             :saving-section="savingAutomationSection"
+            :show-water-contour-section="false"
+            :show-irrigation-section="false"
+            :show-solution-correction-section="false"
+            :show-lighting-enable-toggle="false"
+            :show-lighting-config-fields="false"
+            :show-zone-climate-enable-toggle="false"
+            :show-zone-climate-config-fields="false"
             @bind-devices="attachZoneDevicesOnly"
             @refresh-nodes="refreshAvailableNodes"
-            @save-section="saveAutomationSection"
+            @save-section="saveDeviceSection"
           />
 
           <div
@@ -405,11 +409,11 @@
             <span v-if="zoneAutomationAssignmentsReady && !zoneAutomationNodesReady" class="text-[color:var(--badge-warning-text)]">
               Привязка нод ещё не подтверждена
             </span>
-            <span v-else-if="stepZoneAutomationDone" class="text-[color:var(--badge-success-text)]">
-              Профиль зоны и bindings сохранены
+            <span v-else-if="stepZoneDevicesDone" class="text-[color:var(--badge-success-text)]">
+              Привязка нод сохранена и подтверждена
             </span>
             <span v-else>
-              Сохраните обязательные устройства и хотя бы одну секцию профиля.
+              Сохраните обязательные устройства и, если профиль включает optional subsystem, привяжите соответствующие ноды.
             </span>
             <Button
               size="sm"
@@ -422,8 +426,7 @@
           </div>
 
           <div class="text-xs text-[color:var(--text-muted)]">
-            <span v-if="automationAppliedAt">Последнее применение: {{ formatDateTime(automationAppliedAt) }}</span>
-            <span v-else>Профиль зоны ещё не применён</span>
+            <span>Профиль автоматики сохраняется на следующем шаге.</span>
           </div>
         </template>
       </section>
@@ -431,7 +434,92 @@
       <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            5. Запуск
+            5. Профиль автоматики
+          </h3>
+          <Badge :variant="stepZoneAutomationProfileDone ? 'success' : 'neutral'">
+            {{ stepZoneAutomationProfileDone ? 'Готово' : 'Не настроено' }}
+          </Badge>
+        </div>
+
+        <div
+          v-if="!stepZoneDone"
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
+        >
+          Сначала создайте или выберите зону на шаге 2.
+        </div>
+
+        <template v-else>
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
+            Здесь редактируется только профиль автоматики зоны: водный контур, полив, коррекция, свет и zonal climate. Привязка устройств сохранена отдельно на предыдущем шаге, а calibration stack вынесен в следующий.
+          </div>
+
+          <ZoneAutomationProfileSections
+            :water-form="automationWaterForm"
+            :lighting-form="automationLightingForm"
+            :zone-climate-form="zoneClimateForm"
+            :can-configure="canConfigure"
+            :show-node-bindings="false"
+            :show-bind-buttons="false"
+            :show-refresh-buttons="false"
+            :show-section-save-buttons="true"
+            :save-disabled="loading.stepDevices || loading.stepAutomation"
+            :saving-section="savingAutomationSection"
+            :show-required-devices-section="false"
+            @save-section="saveAutomationSection"
+          />
+
+          <div class="text-xs text-[color:var(--text-muted)]">
+            <span v-if="automationAppliedAt">Последнее применение: {{ formatDateTime(automationAppliedAt) }}</span>
+            <span v-else>Профиль автоматики зоны ещё не применён</span>
+          </div>
+        </template>
+      </section>
+
+      <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            6. Калибровка
+          </h3>
+          <Badge :variant="stepZoneCalibrationReady ? 'success' : 'neutral'">
+            {{ stepZoneCalibrationReady ? 'Доступно' : 'Ожидает профиль' }}
+          </Badge>
+        </div>
+
+        <div
+          v-if="!stepZoneDone"
+          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
+        >
+          Сначала создайте или выберите зону на шаге 2.
+        </div>
+
+        <template v-else-if="!stepZoneAutomationProfileDone">
+          <div class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]">
+            Сначала сохраните профиль автоматики на шаге 5, затем переходите к PID, process calibration и sensor calibration.
+          </div>
+        </template>
+
+        <template v-else-if="selectedZone?.id && sensorCalibrationSettings">
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
+            Отдельный рабочий шаг для correction runtime readiness, PID, process calibration, pump calibration и sensor calibration.
+          </div>
+
+          <ZoneCorrectionCalibrationStack
+            :zone-id="selectedZone.id"
+            :sensor-calibration-settings="sensorCalibrationSettings"
+          />
+        </template>
+
+        <template v-else>
+          <div class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]">
+            Не удалось загрузить настройки sensor calibration. Проверьте `sensorCalibrationSettings` в Inertia props.
+          </div>
+        </template>
+      </section>
+
+      <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            7. Запуск
           </h3>
           <Badge :variant="canLaunch ? 'success' : 'warning'">
             {{ canLaunch ? 'Можно запускать' : 'Есть незавершённые шаги' }}
@@ -485,6 +573,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfiguration.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
+import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
@@ -526,7 +615,9 @@ const {
   stepZoneDone,
   stepPlantDone,
   stepRecipeDone,
-  stepZoneAutomationDone,
+  stepZoneDevicesDone,
+  stepZoneAutomationProfileDone,
+  stepZoneCalibrationReady,
   zoneAutomationAssignmentsReady,
   zoneAutomationNodesReady,
   zoneAutomationExpectedNodeIds,
@@ -548,7 +639,7 @@ const {
   selectPlant,
   refreshAvailableNodes,
   applyGreenhouseClimate,
-  saveZoneAutomationAndDevices,
+  saveZoneDeviceBindingsSection,
   applyAutomation,
   openCycleWizard,
   formatDateTime,
@@ -558,7 +649,7 @@ const showPlantCreateWizard = ref(false)
 const sensorCalibrationSettings = computed(() => page.props.sensorCalibrationSettings ?? null)
 const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
 
-async function saveAutomationSection(section: ZoneAutomationSectionSaveKey): Promise<void> {
+async function saveDeviceSection(section: ZoneAutomationSectionSaveKey): Promise<void> {
   if (!canConfigure.value || !selectedZone.value?.id) {
     return
   }
@@ -566,20 +657,31 @@ async function saveAutomationSection(section: ZoneAutomationSectionSaveKey): Pro
   savingAutomationSection.value = section
   try {
     if (section === 'required_devices') {
-      await attachZoneDevicesOnly(['irrigation', 'ph_correction', 'ec_correction'])
+      await saveZoneDeviceBindingsSection(['irrigation', 'ph_correction', 'ec_correction'])
       return
     }
 
     if (section === 'lighting') {
-      await saveZoneAutomationAndDevices()
+      await saveZoneDeviceBindingsSection(['light'])
       return
     }
 
     if (section === 'zone_climate') {
-      await saveZoneAutomationAndDevices()
+      await saveZoneDeviceBindingsSection(['co2_sensor', 'co2_actuator', 'root_vent_actuator'])
       return
     }
+  } finally {
+    savingAutomationSection.value = null
+  }
+}
 
+async function saveAutomationSection(section: ZoneAutomationSectionSaveKey): Promise<void> {
+  if (!canConfigure.value || !selectedZone.value?.id) {
+    return
+  }
+
+  savingAutomationSection.value = section
+  try {
     await applyAutomation()
   } finally {
     savingAutomationSection.value = null

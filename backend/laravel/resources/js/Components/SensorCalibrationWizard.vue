@@ -5,7 +5,7 @@
     size="large"
     @close="$emit('close')"
   >
-    <div class="space-y-4">
+    <div class="sensor-calibration-wizard space-y-4">
       <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-sm text-[color:var(--text-muted)]">
         Канал: {{ overview.channel_uid }} · Узел: {{ overview.node_uid || 'unknown' }}
       </div>
@@ -37,7 +37,10 @@
       >
         <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
           <div class="text-sm font-medium">Шаг 2. Точка 1</div>
-          <label class="text-xs text-[color:var(--text-muted)] block">
+          <label
+            class="text-xs text-[color:var(--text-muted)] block"
+            :title="fieldHelp('point_1_reference')"
+          >
             Reference value
             <input
               v-model.number="point1Value"
@@ -67,7 +70,10 @@
 
         <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
           <div class="text-sm font-medium">Шаг 3. Точка 2</div>
-          <label class="text-xs text-[color:var(--text-muted)] block">
+          <label
+            class="text-xs text-[color:var(--text-muted)] block"
+            :title="fieldHelp('point_2_reference')"
+          >
             Reference value
             <input
               v-model.number="point2Value"
@@ -150,6 +156,14 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'completed'): void
 }>()
+
+function fieldHelp(key: 'point_1_reference' | 'point_2_reference'): string {
+  if (key === 'point_1_reference') {
+    return 'Эталонное значение для первой точки калибровки. Обычно это lower reference из системных настроек текущего типа сенсора.'
+  }
+
+  return 'Эталонное значение для второй точки калибровки. Обычно это upper reference из системных настроек текущего типа сенсора.'
+}
 
 const { startCalibration, submitPoint: submitCalibrationPoint, cancelCalibration, getCalibration } = useSensorCalibration(props.zoneId)
 
@@ -288,3 +302,18 @@ onBeforeUnmount(() => {
   stopPolling()
 })
 </script>
+
+<style scoped>
+.sensor-calibration-wizard :deep(label.text-xs) {
+  display: grid;
+  gap: 0.32rem;
+  line-height: 1.35;
+}
+
+.sensor-calibration-wizard :deep(.input-field) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+</style>

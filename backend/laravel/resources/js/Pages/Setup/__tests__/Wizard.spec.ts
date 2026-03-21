@@ -51,14 +51,34 @@ vi.mock('@/Components/GreenhouseClimateConfiguration.vue', () => ({
   },
 }))
 
+vi.mock('@/Components/ZoneCorrectionCalibrationStack.vue', () => ({
+  default: {
+    name: 'ZoneCorrectionCalibrationStack',
+    template: '<div data-test="zone-correction-calibration-stack">calibration stack</div>',
+  },
+}))
+
 vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
   default: {
     name: 'ZoneAutomationProfileSections',
-    props: ['assignments', 'lightingForm', 'zoneClimateForm'],
+    props: [
+      'assignments',
+      'lightingForm',
+      'zoneClimateForm',
+      'showRequiredDevicesSection',
+      'showWaterContourSection',
+      'showIrrigationSection',
+      'showSolutionCorrectionSection',
+      'showLightingSection',
+      'showLightingEnableToggle',
+      'showZoneClimateSection',
+      'showZoneClimateEnableToggle',
+      'showNodeBindings',
+    ],
     emits: ['save-section'],
     template: `
       <div data-test="zone-automation-sections">
-        <label>
+        <label v-if="showLightingEnableToggle !== false">
           Управлять освещением
           <input
             data-test="lighting-toggle"
@@ -67,7 +87,7 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
             @change="lightingForm.enabled = $event.target.checked"
           />
         </label>
-        <label>
+        <label v-if="showZoneClimateEnableToggle !== false">
           Управлять климатом зоны
           <input
             data-test="zone-climate-toggle"
@@ -76,30 +96,71 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
             @change="zoneClimateForm.enabled = $event.target.checked"
           />
         </label>
-        <select data-test="irrigation-select" :value="assignments.irrigation ?? ''" @change="assignments.irrigation = Number($event.target.value) || null">
+        <select
+          v-if="showRequiredDevicesSection !== false"
+          data-test="irrigation-select"
+          :value="assignments.irrigation ?? ''"
+          @change="assignments.irrigation = Number($event.target.value) || null"
+        >
           <option value="">none</option>
           <option value="101">irrig</option>
         </select>
-        <select data-test="ph-select" :value="assignments.ph_correction ?? ''" @change="assignments.ph_correction = Number($event.target.value) || null">
+        <select
+          v-if="showRequiredDevicesSection !== false"
+          data-test="ph-select"
+          :value="assignments.ph_correction ?? ''"
+          @change="assignments.ph_correction = Number($event.target.value) || null"
+        >
           <option value="">none</option>
           <option value="102">ph</option>
         </select>
-        <select data-test="ec-select" :value="assignments.ec_correction ?? ''" @change="assignments.ec_correction = Number($event.target.value) || null">
+        <select
+          v-if="showRequiredDevicesSection !== false"
+          data-test="ec-select"
+          :value="assignments.ec_correction ?? ''"
+          @change="assignments.ec_correction = Number($event.target.value) || null"
+        >
           <option value="">none</option>
           <option value="104">ec</option>
         </select>
-        <select data-test="light-select" :value="assignments.light ?? ''" @change="assignments.light = Number($event.target.value) || null">
+        <select
+          v-if="showLightingSection !== false && showNodeBindings"
+          data-test="light-select"
+          :value="assignments.light ?? ''"
+          @change="assignments.light = Number($event.target.value) || null"
+        >
           <option value="">none</option>
           <option value="105">light</option>
         </select>
-        <select data-test="co2-sensor-select" :value="assignments.co2_sensor ?? ''" @change="assignments.co2_sensor = Number($event.target.value) || null">
+        <select
+          v-if="showZoneClimateSection !== false && showNodeBindings"
+          data-test="co2-sensor-select"
+          :value="assignments.co2_sensor ?? ''"
+          @change="assignments.co2_sensor = Number($event.target.value) || null"
+        >
           <option value="">none</option>
           <option value="106">co2</option>
         </select>
-        <button data-test="save-section-required-devices" @click="$emit('save-section', 'required_devices')">save required</button>
-        <button data-test="save-section-water-contour" @click="$emit('save-section', 'water_contour')">save contour</button>
-        <button data-test="save-section-lighting" @click="$emit('save-section', 'lighting')">save lighting</button>
-        <button data-test="save-section-zone-climate" @click="$emit('save-section', 'zone_climate')">save zone climate</button>
+        <button
+          v-if="showRequiredDevicesSection !== false"
+          data-test="save-section-required-devices"
+          @click="$emit('save-section', 'required_devices')"
+        >save required</button>
+        <button
+          v-if="showWaterContourSection !== false"
+          data-test="save-section-water-contour"
+          @click="$emit('save-section', 'water_contour')"
+        >save contour</button>
+        <button
+          v-if="showLightingSection !== false"
+          data-test="save-section-lighting"
+          @click="$emit('save-section', 'lighting')"
+        >save lighting</button>
+        <button
+          v-if="showZoneClimateSection !== false"
+          data-test="save-section-zone-climate"
+          @click="$emit('save-section', 'zone_climate')"
+        >save zone climate</button>
       </div>
     `,
   },
@@ -300,9 +361,11 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('1. Теплица')
     expect(wrapper.text()).toContain('2. Зона')
     expect(wrapper.text()).toContain('3. Культура и рецепт')
-    expect(wrapper.text()).toContain('4. Автоматизация и устройства зоны')
-    expect(wrapper.text()).toContain('5. Запуск')
-    expect(wrapper.text()).not.toContain('6. Запуск и контроль')
+    expect(wrapper.text()).toContain('4. Устройства нод зоны')
+    expect(wrapper.text()).toContain('5. Профиль автоматики')
+    expect(wrapper.text()).toContain('6. Калибровка')
+    expect(wrapper.text()).toContain('7. Запуск')
+    expect(wrapper.text()).not.toContain('4. Автоматизация и устройства зоны')
   })
 
   it('показывает inline-блок климата после выбора теплицы', async () => {
@@ -449,7 +512,8 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="co2-sensor-select"]').setValue('106')
     await flushPromises()
 
-    await wrapper.find('[data-test="save-section-zone-climate"]').trigger('click')
+    const saveZoneClimateButtons = wrapper.findAll('[data-test="save-section-zone-climate"]')
+    await saveZoneClimateButtons[1]?.trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
@@ -488,7 +552,8 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="zone-climate-toggle"]').setValue(false)
     await flushPromises()
 
-    await wrapper.find('[data-test="save-section-lighting"]').trigger('click')
+    const saveLightingButtons = wrapper.findAll('[data-test="save-section-lighting"]')
+    await saveLightingButtons[0]?.trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(

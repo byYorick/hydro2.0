@@ -1,5 +1,5 @@
 <template>
-  <section class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4">
+  <section class="greenhouse-climate-configuration rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4">
     <div class="flex items-center justify-between gap-3">
       <div>
         <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -9,7 +9,10 @@
           Автономная система климата теплицы. Runtime dispatcher пока в разработке, но профиль и bindings уже сохраняются.
         </p>
       </div>
-      <label class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]">
+      <label
+        class="inline-flex items-center gap-2 text-xs text-[color:var(--text-muted)]"
+        :title="fieldHelp('climate.enabled')"
+      >
         <input
           :checked="enabled"
           type="checkbox"
@@ -118,7 +121,10 @@
           Профиль климата
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.intervalMinutes')"
+          >
             Интервал климата (мин)
             <input
               v-model.number="climateForm.intervalMinutes"
@@ -129,7 +135,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.overrideMinutes')"
+          >
             Ручной override (мин)
             <input
               v-model.number="climateForm.overrideMinutes"
@@ -140,7 +149,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.useExternalTelemetry')"
+          >
             Внешняя телеметрия
             <select
               v-model="climateForm.useExternalTelemetry"
@@ -151,7 +163,10 @@
               <option :value="false">Игнорировать</option>
             </select>
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.dayTemp')"
+          >
             Температура день
             <input
               v-model.number="climateForm.dayTemp"
@@ -163,7 +178,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.nightTemp')"
+          >
             Температура ночь
             <input
               v-model.number="climateForm.nightTemp"
@@ -175,7 +193,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.dayHumidity')"
+          >
             Влажность день
             <input
               v-model.number="climateForm.dayHumidity"
@@ -186,7 +207,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.nightHumidity')"
+          >
             Влажность ночь
             <input
               v-model.number="climateForm.nightHumidity"
@@ -197,7 +221,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.ventMinPercent')"
+          >
             Min форточек (%)
             <input
               v-model.number="climateForm.ventMinPercent"
@@ -208,7 +235,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.ventMaxPercent')"
+          >
             Max форточек (%)
             <input
               v-model.number="climateForm.ventMaxPercent"
@@ -219,7 +249,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.dayStart')"
+          >
             День начинается
             <input
               v-model="climateForm.dayStart"
@@ -228,7 +261,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.nightStart')"
+          >
             Ночь начинается
             <input
               v-model="climateForm.nightStart"
@@ -237,7 +273,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.outsideTempMin')"
+          >
             Мин. внешняя t°C
             <input
               v-model.number="climateForm.outsideTempMin"
@@ -248,7 +287,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.outsideTempMax')"
+          >
             Макс. внешняя t°C
             <input
               v-model.number="climateForm.outsideTempMax"
@@ -259,7 +301,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)]">
+          <label
+            class="text-xs text-[color:var(--text-muted)]"
+            :title="fieldHelp('climate.outsideHumidityMax')"
+          >
             Макс. внешняя влажность (%)
             <input
               v-model.number="climateForm.outsideHumidityMax"
@@ -270,7 +315,10 @@
               :disabled="!canConfigure"
             />
           </label>
-          <label class="text-xs text-[color:var(--text-muted)] md:col-span-2">
+          <label
+            class="text-xs text-[color:var(--text-muted)] md:col-span-2"
+            :title="fieldHelp('climate.manualOverrideEnabled')"
+          >
             Ручной override климата
             <select
               v-model="climateForm.manualOverrideEnabled"
@@ -335,6 +383,29 @@ const emit = defineEmits<{
   (e: 'apply'): void
 }>()
 
+const FIELD_HELP: Record<string, string> = {
+  'climate.enabled': 'Включает greenhouse-level climate profile и разрешает сохранять bindings климатических нод теплицы.',
+  'climate.intervalMinutes': 'Период обновления climate automation для теплицы. Чем меньше интервал, тем чаще пересчитываются климатические действия.',
+  'climate.overrideMinutes': 'Сколько минут действует ручной climate override, если оператор временно вмешался в управление.',
+  'climate.useExternalTelemetry': 'Разрешает использовать внешнюю погодную телеметрию при принятии климатических решений.',
+  'climate.dayTemp': 'Целевая температура воздуха в дневном режиме теплицы.',
+  'climate.nightTemp': 'Целевая температура воздуха в ночном режиме теплицы.',
+  'climate.dayHumidity': 'Целевая влажность воздуха в дневном режиме.',
+  'climate.nightHumidity': 'Целевая влажность воздуха в ночном режиме.',
+  'climate.ventMinPercent': 'Минимальный процент открытия форточек, ниже которого automation не будет опускаться.',
+  'climate.ventMaxPercent': 'Верхний лимит открытия форточек для greenhouse climate control.',
+  'climate.dayStart': 'Время начала дневного климатического профиля.',
+  'climate.nightStart': 'Время начала ночного климатического профиля.',
+  'climate.outsideTempMin': 'Нижний порог внешней температуры, ниже которого форточки и внешнее проветривание ограничиваются.',
+  'climate.outsideTempMax': 'Верхний порог внешней температуры, выше которого climate automation считает наружный воздух слишком горячим.',
+  'climate.outsideHumidityMax': 'Максимальная допустимая внешняя влажность для использования наружного воздуха.',
+  'climate.manualOverrideEnabled': 'Разрешает оператору временно переводить greenhouse climate в ручной override без отключения профиля.',
+}
+
+function fieldHelp(key: string): string {
+  return FIELD_HELP[key] ?? 'Параметр climate profile теплицы.'
+}
+
 function nodeLabel(node: SetupWizardNode): string {
   return node.name || node.uid || `Node #${node.id}`
 }
@@ -391,3 +462,19 @@ const fanActuatorCandidates = computed(() => {
   })
 })
 </script>
+
+<style scoped>
+.greenhouse-climate-configuration :deep(label.text-xs) {
+  display: grid;
+  gap: 0.32rem;
+  line-height: 1.35;
+}
+
+.greenhouse-climate-configuration :deep(.input-field),
+.greenhouse-climate-configuration :deep(.input-select) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+</style>

@@ -535,10 +535,17 @@ export function useSetupWizard() {
     return greenhouseClimateBindingsReady.value && greenhouseClimateAppliedAt.value !== null
   })
 
-  const stepZoneAutomationDone = computed(() => {
+  const stepZoneDevicesDone = computed(() => {
     return zoneAutomationAssignmentsReady.value
       && zoneAutomationNodesReady.value
-      && automationAppliedAt.value !== null
+  })
+
+  const stepZoneAutomationProfileDone = computed(() => {
+    return automationAppliedAt.value !== null
+  })
+
+  const stepZoneCalibrationReady = computed(() => {
+    return stepZoneAutomationProfileDone.value
   })
 
   const canLaunch = computed(() => {
@@ -547,7 +554,8 @@ export function useSetupWizard() {
       && stepZoneDone.value
       && stepPlantDone.value
       && stepRecipeDone.value
-      && stepZoneAutomationDone.value
+      && stepZoneDevicesDone.value
+      && stepZoneAutomationProfileDone.value
       && !selectedZoneHasActiveCycle.value
   })
 
@@ -556,27 +564,33 @@ export function useSetupWizard() {
       stepGreenhouseDone.value && stepGreenhouseClimateDone.value,
       stepZoneDone.value,
       stepPlantDone.value && stepRecipeDone.value,
-      stepZoneAutomationDone.value,
+      stepZoneDevicesDone.value,
+      stepZoneAutomationProfileDone.value,
+      stepZoneCalibrationReady.value,
       canLaunch.value,
     ].filter(Boolean).length
   })
 
-  const progressPercent = computed(() => Math.min(100, Math.round((completedSteps.value / 5) * 100)))
+  const progressPercent = computed(() => Math.min(100, Math.round((completedSteps.value / 7) * 100)))
 
   const launchChecklist = computed(() => [
     { id: 'greenhouse', label: 'Теплица', done: stepGreenhouseDone.value },
     { id: 'greenhouse-climate', label: 'Климат теплицы', done: stepGreenhouseClimateDone.value },
     { id: 'zone', label: 'Зона', done: stepZoneDone.value },
     { id: 'plant', label: 'Культура и рецепт', done: stepPlantDone.value && stepRecipeDone.value },
-    { id: 'zone-automation', label: 'Автоматизация и устройства зоны', done: stepZoneAutomationDone.value },
+    { id: 'zone-devices', label: 'Устройства нод зоны', done: stepZoneDevicesDone.value },
+    { id: 'zone-automation-profile', label: 'Профиль автоматики', done: stepZoneAutomationProfileDone.value },
+    { id: 'zone-calibration', label: 'Калибровка', done: stepZoneCalibrationReady.value },
   ])
 
   const stepItems = computed(() => [
     { id: 'greenhouse', title: '1. Теплица', hint: 'Теплица и общий климат', done: stepGreenhouseDone.value && stepGreenhouseClimateDone.value },
     { id: 'zone', title: '2. Зона', hint: 'Рабочая зона выращивания', done: stepZoneDone.value },
     { id: 'plant', title: '3. Культура и рецепт', hint: 'Рецепт подтягивается по выбранной культуре', done: stepPlantDone.value && stepRecipeDone.value },
-    { id: 'automation', title: '4. Автоматизация и устройства зоны', hint: 'Полив, коррекция, zone climate и свет', done: stepZoneAutomationDone.value },
-    { id: 'launch', title: '5. Запуск', hint: 'Открыть мастер цикла', done: canLaunch.value },
+    { id: 'devices', title: '4. Устройства нод зоны', hint: 'Bindings и подтверждение конфигов на нодах', done: stepZoneDevicesDone.value },
+    { id: 'automation', title: '5. Профиль автоматики', hint: 'Водный контур, полив, коррекция, свет и zone climate', done: stepZoneAutomationProfileDone.value },
+    { id: 'calibration', title: '6. Калибровка', hint: 'PID, process calibration, pump calibration и sensor calibration', done: stepZoneCalibrationReady.value },
+    { id: 'launch', title: '7. Запуск', hint: 'Открыть мастер цикла', done: canLaunch.value },
   ])
 
   const waterTopologyLabel = computed(() => {
@@ -841,21 +855,69 @@ export function useSetupWizard() {
     return normalizeZoneAssignmentsPayload(payload)
   }
 
-  async function saveZoneAutomationAndDevices(): Promise<boolean> {
-    if (!zoneAutomationAssignmentsReady.value || !selectedZone.value?.id) {
+  async function persistZoneDeviceBindings(): Promise<boolean> {
+    if (!selectedZone.value?.id) {
+      showToast('Сначала выберите зону для привязки устройств.', 'warning')
       return false
     }
 
-    selectedNodeIds.value = zoneAutomationExpectedNodeIds.value
-    await dataFlows.attachNodesToZone(buildZoneAssignmentsPayload())
-    const nodesReady = zoneAutomationNodesReady.value
-    const automationSaved = await recipeAutomationFlows.applyAutomation()
-
-    if (!nodesReady) {
-      showToast('Профиль зоны сохранён, но не все обязательные ноды подтвердили привязку к зоне', 'warning')
+    if (
+      deviceAssignments.irrigation === null
+      || deviceAssignments.ph_correction === null
+      || deviceAssignments.ec_correction === null
+    ) {
+      showToast('Сначала выберите обязательные устройства зоны: полив, pH и EC.', 'warning')
+      return false
     }
 
-    return automationSaved
+    loading.stepDevices = true
+    try {
+      const payload = buildZoneAssignmentsPayload()
+      const selectedNodeIdsPayload = zoneAutomationExpectedNodeIds.value
+
+      await api.post('/setup-wizard/validate-devices', {
+        zone_id: selectedZone.value.id,
+        assignments: payload,
+        selected_node_ids: selectedNodeIdsPayload,
+      })
+
+      await api.post('/setup-wizard/apply-device-bindings', {
+        zone_id: selectedZone.value.id,
+        assignments: payload,
+        selected_node_ids: selectedNodeIdsPayload,
+      })
+
+      showToast('Bindings устройств зоны сохранены', 'success')
+      return true
+    } catch {
+      showToast('Не удалось сохранить bindings устройств зоны', 'error')
+      return false
+    } finally {
+      loading.stepDevices = false
+    }
+  }
+
+  async function saveZoneDeviceBindingsSection(
+    roles: Array<keyof SetupWizardDeviceAssignments>
+  ): Promise<boolean> {
+    if (!selectedZone.value?.id) {
+      showToast('Сначала выберите зону для привязки устройств.', 'warning')
+      return false
+    }
+
+    const payload = buildPartialZoneAssignmentsPayload(roles)
+    const nodeIds = Array.from(new Set(
+      roles
+        .map((role) => payload[role])
+        .filter((value): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0)
+    ))
+
+    if (nodeIds.length > 0) {
+      selectedNodeIds.value = nodeIds
+      await dataFlows.attachNodesToZone(null)
+    }
+
+    return await persistZoneDeviceBindings()
   }
 
   async function attachZoneDevicesOnly(
@@ -1068,7 +1130,9 @@ export function useSetupWizard() {
     stepZoneDone,
     stepPlantDone,
     stepRecipeDone,
-    stepZoneAutomationDone,
+    stepZoneDevicesDone,
+    stepZoneAutomationProfileDone,
+    stepZoneCalibrationReady,
     zoneAutomationAssignmentsReady,
     zoneAutomationNodesReady,
     zoneAutomationExpectedNodeIds,
@@ -1098,7 +1162,7 @@ export function useSetupWizard() {
     isNodeAttachedToCurrentZone: dataFlows.isNodeAttachedToCurrentZone,
     refreshAvailableNodes,
     applyGreenhouseClimate,
-    saveZoneAutomationAndDevices,
+    saveZoneDeviceBindingsSection,
     applyAutomation: recipeAutomationFlows.applyAutomation,
     openCycleWizard: recipeAutomationFlows.openCycleWizard,
     formatDateTime,

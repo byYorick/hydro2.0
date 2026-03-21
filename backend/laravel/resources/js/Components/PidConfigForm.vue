@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card class="pid-config-form">
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div class="text-sm font-semibold">
@@ -41,6 +41,7 @@
               :min="selectedType === 'ph' ? 4 : 0"
               :max="selectedType === 'ph' ? 9 : 10"
               class="input-field w-full"
+              :title="fieldHelp('target')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -59,6 +60,7 @@
               min="0"
               max="2"
               class="input-field w-full"
+              :title="fieldHelp('dead_zone')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -77,6 +79,7 @@
               min="0"
               max="5"
               class="input-field w-full"
+              :title="fieldHelp('close_zone')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -95,6 +98,7 @@
               min="0"
               max="10"
               class="input-field w-full"
+              :title="fieldHelp('far_zone')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -117,6 +121,7 @@
                 min="0"
                 max="1000"
                 class="input-field w-full"
+                :title="fieldHelp('close.kp')"
                 required
               />
             </div>
@@ -129,6 +134,7 @@
                 min="0"
                 max="100"
                 class="input-field w-full"
+                :title="fieldHelp('close.ki')"
                 required
               />
             </div>
@@ -141,6 +147,7 @@
                 min="0"
                 max="100"
                 class="input-field w-full"
+                :title="fieldHelp('close.kd')"
                 required
               />
             </div>
@@ -161,6 +168,7 @@
                 min="0"
                 max="1000"
                 class="input-field w-full"
+                :title="fieldHelp('far.kp')"
                 required
               />
             </div>
@@ -173,6 +181,7 @@
                 min="0"
                 max="100"
                 class="input-field w-full"
+                :title="fieldHelp('far.ki')"
                 required
               />
             </div>
@@ -185,6 +194,7 @@
                 min="0"
                 max="100"
                 class="input-field w-full"
+                :title="fieldHelp('far.kd')"
                 required
               />
             </div>
@@ -203,6 +213,7 @@
               min="0.1"
               max="500"
               class="input-field w-full"
+              :title="fieldHelp('max_output')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -221,6 +232,7 @@
               min="0.5"
               max="60"
               class="input-field w-full"
+              :title="fieldHelp('interval_minutes')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -239,6 +251,7 @@
               min="1"
               max="500"
               class="input-field w-full"
+              :title="fieldHelp('max_integral')"
               required
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
@@ -295,6 +308,26 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const FIELD_HELP: Record<string, string> = {
+  target: 'Целевое значение PID-контура. Для pH это рабочая кислотность раствора, для EC - целевая электропроводность.',
+  dead_zone: 'Зона, в которой отклонение считается слишком малым для dosing-реакции. Помогает избежать дрожания регулятора.',
+  close_zone: 'Окно умеренного отклонения рядом с target. В этой зоне обычно используются более мягкие коэффициенты PID.',
+  far_zone: 'Окно крупного отклонения от target. В нём runtime может использовать более агрессивные коэффициенты.',
+  'close.kp': 'Пропорциональный коэффициент для близкой зоны. Чем выше, тем сильнее реакция на текущую ошибку.',
+  'close.ki': 'Интегральный коэффициент для близкой зоны. Компенсирует накопленную систематическую ошибку.',
+  'close.kd': 'Дифференциальный коэффициент для близкой зоны. Смягчает перерегулирование по скорости изменения ошибки.',
+  'far.kp': 'Пропорциональный коэффициент для дальней зоны, когда отклонение от target ещё велико.',
+  'far.ki': 'Интегральный коэффициент для дальней зоны. Обычно требует осторожной настройки, чтобы не накопить лишнюю дозу.',
+  'far.kd': 'Дифференциальный коэффициент для дальней зоны. Помогает стабилизировать aggressive-коррекцию.',
+  max_output: 'Максимальная доза за одно решение PID. Ограничивает объём добавки и защищает систему от слишком резкой коррекции.',
+  interval_minutes: 'Минимальная пауза между dosing-циклами PID. Даёт раствору время дойти до датчиков и стабилизироваться.',
+  max_integral: 'Предел накопления интегральной ошибки. Нужен, чтобы интегральная часть не разгоняла контур в saturation.',
+}
+
+function fieldHelp(key: string): string {
+  return FIELD_HELP[key] ?? 'Параметр PID-контура коррекции.'
+}
 
 const emit = defineEmits<{
   saved: [config: PidConfigWithMeta]
@@ -437,3 +470,12 @@ onMounted(() => {
   void loadConfig()
 })
 </script>
+
+<style scoped>
+.pid-config-form :deep(.input-field) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+</style>

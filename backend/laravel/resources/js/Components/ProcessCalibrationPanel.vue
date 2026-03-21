@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card class="process-calibration-panel">
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -67,6 +67,7 @@
               :max="field.max"
               class="input-field w-full"
               :placeholder="field.placeholder"
+              :title="`${field.description} ${field.hint}`"
             />
             <span class="block text-[11px] text-[color:var(--text-dim)]">
               {{ field.description }}
@@ -590,3 +591,12 @@ onMounted(() => {
   void Promise.all([loadCalibrations(), loadHistory()])
 })
 </script>
+
+<style scoped>
+.process-calibration-panel :deep(.input-field) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+</style>

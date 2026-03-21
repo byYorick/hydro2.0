@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card class="zone-pump-calibration-settings-card">
     <div class="space-y-4">
       <div class="flex items-center justify-between gap-3">
         <div>
@@ -40,6 +40,7 @@
             :max="field.max"
             class="input-field w-full"
             :placeholder="`Система: ${resolvedSystemSettings[field.path as keyof PumpCalibrationSettings]}`"
+            :title="field.description"
             @input="updateField(field.path, ($event.target as HTMLInputElement).value)"
           />
           <div class="text-[11px] text-[color:var(--text-dim)]">
@@ -199,3 +200,12 @@ onMounted(() => {
   void load()
 })
 </script>
+
+<style scoped>
+.zone-pump-calibration-settings-card :deep(.input-field) {
+  height: 2.2rem;
+  padding: 0 0.7rem;
+  font-size: 0.78rem;
+  border-radius: 0.72rem;
+}
+</style>

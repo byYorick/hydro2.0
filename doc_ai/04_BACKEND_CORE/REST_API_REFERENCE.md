@@ -105,8 +105,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
 | GET | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum | Получить greenhouse climate profile и greenhouse bindings |
 | POST | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum (operator/admin/agronomist/engineer) | Сохранить greenhouse-owned automation profile (`climate`) |
-| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация unified шага `4. Автоматизация и устройства зоны` |
-| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод |
+| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация шага `4. Устройства нод зоны` |
+| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод на шаге `4. Устройства нод зоны` |
 | POST | /api/setup-wizard/validate-greenhouse-climate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация greenhouse climate nodes для шага `1. Теплица` |
 | POST | /api/setup-wizard/apply-greenhouse-climate-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка greenhouse roles (`climate_sensor`, `weather_station_sensor`, `vent_actuator`, `fan_actuator`) |
 
