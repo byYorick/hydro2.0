@@ -65,62 +65,66 @@
           </div>
         </div>
 
-        <div
-          v-for="pump in calibrations"
-          :key="pump.node_channel_id"
-          class="rounded-xl border border-[color:var(--border-muted)] px-3 py-2.5 space-y-2"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[color:var(--bg-elevated)] text-[10px] font-semibold text-[color:var(--text-dim)]">
-                  {{ roleShortLabel(pump.role) }}
-                </span>
-                <span class="text-sm font-medium truncate">{{ formatPumpLabel(pump) }}</span>
-                <Badge :variant="pump.ml_per_sec ? 'success' : 'warning'">
-                  {{ pump.ml_per_sec ? `${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Нет калибровки' }}
-                </Badge>
-              </div>
-              <div class="mt-1 text-xs text-[color:var(--text-dim)]">
-                {{ pump.node_uid }} / {{ pump.channel }}
-              </div>
-            </div>
-            <span class="text-xs text-[color:var(--text-dim)] whitespace-nowrap">
-              {{ formatCalibrationSource(pump.source, pump.valid_from) }}
-            </span>
-          </div>
-
-          <div class="flex flex-wrap gap-2 text-xs">
-            <span class="inline-flex items-center rounded-full bg-[color:var(--bg-elevated)] px-2.5 py-1 text-[color:var(--text-primary)]">
-              {{ pump.ml_per_sec ? `Скорость ${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Скорость не задана' }}
-            </span>
-            <span class="inline-flex items-center rounded-full bg-[color:var(--bg-elevated)] px-2.5 py-1 text-[color:var(--text-dim)]">
-              Диапазон {{ formatMlPerSec(pumpSettings.ml_per_sec_min) }}-{{ formatMlPerSec(pumpSettings.ml_per_sec_max) }} мл/с
-            </span>
-            <span class="inline-flex items-center rounded-full bg-[color:var(--bg-elevated)] px-2.5 py-1 text-[color:var(--text-dim)]">
-              Настройка через визард
-            </span>
-            <span
-              v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days"
-              class="inline-flex items-center rounded-full bg-[color:var(--badge-warning-bg)] px-2.5 py-1 text-[color:var(--badge-warning-text)]"
-            >
-              Устарела: {{ pump.calibration_age_days }} дн
-            </span>
-          </div>
-
-          <div
-            v-if="historyByRole[pump.role]"
-            class="text-xs text-[color:var(--text-dim)]"
-          >
-            <div class="flex flex-wrap gap-x-4 gap-y-1">
-              <span class="text-[color:var(--text-primary)]">{{ historyByRole[pump.role]?.message }}</span>
-              <span>{{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}</span>
-              <span>{{ historyByRole[pump.role]?.source ?? 'источник не задан' }}</span>
-              <span v-if="historyByRole[pump.role]?.mlPerSec !== null">
-                {{ formatMlPerSec(historyByRole[pump.role]!.mlPerSec!) }} мл/с
-              </span>
-            </div>
-          </div>
+        <div class="overflow-x-auto rounded-xl border border-[color:var(--border-muted)]">
+          <table class="w-full min-w-[760px] text-xs">
+            <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-dim)]">
+              <tr class="border-b border-[color:var(--border-muted)]">
+                <th class="px-3 py-2 text-left font-medium">Роль</th>
+                <th class="px-3 py-2 text-left font-medium">Узел / канал</th>
+                <th class="px-3 py-2 text-left font-medium">Статус</th>
+                <th class="px-3 py-2 text-left font-medium">Источник</th>
+                <th class="px-3 py-2 text-left font-medium">Последнее событие</th>
+                <th class="px-3 py-2 text-left font-medium">Примечание</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="pump in calibrations"
+                :key="pump.node_channel_id"
+                class="border-b border-[color:var(--border-muted)] last:border-b-0"
+              >
+                <td class="px-3 py-2 align-top">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[color:var(--bg-elevated)] text-[10px] font-semibold text-[color:var(--text-dim)]">
+                      {{ roleShortLabel(pump.role) }}
+                    </span>
+                    <span class="font-medium text-[color:var(--text-primary)]">{{ formatPumpLabel(pump) }}</span>
+                  </div>
+                </td>
+                <td class="px-3 py-2 align-top text-[color:var(--text-dim)]">
+                  <div>{{ pump.node_uid }}</div>
+                  <div>{{ pump.channel }}</div>
+                </td>
+                <td class="px-3 py-2 align-top">
+                  <Badge :variant="pump.ml_per_sec ? 'success' : 'warning'">
+                    {{ pump.ml_per_sec ? `${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Нет калибровки' }}
+                  </Badge>
+                  <div class="mt-1 text-[color:var(--text-dim)]">
+                    Диапазон {{ formatMlPerSec(pumpSettings.ml_per_sec_min) }}-{{ formatMlPerSec(pumpSettings.ml_per_sec_max) }} мл/с
+                  </div>
+                </td>
+                <td class="px-3 py-2 align-top text-[color:var(--text-dim)] whitespace-nowrap">
+                  {{ formatCalibrationSource(pump.source, pump.valid_from) }}
+                </td>
+                <td class="px-3 py-2 align-top text-[color:var(--text-dim)]">
+                  <template v-if="historyByRole[pump.role]">
+                    <div class="text-[color:var(--text-primary)]">{{ historyByRole[pump.role]?.message }}</div>
+                    <div class="mt-1">{{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}</div>
+                    <div v-if="historyByRole[pump.role]?.mlPerSec !== null">
+                      {{ formatMlPerSec(historyByRole[pump.role]!.mlPerSec!) }} мл/с
+                    </div>
+                  </template>
+                  <span v-else>Нет событий</span>
+                </td>
+                <td class="px-3 py-2 align-top text-[color:var(--text-dim)]">
+                  <div>Через визард</div>
+                  <div v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days" class="mt-1 text-[color:var(--badge-warning-text)]">
+                    Устарела: {{ pump.calibration_age_days }} дн
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

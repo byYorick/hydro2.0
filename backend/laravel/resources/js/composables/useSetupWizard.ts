@@ -602,8 +602,8 @@ export function useSetupWizard() {
     { id: 'zone', title: '2. Зона', hint: 'Рабочая зона выращивания', done: stepZoneDone.value },
     { id: 'plant', title: '3. Культура и рецепт', hint: 'Рецепт подтягивается по выбранной культуре', done: stepPlantDone.value && stepRecipeDone.value },
     { id: 'automation', title: '4. Автоматика зоны', hint: 'Водный контур, климат и освещение как единые блоки', done: stepZoneAutomationDone.value },
-    { id: 'calibration', title: '5. Калибровка', hint: 'Сенсоры, насосы, runtime bounds, process calibration и PID', done: stepZoneCalibrationReady.value },
-    { id: 'launch', title: '6. Запуск', hint: 'Открыть мастер цикла', done: canLaunch.value },
+    { id: 'calibration', title: '5. Калибровка', hint: 'Сенсоры, насосы и process calibration', done: stepZoneCalibrationReady.value },
+    { id: 'launch', title: '6. Проверка и запуск', hint: 'Readiness и мастер цикла', done: canLaunch.value },
   ])
 
   const waterTopologyLabel = computed(() => {

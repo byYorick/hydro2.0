@@ -212,6 +212,8 @@ export function useZoneShowPage() {
     setLoading('pumpCalibrationSave', true)
     try {
       await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, { ...payload, skip_run: true })
+      reloadZone(zoneId.value, ['zone', 'active_grow_cycle', 'active_cycle'])
+      reloadZonePageProps()
       showToast('Калибровка сохранена в конфигурации канала.', 'success', TOAST_TIMEOUT.NORMAL)
       pumpCalibrationSaveSeq.value += 1
     } catch (error) {

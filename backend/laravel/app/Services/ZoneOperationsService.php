@@ -60,16 +60,14 @@ class ZoneOperationsService
      */
     public function calibratePump(Zone $zone, array $data): string
     {
-        $skipRun = (bool) ($data['skip_run'] ?? false);
-
-        // skip_run=true используется для сохранения коэффициентов калибровки без физического запуска насоса.
-        // Такой запрос не должен блокироваться offline-статусом зоны.
-        if (! $skipRun) {
-            $this->validateZoneOperation($zone, 'calibrate_pump');
-        }
+        // Для pump calibration не блокируемся по zone.status.
+        // Реальный физический прогон всё равно валидируется ниже по pipeline:
+        // history-logger/common.water_flow проверяет принадлежность канала зоне и online-статус конкретной ноды.
 
         $jobId = \Illuminate\Support\Str::uuid()->toString();
-        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'calibrate_pump', $data, $jobId);
+        // Выполняем pump calibration синхронно, чтобы команда на ноду не зависела от наличия queue worker.
+        // History-logger для run-step возвращает после отправки команды и не ждёт завершения прогона.
+        \App\Jobs\ZoneOperationJob::dispatchSync($zone->id, 'calibrate_pump', $data, $jobId);
 
         return $jobId;
     }

@@ -1,7 +1,9 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { usePageProp } from '@/composables/usePageProps'
+import { usePidConfig } from '@/composables/usePidConfig'
 import type { Device } from '@/types'
 import type { PumpCalibrationComponent, PumpChannelOption, PumpCalibrationSavePayload } from '@/types/Calibration'
+import type { PumpCalibrationConfig } from '@/types/Device'
 import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
 interface PumpCalibrationProps {
@@ -51,6 +53,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
     ...DEFAULT_PUMP_CALIBRATION_SETTINGS,
     ...(rawSettings.value || {}),
   }))
+  const { getPumpCalibrations } = usePidConfig()
   const form = reactive<{
     component: PumpCalibrationComponent
     node_channel_id: number | null
@@ -73,6 +76,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
 
   const formError = ref<string | null>(null)
   const persistedBindings = ref<Partial<Record<PumpCalibrationComponent, number>>>({})
+  const dbCalibrationsByChannelId = ref<Record<number, PumpCalibrationConfig>>({})
 
   const storageKey = computed(() => {
     if (!props.zoneId) {
@@ -117,7 +121,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
           label: `${deviceLabel} / ${channelName}`,
           channelName,
           priority,
-          calibration: channel.pump_calibration || null,
+          calibration: dbCalibrationsByChannelId.value[channelId] ?? channel.pump_calibration ?? null,
         })
       })
     })
@@ -416,6 +420,28 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
     return date.toLocaleString('ru-RU')
   }
 
+  async function refreshDbCalibrations(): Promise<void> {
+    if (!props.zoneId || props.zoneId <= 0) {
+      dbCalibrationsByChannelId.value = {}
+      return
+    }
+
+    try {
+      const calibrations = await getPumpCalibrations(props.zoneId)
+      dbCalibrationsByChannelId.value = calibrations.reduce<Record<number, PumpCalibrationConfig>>((acc, item) => {
+        acc[item.node_channel_id] = {
+          ml_per_sec: item.ml_per_sec ?? undefined,
+          k_ms_per_ml_l: item.k_ms_per_ml_l ?? undefined,
+          component: item.component ?? undefined,
+          calibrated_at: item.valid_from ?? null,
+        }
+        return acc
+      }, {})
+    } catch {
+      // Не блокируем UX модалки, если refresh из БД не удался.
+    }
+  }
+
   // ── Watchers ─────────────────────────────────────────────────────────────
   watch(
     () => props.show,
@@ -423,6 +449,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
       if (!isOpen) {
         return
       }
+      void refreshDbCalibrations()
       loadPersistedBindings()
       formError.value = null
       form.duration_sec = settings.value.default_run_duration_sec
@@ -466,10 +493,11 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
 
   watch(
     () => props.saveSuccessSeq,
-    (next, prev) => {
+    async (next, prev) => {
       if (!props.show || (next ?? 0) <= (prev ?? 0)) {
         return
       }
+      await refreshDbCalibrations()
       moveToNextComponent()
     },
   )

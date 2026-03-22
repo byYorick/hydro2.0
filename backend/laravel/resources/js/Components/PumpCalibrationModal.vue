@@ -311,6 +311,23 @@
             </div>
           </section>
         </div>
+
+        <details
+          v-if="zoneId !== null"
+          class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
+          data-testid="pump-calibration-advanced"
+        >
+          <summary class="cursor-pointer list-none px-3 py-2.5 text-sm font-semibold text-[color:var(--text-primary)]">
+            Расширенные настройки runtime bounds
+            <div class="mt-1 text-xs font-normal text-[color:var(--text-dim)]">
+              Zone-level override для `min_dose_ms` и допустимого диапазона `ml_per_sec`. Нужен только для нестандартных насосов и гидравлики.
+            </div>
+          </summary>
+
+          <div class="border-t border-[color:var(--border-muted)] p-3">
+            <ZonePumpCalibrationSettingsCard :zone-id="zoneId" />
+          </div>
+        </details>
       </template>
     </div>
   </Modal>
@@ -319,6 +336,7 @@
 <script setup lang="ts">
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import ZonePumpCalibrationSettingsCard from '@/Components/ZonePumpCalibrationSettingsCard.vue'
 import { usePageProp } from '@/composables/usePageProps'
 import type { Device } from '@/types'
 import type { PumpCalibrationComponent, PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'

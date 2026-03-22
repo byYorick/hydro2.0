@@ -1,5 +1,13 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+const getPumpCalibrationsMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/composables/usePidConfig', () => ({
+  usePidConfig: () => ({
+    getPumpCalibrations: getPumpCalibrationsMock,
+  }),
+}))
+
 import PumpCalibrationModal from '../PumpCalibrationModal.vue'
 
 const sampleDevices = [
@@ -16,6 +24,12 @@ const sampleDevices = [
 ]
 
 describe('PumpCalibrationModal', () => {
+  beforeEach(() => {
+    getPumpCalibrationsMock.mockReset()
+    getPumpCalibrationsMock.mockResolvedValue([])
+    window.localStorage.clear()
+  })
+
   it('эмитит запуск калибровки с валидным payload', async () => {
     const wrapper = mount(PumpCalibrationModal, {
       props: {
@@ -24,6 +38,11 @@ describe('PumpCalibrationModal', () => {
         devices: sampleDevices,
         loadingRun: false,
         loadingSave: false,
+      },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
+        },
       },
     })
 
@@ -49,6 +68,11 @@ describe('PumpCalibrationModal', () => {
         devices: sampleDevices,
         loadingRun: false,
         loadingSave: false,
+      },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
+        },
       },
     })
 
@@ -106,6 +130,11 @@ describe('PumpCalibrationModal', () => {
         loadingRun: false,
         loadingSave: false,
       },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
+        },
+      },
     })
 
     await wrapper.find('[data-testid="pump-calibration-component"]').setValue('ph_down')
@@ -117,5 +146,78 @@ describe('PumpCalibrationModal', () => {
     expect(readiness.text()).toContain('pH Up: Откалиброван')
     expect(readiness.text()).toContain('pH Down: Текущий выбор без сохранённой калибровки')
     expect(readiness.text()).toContain('После сохранения этот компонент закроет последний пробел в pH dosing path.')
+  })
+
+  it('показывает runtime bounds в расширенных настройках визарда', () => {
+    const wrapper = mount(PumpCalibrationModal, {
+      props: {
+        show: true,
+        zoneId: 1,
+        devices: sampleDevices,
+        loadingRun: false,
+        loadingSave: false,
+      },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub">Runtime bounds stub</div>' },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('Расширенные настройки runtime bounds')
+    expect(wrapper.find('[data-testid="pump-calibration-advanced"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Runtime bounds stub')
+  })
+
+  it('обновляет UI при получении свежей калибровки после сохранения', async () => {
+    getPumpCalibrationsMock.mockResolvedValue([])
+
+    const wrapper = mount(PumpCalibrationModal, {
+      props: {
+        show: true,
+        zoneId: 1,
+        devices: sampleDevices,
+        loadingRun: false,
+        loadingSave: false,
+        saveSuccessSeq: 0,
+      },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.find('[data-testid="pump-calibration-component"]').setValue('npk')
+    await wrapper.find('[data-testid="pump-calibration-channel"]').setValue('101')
+
+    expect(wrapper.text()).toContain('Нет калибровки')
+
+    await wrapper.setProps({
+      saveSuccessSeq: 1,
+      devices: [
+        {
+          ...sampleDevices[0],
+          channels: [
+            {
+              ...sampleDevices[0].channels[0],
+              pump_calibration: {
+                ml_per_sec: 0.81,
+                calibrated_at: '2026-03-22T10:00:00Z',
+                component: 'npk',
+              },
+            },
+            sampleDevices[0].channels[1],
+          ],
+        },
+      ],
+    })
+    await flushPromises()
+
+    expect(getPumpCalibrationsMock).toHaveBeenCalledWith(1)
+    expect(wrapper.text()).toContain('Уже сохранено')
+    expect(wrapper.text()).toContain('pump-node-1 / pump_npk:')
+    expect(wrapper.text()).toContain('0.81 мл/сек')
   })
 })

@@ -446,18 +446,19 @@
 
         <template v-else-if="!stepZoneAutomationDone">
           <div class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]">
-            Сначала сохраните автоматику зоны на шаге 4. После этого шаг 5 проходится последовательно: sensor calibration, pump calibration, runtime bounds, process calibration, PID и финальная readiness-проверка.
+            Сначала сохраните автоматику зоны на шаге 4. После этого шаг 5 проходится последовательно: sensor calibration, pump calibration и process calibration. Финальная readiness-проверка и запуск объединены в шаге 6.
           </div>
         </template>
 
         <template v-else-if="selectedZone?.id && sensorCalibrationSettings">
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
-            Отдельный рабочий шаг для последовательной настройки calibration-контура зоны: сенсоры, дозирование, runtime bounds, process calibration, PID и итоговая correction runtime readiness.
+            Отдельный рабочий шаг для последовательной настройки calibration-контура зоны: сенсоры, дозирование и process calibration. Runtime bounds насосов и PID/autotune доступны только в расширенных настройках, а финальная readiness вынесена в шаг запуска.
           </div>
 
           <ZoneCorrectionCalibrationStack
             :zone-id="selectedZone.id"
             :sensor-calibration-settings="sensorCalibrationSettings"
+            :show-runtime-readiness="false"
             @open-pump-calibration="openPumpCalibrationModal"
           />
         </template>
@@ -472,12 +473,30 @@
       <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            6. Запуск
+            6. Проверка и запуск
           </h3>
           <Badge :variant="canLaunch ? 'success' : 'warning'">
             {{ canLaunch ? 'Можно запускать' : 'Есть незавершённые шаги' }}
           </Badge>
         </div>
+
+        <template v-if="!stepZoneDone">
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
+            Сначала создайте или выберите зону на шаге 2.
+          </div>
+        </template>
+
+        <template v-else-if="selectedZone?.id">
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
+            Финальный шаг: сначала проверьте correction runtime readiness, затем запускайте цикл. Если есть блокеры, используйте ссылки карточки, чтобы вернуться к нужной настройке.
+          </div>
+
+          <CorrectionRuntimeReadinessCard
+            :zone-id="selectedZone.id"
+            @focus-process-calibration="focusProcessCalibration"
+            @open-pump-calibration="openPumpCalibrationModal"
+          />
+        </template>
 
         <div class="flex flex-wrap items-center gap-2">
           <Button
@@ -537,6 +556,7 @@ import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import CorrectionRuntimeReadinessCard from '@/Components/CorrectionRuntimeReadinessCard.vue'
 import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfiguration.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
@@ -695,6 +715,15 @@ function openPumpCalibrationModal(): void {
 
 function closePumpCalibrationModal(): void {
   showPumpCalibrationModal.value = false
+}
+
+function focusProcessCalibration(): void {
+  if (typeof document === 'undefined') {
+    return
+  }
+
+  const target = document.getElementById('zone-process-calibration-panel-shared')
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -880,6 +909,7 @@ async function savePumpCalibration(payload: PumpCalibrationSavePayload): Promise
   pumpCalibrationLoadingSave.value = true
   try {
     await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, { ...payload, skip_run: true })
+    await refreshAvailableNodes()
     pumpCalibrationSaveSeq.value += 1
     showToast('Калибровка насоса сохранена.', 'success')
   } catch {

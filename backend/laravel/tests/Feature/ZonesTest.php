@@ -522,6 +522,36 @@ class ZonesTest extends TestCase
             ->assertJsonPath('message', 'Calibrate pump operation queued');
     }
 
+    public function test_calibrate_pump_run_allows_offline_zone_when_channel_belongs_to_zone(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'offline']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 10,
+                'component' => 'npk',
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Calibrate pump operation queued');
+    }
+
     public function test_calibrate_pump_rejects_node_channel_from_other_zone(): void
     {
         $token = $this->token();

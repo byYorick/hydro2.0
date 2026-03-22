@@ -132,7 +132,10 @@ Canonical recipe UX:
   - `Климат зоны` начинается со switch `enabled`; если блок включён, UI раскрывает привязку CO2/root-vent нод и настройки логики;
   - `Освещение` устроено так же: switch `enabled` + раскрытие binding/logics только для включённой подсистемы;
 - сохранение шага `4` идёт по блокам (`water_contour`, `zone_climate`, `lighting`), но readiness шага считается единой зональной automation-конфигурацией;
-- шаг `5. Калибровка` идёт в логическом порядке: `sensor calibration -> pump calibration -> runtime bounds -> process calibration -> PID/autotune -> correction runtime readiness`;
+- шаг `5. Калибровка` идёт в логическом порядке: `sensor calibration -> pump calibration -> process calibration`;
+- zone-level `runtime bounds` для pump calibration не вынесены в отдельный блок шага и живут внутри `pump calibration wizard` как advanced settings для редких override-сценариев;
+- `PID/autotune` не участвует в основном linear-flow шага и живёт в отдельном advanced-блоке `Расширенная тонкая настройка PID и autotune`;
+- шаг `6. Проверка и запуск` объединяет `correction runtime readiness`, launch checklist и открытие мастера цикла;
 - correction/calibration stack не дублируется вручную, а переиспользуется отдельным шагом тем же shared-блоком, что и на `Zone Detail`.
 
 Экран `Greenhouses/Show.vue` теперь использует ту же greenhouse-climate форму, что и setup wizard:

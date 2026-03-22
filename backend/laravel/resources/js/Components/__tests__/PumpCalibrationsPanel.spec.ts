@@ -134,8 +134,8 @@ describe('PumpCalibrationsPanel.vue', () => {
       },
     })
     expect(wrapper.text()).toContain('Калибровка насоса [ph_acid_pump]: 0.55 мл/с')
-    expect(wrapper.text()).toContain('Источник: manual')
-    expect(wrapper.text()).toContain('Скорость: 0.55 мл/с')
+    expect(wrapper.text()).toContain('Вручную')
+    expect(wrapper.text()).toContain('0.55 мл/с')
     expect(wrapper.text()).toContain('1 без калибровки')
   })
 
@@ -146,10 +146,10 @@ describe('PumpCalibrationsPanel.vue', () => {
 
     await flushPromises()
     expect(wrapper.text()).not.toContain('Сохранить')
-    expect(wrapper.text()).toContain('Рабочий диапазон системы: 0.01-20 мл/с')
-    const calibrateButton = wrapper.findAll('button').find((button) => button.text() === 'Перекалибровать')
-    expect(calibrateButton).toBeTruthy()
-    await calibrateButton!.trigger('click')
+    expect(wrapper.text()).toContain('Диапазон 0.01-20 мл/с')
+    const wizardButton = wrapper.findAll('button').find((button) => button.text() === 'Открыть визард')
+    expect(wizardButton).toBeTruthy()
+    await wizardButton!.trigger('click')
 
     expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
   })
@@ -163,6 +163,6 @@ describe('PumpCalibrationsPanel.vue', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Рабочий диапазон системы: 0-20 мл/с')
+    expect(wrapper.text()).toContain('Диапазон 0-20 мл/с')
   })
 })

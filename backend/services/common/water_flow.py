@@ -1043,6 +1043,21 @@ async def calibrate_pump(
                 "start_time": started_at.isoformat(),
             },
         )
+
+        # Для двухшагового UX "запустить -> потом ввести actual_ml" не держим HTTP-запрос
+        # до завершения прогона. После успешной отправки команды сразу возвращаем awaiting_actual_ml.
+        if actual_ml is None:
+            return {
+                "success": True,
+                "status": "awaiting_actual_ml",
+                "node_channel_id": node_channel_id,
+                "node_uid": node_uid,
+                "channel": channel,
+                "duration_sec": duration_sec,
+                "component": normalized_component,
+                "started_at": started_at.isoformat(),
+            }
+
         await asyncio.sleep(duration_sec + 1)
     else:
         # skip_run используется и для чистого пропуска физического запуска, и для

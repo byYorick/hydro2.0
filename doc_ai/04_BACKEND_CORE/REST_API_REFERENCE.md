@@ -78,6 +78,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - при busy zone возвращает `409` с `code=runtime_switch_denied_zone_busy`
 - busy zone определяется через active `ae_tasks`, active `ae_zone_leases` или indeterminate `ae_commands` state
 
+Контракт `POST /api/zones/{id}/calibrate-pump`:
+- не блокируется по `zones.status`;
+- требует, чтобы `node_channel_id` принадлежал выбранной зоне;
+- физический прогон помпы (`skip_run=false`) валидируется по online-статусу конкретной ноды уже в `history-logger/common.water_flow`, а не по coarse-grained статусу зоны.
+
 Контракт `GET /api/zones/{id}/state`:
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.
 - поле `solution_tank_guard` (если присутствует) отражает последний non-blocking startup guard по solution tank: `checked`, `reset`, `reason`, `sensor_label`, `sample_ts`.

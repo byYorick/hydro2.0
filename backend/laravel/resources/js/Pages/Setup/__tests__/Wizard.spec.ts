@@ -55,8 +55,17 @@ vi.mock('@/Components/GreenhouseClimateConfiguration.vue', () => ({
 vi.mock('@/Components/ZoneCorrectionCalibrationStack.vue', () => ({
   default: {
     name: 'ZoneCorrectionCalibrationStack',
+    props: ['showRuntimeReadiness'],
     emits: ['open-pump-calibration'],
-    template: '<div data-test="zone-correction-calibration-stack"><button data-test="open-pump-calibration" @click="$emit(\'open-pump-calibration\')">open pump</button></div>',
+    template: '<div data-test="zone-correction-calibration-stack">{{ showRuntimeReadiness }}<button data-test="open-pump-calibration" @click="$emit(\'open-pump-calibration\')">open pump</button></div>',
+  },
+}))
+
+vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
+  default: {
+    name: 'CorrectionRuntimeReadinessCard',
+    emits: ['focus-process-calibration', 'open-pump-calibration'],
+    template: '<div data-test="correction-runtime-readiness-card">runtime readiness</div>',
   },
 }))
 
@@ -376,7 +385,7 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('3. Культура и рецепт')
     expect(wrapper.text()).toContain('4. Автоматика зоны')
     expect(wrapper.text()).toContain('5. Калибровка')
-    expect(wrapper.text()).toContain('6. Запуск')
+    expect(wrapper.text()).toContain('6. Проверка и запуск')
     expect(wrapper.text()).not.toContain('4. Устройства нод зоны')
     expect(wrapper.text()).not.toContain('5. Профиль автоматики')
   })

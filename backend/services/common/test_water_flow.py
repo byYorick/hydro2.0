@@ -776,7 +776,7 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
          patch("common.water_flow.execute", new_callable=AsyncMock), \
          patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
          patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep"):
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         mock_settings.return_value = {
             "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
             "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
@@ -797,6 +797,7 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
 
         assert result["success"] is True
         assert result["status"] == "awaiting_actual_ml"
+        mock_sleep.assert_not_awaited()
 
 
 @pytest.mark.asyncio
