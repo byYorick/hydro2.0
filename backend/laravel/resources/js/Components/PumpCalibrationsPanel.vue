@@ -1,6 +1,6 @@
 <template>
   <Card>
-    <div class="space-y-4">
+    <div class="space-y-3">
       <div class="flex items-center justify-between gap-2">
         <div class="text-sm font-semibold">Калибровки насосов</div>
         <div class="flex items-center gap-2">
@@ -15,7 +15,7 @@
             variant="outline"
             @click="emit('open-pump-calibration')"
           >
-            Открыть Pump Calibration
+            Открыть визард
           </Button>
         </div>
       </div>
@@ -36,12 +36,39 @@
 
       <div
         v-else
-        class="space-y-3"
+        class="space-y-2.5"
       >
+        <div class="grid gap-2 md:grid-cols-3">
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2.5">
+            <div class="text-[11px] uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Всего каналов
+            </div>
+            <div class="mt-1.5 text-base font-semibold text-[color:var(--text-primary)]">
+              {{ calibrations.length }}
+            </div>
+          </div>
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2.5">
+            <div class="text-[11px] uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Откалибровано
+            </div>
+            <div class="mt-1.5 text-base font-semibold text-[color:var(--text-primary)]">
+              {{ calibratedCount }}
+            </div>
+          </div>
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-3 py-2.5">
+            <div class="text-[11px] uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Требуют внимания
+            </div>
+            <div class="mt-1.5 text-base font-semibold text-[color:var(--text-primary)]">
+              {{ attentionCount }}
+            </div>
+          </div>
+        </div>
+
         <div
           v-for="pump in calibrations"
           :key="pump.node_channel_id"
-          class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-2"
+          class="rounded-xl border border-[color:var(--border-muted)] px-3 py-2.5 space-y-2"
         >
           <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
@@ -51,10 +78,10 @@
                 </span>
                 <span class="text-sm font-medium truncate">{{ formatPumpLabel(pump) }}</span>
                 <Badge :variant="pump.ml_per_sec ? 'success' : 'warning'">
-                  {{ pump.ml_per_sec ? `${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Не откалиброван' }}
+                  {{ pump.ml_per_sec ? `${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Нет калибровки' }}
                 </Badge>
               </div>
-              <div class="text-xs text-[color:var(--text-dim)] mt-1">
+              <div class="mt-1 text-xs text-[color:var(--text-dim)]">
                 {{ pump.node_uid }} / {{ pump.channel }}
               </div>
             </div>
@@ -63,52 +90,41 @@
             </span>
           </div>
 
-          <div class="rounded-lg bg-[color:var(--bg-elevated)] px-3 py-2 text-xs text-[color:var(--text-dim)]">
-            <div class="font-medium text-[color:var(--text-primary)]">
-              {{ pump.ml_per_sec ? `Текущая скорость: ${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Скорость ещё не сохранена' }}
-            </div>
-            <div class="mt-1">
-              Рабочий диапазон системы: {{ formatMlPerSec(pumpSettings.ml_per_sec_min) }}-{{ formatMlPerSec(pumpSettings.ml_per_sec_max) }} мл/с.
-              Ручное редактирование из списка убрано, чтобы не дублировать Pump Calibration modal.
-            </div>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              @click="emit('open-pump-calibration')"
+          <div class="flex flex-wrap gap-2 text-xs">
+            <span class="inline-flex items-center rounded-full bg-[color:var(--bg-elevated)] px-2.5 py-1 text-[color:var(--text-primary)]">
+              {{ pump.ml_per_sec ? `Скорость ${formatMlPerSec(pump.ml_per_sec)} мл/с` : 'Скорость не задана' }}
+            </span>
+            <span class="inline-flex items-center rounded-full bg-[color:var(--bg-elevated)] px-2.5 py-1 text-[color:var(--text-dim)]">
+              Диапазон {{ formatMlPerSec(pumpSettings.ml_per_sec_min) }}-{{ formatMlPerSec(pumpSettings.ml_per_sec_max) }} мл/с
+            </span>
+            <span class="inline-flex items-center rounded-full bg-[color:var(--bg-elevated)] px-2.5 py-1 text-[color:var(--text-dim)]">
+              Настройка через визард
+            </span>
+            <span
+              v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days"
+              class="inline-flex items-center rounded-full bg-[color:var(--badge-warning-bg)] px-2.5 py-1 text-[color:var(--badge-warning-text)]"
             >
-              {{ pump.ml_per_sec ? 'Перекалибровать' : 'Калибровать' }}
-            </Button>
+              Устарела: {{ pump.calibration_age_days }} дн
+            </span>
           </div>
 
           <div
             v-if="historyByRole[pump.role]"
-            class="rounded-lg bg-[color:var(--bg-elevated)] px-3 py-2 text-xs text-[color:var(--text-dim)]"
+            class="text-xs text-[color:var(--text-dim)]"
           >
-            <div class="font-medium text-[color:var(--text-primary)]">
-              {{ historyByRole[pump.role]?.message }}
-            </div>
-            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-              <span>Время: {{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}</span>
-              <span>Источник: {{ historyByRole[pump.role]?.source ?? 'не задан' }}</span>
+            <div class="flex flex-wrap gap-x-4 gap-y-1">
+              <span class="text-[color:var(--text-primary)]">{{ historyByRole[pump.role]?.message }}</span>
+              <span>{{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}</span>
+              <span>{{ historyByRole[pump.role]?.source ?? 'источник не задан' }}</span>
               <span v-if="historyByRole[pump.role]?.mlPerSec !== null">
-                Скорость: {{ formatMlPerSec(historyByRole[pump.role]!.mlPerSec!) }} мл/с
+                {{ formatMlPerSec(historyByRole[pump.role]!.mlPerSec!) }} мл/с
               </span>
             </div>
-          </div>
-
-          <div
-            v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days"
-            class="text-xs text-[color:var(--badge-warning-text)]"
-          >
-            Калибровка устарела ({{ pump.calibration_age_days }} дн)
           </div>
         </div>
       </div>
 
-      <div class="rounded-md bg-[color:var(--bg-elevated)] p-2 text-xs text-[color:var(--text-dim)]">
+      <div class="rounded-md bg-[color:var(--bg-elevated)] px-3 py-2 text-xs text-[color:var(--text-dim)]">
         <strong>Рекомендуемые значения:</strong>
         pH кислота/щёлочь: 0.5-1.0 мл/с · NPK: 0.8-1.5 мл/с · Ca/Mg/Micro: 0.6-1.0 мл/с
       </div>
@@ -181,6 +197,9 @@ const pumpSettings = computed<PumpCalibrationSettings>(() => ({
 
 const hasUncalibrated = computed(() => calibrations.value.some((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0))
 const uncalibratedCount = computed(() => calibrations.value.filter((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0).length)
+const calibratedCount = computed(() => calibrations.value.filter((pump) => pump.ml_per_sec && pump.ml_per_sec > 0).length)
+const staleCount = computed(() => calibrations.value.filter((pump) => Number(pump.calibration_age_days) > pumpSettings.value.age_warning_days).length)
+const attentionCount = computed(() => uncalibratedCount.value + staleCount.value)
 const historyByRole = computed<Record<string, PumpCalibrationHistoryItem>>(() => {
   return historyEvents.value.reduce<Record<string, PumpCalibrationHistoryItem>>((acc, item) => {
     if (!acc[item.role] || acc[item.role].id < item.id) {

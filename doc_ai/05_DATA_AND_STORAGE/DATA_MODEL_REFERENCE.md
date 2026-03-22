@@ -1759,6 +1759,7 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - Поддерживаемые namespace:
   - `pump_calibration`
   - `sensor_calibration`
+  - `process_calibration_defaults`
   - `automation_defaults`
   - `automation_command_templates`
   - internal backend-owned: `pid_defaults_ph`, `pid_defaults_ec`
@@ -1774,6 +1775,12 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   - `ec_point_1_tds`, `ec_point_2_tds`
   - `reminder_days`, `critical_days`
   - `command_timeout_sec`
+- Для `process_calibration_defaults` хранятся рекомендуемые значения для UI
+  создания/редактирования `zone_process_calibrations`:
+  - `ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`
+  - `ph_per_ec_ml`, `ec_per_ph_ml`
+  - `transport_delay_sec`, `settle_sec`
+  - `confidence`
 - Для `automation_defaults` хранятся scalar/default значения для automation UI и
   `GROWTH_CYCLE_CONFIG` сборки:
   - рекомендуемые значения `climate_*`, `water_*`, `lighting_*`
@@ -1796,6 +1803,9 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   но являются runtime source of truth и позволяют менять PID defaults без redeploy.
   - `ph_reference_min`, `ph_reference_max`
   - `ec_tds_reference_max`
+- Laravel дополнительно шарит `processCalibrationDefaults` в Inertia props, чтобы
+  пустая process calibration форма поднималась из `system_automation_settings`,
+  а не из локальных хардкодов.
 
 ### 16.2. Таблица `sensor_calibrations`
 

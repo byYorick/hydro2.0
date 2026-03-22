@@ -50,6 +50,13 @@ class HandleInertiaRequests extends Middleware
                     return SystemAutomationSettingsCatalog::defaults('automation_command_templates');
                 }
             },
+            'processCalibrationDefaults' => static function (): array {
+                try {
+                    return SystemAutomationSetting::forNamespace('process_calibration_defaults');
+                } catch (\RuntimeException) {
+                    return SystemAutomationSettingsCatalog::defaults('process_calibration_defaults');
+                }
+            },
         ];
     }
 }

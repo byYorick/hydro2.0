@@ -1,7 +1,7 @@
 <template>
   <div class="zone-automation-profile-sections space-y-4">
     <section
-      v-if="showRequiredDevicesSection"
+      v-if="showRequiredDevicesSection && !isZoneBlockLayout"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
       <details open class="group">
@@ -203,15 +203,182 @@
               Водный контур
             </h4>
             <p class="mt-1 text-xs text-[color:var(--text-dim)]">
-              Тип системы, баковая схема и базовая гидравлическая конфигурация.
+              {{ isZoneBlockLayout
+                ? 'Обязательные ноды зоны и вся логика water runtime: topology, irrigation и correction.'
+                : 'Тип системы, баковая схема и базовая гидравлическая конфигурация.' }}
             </p>
           </div>
           <span class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
-            Базовая схема
+            {{ isZoneBlockLayout ? 'Основной блок' : 'Базовая схема' }}
           </span>
         </summary>
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
+          <div
+            v-if="isZoneBlockLayout && showNodeBindings && assignments"
+            class="rounded-xl border border-[color:var(--border-muted)] p-3"
+          >
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  Привязка обязательных нод
+                </h5>
+                <p class="mt-1 text-xs text-[color:var(--text-dim)]">
+                  Полив, pH и EC обязательны. Без них water runtime не считается готовым.
+                </p>
+              </div>
+              <span class="text-[11px] uppercase tracking-[0.18em] text-[color:var(--text-muted)]">
+                {{ requiredDevicesSelectedCount }}/3
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 xl:grid-cols-3">
+              <div class="grid grid-cols-1 gap-2 items-end">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('device.irrigation')"
+                >
+                  Узел полива
+                  <select
+                    v-model.number="assignments.irrigation"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option :value="null">
+                      Выберите узел полива
+                    </option>
+                    <option
+                      v-for="node in irrigationCandidates"
+                      :key="node.id"
+                      :value="node.id"
+                    >
+                      {{ nodeLabel(node) }}
+                    </option>
+                  </select>
+                </label>
+                <div
+                  v-if="showBindButtons || showRefreshButtons"
+                  class="flex items-center gap-2"
+                >
+                  <Button
+                    v-if="showBindButtons"
+                    size="sm"
+                    variant="secondary"
+                    :disabled="!canBindSelected(assignments?.irrigation)"
+                    @click="emit('bind-devices', ['irrigation'])"
+                  >
+                    {{ bindingInProgress ? 'Привязка...' : 'Привязать' }}
+                  </Button>
+                  <Button
+                    v-if="showRefreshButtons"
+                    size="sm"
+                    variant="ghost"
+                    :disabled="!canRefreshNodes"
+                    @click="emit('refresh-nodes')"
+                  >
+                    {{ refreshingNodes ? 'Обновление...' : 'Обновить' }}
+                  </Button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2 items-end">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('device.ph_correction')"
+                >
+                  Узел коррекции pH
+                  <select
+                    v-model.number="assignments.ph_correction"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option :value="null">
+                      Выберите узел pH
+                    </option>
+                    <option
+                      v-for="node in phCandidates"
+                      :key="node.id"
+                      :value="node.id"
+                    >
+                      {{ nodeLabel(node) }}
+                    </option>
+                  </select>
+                </label>
+                <div
+                  v-if="showBindButtons || showRefreshButtons"
+                  class="flex items-center gap-2"
+                >
+                  <Button
+                    v-if="showBindButtons"
+                    size="sm"
+                    variant="secondary"
+                    :disabled="!canBindSelected(assignments?.ph_correction)"
+                    @click="emit('bind-devices', ['ph_correction'])"
+                  >
+                    {{ bindingInProgress ? 'Привязка...' : 'Привязать' }}
+                  </Button>
+                  <Button
+                    v-if="showRefreshButtons"
+                    size="sm"
+                    variant="ghost"
+                    :disabled="!canRefreshNodes"
+                    @click="emit('refresh-nodes')"
+                  >
+                    {{ refreshingNodes ? 'Обновление...' : 'Обновить' }}
+                  </Button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2 items-end">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('device.ec_correction')"
+                >
+                  Узел коррекции EC
+                  <select
+                    v-model.number="assignments.ec_correction"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option :value="null">
+                      Выберите узел EC
+                    </option>
+                    <option
+                      v-for="node in ecCandidates"
+                      :key="node.id"
+                      :value="node.id"
+                    >
+                      {{ nodeLabel(node) }}
+                    </option>
+                  </select>
+                </label>
+                <div
+                  v-if="showBindButtons || showRefreshButtons"
+                  class="flex items-center gap-2"
+                >
+                  <Button
+                    v-if="showBindButtons"
+                    size="sm"
+                    variant="secondary"
+                    :disabled="!canBindSelected(assignments?.ec_correction)"
+                    @click="emit('bind-devices', ['ec_correction'])"
+                  >
+                    {{ bindingInProgress ? 'Привязка...' : 'Привязать' }}
+                  </Button>
+                  <Button
+                    v-if="showRefreshButtons"
+                    size="sm"
+                    variant="ghost"
+                    :disabled="!canRefreshNodes"
+                    @click="emit('refresh-nodes')"
+                  >
+                    {{ refreshingNodes ? 'Обновление...' : 'Обновить' }}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label
               class="text-xs text-[color:var(--text-muted)]"
@@ -431,17 +598,312 @@
           </details>
 
           <div
+            v-if="isZoneBlockLayout"
+            class="rounded-xl border border-[color:var(--border-muted)] p-3"
+          >
+            <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Полив
+            </h5>
+            <p class="mt-1 text-xs text-[color:var(--text-dim)]">
+              Основной цикл полива, окна приготовления и рабочие объёмы контура.
+            </p>
+
+            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.intervalMinutes')"
+              >
+                Интервал полива (мин)
+                <input
+                  v-model.number="waterForm.intervalMinutes"
+                  type="number"
+                  min="5"
+                  max="1440"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.durationSeconds')"
+              >
+                Длительность полива (сек)
+                <input
+                  v-model.number="waterForm.durationSeconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.irrigationBatchL')"
+              >
+                Порция полива (л)
+                <input
+                  v-model.number="waterForm.irrigationBatchL"
+                  type="number"
+                  min="1"
+                  max="500"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.fillTemperatureC')"
+              >
+                Температура набора (°C)
+                <input
+                  v-model.number="waterForm.fillTemperatureC"
+                  type="number"
+                  min="5"
+                  max="35"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.cleanTankFillL')"
+              >
+                Объём чистого бака (л)
+                <input
+                  v-model.number="waterForm.cleanTankFillL"
+                  type="number"
+                  min="10"
+                  max="5000"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.nutrientTankTargetL')"
+              >
+                Объём бака раствора (л)
+                <input
+                  v-model.number="waterForm.nutrientTankTargetL"
+                  type="number"
+                  min="10"
+                  max="5000"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.fillWindowStart')"
+              >
+                Окно набора воды: от
+                <input
+                  v-model="waterForm.fillWindowStart"
+                  type="time"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.fillWindowEnd')"
+              >
+                Окно набора воды: до
+                <input
+                  v-model="waterForm.fillWindowEnd"
+                  type="time"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div
+            v-if="isZoneBlockLayout"
+            class="rounded-xl border border-[color:var(--border-muted)] p-3"
+          >
+            <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Раствор и коррекция
+            </h5>
+            <p class="mt-1 text-xs text-[color:var(--text-dim)]">
+              Целевые параметры раствора и ограничения correction runtime.
+            </p>
+
+            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.targetPh')"
+              >
+                Целевой pH
+                <input
+                  v-model.number="waterForm.targetPh"
+                  type="number"
+                  min="4"
+                  max="9"
+                  step="0.1"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.targetEc')"
+              >
+                Целевой EC
+                <input
+                  v-model.number="waterForm.targetEc"
+                  type="number"
+                  min="0.1"
+                  max="10"
+                  step="0.1"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionDuringIrrigation')"
+              >
+                Коррекция во время полива
+                <select
+                  v-model="waterForm.correctionDuringIrrigation"
+                  class="input-select mt-1 w-full"
+                  :disabled="!canConfigure"
+                >
+                  <option :value="true">Включена</option>
+                  <option :value="false">Выключена</option>
+                </select>
+              </label>
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.correctionStabilizationSec')"
+              >
+                Стабилизация после дозирования (сек)
+                <input
+                  v-model.number="waterForm.correctionStabilizationSec"
+                  type="number"
+                  min="0"
+                  max="3600"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure"
+                />
+              </label>
+            </div>
+
+            <details class="mt-3 rounded-xl border border-[color:var(--border-muted)] p-3">
+              <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
+                Расширенные настройки коррекции
+              </summary>
+
+              <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.prepareToleranceEcPct')"
+                >
+                  Допуск EC подготовки (%)
+                  <input
+                    v-model.number="waterForm.prepareToleranceEcPct"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.prepareTolerancePhPct')"
+                >
+                  Допуск pH подготовки (%)
+                  <input
+                    v-model.number="waterForm.prepareTolerancePhPct"
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.correctionMaxEcCorrectionAttempts')"
+                >
+                  Лимит попыток EC-коррекции
+                  <input
+                    v-model.number="waterForm.correctionMaxEcCorrectionAttempts"
+                    type="number"
+                    min="1"
+                    max="50"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.correctionMaxPhCorrectionAttempts')"
+                >
+                  Лимит попыток pH-коррекции
+                  <input
+                    v-model.number="waterForm.correctionMaxPhCorrectionAttempts"
+                    type="number"
+                    min="1"
+                    max="50"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.correctionPrepareRecirculationMaxAttempts')"
+                >
+                  Лимит окон рециркуляции
+                  <input
+                    v-model.number="waterForm.correctionPrepareRecirculationMaxAttempts"
+                    type="number"
+                    min="1"
+                    max="50"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.correctionPrepareRecirculationMaxCorrectionAttempts')"
+                >
+                  Лимит correction-шагов
+                  <input
+                    v-model.number="waterForm.correctionPrepareRecirculationMaxCorrectionAttempts"
+                    type="number"
+                    min="1"
+                    max="500"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+              </div>
+            </details>
+          </div>
+
+          <div
             v-if="showSectionSaveButtons"
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
-            <span>Сохраняет изменения этой секции в общем профиле зоны.</span>
+            <span>
+              {{ isZoneBlockLayout
+                ? 'Сохраняет блок целиком: обязательные ноды и логику водного контура.'
+                : 'Сохраняет изменения этой секции в общем профиле зоны.' }}
+            </span>
             <Button
               size="sm"
               :disabled="!canSaveContourSection"
               data-test="save-section-water-contour"
               @click="emit('save-section', 'water_contour')"
             >
-              {{ savingSection === 'water_contour' ? 'Сохранение...' : 'Сохранить секцию' }}
+              {{ savingSection === 'water_contour' ? 'Сохранение...' : (isZoneBlockLayout ? 'Сохранить блок' : 'Сохранить секцию') }}
             </Button>
           </div>
         </div>
@@ -449,7 +911,7 @@
     </section>
 
     <section
-      v-if="showIrrigationSection"
+      v-if="showIrrigationSection && !isZoneBlockLayout"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
       <details open class="group">
@@ -885,7 +1347,7 @@
     </section>
 
     <section
-      v-if="showSolutionCorrectionSection"
+      v-if="showSolutionCorrectionSection && !isZoneBlockLayout"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
       <details open class="group">
@@ -1129,7 +1591,7 @@
             v-else-if="!lightingForm.enabled"
             class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
-            Подсистема освещения выключена в профиле автоматики. Включите её на шаге 5, затем вернитесь сюда для привязки ноды.
+            Включите подсистему освещения, чтобы открыть привязку ноды и настройки логики для этого блока.
           </div>
 
           <div
@@ -1318,9 +1780,11 @@
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
             <span>
-              {{ showLightingConfigFields
-                ? 'Сохраняет изменения этой секции в общем профиле зоны.'
-                : 'Сохраняет binding устройств для секции освещения.' }}
+              {{ isZoneBlockLayout
+                ? 'Сохраняет блок освещения: switch, привязку ноды и параметры досветки.'
+                : (showLightingConfigFields
+                  ? 'Сохраняет изменения этой секции в общем профиле зоны.'
+                  : 'Сохраняет binding устройств для секции освещения.') }}
             </span>
             <Button
               size="sm"
@@ -1328,7 +1792,7 @@
               data-test="save-section-lighting"
               @click="emit('save-section', 'lighting')"
             >
-              {{ savingSection === 'lighting' ? 'Сохранение...' : 'Сохранить секцию' }}
+              {{ savingSection === 'lighting' ? 'Сохранение...' : (isZoneBlockLayout ? 'Сохранить блок' : 'Сохранить секцию') }}
             </Button>
           </div>
         </div>
@@ -1376,7 +1840,7 @@
             v-else-if="!zoneClimateForm.enabled"
             class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
-            Zone climate выключен в профиле автоматики. Включите его на шаге 5, затем вернитесь сюда для привязки CO2 и root-vent устройств.
+            Включите климат зоны, чтобы открыть привязку CO2/root-vent нод и настройки этого блока.
           </div>
 
           <div
@@ -1533,9 +1997,11 @@
             class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
           >
             <span>
-              {{ showZoneClimateConfigFields
-                ? 'Сохраняет изменения этой секции в общем профиле зоны.'
-                : 'Сохраняет binding устройств для секции климата зоны.' }}
+              {{ isZoneBlockLayout
+                ? 'Сохраняет блок климата зоны: switch, привязку нод и параметры подсистемы.'
+                : (showZoneClimateConfigFields
+                  ? 'Сохраняет изменения этой секции в общем профиле зоны.'
+                  : 'Сохраняет binding устройств для секции климата зоны.') }}
             </span>
             <Button
               size="sm"
@@ -1543,7 +2009,7 @@
               data-test="save-section-zone-climate"
               @click="emit('save-section', 'zone_climate')"
             >
-              {{ savingSection === 'zone_climate' ? 'Сохранение...' : 'Сохранить секцию' }}
+              {{ savingSection === 'zone_climate' ? 'Сохранение...' : (isZoneBlockLayout ? 'Сохранить блок' : 'Сохранить секцию') }}
             </Button>
           </div>
         </div>
@@ -1595,6 +2061,7 @@ const props = withDefaults(defineProps<{
   waterForm: WaterFormState
   lightingForm: LightingFormState
   zoneClimateForm: ZoneClimateFormState
+  layoutMode?: 'legacy' | 'zone_blocks'
   canConfigure?: boolean
   isSystemTypeLocked?: boolean
   showNodeBindings?: boolean
@@ -1623,6 +2090,7 @@ const props = withDefaults(defineProps<{
   showZoneClimateEnableToggle?: boolean
   showZoneClimateConfigFields?: boolean
 }>(), {
+  layoutMode: 'legacy',
   canConfigure: true,
   isSystemTypeLocked: false,
   showNodeBindings: false,
@@ -1657,6 +2125,8 @@ const emit = defineEmits<{
   (e: 'refresh-nodes'): void
   (e: 'save-section', section: ZoneAutomationSectionSaveKey): void
 }>()
+
+const isZoneBlockLayout = computed(() => props.layoutMode === 'zone_blocks')
 
 const FIELD_HELP: Record<string, string> = {
   'device.irrigation': 'Основная нода полива зоны. Через неё runtime ожидает каналы запуска полива и refill/flow-команды для водного узла.',
@@ -1758,15 +2228,30 @@ function nodeChannels(node: SetupWizardNode): string[] {
     : []
 }
 
+function nodeBindingRoles(node: SetupWizardNode): string[] {
+  return Array.isArray(node.channels)
+    ? node.channels
+      .map((channel) => String(channel.binding_role ?? '').toLowerCase())
+      .filter((role) => role.length > 0)
+    : []
+}
+
 function matchesAnyChannel(node: SetupWizardNode, candidates: string[]): boolean {
   const channels = new Set(nodeChannels(node))
   return candidates.some((candidate) => channels.has(candidate))
 }
 
+function matchesAnyBindingRole(node: SetupWizardNode, candidates: string[]): boolean {
+  const bindingRoles = new Set(nodeBindingRoles(node))
+  return candidates.some((candidate) => bindingRoles.has(candidate))
+}
+
 const irrigationCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'irrig' || matchesAnyChannel(node, [
+    return type === 'irrig'
+      || matchesAnyBindingRole(node, ['main_pump', 'drain'])
+      || matchesAnyChannel(node, [
       'pump_main',
       'main_pump',
       'pump_irrigation',
@@ -1779,42 +2264,54 @@ const irrigationCandidates = computed(() => {
 const phCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'ph' || matchesAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
+    return type === 'ph'
+      || matchesAnyBindingRole(node, ['ph_acid_pump', 'ph_base_pump'])
+      || matchesAnyChannel(node, ['ph_sensor', 'pump_acid', 'pump_base'])
   })
 })
 
 const ecCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'ec' || matchesAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
+    return type === 'ec'
+      || matchesAnyBindingRole(node, ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'])
+      || matchesAnyChannel(node, ['ec_sensor', 'pump_a', 'pump_b', 'pump_c', 'pump_d'])
   })
 })
 
 const lightCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'light' || matchesAnyChannel(node, ['light', 'light_main', 'white_light', 'uv_light'])
+    return type === 'light'
+      || matchesAnyBindingRole(node, ['light'])
+      || matchesAnyChannel(node, ['light', 'light_main', 'white_light', 'uv_light'])
   })
 })
 
 const co2SensorCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'climate' || matchesAnyChannel(node, ['co2_ppm'])
+    return type === 'climate'
+      || matchesAnyBindingRole(node, ['co2_sensor'])
+      || matchesAnyChannel(node, ['co2_ppm'])
   })
 })
 
 const co2ActuatorCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'climate' || matchesAnyChannel(node, ['co2_inject'])
+    return type === 'climate'
+      || matchesAnyBindingRole(node, ['co2_actuator'])
+      || matchesAnyChannel(node, ['co2_inject'])
   })
 })
 
 const rootVentCandidates = computed(() => {
   return props.availableNodes.filter((node) => {
     const type = String(node.type ?? '').toLowerCase()
-    return type === 'climate' || matchesAnyChannel(node, ['root_vent', 'fan_root'])
+    return type === 'climate'
+      || matchesAnyBindingRole(node, ['root_vent_actuator'])
+      || matchesAnyChannel(node, ['root_vent', 'fan_root'])
   })
 })
 
@@ -1857,7 +2354,7 @@ const canSaveRequiredDevices = computed(() => {
 })
 
 const canSaveContourSection = computed(() => {
-  return baseSaveAllowed.value
+  return baseSaveAllowed.value && (!isZoneBlockLayout.value || requiredDevicesSelectedCount.value === 3)
 })
 
 const canSaveIrrigationSection = computed(() => {

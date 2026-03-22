@@ -6,11 +6,16 @@
     @close="$emit('close')"
   >
     <div class="pump-calibration-modal space-y-4">
-      <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]">
-        <div>1. Запустите насос на заданное время и измерьте фактический объём.</div>
-        <div>2. Для ΔEC-калибровки укажите объём тестового бака и EC до/после дозы (опционально).</div>
-        <div>3. Сохраните калибровку в конфиг ноды: `ml_per_sec` и коэффициент `k` (если рассчитан).</div>
-        <div>4. После сохранения форма автоматически переключится на следующий насос.</div>
+      <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3">
+        <div class="text-xs font-medium text-[color:var(--text-primary)]">
+          Порядок калибровки
+        </div>
+        <div class="mt-2 grid gap-2 text-xs text-[color:var(--text-muted)] md:grid-cols-2">
+          <div>1. Выберите компонент, канал и время тестового запуска.</div>
+          <div>2. Запустите насос и измерьте фактический объём дозы.</div>
+          <div>3. Для ΔEC-калибровки при необходимости заполните тестовый бак и EC до/после дозы.</div>
+          <div>4. Сохраните `ml_per_sec` и, если рассчитан, коэффициент `k`.</div>
+        </div>
       </div>
 
       <div
@@ -21,246 +26,290 @@
       </div>
 
       <template v-else>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('component')"
-          >
-            Компонент
-            <select
-              v-model="form.component"
-              class="input-select mt-1 w-full"
-              data-testid="pump-calibration-component"
-            >
-              <option
-                v-for="option in componentOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
+        <div class="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
+          <section class="space-y-4">
+            <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3">
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                1. Выбор насоса
+              </div>
+              <div class="mt-1 text-xs text-[color:var(--text-dim)]">
+                Сначала зафиксируйте, какой dosing-компонент и какой канал сейчас калибруете.
+              </div>
+              <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('component')"
+                >
+                  Компонент
+                  <select
+                    v-model="form.component"
+                    class="input-select mt-1 w-full"
+                    data-testid="pump-calibration-component"
+                  >
+                    <option
+                      v-for="option in componentOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
 
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('node_channel_id')"
-          >
-            Канал помпы
-            <select
-              v-model.number="form.node_channel_id"
-              class="input-select mt-1 w-full"
-              data-testid="pump-calibration-channel"
-            >
-              <option
-                v-for="channel in pumpChannels"
-                :key="channel.id"
-                :value="channel.id"
-              >
-                {{ channel.label }}
-              </option>
-            </select>
-          </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('node_channel_id')"
+                >
+                  Канал помпы
+                  <select
+                    v-model.number="form.node_channel_id"
+                    class="input-select mt-1 w-full"
+                    data-testid="pump-calibration-channel"
+                  >
+                    <option
+                      v-for="channel in pumpChannels"
+                      :key="channel.id"
+                      :value="channel.id"
+                    >
+                      {{ channel.label }}
+                    </option>
+                  </select>
+                </label>
 
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('duration_sec')"
-          >
-            Время запуска (сек)
-            <input
-              v-model.number="form.duration_sec"
-              type="number"
-              :min="pumpSettings.calibration_duration_min_sec"
-              :max="pumpSettings.calibration_duration_max_sec"
-              step="1"
-              class="input-field mt-1 w-full"
-              data-testid="pump-calibration-duration"
-            />
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('actual_ml')"
-          >
-            Фактический объём (мл)
-            <input
-              v-model.number="form.actual_ml"
-              type="number"
-              min="0.01"
-              max="100000"
-              step="0.01"
-              class="input-field mt-1 w-full"
-              data-testid="pump-calibration-actual-ml"
-            />
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('test_volume_l')"
-          >
-            Объём теста (л)
-            <input
-              v-model.number="form.test_volume_l"
-              type="number"
-              min="0.1"
-              max="1000"
-              step="0.1"
-              class="input-field mt-1 w-full"
-              data-testid="pump-calibration-test-volume"
-            />
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('ec_before_ms')"
-          >
-            EC до дозы (mS/cm)
-            <input
-              v-model.number="form.ec_before_ms"
-              type="number"
-              min="0"
-              max="20"
-              step="0.001"
-              class="input-field mt-1 w-full"
-              data-testid="pump-calibration-ec-before"
-            />
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('ec_after_ms')"
-          >
-            EC после дозы (mS/cm)
-            <input
-              v-model.number="form.ec_after_ms"
-              type="number"
-              min="0"
-              max="20"
-              step="0.001"
-              class="input-field mt-1 w-full"
-              data-testid="pump-calibration-ec-after"
-            />
-          </label>
-
-          <label
-            class="text-xs text-[color:var(--text-muted)]"
-            :title="fieldHelp('temperature_c')"
-          >
-            Температура (°C, опц.)
-            <input
-              v-model.number="form.temperature_c"
-              type="number"
-              min="0"
-              max="50"
-              step="0.1"
-              class="input-field mt-1 w-full"
-              data-testid="pump-calibration-temperature"
-            />
-          </label>
-        </div>
-
-        <div
-          v-if="selectedCalibration"
-          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
-          data-testid="pump-calibration-current"
-        >
-          <div class="font-medium text-[color:var(--text-primary)]">
-            Текущая калибровка канала: {{ selectedChannel?.label }}
-          </div>
-          <div class="mt-1">
-            {{ selectedCalibration.ml_per_sec ?? '-' }} мл/сек
-            · {{ selectedCalibration.actual_ml ?? '-' }} мл за {{ selectedCalibration.duration_sec ?? '-' }} сек
-          </div>
-          <div
-            v-if="selectedCalibration.k_ms_per_ml_l !== undefined && selectedCalibration.k_ms_per_ml_l !== null"
-            class="mt-1"
-          >
-            k: {{ selectedCalibration.k_ms_per_ml_l }} mS/(мл/л)
-          </div>
-          <div
-            v-if="selectedCalibration.calibrated_at"
-            class="mt-1 text-[color:var(--text-dim)]"
-          >
-            Обновлено: {{ formatDateTime(selectedCalibration.calibrated_at) }}
-          </div>
-        </div>
-
-        <div
-          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
-          data-testid="pump-calibration-readiness"
-        >
-          <div class="font-medium text-[color:var(--text-primary)]">
-            Влияние на correction runtime
-          </div>
-          <div class="mt-1">
-            Выбранный компонент относится к {{ currentPathLabel }}.
-          </div>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <span
-              v-for="item in currentPathStatuses"
-              :key="item.component"
-              class="inline-flex items-center rounded-full border px-2 py-1"
-              :class="item.calibrated ? 'border-[color:var(--accent-green)] text-[color:var(--accent-green)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
-            >
-              {{ item.label }}: {{ item.stateLabel }}
-            </span>
-          </div>
-          <div class="mt-2">
-            {{ currentPathSummary }}
-          </div>
-        </div>
-
-        <div
-          v-if="estimatedK !== null"
-          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
-        >
-          Расчёт k по введённым данным: <span class="font-semibold text-[color:var(--text-primary)]">{{ estimatedK.toFixed(6) }}</span> mS/(мл/л)
-        </div>
-
-        <div
-          v-if="calibratedChannels.length > 0"
-          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3"
-        >
-          <div class="text-xs font-medium text-[color:var(--text-primary)]">
-            Сохранённые калибровки
-          </div>
-          <div class="mt-2 space-y-1 text-xs text-[color:var(--text-muted)]">
-            <div
-              v-for="channel in calibratedChannels"
-              :key="`cal-${channel.id}`"
-            >
-              {{ channel.label }}:
-              {{ channel.calibration?.ml_per_sec ?? '-' }} мл/сек
+                <label
+                  class="text-xs text-[color:var(--text-muted)] md:col-span-2"
+                  :title="fieldHelp('duration_sec')"
+                >
+                  Время запуска (сек)
+                  <input
+                    v-model.number="form.duration_sec"
+                    type="number"
+                    :min="pumpSettings.calibration_duration_min_sec"
+                    :max="pumpSettings.calibration_duration_max_sec"
+                    step="1"
+                    class="input-field mt-1 w-full"
+                    data-testid="pump-calibration-duration"
+                  />
+                </label>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div
-          v-if="formError"
-          class="text-sm text-[color:var(--accent-red)]"
-          data-testid="pump-calibration-error"
-        >
-          {{ formError }}
-        </div>
+            <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3">
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                2. Измерение дозы
+              </div>
+              <div class="mt-1 text-xs text-[color:var(--text-dim)]">
+                Для базовой калибровки обязателен только фактический объём. ΔEC-поля заполняйте, если хотите сразу оценить `k`.
+              </div>
+              <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('actual_ml')"
+                >
+                  Фактический объём (мл)
+                  <input
+                    v-model.number="form.actual_ml"
+                    type="number"
+                    min="0.01"
+                    max="100000"
+                    step="0.01"
+                    class="input-field mt-1 w-full"
+                    data-testid="pump-calibration-actual-ml"
+                  />
+                </label>
 
-        <div class="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            :disabled="loadingRun"
-            data-testid="pump-calibration-start-btn"
-            @click="onStart"
-          >
-            {{ loadingRun ? 'Запуск...' : 'Запустить калибровку' }}
-          </Button>
-          <Button
-            type="button"
-            :disabled="loadingSave"
-            data-testid="pump-calibration-save-btn"
-            @click="onSave"
-          >
-            {{ loadingSave ? 'Сохранение...' : 'Сохранить фактический объём' }}
-          </Button>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('temperature_c')"
+                >
+                  Температура (°C, опц.)
+                  <input
+                    v-model.number="form.temperature_c"
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                    data-testid="pump-calibration-temperature"
+                  />
+                </label>
+
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('test_volume_l')"
+                >
+                  Объём теста (л)
+                  <input
+                    v-model.number="form.test_volume_l"
+                    type="number"
+                    min="0.1"
+                    max="1000"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                    data-testid="pump-calibration-test-volume"
+                  />
+                </label>
+
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('ec_before_ms')"
+                >
+                  EC до дозы (mS/cm)
+                  <input
+                    v-model.number="form.ec_before_ms"
+                    type="number"
+                    min="0"
+                    max="20"
+                    step="0.001"
+                    class="input-field mt-1 w-full"
+                    data-testid="pump-calibration-ec-before"
+                  />
+                </label>
+
+                <label
+                  class="text-xs text-[color:var(--text-muted)] md:col-span-2"
+                  :title="fieldHelp('ec_after_ms')"
+                >
+                  EC после дозы (mS/cm)
+                  <input
+                    v-model.number="form.ec_after_ms"
+                    type="number"
+                    min="0"
+                    max="20"
+                    step="0.001"
+                    class="input-field mt-1 w-full"
+                    data-testid="pump-calibration-ec-after"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div
+              v-if="formError"
+              class="rounded-xl border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3 text-sm text-[color:var(--badge-danger-text)]"
+              data-testid="pump-calibration-error"
+            >
+              {{ formError }}
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                :disabled="loadingRun"
+                data-testid="pump-calibration-start-btn"
+                @click="onStart"
+              >
+                {{ loadingRun ? 'Запуск...' : 'Запустить калибровку' }}
+              </Button>
+              <Button
+                type="button"
+                :disabled="loadingSave"
+                data-testid="pump-calibration-save-btn"
+                @click="onSave"
+              >
+                {{ loadingSave ? 'Сохранение...' : 'Сохранить фактический объём' }}
+              </Button>
+            </div>
+          </section>
+
+          <section class="space-y-4">
+            <div
+              class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+              data-testid="pump-calibration-current"
+            >
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                3. Текущий канал
+              </div>
+              <div class="mt-1">
+                {{ selectedChannel?.label ?? 'Канал ещё не выбран' }}
+              </div>
+              <template v-if="selectedCalibration">
+                <div class="mt-3 font-medium text-[color:var(--text-primary)]">
+                  Сохранённая калибровка
+                </div>
+                <div class="mt-1">
+                  {{ selectedCalibration.ml_per_sec ?? '-' }} мл/сек
+                  · {{ selectedCalibration.actual_ml ?? '-' }} мл за {{ selectedCalibration.duration_sec ?? '-' }} сек
+                </div>
+                <div
+                  v-if="selectedCalibration.k_ms_per_ml_l !== undefined && selectedCalibration.k_ms_per_ml_l !== null"
+                  class="mt-1"
+                >
+                  k: {{ selectedCalibration.k_ms_per_ml_l }} mS/(мл/л)
+                </div>
+                <div
+                  v-if="selectedCalibration.calibrated_at"
+                  class="mt-1 text-[color:var(--text-dim)]"
+                >
+                  Обновлено: {{ formatDateTime(selectedCalibration.calibrated_at) }}
+                </div>
+              </template>
+              <div
+                v-else
+                class="mt-3 rounded-lg bg-[color:var(--bg-elevated)] px-3 py-2 text-[color:var(--text-dim)]"
+              >
+                Для выбранного канала ещё нет сохранённой калибровки.
+              </div>
+            </div>
+
+            <div
+              class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+              data-testid="pump-calibration-readiness"
+            >
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                4. Влияние на correction runtime
+              </div>
+              <div class="mt-1">
+                Выбранный компонент относится к {{ currentPathLabel }}.
+              </div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <span
+                  v-for="item in currentPathStatuses"
+                  :key="item.component"
+                  class="inline-flex items-center rounded-full border px-2 py-1"
+                  :class="item.calibrated ? 'border-[color:var(--accent-green)] text-[color:var(--accent-green)]' : (item.current ? 'border-[color:var(--accent-yellow)] text-[color:var(--accent-yellow)]' : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)]')"
+                >
+                  {{ item.label }}: {{ item.stateLabel }}
+                </span>
+              </div>
+              <div class="mt-2">
+                {{ currentPathSummary }}
+              </div>
+            </div>
+
+            <div
+              v-if="estimatedK !== null"
+              class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+            >
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                5. Расчёт коэффициента
+              </div>
+              <div class="mt-1">
+                Расчётный `k` по введённым данным:
+                <span class="font-semibold text-[color:var(--text-primary)]">{{ estimatedK.toFixed(6) }}</span>
+                mS/(мл/л)
+              </div>
+            </div>
+
+            <div
+              v-if="calibratedChannels.length > 0"
+              class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-3"
+            >
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                6. Уже сохранено
+              </div>
+              <div class="mt-2 space-y-1 text-xs text-[color:var(--text-muted)]">
+                <div
+                  v-for="channel in calibratedChannels"
+                  :key="`cal-${channel.id}`"
+                >
+                  {{ channel.label }}:
+                  {{ channel.calibration?.ml_per_sec ?? '-' }} мл/сек
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </template>
     </div>

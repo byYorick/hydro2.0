@@ -6,7 +6,7 @@
           Мастер настройки системы
         </h1>
         <p class="mt-2 text-sm text-[color:var(--text-muted)]">
-          Пошаговая настройка теплицы, зоны, культуры, устройств нод, профиля автоматики и калибровки.
+          Пошаговая настройка теплицы, зоны, культуры, автоматики зоны и калибровки.
         </p>
 
         <div class="mt-4 h-2 overflow-hidden rounded-full bg-[color:var(--border-muted)]">
@@ -349,10 +349,10 @@
       <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            4. Устройства нод зоны
+            4. Автоматика зоны
           </h3>
-          <Badge :variant="stepZoneDevicesDone ? 'success' : 'neutral'">
-            {{ stepZoneDevicesDone ? 'Готово' : 'Не настроено' }}
+          <Badge :variant="stepZoneAutomationDone ? 'success' : 'neutral'">
+            {{ stepZoneAutomationDone ? 'Готово' : 'Не настроено' }}
           </Badge>
         </div>
 
@@ -365,10 +365,11 @@
 
         <template v-else>
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
-            На этом шаге привязываются обязательные ноды зоны и optional bindings для света и zonal climate. Параметры автоматики редактируются на следующем шаге.
+            Автоматика зоны собрана в три блока. `Водный контур` включает обязательные ноды и water runtime, `Климат зоны` и `Освещение` включаются switch-ом и раскрывают привязку нод вместе с логикой подсистемы.
           </div>
 
           <ZoneAutomationProfileSections
+            :layout-mode="'zone_blocks'"
             :water-form="automationWaterForm"
             :lighting-form="automationLightingForm"
             :zone-climate-form="zoneClimateForm"
@@ -385,16 +386,10 @@
             :show-section-save-buttons="true"
             :save-disabled="loading.stepDevices || loading.stepAutomation"
             :saving-section="savingAutomationSection"
-            :show-water-contour-section="false"
-            :show-irrigation-section="false"
-            :show-solution-correction-section="false"
-            :show-lighting-enable-toggle="false"
-            :show-lighting-config-fields="false"
-            :show-zone-climate-enable-toggle="false"
-            :show-zone-climate-config-fields="false"
+            :show-required-devices-section="false"
             @bind-devices="attachZoneDevicesOnly"
             @refresh-nodes="refreshAvailableNodes"
-            @save-section="saveDeviceSection"
+            @save-section="saveZoneAutomationBlock"
           />
 
           <div
@@ -410,10 +405,10 @@
               Привязка нод ещё не подтверждена
             </span>
             <span v-else-if="stepZoneDevicesDone" class="text-[color:var(--badge-success-text)]">
-              Привязка нод сохранена и подтверждена
+              Привязка нод подтверждена
             </span>
             <span v-else>
-              Сохраните обязательные устройства и, если профиль включает optional subsystem, привяжите соответствующие ноды.
+              Сохраните `Водный контур`, затем при необходимости сохраните блоки климата зоны и освещения.
             </span>
             <Button
               size="sm"
@@ -426,50 +421,7 @@
           </div>
 
           <div class="text-xs text-[color:var(--text-muted)]">
-            <span>Профиль автоматики сохраняется на следующем шаге.</span>
-          </div>
-        </template>
-      </section>
-
-      <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            5. Профиль автоматики
-          </h3>
-          <Badge :variant="stepZoneAutomationProfileDone ? 'success' : 'neutral'">
-            {{ stepZoneAutomationProfileDone ? 'Готово' : 'Не настроено' }}
-          </Badge>
-        </div>
-
-        <div
-          v-if="!stepZoneDone"
-          class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]"
-        >
-          Сначала создайте или выберите зону на шаге 2.
-        </div>
-
-        <template v-else>
-          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
-            Здесь редактируется только профиль автоматики зоны: водный контур, полив, коррекция, свет и zonal climate. Привязка устройств сохранена отдельно на предыдущем шаге, а calibration stack вынесен в следующий.
-          </div>
-
-          <ZoneAutomationProfileSections
-            :water-form="automationWaterForm"
-            :lighting-form="automationLightingForm"
-            :zone-climate-form="zoneClimateForm"
-            :can-configure="canConfigure"
-            :show-node-bindings="false"
-            :show-bind-buttons="false"
-            :show-refresh-buttons="false"
-            :show-section-save-buttons="true"
-            :save-disabled="loading.stepDevices || loading.stepAutomation"
-            :saving-section="savingAutomationSection"
-            :show-required-devices-section="false"
-            @save-section="saveAutomationSection"
-          />
-
-          <div class="text-xs text-[color:var(--text-muted)]">
-            <span v-if="automationAppliedAt">Последнее применение: {{ formatDateTime(automationAppliedAt) }}</span>
+            <span v-if="automationAppliedAt">Последнее применение профиля: {{ formatDateTime(automationAppliedAt) }}</span>
             <span v-else>Профиль автоматики зоны ещё не применён</span>
           </div>
         </template>
@@ -478,10 +430,10 @@
       <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            6. Калибровка
+            5. Калибровка
           </h3>
           <Badge :variant="stepZoneCalibrationReady ? 'success' : 'neutral'">
-            {{ stepZoneCalibrationReady ? 'Доступно' : 'Ожидает профиль' }}
+            {{ stepZoneCalibrationReady ? 'Доступно' : 'Ожидает автоматику' }}
           </Badge>
         </div>
 
@@ -492,20 +444,21 @@
           Сначала создайте или выберите зону на шаге 2.
         </div>
 
-        <template v-else-if="!stepZoneAutomationProfileDone">
+        <template v-else-if="!stepZoneAutomationDone">
           <div class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]">
-            Сначала сохраните профиль автоматики на шаге 5, затем переходите к PID, process calibration и sensor calibration.
+            Сначала сохраните автоматику зоны на шаге 4. После этого шаг 5 проходится последовательно: sensor calibration, pump calibration, runtime bounds, process calibration, PID и финальная readiness-проверка.
           </div>
         </template>
 
         <template v-else-if="selectedZone?.id && sensorCalibrationSettings">
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
-            Отдельный рабочий шаг для correction runtime readiness, PID, process calibration, pump calibration и sensor calibration.
+            Отдельный рабочий шаг для последовательной настройки calibration-контура зоны: сенсоры, дозирование, runtime bounds, process calibration, PID и итоговая correction runtime readiness.
           </div>
 
           <ZoneCorrectionCalibrationStack
             :zone-id="selectedZone.id"
             :sensor-calibration-settings="sensorCalibrationSettings"
+            @open-pump-calibration="openPumpCalibrationModal"
           />
         </template>
 
@@ -519,7 +472,7 @@
       <section class="surface-card surface-card--elevated rounded-2xl border border-[color:var(--border-muted)] p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
-            7. Запуск
+            6. Запуск
           </h3>
           <Badge :variant="canLaunch ? 'success' : 'warning'">
             {{ canLaunch ? 'Можно запускать' : 'Есть незавершённые шаги' }}
@@ -562,24 +515,45 @@
       @close="handlePlantCreateClose"
       @created="handlePlantCreated"
     />
+
+    <PumpCalibrationModal
+      v-if="showPumpCalibrationModal"
+      :show="showPumpCalibrationModal"
+      :zone-id="selectedZone?.id ?? null"
+      :devices="pumpCalibrationDevices"
+      :loading-run="pumpCalibrationLoadingRun"
+      :loading-save="pumpCalibrationLoadingSave"
+      :save-success-seq="pumpCalibrationSaveSeq"
+      @close="closePumpCalibrationModal"
+      @start="startPumpCalibration"
+      @save="savePumpCalibration"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import GreenhouseClimateConfiguration from '@/Components/GreenhouseClimateConfiguration.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
+import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
+import { useApi } from '@/composables/useApi'
 import { useSetupWizard } from '@/composables/useSetupWizard'
+import { useToast } from '@/composables/useToast'
+import { applyAutomationFromRecipe, type LightingFormState, type WaterFormState, type ZoneClimateFormState } from '@/composables/zoneAutomationFormLogic'
+import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
+import type { Device, DeviceChannel } from '@/types/Device'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 import type { ZoneAutomationSectionSaveKey } from '@/Components/ZoneAutomationProfileSections.vue'
 
 const page = usePage<{ sensorCalibrationSettings?: SensorCalibrationSettings | null }>()
+const { showToast } = useToast()
+const { api } = useApi(showToast)
 
 const {
   canConfigure,
@@ -616,7 +590,7 @@ const {
   stepPlantDone,
   stepRecipeDone,
   stepZoneDevicesDone,
-  stepZoneAutomationProfileDone,
+  stepZoneAutomationDone,
   stepZoneCalibrationReady,
   zoneAutomationAssignmentsReady,
   zoneAutomationNodesReady,
@@ -646,43 +620,319 @@ const {
 } = useSetupWizard()
 
 const showPlantCreateWizard = ref(false)
+const showPumpCalibrationModal = ref(false)
+const pumpCalibrationLoadingRun = ref(false)
+const pumpCalibrationLoadingSave = ref(false)
+const pumpCalibrationSaveSeq = ref(0)
 const sensorCalibrationSettings = computed(() => page.props.sensorCalibrationSettings ?? null)
 const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
+const committedWaterForm = ref<WaterFormState>(cloneWaterForm(automationWaterForm))
+const committedLightingForm = ref<LightingFormState>(cloneLightingForm(automationLightingForm))
+const committedZoneClimateForm = ref<ZoneClimateFormState>(cloneZoneClimateForm(zoneClimateForm))
 
-async function saveDeviceSection(section: ZoneAutomationSectionSaveKey): Promise<void> {
+const pumpCalibrationDevices = computed<Device[]>(() => {
+  const zoneId = selectedZone.value?.id ?? null
+  if (!zoneId) {
+    return []
+  }
+
+  const expectedNodeIds = new Set(zoneAutomationExpectedNodeIds.value)
+
+  return availableNodes.value
+    .filter((node) => node.zone_id === zoneId || node.pending_zone_id === zoneId || expectedNodeIds.has(node.id))
+    .map((node) => {
+      const channels = Array.isArray(node.channels)
+        ? node.channels.map((channel): DeviceChannel => {
+          const raw = channel as Record<string, unknown>
+          const channelId = typeof raw.id === 'number'
+            ? raw.id
+            : (typeof raw.node_channel_id === 'number' ? raw.node_channel_id : undefined)
+
+          return {
+            id: channelId,
+            node_channel_id: channelId,
+            node_id: node.id,
+            channel: String(channel.channel ?? ''),
+            type: String(channel.type ?? ''),
+            metric: channel.metric ?? null,
+            unit: channel.unit ?? null,
+            binding_role: typeof channel.binding_role === 'string' ? channel.binding_role : null,
+            config: raw.config && typeof raw.config === 'object' && !Array.isArray(raw.config)
+              ? raw.config as Record<string, unknown>
+              : undefined,
+            pump_calibration: raw.pump_calibration && typeof raw.pump_calibration === 'object' && !Array.isArray(raw.pump_calibration)
+              ? raw.pump_calibration as DeviceChannel['pump_calibration']
+              : null,
+            actuator_type: typeof raw.actuator_type === 'string' ? raw.actuator_type : null,
+            pump_component: typeof raw.pump_component === 'string' ? raw.pump_component : null,
+            description: typeof raw.description === 'string' ? raw.description : null,
+          }
+        })
+        : []
+
+      return {
+        id: node.id,
+        uid: node.uid ?? `node-${node.id}`,
+        name: node.name,
+        type: (typeof node.type === 'string' ? node.type : 'unknown') as Device['type'],
+        status: 'unknown',
+        lifecycle_state: (node.lifecycle_state ?? undefined) as Device['lifecycle_state'],
+        zone_id: node.zone_id ?? undefined,
+        pending_zone_id: node.pending_zone_id ?? null,
+        channels,
+      }
+    })
+})
+
+function openPumpCalibrationModal(): void {
+  if (!selectedZone.value?.id) {
+    showToast('Сначала выберите зону.', 'warning')
+    return
+  }
+
+  showPumpCalibrationModal.value = true
+}
+
+function closePumpCalibrationModal(): void {
+  showPumpCalibrationModal.value = false
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  return value as Record<string, unknown>
+}
+
+function cloneWaterForm(source: WaterFormState): WaterFormState {
+  return { ...source }
+}
+
+function cloneLightingForm(source: LightingFormState): LightingFormState {
+  return { ...source }
+}
+
+function cloneZoneClimateForm(source: ZoneClimateFormState): ZoneClimateFormState {
+  return { ...source }
+}
+
+function resolveZoneAutomationProfileEntry(payload: unknown): { subsystems: Record<string, unknown>; updatedAt: string | null } | null {
+  const record = asRecord(payload)
+  const data = asRecord(record?.data ?? null)
+  const profiles = asRecord(data?.profiles ?? null)
+  if (!profiles) {
+    return null
+  }
+
+  const activeMode = typeof data?.active_mode === 'string' ? data.active_mode : null
+  const preferredModes = [activeMode, 'setup', 'working']
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+
+  for (const mode of preferredModes) {
+    const candidate = asRecord(profiles[mode])
+    const subsystems = asRecord(candidate?.subsystems ?? null)
+    if (!subsystems) {
+      continue
+    }
+
+    return {
+      subsystems,
+      updatedAt: typeof candidate?.updated_at === 'string' ? candidate.updated_at : null,
+    }
+  }
+
+  return null
+}
+
+function syncCommittedAutomationStateFromCurrentForms(): void {
+  committedWaterForm.value = cloneWaterForm(automationWaterForm)
+  committedLightingForm.value = cloneLightingForm(automationLightingForm)
+  committedZoneClimateForm.value = cloneZoneClimateForm(zoneClimateForm)
+}
+
+function applySubsystemsToCurrentForms(subsystems: Record<string, unknown>, updatedAt: string | null): void {
+  applyAutomationFromRecipe(
+    { extensions: { subsystems } },
+    {
+      climateForm: automationClimateForm,
+      waterForm: automationWaterForm,
+      lightingForm: automationLightingForm,
+      zoneClimateForm,
+    }
+  )
+  zoneClimateForm.enabled = Boolean(asRecord(subsystems.zone_climate)?.enabled ?? false)
+  automationAppliedAt.value = updatedAt
+}
+
+function buildCommittedAutomationStateFromSubsystems(subsystems: Record<string, unknown>): void {
+  const waterForm = cloneWaterForm(automationWaterForm)
+  const lightingForm = cloneLightingForm(automationLightingForm)
+  const zoneClimate = cloneZoneClimateForm(zoneClimateForm)
+
+  applyAutomationFromRecipe(
+    { extensions: { subsystems } },
+    {
+      climateForm: automationClimateForm,
+      waterForm,
+      lightingForm,
+      zoneClimateForm: zoneClimate,
+    }
+  )
+  zoneClimate.enabled = Boolean(asRecord(subsystems.zone_climate)?.enabled ?? false)
+
+  committedWaterForm.value = waterForm
+  committedLightingForm.value = lightingForm
+  committedZoneClimateForm.value = zoneClimate
+}
+
+async function loadCommittedZoneAutomationProfile(zoneId: number | null): Promise<void> {
+  syncCommittedAutomationStateFromCurrentForms()
+  automationAppliedAt.value = null
+
+  if (!zoneId) {
+    return
+  }
+
+  try {
+    const response = await api.get(`/api/zones/${zoneId}/automation-logic-profile`)
+    const profile = resolveZoneAutomationProfileEntry(response.data)
+    if (!profile) {
+      return
+    }
+
+    applySubsystemsToCurrentForms(profile.subsystems, profile.updatedAt)
+    buildCommittedAutomationStateFromSubsystems(profile.subsystems)
+  } catch {
+    // Existing zones without saved automation profile are valid; keep current form state as committed baseline.
+  }
+}
+
+function buildFormsForZoneAutomationBlock(
+  section: ZoneAutomationSectionSaveKey
+): { waterForm: WaterFormState; lightingForm: LightingFormState; zoneClimateForm: ZoneClimateFormState } {
+  if (section === 'water_contour') {
+    return {
+      waterForm: cloneWaterForm(automationWaterForm),
+      lightingForm: cloneLightingForm(committedLightingForm.value),
+      zoneClimateForm: cloneZoneClimateForm(committedZoneClimateForm.value),
+    }
+  }
+
+  if (section === 'lighting') {
+    return {
+      waterForm: cloneWaterForm(committedWaterForm.value),
+      lightingForm: cloneLightingForm(automationLightingForm),
+      zoneClimateForm: cloneZoneClimateForm(committedZoneClimateForm.value),
+    }
+  }
+
+  return {
+    waterForm: cloneWaterForm(committedWaterForm.value),
+    lightingForm: cloneLightingForm(committedLightingForm.value),
+    zoneClimateForm: cloneZoneClimateForm(zoneClimateForm),
+  }
+}
+
+function commitSavedZoneAutomationForms(forms: {
+  waterForm: WaterFormState
+  lightingForm: LightingFormState
+  zoneClimateForm: ZoneClimateFormState
+}): void {
+  committedWaterForm.value = cloneWaterForm(forms.waterForm)
+  committedLightingForm.value = cloneLightingForm(forms.lightingForm)
+  committedZoneClimateForm.value = cloneZoneClimateForm(forms.zoneClimateForm)
+}
+
+watch(
+  () => selectedZone.value?.id ?? null,
+  async (zoneId, previousZoneId) => {
+    if (zoneId === previousZoneId) {
+      return
+    }
+
+    await loadCommittedZoneAutomationProfile(zoneId)
+  },
+  { immediate: true }
+)
+
+async function startPumpCalibration(payload: PumpCalibrationRunPayload): Promise<void> {
+  if (!selectedZone.value?.id) {
+    return
+  }
+
+  pumpCalibrationLoadingRun.value = true
+  try {
+    await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, payload)
+    showToast('Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.', 'success')
+  } catch {
+    showToast('Не удалось запустить калибровку насоса.', 'error')
+  } finally {
+    pumpCalibrationLoadingRun.value = false
+  }
+}
+
+async function savePumpCalibration(payload: PumpCalibrationSavePayload): Promise<void> {
+  if (!selectedZone.value?.id) {
+    return
+  }
+
+  pumpCalibrationLoadingSave.value = true
+  try {
+    await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, { ...payload, skip_run: true })
+    pumpCalibrationSaveSeq.value += 1
+    showToast('Калибровка насоса сохранена.', 'success')
+  } catch {
+    showToast('Не удалось сохранить калибровку насоса.', 'error')
+  } finally {
+    pumpCalibrationLoadingSave.value = false
+  }
+}
+
+async function saveZoneAutomationBlock(section: ZoneAutomationSectionSaveKey): Promise<void> {
   if (!canConfigure.value || !selectedZone.value?.id) {
     return
   }
 
   savingAutomationSection.value = section
   try {
-    if (section === 'required_devices') {
-      await saveZoneDeviceBindingsSection(['irrigation', 'ph_correction', 'ec_correction'])
+    if (section === 'water_contour') {
+      const bindingsSaved = await saveZoneDeviceBindingsSection(['irrigation', 'ph_correction', 'ec_correction'])
+      if (!bindingsSaved) {
+        return
+      }
+      const formsForSave = buildFormsForZoneAutomationBlock(section)
+      const applied = await applyAutomation(formsForSave)
+      if (applied) {
+        commitSavedZoneAutomationForms(formsForSave)
+      }
       return
     }
 
     if (section === 'lighting') {
-      await saveZoneDeviceBindingsSection(['light'])
+      const bindingsSaved = await saveZoneDeviceBindingsSection(['light'])
+      if (!bindingsSaved) {
+        return
+      }
+      const formsForSave = buildFormsForZoneAutomationBlock(section)
+      const applied = await applyAutomation(formsForSave)
+      if (applied) {
+        commitSavedZoneAutomationForms(formsForSave)
+      }
       return
     }
 
     if (section === 'zone_climate') {
-      await saveZoneDeviceBindingsSection(['co2_sensor', 'co2_actuator', 'root_vent_actuator'])
-      return
+      const bindingsSaved = await saveZoneDeviceBindingsSection(['co2_sensor', 'co2_actuator', 'root_vent_actuator'])
+      if (!bindingsSaved) {
+        return
+      }
+      const formsForSave = buildFormsForZoneAutomationBlock(section)
+      const applied = await applyAutomation(formsForSave)
+      if (applied) {
+        commitSavedZoneAutomationForms(formsForSave)
+      }
     }
-  } finally {
-    savingAutomationSection.value = null
-  }
-}
-
-async function saveAutomationSection(section: ZoneAutomationSectionSaveKey): Promise<void> {
-  if (!canConfigure.value || !selectedZone.value?.id) {
-    return
-  }
-
-  savingAutomationSection.value = section
-  try {
-    await applyAutomation()
   } finally {
     savingAutomationSection.value = null
   }

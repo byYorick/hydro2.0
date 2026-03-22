@@ -25,6 +25,7 @@ class SystemAutomationSettingsControllerTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.pump_calibration.namespace', 'pump_calibration')
             ->assertJsonPath('data.sensor_calibration.namespace', 'sensor_calibration')
+            ->assertJsonPath('data.process_calibration_defaults.namespace', 'process_calibration_defaults')
             ->assertJsonPath('data.automation_defaults.namespace', 'automation_defaults')
             ->assertJsonPath('data.automation_command_templates.namespace', 'automation_command_templates')
             ->assertJsonPath('data.pump_calibration.config.default_run_duration_sec', 20);
@@ -94,6 +95,22 @@ class SystemAutomationSettingsControllerTest extends TestCase
             ->assertJsonPath('data.config.water_refill_required_node_types_csv', 'irrig,climate')
             ->assertJsonPath('data.config.climate_enabled', false)
             ->assertJsonPath('data.config.water_startup_solution_fill_timeout_sec', 1800);
+    }
+
+    public function test_update_merges_process_calibration_defaults_config(): void
+    {
+        $response = $this->putJson('/api/system/automation-settings/process_calibration_defaults', [
+            'config' => [
+                'transport_delay_sec' => 24,
+                'confidence' => 0.82,
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.config.transport_delay_sec', 24)
+            ->assertJsonPath('data.config.confidence', 0.82)
+            ->assertJsonPath('data.config.settle_sec', 45)
+            ->assertJsonPath('data.config.ec_gain_per_ml', 0.11);
     }
 
     public function test_update_rejects_inconsistent_automation_defaults_config(): void

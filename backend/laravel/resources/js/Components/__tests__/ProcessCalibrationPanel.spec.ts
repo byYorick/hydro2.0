@@ -127,6 +127,45 @@ describe('ProcessCalibrationPanel.vue', () => {
     expect(wrapper.text()).toContain('Confidence: 0.91')
   })
 
+  it('подставляет системные дефолты в пустую форму, если калибровок ещё нет', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/zones/7/process-calibrations') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [],
+          },
+        })
+      }
+
+      if (url === '/api/zones/7/events') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [],
+          },
+        })
+      }
+
+      return Promise.reject(new Error(`Unexpected GET ${url}`))
+    })
+
+    const wrapper = mount(ProcessCalibrationPanel, {
+      props: { zoneId: 7 },
+    })
+
+    await flushPromises()
+
+    const inputs = wrapper.findAll('input')
+    expect(inputs[0]?.element).toHaveProperty('value', '20')
+    expect(inputs[1]?.element).toHaveProperty('value', '45')
+    expect(inputs[2]?.element).toHaveProperty('value', '0.11')
+    expect(inputs[7]?.element).toHaveProperty('value', '0.75')
+    expect(wrapper.text()).toContain('в форме подставлены системные дефолты')
+    expect(wrapper.text()).toContain('Источник: system defaults')
+    expect(wrapper.text()).toContain('Confidence: 0.75')
+  })
+
   it('не отправляет save при выходе за диапазон и показывает warning toast', async () => {
     const wrapper = mount(ProcessCalibrationPanel, {
       props: { zoneId: 7 },

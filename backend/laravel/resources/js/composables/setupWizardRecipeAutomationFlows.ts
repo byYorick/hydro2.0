@@ -20,6 +20,7 @@ import type {
 import type {
   ClimateFormState,
   LightingFormState,
+  ZoneAutomationForms,
   WaterFormState,
   ZoneClimateFormState,
 } from './zoneAutomationTypes'
@@ -222,7 +223,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     showToast('Рецепт выбран', 'success', TOAST_TIMEOUT.NORMAL)
   }
 
-  async function applyAutomation(): Promise<boolean> {
+  async function applyAutomation(formsOverride?: Partial<Pick<ZoneAutomationForms, 'waterForm' | 'lightingForm' | 'zoneClimateForm'>>): Promise<boolean> {
     if (!canConfigure.value || !selectedZone.value?.id) {
       return false
     }
@@ -235,7 +236,11 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       }
     }
 
-    const validationError = validateForms({ climateForm, waterForm })
+    const effectiveWaterForm = formsOverride?.waterForm ?? waterForm
+    const effectiveLightingForm = formsOverride?.lightingForm ?? lightingForm
+    const effectiveZoneClimateForm = formsOverride?.zoneClimateForm ?? zoneClimateForm
+
+    const validationError = validateForms({ climateForm, waterForm: effectiveWaterForm })
     if (validationError) {
       showToast(validationError, 'error', TOAST_TIMEOUT.NORMAL)
       return false
@@ -245,9 +250,9 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     try {
       const payload = buildGrowthCycleConfigPayload({
         climateForm,
-        waterForm,
-        lightingForm,
-        zoneClimateForm,
+        waterForm: effectiveWaterForm,
+        lightingForm: effectiveLightingForm,
+        zoneClimateForm: effectiveZoneClimateForm,
       }, {
         includeClimateSubsystem: false,
         automationDefaults: automationDefaults.value,

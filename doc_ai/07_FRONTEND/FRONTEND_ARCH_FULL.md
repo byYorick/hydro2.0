@@ -113,29 +113,26 @@ Canonical recipe UX:
 
 ## 3.0. Setup Wizard (`/setup/wizard`)
 
-Текущий мастер запуска состоит из 7 шагов:
+Текущий мастер запуска состоит из 6 шагов:
 
 1. `Теплица`
 2. `Зона`
 3. `Культура и рецепт`
-4. `Устройства нод зоны`
-5. `Профиль автоматики`
-6. `Калибровка`
-7. `Запуск`
+4. `Автоматика зоны`
+5. `Калибровка`
+6. `Запуск`
 
 Новый canonical UX:
 
 - общий климат теплицы редактируется только на уровне теплицы;
 - в шаге `1. Теплица` есть inline-toggle `Управлять климатом`;
 - при включении шага климата сначала выбираются greenhouse climate nodes, затем сохраняется profile;
-- шаг `4. Устройства нод зоны` отвечает только за zonal bindings и подтверждение `config_report` от нод;
-- шаг `5. Профиль автоматики` редактирует только профиль автоматики зоны;
-- шаг `6. Калибровка` отвечает за correction runtime readiness, PID, process calibration, pump calibration и sensor calibration;
-- внутри шага `5` секции всегда идут в порядке:
-  - `Полив и накопление`
-  - `Коррекция`
-  - `Zone climate`
-  - `Свет`
+- шаг `4. Автоматика зоны` собран блоками, а не отдельными шагами `devices/profile`:
+  - `Водный контур` объединяет обязательные zonal bindings (`irrigation`, `ph_correction`, `ec_correction`) и всю water logic;
+  - `Климат зоны` начинается со switch `enabled`; если блок включён, UI раскрывает привязку CO2/root-vent нод и настройки логики;
+  - `Освещение` устроено так же: switch `enabled` + раскрытие binding/logics только для включённой подсистемы;
+- сохранение шага `4` идёт по блокам (`water_contour`, `zone_climate`, `lighting`), но readiness шага считается единой зональной automation-конфигурацией;
+- шаг `5. Калибровка` идёт в логическом порядке: `sensor calibration -> pump calibration -> runtime bounds -> process calibration -> PID/autotune -> correction runtime readiness`;
 - correction/calibration stack не дублируется вручную, а переиспользуется отдельным шагом тем же shared-блоком, что и на `Zone Detail`.
 
 Экран `Greenhouses/Show.vue` теперь использует ту же greenhouse-climate форму, что и setup wizard:

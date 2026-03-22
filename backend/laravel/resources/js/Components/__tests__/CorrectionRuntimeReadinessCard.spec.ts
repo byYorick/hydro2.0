@@ -91,7 +91,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
     })
     expect(getPumpCalibrationsMock).toHaveBeenCalledWith(42)
     expect(wrapper.text()).toContain('Готово с fallback')
-    expect(wrapper.text()).toContain('Generic fallback')
+    expect(wrapper.text()).toContain('Через generic')
     expect(wrapper.text()).toContain('Все обязательные насосы откалиброваны.')
   })
 
@@ -120,9 +120,9 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Fail-closed')
+    expect(wrapper.text()).toContain('Блокировано')
     expect(wrapper.text()).toContain('Проблемные фазы: Наполнение, Рециркуляция, Полив')
-    expect(wrapper.text()).toContain('Ни mode-specific, ни generic process calibration не заданы')
+    expect(wrapper.text()).toContain('Для этой фазы не заданы ни отдельная, ни generic-калибровка процесса')
     expect(wrapper.text()).toContain('насос pH щёлочи')
     expect(wrapper.text()).toContain('насос EC NPK')
   })

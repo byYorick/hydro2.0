@@ -51,6 +51,17 @@ export interface SensorCalibrationSettings {
   ec_tds_reference_max: number
 }
 
+export interface ProcessCalibrationDefaultsSettings {
+  ec_gain_per_ml: number
+  ph_up_gain_per_ml: number
+  ph_down_gain_per_ml: number
+  ph_per_ec_ml: number
+  ec_per_ph_ml: number
+  transport_delay_sec: number
+  settle_sec: number
+  confidence: number
+}
+
 export interface AutomationDefaultsSettings {
   climate_enabled: boolean
   climate_day_temp_c: number

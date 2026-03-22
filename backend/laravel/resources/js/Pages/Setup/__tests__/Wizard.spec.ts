@@ -2,6 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
+const pagePropsState = vi.hoisted(() => ({ sensorCalibrationSettings: null as Record<string, unknown> | null }))
 const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPostMock = vi.hoisted(() => vi.fn())
 const apiPatchMock = vi.hoisted(() => vi.fn())
@@ -54,7 +55,17 @@ vi.mock('@/Components/GreenhouseClimateConfiguration.vue', () => ({
 vi.mock('@/Components/ZoneCorrectionCalibrationStack.vue', () => ({
   default: {
     name: 'ZoneCorrectionCalibrationStack',
-    template: '<div data-test="zone-correction-calibration-stack">calibration stack</div>',
+    emits: ['open-pump-calibration'],
+    template: '<div data-test="zone-correction-calibration-stack"><button data-test="open-pump-calibration" @click="$emit(\'open-pump-calibration\')">open pump</button></div>',
+  },
+}))
+
+vi.mock('@/Components/PumpCalibrationModal.vue', () => ({
+  default: {
+    name: 'PumpCalibrationModal',
+    props: ['show', 'zoneId', 'devices', 'loadingRun', 'loadingSave', 'saveSuccessSeq'],
+    emits: ['close', 'start', 'save'],
+    template: '<div data-test="pump-calibration-modal">pump calibration modal</div>',
   },
 }))
 
@@ -62,6 +73,7 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
   default: {
     name: 'ZoneAutomationProfileSections',
     props: [
+      'layoutMode',
       'assignments',
       'lightingForm',
       'zoneClimateForm',
@@ -97,7 +109,7 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
           />
         </label>
         <select
-          v-if="showRequiredDevicesSection !== false"
+          v-if="showRequiredDevicesSection !== false || layoutMode === 'zone_blocks'"
           data-test="irrigation-select"
           :value="assignments.irrigation ?? ''"
           @change="assignments.irrigation = Number($event.target.value) || null"
@@ -106,7 +118,7 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
           <option value="101">irrig</option>
         </select>
         <select
-          v-if="showRequiredDevicesSection !== false"
+          v-if="showRequiredDevicesSection !== false || layoutMode === 'zone_blocks'"
           data-test="ph-select"
           :value="assignments.ph_correction ?? ''"
           @change="assignments.ph_correction = Number($event.target.value) || null"
@@ -115,7 +127,7 @@ vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
           <option value="102">ph</option>
         </select>
         <select
-          v-if="showRequiredDevicesSection !== false"
+          v-if="showRequiredDevicesSection !== false || layoutMode === 'zone_blocks'"
           data-test="ec-select"
           :value="assignments.ec_correction ?? ''"
           @change="assignments.ec_correction = Number($event.target.value) || null"
@@ -175,7 +187,7 @@ vi.mock('@inertiajs/vue3', () => ({
           role: roleState.role,
         },
       },
-      sensorCalibrationSettings: null,
+      sensorCalibrationSettings: pagePropsState.sensorCalibrationSettings,
     },
   }),
   router: {
@@ -307,6 +319,7 @@ async function createGreenhouseAndZone(wrapper: ReturnType<typeof mount>) {
 describe('Setup/Wizard.vue', () => {
   beforeEach(() => {
     roleState.role = 'agronomist'
+    pagePropsState.sensorCalibrationSettings = null
     apiGetMock.mockReset()
     apiPostMock.mockReset()
     apiPatchMock.mockReset()
@@ -361,11 +374,61 @@ describe('Setup/Wizard.vue', () => {
     expect(wrapper.text()).toContain('1. Теплица')
     expect(wrapper.text()).toContain('2. Зона')
     expect(wrapper.text()).toContain('3. Культура и рецепт')
-    expect(wrapper.text()).toContain('4. Устройства нод зоны')
-    expect(wrapper.text()).toContain('5. Профиль автоматики')
-    expect(wrapper.text()).toContain('6. Калибровка')
-    expect(wrapper.text()).toContain('7. Запуск')
-    expect(wrapper.text()).not.toContain('4. Автоматизация и устройства зоны')
+    expect(wrapper.text()).toContain('4. Автоматика зоны')
+    expect(wrapper.text()).toContain('5. Калибровка')
+    expect(wrapper.text()).toContain('6. Запуск')
+    expect(wrapper.text()).not.toContain('4. Устройства нод зоны')
+    expect(wrapper.text()).not.toContain('5. Профиль автоматики')
+  })
+
+  it('открывает модалку калибровки насосов из шага 5', async () => {
+    pagePropsState.sensorCalibrationSettings = {
+      ph_point_1_value: 7,
+      ph_point_2_value: 4.01,
+      ec_point_1_tds: 1413,
+      ec_point_2_tds: 707,
+      reminder_days: 30,
+      critical_days: 90,
+      command_timeout_sec: 10,
+      ph_reference_min: 1,
+      ph_reference_max: 12,
+      ec_tds_reference_max: 10000,
+    }
+
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/nodes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [
+              { id: 101, uid: 'nd-irrig-bound', type: 'controller', zone_id: '20', channels: [{ binding_role: 'main_pump' }] },
+              { id: 102, uid: 'nd-ph-bound', type: 'controller', zone_id: '20', channels: [{ binding_role: 'ph_acid_pump' }] },
+              { id: 104, uid: 'nd-ec-bound', type: 'controller', zone_id: '20', channels: [{ binding_role: 'ec_npk_pump' }] },
+            ],
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+    await createGreenhouseAndZone(wrapper)
+    await wrapper.findAll('select.input-select')[2]?.setValue('5')
+    await flushPromises()
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(false)
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await flushPromises()
+    await wrapper.get('[data-test="save-section-water-contour"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-test="open-pump-calibration"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="pump-calibration-modal"]').exists()).toBe(true)
   })
 
   it('показывает inline-блок климата после выбора теплицы', async () => {
@@ -403,7 +466,7 @@ describe('Setup/Wizard.vue', () => {
     )
   })
 
-  it('сохраняет обязательные устройства отдельной секцией', async () => {
+  it('сохраняет блок водного контура: bindings и automation profile', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
@@ -422,7 +485,7 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="ec-select"]').setValue('104')
     await flushPromises()
 
-    await wrapper.find('[data-test="save-section-required-devices"]').trigger('click')
+    await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(
@@ -438,9 +501,63 @@ describe('Setup/Wizard.vue', () => {
       }),
       undefined,
     )
+
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/zones/20/automation-logic-profile',
+      expect.objectContaining({
+        mode: 'setup',
+        activate: true,
+      }),
+      undefined,
+    )
   })
 
-  it('сохраняет секцию профиля зоны: automation profile + команду', async () => {
+  it('подтягивает уже привязанные к зоне ноды в блок водного контура', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/nodes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [
+              {
+                id: 101,
+                uid: 'nd-irrig-bound',
+                type: 'controller',
+                zone_id: '20',
+                channels: [{ binding_role: 'main_pump' }],
+              },
+              {
+                id: 102,
+                uid: 'nd-ph-bound',
+                type: 'controller',
+                zone_id: '20',
+                channels: [{ binding_role: 'ph_acid_pump' }],
+              },
+              {
+                id: 104,
+                uid: 'nd-ec-bound',
+                type: 'controller',
+                zone_id: '20',
+                channels: [{ binding_role: 'ec_npk_pump' }],
+              },
+            ],
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+    await createGreenhouseAndZone(wrapper)
+
+    expect((wrapper.get('[data-test="irrigation-select"]').element as HTMLSelectElement).value).toBe('101')
+    expect((wrapper.get('[data-test="ph-select"]').element as HTMLSelectElement).value).toBe('102')
+    expect((wrapper.get('[data-test="ec-select"]').element as HTMLSelectElement).value).toBe('104')
+  })
+
+  it('после сохранения water block отправляет automation profile и команду применения', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
 
@@ -491,6 +608,81 @@ describe('Setup/Wizard.vue', () => {
     )
   })
 
+  it('не протаскивает несохранённые изменения освещения при сохранении water block', async () => {
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await createGreenhouseAndZone(wrapper)
+
+    const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
+    await plantSelect?.setValue('5')
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.find('[data-test="lighting-toggle"]').setValue(true)
+    await wrapper.find('[data-test="light-select"]').setValue('105')
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await flushPromises()
+
+    await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
+    await flushPromises()
+
+    const automationCall = apiPostMock.mock.calls.find(([url]) => url === '/api/zones/20/automation-logic-profile')
+    expect(automationCall?.[1]?.subsystems?.lighting?.enabled).toBe(false)
+  })
+
+  it('сохраняет уже загруженный профиль освещения при сохранении water block', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/zones/20/automation-logic-profile') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              active_mode: 'setup',
+              profiles: {
+                setup: {
+                  mode: 'setup',
+                  is_active: true,
+                  updated_at: '2026-03-22T12:00:00Z',
+                  subsystems: {
+                    ph: { enabled: true, execution: {} },
+                    ec: { enabled: true, execution: {} },
+                    irrigation: { enabled: true, execution: { system_type: 'substrate_trays' } },
+                    lighting: { enabled: true, execution: { interval_sec: 1800 } },
+                  },
+                },
+              },
+            },
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+    await createGreenhouseAndZone(wrapper)
+
+    const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
+    await plantSelect?.setValue('5')
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.find('[data-test="irrigation-select"]').setValue('101')
+    await wrapper.find('[data-test="ph-select"]').setValue('102')
+    await wrapper.find('[data-test="ec-select"]').setValue('104')
+    await flushPromises()
+
+    await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
+    await flushPromises()
+
+    const automationCall = apiPostMock.mock.calls.find(([url]) => url === '/api/zones/20/automation-logic-profile')
+    expect(automationCall?.[1]?.subsystems?.lighting?.enabled).toBe(true)
+  })
+
   it('отправляет флаги света и zone climate из секции профиля', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
@@ -512,8 +704,7 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="co2-sensor-select"]').setValue('106')
     await flushPromises()
 
-    const saveZoneClimateButtons = wrapper.findAll('[data-test="save-section-zone-climate"]')
-    await saveZoneClimateButtons[1]?.trigger('click')
+    await wrapper.get('[data-test="save-section-zone-climate"]').trigger('click')
     await flushPromises()
 
     expect(apiPostMock).toHaveBeenCalledWith(

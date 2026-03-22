@@ -145,6 +145,19 @@ function nodeChannels(node: Node): string[] {
     : []
 }
 
+function normalizePositiveInt(value: unknown): number | null {
+  const normalized = Number(value)
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : null
+}
+
+function nodeId(node: Node): number | null {
+  return normalizePositiveInt(node.id)
+}
+
+function nodeZoneId(node: Node): number | null {
+  return normalizePositiveInt(node.zone_id)
+}
+
 function nodeBindingRoles(node: Node): string[] {
   return Array.isArray(node.channels)
     ? node.channels
@@ -364,7 +377,7 @@ export function useSetupWizard() {
   })
 
   const automationLightingForm = reactive<LightingFormState>({
-    enabled: true,
+    enabled: false,
     luxDay: 18000,
     luxNight: 0,
     hoursOn: 16,
@@ -544,8 +557,12 @@ export function useSetupWizard() {
     return automationAppliedAt.value !== null
   })
 
+  const stepZoneAutomationDone = computed(() => {
+    return stepZoneDevicesDone.value && stepZoneAutomationProfileDone.value
+  })
+
   const stepZoneCalibrationReady = computed(() => {
-    return stepZoneAutomationProfileDone.value
+    return stepZoneAutomationDone.value
   })
 
   const canLaunch = computed(() => {
@@ -554,8 +571,7 @@ export function useSetupWizard() {
       && stepZoneDone.value
       && stepPlantDone.value
       && stepRecipeDone.value
-      && stepZoneDevicesDone.value
-      && stepZoneAutomationProfileDone.value
+      && stepZoneAutomationDone.value
       && !selectedZoneHasActiveCycle.value
   })
 
@@ -564,22 +580,20 @@ export function useSetupWizard() {
       stepGreenhouseDone.value && stepGreenhouseClimateDone.value,
       stepZoneDone.value,
       stepPlantDone.value && stepRecipeDone.value,
-      stepZoneDevicesDone.value,
-      stepZoneAutomationProfileDone.value,
+      stepZoneAutomationDone.value,
       stepZoneCalibrationReady.value,
       canLaunch.value,
     ].filter(Boolean).length
   })
 
-  const progressPercent = computed(() => Math.min(100, Math.round((completedSteps.value / 7) * 100)))
+  const progressPercent = computed(() => Math.min(100, Math.round((completedSteps.value / 6) * 100)))
 
   const launchChecklist = computed(() => [
     { id: 'greenhouse', label: 'Теплица', done: stepGreenhouseDone.value },
     { id: 'greenhouse-climate', label: 'Климат теплицы', done: stepGreenhouseClimateDone.value },
     { id: 'zone', label: 'Зона', done: stepZoneDone.value },
     { id: 'plant', label: 'Культура и рецепт', done: stepPlantDone.value && stepRecipeDone.value },
-    { id: 'zone-devices', label: 'Устройства нод зоны', done: stepZoneDevicesDone.value },
-    { id: 'zone-automation-profile', label: 'Профиль автоматики', done: stepZoneAutomationProfileDone.value },
+    { id: 'zone-automation', label: 'Автоматика зоны', done: stepZoneAutomationDone.value },
     { id: 'zone-calibration', label: 'Калибровка', done: stepZoneCalibrationReady.value },
   ])
 
@@ -587,10 +601,9 @@ export function useSetupWizard() {
     { id: 'greenhouse', title: '1. Теплица', hint: 'Теплица и общий климат', done: stepGreenhouseDone.value && stepGreenhouseClimateDone.value },
     { id: 'zone', title: '2. Зона', hint: 'Рабочая зона выращивания', done: stepZoneDone.value },
     { id: 'plant', title: '3. Культура и рецепт', hint: 'Рецепт подтягивается по выбранной культуре', done: stepPlantDone.value && stepRecipeDone.value },
-    { id: 'devices', title: '4. Устройства нод зоны', hint: 'Bindings и подтверждение конфигов на нодах', done: stepZoneDevicesDone.value },
-    { id: 'automation', title: '5. Профиль автоматики', hint: 'Водный контур, полив, коррекция, свет и zone climate', done: stepZoneAutomationProfileDone.value },
-    { id: 'calibration', title: '6. Калибровка', hint: 'PID, process calibration, pump calibration и sensor calibration', done: stepZoneCalibrationReady.value },
-    { id: 'launch', title: '7. Запуск', hint: 'Открыть мастер цикла', done: canLaunch.value },
+    { id: 'automation', title: '4. Автоматика зоны', hint: 'Водный контур, климат и освещение как единые блоки', done: stepZoneAutomationDone.value },
+    { id: 'calibration', title: '5. Калибровка', hint: 'Сенсоры, насосы, runtime bounds, process calibration и PID', done: stepZoneCalibrationReady.value },
+    { id: 'launch', title: '6. Запуск', hint: 'Открыть мастер цикла', done: canLaunch.value },
   ])
 
   const waterTopologyLabel = computed(() => {
@@ -602,19 +615,21 @@ export function useSetupWizard() {
   })
 
   function deriveZoneAssignmentFromNodes(role: ZoneAssignmentRole, zoneId: number, nodes: Node[]): number | null {
-    const zoneNodes = nodes.filter((node) => node.zone_id === zoneId)
+    const zoneNodes = nodes.filter((node) => nodeZoneId(node) === zoneId)
     const expectedBindingRoles = new Set(ZONE_ASSIGNMENT_BINDING_ROLES[role])
     const exactMatch = zoneNodes.find((node) => {
       return nodeBindingRoles(node).some((bindingRole) => expectedBindingRoles.has(bindingRole))
     })
 
-    if (typeof exactMatch?.id === 'number') {
-      return exactMatch.id
+    const exactMatchId = exactMatch ? nodeId(exactMatch) : null
+    if (exactMatchId !== null) {
+      return exactMatchId
     }
 
     const fallbackMatches = zoneNodes.filter((node) => matchesZoneAssignmentRole(node, role))
-    if (fallbackMatches.length === 1 && typeof fallbackMatches[0]?.id === 'number') {
-      return fallbackMatches[0].id
+    const fallbackMatchId = fallbackMatches.length === 1 ? nodeId(fallbackMatches[0]) : null
+    if (fallbackMatchId !== null) {
+      return fallbackMatchId
     }
 
     return null
@@ -633,7 +648,11 @@ export function useSetupWizard() {
     }
 
     const zoneNodeIds = availableNodes.value
-      .filter((node) => node.zone_id === zoneId)
+      .map((node) => ({
+        id: nodeId(node),
+        zoneId: nodeZoneId(node),
+      }))
+      .filter((node): node is { id: number; zoneId: number } => node.id !== null && node.zoneId === zoneId)
       .map((node) => node.id)
     dataFlows.syncAttachedNodesToCurrentZone(zoneNodeIds)
 
@@ -1132,6 +1151,7 @@ export function useSetupWizard() {
     stepRecipeDone,
     stepZoneDevicesDone,
     stepZoneAutomationProfileDone,
+    stepZoneAutomationDone,
     stepZoneCalibrationReady,
     zoneAutomationAssignmentsReady,
     zoneAutomationNodesReady,

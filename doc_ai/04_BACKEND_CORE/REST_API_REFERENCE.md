@@ -105,8 +105,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
 | GET | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum | Получить greenhouse climate profile и greenhouse bindings |
 | POST | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum (operator/admin/agronomist/engineer) | Сохранить greenhouse-owned automation profile (`climate`) |
-| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация шага `4. Устройства нод зоны` |
-| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод на шаге `4. Устройства нод зоны` |
+| POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация zonal bindings внутри шага `4. Автоматика зоны` |
+| POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод внутри блоков шага `4. Автоматика зоны` |
 | POST | /api/setup-wizard/validate-greenhouse-climate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация greenhouse climate nodes для шага `1. Теплица` |
 | POST | /api/setup-wizard/apply-greenhouse-climate-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка greenhouse roles (`climate_sensor`, `weather_station_sensor`, `vent_actuator`, `fan_actuator`) |
 
@@ -202,10 +202,14 @@ Legacy `extensions.day_target/night_target` больше не используе
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
 | GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler (`dispatches`, `cycle_duration`, `active_tasks`); `counter`/`histogram` читаются из персистентных aggregate tables, а не из `scheduler_logs` |
-| GET | /api/system/automation-settings | auth:sanctum (admin) | Список системных automation settings namespaces (`pump_calibration`, `sensor_calibration`, `automation_defaults`, `automation_command_templates`) |
+| GET | /api/system/automation-settings | auth:sanctum (admin) | Список системных automation settings namespaces (`pump_calibration`, `sensor_calibration`, `process_calibration_defaults`, `automation_defaults`, `automation_command_templates`) |
 | GET | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Получить config и field catalog namespace |
 | PUT | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Частично обновить namespace через merge с defaults |
 | POST | /api/system/automation-settings/{namespace}/reset | auth:sanctum (admin) | Сбросить namespace к catalog defaults |
+
+- `process_calibration_defaults` используется Laravel Inertia middleware как shared prop
+  `processCalibrationDefaults` для первичного заполнения формы `ProcessCalibrationPanel`
+  при отсутствии сохранённых `zone_process_calibrations`.
 
 ---
 

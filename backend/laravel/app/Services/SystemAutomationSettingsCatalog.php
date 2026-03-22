@@ -46,6 +46,23 @@ class SystemAutomationSettingsCatalog
                 ],
             ],
         ],
+        'process_calibration_defaults' => [
+            [
+                'key' => 'process_calibration_defaults',
+                'label' => 'Калибровка процесса',
+                'description' => 'Системные значения по умолчанию для process calibration UI.',
+                'fields' => [
+                    ['path' => 'transport_delay_sec', 'label' => 'Transport delay', 'description' => 'Время от дозы до ожидаемого отклика на датчике.', 'type' => 'integer', 'min' => 0, 'max' => 120],
+                    ['path' => 'settle_sec', 'label' => 'Settle sec', 'description' => 'Дополнительное окно для стабилизации измерений.', 'type' => 'integer', 'min' => 0, 'max' => 300],
+                    ['path' => 'ec_gain_per_ml', 'label' => 'EC gain', 'description' => 'Ожидаемый прирост EC на 1 мл nutrient dose.', 'type' => 'number', 'min' => 0.001, 'max' => 10.0, 'step' => 0.001],
+                    ['path' => 'ph_up_gain_per_ml', 'label' => 'pH up gain', 'description' => 'Ожидаемый отклик pH на 1 мл pH-up dose.', 'type' => 'number', 'min' => 0.001, 'max' => 5.0, 'step' => 0.001],
+                    ['path' => 'ph_down_gain_per_ml', 'label' => 'pH down gain', 'description' => 'Ожидаемый отклик pH на 1 мл pH-down dose.', 'type' => 'number', 'min' => 0.001, 'max' => 5.0, 'step' => 0.001],
+                    ['path' => 'ph_per_ec_ml', 'label' => 'pH from EC', 'description' => 'Cross-coupling pH <- EC на 1 мл EC-дозы.', 'type' => 'number', 'min' => -2.0, 'max' => 2.0, 'step' => 0.001],
+                    ['path' => 'ec_per_ph_ml', 'label' => 'EC from pH', 'description' => 'Cross-coupling EC <- pH на 1 мл pH-дозы.', 'type' => 'number', 'min' => -2.0, 'max' => 2.0, 'step' => 0.001],
+                    ['path' => 'confidence', 'label' => 'Confidence', 'description' => 'Начальная оценка доверия к системным рекомендованным значениям.', 'type' => 'number', 'min' => 0.0, 'max' => 1.0, 'step' => 0.01],
+                ],
+            ],
+        ],
         'automation_defaults' => [
             [
                 'key' => 'automation_profile_climate',
@@ -200,6 +217,16 @@ class SystemAutomationSettingsCatalog
                 'ph_reference_min' => 1.0,
                 'ph_reference_max' => 12.0,
                 'ec_tds_reference_max' => 10000,
+            ],
+            'process_calibration_defaults' => [
+                'ec_gain_per_ml' => 0.11,
+                'ph_up_gain_per_ml' => 0.08,
+                'ph_down_gain_per_ml' => 0.07,
+                'ph_per_ec_ml' => -0.015,
+                'ec_per_ph_ml' => 0.02,
+                'transport_delay_sec' => 20,
+                'settle_sec' => 45,
+                'confidence' => 0.75,
             ],
             'pid_defaults_ph' => [
                 'target' => 5.8,

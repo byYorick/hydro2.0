@@ -5,7 +5,7 @@
         <div>
           <div class="text-sm font-semibold">Готовность correction runtime</div>
           <div class="mt-1 text-xs text-[color:var(--text-dim)]">
-            Агрегированная проверка process calibration и калибровок дозирующих насосов для in-flow correction.
+            Агрегированная проверка калибровки процесса и калибровок дозирующих насосов для in-flow correction.
           </div>
         </div>
         <Badge :variant="overallStatus.variant">
@@ -42,7 +42,7 @@
               data-testid="correction-readiness-process-btn"
               @click="emit('focus-process-calibration')"
             >
-              Перейти к Process Calibration
+              Перейти к калибровке процесса
             </button>
             <button
               v-if="hasMissingPumpGroups"
@@ -51,7 +51,7 @@
               data-testid="correction-readiness-pump-btn"
               @click="emit('open-pump-calibration')"
             >
-              Открыть Pump Calibration
+              Открыть калибровку насосов
             </button>
           </div>
         </div>
@@ -115,7 +115,7 @@
         <div class="grid gap-4 xl:grid-cols-2">
           <section class="space-y-2">
             <div class="text-xs font-medium uppercase tracking-[0.08em] text-[color:var(--text-muted)]">
-              Process calibration
+              Калибровка процесса
             </div>
 
             <div
@@ -139,7 +139,7 @@
 
           <section class="space-y-2">
             <div class="text-xs font-medium uppercase tracking-[0.08em] text-[color:var(--text-muted)]">
-              Pump calibration
+              Калибровка насосов
             </div>
 
             <div
@@ -263,8 +263,8 @@ const pumpGroups = computed<PumpGroupStatus[]>(() => {
   )
 
   const groups: Array<{ key: 'ph' | 'ec'; label: string; roles: string[] }> = [
-    { key: 'ph', label: 'pH dosing path', roles: ['ph_acid_pump', 'ph_base_pump'] },
-    { key: 'ec', label: 'EC dosing path', roles: ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'] },
+    { key: 'ph', label: 'Контур дозирования pH', roles: ['ph_acid_pump', 'ph_base_pump'] },
+    { key: 'ec', label: 'Контур дозирования EC', roles: ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'] },
   ]
 
   return groups.map((group) => {
@@ -292,9 +292,9 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
       return {
         mode,
         label: phaseLabels[mode],
-        badgeLabel: 'Mode-specific',
+        badgeLabel: 'Отдельная',
         badgeVariant: 'success',
-        message: `Для фазы задана отдельная process calibration с confidence ${formatConfidence(specific.confidence)}.`,
+        message: `Для фазы сохранена отдельная калибровка процесса. Confidence: ${formatConfidence(specific.confidence)}.`,
         failClosed: false,
       }
     }
@@ -303,9 +303,9 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
       return {
         mode,
         label: phaseLabels[mode],
-        badgeLabel: 'Generic fallback',
+        badgeLabel: 'Через generic',
         badgeVariant: 'warning',
-        message: `Используется generic calibration с confidence ${formatConfidence(generic.confidence)}.`,
+        message: `Для фазы отдельной калибровки нет, используется generic-профиль. Confidence: ${formatConfidence(generic.confidence)}.`,
         failClosed: false,
       }
     }
@@ -313,9 +313,9 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
     return {
       mode,
       label: phaseLabels[mode],
-      badgeLabel: 'Fail-closed',
+      badgeLabel: 'Блокировано',
       badgeVariant: 'danger',
-      message: 'Ни mode-specific, ни generic process calibration не заданы; correction runtime не должен дозировать в этой фазе.',
+      message: 'Для этой фазы не заданы ни отдельная, ни generic-калибровка процесса, поэтому correction runtime не должен дозировать.',
       failClosed: true,
     }
   })
@@ -326,7 +326,7 @@ const overallStatus = computed(() => {
   const failClosedPhases = phaseCoverage.value.filter((item) => item.failClosed)
 
   if (missingPumpGroups.length === 0 && failClosedPhases.length === 0) {
-    const usesFallback = phaseCoverage.value.some((item) => item.badgeLabel === 'Generic fallback')
+    const usesFallback = phaseCoverage.value.some((item) => item.badgeLabel === 'Через generic')
 
     return {
       variant: usesFallback ? 'info' as const : 'success' as const,
@@ -341,7 +341,7 @@ const overallStatus = computed(() => {
   if (failClosedPhases.length > 0) {
     return {
       variant: 'danger' as const,
-      label: 'Fail-closed',
+      label: 'Блокировано',
       title: 'Есть фазы, где runtime должен оставаться fail-closed.',
       description: `Проблемные фазы: ${failClosedPhases.map((item) => item.label).join(', ')}. Сначала задайте process calibration, затем проверяйте correction cycle.`,
     }
@@ -350,8 +350,8 @@ const overallStatus = computed(() => {
   return {
     variant: 'warning' as const,
     label: 'Нужна калибровка',
-    title: 'Process calibration есть, но dosing path ещё не готов.',
-    description: `Не хватает pump calibration для: ${missingPumpGroups.map((group) => group.label).join(', ')}.`,
+    title: 'Калибровка процесса есть, но контур дозирования ещё не готов.',
+    description: `Не хватает калибровки насосов для: ${missingPumpGroups.map((group) => group.label).join(', ')}.`,
   }
 })
 

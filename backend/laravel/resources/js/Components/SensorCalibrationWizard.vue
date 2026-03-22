@@ -1,140 +1,143 @@
 <template>
-  <Modal
-    :open="open"
-    :title="`Калибровка ${sensorLabel}`"
-    size="large"
-    @close="$emit('close')"
-  >
-    <div class="sensor-calibration-wizard space-y-4">
-      <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-sm text-[color:var(--text-muted)]">
-        Канал: {{ overview.channel_uid }} · Узел: {{ overview.node_uid || 'unknown' }}
-      </div>
-
-      <div class="space-y-2">
-        <div class="text-sm font-medium">Шаг 1. Подготовка</div>
-        <div class="text-xs text-[color:var(--text-dim)]">
-          Рекомендуемые значения: {{ defaults.point_1_value }} и {{ defaults.point_2_value }}.
+  <Teleport to="body">
+    <Modal
+      :open="open"
+      :title="`Калибровка ${sensorLabel}`"
+      size="large"
+      class="z-[70]"
+      @close="$emit('close')"
+    >
+      <div class="sensor-calibration-wizard space-y-4">
+        <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-sm text-[color:var(--text-muted)]">
+          Канал: {{ overview.channel_uid }} · Узел: {{ overview.node_uid || 'unknown' }}
         </div>
-        <div
-          v-if="sessionLoading"
-          class="text-xs text-[color:var(--text-dim)]"
-        >
-          Загрузка активной сессии...
-        </div>
-        <Button
-          v-if="!calibration"
-          size="sm"
-          :disabled="busy || sessionLoading"
-          @click="start"
-        >
-          Начать калибровку
-        </Button>
-      </div>
 
-      <div
-        v-if="calibration"
-        class="space-y-4"
-      >
-        <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
-          <div class="text-sm font-medium">Шаг 2. Точка 1</div>
-          <label
-            class="text-xs text-[color:var(--text-muted)] block"
-            :title="fieldHelp('point_1_reference')"
-          >
-            Reference value
-            <input
-              v-model.number="point1Value"
-              type="number"
-              step="0.01"
-              class="input-field mt-1 w-full"
-            />
-          </label>
+        <div class="space-y-2">
+          <div class="text-sm font-medium">Шаг 1. Подготовка</div>
           <div class="text-xs text-[color:var(--text-dim)]">
-            Статус: {{ calibration.status }}
-            <span v-if="calibration.point_1_result"> · {{ calibration.point_1_result }}</span>
+            Рекомендуемые значения: {{ defaults.point_1_value }} и {{ defaults.point_2_value }}.
           </div>
           <div
-            v-if="calibration.point_1_error"
-            class="text-xs text-[color:var(--accent-red)]"
+            v-if="sessionLoading"
+            class="text-xs text-[color:var(--text-dim)]"
           >
-            {{ calibration.point_1_error }}
+            Загрузка активной сессии...
           </div>
           <Button
+            v-if="!calibration"
             size="sm"
-            :disabled="busy || calibration.status !== 'started'"
-            @click="submitPoint(1)"
+            :disabled="busy || sessionLoading"
+            @click="start"
           >
-            Калибровать точку 1
-          </Button>
-        </div>
-
-        <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
-          <div class="text-sm font-medium">Шаг 3. Точка 2</div>
-          <label
-            class="text-xs text-[color:var(--text-muted)] block"
-            :title="fieldHelp('point_2_reference')"
-          >
-            Reference value
-            <input
-              v-model.number="point2Value"
-              type="number"
-              step="0.01"
-              class="input-field mt-1 w-full"
-            />
-          </label>
-          <div class="text-xs text-[color:var(--text-dim)]">
-            Статус: {{ calibration.status }}
-            <span v-if="calibration.point_2_result"> · {{ calibration.point_2_result }}</span>
-          </div>
-          <div
-            v-if="calibration.point_2_error"
-            class="text-xs text-[color:var(--accent-red)]"
-          >
-            {{ calibration.point_2_error }}
-          </div>
-          <Button
-            size="sm"
-            :disabled="busy || calibration.status !== 'point_1_done'"
-            @click="submitPoint(2)"
-          >
-            Калибровать точку 2
+            Начать калибровку
           </Button>
         </div>
 
         <div
-          v-if="calibration.status === 'completed'"
-          class="rounded-lg border border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] p-3 text-sm text-[color:var(--badge-success-text)]"
+          v-if="calibration"
+          class="space-y-4"
         >
-          Калибровка завершена.
-        </div>
-        <div
-          v-else-if="calibration.status === 'failed'"
-          class="rounded-lg border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3 text-sm text-[color:var(--badge-danger-text)]"
-        >
-          Калибровка завершилась ошибкой. Для retry создайте новую сессию.
-        </div>
-      </div>
+          <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
+            <div class="text-sm font-medium">Шаг 2. Точка 1</div>
+            <label
+              class="text-xs text-[color:var(--text-muted)] block"
+              :title="fieldHelp('point_1_reference')"
+            >
+              Reference value
+              <input
+                v-model.number="point1Value"
+                type="number"
+                step="0.01"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <div class="text-xs text-[color:var(--text-dim)]">
+              Статус: {{ calibration.status }}
+              <span v-if="calibration.point_1_result"> · {{ calibration.point_1_result }}</span>
+            </div>
+            <div
+              v-if="calibration.point_1_error"
+              class="text-xs text-[color:var(--accent-red)]"
+            >
+              {{ calibration.point_1_error }}
+            </div>
+            <Button
+              size="sm"
+              :disabled="busy || calibration.status !== 'started'"
+              @click="submitPoint(1)"
+            >
+              Калибровать точку 1
+            </Button>
+          </div>
 
-      <div class="flex gap-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          @click="$emit('close')"
-        >
-          Закрыть
-        </Button>
-        <Button
-          v-if="calibration && !['completed', 'failed', 'cancelled'].includes(calibration.status)"
-          size="sm"
-          variant="secondary"
-          :disabled="busy"
-          @click="cancel"
-        >
-          Отменить сессию
-        </Button>
+          <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
+            <div class="text-sm font-medium">Шаг 3. Точка 2</div>
+            <label
+              class="text-xs text-[color:var(--text-muted)] block"
+              :title="fieldHelp('point_2_reference')"
+            >
+              Reference value
+              <input
+                v-model.number="point2Value"
+                type="number"
+                step="0.01"
+                class="input-field mt-1 w-full"
+              />
+            </label>
+            <div class="text-xs text-[color:var(--text-dim)]">
+              Статус: {{ calibration.status }}
+              <span v-if="calibration.point_2_result"> · {{ calibration.point_2_result }}</span>
+            </div>
+            <div
+              v-if="calibration.point_2_error"
+              class="text-xs text-[color:var(--accent-red)]"
+            >
+              {{ calibration.point_2_error }}
+            </div>
+            <Button
+              size="sm"
+              :disabled="busy || calibration.status !== 'point_1_done'"
+              @click="submitPoint(2)"
+            >
+              Калибровать точку 2
+            </Button>
+          </div>
+
+          <div
+            v-if="calibration.status === 'completed'"
+            class="rounded-lg border border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] p-3 text-sm text-[color:var(--badge-success-text)]"
+          >
+            Калибровка завершена.
+          </div>
+          <div
+            v-else-if="calibration.status === 'failed'"
+            class="rounded-lg border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3 text-sm text-[color:var(--badge-danger-text)]"
+          >
+            Калибровка завершилась ошибкой. Для retry создайте новую сессию.
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="$emit('close')"
+          >
+            Закрыть
+          </Button>
+          <Button
+            v-if="calibration && !['completed', 'failed', 'cancelled'].includes(calibration.status)"
+            size="sm"
+            variant="secondary"
+            :disabled="busy"
+            @click="cancel"
+          >
+            Отменить сессию
+          </Button>
+        </div>
       </div>
-    </div>
-  </Modal>
+    </Modal>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

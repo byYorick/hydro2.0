@@ -28,6 +28,53 @@ describe('SensorCalibrationWizard', () => {
     submitPointMock.mockReset()
     cancelCalibrationMock.mockReset()
     getCalibrationMock.mockReset()
+    document.body.innerHTML = ''
+  })
+
+  it('рендерит визард в body через teleport', async () => {
+    mount(SensorCalibrationWizard, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        zoneId: 1,
+        overview: {
+          node_channel_id: 101,
+          channel_uid: 'ec_sensor',
+          sensor_type: 'ec',
+          node_uid: 'node-ec-1',
+          last_calibrated_at: null,
+          days_since_calibration: null,
+          calibration_status: 'never',
+          has_active_session: false,
+          active_calibration_id: null,
+        },
+        settings: {
+          ph_point_1_value: 7,
+          ph_point_2_value: 4,
+          ec_point_1_tds: 1413,
+          ec_point_2_tds: 2764,
+          ph_reference_min: 0,
+          ph_reference_max: 14,
+          ec_tds_reference_max: 10000,
+          reminder_days: 30,
+          critical_days: 45,
+        },
+      },
+      global: {
+        stubs: {
+          Modal: {
+            props: ['open', 'title'],
+            template: '<div v-if="open" class="modal-stub"><div class="modal-title">{{ title }}</div><slot /></div>',
+          },
+          Button: { template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>', props: ['disabled'] },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Калибровка EC-сенсора')
+    expect(document.body.textContent).toContain('Канал: ec_sensor')
   })
 
   it('подхватывает активную сессию при открытии wizard', async () => {
@@ -57,6 +104,7 @@ describe('SensorCalibrationWizard', () => {
     })
 
     const wrapper = mount(SensorCalibrationWizard, {
+      attachTo: document.body,
       props: {
         open: true,
         zoneId: 1,
@@ -95,7 +143,9 @@ describe('SensorCalibrationWizard', () => {
 
     expect(getCalibrationMock).toHaveBeenCalledWith(42)
     expect(startCalibrationMock).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('point_1_pending')
-    expect(wrapper.text()).not.toContain('Начать калибровку')
+    expect(document.body.textContent).toContain('point_1_pending')
+    expect(document.body.textContent).not.toContain('Начать калибровку')
+
+    wrapper.unmount()
   })
 })

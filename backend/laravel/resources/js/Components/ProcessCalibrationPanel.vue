@@ -38,15 +38,27 @@
       >
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
           <div class="font-medium text-[color:var(--text-primary)]">
-            {{ selectedUsesFallback ? `Для режима ${modeLabel(activeMode)} используется generic-калибровка.` : `Режим: ${modeLabel(activeMode)}` }}
+            {{
+              selectedUsesFallback
+                ? `Для режима ${modeLabel(activeMode)} используется generic-калибровка.`
+                : selectedUsesSystemDefaults
+                  ? `Для режима ${modeLabel(activeMode)} в форме подставлены системные дефолты.`
+                  : `Режим: ${modeLabel(activeMode)}`
+            }}
           </div>
           <div class="mt-1">
             {{ activeModeDescription }}
           </div>
+          <div
+            v-if="selectedUsesSystemDefaults"
+            class="mt-1"
+          >
+            Runtime всё ещё fail-closed, пока значения не будут сохранены как calibration зоны.
+          </div>
           <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-            <span>Источник: {{ selectedCalibration?.source ?? genericCalibration?.source ?? 'не задан' }}</span>
+            <span>Источник: {{ calibrationSourceLabel }}</span>
             <span>Активно с: {{ formatDateTime(selectedCalibration?.valid_from ?? genericCalibration?.valid_from) }}</span>
-            <span>Confidence: {{ formatConfidence(selectedCalibration?.confidence ?? genericCalibration?.confidence) }}</span>
+            <span>Confidence: {{ formatConfidence(displayedConfidence) }}</span>
           </div>
         </div>
 
@@ -168,6 +180,10 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import { useApi } from '@/composables/useApi'
+import {
+  createDefaultProcessCalibrationForm,
+  useProcessCalibrationDefaults,
+} from '@/composables/useProcessCalibrationDefaults'
 import { useToast } from '@/composables/useToast'
 import type {
   ProcessCalibrationMode,
@@ -219,6 +235,7 @@ const props = defineProps<{ zoneId: number }>()
 
 const { api } = useApi()
 const { showToast } = useToast()
+const processCalibrationDefaults = useProcessCalibrationDefaults()
 
 const modes: Array<{ key: ProcessCalibrationMode; label: string; description: string }> = [
   {
@@ -351,7 +368,34 @@ const historyEvents = ref<ProcessCalibrationHistoryItem[]>([])
 const selectedCalibration = computed(() => calibrations.value[activeMode.value])
 const genericCalibration = computed(() => calibrations.value.generic)
 const selectedUsesFallback = computed(() => activeMode.value !== 'generic' && !selectedCalibration.value && !!genericCalibration.value)
+const selectedUsesSystemDefaults = computed(() => !selectedCalibration.value && !genericCalibration.value)
 const activeModeDescription = computed(() => modes.find((item) => item.key === activeMode.value)?.description ?? '')
+const calibrationSourceLabel = computed(() => {
+  if (selectedCalibration.value?.source) {
+    return selectedCalibration.value.source
+  }
+  if (genericCalibration.value?.source) {
+    return genericCalibration.value.source
+  }
+  if (selectedUsesSystemDefaults.value) {
+    return 'system defaults'
+  }
+
+  return 'не задан'
+})
+const displayedConfidence = computed(() => {
+  if (selectedCalibration.value?.confidence !== null && selectedCalibration.value?.confidence !== undefined) {
+    return selectedCalibration.value.confidence
+  }
+  if (genericCalibration.value?.confidence !== null && genericCalibration.value?.confidence !== undefined) {
+    return genericCalibration.value.confidence
+  }
+  if (selectedUsesSystemDefaults.value) {
+    return parseNumeric(form.value.confidence)
+  }
+
+  return null
+})
 const activeHistoryEvents = computed(() => {
   const relevantModes = selectedUsesFallback.value && activeMode.value !== 'generic'
     ? new Set<ProcessCalibrationMode>([activeMode.value, 'generic'])
@@ -368,16 +412,7 @@ const observationWindowLabel = computed(() => {
 })
 
 function emptyForm(): ZoneProcessCalibrationForm {
-  return {
-    ec_gain_per_ml: '',
-    ph_up_gain_per_ml: '',
-    ph_down_gain_per_ml: '',
-    ph_per_ec_ml: '',
-    ec_per_ph_ml: '',
-    transport_delay_sec: '',
-    settle_sec: '',
-    confidence: '',
-  }
+  return createDefaultProcessCalibrationForm(processCalibrationDefaults.value)
 }
 
 function modeLabel(mode: ProcessCalibrationMode): string {
@@ -410,16 +445,18 @@ function formatNumeric(value: number | null | undefined, step: string): string {
 
 function hydrateForm(mode: ProcessCalibrationMode): void {
   const source = calibrations.value[mode] ?? (mode === 'generic' ? null : calibrations.value.generic)
-  form.value = {
-    ec_gain_per_ml: formatNumeric(source?.ec_gain_per_ml, '0.001'),
-    ph_up_gain_per_ml: formatNumeric(source?.ph_up_gain_per_ml, '0.001'),
-    ph_down_gain_per_ml: formatNumeric(source?.ph_down_gain_per_ml, '0.001'),
-    ph_per_ec_ml: formatNumeric(source?.ph_per_ec_ml, '0.001'),
-    ec_per_ph_ml: formatNumeric(source?.ec_per_ph_ml, '0.001'),
-    transport_delay_sec: formatNumeric(source?.transport_delay_sec, '1'),
-    settle_sec: formatNumeric(source?.settle_sec, '1'),
-    confidence: formatNumeric(source?.confidence, '0.01'),
-  }
+  form.value = source
+    ? {
+      ec_gain_per_ml: formatNumeric(source.ec_gain_per_ml, '0.001'),
+      ph_up_gain_per_ml: formatNumeric(source.ph_up_gain_per_ml, '0.001'),
+      ph_down_gain_per_ml: formatNumeric(source.ph_down_gain_per_ml, '0.001'),
+      ph_per_ec_ml: formatNumeric(source.ph_per_ec_ml, '0.001'),
+      ec_per_ph_ml: formatNumeric(source.ec_per_ph_ml, '0.001'),
+      transport_delay_sec: formatNumeric(source.transport_delay_sec, '1'),
+      settle_sec: formatNumeric(source.settle_sec, '1'),
+      confidence: formatNumeric(source.confidence, '0.01'),
+    }
+    : createDefaultProcessCalibrationForm(processCalibrationDefaults.value)
   validationErrors.value = {}
 }
 
