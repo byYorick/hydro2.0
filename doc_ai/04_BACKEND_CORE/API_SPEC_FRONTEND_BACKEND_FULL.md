@@ -1167,10 +1167,17 @@ Legacy `extensions.day_target/night_target` не записывается.
 - `POST /api/zones/{zone}/sensor-calibrations/{id}/point`
   - body: `{ "stage": 1|2, "reference_value": number }`
   - публикует node command через history-logger `POST /commands`
+  - publish blocked for offline node with `422`
   - success-path: `started -> point_1_pending -> point_1_done -> point_2_pending -> completed`
+  - stage 2 `DONE` from `POST /api/python/commands/ack` only marks `meta.awaiting_config_report=true`; final `completed` is emitted after node `config_report` with persisted `NodeConfig.calibration`
   - fail-path: любой terminal status кроме `DONE` переводит session в `failed`
 - `POST /api/zones/{zone}/sensor-calibrations/{id}/cancel`
   - переводит не-terminal session в `cancelled`
+- `POST /api/zones/{zone}/calibrate-pump`
+  - `duration_sec` uses `system_automation_settings(namespace='pump_calibration')`
+  - first-step run response returns `data.run_token`
+  - second-step save with `skip_run=true` requires `run_token`, unless caller explicitly sets `manual_override=true`
+  - legacy mirror `node_channels.config.pump_calibration` is updated through merge patch, not full overwrite
 
 ---
 

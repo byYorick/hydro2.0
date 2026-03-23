@@ -113,6 +113,26 @@ class SensorCalibrationControllerTest extends TestCase
         });
     }
 
+    public function test_submit_point_rejects_offline_node(): void
+    {
+        [$zone, $channel] = $this->makeSensorChannel('ph_sensor', 'PH');
+        $channel->node->update(['status' => 'offline']);
+
+        $calibration = SensorCalibration::query()->create([
+            'zone_id' => $zone->id,
+            'node_channel_id' => $channel->id,
+            'sensor_type' => 'ph',
+            'status' => SensorCalibration::STATUS_STARTED,
+            'calibrated_by' => auth()->id(),
+        ]);
+
+        $this->postJson("/api/zones/{$zone->id}/sensor-calibrations/{$calibration->id}/point", [
+            'stage' => 1,
+            'reference_value' => 7.0,
+        ])->assertStatus(422)
+            ->assertJsonPath('message', "Node {$channel->node->uid} is offline; sensor calibration command cannot be sent.");
+    }
+
     public function test_status_returns_overview_for_all_sensors(): void
     {
         [$zone, $phChannel] = $this->makeSensorChannel('ph_sensor', 'PH');
@@ -185,7 +205,7 @@ class SensorCalibrationControllerTest extends TestCase
             ->assertJsonPath('data.0.node_channel_id', $firstChannel->id);
     }
 
-    public function test_command_terminal_ingest_marks_calibration_completed(): void
+    public function test_command_terminal_ingest_waits_for_config_report_before_completion(): void
     {
         [$zone, $channel] = $this->makeSensorChannel('ph_sensor', 'PH');
         $calibration = SensorCalibration::query()->create([
@@ -213,9 +233,10 @@ class SensorCalibrationControllerTest extends TestCase
             ->assertOk();
 
         $calibration->refresh();
-        $this->assertSame(SensorCalibration::STATUS_COMPLETED, $calibration->status);
+        $this->assertSame(SensorCalibration::STATUS_POINT_2_PENDING, $calibration->status);
         $this->assertSame('DONE', $calibration->point_2_result);
-        $this->assertNotNull($calibration->completed_at);
+        $this->assertNull($calibration->completed_at);
+        $this->assertTrue((bool) data_get($calibration->meta, 'awaiting_config_report'));
     }
 
     public function test_non_done_terminal_command_statuses_map_to_failed(): void

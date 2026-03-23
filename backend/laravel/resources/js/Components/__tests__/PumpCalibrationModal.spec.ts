@@ -90,6 +90,47 @@ describe('PumpCalibrationModal', () => {
       actual_ml: 8.5,
       component: 'ph_down',
       skip_run: true,
+      manual_override: true,
+    })
+  })
+
+  it('эмитит run_token после успешного physical run', async () => {
+    const wrapper = mount(PumpCalibrationModal, {
+      props: {
+        show: true,
+        zoneId: 1,
+        devices: sampleDevices,
+        loadingRun: false,
+        loadingSave: false,
+        runSuccessSeq: 0,
+        lastRunToken: null,
+      },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
+        },
+      },
+    })
+
+    await wrapper.find('[data-testid="pump-calibration-component"]').setValue('npk')
+    await wrapper.find('[data-testid="pump-calibration-channel"]').setValue('101')
+    await wrapper.find('[data-testid="pump-calibration-duration"]').setValue('20')
+    await wrapper.setProps({
+      runSuccessSeq: 1,
+      lastRunToken: 'run-token-123',
+    })
+    await wrapper.find('[data-testid="pump-calibration-actual-ml"]').setValue('8.5')
+    await wrapper.find('[data-testid="pump-calibration-save-btn"]').trigger('click')
+
+    const emitted = wrapper.emitted('save')
+    expect(emitted).toBeTruthy()
+    expect(emitted?.[0]?.[0]).toEqual({
+      node_channel_id: 101,
+      duration_sec: 20,
+      actual_ml: 8.5,
+      component: 'npk',
+      skip_run: true,
+      run_token: 'run-token-123',
     })
   })
 

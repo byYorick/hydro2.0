@@ -25,6 +25,7 @@ interface SetupWizardPlantNodeCommandsOptions {
   availableNodes: Ref<Node[]>
   availablePlants: Ref<Plant[]>
   selectedPlantId: Ref<number | null>
+  selectedZoneId: Ref<number | null>
   selectedZone: Ref<Zone | null>
   selectedPlant: Ref<Plant | null>
   selectedNodeIds: Ref<number[]>
@@ -122,6 +123,7 @@ export function createSetupWizardPlantNodeCommands(
     availableNodes,
     availablePlants,
     selectedPlantId,
+    selectedZoneId,
     selectedZone,
     selectedPlant,
     selectedNodeIds,
@@ -142,13 +144,17 @@ export function createSetupWizardPlantNodeCommands(
   const attachedNodeIds = new Set<number>()
   let attachedZoneId: number | null = null
 
+  function currentZoneId(): number | null {
+    return selectedZone.value?.id ?? selectedZoneId.value ?? null
+  }
+
   function getNodeById(nodeId: number): Node | null {
     return availableNodes.value.find((item) => item.id === nodeId) ?? null
   }
 
   function isNodeAttachedToCurrentZone(nodeId: number): boolean {
-    const currentZoneId = selectedZone.value?.id ?? null
-    if (!currentZoneId || attachedZoneId !== currentZoneId) {
+    const zoneId = currentZoneId()
+    if (!zoneId || attachedZoneId !== zoneId) {
       return false
     }
 
@@ -156,11 +162,11 @@ export function createSetupWizardPlantNodeCommands(
   }
 
   function syncAttachedNodesToCurrentZone(nodeIds: number[]): void {
-    const currentZoneId = selectedZone.value?.id ?? null
+    const zoneId = currentZoneId()
     attachedNodeIds.clear()
-    attachedZoneId = currentZoneId
+    attachedZoneId = zoneId
 
-    if (!currentZoneId) {
+    if (!zoneId) {
       attachedNodesCount.value = 0
       return
     }

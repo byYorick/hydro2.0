@@ -704,6 +704,7 @@ async def test_calibrate_pump_success():
         assert result["success"] is True
         assert result["status"] == "calibrated"
         assert result["ml_per_sec"] == pytest.approx(0.9, abs=0.000001)
+        assert isinstance(result["run_token"], str)
         assert mock_send.called
 
 
@@ -797,6 +798,7 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
 
         assert result["success"] is True
         assert result["status"] == "awaiting_actual_ml"
+        assert isinstance(result["run_token"], str)
         mock_sleep.assert_not_awaited()
 
 
@@ -840,6 +842,7 @@ async def test_calibrate_pump_skip_run_with_actual_ml_does_not_emit_skipped_even
             actual_ml=0.8,
             component="micro",
             skip_run=True,
+            manual_override=True,
             gh_uid="gh-1",
         )
 
@@ -850,6 +853,38 @@ async def test_calibrate_pump_skip_run_with_actual_ml_does_not_emit_skipped_even
         event_types = [call.args[1] for call in mock_event.await_args_list]
         assert "PUMP_CALIBRATION_RUN_SKIPPED" not in event_types
         assert "PUMP_CALIBRATION_FINISHED" in event_types
+
+
+@pytest.mark.asyncio
+async def test_calibrate_pump_save_after_run_requires_run_token():
+    channel_info = {
+        "channel_id": 26,
+        "channel": "pump_manual",
+        "config": {},
+        "node_id": 16,
+        "node_uid": "nd-irrig-1",
+        "node_status": "online",
+    }
+
+    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+         patch("common.water_flow.fetch") as mock_fetch:
+        mock_settings.return_value = {
+            "calibration_duration_min_sec": 1, "calibration_duration_max_sec": 120,
+            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
+            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
+        }
+        mock_fetch.return_value = [channel_info]
+
+        with pytest.raises(ValueError, match="run_token is required"):
+            await calibrate_pump(
+                zone_id=1,
+                node_channel_id=26,
+                duration_sec=10,
+                actual_ml=5.0,
+                component="npk",
+                skip_run=True,
+                gh_uid="gh-1",
+            )
 
 
 @pytest.mark.asyncio

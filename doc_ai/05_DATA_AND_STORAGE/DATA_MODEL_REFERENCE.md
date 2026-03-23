@@ -1831,8 +1831,12 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - Командная связка:
   - stage 1 и stage 2 публикуются через `history-logger POST /commands`
   - `point_1_command_id` и `point_2_command_id` совпадают с `commands.cmd_id`
-  - terminal status `DONE` завершает этап успешно
+  - terminal status `DONE` завершает stage 1 сразу, а для stage 2 сначала ставит `meta.awaiting_config_report=true`
+  - финальный переход `point_2_pending -> completed` выполняется только после `config_report`, в котором нода прислала persisted `NodeConfig.calibration` для соответствующего `sensor_type`
   - terminal status `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` маппится в `failed`
+- `meta` используется для transport/runtime confirmation:
+  - `awaiting_config_report` — stage 2 acknowledged, но backend ещё ждёт persisted config от ноды;
+  - `persisted_via_config_report` / `persisted_at` — server-side подтверждение, что calibration пережила round-trip через node config.
 
 ### 16.3. Таблица `pump_calibrations`
 
@@ -1847,6 +1851,10 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 - Политика версии:
   - новая калибровка деактивирует предыдущую (`is_active=false`, `valid_to=NOW()`),
   - актуальная калибровка выбирается по `is_active=true` и `valid_from DESC`.
+- Two-step UX `run -> save` коррелируется через `zone_events.payload_json.run_token`:
+  - `PUMP_CALIBRATION_STARTED` сохраняет `run_token`, `node_channel_id`, `duration_sec`, `component`, `command_id`;
+  - `PUMP_CALIBRATION_FINISHED` повторно пишет `run_token` и тем самым помечает его consumed;
+  - прямой manual persist без correlated physical run допускается только с `manual_override=true`.
 - Runtime constraint:
   - `ml_per_sec` обязан попадать в диапазон `0.01 .. 100.0`;
   - значение вне диапазона считается невалидной runtime-calibration и блокируется DB CHECK constraint.

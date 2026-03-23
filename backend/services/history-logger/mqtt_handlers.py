@@ -1249,6 +1249,16 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
             node_id,
         )
 
+        try:
+            await _complete_sensor_calibrations_after_config_report(int(node_id), data)
+        except Exception as sync_sensor_err:
+            logger.warning(
+                "[CONFIG_REPORT] Failed to finalize sensor calibrations for node %s: %s",
+                node_uid,
+                sync_sensor_err,
+                exc_info=True,
+            )
+
         channels_payload = data.get("channels")
         if channels_payload is not None:
             try:
@@ -1287,6 +1297,77 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
         CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
     finally:
         clear_trace_id()
+
+
+def _extract_persisted_sensor_calibration_types(config: Dict[str, Any]) -> set[str]:
+    calibration = config.get("calibration")
+    if not isinstance(calibration, dict):
+        return set()
+
+    persisted: set[str] = set()
+    for sensor_type in ("ph", "ec"):
+        if isinstance(calibration.get(sensor_type), dict) and calibration.get(sensor_type):
+            persisted.add(sensor_type)
+
+    return persisted
+
+
+async def _complete_sensor_calibrations_after_config_report(node_id: int, config: Dict[str, Any]) -> None:
+    persisted_sensor_types = _extract_persisted_sensor_calibration_types(config)
+    if not persisted_sensor_types:
+        return
+
+    rows = await fetch(
+        """
+        SELECT sc.id, sc.sensor_type, sc.meta
+        FROM sensor_calibrations sc
+        JOIN node_channels nc ON nc.id = sc.node_channel_id
+        WHERE nc.node_id = $1
+          AND sc.status = 'point_2_pending'
+          AND sc.point_2_result = 'DONE'
+        """,
+        node_id,
+    )
+    if not rows:
+        return
+
+    completed_ids: list[int] = []
+    persisted_at = utcnow().isoformat()
+    for row in rows:
+        sensor_type = str(row.get("sensor_type") or "").strip().lower()
+        if sensor_type not in persisted_sensor_types:
+            continue
+
+        meta = row.get("meta") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["awaiting_config_report"] = False
+        meta["persisted_via_config_report"] = True
+        meta["persisted_at"] = persisted_at
+
+        await execute(
+            """
+            UPDATE sensor_calibrations
+            SET status = 'completed',
+                completed_at = NOW(),
+                meta = $2,
+                updated_at = NOW()
+            WHERE id = $1
+              AND status = 'point_2_pending'
+              AND point_2_result = 'DONE'
+            """,
+            row["id"],
+            meta,
+        )
+        completed_ids.append(int(row["id"]))
+
+    if completed_ids:
+        logger.info(
+            "[CONFIG_REPORT] Finalized sensor calibration(s) after persisted config report: node_id=%s ids=%s sensors=%s",
+            node_id,
+            completed_ids,
+            sorted(list(persisted_sensor_types)),
+        )
 
 
 def _normalize_config_report_channels_for_storage(config: Dict[str, Any]) -> Dict[str, Any]:

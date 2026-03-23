@@ -543,6 +543,8 @@
       :loading-run="pumpCalibrationLoadingRun"
       :loading-save="pumpCalibrationLoadingSave"
       :save-success-seq="pumpCalibrationSaveSeq"
+      :run-success-seq="pumpCalibrationRunSeq"
+      :last-run-token="pumpCalibrationLastRunToken"
       @close="closePumpCalibrationModal"
       @start="startPumpCalibration"
       @save="savePumpCalibration"
@@ -644,6 +646,8 @@ const showPumpCalibrationModal = ref(false)
 const pumpCalibrationLoadingRun = ref(false)
 const pumpCalibrationLoadingSave = ref(false)
 const pumpCalibrationSaveSeq = ref(0)
+const pumpCalibrationRunSeq = ref(0)
+const pumpCalibrationLastRunToken = ref<string | null>(null)
 const sensorCalibrationSettings = computed(() => page.props.sensorCalibrationSettings ?? null)
 const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
 const committedWaterForm = ref<WaterFormState>(cloneWaterForm(automationWaterForm))
@@ -892,7 +896,10 @@ async function startPumpCalibration(payload: PumpCalibrationRunPayload): Promise
 
   pumpCalibrationLoadingRun.value = true
   try {
-    await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, payload)
+    const response = await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, payload)
+    const runToken = response?.data?.data?.run_token
+    pumpCalibrationLastRunToken.value = typeof runToken === 'string' && runToken !== '' ? runToken : null
+    pumpCalibrationRunSeq.value += 1
     showToast('Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.', 'success')
   } catch {
     showToast('Не удалось запустить калибровку насоса.', 'error')
@@ -910,6 +917,7 @@ async function savePumpCalibration(payload: PumpCalibrationSavePayload): Promise
   try {
     await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, { ...payload, skip_run: true })
     await refreshAvailableNodes()
+    pumpCalibrationLastRunToken.value = null
     pumpCalibrationSaveSeq.value += 1
     showToast('Калибровка насоса сохранена.', 'success')
   } catch {

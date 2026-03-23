@@ -89,6 +89,8 @@ export function useZoneShowPage() {
     expectedHarvestAt?: string | null
   } | null>(null)
   const pumpCalibrationSaveSeq = ref(0)
+  const pumpCalibrationRunSeq = ref(0)
+  const pumpCalibrationLastRunToken = ref<string | null>(null)
 
   const { loading, setLoading } = useLoading<LoadingState>({
     irrigate: false,
@@ -194,7 +196,10 @@ export function useZoneShowPage() {
     if (!zoneId.value) return
     setLoading('pumpCalibrationRun', true)
     try {
-      await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, payload)
+      const response = await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, payload)
+      const runToken = response?.data?.data?.run_token
+      pumpCalibrationLastRunToken.value = typeof runToken === 'string' && runToken !== '' ? runToken : null
+      pumpCalibrationRunSeq.value += 1
       showToast(
         'Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.',
         'success',
@@ -215,6 +220,7 @@ export function useZoneShowPage() {
       reloadZone(zoneId.value, ['zone', 'active_grow_cycle', 'active_cycle'])
       reloadZonePageProps()
       showToast('Калибровка сохранена в конфигурации канала.', 'success', TOAST_TIMEOUT.NORMAL)
+      pumpCalibrationLastRunToken.value = null
       pumpCalibrationSaveSeq.value += 1
     } catch (error) {
       handleError(error, { component: 'useZoneShowPage', action: 'pumpCalibrationSave', zoneId: zoneId.value })
@@ -323,6 +329,8 @@ export function useZoneShowPage() {
     selectedNode,
     growthCycleInitialData,
     pumpCalibrationSaveSeq,
+    pumpCalibrationRunSeq,
+    pumpCalibrationLastRunToken,
     loading,
     variant,
     onRunCycle,

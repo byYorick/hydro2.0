@@ -122,6 +122,8 @@ class CalibratePumpRequest(BaseModel):
     ec_before_ms: Optional[float] = Field(None, ge=0.0, le=20.0, description="EC before dosing, mS/cm")
     ec_after_ms: Optional[float] = Field(None, ge=0.0, le=20.0, description="EC after dosing, mS/cm")
     temperature_c: Optional[float] = Field(None, ge=0.0, le=50.0, description="Water temperature in Celsius")
+    run_token: Optional[str] = Field(None, max_length=128, description="Correlation token for two-step run/save flow")
+    manual_override: bool = Field(False, description="Allow direct save without correlated physical run")
 
     @field_validator("component")
     @classmethod

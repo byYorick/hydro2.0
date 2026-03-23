@@ -58,7 +58,7 @@ class ZoneOperationsService
     /**
      * Выполнить калибровку дозирующей помпы.
      */
-    public function calibratePump(Zone $zone, array $data): string
+    public function calibratePump(Zone $zone, array $data): array
     {
         // Для pump calibration не блокируемся по zone.status.
         // Реальный физический прогон всё равно валидируется ниже по pipeline:
@@ -69,7 +69,14 @@ class ZoneOperationsService
         // History-logger для run-step возвращает после отправки команды и не ждёт завершения прогона.
         \App\Jobs\ZoneOperationJob::dispatchSync($zone->id, 'calibrate_pump', $data, $jobId);
 
-        return $jobId;
+        $jobState = \Illuminate\Support\Facades\Cache::get("zone_operation:{$jobId}");
+
+        return [
+            'job_id' => $jobId,
+            'result' => is_array($jobState) && is_array($jobState['result'] ?? null)
+                ? $jobState['result']
+                : [],
+        ];
     }
 
     /**

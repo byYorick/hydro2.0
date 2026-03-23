@@ -18,6 +18,8 @@
       :loading-run="loading.pumpCalibrationRun"
       :loading-save="loading.pumpCalibrationSave"
       :save-success-seq="pumpCalibrationSaveSeq"
+      :run-success-seq="pumpCalibrationRunSeq"
+      :last-run-token="pumpCalibrationLastRunToken"
       @close="$emit('close-pump-calibration')"
       @start="$emit('start-pump-calibration', $event)"
       @save="$emit('save-pump-calibration', $event)"
@@ -202,6 +204,8 @@ interface Props {
   changeRecipeModal: ChangeRecipeModalState
   loading: LoadingState
   pumpCalibrationSaveSeq: number
+  pumpCalibrationRunSeq: number
+  pumpCalibrationLastRunToken: string | null
 }
 
 const props = defineProps<Props>()
@@ -211,7 +215,7 @@ const emit = defineEmits<{
   (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
   (e: 'close-pump-calibration'): void
   (e: 'start-pump-calibration', payload: { node_channel_id: number; duration_sec: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down' }): void
-  (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true; test_volume_l?: number; ec_before_ms?: number; ec_after_ms?: number; temperature_c?: number }): void
+  (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true; run_token?: string; manual_override?: true; test_volume_l?: number; ec_before_ms?: number; ec_after_ms?: number; temperature_c?: number }): void
   (e: 'close-attach-nodes'): void
   (e: 'nodes-attached', payload: number[]): void
   (e: 'close-node-config'): void

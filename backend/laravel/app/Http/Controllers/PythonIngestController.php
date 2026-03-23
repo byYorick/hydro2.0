@@ -617,10 +617,19 @@ class PythonIngestController extends Controller
             if ($calibration->point_2_command_id === $commandId) {
                 $calibration->point_2_result = $status;
                 $calibration->point_2_error = $status === Command::STATUS_DONE ? null : (string) ($errorMessage ?? $status);
-                $calibration->status = $status === Command::STATUS_DONE
-                    ? SensorCalibration::STATUS_COMPLETED
-                    : SensorCalibration::STATUS_FAILED;
-                $calibration->completed_at = now();
+                $meta = is_array($calibration->meta) ? $calibration->meta : [];
+                if ($status === Command::STATUS_DONE) {
+                    $meta['awaiting_config_report'] = true;
+                    $meta['persisted_via_config_report'] = false;
+                    $meta['point_2_acknowledged_at'] = now()->toIso8601String();
+                    $calibration->status = SensorCalibration::STATUS_POINT_2_PENDING;
+                    $calibration->completed_at = null;
+                } else {
+                    $meta['awaiting_config_report'] = false;
+                    $calibration->status = SensorCalibration::STATUS_FAILED;
+                    $calibration->completed_at = now();
+                }
+                $calibration->meta = $meta;
                 $calibration->save();
             }
         }

@@ -76,6 +76,7 @@ export function createSetupWizardEntityCommands(
     availableNodes: options.availableNodes,
     availablePlants: options.availablePlants,
     selectedPlantId: options.selectedPlantId,
+    selectedZoneId: options.selectedZoneId,
     selectedZone: options.selectedZone,
     selectedPlant: options.selectedPlant,
     selectedNodeIds: options.selectedNodeIds,

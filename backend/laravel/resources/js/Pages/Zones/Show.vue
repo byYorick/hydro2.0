@@ -107,6 +107,8 @@
       :change-recipe-modal="changeRecipeModal"
       :loading="loading"
       :pump-calibration-save-seq="pumpCalibrationSaveSeq"
+      :pump-calibration-run-seq="pumpCalibrationRunSeq"
+      :pump-calibration-last-run-token="pumpCalibrationLastRunToken"
       @close-action="modals.close('action')"
       @submit-action="onActionSubmit"
       @close-pump-calibration="modals.close('pumpCalibration')"
@@ -157,6 +159,8 @@ const {
     selectedNode,
     growthCycleInitialData,
     pumpCalibrationSaveSeq,
+    pumpCalibrationRunSeq,
+    pumpCalibrationLastRunToken,
     loading,
     zoneId,
     zone,

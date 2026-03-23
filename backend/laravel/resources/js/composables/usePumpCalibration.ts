@@ -11,6 +11,8 @@ interface PumpCalibrationProps {
   zoneId: number | null
   devices: Device[]
   saveSuccessSeq?: number
+  runSuccessSeq?: number
+  lastRunToken?: string | null
 }
 
 const componentOptions: Array<{ value: PumpCalibrationComponent; label: string }> = [
@@ -77,6 +79,12 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
   const formError = ref<string | null>(null)
   const persistedBindings = ref<Partial<Record<PumpCalibrationComponent, number>>>({})
   const dbCalibrationsByChannelId = ref<Record<number, PumpCalibrationConfig>>({})
+  const pendingRun = ref<{
+    runToken: string
+    component: PumpCalibrationComponent
+    node_channel_id: number
+    duration_sec: number
+  } | null>(null)
 
   const storageKey = computed(() => {
     if (!props.zoneId) {
@@ -370,6 +378,18 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
       skip_run: true,
     }
 
+    const currentDurationSec = Math.trunc(form.duration_sec)
+    if (
+      pendingRun.value
+      && pendingRun.value.component === form.component
+      && pendingRun.value.node_channel_id === form.node_channel_id
+      && pendingRun.value.duration_sec === currentDurationSec
+    ) {
+      payload.run_token = pendingRun.value.runToken
+    } else {
+      payload.manual_override = true
+    }
+
     if (Number.isFinite(form.test_volume_l) && (form.test_volume_l as number) > 0) {
       payload.test_volume_l = Number(form.test_volume_l)
     }
@@ -451,6 +471,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
       }
       void refreshDbCalibrations()
       loadPersistedBindings()
+      pendingRun.value = null
       formError.value = null
       form.duration_sec = settings.value.default_run_duration_sec
       ensureSelection()
@@ -492,11 +513,28 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
   )
 
   watch(
+    () => props.runSuccessSeq,
+    (next, prev) => {
+      if (!props.show || !props.lastRunToken || (next ?? 0) <= (prev ?? 0) || !form.node_channel_id) {
+        return
+      }
+
+      pendingRun.value = {
+        runToken: props.lastRunToken,
+        component: form.component,
+        node_channel_id: form.node_channel_id,
+        duration_sec: Math.trunc(form.duration_sec),
+      }
+    },
+  )
+
+  watch(
     () => props.saveSuccessSeq,
     async (next, prev) => {
       if (!props.show || (next ?? 0) <= (prev ?? 0)) {
         return
       }
+      pendingRun.value = null
       await refreshDbCalibrations()
       moveToNextComponent()
     },

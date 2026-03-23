@@ -161,6 +161,38 @@ class TestConfigReportFormatSync:
             mock_processed.inc.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_complete_sensor_calibrations_after_config_report_marks_completed(self):
+        """config_report с calibration namespace должен финализировать ожидающую sensor calibration."""
+        from mqtt_handlers import _complete_sensor_calibrations_after_config_report
+
+        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
+             patch('mqtt_handlers.execute', new_callable=AsyncMock) as mock_execute:
+            mock_fetch.return_value = [
+                {
+                    "id": 42,
+                    "sensor_type": "ph",
+                    "meta": {"awaiting_config_report": True},
+                }
+            ]
+
+            await _complete_sensor_calibrations_after_config_report(7, {
+                "calibration": {
+                    "ph": {
+                        "point1": {"raw": 1000, "value": 4.0},
+                        "point2": {"raw": 2000, "value": 7.0},
+                    }
+                }
+            })
+
+            mock_fetch.assert_awaited_once()
+            mock_execute.assert_awaited_once()
+            args = mock_execute.await_args.args
+            assert "UPDATE sensor_calibrations" in args[0]
+            assert args[1] == 42
+            assert args[2]["awaiting_config_report"] is False
+            assert args[2]["persisted_via_config_report"] is True
+
+    @pytest.mark.asyncio
     async def test_handle_config_report_fills_default_relay_type_for_relay_actuators(self):
         """Для relay-like actuator в config_report должен проставляться relay_type=NO при отсутствии поля."""
         from mqtt_handlers import handle_config_report

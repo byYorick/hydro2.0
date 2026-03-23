@@ -5,6 +5,7 @@ Water Flow Engine - контроль уровня воды, расхода и з
 import asyncio
 import json
 import os
+import uuid
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timedelta
 from .utils.time import utcnow
@@ -949,6 +950,8 @@ async def calibrate_pump(
     ec_before_ms: Optional[float] = None,
     ec_after_ms: Optional[float] = None,
     temperature_c: Optional[float] = None,
+    run_token: Optional[str] = None,
+    manual_override: bool = False,
     mqtt_client: Any = None,  # Deprecated, не используется
     gh_uid: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1016,6 +1019,7 @@ async def calibrate_pump(
     channel = channel_info.get("channel") or "default"
 
     started_at = utcnow()
+    calibration_run_token = str(run_token or uuid.uuid4())
     if not skip_run:
         if channel_info.get("node_status") != "online":
             raise ValueError(f"Node {node_uid} is offline; cannot run calibration")
@@ -1040,6 +1044,8 @@ async def calibrate_pump(
                 "channel": channel,
                 "duration_sec": duration_sec,
                 "component": normalized_component,
+                "run_token": calibration_run_token,
+                "command_id": run_result.get("cmd_id"),
                 "start_time": started_at.isoformat(),
             },
         )
@@ -1055,6 +1061,7 @@ async def calibrate_pump(
                 "channel": channel,
                 "duration_sec": duration_sec,
                 "component": normalized_component,
+                "run_token": calibration_run_token,
                 "started_at": started_at.isoformat(),
             }
 
@@ -1074,6 +1081,7 @@ async def calibrate_pump(
                     "channel": channel,
                     "duration_sec": duration_sec,
                     "component": normalized_component,
+                    "run_token": calibration_run_token,
                 },
             )
 
@@ -1086,8 +1094,51 @@ async def calibrate_pump(
             "channel": channel,
             "duration_sec": duration_sec,
             "component": normalized_component,
+            "run_token": calibration_run_token,
             "started_at": started_at.isoformat(),
         }
+
+    if skip_run and not manual_override:
+        if not run_token:
+            raise ValueError("run_token is required when saving calibration after a physical run")
+
+        matching_run = await fetch(
+            """
+            SELECT id
+            FROM zone_events
+            WHERE zone_id = $1
+              AND type = 'PUMP_CALIBRATION_STARTED'
+              AND COALESCE(payload_json, details)->>'run_token' = $2
+              AND (COALESCE(payload_json, details)->>'node_channel_id')::int = $3
+              AND COALESCE(payload_json, details)->>'duration_sec' = $4
+              AND COALESCE(payload_json, details)->>'component' IS NOT DISTINCT FROM $5
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            run_token,
+            node_channel_id,
+            str(duration_sec),
+            normalized_component,
+        )
+        if not matching_run:
+            raise ValueError("run_token does not match an active pump calibration run")
+
+        already_finished = await fetch(
+            """
+            SELECT id
+            FROM zone_events
+            WHERE zone_id = $1
+              AND type = 'PUMP_CALIBRATION_FINISHED'
+              AND COALESCE(payload_json, details)->>'run_token' = $2
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            run_token,
+        )
+        if already_finished:
+            raise ValueError("run_token has already been consumed by a completed calibration save")
 
     actual_ml_value = float(actual_ml)
     if actual_ml_value <= 0:
@@ -1125,9 +1176,6 @@ async def calibrate_pump(
             raise ValueError("Calculated k_ms_per_ml_l must be greater than 0")
 
     calibrated_at_iso = utcnow().isoformat()
-    current_config = channel_info.get("config") or {}
-    if not isinstance(current_config, dict):
-        current_config = {}
     calibration_payload = {
         "ml_per_sec": ml_per_sec,
         "duration_sec": duration_sec,
@@ -1141,7 +1189,6 @@ async def calibrate_pump(
         "temperature_c": float(temperature_c) if temperature_c is not None else None,
         "calibrated_at": calibrated_at_iso,
     }
-    current_config["pump_calibration"] = calibration_payload
 
     quality_score = (
         float(settings["quality_score_with_k"])
@@ -1221,7 +1268,7 @@ async def calibrate_pump(
 
         response = await client.patch(
             f"{api_url}/api/node-channels/{node_channel_id}",
-            json={"config": current_config},
+            json={"config": {"pump_calibration": calibration_payload}},
             headers=headers,
             timeout=10.0,
         )
@@ -1246,6 +1293,8 @@ async def calibrate_pump(
             "ec_after_ms": float(ec_after_ms) if ec_after_ms is not None else None,
             "delta_ec_ms": ec_delta_ms,
             "temperature_c": float(temperature_c) if temperature_c is not None else None,
+            "run_token": calibration_run_token,
+            "manual_override": bool(manual_override),
             "finished_at": finished_at.isoformat(),
         },
     )
@@ -1266,5 +1315,6 @@ async def calibrate_pump(
         "ec_after_ms": float(ec_after_ms) if ec_after_ms is not None else None,
         "delta_ec_ms": ec_delta_ms,
         "temperature_c": float(temperature_c) if temperature_c is not None else None,
+        "run_token": calibration_run_token,
         "calibrated_at": finished_at.isoformat(),
     }

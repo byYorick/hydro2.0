@@ -6,6 +6,7 @@ use App\Models\NodeChannel;
 use App\Models\SensorCalibration;
 use App\Models\SystemAutomationSetting;
 use App\Models\Zone;
+use DomainException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
@@ -20,6 +21,15 @@ class SensorCalibrationCommandService
         int $stage,
         float $referenceValue,
     ): SensorCalibration {
+        $channel->loadMissing('node');
+        $node = $channel->node;
+        if (! $node) {
+            throw new \RuntimeException("node_channel {$channel->id} has no node");
+        }
+        if ($node->status !== 'online') {
+            throw new DomainException("Node {$node->uid} is offline; sensor calibration command cannot be sent.");
+        }
+
         $commandId = (string) Str::uuid();
         $response = Http::baseUrl($this->historyLoggerBaseUrl())
             ->withToken($this->historyLoggerToken())
@@ -46,6 +56,8 @@ class SensorCalibrationCommandService
                 'status' => SensorCalibration::STATUS_POINT_1_PENDING,
             ]);
         } else {
+            $meta = is_array($calibration->meta) ? $calibration->meta : [];
+            unset($meta['awaiting_config_report'], $meta['persisted_via_config_report'], $meta['persisted_at']);
             $calibration->fill([
                 'point_2_reference' => $referenceValue,
                 'point_2_command_id' => $commandId,
@@ -53,6 +65,7 @@ class SensorCalibrationCommandService
                 'point_2_result' => null,
                 'point_2_error' => null,
                 'status' => SensorCalibration::STATUS_POINT_2_PENDING,
+                'meta' => $meta,
             ]);
         }
 
@@ -74,11 +87,6 @@ class SensorCalibrationCommandService
         float $referenceValue,
         string $commandId,
     ): array {
-        $node = $channel->node;
-        if (! $node) {
-            throw new \RuntimeException("node_channel {$channel->id} has no node");
-        }
-
         $params = ['stage' => $stage];
         if ($calibration->sensor_type === 'ph') {
             $params['known_ph'] = $referenceValue;

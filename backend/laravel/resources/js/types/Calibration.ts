@@ -31,6 +31,8 @@ export interface PumpCalibrationRunPayload {
 export interface PumpCalibrationSavePayload extends PumpCalibrationRunPayload {
   actual_ml: number
   skip_run: true
+  run_token?: string
+  manual_override?: true
   test_volume_l?: number
   ec_before_ms?: number
   ec_after_ms?: number

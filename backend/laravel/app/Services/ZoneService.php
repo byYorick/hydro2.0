@@ -613,6 +613,12 @@ class ZoneService
         if (array_key_exists('temperature_c', $data) && $data['temperature_c'] !== null) {
             $payload['temperature_c'] = $data['temperature_c'];
         }
+        if (! empty($data['run_token'])) {
+            $payload['run_token'] = $data['run_token'];
+        }
+        if (! empty($data['manual_override'])) {
+            $payload['manual_override'] = true;
+        }
 
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders($headers)

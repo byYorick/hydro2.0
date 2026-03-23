@@ -14,6 +14,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\SystemAutomationSetting;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
@@ -490,6 +491,59 @@ class ZonesTest extends TestCase
             ->assertJsonPath('message', 'Calibrate pump operation queued');
     }
 
+    public function test_calibrate_pump_uses_system_duration_bounds(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        SystemAutomationSetting::query()->updateOrCreate(
+            ['namespace' => 'pump_calibration'],
+            ['config' => [
+                'ml_per_sec_min' => 0.001,
+                'ml_per_sec_max' => 1000,
+                'min_dose_ms' => 1,
+                'calibration_duration_min_sec' => 1,
+                'calibration_duration_max_sec' => 300,
+                'quality_score_basic' => 0.5,
+                'quality_score_with_k' => 0.8,
+                'quality_score_legacy' => 0.3,
+                'age_warning_days' => 30,
+                'age_critical_days' => 60,
+                'default_run_duration_sec' => 20,
+            ]],
+        );
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'status' => 'awaiting_actual_ml', 'run_token' => 'run-123'],
+            ], 200),
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 180,
+                'component' => 'npk',
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.run_token', 'run-123');
+    }
+
     public function test_calibrate_pump_skip_run_allows_offline_zone(): void
     {
         $token = $this->token();
@@ -515,11 +569,44 @@ class ZonesTest extends TestCase
                 'actual_ml' => 1.0,
                 'component' => 'npk',
                 'skip_run' => true,
+                'manual_override' => true,
             ]);
 
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('message', 'Calibrate pump operation queued');
+    }
+
+    public function test_calibrate_pump_save_after_run_requires_run_token(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'offline']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 10,
+                'actual_ml' => 5.0,
+                'component' => 'npk',
+                'skip_run' => true,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'run_token is required when saving calibration after a physical run');
     }
 
     public function test_calibrate_pump_run_allows_offline_zone_when_channel_belongs_to_zone(): void

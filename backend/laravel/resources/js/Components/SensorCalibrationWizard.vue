@@ -104,6 +104,12 @@
           </div>
 
           <div
+            v-if="calibration.status === 'point_2_pending' && calibration.point_2_result === 'DONE' && calibration.meta?.awaiting_config_report"
+            class="rounded-lg border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-sm text-[color:var(--badge-warning-text)]"
+          >
+            Команда принята нодой. Ожидается `config_report` с сохранённой calibration, после этого сессия завершится автоматически.
+          </div>
+          <div
             v-if="calibration.status === 'completed'"
             class="rounded-lg border border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] p-3 text-sm text-[color:var(--badge-success-text)]"
           >

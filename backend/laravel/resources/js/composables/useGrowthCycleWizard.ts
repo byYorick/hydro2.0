@@ -1236,6 +1236,7 @@ export function useGrowthCycleWizard({
             actual_ml: entry.ml_per_sec,
             duration_sec: 1,
             skip_run: true,
+            manual_override: true,
           });
         } catch {
           failedChannels.push(entry.channel_label);

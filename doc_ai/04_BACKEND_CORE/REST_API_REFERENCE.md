@@ -82,6 +82,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - не блокируется по `zones.status`;
 - требует, чтобы `node_channel_id` принадлежал выбранной зоне;
 - физический прогон помпы (`skip_run=false`) валидируется по online-статусу конкретной ноды уже в `history-logger/common.water_flow`, а не по coarse-grained статусу зоны.
+- `duration_sec` валидируется по `system_automation_settings(namespace='pump_calibration')`, а не по hardcoded controller-bound;
+- первый шаг (`skip_run=false`, без `actual_ml`) возвращает `data.run_token` для двухшагового UX `run -> measure -> save`;
+- второй шаг (`skip_run=true`, с `actual_ml`) требует `run_token`, если это сохранение после физического прогона; для явного manual persist без correlated run используется `manual_override=true`;
+- mirror в `node_channels.config.pump_calibration` обновляется merge-патчем и не должен затирать соседние config-ключи канала.
 
 Контракт `GET /api/zones/{id}/state`:
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.
@@ -521,8 +525,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `reference_value` валидируется против `system_automation_settings(namespace='sensor_calibration')`;
 - `stage=1` допустим только из `started`;
 - `stage=2` допустим только из `point_1_done`;
+- publish calibration command запрещён для offline-ноды и возвращает `422`, не переводя сессию в pending по timeout-path;
 - успешный enqueue переводит session в `point_1_pending` или `point_2_pending`;
-- terminal status `DONE` приходит через `POST /api/python/commands/ack` и переводит session в `point_1_done` или `completed`;
+- terminal status `DONE` приходит через `POST /api/python/commands/ack` и переводит session в `point_1_done` либо оставляет stage 2 в `point_2_pending` с `meta.awaiting_config_report=true`;
+- финальный переход в `completed` для stage 2 происходит только после `config_report` от ноды с persisted calibration namespace (`NodeConfig.calibration`);
 - terminal status `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` переводит session в `failed`.
 
 Контракт `POST /api/zones/{zone}/relay-autotune`:

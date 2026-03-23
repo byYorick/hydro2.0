@@ -351,6 +351,8 @@ interface Props {
   loadingRun?: boolean
   loadingSave?: boolean
   saveSuccessSeq?: number
+  runSuccessSeq?: number
+  lastRunToken?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -358,6 +360,8 @@ const props = withDefaults(defineProps<Props>(), {
   loadingRun: false,
   loadingSave: false,
   saveSuccessSeq: 0,
+  runSuccessSeq: 0,
+  lastRunToken: null,
 })
 
 const emit = defineEmits<{

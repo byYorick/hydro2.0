@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\NodeChannel;
+use App\Models\SystemAutomationSetting;
 use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
 use App\Services\ZoneDataService;
@@ -361,9 +362,13 @@ class ZoneController extends Controller
     {
         $this->authorizeZoneAccess($request->user(), $zone);
 
+        $settings = SystemAutomationSetting::forNamespace('pump_calibration');
+        $durationMinSec = max(1, (int) ($settings['calibration_duration_min_sec'] ?? 1));
+        $durationMaxSec = max($durationMinSec, (int) ($settings['calibration_duration_max_sec'] ?? 120));
+
         $data = $request->validate([
             'node_channel_id' => ['required', 'integer', 'exists:node_channels,id'],
-            'duration_sec' => ['required', 'integer', 'min:1', 'max:120'],
+            'duration_sec' => ['required', 'integer', 'min:1'],
             'actual_ml' => ['nullable', 'numeric', 'min:0.01', 'max:100000'],
             'skip_run' => ['nullable', 'boolean'],
             'component' => ['nullable', 'string', 'in:npk,calcium,magnesium,micro,ph_up,ph_down'],
@@ -371,7 +376,19 @@ class ZoneController extends Controller
             'ec_before_ms' => ['nullable', 'numeric', 'min:0', 'max:20'],
             'ec_after_ms' => ['nullable', 'numeric', 'min:0', 'max:20'],
             'temperature_c' => ['nullable', 'numeric', 'min:0', 'max:50'],
+            'run_token' => ['nullable', 'string', 'max:128'],
+            'manual_override' => ['nullable', 'boolean'],
         ]);
+
+        if ((int) $data['duration_sec'] < $durationMinSec || (int) $data['duration_sec'] > $durationMaxSec) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "duration_sec must be within [{$durationMinSec}, {$durationMaxSec}]",
+                'errors' => [
+                    'duration_sec' => ["duration_sec must be within [{$durationMinSec}, {$durationMaxSec}]"],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         $channelBelongsToZone = NodeChannel::query()
             ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
@@ -401,12 +418,26 @@ class ZoneController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $jobId = $this->operationsService->calibratePump($zone, $data);
+        $skipRun = (bool) ($data['skip_run'] ?? false);
+        $manualOverride = (bool) ($data['manual_override'] ?? false);
+        $hasActualMl = array_key_exists('actual_ml', $data) && $data['actual_ml'] !== null;
+        if ($skipRun && $hasActualMl && ! $manualOverride && empty($data['run_token'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'run_token is required when saving calibration after a physical run',
+                'errors' => [
+                    'run_token' => ['run_token is required when saving calibration after a physical run'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $job = $this->operationsService->calibratePump($zone, $data);
 
         return response()->json([
             'status' => 'ok',
             'message' => 'Calibrate pump operation queued',
-            'job_id' => $jobId,
+            'job_id' => $job['job_id'],
+            'data' => $job['result'],
         ], Response::HTTP_ACCEPTED);
     }
 

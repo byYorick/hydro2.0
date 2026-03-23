@@ -72,7 +72,7 @@ vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
 vi.mock('@/Components/PumpCalibrationModal.vue', () => ({
   default: {
     name: 'PumpCalibrationModal',
-    props: ['show', 'zoneId', 'devices', 'loadingRun', 'loadingSave', 'saveSuccessSeq'],
+    props: ['show', 'zoneId', 'devices', 'loadingRun', 'loadingSave', 'saveSuccessSeq', 'runSuccessSeq', 'lastRunToken'],
     emits: ['close', 'start', 'save'],
     template: '<div data-test="pump-calibration-modal">pump calibration modal</div>',
   },
@@ -564,6 +564,92 @@ describe('Setup/Wizard.vue', () => {
     expect((wrapper.get('[data-test="irrigation-select"]').element as HTMLSelectElement).value).toBe('101')
     expect((wrapper.get('[data-test="ph-select"]').element as HTMLSelectElement).value).toBe('102')
     expect((wrapper.get('[data-test="ec-select"]').element as HTMLSelectElement).value).toBe('104')
+  })
+
+  it('считает уже привязанные ноды подтверждёнными при выборе существующей зоны', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/greenhouses') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 10, uid: 'gh-main', name: 'Main GH' }],
+          },
+        })
+      }
+
+      if (url === '/api/greenhouses/10') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 10, uid: 'gh-main', name: 'Main GH' },
+          },
+        })
+      }
+
+      if (url === '/api/zones') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 20, name: 'Zone A', greenhouse_id: 10 }],
+          },
+        })
+      }
+
+      if (url === '/api/zones/20') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
+          },
+        })
+      }
+
+      if (url === '/api/nodes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [
+              {
+                id: 101,
+                uid: 'nd-irrig-bound',
+                type: 'controller',
+                zone_id: '20',
+                channels: [{ binding_role: 'main_pump' }],
+              },
+              {
+                id: 102,
+                uid: 'nd-ph-bound',
+                type: 'controller',
+                zone_id: '20',
+                channels: [{ binding_role: 'ph_acid_pump' }],
+              },
+              {
+                id: 104,
+                uid: 'nd-ec-bound',
+                type: 'controller',
+                zone_id: '20',
+                channels: [{ binding_role: 'ec_npk_pump' }],
+              },
+            ],
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await wrapper.findAll('select.input-select')[0]?.setValue('10')
+    await flushPromises()
+    await wrapper.findAll('select.input-select')[1]?.setValue('20')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Ожидается нод: 3')
+    expect(wrapper.text()).toContain('Привязка нод подтверждена')
+    expect(wrapper.text()).not.toContain('Привязка нод ещё не подтверждена')
   })
 
   it('после сохранения water block отправляет automation profile и команду применения', async () => {

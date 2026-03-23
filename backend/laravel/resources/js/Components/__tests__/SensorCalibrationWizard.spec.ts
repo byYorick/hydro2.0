@@ -148,4 +148,71 @@ describe('SensorCalibrationWizard', () => {
 
     wrapper.unmount()
   })
+
+  it('показывает ожидание config_report после DONE на второй точке', async () => {
+    getCalibrationMock.mockResolvedValue({
+      id: 43,
+      zone_id: 1,
+      node_channel_id: 101,
+      sensor_type: 'ph',
+      status: 'point_2_pending',
+      point_1_reference: 7,
+      point_1_command_id: 'cmd-1',
+      point_1_sent_at: '2026-03-13T10:00:00.000Z',
+      point_1_result: 'DONE',
+      point_1_error: null,
+      point_2_reference: 4,
+      point_2_command_id: 'cmd-2',
+      point_2_sent_at: '2026-03-13T10:05:00.000Z',
+      point_2_result: 'DONE',
+      point_2_error: null,
+      completed_at: null,
+      calibrated_by: 1,
+      notes: null,
+      meta: { awaiting_config_report: true },
+      node_channel: { id: 101, channel: 'ph_sensor', node_uid: 'node-ph-1' },
+      created_at: '2026-03-13T09:59:00.000Z',
+      updated_at: '2026-03-13T10:05:00.000Z',
+    })
+
+    mount(SensorCalibrationWizard, {
+      attachTo: document.body,
+      props: {
+        open: true,
+        zoneId: 1,
+        overview: {
+          node_channel_id: 101,
+          channel_uid: 'ph_sensor',
+          sensor_type: 'ph',
+          node_uid: 'node-ph-1',
+          last_calibrated_at: null,
+          days_since_calibration: null,
+          calibration_status: 'never',
+          has_active_session: true,
+          active_calibration_id: 43,
+        },
+        settings: {
+          ph_point_1_value: 7,
+          ph_point_2_value: 4,
+          ec_point_1_tds: 1413,
+          ec_point_2_tds: 2764,
+          ph_reference_min: 0,
+          ph_reference_max: 14,
+          ec_tds_reference_max: 10000,
+          reminder_days: 30,
+          critical_days: 45,
+        },
+      },
+      global: {
+        stubs: {
+          Modal: { template: '<div><slot /></div>' },
+          Button: { template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>', props: ['disabled'] },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Ожидается `config_report` с сохранённой calibration')
+  })
 })
