@@ -7,6 +7,7 @@ use App\Models\ChannelBinding;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
+use App\Models\ZonePidConfig;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -15,6 +16,11 @@ use Illuminate\Support\Facades\Log;
  */
 class ZoneReadinessService
 {
+    private const HARD_BLOCKING_ALERT_CODES = [
+        'biz_zone_correction_config_missing',
+        'biz_zone_dosing_calibration_missing',
+    ];
+
     private const PH_REQUIRED_BINDINGS = [
         'ph_acid_pump',
         'ph_base_pump',
@@ -26,6 +32,10 @@ class ZoneReadinessService
         'ec_magnesium_pump',
         'ec_micro_pump',
     ];
+
+    public function __construct(
+        private readonly AutomationRuntimeConfigService $runtimeConfig
+    ) {}
 
     /**
      * Получить список обязательных bindings для зоны.
@@ -179,12 +189,14 @@ class ZoneReadinessService
 
         // Проверка 1: Required bindings (только если strict_mode включен)
         $requiredBindings = $this->getRequiredBindings($zone);
+        $requiredPidConfigTypes = $this->getRequiredPidConfigTypes($zone);
         $missingBindings = [];
         $calibrationRequiredBindings = array_values(array_intersect(
             $requiredBindings,
             array_merge(self::PH_REQUIRED_BINDINGS, self::EC_REQUIRED_BINDINGS)
         ));
         $missingCalibrations = [];
+        $missingPidConfigTypes = [];
         if (! empty($requiredBindings)) {
             $missingBindings = $this->checkRequiredBindings($zone, $requiredBindings);
             if (! empty($missingBindings)) {
@@ -212,6 +224,36 @@ class ZoneReadinessService
             }
         }
 
+        if (! empty($requiredPidConfigTypes)) {
+            $missingPidConfigTypes = $this->checkRequiredPidConfigs($zone, $requiredPidConfigTypes);
+            if (! empty($missingPidConfigTypes)) {
+                $errorDetails[] = [
+                    'type' => 'missing_pid_configs',
+                    'message' => 'Required zone PID configs are missing: '.implode(', ', $missingPidConfigTypes),
+                    'pid_types' => $missingPidConfigTypes,
+                    'required' => $requiredPidConfigTypes,
+                ];
+            }
+        }
+
+        $dispatchEnabled = $this->isGrowCycleStartDispatchEnabled();
+        if (! $dispatchEnabled) {
+            $errorDetails[] = [
+                'type' => 'dispatch_disabled',
+                'message' => 'Grow-cycle dispatch в automation-engine отключён runtime-флагом',
+                'config_key' => 'automation_engine.grow_cycle_start_dispatch_enabled',
+            ];
+        }
+
+        $blockingAlerts = $this->findHardBlockingAlerts($zone);
+        if ($blockingAlerts !== []) {
+            $errorDetails[] = [
+                'type' => 'blocking_alerts',
+                'message' => 'Есть активные блокирующие alerts automation-engine',
+                'alerts' => $blockingAlerts,
+            ];
+        }
+
         // Проверка 2: Online nodes (warning only)
         if ($nodesInfo['offline_count'] > 0) {
             $warningDetails[] = [
@@ -235,21 +277,30 @@ class ZoneReadinessService
             $calibrationChecks["{$role}_calibration"] = ! in_array($role, $missingCalibrations, true);
         }
 
+        $pidConfigChecks = [];
+        foreach ($requiredPidConfigTypes as $pidType) {
+            $pidConfigChecks["pid_config_{$pidType}"] = ! in_array($pidType, $missingPidConfigTypes, true);
+        }
+
         $checks = array_merge($requiredAssets, $calibrationChecks, [
             'has_nodes' => $hasNodes,
             'online_nodes' => $hasOnlineNodes,
-        ]);
+            'dispatch_enabled' => $dispatchEnabled,
+            'blocking_alerts_clear' => $blockingAlerts === [],
+        ], $pidConfigChecks);
 
-        return [
+        $readiness = [
             'ready' => empty($errorDetails),
-            'warnings' => $this->extractMessages($warningDetails),
-            'errors' => $this->extractMessages($errorDetails),
+            'warnings' => [],
+            'errors' => [],
             'warning_details' => $warningDetails,
             'error_details' => $errorDetails,
             'required_bindings' => $requiredBindings,
             'missing_bindings' => $missingBindings,
             'calibration_required_bindings' => $calibrationRequiredBindings,
             'missing_calibrations' => $missingCalibrations,
+            'required_pid_config_types' => $requiredPidConfigTypes,
+            'missing_pid_config_types' => $missingPidConfigTypes,
             'required_assets' => $requiredAssets,
             'optional_assets' => $optionalAssets,
             'nodes' => [
@@ -258,7 +309,159 @@ class ZoneReadinessService
                 'all_online' => $nodesInfo['offline_count'] === 0 && $nodesInfo['total_count'] > 0,
             ],
             'checks' => $checks,
+            'dispatch_enabled' => $dispatchEnabled,
+            'blocking_alerts' => $blockingAlerts,
         ];
+
+        $readiness['warnings'] = $this->buildUserFacingWarnings($readiness);
+        $readiness['errors'] = $this->buildUserFacingErrors($readiness);
+
+        return $readiness;
+    }
+
+    /**
+     * @param  array<string, mixed>  $readiness
+     * @return array<int, string>
+     */
+    public function buildUserFacingErrors(array $readiness): array
+    {
+        $errors = [];
+        $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
+        $hasNodes = (bool) ($checks['has_nodes'] ?? false);
+        $hasOnlineNodes = (bool) ($checks['online_nodes'] ?? false);
+
+        if (! $hasNodes) {
+            $errors[] = 'Нет привязанных нод в зоне';
+        }
+        if ($hasNodes && ! $hasOnlineNodes) {
+            $errors[] = 'Нет онлайн нод в зоне';
+        }
+
+        $roleMessages = [
+            'main_pump' => 'Основная помпа не привязана к каналу',
+            'drain' => 'Дренаж не привязан к каналу',
+            'ph_acid_pump' => 'Насос pH кислоты не привязан к каналу',
+            'ph_base_pump' => 'Насос pH щёлочи не привязан к каналу',
+            'ec_npk_pump' => 'Насос EC NPK не привязан к каналу',
+            'ec_calcium_pump' => 'Насос EC Calcium не привязан к каналу',
+            'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
+            'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
+        ];
+        $calibrationMessages = [
+            'ph_acid_pump' => 'Для насоса pH кислоты не задана калибровка',
+            'ph_base_pump' => 'Для насоса pH щёлочи не задана калибровка',
+            'ec_npk_pump' => 'Для насоса EC NPK не задана калибровка',
+            'ec_calcium_pump' => 'Для насоса EC Calcium не задана калибровка',
+            'ec_magnesium_pump' => 'Для насоса EC Magnesium не задана калибровка',
+            'ec_micro_pump' => 'Для насоса EC Micro не задана калибровка',
+        ];
+        $pidMessages = [
+            'ph' => 'PID-настройки pH не сохранены для зоны',
+            'ec' => 'PID-настройки EC не сохранены для зоны',
+        ];
+
+        foreach ($roleMessages as $role => $message) {
+            if (array_key_exists($role, $checks) && ! $checks[$role]) {
+                $errors[] = $message;
+            }
+        }
+        foreach ($pidMessages as $pidType => $message) {
+            $key = "pid_config_{$pidType}";
+            if (array_key_exists($key, $checks) && ! $checks[$key]) {
+                $errors[] = $message;
+            }
+        }
+
+        $errorDetails = is_array($readiness['error_details'] ?? null) ? $readiness['error_details'] : [];
+        foreach ($errorDetails as $issue) {
+            if (! is_array($issue)) {
+                continue;
+            }
+
+            $type = (string) ($issue['type'] ?? '');
+            if ($type === 'dispatch_disabled') {
+                $errors[] = 'Запуск в automation-engine отключён runtime-флагом';
+                continue;
+            }
+
+            if ($type === 'blocking_alerts') {
+                $alerts = is_array($issue['alerts'] ?? null) ? $issue['alerts'] : [];
+                foreach ($alerts as $alert) {
+                    if (! is_array($alert)) {
+                        continue;
+                    }
+
+                    $code = (string) ($alert['code'] ?? '');
+                    $errors[] = $this->blockingAlertMessage($code);
+                }
+                continue;
+            }
+
+            if (! in_array($type, ['missing_bindings', 'missing_calibrations', 'missing_pid_configs'], true)) {
+                continue;
+            }
+
+            if ($type === 'missing_pid_configs') {
+                $pidTypes = is_array($issue['pid_types'] ?? null) ? $issue['pid_types'] : [];
+                foreach ($pidTypes as $pidType) {
+                    if (! is_string($pidType) || $pidType === '') {
+                        continue;
+                    }
+
+                    $errors[] = $pidMessages[$pidType] ?? "Не сохранён обязательный PID-конфиг: {$pidType}";
+                }
+
+                continue;
+            }
+
+            $bindings = is_array($issue['bindings'] ?? null) ? $issue['bindings'] : [];
+            foreach ($bindings as $binding) {
+                if (! is_string($binding) || $binding === '') {
+                    continue;
+                }
+
+                if ($type === 'missing_calibrations' && isset($calibrationMessages[$binding])) {
+                    $errors[] = $calibrationMessages[$binding];
+                } elseif (isset($roleMessages[$binding])) {
+                    $errors[] = $roleMessages[$binding];
+                } else {
+                    $errors[] = "Не привязан обязательный канал: {$binding}";
+                }
+            }
+        }
+
+        return array_values(array_unique($errors));
+    }
+
+    /**
+     * @param  array<string, mixed>  $readiness
+     * @return array<int, string>
+     */
+    public function buildUserFacingWarnings(array $readiness): array
+    {
+        $warnings = [];
+        $warningDetails = is_array($readiness['warning_details'] ?? null) ? $readiness['warning_details'] : [];
+        foreach ($warningDetails as $issue) {
+            if (! is_array($issue)) {
+                continue;
+            }
+
+            $type = (string) ($issue['type'] ?? '');
+            if ($type === 'offline_nodes') {
+                $count = (int) ($issue['count'] ?? 0);
+                if ($count > 0) {
+                    $warnings[] = $count === 1 ? '1 нода офлайн' : "{$count} нод офлайн";
+                }
+                continue;
+            }
+
+            $message = $issue['message'] ?? null;
+            if (is_string($message) && $message !== '') {
+                $warnings[] = $message;
+            }
+        }
+
+        return array_values(array_unique($warnings));
     }
 
     /**
@@ -290,8 +493,8 @@ class ZoneReadinessService
         return [
             'valid' => $readiness['ready'],
             'ready' => $readiness['ready'],
-            'warnings' => $this->extractMessages($readiness['warnings']),
-            'errors' => $this->extractMessages($readiness['errors']),
+            'warnings' => $this->buildUserFacingWarnings($readiness),
+            'errors' => $this->buildUserFacingErrors($readiness),
             'details' => $readiness,
         ];
     }
@@ -332,10 +535,56 @@ class ZoneReadinessService
             'ready' => $readiness['ready'],
             'warnings' => $readiness['warnings'],
             'errors' => $readiness['errors'],
+            'checks' => $readiness['checks'] ?? [],
+            'error_details' => $readiness['error_details'] ?? [],
+            'warning_details' => $readiness['warning_details'] ?? [],
+            'dispatch_enabled' => (bool) ($readiness['dispatch_enabled'] ?? false),
+            'blocking_alerts' => $readiness['blocking_alerts'] ?? [],
+            'blocking_alerts_count' => count($readiness['blocking_alerts'] ?? []),
             'nodes_total' => $nodesTotal,
             'nodes_online' => $nodesOnline,
             'active_alerts_count' => $activeAlertsCount,
+            'readiness' => $readiness,
         ];
+    }
+
+    private function isGrowCycleStartDispatchEnabled(): bool
+    {
+        return (bool) $this->runtimeConfig->automationEngineValue('grow_cycle_start_dispatch_enabled', false);
+    }
+
+    /**
+     * @return array<int, array{id:int,code:string,status:string,severity:string|null,created_at:string|null,last_seen_at:string|null}>
+     */
+    private function findHardBlockingAlerts(Zone $zone): array
+    {
+        return Alert::query()
+            ->where('zone_id', $zone->id)
+            ->where('status', 'ACTIVE')
+            ->whereIn('code', self::HARD_BLOCKING_ALERT_CODES)
+            ->orderByDesc('created_at')
+            ->get(['id', 'code', 'status', 'severity', 'created_at', 'last_seen_at'])
+            ->map(static function (Alert $alert): array {
+                return [
+                    'id' => (int) $alert->id,
+                    'code' => (string) $alert->code,
+                    'status' => (string) $alert->status,
+                    'severity' => is_string($alert->severity) ? $alert->severity : null,
+                    'created_at' => $alert->created_at?->toIso8601String(),
+                    'last_seen_at' => $alert->last_seen_at?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function blockingAlertMessage(string $code): string
+    {
+        return match ($code) {
+            'biz_zone_correction_config_missing' => 'Есть активный блокирующий alert: не настроен correction config зоны',
+            'biz_zone_dosing_calibration_missing' => 'Есть активный блокирующий alert: не завершена калибровка дозирующих насосов',
+            default => "Есть активный блокирующий alert: {$code}",
+        };
     }
 
     /**
@@ -423,6 +672,59 @@ class ZoneReadinessService
         }
 
         return array_values($missing);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function getRequiredPidConfigTypes(Zone $zone): array
+    {
+        $env = env('APP_ENV', 'production');
+        if (config('zones.readiness.e2e_mode', false) || $env === 'e2e') {
+            return [];
+        }
+
+        if (! config('zones.readiness.strict_mode', true)) {
+            return [];
+        }
+
+        return ['ph', 'ec'];
+    }
+
+    /**
+     * @param  array<int, string>  $requiredTypes
+     * @return array<int, string>
+     */
+    private function checkRequiredPidConfigs(Zone $zone, array $requiredTypes): array
+    {
+        if (empty($requiredTypes)) {
+            return [];
+        }
+
+        if (! DB::getSchemaBuilder()->hasTable('zone_pid_configs')) {
+            Log::error('zone_pid_configs table does not exist; readiness PID check is fail-closed', [
+                'zone_id' => $zone->id,
+                'required_pid_config_types' => $requiredTypes,
+            ]);
+
+            return array_values($requiredTypes);
+        }
+
+        $existingTypes = ZonePidConfig::query()
+            ->where('zone_id', $zone->id)
+            ->whereIn('type', $requiredTypes)
+            ->get(['type', 'config'])
+            ->filter(function (ZonePidConfig $config): bool {
+                $payload = $config->config;
+
+                return is_array($payload) && ! empty($payload) && ! array_is_list($payload);
+            })
+            ->pluck('type')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        return array_values(array_diff($requiredTypes, $existingTypes));
     }
 
     private function nodeChannelHasActiveCalibration(?NodeChannel $channel): bool
@@ -513,29 +815,6 @@ class ZoneReadinessService
                 ];
             })->values()->toArray(),
         ];
-    }
-
-    /**
-     * Нормализовать список предупреждений/ошибок в массив сообщений.
-     *
-     * @param  array<int, mixed>  $issues
-     * @return array<int, string>
-     */
-    private function extractMessages(array $issues): array
-    {
-        $messages = [];
-        foreach ($issues as $issue) {
-            if (is_string($issue)) {
-                $messages[] = $issue;
-                continue;
-            }
-
-            if (is_array($issue) && isset($issue['message']) && is_string($issue['message'])) {
-                $messages[] = $issue['message'];
-            }
-        }
-
-        return $messages;
     }
 
     /**

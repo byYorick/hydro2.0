@@ -119,7 +119,7 @@
                 :key="recipe.id"
                 :value="recipe.id"
               >
-                {{ recipe.name }} ({{ recipe.published_revisions?.[0]?.phases?.length || 0 }} фаз)
+                {{ recipe.name }} ({{ recipe.phases_count || 0 }} фаз)
               </option>
             </select>
           </div>
@@ -149,7 +149,8 @@
               :key="revision.id"
               :value="revision.id"
             >
-              Rev {{ revision.revision_number }} — {{ revision.description || "Без описания" }}
+              {{ revision.revision_number ? `Rev ${revision.revision_number}` : 'Актуальная опубликованная ревизия' }}
+              — {{ revision.description || "Без описания" }}
             </option>
           </select>
         </div>
@@ -700,6 +701,12 @@
       >
         <h3 class="text-sm font-semibold mb-1">Предпросмотр запуска</h3>
 
+        <ReadinessChecklist
+          :zone-id="form.zoneId"
+          :readiness="zoneReadiness"
+          :loading="zoneReadinessLoading"
+        />
+
         <div class="space-y-3">
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
             <div class="text-xs text-[color:var(--text-dim)] mb-1">Зона</div>
@@ -870,6 +877,7 @@ import { useZones } from "@/composables/useZones";
 import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
 import ErrorBoundary from "@/Components/ErrorBoundary.vue";
+import ReadinessChecklist from "@/Components/GrowCycle/ReadinessChecklist.vue";
 import RecipeCreateWizard from "@/Components/RecipeCreateWizard.vue";
 import { useGrowthCycleWizard, type GrowthCycleWizardProps, type GrowthCycleWizardEmit } from "@/composables/useGrowthCycleWizard";
 
@@ -933,6 +941,8 @@ const {
   isZoneChannelsLoading,
   zoneChannelsError,
   hasCalibrationChannels,
+  zoneReadiness,
+  zoneReadinessLoading,
   getCalibrationComponentLabel,
   formatDateTime,
   formatDate,

@@ -2,12 +2,14 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\Alert;
 use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
+use App\Models\ZonePidConfig;
 use App\Services\ZoneReadinessService;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -30,6 +32,7 @@ class ZoneReadinessServiceTest extends TestCase
         config()->set('zones.readiness.strict_mode', true);
         config()->set('zones.readiness.e2e_mode', false);
         config()->set('zones.readiness.required_bindings', ['main_pump', 'drain']);
+        config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', true);
 
         $this->service = app(ZoneReadinessService::class);
     }
@@ -43,6 +46,45 @@ class ZoneReadinessServiceTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    private function createPidConfigs(Zone $zone): void
+    {
+        ZonePidConfig::query()->create([
+            'zone_id' => $zone->id,
+            'type' => 'ph',
+            'config' => [
+                'target' => 5.8,
+                'dead_zone' => 0.05,
+                'close_zone' => 0.3,
+                'far_zone' => 1.0,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 5.0, 'ki' => 0.05, 'kd' => 0.0],
+                    'far' => ['kp' => 8.0, 'ki' => 0.02, 'kd' => 0.0],
+                ],
+                'max_output' => 20.0,
+                'min_interval_ms' => 90000,
+                'max_integral' => 20.0,
+            ],
+        ]);
+
+        ZonePidConfig::query()->create([
+            'zone_id' => $zone->id,
+            'type' => 'ec',
+            'config' => [
+                'target' => 1.6,
+                'dead_zone' => 0.1,
+                'close_zone' => 0.5,
+                'far_zone' => 1.5,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 30.0, 'ki' => 0.3, 'kd' => 0.0],
+                    'far' => ['kp' => 50.0, 'ki' => 0.1, 'kd' => 0.0],
+                ],
+                'max_output' => 50.0,
+                'min_interval_ms' => 120000,
+                'max_integral' => 100.0,
+            ],
+        ]);
     }
 
     public function test_check_zone_readiness_detects_missing_ec_roles_when_ec_control_enabled(): void
@@ -93,6 +135,7 @@ class ZoneReadinessServiceTest extends TestCase
         $this->createActuatorBinding($zone, $node, 'pump_b', 'ec_calcium_pump', 'Насос EC Calcium', withCalibration: true);
         $this->createActuatorBinding($zone, $node, 'pump_c', 'ec_magnesium_pump', 'Насос EC Magnesium', withCalibration: true);
         $this->createActuatorBinding($zone, $node, 'pump_d', 'ec_micro_pump', 'Насос EC Micro', withCalibration: true);
+        $this->createPidConfigs($zone);
 
         $readiness = $this->service->checkZoneReadiness($zone);
 
@@ -116,11 +159,12 @@ class ZoneReadinessServiceTest extends TestCase
         $this->createActuatorBinding($zone, $onlineNode, 'pump_main', 'main_pump', 'Основная помпа');
         $this->createActuatorBinding($zone, $onlineNode, 'drain_main', 'drain', 'Дренаж');
         $this->createActuatorBinding($zone, $offlineNode, 'fan_main', 'vent', 'Вентиляция');
+        $this->createPidConfigs($zone);
 
         $result = $this->service->validate($zone->id);
 
         $this->assertTrue($result['valid']);
-        $this->assertContains('1 node(s) are offline', $result['warnings']);
+        $this->assertContains('1 нода офлайн', $result['warnings']);
     }
 
     public function test_check_zone_readiness_ignores_unbound_nodes_for_online_check(): void
@@ -138,6 +182,7 @@ class ZoneReadinessServiceTest extends TestCase
 
         $this->createActuatorBinding($zone, $boundOnlineNode, 'pump_main', 'main_pump', 'Основная помпа');
         $this->createActuatorBinding($zone, $boundOnlineNode, 'drain_main', 'drain', 'Дренаж');
+        $this->createPidConfigs($zone);
 
         $readiness = $this->service->checkZoneReadiness($zone);
 
@@ -172,6 +217,7 @@ class ZoneReadinessServiceTest extends TestCase
             'Дренаж',
             ownerType: 'greenhouse'
         );
+        $this->createPidConfigs($zone);
 
         $readiness = $this->service->checkZoneReadiness($zone);
 
@@ -212,6 +258,7 @@ class ZoneReadinessServiceTest extends TestCase
         ]);
 
         $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createPidConfigs($zone);
 
         ZoneAutomationLogicProfile::query()->create([
             'zone_id' => $zone->id,
@@ -330,5 +377,59 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertFalse($readiness['ready']);
         $this->assertContains('ph_acid_pump', $readiness['missing_bindings']);
         $this->assertContains('ec_npk_pump', $readiness['missing_bindings']);
+    }
+
+    public function test_check_zone_readiness_is_not_ready_when_dispatch_is_disabled(): void
+    {
+        config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', false);
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertFalse($readiness['checks']['dispatch_enabled']);
+        $this->assertContains('Запуск в automation-engine отключён runtime-флагом', $readiness['errors']);
+    }
+
+    public function test_check_zone_readiness_detects_hard_blocking_alerts(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->createActuatorBinding($zone, $node, 'drain_main', 'drain', 'Дренаж');
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'automation-engine',
+            'code' => 'biz_zone_correction_config_missing',
+            'type' => 'biz',
+            'details' => [],
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'critical',
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone);
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertFalse($readiness['checks']['blocking_alerts_clear']);
+        $this->assertCount(1, $readiness['blocking_alerts']);
+        $this->assertContains('Есть активный блокирующий alert: не настроен correction config зоны', $readiness['errors']);
     }
 }

@@ -57,7 +57,7 @@
               <div class="flex-1 min-w-0">
                 <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-dim)]">
                   <span>{{ formatDate(item.created_at) }}</span>
-                  <span v-if="item.type">{{ item.type }}</span>
+                  <span v-if="getAlertTitle(item)">{{ getAlertTitle(item) }}</span>
                 </div>
                 <div class="text-sm">
                   {{ getAlertMessage(item) || 'Без сообщения' }}
@@ -85,7 +85,7 @@
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-dim)]">
                 <span>{{ formatDate(item.created_at) }}</span>
-                <span v-if="item.type">{{ item.type }}</span>
+                <span v-if="getAlertTitle(item)">{{ getAlertTitle(item) }}</span>
               </div>
               <div class="text-sm">
                 {{ getAlertMessage(item) || 'Без сообщения' }}
@@ -147,6 +147,17 @@ const getAlertMessage = (alert: Alert): string => {
     if (typeof detailMessage === 'string' && detailMessage.trim() !== '') return detailMessage
   }
   return ''
+}
+
+const getAlertTitle = (alert: Alert): string => {
+  if (typeof alert.title === 'string' && alert.title.trim() !== '') return alert.title
+  if (alert.details && typeof alert.details === 'object') {
+    const details = alert.details as Record<string, unknown>
+    if (typeof details.title === 'string' && details.title.trim() !== '') {
+      return details.title
+    }
+  }
+  return typeof alert.type === 'string' ? alert.type : ''
 }
 
 const filteredAlerts = computed(() => {

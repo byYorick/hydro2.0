@@ -20,6 +20,9 @@ export interface Alert {
   zone?: Zone
   source?: string
   code?: string
+  title?: string
+  description?: string
+  recommendation?: string
   severity?: 'info' | 'warning' | 'error' | 'critical' | string
   category?: string
   node_uid?: string

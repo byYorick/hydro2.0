@@ -4,6 +4,10 @@ namespace App\Services;
 
 class ZoneEventMessageFormatter
 {
+    public function __construct(
+        private AlertLocalizationService $alertLocalization,
+    ) {}
+
     /**
      * Сформировать человекочитаемое сообщение события зоны.
      */
@@ -12,7 +16,7 @@ class ZoneEventMessageFormatter
         $eventType = strtoupper((string) ($type ?? ''));
         $payload = $this->normalizeDetails($details);
 
-        $explicitMessage = $this->extractExplicitMessage($payload);
+        $explicitMessage = $this->extractExplicitMessage($eventType, $payload);
         if ($explicitMessage !== null) {
             return $explicitMessage;
         }
@@ -112,12 +116,23 @@ class ZoneEventMessageFormatter
         return [];
     }
 
-    private function extractExplicitMessage(array $details): ?string
+    private function extractExplicitMessage(string $eventType, array $details): ?string
     {
         $direct = $this->toStringOrNull($details['message'] ?? null)
             ?? $this->toStringOrNull($details['msg'] ?? null);
 
+        $alertLikeEvents = [
+            'ALERT_CREATED',
+            'ALERT_UPDATED',
+            'ALERT_RESOLVED',
+            'AE_TASK_FAILED',
+        ];
+
         if ($direct !== null) {
+            if (in_array($eventType, $alertLikeEvents, true)) {
+                return $this->localizeAlertPayloadMessage($details, $direct);
+            }
+
             return $direct;
         }
 
@@ -126,11 +141,33 @@ class ZoneEventMessageFormatter
                 ?? $this->toStringOrNull($details['details']['msg'] ?? null);
 
             if ($nested !== null) {
+                if (in_array($eventType, $alertLikeEvents, true)) {
+                    return $this->localizeAlertPayloadMessage($details, $nested);
+                }
+
                 return $nested;
             }
         }
 
         return null;
+    }
+
+    /**
+     * @param array<string, mixed> $details
+     */
+    private function localizeAlertPayloadMessage(array $details, string $fallback): string
+    {
+        $presentation = $this->alertLocalization->present(
+            code: $this->toStringOrNull($details['code'] ?? null)
+                ?? $this->toStringOrNull($details['error_code'] ?? null)
+                ?? $this->toStringOrNull($details['alert_code'] ?? null),
+            type: $this->toStringOrNull($details['alert_type'] ?? null)
+                ?? $this->toStringOrNull($details['type'] ?? null),
+            details: $details,
+            source: $this->toStringOrNull($details['source'] ?? null),
+        );
+
+        return trim($presentation['message']) !== '' ? $presentation['message'] : $fallback;
     }
 
     private function formatAlertCreated(array $details): string

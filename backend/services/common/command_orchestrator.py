@@ -122,7 +122,7 @@ async def send_command(
     
     # Формируем запрос к history-logger API
     request_data = {
-        "type": cmd,
+        "cmd": cmd,
         "params": params,
         "greenhouse_uid": greenhouse_uid,
         "node_uid": node_uid,

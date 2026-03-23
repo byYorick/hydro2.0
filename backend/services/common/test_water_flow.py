@@ -10,6 +10,7 @@ from common.utils.time import utcnow
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.water_flow import (
+    _load_system_automation_settings,
     check_water_level,
     check_flow,
     check_dry_run_protection,
@@ -24,6 +25,19 @@ from common.water_flow import (
     WATER_LEVEL_LOW_THRESHOLD,
     MIN_FLOW_THRESHOLD,
 )
+
+
+@pytest.mark.asyncio
+async def test_load_system_automation_settings_uses_builtin_fallback_for_pump_calibration():
+    with patch("common.water_flow.fetch", new_callable=AsyncMock) as mock_fetch:
+        mock_fetch.return_value = []
+
+        result = await _load_system_automation_settings("pump_calibration")
+
+        assert result["calibration_duration_min_sec"] == 1
+        assert result["calibration_duration_max_sec"] == 120
+        assert result["ml_per_sec_min"] == pytest.approx(0.01)
+        assert result["ml_per_sec_max"] == pytest.approx(20.0)
 
 
 @pytest.mark.asyncio

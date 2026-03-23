@@ -73,8 +73,15 @@ vi.mock('@/Components/ZoneAutomationAccordionSection.vue', () => ({
 vi.mock('@/Components/PumpCalibrationsPanel.vue', () => ({
   default: {
     name: 'PumpCalibrationsPanel',
+    props: ['saveSuccessSeq', 'runSuccessSeq'],
     emits: ['open-pump-calibration'],
-    template: '<div><button data-testid="mock-open-pump-panel" @click="$emit(\'open-pump-calibration\')" /></div>',
+    template: `
+      <div>
+        <span data-testid="mock-pump-save-seq">{{ saveSuccessSeq }}</span>
+        <span data-testid="mock-pump-run-seq">{{ runSuccessSeq }}</span>
+        <button data-testid="mock-open-pump-panel" @click="$emit('open-pump-calibration')" />
+      </div>
+    `,
   },
 }))
 vi.mock('@/Components/SensorCalibrationStatus.vue', () => ({
@@ -1002,5 +1009,24 @@ describe('ZoneAutomationTab.vue', () => {
     await wrapper.find('[data-testid="mock-open-pump-panel"]').trigger('click')
 
     expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
+  })
+
+  it('пробрасывает seq-счётчики pump calibration в стек калибровки', async () => {
+    const wrapper = mount(ZoneAutomationTab, {
+      props: {
+        zoneId: 42,
+        pumpCalibrationSaveSeq: 3,
+        pumpCalibrationRunSeq: 5,
+        targets: {
+          ph: { target: 5.8 },
+          ec: { target: 1.5 },
+        } as any,
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="mock-pump-save-seq"]').text()).toBe('3')
+    expect(wrapper.get('[data-testid="mock-pump-run-seq"]').text()).toBe('5')
   })
 })

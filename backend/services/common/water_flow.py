@@ -27,6 +27,22 @@ DRY_RUN_CHECK_DELAY_SEC = 3  # Задержка перед проверкой fl
 
 _IRRIGATION_ACTIVE_PHASES = {"irrig_recirc", "irrigating"}
 
+_SYSTEM_AUTOMATION_SETTINGS_FALLBACKS: Dict[str, Dict[str, Any]] = {
+    "pump_calibration": {
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 20.0,
+        "min_dose_ms": 50,
+        "calibration_duration_min_sec": 1,
+        "calibration_duration_max_sec": 120,
+        "quality_score_basic": 0.75,
+        "quality_score_with_k": 0.90,
+        "quality_score_legacy": 0.50,
+        "age_warning_days": 30,
+        "age_critical_days": 90,
+        "default_run_duration_sec": 20,
+    },
+}
+
 import logging as _logging
 _wf_logger = _logging.getLogger(__name__)
 
@@ -42,7 +58,15 @@ async def _load_system_automation_settings(namespace: str) -> Dict[str, Any]:
         namespace,
     )
     if not rows:
-        raise RuntimeError(f"system_automation_settings namespace '{namespace}' not found")
+        fallback = _SYSTEM_AUTOMATION_SETTINGS_FALLBACKS.get(namespace)
+        if fallback is None:
+            raise RuntimeError(f"system_automation_settings namespace '{namespace}' not found")
+
+        _wf_logger.warning(
+            "system_automation_settings namespace '%s' not found; using built-in fallback",
+            namespace,
+        )
+        return dict(fallback)
 
     config = rows[0]["config"]
     return json.loads(config) if isinstance(config, str) else dict(config)

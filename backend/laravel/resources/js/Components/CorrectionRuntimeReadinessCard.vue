@@ -5,7 +5,7 @@
         <div>
           <div class="text-sm font-semibold">Готовность correction runtime</div>
           <div class="mt-1 text-xs text-[color:var(--text-dim)]">
-            Агрегированная проверка калибровки процесса и калибровок дозирующих насосов для in-flow correction.
+            Агрегированная проверка process calibration, калибровок дозирующих насосов и сохранённых PID-конфигов зоны для in-flow correction.
           </div>
         </div>
         <Badge :variant="overallStatus.variant">
@@ -52,6 +52,15 @@
               @click="emit('open-pump-calibration')"
             >
               Открыть калибровку насосов
+            </button>
+            <button
+              v-if="hasMissingPidConfigs"
+              type="button"
+              class="btn btn-outline h-8 px-3 text-xs"
+              data-testid="correction-readiness-pid-btn"
+              @click="emit('focus-pid-config')"
+            >
+              Открыть PID-настройки
             </button>
           </div>
         </div>
@@ -112,7 +121,7 @@
           </div>
         </section>
 
-        <div class="grid gap-4 xl:grid-cols-2">
+        <div class="grid gap-4 xl:grid-cols-3">
           <section class="space-y-2">
             <div class="text-xs font-medium uppercase tracking-[0.08em] text-[color:var(--text-muted)]">
               Калибровка процесса
@@ -165,6 +174,30 @@
               </div>
             </div>
           </section>
+
+          <section class="space-y-2">
+            <div class="text-xs font-medium uppercase tracking-[0.08em] text-[color:var(--text-muted)]">
+              PID-конфиги зоны
+            </div>
+
+            <div
+              v-for="item in pidConfigStatuses"
+              :key="item.type"
+              class="rounded-xl border border-[color:var(--border-muted)] p-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-sm font-medium text-[color:var(--text-primary)]">
+                  {{ item.label }}
+                </div>
+                <Badge :variant="item.ready ? 'success' : 'danger'">
+                  {{ item.ready ? 'Сохранён' : 'Нужно сохранить' }}
+                </Badge>
+              </div>
+              <div class="mt-1 text-xs text-[color:var(--text-dim)]">
+                {{ item.message }}
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -177,7 +210,7 @@ import Badge from '@/Components/Badge.vue'
 import Card from '@/Components/Card.vue'
 import { useApi } from '@/composables/useApi'
 import { usePidConfig } from '@/composables/usePidConfig'
-import type { PumpCalibration } from '@/types/PidConfig'
+import type { PidConfigWithMeta, PumpCalibration } from '@/types/PidConfig'
 import type { ProcessCalibrationMode, ZoneProcessCalibration } from '@/types/ProcessCalibration'
 
 interface ApiResponse<T> {
@@ -190,6 +223,13 @@ interface PumpGroupStatus {
   label: string
   ready: boolean
   missingMessage: string
+}
+
+interface PidConfigStatusItem {
+  type: 'ph' | 'ec'
+  label: string
+  ready: boolean
+  message: string
 }
 
 interface PhaseCoverageItem {
@@ -222,7 +262,7 @@ interface RuntimeIssueItem {
   badgeVariant: 'danger' | 'warning' | 'info'
   badgeLabel: string
   recommendation: string | null
-  action: 'focus-process-calibration' | 'open-pump-calibration' | null
+  action: 'focus-process-calibration' | 'open-pump-calibration' | 'focus-pid-config' | null
   actionLabel: string | null
 }
 
@@ -230,14 +270,16 @@ const props = defineProps<{ zoneId: number }>()
 const emit = defineEmits<{
   (e: 'focus-process-calibration'): void
   (e: 'open-pump-calibration'): void
+  (e: 'focus-pid-config'): void
 }>()
 
 const { api } = useApi()
-const { getPumpCalibrations } = usePidConfig()
+const { getAllPidConfigs, getPumpCalibrations } = usePidConfig()
 
 const loading = ref(true)
 const processCalibrations = ref<ZoneProcessCalibration[]>([])
 const pumpCalibrations = ref<PumpCalibration[]>([])
+const pidConfigs = ref<Record<'ph' | 'ec', PidConfigWithMeta> | null>(null)
 const runtimeEvents = ref<RuntimeIssueItem[]>([])
 
 const phaseLabels: Record<Exclude<ProcessCalibrationMode, 'generic'>, string> = {
@@ -253,6 +295,11 @@ const roleLabels: Record<string, string> = {
   ec_calcium_pump: 'насос EC Calcium',
   ec_magnesium_pump: 'насос EC Magnesium',
   ec_micro_pump: 'насос EC Micro',
+}
+
+const pidTypeLabels: Record<'ph' | 'ec', string> = {
+  ph: 'PID pH',
+  ec: 'PID EC',
 }
 
 const pumpGroups = computed<PumpGroupStatus[]>(() => {
@@ -321,11 +368,28 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
   })
 })
 
+const pidConfigStatuses = computed<PidConfigStatusItem[]>(() => {
+  return (['ph', 'ec'] as const).map((type) => {
+    const config = pidConfigs.value?.[type]
+    const ready = Boolean(config) && config.is_default !== true
+
+    return {
+      type,
+      label: pidTypeLabels[type],
+      ready,
+      message: ready
+        ? 'Конфиг сохранён в zone_pid_configs и будет использован automation-engine.'
+        : 'Сейчас доступен только системный default для редактирования. Откройте PID-форму и явно сохраните конфиг зоны.',
+    }
+  })
+})
+
 const overallStatus = computed(() => {
   const missingPumpGroups = pumpGroups.value.filter((group) => !group.ready)
   const failClosedPhases = phaseCoverage.value.filter((item) => item.failClosed)
+  const missingPidConfigs = pidConfigStatuses.value.filter((item) => !item.ready)
 
-  if (missingPumpGroups.length === 0 && failClosedPhases.length === 0) {
+  if (missingPumpGroups.length === 0 && failClosedPhases.length === 0 && missingPidConfigs.length === 0) {
     const usesFallback = phaseCoverage.value.some((item) => item.badgeLabel === 'Через generic')
 
     return {
@@ -338,12 +402,21 @@ const overallStatus = computed(() => {
     }
   }
 
-  if (failClosedPhases.length > 0) {
+  if (failClosedPhases.length > 0 || missingPidConfigs.length > 0) {
+    const blockers = [
+      failClosedPhases.length > 0
+        ? `process calibration: ${failClosedPhases.map((item) => item.label).join(', ')}`
+        : null,
+      missingPidConfigs.length > 0
+        ? `PID: ${missingPidConfigs.map((item) => item.label).join(', ')}`
+        : null,
+    ].filter(Boolean)
+
     return {
       variant: 'danger' as const,
       label: 'Блокировано',
-      title: 'Есть фазы, где runtime должен оставаться fail-closed.',
-      description: `Проблемные фазы: ${failClosedPhases.map((item) => item.label).join(', ')}. Сначала задайте process calibration, затем проверяйте correction cycle.`,
+      title: 'Есть обязательные runtime-контракты, которые ещё не сохранены.',
+      description: `${blockers.join('. ')}. Сначала сохраните отсутствующие настройки, затем проверяйте correction cycle.`,
     }
   }
 
@@ -357,7 +430,8 @@ const overallStatus = computed(() => {
 
 const hasMissingPumpGroups = computed(() => pumpGroups.value.some((group) => !group.ready))
 const hasFailClosedPhases = computed(() => phaseCoverage.value.some((item) => item.failClosed))
-const showActions = computed(() => hasMissingPumpGroups.value || hasFailClosedPhases.value)
+const hasMissingPidConfigs = computed(() => pidConfigStatuses.value.some((item) => !item.ready))
+const showActions = computed(() => hasMissingPumpGroups.value || hasFailClosedPhases.value || hasMissingPidConfigs.value)
 const latestIssues = computed(() => runtimeEvents.value.slice(0, 3))
 
 function formatConfidence(value: number | null | undefined): string {
@@ -536,6 +610,11 @@ function handleIssueAction(action: RuntimeIssueItem['action']): void {
     return
   }
 
+  if (action === 'focus-pid-config') {
+    emit('focus-pid-config')
+    return
+  }
+
   if (action === 'open-pump-calibration') {
     emit('open-pump-calibration')
   }
@@ -545,9 +624,10 @@ async function load(): Promise<void> {
   loading.value = true
 
   try {
-    const [processResponse, pumps, eventsResponse] = await Promise.all([
+    const [processResponse, pumps, allPidConfigs, eventsResponse] = await Promise.all([
       api.get<ApiResponse<ZoneProcessCalibration[]>>(`/api/zones/${props.zoneId}/process-calibrations`),
       getPumpCalibrations(props.zoneId),
+      getAllPidConfigs(props.zoneId),
       api.get<ApiResponse<ZoneApiEvent[]>>(`/api/zones/${props.zoneId}/events`, {
         params: {
           limit: 80,
@@ -557,6 +637,7 @@ async function load(): Promise<void> {
 
     processCalibrations.value = Array.isArray(processResponse.data.data) ? processResponse.data.data : []
     pumpCalibrations.value = Array.isArray(pumps) ? pumps : []
+    pidConfigs.value = allPidConfigs
     runtimeEvents.value = Array.isArray(eventsResponse.data.data)
       ? eventsResponse.data.data
         .map((item) => toRuntimeIssue(item))

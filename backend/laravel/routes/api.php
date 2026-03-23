@@ -189,10 +189,6 @@ Route::middleware([
     Route::put('plants/{plant}', [PlantController::class, 'update']);
     Route::delete('plants/{plant}', [PlantController::class, 'destroy']);
 
-    // Grow Cycle Wizard endpoints
-    Route::get('grow-cycle-wizard/data', [\App\Http\Controllers\GrowCycleWizardController::class, 'getWizardData']);
-    Route::get('grow-cycle-wizard/zone/{zone}', [\App\Http\Controllers\GrowCycleWizardController::class, 'getZoneData']);
-
     // Mutating endpoints (operator+)
     Route::middleware(['role:operator,admin,agronomist,engineer', 'ae.legacy.sql.guard'])->group(function () {
         // Greenhouses
@@ -302,8 +298,6 @@ Route::middleware([
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
         Route::post('alerts/dlq/{id}/replay', [AlertController::class, 'replayDlq']);
 
-        // Grow Cycle Wizard (operator+)
-        Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);
         Route::post('setup-wizard/validate-devices', [SetupWizardController::class, 'validateDevices']);
         Route::post('setup-wizard/apply-device-bindings', [SetupWizardController::class, 'applyDeviceBindings']);
         Route::post('setup-wizard/validate-greenhouse-climate-devices', [SetupWizardController::class, 'validateGreenhouseClimateDevices']);

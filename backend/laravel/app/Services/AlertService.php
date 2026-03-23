@@ -10,9 +10,12 @@ class AlertService
 {
     private AlertCatalogService $alertCatalog;
 
-    public function __construct(?AlertCatalogService $alertCatalog = null)
+    private AlertLocalizationService $alertLocalization;
+
+    public function __construct(?AlertCatalogService $alertCatalog = null, ?AlertLocalizationService $alertLocalization = null)
     {
         $this->alertCatalog = $alertCatalog ?? app(AlertCatalogService::class);
+        $this->alertLocalization = $alertLocalization ?? app(AlertLocalizationService::class);
     }
 
     /**
@@ -691,12 +694,22 @@ class AlertService
     private function buildRealtimePayload(Alert $alert): array
     {
         $details = $this->normalizeDetails($alert->details);
+        $presentation = $this->alertLocalization->present(
+            code: is_string($alert->code) ? $alert->code : null,
+            type: is_string($alert->type) ? $alert->type : null,
+            details: $details,
+            source: is_string($alert->source) ? $alert->source : null,
+        );
 
         return [
             'id' => $alert->id,
             'type' => $alert->type,
             'source' => $alert->source,
             'code' => $alert->code,
+            'title' => $presentation['title'],
+            'message' => $presentation['message'],
+            'description' => $presentation['description'],
+            'recommendation' => $presentation['recommendation'],
             'status' => $alert->status,
             'zone_id' => $alert->zone_id,
             'details' => $details,

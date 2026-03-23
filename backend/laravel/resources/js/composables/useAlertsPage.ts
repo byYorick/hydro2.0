@@ -209,6 +209,25 @@ export function useAlertsPage() {
 
   // ── Alert metadata helpers ───────────────────────────────────────────────
   const getAlertMeta = (alert?: AlertRecord | null): AlertCodeMeta => {
+    if (alert?.title || alert?.description || alert?.recommendation) {
+      return {
+        title: String(alert.title || 'Системное предупреждение'),
+        description: String(alert.description || 'Сервис сообщил о состоянии, которое требует проверки.'),
+        recommendation: String(alert.recommendation || 'Проверьте детали алерта и журналы сервиса.'),
+        severity: resolveAlertSeverity(alert.code, alert.details),
+      }
+    }
+
+    const details = alert?.details as Record<string, unknown> | null | undefined
+    if (details?.title || details?.description || details?.recommendation) {
+      return {
+        title: String(details.title || 'Системное предупреждение'),
+        description: String(details.description || 'Сервис сообщил о состоянии, которое требует проверки.'),
+        recommendation: String(details.recommendation || 'Проверьте детали алерта и журналы сервиса.'),
+        severity: resolveAlertSeverity(alert?.code, alert?.details),
+      }
+    }
+
     const code = String(alert?.code || '').trim().toLowerCase()
     if (code && catalogMetaByCode.value[code]) {
       return catalogMetaByCode.value[code]
@@ -218,7 +237,13 @@ export function useAlertsPage() {
 
   const getAlertMessage = (alert?: AlertRecord | null): string => {
     if (!alert) return ''
-    const messageFromPayload = String(alert.message || (alert.details as Record<string, unknown>)?.message || '').trim()
+    const messageFromPayload = String(
+      alert.message
+      || (alert.details as Record<string, unknown>)?.message
+      || (alert.details as Record<string, unknown>)?.reason
+      || (alert.details as Record<string, unknown>)?.error_message
+      || ''
+    ).trim()
     if (messageFromPayload) return messageFromPayload
     return getAlertMeta(alert).description
   }

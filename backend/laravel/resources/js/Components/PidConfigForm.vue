@@ -25,6 +25,47 @@
         </div>
       </div>
 
+      <div
+        class="rounded-md border p-3"
+        :class="allPidConfigsSaved
+          ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)]'
+          : 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]'"
+      >
+        <div
+          class="text-xs font-medium"
+          :class="allPidConfigsSaved
+            ? 'text-[color:var(--badge-success-text)]'
+            : 'text-[color:var(--badge-warning-text)]'"
+        >
+          Сохранение PID для запуска
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
+          <span
+            v-for="item in pidSaveStatuses"
+            :key="item.type"
+            class="inline-flex items-center rounded-full border px-2 py-1"
+            :class="item.saved
+              ? 'border-[color:var(--badge-success-border)] text-[color:var(--badge-success-text)]'
+              : 'border-[color:var(--badge-warning-border)] text-[color:var(--badge-warning-text)]'"
+          >
+            {{ item.label }}: {{ item.saved ? 'сохранён' : 'не сохранён' }}
+          </span>
+        </div>
+        <div
+          class="mt-2 text-xs"
+          :class="allPidConfigsSaved
+            ? 'text-[color:var(--badge-success-text)]'
+            : 'text-[color:var(--badge-warning-text)]'"
+        >
+          <template v-if="allPidConfigsSaved">
+            Оба PID-конфига сохранены в `zone_pid_configs`.
+          </template>
+          <template v-else>
+            Системные defaults подставляются только для редактирования. Для запуска цикла нужно явно сохранить и `pH`, и `EC`.
+          </template>
+        </div>
+      </div>
+
       <form
         class="space-y-4"
         @submit.prevent="onSubmit"
@@ -364,9 +405,20 @@ const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
 
 const selectedType = ref<'ph' | 'ec'>('ph')
 const confirmed = ref(false)
-const { getPidConfig, updatePidConfig, loading } = usePidConfig()
+const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({
+  ph: false,
+  ec: false,
+})
+const { getPidConfig, getAllPidConfigs, updatePidConfig, loading } = usePidConfig()
 
 const form = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
+
+const pidSaveStatuses = computed(() => [
+  { type: 'ph' as const, label: 'pH', saved: pidConfigSavedState.value.ph },
+  { type: 'ec' as const, label: 'EC', saved: pidConfigSavedState.value.ec },
+])
+
+const allPidConfigsSaved = computed(() => pidSaveStatuses.value.every((item) => item.saved))
 
 const intervalMinutes = computed({
   get: () => Number(form.value.min_interval_ms || 0) / 60000,
@@ -424,12 +476,25 @@ function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' 
 async function loadConfig() {
   try {
     const config = await getPidConfig(props.zoneId, selectedType.value)
-    const source = config.is_default ? DEFAULT_CONFIGS[selectedType.value] : (config.config || DEFAULT_CONFIGS[selectedType.value])
+    const source = config.config || DEFAULT_CONFIGS[selectedType.value]
     form.value = normalizeConfig(source, selectedType.value)
+    pidConfigSavedState.value[selectedType.value] = config.is_default !== true
     confirmed.value = false
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID config:', error)
     form.value = cloneConfig(DEFAULT_CONFIGS[selectedType.value])
+  }
+}
+
+async function loadStatuses(): Promise<void> {
+  try {
+    const configs = await getAllPidConfigs(props.zoneId)
+    pidConfigSavedState.value = {
+      ph: configs.ph?.is_default !== true,
+      ec: configs.ec?.is_default !== true,
+    }
+  } catch (error) {
+    logger.error('[PidConfigForm] Failed to load PID status map:', error)
   }
 }
 
@@ -441,6 +506,8 @@ async function onSubmit() {
 
   try {
     const saved = await updatePidConfig(props.zoneId, selectedType.value, form.value)
+    pidConfigSavedState.value[selectedType.value] = true
+    await loadStatuses()
     emit('saved', saved)
     confirmed.value = false
   } catch (error) {
@@ -467,6 +534,7 @@ watch(
 )
 
 onMounted(() => {
+  void loadStatuses()
   void loadConfig()
 })
 </script>

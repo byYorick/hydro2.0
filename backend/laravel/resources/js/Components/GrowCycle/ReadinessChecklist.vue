@@ -244,6 +244,10 @@ const checks = computed((): ReadinessCheck[] => {
         ec_calcium_pump: 'Насос EC Calcium привязан',
         ec_magnesium_pump: 'Насос EC Magnesium привязан',
         ec_micro_pump: 'Насос EC Micro привязан',
+        pid_config_ph: 'PID-конфиг pH сохранён',
+        pid_config_ec: 'PID-конфиг EC сохранён',
+        dispatch_enabled: 'Dispatch в automation-engine включён',
+        blocking_alerts_clear: 'Нет блокирующих alerts',
         online_nodes: 'Есть онлайн ноды',
       }
       

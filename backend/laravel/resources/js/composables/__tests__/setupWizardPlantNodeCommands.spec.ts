@@ -402,4 +402,38 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
       6000
     )
   })
+
+  it('считает ноду подтверждённой по фактическому zone_id после повторной загрузки списка', () => {
+    const showToast = vi.fn()
+    const commands = createSetupWizardPlantNodeCommands({
+      api: {
+        get: vi.fn(),
+        post: vi.fn(),
+        patch: vi.fn(),
+      },
+      loading: createLoadingState(),
+      canConfigure: computed(() => true),
+      showToast,
+      availableNodes: ref([
+        { id: 101, uid: 'nd-test-101', zone_id: 20, lifecycle_state: 'ASSIGNED_TO_ZONE' },
+      ]),
+      availablePlants: ref([]),
+      selectedPlantId: ref(null),
+      selectedZone: ref({ id: 20, name: 'Zone A', greenhouse_id: 10 }),
+      selectedPlant: ref(null),
+      selectedNodeIds: ref([]),
+      attachedNodesCount: ref(0),
+      plantForm: {
+        name: '',
+        species: '',
+        variety: '',
+      },
+      loaders: {
+        loadPlants: vi.fn(),
+        loadAvailableNodes: vi.fn(),
+      },
+    })
+
+    expect(commands.isNodeAttachedToCurrentZone(101)).toBe(true)
+  })
 })

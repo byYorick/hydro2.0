@@ -22,6 +22,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | `Zones/Show.vue:300` | `/api/zones/{id}/telemetry/history` | GET | `TelemetryController::zoneHistory` | ✅ Используется |
 | `Zones/Show.vue:340` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/zones/{id}/grow-cycles` | POST | `GrowCycleController::store` | ✅ Используется |
+| `Components/GrowCycle/GrowthCycleWizard.vue`, `Pages/Setup/Wizard.vue` | `/api/zones/{id}/health` | GET | `ZoneController::health` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/pause` | POST | `GrowCycleController::pause` | ✅ Используется |
 | `Zones/Tabs/ZoneAutomationTab.vue` | `/api/grow-cycles/{id}/resume` | POST | `GrowCycleController::resume` | ✅ Используется |
 | `Zones/Show.vue:400` | `/api/zones/{id}/commands` | POST | `ZoneCommandController::store` | ✅ Используется |
@@ -49,6 +50,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 | Frontend использование | Backend endpoint | Метод | Контроллер | Статус |
 |------------------------|------------------|-------|------------|--------|
+| `Components/GrowCycle/GrowthCycleWizard.vue` | `/api/recipes?per_page=200` | GET | `RecipeController::index` | ✅ Используется |
+| `Components/GrowCycle/GrowthCycleWizard.vue` | `/api/recipe-revisions/{id}` | GET | `RecipeRevisionController::show` | ✅ Используется |
 | `Recipes/Edit.vue:96` | `/api/recipes/{id}` | PATCH | `RecipeController::update` | ✅ Используется |
 | `Admin/Recipes.vue:41` | `/api/recipes/{id}` | PATCH | `RecipeController::update` | ✅ Используется |
 | `Recipes/Edit.vue` | `/api/nutrient-products` | GET | `NutrientProductController::index` | ✅ Используется |

@@ -411,12 +411,11 @@ class GrowCycleController extends Controller
         if ($startImmediately) {
             $zone->loadMissing('nodes.channels');
             $readiness = $this->checkZoneReadiness($zone);
-            $readinessErrors = $this->buildZoneReadinessErrors($readiness);
-            if (! empty($readinessErrors)) {
+            if ($readiness['ready'] !== true) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Zone is not ready for cycle start',
-                    'readiness_errors' => $readinessErrors,
+                    'readiness_errors' => $readiness['errors'] ?? [],
                     'readiness' => $readiness,
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
@@ -494,84 +493,6 @@ class GrowCycleController extends Controller
     private function checkZoneReadiness(Zone $zone): array
     {
         return $this->zoneReadinessService->checkZoneReadiness($zone);
-    }
-
-    /**
-     * Сформировать читаемые ошибки готовности.
-     *
-     * @param  array{
-     *   checks: array{main_pump: bool, drain: bool, online_nodes: bool, has_nodes: bool}
-     * }  $readiness
-     * @return array<int, string>
-     */
-    private function buildZoneReadinessErrors(array $readiness): array
-    {
-        $errors = [];
-        $checks = is_array($readiness['checks'] ?? null) ? $readiness['checks'] : [];
-        $hasNodes = (bool) ($checks['has_nodes'] ?? false);
-        $hasOnlineNodes = (bool) ($checks['online_nodes'] ?? false);
-
-        if (! $hasNodes) {
-            $errors[] = 'Нет привязанных нод в зоне';
-        }
-        if ($hasNodes && ! $hasOnlineNodes) {
-            $errors[] = 'Нет онлайн нод в зоне';
-        }
-
-        $roleMessages = [
-            'main_pump' => 'Основная помпа не привязана к каналу',
-            'drain' => 'Дренаж не привязан к каналу',
-            'ph_acid_pump' => 'Насос pH кислоты не привязан к каналу',
-            'ph_base_pump' => 'Насос pH щёлочи не привязан к каналу',
-            'ec_npk_pump' => 'Насос EC NPK не привязан к каналу',
-            'ec_calcium_pump' => 'Насос EC Calcium не привязан к каналу',
-            'ec_magnesium_pump' => 'Насос EC Magnesium не привязан к каналу',
-            'ec_micro_pump' => 'Насос EC Micro не привязан к каналу',
-        ];
-        $calibrationMessages = [
-            'ph_acid_pump' => 'Для насоса pH кислоты не задана калибровка',
-            'ph_base_pump' => 'Для насоса pH щёлочи не задана калибровка',
-            'ec_npk_pump' => 'Для насоса EC NPK не задана калибровка',
-            'ec_calcium_pump' => 'Для насоса EC Calcium не задана калибровка',
-            'ec_magnesium_pump' => 'Для насоса EC Magnesium не задана калибровка',
-            'ec_micro_pump' => 'Для насоса EC Micro не задана калибровка',
-        ];
-        foreach ($roleMessages as $role => $message) {
-            if (array_key_exists($role, $checks) && ! $checks[$role]) {
-                $errors[] = $message;
-            }
-        }
-
-        $errorDetails = is_array($readiness['error_details'] ?? null) ? $readiness['error_details'] : [];
-        foreach ($errorDetails as $issue) {
-            if (! is_array($issue)) {
-                continue;
-            }
-
-            $type = (string) ($issue['type'] ?? '');
-            if (! in_array($type, ['missing_bindings', 'missing_calibrations'], true)) {
-                continue;
-            }
-
-            $bindings = is_array($issue['bindings'] ?? null) ? $issue['bindings'] : [];
-            foreach ($bindings as $binding) {
-                if (! is_string($binding) || $binding === '') {
-                    continue;
-                }
-
-                if ($type === 'missing_calibrations' && isset($calibrationMessages[$binding])) {
-                    $errors[] = $calibrationMessages[$binding];
-                } elseif (isset($roleMessages[$binding])) {
-                    $errors[] = $roleMessages[$binding];
-                } else {
-                    $errors[] = "Не привязан обязательный канал: {$binding}";
-                }
-            }
-        }
-
-        $errors = array_values(array_unique($errors));
-
-        return $errors;
     }
 
     /**

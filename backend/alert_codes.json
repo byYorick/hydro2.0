@@ -463,6 +463,256 @@
       "description": "Узел сообщил об ошибке на уровне железа, канала или firmware.",
       "recommendation": "Проверьте питание, wiring, firmware и диагностические payload ноды.",
       "node_related": true
+    },
+    {
+      "code": "biz_ae3_task_failed",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка задачи автоматики",
+      "description": "Задача automation-engine завершилась с ошибкой.",
+      "recommendation": "Проверьте логи automation-engine, состояние зоны и наличие активного цикла.",
+      "node_related": false
+    },
+    {
+      "code": "biz_prepare_recirculation_retry_exhausted",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Исчерпаны попытки подготовки рециркуляции",
+      "description": "Этап подготовки рециркуляции превысил максимальное число попыток.",
+      "recommendation": "Проверьте насосы, клапаны и сенсоры рециркуляционного контура.",
+      "node_related": false
+    },
+    {
+      "code": "biz_zone_correction_config_missing",
+      "source": "biz",
+      "category": "config",
+      "severity": "critical",
+      "title": "Не настроен correction config зоны",
+      "description": "Для зоны отсутствует обязательная конфигурация коррекции.",
+      "recommendation": "Проверьте correction_config зоны и заполните обязательные разделы runtime, timing, dosing, retry, tolerance, controllers и safety.",
+      "node_related": false
+    },
+    {
+      "code": "biz_zone_dosing_calibration_missing",
+      "source": "biz",
+      "category": "config",
+      "severity": "critical",
+      "title": "Не завершена калибровка дозирующих насосов",
+      "description": "Для одного или нескольких дозирующих каналов отсутствует обязательная калибровка.",
+      "recommendation": "Проверьте калибровки дозирующих насосов pH/EC и повторите запуск цикла.",
+      "node_related": true
+    },
+    {
+      "code": "biz_zone_pid_config_missing",
+      "source": "biz",
+      "category": "config",
+      "severity": "critical",
+      "title": "Не настроен PID-контур зоны",
+      "description": "Для зоны отсутствует обязательная PID-конфигурация коррекции.",
+      "recommendation": "Проверьте zone_pid_configs для pH и EC и заполните обязательные параметры.",
+      "node_related": false
+    },
+    {
+      "code": "biz_clean_fill_timeout",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Таймаут заполнения бака чистой водой",
+      "description": "Бак чистой воды не удалось заполнить в пределах допустимого времени.",
+      "recommendation": "Проверьте подачу воды, клапаны, насос и датчики уровня.",
+      "node_related": true
+    },
+    {
+      "code": "biz_solution_fill_timeout",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Таймаут заполнения бака раствором",
+      "description": "Бак раствора не удалось заполнить до завершения этапа.",
+      "recommendation": "Проверьте подачу раствора, насос, клапаны и датчики уровня.",
+      "node_related": true
+    },
+    {
+      "code": "biz_correction_exhausted",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Исчерпаны попытки коррекции",
+      "description": "Цикл коррекции исчерпал все настроенные попытки и не достиг целевого состояния.",
+      "recommendation": "Проверьте дозирующие насосы pH/EC, калибровки и актуальные цели зоны.",
+      "node_related": true
+    },
+    {
+      "code": "biz_ph_correction_no_effect",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Коррекция pH не даёт эффекта",
+      "description": "После дозирования pH не наблюдается ожидаемая реакция раствора.",
+      "recommendation": "Проверьте насосы pH-up/pH-down, реагенты, телеметрию и перемешивание.",
+      "node_related": true
+    },
+    {
+      "code": "biz_ec_correction_no_effect",
+      "source": "biz",
+      "category": "agronomy",
+      "severity": "error",
+      "title": "Коррекция EC не даёт эффекта",
+      "description": "После дозирования EC не наблюдается ожидаемая реакция раствора.",
+      "recommendation": "Проверьте насосы компонентов EC, реагенты, телеметрию и перемешивание.",
+      "node_related": true
+    },
+    {
+      "code": "ae3_zone_lease_release_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Не удалось освободить lease зоны",
+      "description": "AE3 runtime не смог освободить блокировку зоны после завершения задачи.",
+      "recommendation": "Проверьте состояние worker, таблицу lease и не осталось ли зависшей задачи по зоне.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_zone_lease_lost",
+      "source": "infra",
+      "category": "operations",
+      "severity": "critical",
+      "title": "Потерян lease зоны",
+      "description": "AE3 runtime потерял lease зоны во время выполнения задачи.",
+      "recommendation": "Проверьте heartbeat worker, БД и наличие параллельного владельца зоны.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_background_task_crashed",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "error",
+      "title": "Сбой фоновой задачи AE3",
+      "description": "Одна из фоновых задач AE3 runtime завершилась с ошибкой.",
+      "recommendation": "Проверьте stack trace фоновой задачи и состояние зависимых сервисов.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_api_unhandled_exception",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "error",
+      "title": "Необработанное исключение AE3 API",
+      "description": "AE3 API вернул необработанное исключение во время запроса.",
+      "recommendation": "Проверьте trace_id, stack trace и входной payload проблемного запроса.",
+      "node_related": false
+    },
+    {
+      "code": "ae3_api_http_5xx",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "error",
+      "title": "Ошибка AE3 API уровня HTTP 5xx",
+      "description": "AE3 API завершил запрос серверной ошибкой.",
+      "recommendation": "Проверьте логи AE3 API, stack trace и доступность зависимостей.",
+      "node_related": false
+    },
+    {
+      "code": "infra_command_ack_command_not_found",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "ACK для неизвестной команды",
+      "description": "History-logger получил ACK, но не нашёл соответствующую команду в Laravel.",
+      "recommendation": "Проверьте консистентность command_status delivery и сохранение команд в БД.",
+      "node_related": true
+    },
+    {
+      "code": "infra_pump_calibration_failed",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Ошибка калибровки насоса",
+      "description": "Операция калибровки насоса завершилась ошибкой.",
+      "recommendation": "Проверьте насос, исполнительный канал и параметры калибровочного прогона.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_timestamp_skew",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "warning",
+      "title": "Смещение timestamp телеметрии",
+      "description": "Временная метка телеметрии заметно расходится с серверным временем.",
+      "recommendation": "Проверьте синхронизацию часов ноды и источник timestamp в telemetry payload.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_invalid_timestamp",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "warning",
+      "title": "Некорректный timestamp телеметрии",
+      "description": "В telemetry payload пришла некорректная временная метка.",
+      "recommendation": "Проверьте формат timestamp на узле и сериализацию telemetry payload.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_timestamp_parse_failed",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "warning",
+      "title": "Не удалось разобрать timestamp телеметрии",
+      "description": "History-logger не смог распарсить timestamp из telemetry payload.",
+      "recommendation": "Проверьте формат ts_device и соответствие контракту телеметрии.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_zone_not_found",
+      "source": "infra",
+      "category": "config",
+      "severity": "error",
+      "title": "Зона телеметрии не найдена",
+      "description": "Телеметрия пришла для зоны, отсутствующей в актуальной конфигурации.",
+      "recommendation": "Проверьте namespace telemetry topic и привязку зоны в backend.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_node_not_found",
+      "source": "infra",
+      "category": "config",
+      "severity": "error",
+      "title": "Нода телеметрии не найдена",
+      "description": "Телеметрия пришла от ноды, отсутствующей в backend-конфигурации.",
+      "recommendation": "Проверьте регистрацию ноды, topic telemetry и provisioning.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_sample_dropped_node_not_found",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "Сэмпл телеметрии отброшен: нода не найдена",
+      "description": "History-logger отбросил telemetry sample, потому что нода не распознана.",
+      "recommendation": "Проверьте регистрацию ноды и соответствие telemetry topic фактической конфигурации.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_node_unassigned",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "Нода телеметрии не назначена зоне",
+      "description": "Телеметрия пришла от ноды без корректной привязки к зоне.",
+      "recommendation": "Проверьте zone_id ноды, привязки и provisioning в Laravel.",
+      "node_related": true
+    },
+    {
+      "code": "infra_telemetry_node_zone_mismatch",
+      "source": "infra",
+      "category": "config",
+      "severity": "warning",
+      "title": "Несоответствие ноды и зоны в телеметрии",
+      "description": "Зона в telemetry topic не совпадает с backend-привязкой ноды.",
+      "recommendation": "Проверьте MQTT namespace, zone_id ноды и конфигурацию маршрутизации.",
+      "node_related": true
     }
   ]
 }

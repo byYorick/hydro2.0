@@ -54,6 +54,8 @@
 
       <PumpCalibrationsPanel
         :zone-id="zoneId"
+        :save-success-seq="saveSuccessSeq"
+        :run-success-seq="runSuccessSeq"
         @open-pump-calibration="$emit('open-pump-calibration')"
       />
     </section>
@@ -90,10 +92,15 @@
         :zone-id="zoneId"
         @focus-process-calibration="scrollToSection('zone-process-calibration-panel-shared')"
         @open-pump-calibration="$emit('open-pump-calibration')"
+        @focus-pid-config="openPidConfigPanel"
       />
     </section>
 
-    <details class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+    <details
+      :open="pidDetailsOpen"
+      class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
+      @toggle="handlePidDetailsToggle"
+    >
       <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[color:var(--text-primary)]">
         Расширенная тонкая настройка PID и autotune
         <div class="mt-1 text-xs font-normal text-[color:var(--text-dim)]">
@@ -101,9 +108,15 @@
         </div>
       </summary>
 
-      <div class="border-t border-[color:var(--border-muted)] p-4">
+      <div
+        id="zone-pid-config-panel-shared"
+        class="border-t border-[color:var(--border-muted)] p-4"
+      >
         <section class="grid gap-4 xl:grid-cols-2">
-          <PidConfigForm :zone-id="zoneId" />
+          <PidConfigForm
+            :zone-id="zoneId"
+            @saved="handlePidConfigSaved"
+          />
           <RelayAutotuneTrigger :zone-id="zoneId" />
         </section>
       </div>
@@ -112,26 +125,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import CorrectionRuntimeReadinessCard from '@/Components/CorrectionRuntimeReadinessCard.vue'
 import PidConfigForm from '@/Components/PidConfigForm.vue'
 import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
 import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
 import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
 import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
+import type { PidConfigWithMeta } from '@/types/PidConfig'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
 const props = withDefaults(defineProps<{
   zoneId: number
   sensorCalibrationSettings: SensorCalibrationSettings
   showRuntimeReadiness?: boolean
+  saveSuccessSeq?: number
+  runSuccessSeq?: number
 }>(), {
   showRuntimeReadiness: true,
+  saveSuccessSeq: 0,
+  runSuccessSeq: 0,
 })
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'open-pump-calibration'): void
+  (e: 'pid-config-saved', config: PidConfigWithMeta): void
 }>()
+
+const pidDetailsOpen = ref(false)
 
 const stackIntroText = computed(() => {
   if (props.showRuntimeReadiness) {
@@ -160,5 +181,23 @@ function scrollToSection(id: string): void {
   }
 
   element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function openPidConfigPanel(): void {
+  pidDetailsOpen.value = true
+  scrollToSection('zone-pid-config-panel-shared')
+}
+
+function handlePidDetailsToggle(event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLDetailsElement)) {
+    return
+  }
+
+  pidDetailsOpen.value = target.open
+}
+
+function handlePidConfigSaved(config: PidConfigWithMeta): void {
+  emit('pid-config-saved', config)
 }
 </script>

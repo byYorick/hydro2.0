@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiGetMock = vi.hoisted(() => vi.fn())
+const getAllPidConfigsMock = vi.hoisted(() => vi.fn())
 const getPumpCalibrationsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/Components/Card.vue', () => ({
@@ -29,6 +30,7 @@ vi.mock('@/composables/useApi', () => ({
 
 vi.mock('@/composables/usePidConfig', () => ({
   usePidConfig: () => ({
+    getAllPidConfigs: getAllPidConfigsMock,
     getPumpCalibrations: getPumpCalibrationsMock,
   }),
 }))
@@ -38,6 +40,7 @@ import CorrectionRuntimeReadinessCard from '../CorrectionRuntimeReadinessCard.vu
 describe('CorrectionRuntimeReadinessCard.vue', () => {
   beforeEach(() => {
     apiGetMock.mockReset()
+    getAllPidConfigsMock.mockReset()
     getPumpCalibrationsMock.mockReset()
   })
 
@@ -68,6 +71,10 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
 
       return Promise.reject(new Error(`Unexpected url: ${url}`))
     })
+    getAllPidConfigsMock.mockResolvedValue({
+      ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
+      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+    })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: 0.5 },
       { role: 'ph_base_pump', ml_per_sec: 0.5 },
@@ -89,10 +96,13 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
         limit: 80,
       },
     })
+    expect(getAllPidConfigsMock).toHaveBeenCalledWith(42)
     expect(getPumpCalibrationsMock).toHaveBeenCalledWith(42)
     expect(wrapper.text()).toContain('Готово с fallback')
     expect(wrapper.text()).toContain('Через generic')
     expect(wrapper.text()).toContain('Все обязательные насосы откалиброваны.')
+    expect(wrapper.text()).toContain('PID pH')
+    expect(wrapper.text()).toContain('PID EC')
   })
 
   it('показывает fail-closed и отсутствующие pump calibration', async () => {
@@ -108,6 +118,10 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
 
       return Promise.reject(new Error(`Unexpected url: ${url}`))
     })
+    getAllPidConfigsMock.mockResolvedValue({
+      ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
+      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+    })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: 0.4 },
       { role: 'ph_base_pump', ml_per_sec: null },
@@ -121,7 +135,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Блокировано')
-    expect(wrapper.text()).toContain('Проблемные фазы: Наполнение, Рециркуляция, Полив')
+    expect(wrapper.text()).toContain('process calibration: Наполнение, Рециркуляция, Полив')
     expect(wrapper.text()).toContain('Для этой фазы не заданы ни отдельная, ни generic-калибровка процесса')
     expect(wrapper.text()).toContain('насос pH щёлочи')
     expect(wrapper.text()).toContain('насос EC NPK')
@@ -140,6 +154,10 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
 
       return Promise.reject(new Error(`Unexpected url: ${url}`))
     })
+    getAllPidConfigsMock.mockResolvedValue({
+      ph: { type: 'ph', config: { target: 5.8 }, is_default: true },
+      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+    })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: null },
     ])
@@ -152,9 +170,11 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
 
     await wrapper.find('[data-testid="correction-readiness-process-btn"]').trigger('click')
     await wrapper.find('[data-testid="correction-readiness-pump-btn"]').trigger('click')
+    await wrapper.find('[data-testid="correction-readiness-pid-btn"]').trigger('click')
 
     expect(wrapper.emitted('focus-process-calibration')).toBeTruthy()
     expect(wrapper.emitted('open-pump-calibration')).toBeTruthy()
+    expect(wrapper.emitted('focus-pid-config')).toBeTruthy()
   })
 
   it('показывает последние runtime blockers и эмитит action из них', async () => {
@@ -218,6 +238,10 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       }
 
       return Promise.reject(new Error(`Unexpected url: ${url}`))
+    })
+    getAllPidConfigsMock.mockResolvedValue({
+      ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
+      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: 0.5 },

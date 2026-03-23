@@ -91,7 +91,7 @@ export function useDashboardRealtimeFeed({
     return (latestAlerts.value || []).map(a => ({
       id: a.id,
       kind: 'ALERT' as const,
-      message: (a as AlertWithDetails).details?.message || a.type,
+      message: a.message || (a as AlertWithDetails).details?.message || a.title || a.type,
       zone_id: a.zone_id,
       occurred_at: a.created_at,
       created_at: a.created_at,

@@ -137,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
@@ -167,7 +167,14 @@ interface PumpCalibrationHistoryItem {
   mlPerSec: number | null
 }
 
-const props = defineProps<{ zoneId: number }>()
+const props = withDefaults(defineProps<{
+  zoneId: number
+  saveSuccessSeq?: number
+  runSuccessSeq?: number
+}>(), {
+  saveSuccessSeq: 0,
+  runSuccessSeq: 0,
+})
 const emit = defineEmits<{
   (e: 'open-pump-calibration'): void
 }>()
@@ -287,13 +294,42 @@ function parseNumeric(value: unknown): number | null {
   return null
 }
 
-function toHistoryItem(raw: ZoneApiEvent): PumpCalibrationHistoryItem | null {
-  if (raw.type !== 'PUMP_CALIBRATION_SAVED') {
+function resolvePumpRole(payload: Record<string, unknown> | null, pumps: PumpCalibration[]): string | null {
+  const directRole = typeof payload?.role === 'string' ? payload.role : null
+  if (directRole) {
+    return directRole
+  }
+
+  const component = typeof payload?.component === 'string' ? payload.component : null
+  const componentRoleMap: Record<string, string> = {
+    ph_down: 'ph_acid_pump',
+    ph_up: 'ph_base_pump',
+    npk: 'ec_npk_pump',
+    calcium: 'ec_calcium_pump',
+    magnesium: 'ec_magnesium_pump',
+    micro: 'ec_micro_pump',
+  }
+
+  if (component && componentRoleMap[component]) {
+    return componentRoleMap[component]
+  }
+
+  const nodeChannelId = parseNumeric(payload?.node_channel_id)
+  if (nodeChannelId === null) {
+    return null
+  }
+
+  const matchedPump = pumps.find((pump) => Number(pump.node_channel_id) === nodeChannelId)
+  return matchedPump?.role ?? null
+}
+
+function toHistoryItem(raw: ZoneApiEvent, pumps: PumpCalibration[]): PumpCalibrationHistoryItem | null {
+  if (raw.type !== 'PUMP_CALIBRATION_SAVED' && raw.type !== 'PUMP_CALIBRATION_FINISHED') {
     return null
   }
 
   const payload = toPayloadRecord(raw.payload ?? raw.details)
-  const role = typeof payload?.role === 'string' ? payload.role : null
+  const role = resolvePumpRole(payload, pumps)
   const id = Number(raw.event_id ?? raw.id)
 
   if (!role || !Number.isInteger(id) || id <= 0) {
@@ -310,35 +346,38 @@ function toHistoryItem(raw: ZoneApiEvent): PumpCalibrationHistoryItem | null {
   }
 }
 
-async function loadHistory(): Promise<void> {
+async function loadHistory(): Promise<ZoneApiEvent[]> {
   const response = await api.get<{ status: string; data: ZoneApiEvent[] }>(`/api/zones/${props.zoneId}/events`, {
     params: {
       limit: 80,
     },
   })
 
-  historyEvents.value = Array.isArray(response.data.data)
-    ? response.data.data
-      .map((item) => toHistoryItem(item))
-      .filter((item): item is PumpCalibrationHistoryItem => item !== null)
-      .sort((left, right) => right.id - left.id)
-    : []
+  return Array.isArray(response.data.data) ? response.data.data : []
 }
 
 async function loadCalibrations(): Promise<void> {
   loading.value = true
   try {
-    const [pumps] = await Promise.all([
+    const [pumps, rawHistory] = await Promise.all([
       getPumpCalibrations(props.zoneId),
       loadHistory(),
     ])
     calibrations.value = pumps
+    historyEvents.value = rawHistory
+      .map((item) => toHistoryItem(item, pumps))
+      .filter((item): item is PumpCalibrationHistoryItem => item !== null)
+      .sort((left, right) => right.id - left.id)
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => {
+watch(
+  () => [props.zoneId, props.saveSuccessSeq, props.runSuccessSeq],
+  () => {
   void loadCalibrations()
-})
+  },
+  { immediate: true }
+)
 </script>

@@ -78,6 +78,11 @@ function sleep(ms: number): Promise<void> {
   })
 }
 
+function normalizePositiveInt(value: unknown): number | null {
+  const normalized = Number(value)
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : null
+}
+
 function parseNodeUpdate(payload: unknown): Node | null {
   const node = extractData<unknown>(payload)
   if (!node || typeof node !== 'object' || !('id' in node)) {
@@ -145,20 +150,25 @@ export function createSetupWizardPlantNodeCommands(
   let attachedZoneId: number | null = null
 
   function currentZoneId(): number | null {
-    return selectedZone.value?.id ?? selectedZoneId.value ?? null
+    return normalizePositiveInt(selectedZone.value?.id ?? selectedZoneId.value ?? null)
   }
 
   function getNodeById(nodeId: number): Node | null {
-    return availableNodes.value.find((item) => item.id === nodeId) ?? null
+    return availableNodes.value.find((item) => normalizePositiveInt(item.id) === nodeId) ?? null
   }
 
   function isNodeAttachedToCurrentZone(nodeId: number): boolean {
     const zoneId = currentZoneId()
-    if (!zoneId || attachedZoneId !== zoneId) {
+    if (!zoneId) {
       return false
     }
 
-    return attachedNodeIds.has(nodeId)
+    if (attachedZoneId === zoneId && attachedNodeIds.has(nodeId)) {
+      return true
+    }
+
+    const node = getNodeById(nodeId)
+    return normalizePositiveInt(node?.zone_id) === zoneId
   }
 
   function syncAttachedNodesToCurrentZone(nodeIds: number[]): void {

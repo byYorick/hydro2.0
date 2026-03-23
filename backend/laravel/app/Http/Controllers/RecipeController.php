@@ -21,6 +21,7 @@ class RecipeController extends Controller
         // Валидация query параметров
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
         $query = Recipe::query()->with([
@@ -39,7 +40,8 @@ class RecipeController extends Controller
             });
         }
 
-        $items = $query->latest('id')->paginate(25);
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $items = $query->latest('id')->paginate($perPage);
 
         $items->setCollection(
             $items->getCollection()->map(fn (Recipe $recipe) => $this->presenter->presentListItem($recipe))

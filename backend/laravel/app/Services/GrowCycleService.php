@@ -56,13 +56,12 @@ class GrowCycleService
             throw new \DomainException('Revision has no phases');
         }
 
-        return DB::transaction(function () use ($zone, $revision, $firstPhase, $plantId, $data, $userId) {
-            $plantingAt = isset($data['planting_at']) && $data['planting_at']
-                ? Carbon::parse($data['planting_at'])
-                : now();
+        $plantingAt = isset($data['planting_at']) && $data['planting_at']
+            ? Carbon::parse($data['planting_at'])
+            : now();
+        $startImmediately = (bool) ($data['start_immediately'] ?? false);
 
-            $startImmediately = $data['start_immediately'] ?? false;
-            $phaseStartedAt = $startImmediately ? $plantingAt : null;
+        $createdCycle = DB::transaction(function () use ($zone, $revision, $firstPhase, $plantId, $data, $userId, $plantingAt) {
             $settings = is_array($data['settings'] ?? null) ? $data['settings'] : [];
 
             $irrigation = is_array($data['irrigation'] ?? null) ? $data['irrigation'] : [];
@@ -87,17 +86,17 @@ class GrowCycleService
                 'recipe_revision_id' => $revision->id,
                 'current_phase_id' => null, // Временно null, обновим после создания снапшота
                 'current_step_id' => null,
-                'status' => $startImmediately ? GrowCycleStatus::RUNNING : GrowCycleStatus::PLANNED,
+                'status' => GrowCycleStatus::PLANNED,
                 'planting_at' => $plantingAt,
-                'phase_started_at' => $phaseStartedAt,
+                'phase_started_at' => null,
                 'batch_label' => $data['batch_label'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'settings' => !empty($settings) ? $settings : null,
-                'started_at' => $startImmediately ? $plantingAt : null,
+                'started_at' => null,
             ]);
 
             // Теперь создаем снапшот первой фазы с ID цикла
-            $firstPhaseSnapshot = $this->createPhaseSnapshot($cycle, $firstPhase, $phaseStartedAt);
+            $firstPhaseSnapshot = $this->createPhaseSnapshot($cycle, $firstPhase, null);
 
             // Обновляем цикл с ID снапшота фазы
             $cycle->update(['current_phase_id' => $firstPhaseSnapshot->id]);
@@ -130,10 +129,6 @@ class GrowCycleService
             // Отправляем WebSocket broadcast
             broadcast(new GrowCycleUpdated($cycle->fresh(), 'CREATED'));
 
-            if ($startImmediately) {
-                $this->syncZoneStatus($zone, 'RUNNING');
-            }
-
             Log::info('Grow cycle created', [
                 'cycle_id' => $cycle->id,
                 'zone_id' => $zone->id,
@@ -142,6 +137,12 @@ class GrowCycleService
 
             return $cycle->load('recipeRevision', 'currentPhase', 'plant');
         });
+
+        if (! $startImmediately) {
+            return $createdCycle;
+        }
+
+        return $this->startCycle($createdCycle->fresh(), $plantingAt->copy());
     }
 
     /**
@@ -191,7 +192,7 @@ class GrowCycleService
         return $startedCycle->fresh();
     }
 
-    private function dispatchAutomationStartCycle(GrowCycle $cycle): void
+    protected function dispatchAutomationStartCycle(GrowCycle $cycle): void
     {
         if (! $this->isGrowCycleStartDispatchEnabled()) {
             return;

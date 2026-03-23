@@ -1185,7 +1185,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                     $alerts = \App\Models\Alert::query()
                         ->where('zone_id', $zoneIdInt)
                         ->latest('id')
-                        ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
+                        ->get(['id', 'type', 'source', 'code', 'status', 'severity', 'category', 'details', 'zone_id', 'created_at', 'resolved_at']);
                 } catch (\Exception $e) {
                     $alerts = collect([]);
                 }
@@ -1426,7 +1426,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 }])
                 ->latest('id')
                 ->limit(100)
-                ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
+                ->get(['id', 'type', 'source', 'code', 'status', 'severity', 'category', 'details', 'zone_id', 'created_at', 'resolved_at']);
         });
 
         return Inertia::render('Alerts/Index', [

@@ -53,6 +53,20 @@ interface GreenhouseAutomationLogicProfilesResponse {
   bindings?: Partial<GreenhouseClimateBindingsState>
 }
 
+interface ZoneLaunchReadiness {
+  ready: boolean
+  checks?: Record<string, boolean>
+  errors?: string[]
+  warnings?: string[]
+  error_details?: Array<Record<string, unknown>>
+  blocking_alerts?: Array<Record<string, unknown>>
+  dispatch_enabled?: boolean
+}
+
+interface ZoneHealthResponse {
+  readiness?: ZoneLaunchReadiness | null
+}
+
 type ZoneAssignmentRole =
   | 'irrigation'
   | 'ph_correction'
@@ -254,6 +268,8 @@ export function useSetupWizard() {
   const availableRecipes = ref<Recipe[]>([])
   const availableNodes = ref<Node[]>([])
   const greenhouseClimateNodes = ref<Node[]>([])
+  const zoneLaunchReadiness = ref<ZoneLaunchReadiness | null>(null)
+  const zoneLaunchReadinessLoading = ref(false)
 
   const selectedGreenhouseId = ref<number | null>(null)
   const selectedZoneId = ref<number | null>(null)
@@ -565,6 +581,20 @@ export function useSetupWizard() {
     return stepZoneAutomationDone.value
   })
 
+  const zoneLaunchReady = computed(() => {
+    if (!selectedZoneId.value) {
+      return false
+    }
+
+    return zoneLaunchReadiness.value?.ready === true
+  })
+
+  const zoneLaunchReadinessErrors = computed(() => {
+    return Array.isArray(zoneLaunchReadiness.value?.errors)
+      ? zoneLaunchReadiness.value?.errors ?? []
+      : []
+  })
+
   const canLaunch = computed(() => {
     return stepGreenhouseDone.value
       && stepGreenhouseClimateDone.value
@@ -572,6 +602,7 @@ export function useSetupWizard() {
       && stepPlantDone.value
       && stepRecipeDone.value
       && stepZoneAutomationDone.value
+      && zoneLaunchReady.value
       && !selectedZoneHasActiveCycle.value
   })
 
@@ -681,6 +712,27 @@ export function useSetupWizard() {
   async function refreshAvailableNodes(): Promise<void> {
     await dataFlows.loadAvailableNodes()
     syncZoneAssignmentsFromAvailableNodes({ preserveManualSelections: true })
+  }
+
+  async function refreshZoneLaunchReadiness(zoneId: number | null = selectedZoneId.value): Promise<void> {
+    if (!zoneId) {
+      zoneLaunchReadiness.value = null
+      zoneLaunchReadinessLoading.value = false
+      return
+    }
+
+    zoneLaunchReadinessLoading.value = true
+
+    try {
+      const response = await api.get(`/zones/${zoneId}/health`)
+      const payload = extractData<ZoneHealthResponse | ZoneLaunchReadiness>(response.data)
+      zoneLaunchReadiness.value = (payload as ZoneHealthResponse | null)?.readiness
+        ?? (payload as ZoneLaunchReadiness | null)
+    } catch {
+      zoneLaunchReadiness.value = null
+    } finally {
+      zoneLaunchReadinessLoading.value = false
+    }
   }
 
   function resetGreenhouseClimateState(): void {
@@ -1073,11 +1125,13 @@ export function useSetupWizard() {
 
     if (!zoneId) {
       await refreshAvailableNodes()
+      await refreshZoneLaunchReadiness(null)
       return
     }
 
     await refreshAvailableNodes()
     syncZoneAssignmentsFromAvailableNodes({ preserveManualSelections: false })
+    await refreshZoneLaunchReadiness(zoneId)
   })
 
   watch(
@@ -1159,6 +1213,10 @@ export function useSetupWizard() {
     greenhouseClimateBindingsReady,
     selectedZoneActiveCycleStatus,
     selectedZoneHasActiveCycle,
+    zoneLaunchReadiness,
+    zoneLaunchReadinessLoading,
+    zoneLaunchReadinessErrors,
+    zoneLaunchReady,
     launchBlockedReason,
     completedSteps,
     progressPercent,
@@ -1181,6 +1239,7 @@ export function useSetupWizard() {
     attachNodesToZone: dataFlows.attachNodesToZone,
     isNodeAttachedToCurrentZone: dataFlows.isNodeAttachedToCurrentZone,
     refreshAvailableNodes,
+    refreshZoneLaunchReadiness,
     applyGreenhouseClimate,
     saveZoneDeviceBindingsSection,
     applyAutomation: recipeAutomationFlows.applyAutomation,

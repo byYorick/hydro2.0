@@ -81,6 +81,32 @@ class ZoneShowEventsFormattingTest extends TestCase
             });
     }
 
+    public function test_zone_show_localizes_ae_task_failed_message_from_payload(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        $this->insertZoneEvent($zone->id, 'AE_TASK_FAILED', [
+            'error_code' => 'zone_correction_config_missing_critical',
+            'error_message' => 'Zone 1 correction_config.base missing required fields: runtime, timing, dosing, retry, tolerance, controllers, safety; fail-closed for critical correction parameters',
+            'message' => 'Zone 1 correction_config.base missing required fields: runtime, timing, dosing, retry, tolerance, controllers, safety; fail-closed for critical correction parameters',
+            'type' => 'automation_engine',
+        ]);
+
+        $this->actingAs($user)
+            ->get("/zones/{$zone->id}")
+            ->assertStatus(200)
+            ->assertInertia(function (AssertableInertia $page): void {
+                $page->component('Zones/Show')
+                    ->has('events', 1)
+                    ->where('events.0.kind', 'AE_TASK_FAILED')
+                    ->where(
+                        'events.0.message',
+                        'В зоне 1 в correction_config.base отсутствуют обязательные поля: runtime, timing, dosing, retry, tolerance, controllers, safety; критические параметры коррекции переведены в fail-closed режим.'
+                    );
+            });
+    }
+
     private function insertZoneEvent(int $zoneId, string $type, array $payload): void
     {
         $payloadColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')

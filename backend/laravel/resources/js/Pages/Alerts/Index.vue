@@ -48,7 +48,7 @@
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Source:</label>
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Источник:</label>
           <select
             v-model="sourceFilter"
             class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
@@ -69,7 +69,7 @@
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Severity:</label>
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Критичность:</label>
           <select
             v-model="severityFilter"
             class="input-select flex-1 sm:w-auto sm:min-w-[150px]"
@@ -93,7 +93,7 @@
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
-          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Category:</label>
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Категория:</label>
           <select
             v-model="categoryFilter"
             class="input-select flex-1 sm:w-auto sm:min-w-[170px]"
@@ -129,7 +129,7 @@
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
           <input
             v-model="searchQuery"
-            placeholder="type / code / message"
+            placeholder="тип / код / сообщение"
             class="input-field flex-1 sm:w-60"
           />
         </div>
@@ -320,7 +320,7 @@
             class="space-y-1"
           >
             <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Code
+              Код
             </div>
             <div class="text-[color:var(--text-primary)] font-semibold">
               {{ selectedAlert.code }}
@@ -331,7 +331,7 @@
             class="space-y-1"
           >
             <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Source
+              Источник
             </div>
             <div class="text-[color:var(--text-primary)] font-semibold">
               {{ selectedAlert.source }}
@@ -405,7 +405,7 @@
             class="space-y-1"
           >
             <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
-              Details
+              Детали
             </div>
             <pre class="text-xs whitespace-pre-wrap rounded-lg border border-[color:var(--border-muted)] p-3 bg-[color:var(--bg-surface)]">
 {{ detailsJson }}

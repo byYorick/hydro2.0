@@ -180,6 +180,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 }
 ```
 
+Примечания по запуску:
+- `start_immediately=true` создаёт цикл через canonical path `PLANNED -> start`, без отдельного legacy wizard-launch endpoint;
+- перед immediate-start backend выполняет fail-closed readiness;
+- readiness должен совпадать с runtime gate и учитывает bind-ы, калибровки, PID, runtime-флаг dispatch и hard-blocking alerts automation-engine.
+
 ### 3.3. POST /api/grow-cycles/{id}/pause
 
 - **Описание:** Приостановить цикл

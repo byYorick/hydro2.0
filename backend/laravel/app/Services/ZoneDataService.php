@@ -73,6 +73,11 @@ class ZoneDataService
                     return [
                         'id' => $alert->id,
                         'type' => $alert->type,
+                        'code' => $alert->code,
+                        'title' => $alert->title,
+                        'message' => $alert->message,
+                        'description' => $alert->description,
+                        'recommendation' => $alert->recommendation,
                         'details' => $alert->details,
                         'created_at' => $alert->created_at?->toIso8601String(),
                     ];

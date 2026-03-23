@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\Alert;
 use App\Models\ChannelBinding;
 use App\Models\GrowCycle;
 use App\Models\DeviceNode;
@@ -12,6 +13,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\ZonePidConfig;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
@@ -37,6 +39,7 @@ class GrowCycleControllerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', true);
         $this->user = User::factory()->create(['role' => 'agronomist']);
         $this->zone = Zone::factory()->create();
         $this->plant = Plant::factory()->create();
@@ -125,6 +128,45 @@ class GrowCycleControllerTest extends TestCase
         ]);
     }
 
+    private function createPidConfigs(Zone $zone): void
+    {
+        ZonePidConfig::query()->create([
+            'zone_id' => $zone->id,
+            'type' => 'ph',
+            'config' => [
+                'target' => 5.8,
+                'dead_zone' => 0.05,
+                'close_zone' => 0.3,
+                'far_zone' => 1.0,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 5.0, 'ki' => 0.05, 'kd' => 0.0],
+                    'far' => ['kp' => 8.0, 'ki' => 0.02, 'kd' => 0.0],
+                ],
+                'max_output' => 20.0,
+                'min_interval_ms' => 90000,
+                'max_integral' => 20.0,
+            ],
+        ]);
+
+        ZonePidConfig::query()->create([
+            'zone_id' => $zone->id,
+            'type' => 'ec',
+            'config' => [
+                'target' => 1.6,
+                'dead_zone' => 0.1,
+                'close_zone' => 0.5,
+                'far_zone' => 1.5,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 30.0, 'ki' => 0.3, 'kd' => 0.0],
+                    'far' => ['kp' => 50.0, 'ki' => 0.1, 'kd' => 0.0],
+                ],
+                'max_output' => 50.0,
+                'min_interval_ms' => 120000,
+                'max_integral' => 100.0,
+            ],
+        ]);
+    }
+
     #[Test]
     public function it_creates_a_grow_cycle(): void
     {
@@ -156,6 +198,8 @@ class GrowCycleControllerTest extends TestCase
     #[Test]
     public function it_creates_and_starts_cycle_immediately(): void
     {
+        $this->createPidConfigs($this->zone);
+
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
                 'recipe_revision_id' => $this->revision->id,
@@ -172,8 +216,34 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_rejects_immediate_start_when_required_zone_pid_configs_are_not_saved(): void
+    {
+        $this->assertSame(0, ZonePidConfig::query()->where('zone_id', $this->zone->id)->count());
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start')
+            ->assertJsonPath('readiness.checks.pid_config_ph', false)
+            ->assertJsonPath('readiness.checks.pid_config_ec', false);
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('PID-настройки pH не сохранены для зоны', $errors);
+        $this->assertContains('PID-настройки EC не сохранены для зоны', $errors);
+        $this->assertSame(0, ZonePidConfig::query()->where('zone_id', $this->zone->id)->count());
+    }
+
+    #[Test]
     public function it_saves_irrigation_start_parameters_in_cycle_settings(): void
     {
+        $this->createPidConfigs($this->zone);
+
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
                 'recipe_revision_id' => $this->revision->id,
@@ -394,6 +464,63 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_blocks_cycle_start_when_dispatch_to_automation_engine_is_disabled(): void
+    {
+        config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', false);
+        $this->createPidConfigs($this->zone);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('readiness.checks.dispatch_enabled', false);
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Запуск в automation-engine отключён runtime-флагом', $errors);
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_zone_has_active_hard_blocking_alert(): void
+    {
+        $this->createPidConfigs($this->zone);
+
+        Alert::query()->create([
+            'zone_id' => $this->zone->id,
+            'source' => 'automation-engine',
+            'code' => 'biz_zone_correction_config_missing',
+            'type' => 'biz',
+            'details' => [],
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'critical',
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('readiness.checks.blocking_alerts_clear', false)
+            ->assertJsonPath('readiness.blocking_alerts.0.code', 'biz_zone_correction_config_missing');
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Есть активный блокирующий alert: не настроен correction config зоны', $errors);
+    }
+
+    #[Test]
     public function it_starts_cycle_when_required_ec_pump_calibrations_exist(): void
     {
         $ecZone = Zone::factory()->create([
@@ -403,6 +530,7 @@ class GrowCycleControllerTest extends TestCase
             ],
         ]);
         $this->attachRequiredInfrastructure($ecZone);
+        $this->createPidConfigs($ecZone);
 
         $node = DeviceNode::factory()->create([
             'zone_id' => $ecZone->id,

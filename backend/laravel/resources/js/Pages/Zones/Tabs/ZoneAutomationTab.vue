@@ -114,6 +114,8 @@
         <ZoneCorrectionCalibrationStack
           :zone-id="Number(zoneId)"
           :sensor-calibration-settings="sensorCalibrationSettings"
+          :save-success-seq="props.pumpCalibrationSaveSeq ?? 0"
+          :run-success-seq="props.pumpCalibrationRunSeq ?? 0"
           @open-pump-calibration="emit('open-pump-calibration')"
         />
       </ZoneAutomationAccordionSection>

@@ -107,6 +107,8 @@ export interface ZoneAutomationTabProps {
   targets: ZoneTargetsType | PredictionTargets
   telemetry?: ZoneTelemetry | null
   activeGrowCycle?: { status?: string | null } | null
+  pumpCalibrationSaveSeq?: number
+  pumpCalibrationRunSeq?: number
 }
 
 // ─── Scheduler Task types ─────────────────────────────────────────────────────

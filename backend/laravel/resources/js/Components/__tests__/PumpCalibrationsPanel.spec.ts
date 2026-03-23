@@ -106,11 +106,12 @@ describe('PumpCalibrationsPanel.vue', () => {
         data: [
           {
             event_id: 11,
-            type: 'PUMP_CALIBRATION_SAVED',
-            message: 'Калибровка насоса [ph_acid_pump]: 0.55 мл/с',
+            type: 'PUMP_CALIBRATION_FINISHED',
+            message: 'Калибровка насоса завершена: 0.55 мл/с',
             created_at: '2026-03-17T09:10:00Z',
             payload: {
-              role: 'ph_acid_pump',
+              component: 'ph_down',
+              node_channel_id: 101,
               source: 'manual',
               ml_per_sec: 0.55,
             },
@@ -133,10 +134,86 @@ describe('PumpCalibrationsPanel.vue', () => {
         limit: 80,
       },
     })
-    expect(wrapper.text()).toContain('Калибровка насоса [ph_acid_pump]: 0.55 мл/с')
+    expect(wrapper.text()).toContain('Калибровка насоса завершена: 0.55 мл/с')
     expect(wrapper.text()).toContain('Вручную')
     expect(wrapper.text()).toContain('0.55 мл/с')
     expect(wrapper.text()).toContain('1 без калибровки')
+  })
+
+  it('перезагружает калибровки после успешного сохранения', async () => {
+    getPumpCalibrationsMock
+      .mockResolvedValueOnce([
+        {
+          node_channel_id: 102,
+          role: 'ph_base_pump',
+          component: 'ph_up',
+          channel_label: 'pH Up',
+          node_uid: 'pump-node-1',
+          channel: 'pump_ph_up',
+          ml_per_sec: null,
+          k_ms_per_ml_l: null,
+          source: null,
+          valid_from: null,
+          is_active: false,
+          calibration_age_days: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          node_channel_id: 102,
+          role: 'ph_base_pump',
+          component: 'ph_up',
+          channel_label: 'pH Up',
+          node_uid: 'pump-node-1',
+          channel: 'pump_ph_up',
+          ml_per_sec: 0.5,
+          k_ms_per_ml_l: null,
+          source: 'manual_calibration',
+          valid_from: '2026-03-23T10:00:00Z',
+          is_active: true,
+          calibration_age_days: 0,
+        },
+      ])
+    apiGetMock
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'ok',
+          data: [
+            {
+              event_id: 21,
+              type: 'PUMP_CALIBRATION_FINISHED',
+              message: 'Калибровка насоса завершена: 0.50 мл/с',
+              created_at: '2026-03-23T10:00:00Z',
+              payload: {
+                component: 'ph_up',
+                node_channel_id: 102,
+                ml_per_sec: 0.5,
+              },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mount(PumpCalibrationsPanel, {
+      props: { zoneId: 7, saveSuccessSeq: 0 },
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('Нет калибровки')
+
+    await wrapper.setProps({ saveSuccessSeq: 1 })
+    await flushPromises()
+
+    expect(getPumpCalibrationsMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('0.50 мл/с')
+    expect(wrapper.text()).toContain('Калибровка (23.03.2026)')
+    expect(wrapper.text()).toContain('Калибровка насоса завершена: 0.50 мл/с')
   })
 
   it('эмитит открытие pump calibration modal из CTA', async () => {

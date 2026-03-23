@@ -459,7 +459,10 @@
             :zone-id="selectedZone.id"
             :sensor-calibration-settings="sensorCalibrationSettings"
             :show-runtime-readiness="false"
+            :save-success-seq="pumpCalibrationSaveSeq"
+            :run-success-seq="pumpCalibrationRunSeq"
             @open-pump-calibration="openPumpCalibrationModal"
+            @pid-config-saved="handleZonePidConfigSaved"
           />
         </template>
 
@@ -495,6 +498,7 @@
             :zone-id="selectedZone.id"
             @focus-process-calibration="focusProcessCalibration"
             @open-pump-calibration="openPumpCalibrationModal"
+            @focus-pid-config="focusPidConfig"
           />
         </template>
 
@@ -518,6 +522,23 @@
 
         <div class="text-xs text-[color:var(--text-muted)]">
           Топология воды: {{ waterTopologyLabel }}
+        </div>
+
+        <div
+          v-if="selectedZone && !zoneLaunchReady && zoneLaunchReadinessErrors.length > 0"
+          class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]"
+        >
+          <div class="font-medium">
+            До запуска нужно закрыть обязательные пункты:
+          </div>
+          <ul class="mt-2 list-disc list-inside space-y-1">
+            <li
+              v-for="item in zoneLaunchReadinessErrors"
+              :key="item"
+            >
+              {{ item }}
+            </li>
+          </ul>
         </div>
 
         <div
@@ -618,6 +639,8 @@ const {
   zoneAutomationNodesReady,
   zoneAutomationExpectedNodeIds,
   selectedZoneHasActiveCycle,
+  zoneLaunchReadinessErrors,
+  zoneLaunchReady,
   launchBlockedReason,
   completedSteps,
   progressPercent,
@@ -634,6 +657,7 @@ const {
   selectZone,
   selectPlant,
   refreshAvailableNodes,
+  refreshZoneLaunchReadiness,
   applyGreenhouseClimate,
   saveZoneDeviceBindingsSection,
   applyAutomation,
@@ -727,6 +751,19 @@ function focusProcessCalibration(): void {
   }
 
   const target = document.getElementById('zone-process-calibration-panel-shared')
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function focusPidConfig(): void {
+  if (typeof document === 'undefined') {
+    return
+  }
+
+  const target = document.getElementById('zone-pid-config-panel-shared')
+  const details = target?.closest('details')
+  if (details instanceof HTMLDetailsElement) {
+    details.open = true
+  }
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
@@ -917,6 +954,7 @@ async function savePumpCalibration(payload: PumpCalibrationSavePayload): Promise
   try {
     await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, { ...payload, skip_run: true })
     await refreshAvailableNodes()
+    await refreshZoneLaunchReadiness(selectedZone.value.id)
     pumpCalibrationLastRunToken.value = null
     pumpCalibrationSaveSeq.value += 1
     showToast('Калибровка насоса сохранена.', 'success')
@@ -972,9 +1010,31 @@ async function saveZoneAutomationBlock(section: ZoneAutomationSectionSaveKey): P
       }
     }
   } finally {
+    if (selectedZone.value?.id) {
+      await refreshZoneLaunchReadiness(selectedZone.value.id)
+    }
     savingAutomationSection.value = null
   }
 }
+
+async function handleZonePidConfigSaved(): Promise<void> {
+  if (!selectedZone.value?.id) {
+    return
+  }
+
+  await refreshZoneLaunchReadiness(selectedZone.value.id)
+}
+
+watch(
+  () => pumpCalibrationRunSeq.value,
+  async () => {
+    if (!selectedZone.value?.id) {
+      return
+    }
+
+    await refreshZoneLaunchReadiness(selectedZone.value.id)
+  }
+)
 
 function handlePlantCreated(plant: { id?: number; name?: string } | null): void {
   showPlantCreateWizard.value = false

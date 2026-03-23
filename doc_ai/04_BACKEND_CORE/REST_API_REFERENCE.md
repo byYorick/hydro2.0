@@ -58,6 +58,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/zones/{id}/calibrate-flow | auth:sanctum (operator/admin/agronomist/engineer) | Калибровка датчика расхода |
 | POST | /api/zones/{id}/calibrate-pump | auth:sanctum (operator/admin/agronomist/engineer) | Калибровка дозирующей помпы (ml/sec) |
 | POST | /api/zones/{id}/grow-cycles | auth:sanctum (agronomist) | Создать новый grow cycle для зоны |
+| GET | /api/zones/{id}/health | auth:sanctum | Состояние зоны + launch readiness для мастеров запуска |
 | POST | /api/grow-cycles/{id}/pause | auth:sanctum (agronomist) | Пауза grow cycle |
 | POST | /api/grow-cycles/{id}/resume | auth:sanctum (agronomist) | Возобновление grow cycle |
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
@@ -86,6 +87,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - первый шаг (`skip_run=false`, без `actual_ml`) возвращает `data.run_token` для двухшагового UX `run -> measure -> save`;
 - второй шаг (`skip_run=true`, с `actual_ml`) требует `run_token`, если это сохранение после физического прогона; для явного manual persist без correlated run используется `manual_override=true`;
 - mirror в `node_channels.config.pump_calibration` обновляется merge-патчем и не должен затирать соседние config-ключи канала.
+
+Контракт `GET /api/zones/{id}/health`:
+- содержит агрегированный `readiness` для запуска цикла;
+- readiness fail-closed учитывает не только bind-ы/калибровки/PID, но и `automation_engine.grow_cycle_start_dispatch_enabled`;
+- readiness включает `blocking_alerts` для hard-block кодов automation-engine (`biz_zone_correction_config_missing`, `biz_zone_dosing_calibration_missing`).
 
 Контракт `GET /api/zones/{id}/state`:
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.

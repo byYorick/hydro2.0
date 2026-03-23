@@ -146,6 +146,41 @@ interface ZoneNodeResponse {
   channels?: DeviceChannel[];
 }
 
+interface RecipeListItem {
+  id: number;
+  name?: string;
+  description?: string | null;
+  phases_count?: number;
+  latest_published_revision_id?: number | null;
+  latest_draft_revision_id?: number | null;
+}
+
+interface RecipeRevisionData {
+  id: number;
+  revision_number?: number | null;
+  description?: string | null;
+  phases?: WizardRecipePhase[];
+}
+
+interface ZoneLaunchReadiness {
+  ready: boolean;
+  errors?: string[];
+  checks?: Record<string, boolean>;
+  warnings?: string[];
+  blocking_alerts?: Array<Record<string, unknown>>;
+  dispatch_enabled?: boolean;
+}
+
+interface ZoneHealthPayload {
+  readiness?: ZoneLaunchReadiness | null;
+}
+
+interface PaginatedCollectionPayload<T> {
+  items: T[];
+  currentPage: number | null;
+  lastPage: number | null;
+}
+
 function getNowLocalDatetimeValue(): string {
   const now = new Date();
   const offsetMs = now.getTimezoneOffset() * 60_000;
@@ -294,15 +329,6 @@ function addHoursToTime(start: string, hours: number): string {
   return `${endH}:${endM}`;
 }
 
-
-function normalizeErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return fallback;
-}
-
 function extractNodesFromResponse(raw: unknown): ZoneNodeResponse[] {
   if (Array.isArray(raw)) {
     return raw as ZoneNodeResponse[];
@@ -326,6 +352,58 @@ function extractNodesFromResponse(raw: unknown): ZoneNodeResponse[] {
   }
 
   return [];
+}
+
+function extractCollectionItems<T>(raw: unknown): T[] {
+  return extractPaginatedCollection<T>(raw).items;
+}
+
+function extractPaginatedCollection<T>(raw: unknown): PaginatedCollectionPayload<T> {
+  if (Array.isArray(raw)) {
+    return {
+      items: raw as T[],
+      currentPage: null,
+      lastPage: null,
+    };
+  }
+
+  if (!raw || typeof raw !== "object") {
+    return {
+      items: [],
+      currentPage: null,
+      lastPage: null,
+    };
+  }
+
+  const payload = raw as { data?: unknown };
+  if (Array.isArray(payload.data)) {
+    return {
+      items: payload.data as T[],
+      currentPage: null,
+      lastPage: null,
+    };
+  }
+
+  if (payload.data && typeof payload.data === "object") {
+    const nested = payload.data as {
+      data?: unknown;
+      current_page?: unknown;
+      last_page?: unknown;
+    };
+    if (Array.isArray(nested.data)) {
+      return {
+        items: nested.data as T[],
+        currentPage: toFiniteNumber(nested.current_page),
+        lastPage: toFiniteNumber(nested.last_page),
+      };
+    }
+  }
+
+  return {
+    items: [],
+    currentPage: null,
+    lastPage: null,
+  };
 }
 
 function normalizeActuatorType(channel: DeviceChannel): string | null {
@@ -440,31 +518,46 @@ export function useGrowthCycleWizard({
 
   const availableZones = ref<any[]>([]);
   const availablePlants = ref<any[]>([]);
-  const availableRecipes = ref<any[]>([]);
-  const selectedRecipe = ref<any | null>(null);
+  const availableRecipes = ref<RecipeListItem[]>([]);
+  const selectedRecipe = ref<RecipeListItem | null>(null);
   const selectedRecipeId = ref<number | null>(null);
   const selectedRevisionId = ref<number | null>(null);
+  const selectedRevisionData = ref<RecipeRevisionData | null>(null);
+  const selectedRevisionRequestId = ref(0);
   const selectedPlantId = ref<number | null>(null);
 
   const zoneChannels = ref<DeviceChannel[]>([]);
   const isZoneChannelsLoading = ref(false);
   const zoneChannelsLoaded = ref(false);
   const zoneChannelsError = ref<string | null>(null);
+  const zoneReadiness = ref<ZoneLaunchReadiness | null>(null);
+  const zoneReadinessLoading = ref(false);
 
   const availableRevisions = computed(() => {
-    if (!selectedRecipe.value) {
+    if (!selectedRecipe.value || !selectedRevisionId.value) {
       return [];
     }
 
-    return selectedRecipe.value.published_revisions || [];
+    if (selectedRevisionData.value && selectedRevisionData.value.id === selectedRevisionId.value) {
+      return [selectedRevisionData.value];
+    }
+
+    return [{
+      id: selectedRevisionId.value,
+      revision_number: null,
+      description: null,
+      phases: [],
+    }];
   });
 
   const selectedRevision = computed(() => {
-    if (!selectedRevisionId.value) {
+    if (!selectedRevisionId.value || !selectedRevisionData.value) {
       return null;
     }
 
-    return availableRevisions.value.find((revision: any) => revision.id === selectedRevisionId.value) || null;
+    return selectedRevisionData.value.id === selectedRevisionId.value
+      ? selectedRevisionData.value
+      : null;
   });
 
   function getCalibrationBlockingReason(): string | null {
@@ -563,13 +656,19 @@ export function useGrowthCycleWizard({
 
   const canSubmit = computed(() => {
     if (currentStep.value === 6) {
-      return getCalibrationBlockingReason() === null && validationErrors.value.length === 0;
+      return getCalibrationBlockingReason() === null
+        && validationErrors.value.length === 0
+        && zoneReadinessLoading.value === false
+        && zoneReadiness.value?.ready === true;
     }
 
     return canProceed.value && validationErrors.value.length === 0;
   });
 
   const hasCalibrationChannels = computed(() => form.value.calibrations.length > 0);
+  const zoneReadinessErrors = computed(() => {
+    return Array.isArray(zoneReadiness.value?.errors) ? zoneReadiness.value?.errors ?? [] : [];
+  });
 
   const nextStepBlockedReason = computed(() => {
     if (currentStep.value === 0 && !form.value.zoneId) {
@@ -706,12 +805,17 @@ export function useGrowthCycleWizard({
 
   async function loadWizardData(): Promise<void> {
     try {
-      const response = await api.get("/grow-cycle-wizard/data");
-      if (response.data?.status === "ok") {
-        const data = response.data.data || {};
-        availableRecipes.value = data.recipes || [];
-        availablePlants.value = data.plants || [];
-      }
+      const [plantsResponse, recipes] = await Promise.all([
+        api.get("/plants"),
+        loadAllRecipes(),
+      ]);
+
+      availablePlants.value = extractCollectionItems<any>(plantsResponse.data);
+      availableRecipes.value = recipes
+        .filter((recipe) => {
+          const publishedId = toFiniteNumber(recipe.latest_published_revision_id);
+          return publishedId !== null && publishedId > 0;
+        });
     } catch (err) {
       logger.error("[GrowthCycleWizard] Failed to load wizard data", err);
       showToast("Не удалось загрузить данные визарда", "error", TOAST_TIMEOUT.NORMAL);
@@ -788,29 +892,113 @@ export function useGrowthCycleWizard({
     }
   }
 
+  function getPreferredRevisionId(recipe: RecipeListItem | null): number | null {
+    if (!recipe) {
+      return null;
+    }
+
+    const publishedId = toFiniteNumber(recipe.latest_published_revision_id);
+    if (publishedId && publishedId > 0) {
+      return Math.round(publishedId);
+    }
+
+    const draftId = toFiniteNumber(recipe.latest_draft_revision_id);
+    if (draftId && draftId > 0) {
+      return Math.round(draftId);
+    }
+
+    return null;
+  }
+
+  async function loadSelectedRevision(revisionId: number): Promise<void> {
+    const requestId = selectedRevisionRequestId.value + 1;
+    selectedRevisionRequestId.value = requestId;
+
+    try {
+      const response = await api.get(`/recipe-revisions/${revisionId}`);
+      const revision = response.data?.data || null;
+      if (selectedRevisionRequestId.value !== requestId) {
+        return;
+      }
+
+      if (revision && typeof revision === "object") {
+        selectedRevisionData.value = revision as RecipeRevisionData;
+        return;
+      }
+
+      selectedRevisionData.value = null;
+    } catch (err) {
+      if (selectedRevisionRequestId.value !== requestId) {
+        return;
+      }
+
+      selectedRevisionData.value = null;
+      logger.warn("[GrowthCycleWizard] Failed to load recipe revision", { revisionId, err });
+      showToast("Не удалось загрузить ревизию рецепта", "warning", TOAST_TIMEOUT.NORMAL);
+    }
+  }
+
+  async function loadAllRecipes(): Promise<RecipeListItem[]> {
+    const perPage = 100;
+    const collected = new Map<number, RecipeListItem>();
+    let page = 1;
+    let lastPage = 1;
+
+    while (page <= lastPage) {
+      const response = await api.get("/recipes", {
+        params: {
+          per_page: perPage,
+          page,
+        },
+      });
+
+      const payload = extractPaginatedCollection<RecipeListItem>(response.data);
+      payload.items.forEach((recipe) => {
+        if (typeof recipe?.id === "number" && recipe.id > 0) {
+          collected.set(recipe.id, recipe);
+        }
+      });
+
+      const reportedLastPage = payload.lastPage && payload.lastPage > 0
+        ? Math.round(payload.lastPage)
+        : page;
+
+      if (payload.items.length === 0 || page >= reportedLastPage) {
+        break;
+      }
+
+      lastPage = reportedLastPage;
+      page += 1;
+    }
+
+    return Array.from(collected.values());
+  }
+
   function onZoneSelected(): void {
     zoneChannelsLoaded.value = false;
     zoneChannels.value = [];
     form.value.calibrations = [];
+    zoneReadiness.value = null;
   }
 
   function syncSelectedRecipe(): void {
     if (!selectedRecipeId.value) {
       selectedRecipe.value = null;
       selectedRevisionId.value = null;
+      selectedRevisionData.value = null;
       return;
     }
 
     selectedRecipe.value = availableRecipes.value.find((recipe) => recipe.id === selectedRecipeId.value) || null;
-    const revisions = selectedRecipe.value?.published_revisions || [];
-    if (!revisions.length) {
+    const preferredRevisionId = getPreferredRevisionId(selectedRecipe.value);
+    if (!preferredRevisionId) {
       selectedRevisionId.value = null;
+      selectedRevisionData.value = null;
       return;
     }
 
-    const hasSelected = revisions.some((revision: any) => revision.id === selectedRevisionId.value);
-    if (!hasSelected) {
-      selectedRevisionId.value = revisions[0].id;
+    if (selectedRevisionId.value !== preferredRevisionId) {
+      selectedRevisionId.value = preferredRevisionId;
     }
   }
 
@@ -820,8 +1008,9 @@ export function useGrowthCycleWizard({
 
   function onRecipeCreated(recipe: any): void {
     selectedRecipeId.value = recipe.id;
-    selectedRecipe.value = recipe;
-    selectedRevisionId.value = recipe.latest_published_revision_id || recipe.latest_draft_revision_id || null;
+    selectedRecipe.value = null;
+    selectedRevisionData.value = null;
+    selectedRevisionId.value = null;
     recipeMode.value = "select";
     void loadWizardData();
   }
@@ -1195,6 +1384,21 @@ export function useGrowthCycleWizard({
     }
   }
 
+  async function loadZoneReadiness(zoneId: number): Promise<void> {
+    zoneReadinessLoading.value = true;
+
+    try {
+      const response = await api.get(`/api/zones/${zoneId}/health`);
+      const payload = (response.data?.data || null) as ZoneHealthPayload | ZoneLaunchReadiness | null;
+      zoneReadiness.value = payload?.readiness ?? (payload as ZoneLaunchReadiness | null);
+    } catch (err) {
+      logger.warn("[GrowthCycleWizard] Failed to load zone readiness", { zoneId, err });
+      zoneReadiness.value = null;
+    } finally {
+      zoneReadinessLoading.value = false;
+    }
+  }
+
   async function saveAutomationProfile(zoneId: number, subsystems: Record<string, unknown>): Promise<void> {
     const payload = {
       mode: "setup",
@@ -1247,6 +1451,26 @@ export function useGrowthCycleWizard({
     return failedChannels;
   }
 
+  async function persistLaunchPrerequisites(zoneId: number): Promise<string[] | null> {
+    const configPayload = buildGrowthCycleConfigPayload({
+      climateForm: climateForm.value,
+      waterForm: waterForm.value,
+      lightingForm: lightingForm.value,
+    }, {
+      automationDefaults: automationDefaults.value,
+      automationCommandTemplates: automationCommandTemplates.value,
+    });
+
+    await saveAutomationProfile(zoneId, (configPayload.subsystems || {}) as Record<string, unknown>);
+
+    const failedCalibrations = await savePumpCalibrations(zoneId);
+    if (failedCalibrations.length > 0) {
+      return failedCalibrations;
+    }
+
+    return null;
+  }
+
   async function onSubmit(): Promise<void> {
     if (!validateStep(currentStep.value)) {
       return;
@@ -1276,9 +1500,28 @@ export function useGrowthCycleWizard({
     error.value = null;
     errorDetails.value = [];
 
-    let cycleId: number | null = null;
-
     try {
+      const failedCalibrations = await persistLaunchPrerequisites(zoneId);
+      if (failedCalibrations && failedCalibrations.length > 0) {
+        const calibrationError = `Не удалось сохранить калибровки насосов: ${failedCalibrations.join(", ")}`;
+        validationErrors.value = [calibrationError];
+        error.value = calibrationError;
+        errorDetails.value = failedCalibrations;
+        showToast(calibrationError, "error", TOAST_TIMEOUT.LONG);
+        return;
+      }
+
+      await loadZoneReadiness(zoneId);
+      if (zoneReadiness.value?.ready !== true) {
+        const readinessErrors = zoneReadinessErrors.value;
+        const firstError = readinessErrors[0] || "Зона не готова к запуску цикла";
+        validationErrors.value = readinessErrors;
+        error.value = firstError;
+        errorDetails.value = readinessErrors;
+        showToast(firstError, "error", TOAST_TIMEOUT.NORMAL);
+        return;
+      }
+
       const plantingAt = form.value.startedAt ? new Date(form.value.startedAt).toISOString() : undefined;
       const cycleResponse = await api.post(`/api/zones/${zoneId}/grow-cycles`, {
         recipe_revision_id: selectedRevisionId.value,
@@ -1307,44 +1550,7 @@ export function useGrowthCycleWizard({
       }
 
       const createdCycleId = toFiniteNumber(cycleResponse.data?.data?.id);
-      cycleId = createdCycleId ? Math.round(createdCycleId) : null;
-
-      const configPayload = buildGrowthCycleConfigPayload({
-        climateForm: climateForm.value,
-        waterForm: waterForm.value,
-        lightingForm: lightingForm.value,
-      }, {
-        automationDefaults: automationDefaults.value,
-        automationCommandTemplates: automationCommandTemplates.value,
-      });
-      await saveAutomationProfile(zoneId, (configPayload.subsystems || {}) as Record<string, unknown>);
-    } catch (err: unknown) {
-      if (cycleId !== null) {
-        error.value = "Цикл создан, но не удалось сохранить профиль автоматики. Настройте его в разделе автоматики зоны.";
-        errorDetails.value = [];
-        showToast(error.value, "warning", TOAST_TIMEOUT.LONG);
-      } else {
-        const errorMessage = extractSetupWizardErrorMessage(err, "Ошибка при создании цикла");
-        const details = extractSetupWizardErrorDetails(err);
-        error.value = errorMessage;
-        errorDetails.value = details;
-        showToast(`${errorMessage}${details[0] ? ` ${details[0]}` : ""}`, "error", TOAST_TIMEOUT.NORMAL);
-      }
-
-      logger.error("[GrowthCycleWizard] Failed to submit", err);
-      loading.value = false;
-      return;
-    }
-
-    try {
-      const failedCalibrations = await savePumpCalibrations(zoneId);
-      if (failedCalibrations.length > 0) {
-        showToast(
-          `Цикл запущен, но не удалось сохранить калибровки: ${failedCalibrations.join(", ")}`,
-          "warning",
-          TOAST_TIMEOUT.LONG,
-        );
-      }
+      const cycleId = createdCycleId ? Math.round(createdCycleId) : null;
 
       clearDraft();
       showToast("Цикл выращивания успешно запущен", "success", TOAST_TIMEOUT.NORMAL);
@@ -1358,11 +1564,12 @@ export function useGrowthCycleWizard({
         expectedHarvestAt: form.value.expectedHarvestAt || undefined,
       });
     } catch (err: unknown) {
-      const message = normalizeErrorMessage(err, "Цикл создан, но произошла ошибка при финализации");
-      error.value = message;
-      errorDetails.value = [];
-      logger.error("[GrowthCycleWizard] Failed on final submit stage", err);
-      showToast(message, "warning", TOAST_TIMEOUT.LONG);
+      const errorMessage = extractSetupWizardErrorMessage(err, "Ошибка при запуске цикла");
+      const details = extractSetupWizardErrorDetails(err);
+      error.value = errorMessage;
+      errorDetails.value = details;
+      logger.error("[GrowthCycleWizard] Failed to submit", err);
+      showToast(`${errorMessage}${details[0] ? ` ${details[0]}` : ""}`, "error", TOAST_TIMEOUT.NORMAL);
     } finally {
       loading.value = false;
     }
@@ -1395,11 +1602,15 @@ export function useGrowthCycleWizard({
     selectedRecipeId.value = null;
     selectedRevisionId.value = null;
     selectedRecipe.value = null;
+    selectedRevisionData.value = null;
+    selectedRevisionRequestId.value = 0;
 
     zoneChannels.value = [];
     isZoneChannelsLoading.value = false;
     zoneChannelsLoaded.value = false;
     zoneChannelsError.value = null;
+    zoneReadiness.value = null;
+    zoneReadinessLoading.value = false;
   }
 
   async function initializeWizardState(): Promise<void> {
@@ -1412,6 +1623,7 @@ export function useGrowthCycleWizard({
       await loadWizardData();
       if (props.zoneId) {
         await loadAutomationProfile(props.zoneId);
+        await loadZoneReadiness(props.zoneId);
       }
       loadDraft();
       applyInitialData();
@@ -1440,12 +1652,45 @@ export function useGrowthCycleWizard({
         if (props.show && !draftFormsHydrated.value && automationProfileLoadedZoneId.value !== newZoneId) {
           void loadAutomationProfile(newZoneId);
         }
+        if (props.show) {
+          void loadZoneReadiness(newZoneId);
+        }
       }
+    },
+  );
+
+  watch(
+    () => form.value.zoneId,
+    (zoneId, previousZoneId) => {
+      if (!props.show || zoneId === previousZoneId) {
+        return;
+      }
+
+      if (!zoneId) {
+        zoneReadiness.value = null;
+        zoneReadinessLoading.value = false;
+        return;
+      }
+
+      void loadZoneReadiness(zoneId);
     },
   );
 
   watch(selectedRecipeId, () => {
     syncSelectedRecipe();
+  });
+
+  watch(selectedRevisionId, (revisionId) => {
+    if (!revisionId) {
+      selectedRevisionData.value = null;
+      return;
+    }
+
+    if (selectedRevisionData.value?.id === revisionId) {
+      return;
+    }
+
+    void loadSelectedRevision(revisionId);
   });
 
   watch(selectedRevision, (revision) => {
@@ -1518,6 +1763,7 @@ export function useGrowthCycleWizard({
       }
 
       void loadAutomationProfile(zoneId);
+      void loadZoneReadiness(zoneId);
     },
   );
 
@@ -1527,6 +1773,9 @@ export function useGrowthCycleWizard({
       const stepKey = steps[step]?.key;
       if (!form.value.calibrationSkipped && (stepKey === "calibration" || stepKey === "confirm")) {
         void fetchZoneChannels(stepKey === "confirm");
+      }
+      if (stepKey === "confirm" && form.value.zoneId) {
+        void loadZoneReadiness(form.value.zoneId);
       }
     },
   );
@@ -1586,6 +1835,9 @@ export function useGrowthCycleWizard({
     zoneChannelsLoaded,
     zoneChannelsError,
     hasCalibrationChannels,
+    zoneReadiness,
+    zoneReadinessLoading,
+    zoneReadinessErrors,
     getCalibrationComponentLabel,
     formatDateTime,
     formatDate,
@@ -1593,6 +1845,7 @@ export function useGrowthCycleWizard({
     onRecipeSelected,
     onRecipeCreated,
     fetchZoneChannels,
+    loadZoneReadiness,
     nextStep,
     prevStep,
     onSubmit,

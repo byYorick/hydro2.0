@@ -64,6 +64,8 @@
         :targets="targets"
         :telemetry="telemetry"
         :active-grow-cycle="activeGrowCycle"
+        :pump-calibration-save-seq="pumpCalibrationSaveSeq"
+        :pump-calibration-run-seq="pumpCalibrationRunSeq"
         @open-pump-calibration="openPumpCalibrationModal"
       />
       <ZoneEventsTab
