@@ -746,7 +746,7 @@ if deps.safety_config.stop_confirmation_required and not stop_result.get("succes
 
 ## Прочитать сначала
 
-1. `backend/services/automation-engine/ae2lite/pg_notify_listener.py` — существующий pg_notify listener
+1. существующий runtime pg_notify listener в `automation-engine` — текущая точка интеграции NOTIFY
 2. `backend/services/automation-engine/executor/workflow_phase_policy.py` — FSM состояния
 3. `backend/services/automation-engine/infrastructure/runtime_state_store.py`
 4. `backend/services/automation-engine/main.py` — точка входа сервиса
@@ -843,7 +843,7 @@ async with zone_execution_context(
 
 ### Подход
 
-Вместо полного event-driven (требует изменения MQTT и firmware), использовать **PostgreSQL NOTIFY** уже существующий в системе (`ae2lite/pg_notify_listener.py`).
+Вместо полного event-driven (требует изменения MQTT и firmware), использовать **PostgreSQL NOTIFY** уже существующий в runtime automation-engine.
 
 Когда `history-logger` записывает событие `CLEAN_FILL_COMPLETED` или `SOLUTION_FILL_COMPLETED` в `zone_events` — он может эмитировать `NOTIFY two_tank_zone_{zone_id}`. `automation-engine` слушает этот канал и немедленно ставит `clean_fill_check` задачу, не ожидая `poll_interval_sec`.
 
@@ -889,7 +889,7 @@ __all__ = ["ZoneEventTrigger"]
 
 ### 6.2 Подключить к существующему pg_notify listener
 
-**Файл:** `backend/services/automation-engine/ae2lite/pg_notify_listener.py`
+**Файл:** текущий runtime pg_notify listener в `backend/services/automation-engine`
 
 Изучить существующий listener. Добавить handling для событий типа `CLEAN_FILL_COMPLETED` и `SOLUTION_FILL_COMPLETED`:
 

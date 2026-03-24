@@ -310,3 +310,24 @@ def test_build_correction_config_preserves_runtime_contract_fields() -> None:
     assert result["meta"]["preset_slug"] == "balanced"
     assert result["meta"]["version"] == 9
     assert result["meta"]["phase_overrides"]["solution_fill"]["timing"]["stabilization_sec"] == 31
+
+
+def test_bundle_correction_config_row_uses_bundle_meta_version() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._bundle_correction_config_row(
+        {
+            "correction": {
+                "resolved_config": {
+                    "base": {"runtime": {"required_node_type": "irrig"}},
+                    "phases": {},
+                    "meta": {"version": 4},
+                },
+                "phase_overrides": {"solution_fill": {"timing": {"stabilization_sec": 12}}},
+            }
+        }
+    )
+
+    assert result is not None
+    assert result["version"] == 4
+    assert result["phase_overrides"]["solution_fill"]["timing"]["stabilization_sec"] == 12

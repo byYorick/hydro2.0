@@ -15,6 +15,7 @@
       >
         <input
           :checked="enabled"
+          data-testid="greenhouse-climate-enabled"
           type="checkbox"
           :disabled="!canConfigure"
           @change="$emit('update:enabled', ($event.target as HTMLInputElement).checked)"
@@ -128,6 +129,7 @@
             Интервал климата (мин)
             <input
               v-model.number="climateForm.intervalMinutes"
+              data-testid="greenhouse-climate-interval"
               type="number"
               min="1"
               max="1440"
@@ -170,6 +172,7 @@
             Температура день
             <input
               v-model.number="climateForm.dayTemp"
+              data-testid="greenhouse-climate-day-temp"
               type="number"
               min="10"
               max="35"
@@ -338,6 +341,7 @@
       >
         <button
           type="button"
+          data-testid="greenhouse-climate-apply"
           class="btn btn-primary h-9 px-3 text-sm"
           :disabled="!canConfigure || applying"
           @click="$emit('apply')"

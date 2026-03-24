@@ -2,6 +2,6 @@
 
 name: E86_ec_ph_correction
 description: |
-  Legacy AE2 EC/pH correction workflow migrated to standalone AE3-Lite.
+  Historical legacy EC/pH correction workflow migrated to standalone AE3-Lite.
   Каноничная проверка: AE3 two-tank real-hardware smoke.
 scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

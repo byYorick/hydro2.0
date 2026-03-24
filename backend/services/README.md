@@ -10,7 +10,7 @@ Python Core (MVP 1a)
 - **Сервисы:**
   - `mqtt-bridge` — FastAPI мост REST→MQTT (порт 9000)
   - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL, **единственная точка публикации команд в MQTT** (порт 9300)
-  - `automation-engine` — AE2-Lite рантайм зон, wake-up `start-cycle`, управление mode/manual-step, публикация команд через history-logger REST API (порты 9401/metrics, 9405/REST API)
+  - `automation-engine` — AE3 рантайм зон, wake-up `start-cycle`, управление mode/manual-step, публикация команд через history-logger REST API (порты 9401/metrics, 9405/REST API)
   - `Laravel scheduler-dispatch` — owner planning/dispatch intents и wake-up в `automation-engine` (через `automation:dispatch-schedules`)
   - `device-registry` — PLANNED (см. `device-registry/README.md`)
 

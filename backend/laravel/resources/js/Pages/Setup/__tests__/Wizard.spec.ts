@@ -886,9 +886,56 @@ describe('Setup/Wizard.vue', () => {
       },
     })
 
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/greenhouses') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 10, uid: 'gh-main', name: 'Main GH' }],
+          },
+        })
+      }
+
+      if (url === '/api/greenhouses/10') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 10, uid: 'gh-main', name: 'Main GH' },
+          },
+        })
+      }
+
+      if (url === '/api/zones') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 20, name: 'Zone A', greenhouse_id: 10 }],
+          },
+        })
+      }
+
+      if (url === '/api/zones/20') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
     const wrapper = mount(Wizard)
     await flushPromises()
-    await createGreenhouseAndZone(wrapper)
+
+    await wrapper.get('[data-testid="setup-wizard-greenhouse-select"]').setValue('10')
+    await flushPromises()
+    await wrapper.get('[data-testid="setup-wizard-zone-select"]').setValue('20')
+    await flushPromises()
+    await flushPromises()
+
+    expect((wrapper.get('[data-test="lighting-toggle"]').element as HTMLInputElement).checked).toBe(true)
 
     const plantSelect = wrapper.findAll('select').find((item) => item.text().includes('Tomato'))
     await plantSelect?.setValue('5')
@@ -903,7 +950,9 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
     await flushPromises()
 
-    const automationCall = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
+    const automationCall = updateDocumentMock.mock.calls
+      .filter(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
+      .at(-1)
     expect(automationCall?.[3]?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(true)
   })
 

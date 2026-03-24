@@ -94,7 +94,7 @@ class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
             restore_runtime.get("params", {}).get("automation_runtime"),
             "${previous_automation_runtime}",
         )
-        self.assertNotIn("'ae2'", str(restore_runtime.get("query") or ""))
+        self.assertIn(":automation_runtime", str(restore_runtime.get("query") or ""))
 
     def test_cleans_zone_workflow_state_in_cleanup(self) -> None:
         step = self._find_step("cleanup", "cleanup_zone_workflow_state_after_run")

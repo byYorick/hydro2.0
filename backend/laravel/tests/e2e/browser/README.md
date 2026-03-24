@@ -16,7 +16,10 @@ tests/e2e/browser/
 │   ├── 06-grow-cycle.spec.ts
 │   ├── 07-alerts.spec.ts
 │   ├── 08-bindings.spec.ts
-│   └── 09-ws-degradation.spec.ts
+│   ├── 09-ws-degradation.spec.ts
+│   ├── 12-automation-authority-settings.spec.ts
+│   ├── 13-correction-authority-flows.spec.ts
+│   └── 14-setup-wizard-greenhouse-authority.spec.ts
 ├── helpers/                   # Вспомогательные функции
 │   └── api.ts                 # API хелперы для создания/удаления тестовых данных
 ├── fixtures/                  # Playwright фикстуры
@@ -63,10 +66,10 @@ npm run e2e:browser
 npm run e2e:browser:ui
 
 # Запуск конкретного теста
-npx playwright test --config=../../tests/e2e/browser/playwright.config.ts specs/01-login.spec.ts
+npx playwright test --config=tests/e2e/browser/playwright.config.ts tests/e2e/browser/specs/01-login.spec.ts
 
 # Запуск в headless режиме
-npx playwright test --config=../../tests/e2e/browser/playwright.config.ts --headed=false
+npx playwright test --config=tests/e2e/browser/playwright.config.ts --headed=false
 ```
 
 ### Из директории tests/e2e/browser:
@@ -139,6 +142,18 @@ npx playwright test specs/01-login.spec.ts
 - Отключение сети и проверка отображения потери соединения
 - Включение сети и проверка авто-переподключения
 - Появление событий после reconnect
+
+### 10. Automation Authority Settings (`12-automation-authority-settings.spec.ts`)
+- Сохранение `system.runtime` через authority UI
+- Валидация system bundle и проверка смены `bundle_revision`
+
+### 11. Correction Authority Flows (`13-correction-authority-flows.spec.ts`)
+- Readiness refresh после сохранения process calibration и PID authority docs
+- CRUD preset-ов correction family через authority form
+
+### 12. Setup Wizard Greenhouse Authority (`14-setup-wizard-greenhouse-authority.spec.ts`)
+- Предзагрузка `greenhouse.logic_profile` через authority API
+- Проверка чтения и сохранения climate profile в setup wizard
 
 ## Подготовка данных
 

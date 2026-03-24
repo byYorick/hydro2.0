@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Models\ZoneAutomationLogicProfile;
+use App\Services\ZoneLogicProfileCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreZoneCommandRequest extends FormRequest
@@ -51,7 +51,7 @@ class StoreZoneCommandRequest extends FormRequest
                     $validator->errors()->add('params.mode', 'The params.mode field is required and must be "start" or "adjust" for GROWTH_CYCLE_CONFIG.');
                 }
 
-                $allowedModes = ZoneAutomationLogicProfile::allowedModes();
+                $allowedModes = ZoneLogicProfileCatalog::allowedModes();
                 $profileMode = $params['profile_mode'] ?? null;
                 if (!is_string($profileMode) || !in_array($profileMode, $allowedModes, true)) {
                     $validator->errors()->add(

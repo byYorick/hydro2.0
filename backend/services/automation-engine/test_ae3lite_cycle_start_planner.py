@@ -37,6 +37,9 @@ def _minimal_zone_correction_config() -> dict:
                 "prepare_recirculation_timeout_sec": 1200,
                 "prepare_recirculation_max_attempts": 3,
                 "prepare_recirculation_max_correction_attempts": 20,
+                "telemetry_stale_retry_sec": 15,
+                "decision_window_retry_sec": 20,
+                "low_water_retry_sec": 30,
             },
             "dosing": {
                 "solution_volume_l": 100.0,

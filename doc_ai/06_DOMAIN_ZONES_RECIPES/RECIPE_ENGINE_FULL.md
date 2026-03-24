@@ -9,7 +9,7 @@ Recipe Engine — это подсистема, которая управляет
 - ✅ Введено версионирование через `RecipeRevision`
 - ✅ Центр истины — `GrowCycle` вместо `Zone`
 - ✅ Цели хранятся по колонкам, а не в JSON
-- ✅ Единый контракт через `EffectiveTargetsService`
+- ✅ Единая бизнес-семантика через `EffectiveTargetsService` и authority bundles
 - ✅ Канонический phase write-contract: flat columns + `extensions.day_night` + `extensions.subsystems.irrigation.targets.system_type`
 - ✅ `targets` на выдаче — derived compatibility/view helper, а не source of truth
 - ✅ `PlantCreateModal` больше не оркестрирует `plant -> recipe -> revision -> phases` на фронте; используется атомарный backend flow
@@ -103,7 +103,7 @@ CREATE TABLE recipe_revision_phases (
 
 ### 3.2. Работа Python контроллеров
 
-1. **Получение runtime targets** через SQL read-model (AE2-Lite):
+1. **Получение runtime targets** через SQL read-model (AE3):
    - чтение `grow_cycles/grow_cycle_phases` и `automation_effective_bundles`;
    - runtime precedence: `phase snapshot -> cycle.phase_overrides -> cycle.manual_overrides -> zone.logic_profile(active_mode)`.
 
@@ -153,7 +153,7 @@ CREATE TABLE recipe_revision_phases (
 
 ## 4. Связь с контроллерами (новая модель)
 
-**Контроллеры получают данные через runtime read-model (AE2-Lite):**
+**Контроллеры получают данные через runtime read-model (AE3):**
 
 1. **Batch read** для нескольких зон:
    - прямые SQL запросы к read-model таблицам;
@@ -230,14 +230,14 @@ CREATE TABLE recipe_revision_phases (
 2. **Версионировать рецепты** — новые изменения через RecipeRevision, а не прямое редактирование
 3. **Обновлять effective targets контракт** — при добавлении новых полей в цели
 4. **Тестировать контракты** — изменения в EffectiveTargetsService требуют обновления тестов
-5. **Использовать Laravel API** — Python сервисы не делают прямые SQL запросы
+5. **Разделять read-path по назначению** — UI и integration tooling используют Laravel API, runtime automation-engine использует direct SQL read-model
 
 ### 5.2. Новая модель данных
 
 - **RecipeRevision** — для версионирования рецептов
 - **GrowCycle** — для активных циклов (1 на зону)
 - **GrowCyclePhase** — снапшоты фаз (не ссылаются на шаблоны)
-- **EffectiveTargetsService** — единый источник целей для Python
+- **EffectiveTargetsService** — Laravel business/read-model для targets и integration contracts
 
 ### 5.3. Запреты
 

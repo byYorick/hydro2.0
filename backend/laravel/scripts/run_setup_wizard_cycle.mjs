@@ -415,12 +415,12 @@ async function main() {
           headers['X-CSRF-TOKEN'] = csrf
         }
 
-        const response = await fetch('/settings/automation-engine', {
-          method: 'PATCH',
+        const response = await fetch('/api/automation-configs/system/0/system.runtime', {
+          method: 'PUT',
           credentials: 'include',
           headers,
           body: JSON.stringify({
-            settings: {
+            payload: {
               'automation_engine.grow_cycle_start_dispatch_enabled': true,
             },
           }),

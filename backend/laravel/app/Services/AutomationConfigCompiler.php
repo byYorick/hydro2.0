@@ -95,7 +95,7 @@ class AutomationConfigCompiler
                     'active_profile' => $activeProfile,
                     'profiles' => $logicProfile['profiles'] ?? [],
                 ],
-                'correction' => $this->payload(AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION, AutomationConfigRegistry::SCOPE_ZONE, $zoneId),
+                'correction' => $this->zoneCorrectionPayload($zoneId),
                 'pid' => [
                     'ph' => [
                         'config' => $this->payload(AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH, AutomationConfigRegistry::SCOPE_ZONE, $zoneId),
@@ -264,6 +264,49 @@ class AutomationConfigCompiler
         }
 
         return $violations;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function zoneCorrectionPayload(int $zoneId): array
+    {
+        $payload = $this->payload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId
+        );
+        $resolvedConfig = is_array($payload['resolved_config'] ?? null) && ! array_is_list($payload['resolved_config'])
+            ? $payload['resolved_config']
+            : [];
+        $meta = is_array($resolvedConfig['meta'] ?? null) && ! array_is_list($resolvedConfig['meta'])
+            ? $resolvedConfig['meta']
+            : [];
+
+        $meta['version'] = $this->documentVersion(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId
+        );
+
+        if (is_array($payload['phase_overrides'] ?? null) && ! array_is_list($payload['phase_overrides'])) {
+            $meta['phase_overrides'] = $payload['phase_overrides'];
+        }
+
+        $resolvedConfig['meta'] = $meta;
+        $payload['resolved_config'] = $resolvedConfig;
+
+        return $payload;
+    }
+
+    private function documentVersion(string $namespace, string $scopeType, int $scopeId): int
+    {
+        return (int) AutomationConfigDocument::query()
+            ->where('namespace', $namespace)
+            ->where('scope_type', $scopeType)
+            ->where('scope_id', $scopeId)
+            ->withCount('versions')
+            ->value('versions_count');
     }
 
     /**

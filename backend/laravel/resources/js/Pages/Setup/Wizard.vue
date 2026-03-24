@@ -73,6 +73,7 @@
         >
           <select
             v-model.number="selectedGreenhouseId"
+            data-testid="setup-wizard-greenhouse-select"
             class="input-select"
             :disabled="!canConfigure || loading.greenhouses"
             @change="selectGreenhouse"
@@ -205,6 +206,7 @@
         >
           <select
             v-model.number="selectedZoneId"
+            data-testid="setup-wizard-zone-select"
             class="input-select"
             :disabled="!canConfigure || loading.zones || !stepGreenhouseDone"
             @change="selectZone"
@@ -298,6 +300,7 @@
         <div class="grid gap-3 md:grid-cols-[1fr_auto]">
           <select
             v-model.number="selectedPlantId"
+            data-testid="setup-wizard-plant-select"
             class="input-select"
             :disabled="!canConfigure || loading.plants"
             @change="selectPlant"
@@ -463,6 +466,7 @@
             :run-success-seq="pumpCalibrationRunSeq"
             @open-pump-calibration="openPumpCalibrationModal"
             @pid-config-saved="handleZonePidConfigSaved"
+            @authority-updated="handleZoneCorrectionCalibrationUpdated"
           />
         </template>
       </section>
@@ -490,6 +494,7 @@
 
           <CorrectionRuntimeReadinessCard
             :zone-id="selectedZone.id"
+            :refresh-token="wizardReadinessRefreshToken"
             @focus-process-calibration="focusProcessCalibration"
             @open-pump-calibration="openPumpCalibrationModal"
             @focus-pid-config="focusPidConfig"
@@ -499,6 +504,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
+            data-testid="setup-wizard-open-cycle"
             :disabled="!canLaunch || loading.stepLaunch"
             @click="openCycleWizard"
           >
@@ -584,7 +590,7 @@ import { useApi } from '@/composables/useApi'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { useToast } from '@/composables/useToast'
-import { payloadFromZoneLogicDocument, resolveZoneLogicProfileEntry } from '@/composables/zoneLogicProfileAuthority'
+import { payloadFromZoneLogicDocument, resolveZoneLogicProfileEntry } from '@/composables/zoneLogicProfileDocument'
 import { applyAutomationFromRecipe, type LightingFormState, type WaterFormState, type ZoneClimateFormState } from '@/composables/zoneAutomationFormLogic'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import type { Device, DeviceChannel } from '@/types/Device'
@@ -669,10 +675,14 @@ const pumpCalibrationLoadingSave = ref(false)
 const pumpCalibrationSaveSeq = ref(0)
 const pumpCalibrationRunSeq = ref(0)
 const pumpCalibrationLastRunToken = ref<string | null>(null)
+const zoneCorrectionAuthoritySeq = ref(0)
 const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
 const committedWaterForm = ref<WaterFormState>(cloneWaterForm(automationWaterForm))
 const committedLightingForm = ref<LightingFormState>(cloneLightingForm(automationLightingForm))
 const committedZoneClimateForm = ref<ZoneClimateFormState>(cloneZoneClimateForm(zoneClimateForm))
+const wizardReadinessRefreshToken = computed(
+  () => `${pumpCalibrationSaveSeq.value}:${pumpCalibrationRunSeq.value}:${zoneCorrectionAuthoritySeq.value}`
+)
 
 const pumpCalibrationDevices = computed<Device[]>(() => {
   const zoneId = selectedZone.value?.id ?? null
@@ -781,34 +791,6 @@ function cloneLightingForm(source: LightingFormState): LightingFormState {
 
 function cloneZoneClimateForm(source: ZoneClimateFormState): ZoneClimateFormState {
   return { ...source }
-}
-
-function resolveZoneAutomationProfileEntry(payload: unknown): { subsystems: Record<string, unknown>; updatedAt: string | null } | null {
-  const record = asRecord(payload)
-  const data = asRecord(record?.data ?? null)
-  const profiles = asRecord(data?.profiles ?? null)
-  if (!profiles) {
-    return null
-  }
-
-  const activeMode = typeof data?.active_mode === 'string' ? data.active_mode : null
-  const preferredModes = [activeMode, 'setup', 'working']
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-
-  for (const mode of preferredModes) {
-    const candidate = asRecord(profiles[mode])
-    const subsystems = asRecord(candidate?.subsystems ?? null)
-    if (!subsystems) {
-      continue
-    }
-
-    return {
-      subsystems,
-      updatedAt: typeof candidate?.updated_at === 'string' ? candidate.updated_at : null,
-    }
-  }
-
-  return null
 }
 
 function syncCommittedAutomationStateFromCurrentForms(): void {
@@ -1018,11 +1000,12 @@ async function handleZonePidConfigSaved(): Promise<void> {
     return
   }
 
+  zoneCorrectionAuthoritySeq.value += 1
   await refreshZoneLaunchReadiness(selectedZone.value.id)
 }
 
 watch(
-  () => pumpCalibrationRunSeq.value,
+  () => [pumpCalibrationSaveSeq.value, pumpCalibrationRunSeq.value],
   async () => {
     if (!selectedZone.value?.id) {
       return
@@ -1031,6 +1014,15 @@ watch(
     await refreshZoneLaunchReadiness(selectedZone.value.id)
   }
 )
+
+async function handleZoneCorrectionCalibrationUpdated(): Promise<void> {
+  if (!selectedZone.value?.id) {
+    return
+  }
+
+  zoneCorrectionAuthoritySeq.value += 1
+  await refreshZoneLaunchReadiness(selectedZone.value.id)
+}
 
 function handlePlantCreated(plant: { id?: number; name?: string } | null): void {
   showPlantCreateWizard.value = false

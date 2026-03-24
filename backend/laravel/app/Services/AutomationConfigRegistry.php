@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\ZoneAutomationLogicProfile;
 use InvalidArgumentException;
 
 class AutomationConfigRegistry
@@ -348,10 +347,10 @@ class AutomationConfigRegistry
         $baseConfig = $payload['base_config'] ?? [];
         $phaseOverrides = $payload['phase_overrides'] ?? [];
 
-        if (! is_array($baseConfig) || array_is_list($baseConfig)) {
+        if (! is_array($baseConfig) || ($baseConfig !== [] && array_is_list($baseConfig))) {
             throw new InvalidArgumentException('zone.correction.base_config must be an object.');
         }
-        if (! is_array($phaseOverrides) || array_is_list($phaseOverrides)) {
+        if (! is_array($phaseOverrides) || ($phaseOverrides !== [] && array_is_list($phaseOverrides))) {
             throw new InvalidArgumentException('zone.correction.phase_overrides must be an object.');
         }
 
@@ -408,12 +407,12 @@ class AutomationConfigRegistry
         }
 
         $profiles = $payload['profiles'] ?? [];
-        if (! is_array($profiles) || array_is_list($profiles)) {
+        if (! is_array($profiles) || ($profiles !== [] && array_is_list($profiles))) {
             throw new InvalidArgumentException('zone.logic_profile.profiles must be an object.');
         }
 
         foreach ($profiles as $mode => $profile) {
-            if (! in_array($mode, ZoneAutomationLogicProfile::allowedModes(), true)) {
+            if (! in_array($mode, ZoneLogicProfileCatalog::allowedModes(), true)) {
                 throw new InvalidArgumentException("Unsupported logic profile mode {$mode}.");
             }
             if (! is_array($profile) || array_is_list($profile)) {
@@ -434,7 +433,7 @@ class AutomationConfigRegistry
         }
 
         $profiles = $payload['profiles'] ?? null;
-        if (! is_array($profiles) || array_is_list($profiles)) {
+        if (! is_array($profiles) || ($profiles !== [] && array_is_list($profiles))) {
             throw new InvalidArgumentException('greenhouse.logic_profile.profiles must be an object.');
         }
 

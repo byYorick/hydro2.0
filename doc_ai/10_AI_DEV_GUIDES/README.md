@@ -68,25 +68,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Порядок включения enforcement
 - Риски и обратимость
 
-#### [AUTOMATION_ENGINE_AE2_MASTER_PLAN_FOR_AI.md](AUTOMATION_ENGINE_AE2_MASTER_PLAN_FOR_AI.md)
-**Мастер-план AE2 (эволюционное развитие automation-engine)**
-- Целевая архитектура отказоустойчивого AE2
-- Пошаговый roadmap для ИИ-ассистентов (куда смотреть/что делать/что на выходе)
-- Модель расширяемых topology/workflow плагинов
 
 ### Исторические документы (scheduler runtime owner = Python, не использовать как source of truth)
 
-#### [AE2_SCHEDULER_REFACTOR_SYNC_PLAN.md](AE2_SCHEDULER_REFACTOR_SYNC_PLAN.md)
-Исторический план декомпозиции Python `scheduler/main.py`.
-
-#### [AE2_SCHEDULER_SPLIT_ADR.md](AE2_SCHEDULER_SPLIT_ADR.md)
-Исторический ADR для Python scheduler split.
-
-#### [AE2_SCHEDULER_SYNC_CONTRACT_V1.md](AE2_SCHEDULER_SYNC_CONTRACT_V1.md)
-Исторический sync-контракт для Python scheduler ingress.
-
-#### `AE2_STAGE_S*_TASK.md` и `AE2_STAGE_S*_FINAL_REPORT.md`
-Исторические stage-артефакты закрытых итераций AE2 (использовать как журнал изменений, не как текущий план исполнения).
+Исторические документы по до-cutover runtime удалены из активного набора и не должны использоваться как source of truth.
 
 ### Специализированные гайды
 

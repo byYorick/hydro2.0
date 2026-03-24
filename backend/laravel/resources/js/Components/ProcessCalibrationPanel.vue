@@ -1,5 +1,5 @@
 <template>
-  <Card class="process-calibration-panel">
+  <Card class="process-calibration-panel" data-testid="process-calibration-panel">
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -19,6 +19,7 @@
           :key="mode.key"
           size="sm"
           :variant="activeMode === mode.key ? 'default' : 'outline'"
+          :data-testid="`process-calibration-mode-${mode.key}`"
           @click="selectMode(mode.key)"
         >
           {{ mode.label }}
@@ -74,6 +75,7 @@
             <input
               v-model="form[field.key]"
               :type="field.type"
+              :data-testid="`process-calibration-input-${field.key}`"
               :step="field.step"
               :min="field.min"
               :max="field.max"
@@ -155,6 +157,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
+            data-testid="process-calibration-save"
             :disabled="saving"
             @click="save"
           >
@@ -239,6 +242,9 @@ interface FieldDescriptor {
 }
 
 const props = defineProps<{ zoneId: number }>()
+const emit = defineEmits<{
+  (e: 'saved', mode: ProcessCalibrationMode): void
+}>()
 
 const { api } = useApi()
 const automationConfig = useAutomationConfig()
@@ -636,6 +642,7 @@ async function save(): Promise<void> {
     await automationConfig.updateDocument('zone', props.zoneId, processCalibrationNamespace(activeMode.value), payload)
     showToast(`Калибровка процесса для режима "${modeLabel(activeMode.value)}" сохранена.`, 'success')
     await Promise.all([loadCalibrations(), loadHistory()])
+    emit('saved', activeMode.value)
   } finally {
     saving.value = false
   }

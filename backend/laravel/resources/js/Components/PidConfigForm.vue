@@ -1,5 +1,5 @@
 <template>
-  <Card class="pid-config-form">
+  <Card class="pid-config-form" data-testid="pid-config-form">
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div class="text-sm font-semibold">
@@ -9,6 +9,7 @@
           <Button
             size="sm"
             variant="outline"
+            data-testid="pid-config-type-ph"
             :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedType === 'ph' }"
             @click="selectedType = 'ph'"
           >
@@ -17,6 +18,7 @@
           <Button
             size="sm"
             variant="outline"
+            data-testid="pid-config-type-ec"
             :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedType === 'ec' }"
             @click="selectedType = 'ec'"
           >
@@ -78,6 +80,7 @@
             <input
               v-model.number="form.target"
               type="number"
+              data-testid="pid-config-input-target"
               :step="selectedType === 'ph' ? 0.01 : 0.01"
               :min="selectedType === 'ph' ? 4 : 0"
               :max="selectedType === 'ph' ? 9 : 10"
@@ -326,6 +329,7 @@
           <Button
             type="submit"
             size="sm"
+            data-testid="pid-config-save"
             :disabled="loading"
           >
             {{ loading ? 'Сохранение...' : (needsConfirmation && !confirmed ? 'Подтвердить и сохранить' : 'Сохранить') }}

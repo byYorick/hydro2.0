@@ -406,7 +406,7 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
-## 7.4. Архитектура публикации команд (AE2-Lite)
+## 7.4. Архитектура публикации команд
 
 **Важно:** Laravel scheduler и automation-engine **НЕ публикуют команды напрямую в MQTT**.  
 Единственный publisher команд в MQTT: `history-logger`.
@@ -489,13 +489,13 @@ POST http://history-logger:9300/commands
 
 **3. Нода возвращает `command_response`**
 - `history-logger` сохраняет статус команды;
-- AE2-Lite получает обновление через `LISTEN/NOTIFY` и reconcile polling.
+- Automation-engine получает обновление через `LISTEN/NOTIFY` и reconcile polling.
 
 ### 7.4.6. Преимущества архитектуры
 
 1. Единый командный publisher (`history-logger`) и единый audit trail.
 2. Детерминированный wake-up контракт (`POST /zones/{id}/start-cycle`).
-3. Отделение scheduling (Laravel) от device execution (AE2-Lite).
+3. Отделение scheduling (Laravel) от device execution (automation-engine).
 4. Устойчивость через `NOTIFY + polling` для feedback-команд.
 
 2. **Централизованное логирование:**

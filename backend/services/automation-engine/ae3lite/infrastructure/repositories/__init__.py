@@ -3,7 +3,7 @@
 from .ae_command_repository import PgAeCommandRepository
 from .automation_task_repository import PgAutomationTaskRepository
 from .pid_state_repository import PgPidStateRepository
-from .zone_correction_config_repository import PgZoneCorrectionConfigRepository
+from .zone_correction_authority_repository import PgZoneCorrectionAuthorityRepository
 from .zone_alert_repository import PgZoneAlertRepository
 from .zone_alert_write_repository import PgZoneAlertWriteRepository
 from .zone_intent_repository import PgZoneIntentRepository
@@ -14,7 +14,7 @@ __all__ = [
     "PgAeCommandRepository",
     "PgAutomationTaskRepository",
     "PgPidStateRepository",
-    "PgZoneCorrectionConfigRepository",
+    "PgZoneCorrectionAuthorityRepository",
     "PgZoneAlertRepository",
     "PgZoneAlertWriteRepository",
     "PgZoneIntentRepository",

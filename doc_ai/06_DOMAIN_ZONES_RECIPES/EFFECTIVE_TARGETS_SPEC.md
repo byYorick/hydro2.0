@@ -3,7 +3,7 @@
 
 Документ описывает формальную спецификацию **effective-targets** — структурированных целевых значений и параметров управления для зон выращивания.
 
-Актуализация AE2-Lite (2026-02-21):
+Актуализация authority / AE3 (2026-03-24):
 - effective-targets остаются канонической бизнес-моделью Laravel;
 - automation-engine в runtime использует direct SQL read-model и не зависит от runtime вызовов `/api/internal/effective-targets/*`;
 - структура effective-targets используется как эталон семантики для SQL parity.
@@ -23,7 +23,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 1. Назначение Effective Targets
 
-**Effective targets** — это **единый источник истины** для контроллеров зон, который определяет:
+**Effective targets** — это каноническая Laravel business/read-model семантика для контроллеров зон, которая определяет:
 - Текущие целевые значения (pH, EC, температура и т.д.)
 - Допустимые диапазоны отклонений
 - Режимы работы систем (полив, освещение, климат)
@@ -34,10 +34,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
    - Активного grow cycle зоны
    - Текущей фазы цикла (VEG, FLOWER и т.д.)
    - Revision рецепта
-   - Базовых параметров зоны
+   - Authority-конфигов `system.*`, `zone.*`, `cycle.*`
+   - Operational facts и bind/calibration контекста зоны
 
 2. Laravel и интеграции могут получать targets через REST API
-3. Контроллеры AE2-Lite используют эквивалентную семантику через SQL read-model
+3. Контроллеры AE3 используют эквивалентную семантику через SQL read-model и compiled bundles, а не через runtime HTTP к effective-targets API
 
 ---
 
@@ -48,7 +49,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Endpoint:** `POST /api/internal/effective-targets/batch`
 
 **Метод:** Batch получение targets для нескольких зон за один запрос.
-Используется вне runtime path AE2-Lite.
+Используется вне runtime path automation-engine.
 
 **Request:**
 ```json
@@ -662,10 +663,10 @@ else:
                 f"{telemetry.get('stabilization_progress_sec')}s / {expected_time}s")
 ```
 
-### 5.2. Scheduler использует targets
+### 5.2. Integration tooling использует targets
 
 ```python
-# Получить targets для зоны
+# Получить targets для зоны вне runtime path automation-engine
 targets = await repo.get_effective_targets(zone_id=1)
 
 # Проверяем расписание полива
@@ -689,13 +690,14 @@ if irrigation and irrigation["mode"] == "SCHEDULE":
 ### 5.3. Frontend отображает targets
 
 ```typescript
-// Vue композабл для получения targets
+// Vue композабл для чтения effective targets через публичный zone API,
+// а не через internal endpoint
 export function useZoneTargets(zoneId: Ref<number>) {
   const targets = ref<EffectiveTargets | null>(null);
 
   async function fetchTargets() {
-    const response = await axios.get(`/api/internal/effective-targets/${zoneId.value}`);
-    targets.value = response.data;
+    const response = await axios.get(`/api/zones/${zoneId.value}/grow-cycle`);
+    targets.value = response.data?.data?.effective_targets ?? null;
   }
 
   return { targets, fetchTargets };
@@ -705,9 +707,9 @@ export function useZoneTargets(zoneId: Ref<number>) {
 const { targets } = useZoneTargets(zoneId);
 
 // Отображение pH targets
-<div v-if="targets?.targets?.ph">
-  <span>pH Target: {{ targets.targets.ph.target }}</span>
-  <span>Range: {{ targets.targets.ph.min }} - {{ targets.targets.ph.max }}</span>
+<div v-if="targets?.ph">
+  <span>pH Target: {{ targets.ph.target }}</span>
+  <span>Range: {{ targets.ph.min }} - {{ targets.ph.max }}</span>
 </div>
 ```
 
@@ -720,9 +722,9 @@ const { targets } = useZoneTargets(zoneId);
 Laravel вычисляет effective targets на основе:
 
 1. **GrowCycle** — активный цикл выращивания зоны
-2. **RecipeRevision** — текущая ревизия рецепта
-3. **Phase columns** — данные фазы в JSON столбцах ревизии
-4. **Zone базовые параметры** — default значения зоны
+2. **RecipeRevision / GrowCyclePhase** — текущая ревизия рецепта и снапшот фазы
+3. **Authority documents / compiled bundles** — `system.*`, `zone.*`, `cycle.*`
+4. **Zone operational facts** — bindings, calibration status, readiness-related runtime facts
 
 ### 6.2. Алгоритм
 

@@ -1,5 +1,0 @@
-flowchart TD
-    A[Workflow/Cmd event] --> B[Mutate in-memory ZoneState]
-    B --> C[Persist zone_automation_state]
-    C --> D[Append zone_events]
-    D --> E[GET /zones/<id>/state returns full snapshot]

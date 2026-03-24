@@ -117,25 +117,9 @@ class Zone extends Model
         return $this->hasMany(AiLog::class);
     }
 
-    public function pidConfigs(): HasMany
-    {
-        return $this->hasMany(ZonePidConfig::class);
-    }
-
     public function growCycles(): HasMany
     {
         return $this->hasMany(GrowCycle::class);
-    }
-
-    public function automationLogicProfiles(): HasMany
-    {
-        return $this->hasMany(ZoneAutomationLogicProfile::class);
-    }
-
-    public function activeAutomationLogicProfile(): HasOne
-    {
-        return $this->hasOne(ZoneAutomationLogicProfile::class)
-            ->where('is_active', true);
     }
 
 

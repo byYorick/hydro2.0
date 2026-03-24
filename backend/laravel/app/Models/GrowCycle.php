@@ -109,23 +109,6 @@ class GrowCycle extends Model
     }
 
     /**
-     * Перекрытия целевых параметров
-     */
-    public function overrides(): HasMany
-    {
-        return $this->hasMany(GrowCycleOverride::class);
-    }
-
-    /**
-     * Активные перекрытия
-     */
-    public function activeOverrides(): HasMany
-    {
-        return $this->hasMany(GrowCycleOverride::class)
-            ->where('is_active', true);
-    }
-
-    /**
      * История переходов фаз
      */
     public function transitions(): HasMany

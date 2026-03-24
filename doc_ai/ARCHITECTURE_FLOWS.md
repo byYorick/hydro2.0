@@ -1,5 +1,5 @@
 # ARCHITECTURE_FLOWS.md
-# Ключевые архитектурные потоки hydro 2.0 (AE2-Lite + AE3-Lite target)
+# Ключевые архитектурные потоки hydro 2.0 (AE3 authority runtime)
 
 **Версия:** 3.3  
 **Дата обновления:** 2026-03-24  
@@ -31,7 +31,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime.
 
 ---
 
-## 3. AE2-Lite запуск цикла
+## 3. AE3 запуск цикла
 
 `Laravel scheduler (insert intent) -> POST /zones/{id}/start-cycle -> ZoneRunner`
 
@@ -42,14 +42,14 @@ Breaking-change: legacy scheduler-task transport удален из runtime.
 - single-writer на уровне зоны: одновременно допускается только один активный `start-cycle` runner на зону;
 - при активном intent/active task endpoint возвращает `409 start_cycle_zone_busy`.
 
-Single-writer fallback:
-- default режим (без `AE2_FALLBACK_LOOP_WRITER_ENABLED`) — fail-closed: при недоступной проверке writer-state
+Single-writer policy:
+- runtime работает fail-closed: при недоступной проверке writer-state
   continuous loop side-effects блокируются;
-- fallback разрешается только явно через `AE2_FALLBACK_LOOP_WRITER_ENABLED=1`.
+- fallback writer-режим не поддерживается.
 
 ---
 
-## 4. Feedback и телеметрия для AE2-Lite
+## 4. Feedback и телеметрия для AE3
 
 `PostgreSQL LISTEN/NOTIFY + reconcile polling`
 
@@ -109,23 +109,22 @@ API:
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-- `10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
+- `04_BACKEND_CORE/ae3lite.md`
 
 ---
 
-## 8. AE3-Lite target pipeline (clean-room rollout)
+## 8. AE3 runtime pipeline
 
 Базовый command flow (инвариант не меняется):
 
 `Scheduler -> Automation-Engine -> history-logger -> MQTT -> ESP32`
 
 Режимы выполнения:
-- `ae2`: зона остаётся на legacy runtime;
-- `ae3`: ownership по зоне переключается на AE3-Lite через `zones.automation_runtime='ae3'`.
+- `ae3`: ownership по зоне переключается на current authority runtime через `zones.automation_runtime='ae3'`.
 
 Routing:
 - cutover выполняется вручную по зоне через поле `zones.automation_runtime`;
-- автоматический canary-router, `ae3l_canary_state` и bridge gate orchestration в canonical AE3-Lite не используются.
+- автоматический canary-router, `ae3l_canary_state` и bridge gate orchestration в canonical AE3 runtime не используются.
 
 Compatibility path:
 - ingress до cutover остаётся через `POST /zones/{id}/start-cycle` и `zone_automation_intents`;

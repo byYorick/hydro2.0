@@ -207,6 +207,7 @@ Route::middleware([
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
         Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
         Route::put('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'update']);
+        Route::delete('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'destroy']);
         Route::post('automation-bundles/{scopeType}/{scopeId}/validate', [AutomationBundleController::class, 'validate']);
         Route::post('automation-presets/{namespace}', [AutomationPresetController::class, 'store']);
         Route::put('automation-presets/{preset}', [AutomationPresetController::class, 'update']);

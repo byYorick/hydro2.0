@@ -173,7 +173,7 @@ class _GatewayRecorder:
         return {"success": True, "task": task}
 
 
-class _CorrectionConfigRepository:
+class _CorrectionAuthorityRepository:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
@@ -291,14 +291,14 @@ async def test_execute_task_fallback_non_two_tank_happy_path() -> None:
     """Non-two-tank topology with valid plan → commands run → task completed."""
     task = _make_task(stage="startup", topology="generic_cycle_start")
     finalize = _FinalizeTaskUseCase()
-    correction_config_repository = _CorrectionConfigRepository()
+    correction_authority_repository = _CorrectionAuthorityRepository()
     use_case = ExecuteTaskUseCase(
         task_repository=_TaskRepoRunning(running_task=task),
         zone_snapshot_read_model=_SnapshotReadModelOk(),
         planner=_PlannerOk(),
         command_gateway=_GatewayOk(),
         workflow_router=object(),
-        zone_correction_config_repository=correction_config_repository,
+        correction_authority_repository=correction_authority_repository,
         finalize_task_use_case=finalize,
     )
 
@@ -306,7 +306,7 @@ async def test_execute_task_fallback_non_two_tank_happy_path() -> None:
 
     assert result.status == "completed"
     assert finalize.calls == []  # complete(), not fail_closed()
-    assert correction_config_repository.calls == []
+    assert correction_authority_repository.calls == []
 
 
 @pytest.mark.asyncio
@@ -502,7 +502,7 @@ async def test_execute_task_skips_fail_safe_shutdown_when_task_was_cleaned_up() 
 @pytest.mark.asyncio
 async def test_execute_task_does_not_mark_correction_config_applied_when_snapshot_load_fails() -> None:
     finalize = _FinalizeTaskUseCase()
-    correction_config_repository = _CorrectionConfigRepository()
+    correction_authority_repository = _CorrectionAuthorityRepository()
     task = _make_task(stage="startup")
     use_case = ExecuteTaskUseCase(
         task_repository=_TaskRepoRunning(running_task=task),
@@ -510,34 +510,34 @@ async def test_execute_task_does_not_mark_correction_config_applied_when_snapsho
         planner=_PlannerFails(),
         command_gateway=object(),
         workflow_router=object(),
-        zone_correction_config_repository=correction_config_repository,
+        correction_authority_repository=correction_authority_repository,
         finalize_task_use_case=finalize,
     )
 
     await use_case.run(task=task, now=NOW)
 
-    assert correction_config_repository.calls == []
+    assert correction_authority_repository.calls == []
 
 
 @pytest.mark.asyncio
 async def test_execute_task_marks_correction_config_applied_for_native_two_tank_plan() -> None:
     task = _make_task(stage="startup", topology="two_tank")
     finalize = _FinalizeTaskUseCase()
-    correction_config_repository = _CorrectionConfigRepository()
+    correction_authority_repository = _CorrectionAuthorityRepository()
     use_case = ExecuteTaskUseCase(
         task_repository=_TaskRepoRunning(running_task=task),
         zone_snapshot_read_model=_SnapshotReadModelOk(),
         planner=_PlannerTwoTankOk(),
         command_gateway=_GatewayOk(),
         workflow_router=_WorkflowRouterOk(),
-        zone_correction_config_repository=correction_config_repository,
+        correction_authority_repository=correction_authority_repository,
         finalize_task_use_case=finalize,
     )
 
     result = await use_case.run(task=task, now=NOW)
 
     assert result.status == "completed"
-    assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+    assert correction_authority_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
 
 
 @pytest.mark.asyncio
@@ -545,45 +545,38 @@ async def test_execute_task_marks_correction_config_applied_for_failed_two_tank_
     """Failed two-tank task still marks correction config as applied (config was loaded and used)."""
     task = _make_task(stage="startup", topology="two_tank")
     finalize = _FinalizeTaskUseCase()
-    correction_config_repository = _CorrectionConfigRepository()
+    correction_authority_repository = _CorrectionAuthorityRepository()
     use_case = ExecuteTaskUseCase(
         task_repository=_TaskRepoRunning(running_task=task),
         zone_snapshot_read_model=_SnapshotReadModelOk(),
         planner=_PlannerTwoTankOk(),
         command_gateway=_GatewayOk(),
         workflow_router=_WorkflowRouterFails(),
-        zone_correction_config_repository=correction_config_repository,
+        correction_authority_repository=correction_authority_repository,
         finalize_task_use_case=finalize,
     )
 
     result = await use_case.run(task=task, now=NOW)
 
     assert result.status == "failed"
-    assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+    assert correction_authority_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
 
 
 @pytest.mark.asyncio
-async def test_execute_task_decision_window_not_ready_emits_task_failed_alert() -> None:
-    # corr_decision_window_not_ready теперь не фейлит таск — он возвращает
-    # StageOutcome с due_delay_sec для ретрая. Этот тест оставлен как проверка
-    # что если OTHER TaskExecutionError приходит с тем же типом кода — тест проходит.
-    # Реальное поведение unstable window проверяется в test_ae3lite_correction_handler.py
-    pass
-
-
-@pytest.mark.asyncio
-async def test_execute_task_marks_correction_config_applied_for_pending_two_tank_task() -> None:
-    """Hot-reload ack must persist while the two-tank task is still active."""
+async def test_execute_task_decision_window_retry_does_not_emit_task_failed_alert() -> None:
+    """Decision-window retry requeues task and must not look like fail_closed."""
     task = _make_task(stage="solution_fill_check", topology="two_tank")
     finalize = _FinalizeTaskUseCase()
-    correction_config_repository = _CorrectionConfigRepository()
+    alerts = _AlertRepositoryRecorder()
+    correction_authority_repository = _CorrectionAuthorityRepository()
     use_case = ExecuteTaskUseCase(
         task_repository=_TaskRepoRunning(running_task=task),
         zone_snapshot_read_model=_SnapshotReadModelOk(),
         planner=_PlannerTwoTankOk(),
         command_gateway=_GatewayOk(),
         workflow_router=_WorkflowRouterPending(),
-        zone_correction_config_repository=correction_config_repository,
+        correction_authority_repository=correction_authority_repository,
+        alert_repository=alerts,
         finalize_task_use_case=finalize,
     )
 
@@ -591,7 +584,32 @@ async def test_execute_task_marks_correction_config_applied_for_pending_two_tank
 
     assert result.status == "pending"
     assert result.current_stage == "prepare_recirculation_check"
-    assert correction_config_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+    assert finalize.calls == []
+    assert alerts.calls == []
+    assert correction_authority_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_marks_correction_config_applied_for_pending_two_tank_task() -> None:
+    """Hot-reload ack must persist while the two-tank task is still active."""
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    correction_authority_repository = _CorrectionAuthorityRepository()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterPending(),
+        correction_authority_repository=correction_authority_repository,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "pending"
+    assert result.current_stage == "prepare_recirculation_check"
+    assert correction_authority_repository.calls == [{"zone_id": 99, "version": 7, "now": NOW}]
 
 
 @pytest.mark.asyncio

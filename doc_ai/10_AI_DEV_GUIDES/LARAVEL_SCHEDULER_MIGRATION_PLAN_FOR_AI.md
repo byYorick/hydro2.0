@@ -9,8 +9,8 @@
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: owner планирования/dispatch перенесен на Laravel scheduler; Python scheduler выведен из runtime compose-профилей.
 
-> Внимание: актуальный контракт scheduler-dispatch для AE2-Lite описан в
-> `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`.
+> Внимание: актуальный контракт scheduler-dispatch описан в
+> `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 > Разделы с task-transport и polling legacy-статусов в этом документе исторические.
 
 ---

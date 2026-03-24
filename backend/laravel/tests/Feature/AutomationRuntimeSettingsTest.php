@@ -26,7 +26,7 @@ class AutomationRuntimeSettingsTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'admin']);
 
-        $response = $this->actingAs($admin)->getJson('/settings/automation-engine');
+        $response = $this->actingAs($admin)->getJson('/api/automation-configs/system/0/system.runtime');
 
         $response
             ->assertOk()
@@ -34,18 +34,21 @@ class AutomationRuntimeSettingsTest extends TestCase
             ->assertJsonStructure([
                 'status',
                 'data' => [
-                    'generated_at',
-                    'sections' => [
-                        '*' => [
-                            'key',
-                            'title',
-                            'items',
+                    'payload',
+                    'snapshot' => [
+                        'generated_at',
+                        'sections' => [
+                            '*' => [
+                                'key',
+                                'title',
+                                'items',
+                            ],
                         ],
                     ],
                 ],
             ]);
 
-        $item = $this->findSettingItem($response->json('data.sections'), 'automation_engine.scheduler_due_grace_sec');
+        $item = $this->findSettingItem($response->json('data.snapshot.sections'), 'automation_engine.scheduler_due_grace_sec');
         $this->assertNotNull($item);
         $this->assertSame('default', $item['source']);
     }
@@ -55,8 +58,8 @@ class AutomationRuntimeSettingsTest extends TestCase
         $viewer = User::factory()->create(['role' => 'viewer']);
 
         $this->actingAs($viewer)
-            ->patchJson('/settings/automation-engine', [
-                'settings' => [
+            ->putJson('/api/automation-configs/system/0/system.runtime', [
+                'payload' => [
                     'automation_engine.scheduler_due_grace_sec' => 35,
                 ],
             ])
@@ -71,8 +74,8 @@ class AutomationRuntimeSettingsTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
 
         $response = $this->actingAs($admin)
-            ->patchJson('/settings/automation-engine', [
-                'settings' => [
+            ->putJson('/api/automation-configs/system/0/system.runtime', [
+                'payload' => [
                     'automation_engine.scheduler_due_grace_sec' => 45,
                     'automation_engine.scheduler_catchup_policy' => 'skip',
                 ],
@@ -80,7 +83,7 @@ class AutomationRuntimeSettingsTest extends TestCase
 
         $response->assertOk()->assertJsonPath('status', 'ok');
 
-        $item = $this->findSettingItem($response->json('data.sections'), 'automation_engine.scheduler_due_grace_sec');
+        $item = $this->findSettingItem($response->json('data.snapshot.sections'), 'automation_engine.scheduler_due_grace_sec');
         $this->assertNotNull($item);
         $this->assertSame(45, $item['value']);
         $this->assertSame('override', $item['source']);
@@ -108,8 +111,8 @@ class AutomationRuntimeSettingsTest extends TestCase
         $agronomist = User::factory()->create(['role' => 'agronomist']);
 
         $response = $this->actingAs($agronomist)
-            ->patchJson('/settings/automation-engine', [
-                'settings' => [
+            ->putJson('/api/automation-configs/system/0/system.runtime', [
+                'payload' => [
                     'automation_engine.scheduler_due_grace_sec' => 41,
                 ],
             ]);
@@ -118,13 +121,13 @@ class AutomationRuntimeSettingsTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'ok');
 
-        $item = $this->findSettingItem($response->json('data.sections'), 'automation_engine.scheduler_due_grace_sec');
+        $item = $this->findSettingItem($response->json('data.snapshot.sections'), 'automation_engine.scheduler_due_grace_sec');
         $this->assertNotNull($item);
         $this->assertSame(41, $item['value']);
         $this->assertSame('override', $item['source']);
     }
 
-    public function test_settings_page_sets_can_edit_flag_for_agronomist(): void
+    public function test_settings_page_no_longer_embeds_runtime_snapshot_props(): void
     {
         $agronomist = User::factory()->create(['role' => 'agronomist']);
 
@@ -135,7 +138,8 @@ class AutomationRuntimeSettingsTest extends TestCase
                 $page
                     ->component('Settings/Index')
                     ->where('auth.user.role', 'agronomist')
-                    ->where('canEditAutomationEngineSettings', true);
+                    ->missing('automationEngineSettings')
+                    ->missing('canEditAutomationEngineSettings');
             });
     }
 
@@ -149,7 +153,7 @@ class AutomationRuntimeSettingsTest extends TestCase
         ], $admin->id);
 
         $this->actingAs($admin)
-            ->deleteJson('/settings/automation-engine')
+            ->deleteJson('/api/automation-configs/system/0/system.runtime')
             ->assertOk()
             ->assertJsonPath('status', 'ok');
 

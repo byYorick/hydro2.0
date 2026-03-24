@@ -9,7 +9,10 @@ use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\ZonePidConfig;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\ZoneLogicProfileCatalog;
+use App\Services\ZoneLogicProfileService;
+use App\Services\ZonePidConfigurationService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +41,7 @@ class SingleZoneServiceSeeder extends Seeder
         $node = DeviceNode::query()->where('uid', 'nd-ph-esp32una')->firstOrFail();
 
         $this->tuneZoneForServices($zone->id, $greenhouse->id);
+        $this->seedAuthorityDocuments($zone);
         $this->seedPidConfigs($zone->id);
         $this->seedPredictionTelemetry($zone, $node);
         $this->pruneToSingleTopology($greenhouse->id, $zone->id, $node->id);
@@ -88,6 +92,7 @@ class SingleZoneServiceSeeder extends Seeder
     private function seedPidConfigs(int $zoneId): void
     {
         $adminId = User::query()->where('role', 'admin')->value('id') ?? User::query()->value('id');
+        $service = app(ZonePidConfigurationService::class);
 
         $common = [
             'dead_zone' => 0.1,
@@ -103,23 +108,52 @@ class SingleZoneServiceSeeder extends Seeder
             'adaptation_rate' => 0.02,
         ];
 
-        ZonePidConfig::query()->updateOrCreate(
-            ['zone_id' => $zoneId, 'type' => 'ph'],
-            [
-                'config' => array_merge($common, ['target' => 6.0]),
-                'updated_by' => $adminId,
-                'updated_at' => now(),
-            ]
+        $service->createOrUpdate(
+            $zoneId,
+            'ph',
+            array_merge($common, ['target' => 6.0]),
+            $adminId ? (int) $adminId : null,
         );
 
-        ZonePidConfig::query()->updateOrCreate(
-            ['zone_id' => $zoneId, 'type' => 'ec'],
-            [
-                'config' => array_merge($common, ['target' => 1.5]),
-                'updated_by' => $adminId,
-                'updated_at' => now(),
-            ]
+        $service->createOrUpdate(
+            $zoneId,
+            'ec',
+            array_merge($common, ['target' => 1.5]),
+            $adminId ? (int) $adminId : null,
         );
+    }
+
+    private function seedAuthorityDocuments(Zone $zone): void
+    {
+        $adminId = User::query()->where('role', 'admin')->value('id') ?? User::query()->value('id');
+        $documents = app(AutomationConfigDocumentService::class);
+
+        $documents->ensureSystemDefaults();
+        $documents->ensureZoneDefaults((int) $zone->id);
+
+        app(ZoneLogicProfileService::class)->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_WORKING,
+            subsystems: $this->defaultAutomationSubsystems(),
+            activate: true,
+            userId: $adminId ? (int) $adminId : null,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultAutomationSubsystems(): array
+    {
+        return [
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                ],
+            ],
+        ];
     }
 
     private function pruneToSingleTopology(int $greenhouseId, int $zoneId, int $nodeId): void

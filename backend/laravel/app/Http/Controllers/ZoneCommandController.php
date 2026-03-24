@@ -9,7 +9,7 @@ use App\Models\ZoneEvent;
 use App\Models\GrowCycle;
 use App\Enums\GrowCycleStatus;
 use App\Services\PythonBridgeService;
-use App\Services\ZoneAutomationLogicProfileService;
+use App\Services\ZoneLogicProfileService;
 use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -21,7 +21,7 @@ use Illuminate\Support\Arr;
 class ZoneCommandController extends Controller
 {
     public function __construct(
-        private readonly ZoneAutomationLogicProfileService $automationLogicProfiles,
+        private readonly ZoneLogicProfileService $automationLogicProfiles,
     ) {
     }
 

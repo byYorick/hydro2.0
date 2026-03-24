@@ -2,6 +2,6 @@
 
 name: E88_config_report_soft_deactivate_channels
 description: |
-  Legacy AE2 config-report soft deactivate scenario migrated to standalone AE3-Lite.
+  Historical legacy config-report soft deactivate scenario migrated to standalone AE3-Lite.
   Каноничная проверка: AE3 two-tank real-hardware smoke.
 scenario_ref: ../ae3lite/E100_ae3_two_tank_realhw_smoke.yaml

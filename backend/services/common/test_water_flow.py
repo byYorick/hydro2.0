@@ -71,6 +71,30 @@ async def test_check_water_level_no_data():
 
 
 @pytest.mark.asyncio
+async def test_check_water_level_zero_value_is_bypassed_in_active_irrigation_phase():
+    """0.0 в активной фазе ирригации считается артефактом перезагрузки ноды."""
+    with patch("common.water_flow.fetch") as mock_fetch:
+        mock_fetch.return_value = [{"value": 0.0}]
+
+        is_ok, level = await check_water_level(1, workflow_phase="irrigating")
+
+        assert is_ok is True
+        assert level == 0.0
+
+
+@pytest.mark.asyncio
+async def test_check_water_level_zero_value_is_not_bypassed_outside_active_irrigation_phase():
+    """Вне активной ирригации 0.0 остаётся low-water состоянием."""
+    with patch("common.water_flow.fetch") as mock_fetch:
+        mock_fetch.return_value = [{"value": 0.0}]
+
+        is_ok, level = await check_water_level(1, workflow_phase="idle")
+
+        assert is_ok is False
+        assert level == 0.0
+
+
+@pytest.mark.asyncio
 async def test_check_water_level_prefers_clean_tank_labels_in_query():
     """Regression: dry-run check must prioritize clean/fresh sensors."""
     with patch("common.water_flow.fetch") as mock_fetch:

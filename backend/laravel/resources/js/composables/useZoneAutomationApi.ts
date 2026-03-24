@@ -6,7 +6,7 @@ import {
   payloadFromZoneLogicDocument,
   resolveZoneLogicProfileEntry,
   upsertZoneLogicProfilePayload,
-} from '@/composables/zoneLogicProfileAuthority'
+} from '@/composables/zoneLogicProfileDocument'
 import {
   applyAutomationFromRecipe,
   buildGrowthCycleConfigPayload,

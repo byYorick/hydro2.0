@@ -2,14 +2,19 @@ import { ref, type Ref } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
 
-export type AutomationScopeType = 'system' | 'zone' | 'grow_cycle'
+export type AutomationScopeType = 'system' | 'greenhouse' | 'zone' | 'grow_cycle'
 
-export interface AutomationDocument<TPayload = Record<string, unknown>> {
+export interface AutomationDocument<
+  TPayload = Record<string, unknown>,
+  TMeta = Record<string, unknown>,
+> {
+  id?: number | null
   namespace: string
   scope_type: AutomationScopeType
   scope_id: number
   schema_version: number
   payload: TPayload
+  meta?: TMeta
   status: string
   updated_at: string | null
   updated_by: number | null
@@ -54,16 +59,16 @@ export function useAutomationConfig(showToast?: ToastHandler) {
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
 
-  async function getDocument<TPayload = Record<string, unknown>>(
+  async function getDocument<TDocument extends AutomationDocument = AutomationDocument>(
     scopeType: AutomationScopeType,
     scopeId: number,
     namespace: string,
-  ): Promise<AutomationDocument<TPayload>> {
+  ): Promise<TDocument> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: AutomationDocument<TPayload> }>(
+      const response = await api.get<{ status: string; data: TDocument }>(
         `/automation-configs/${scopeType}/${scopeId}/${namespace}`
       )
       return response.data.data
@@ -76,17 +81,17 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     }
   }
 
-  async function updateDocument<TPayload = Record<string, unknown>>(
+  async function updateDocument<TPayload = Record<string, unknown>, TDocument extends AutomationDocument<TPayload> = AutomationDocument<TPayload>>(
     scopeType: AutomationScopeType,
     scopeId: number,
     namespace: string,
     payload: TPayload,
-  ): Promise<AutomationDocument<TPayload>> {
+  ): Promise<TDocument> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.put<{ status: string; data: AutomationDocument<TPayload> }>(
+      const response = await api.put<{ status: string; data: TDocument }>(
         `/automation-configs/${scopeType}/${scopeId}/${namespace}`,
         { payload }
       )
@@ -233,11 +238,57 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     }
   }
 
+  async function getHistory<TVersion = Record<string, unknown>>(
+    scopeType: AutomationScopeType,
+    scopeId: number,
+    namespace: string,
+  ): Promise<TVersion[]> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await api.get<{ status: string; data: TVersion[] }>(
+        `/automation-configs/${scopeType}/${scopeId}/${namespace}/history`
+      )
+      return Array.isArray(response.data.data) ? response.data.data : []
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function resetDocument<TDocument extends AutomationDocument = AutomationDocument>(
+    scopeType: AutomationScopeType,
+    scopeId: number,
+    namespace: string,
+  ): Promise<TDocument> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await api.delete<{ status: string; data: TDocument }>(
+        `/automation-configs/${scopeType}/${scopeId}/${namespace}`
+      )
+      return response.data.data
+    } catch (err) {
+      error.value = err instanceof Error ? err : new Error('Unknown error')
+      handleError(err)
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     loading,
     error,
     getDocument,
     updateDocument,
+    getHistory,
+    resetDocument,
     getBundle,
     validateBundle,
     listPresets,

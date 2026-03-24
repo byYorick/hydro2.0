@@ -12,12 +12,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ---
 
-Актуализация AE2-Lite (2026-02-21):
+Актуализация authority / AE3 (2026-03-24):
 - команды к нодам идут только через `history-logger /commands`;
 - запуск цикла автоматики выполняется через `POST /zones/{id}/start-cycle`;
 - runtime-резолв target/config выполняется через SQL read-model (effective-targets API не используется в runtime path).
 
-Актуализация AE3-Lite in-flow correction (2026-03-15):
+Актуализация AE3 in-flow correction (2026-03-15):
 - correction decision больше не строится по одному `telemetry_last` sample;
 - для `EC` и `pH` используется модель `dose -> hold -> observe -> decide`;
 - окно наблюдения собирается из `telemetry_samples`, а не из одного текущего значения;
@@ -486,7 +486,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ---
 
-## 5. Временные параметры (настраиваемые через effective-targets)
+## 5. Временные параметры (семантика effective-targets, источник runtime — authority bundle)
 
 ### 5.1. Параметры стабилизации
 
@@ -517,9 +517,11 @@ interface CorrectionTimings {
 }
 ```
 
-### 5.2. Добавление в effective-targets
+### 5.2. Derived shape в effective-targets
 
-Эти параметры добавляются в `effective-targets` для зоны:
+Эти параметры могут публиковаться в derived `effective-targets` для диагностики и integration tooling.
+В runtime automation-engine эквивалентные значения читаются из compiled authority bundle
+(`zone.correction.resolved_config` + `zone.process_calibration.*`):
 
 ```json
 {

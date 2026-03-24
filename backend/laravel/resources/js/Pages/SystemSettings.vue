@@ -88,11 +88,31 @@ import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
-import { useSystemSettings } from '@/composables/useSystemSettings'
+import { useAutomationConfig, type AutomationDocument } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
 import type { SettingsNamespacePayload, SystemSettingsField } from '@/types/SystemSettings'
 
-const { getAll, updateNamespace, resetNamespace } = useSystemSettings()
+const SYSTEM_NAMESPACE_MAP: Record<string, string> = {
+  automation_defaults: 'system.automation_defaults',
+  automation_command_templates: 'system.command_templates',
+  process_calibration_defaults: 'system.process_calibration_defaults',
+  pid_defaults_ph: 'system.pid_defaults.ph',
+  pid_defaults_ec: 'system.pid_defaults.ec',
+  pump_calibration: 'system.pump_calibration_policy',
+  sensor_calibration: 'system.sensor_calibration_policy',
+}
+
+type SystemAuthorityDocument = AutomationDocument<Record<string, unknown>, {
+  defaults?: Record<string, unknown>
+  field_catalog?: Array<{
+    key: string
+    label: string
+    description: string
+    fields: SystemSettingsField[]
+  }>
+}>
+
+const automationConfig = useAutomationConfig()
 const { showToast } = useToast()
 
 const payloads = ref<Record<string, SettingsNamespacePayload>>({})
@@ -103,6 +123,17 @@ const draft = ref<Record<string, string | number | boolean | undefined>>({})
 const namespaces = computed<string[]>(() => Object.keys(payloads.value))
 const activePayload = computed(() => payloads.value[activeNamespace.value] || null)
 const activeFields = computed<SystemSettingsField[]>(() => activePayload.value?.meta.field_catalog.flatMap((section) => section.fields) || [])
+
+function documentToPayload(namespace: string, document: SystemAuthorityDocument): SettingsNamespacePayload {
+  return {
+    namespace,
+    config: document.payload ?? {},
+    meta: {
+      defaults: document.meta?.defaults ?? {},
+      field_catalog: Array.isArray(document.meta?.field_catalog) ? document.meta.field_catalog : [],
+    },
+  }
+}
 
 function syncDraft(): void {
   if (!activePayload.value) return
@@ -143,15 +174,28 @@ function normalizeDraft(): Record<string, unknown> {
 }
 
 async function load(): Promise<void> {
-  payloads.value = await getAll()
+  const entries = await Promise.all(
+    Object.entries(SYSTEM_NAMESPACE_MAP).map(async ([legacyNamespace, authorityNamespace]) => {
+      const document = await automationConfig.getDocument<SystemAuthorityDocument>('system', 0, authorityNamespace)
+      return [legacyNamespace, documentToPayload(legacyNamespace, document)] as const
+    })
+  )
+
+  payloads.value = Object.fromEntries(entries) as Record<string, SettingsNamespacePayload>
   syncDraft()
 }
 
 async function save(): Promise<void> {
   loading.value = true
   try {
-    const updated = await updateNamespace(activeNamespace.value, normalizeDraft())
-    payloads.value[activeNamespace.value] = updated
+    const authorityNamespace = SYSTEM_NAMESPACE_MAP[activeNamespace.value] ?? activeNamespace.value
+    const document = await automationConfig.updateDocument<Record<string, unknown>, SystemAuthorityDocument>(
+      'system',
+      0,
+      authorityNamespace,
+      normalizeDraft()
+    )
+    payloads.value[activeNamespace.value] = documentToPayload(activeNamespace.value, document)
     syncDraft()
     showToast('Настройки сохранены', 'success')
   } catch (error) {
@@ -164,10 +208,13 @@ async function save(): Promise<void> {
 async function reset(): Promise<void> {
   loading.value = true
   try {
-    const updated = await resetNamespace(activeNamespace.value)
-    payloads.value[activeNamespace.value] = updated
+    const authorityNamespace = SYSTEM_NAMESPACE_MAP[activeNamespace.value] ?? activeNamespace.value
+    const document = await automationConfig.resetDocument<SystemAuthorityDocument>('system', 0, authorityNamespace)
+    payloads.value[activeNamespace.value] = documentToPayload(activeNamespace.value, document)
     syncDraft()
     showToast('Настройки сброшены', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Не удалось сбросить настройки', 'error')
   } finally {
     loading.value = false
   }

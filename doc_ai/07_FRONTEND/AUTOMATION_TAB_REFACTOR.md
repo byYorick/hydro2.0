@@ -321,9 +321,9 @@ WORKFLOW_RECOVERY_WORKFLOW_FALLBACK: 'Workflow переключён на рез�
 - `backend/laravel/resources/js/composables/zoneAutomationTypes.ts`
 
 ### Backend (источники данных)
-- `backend/services/automation-engine/ae2lite/api_automation_state_constants.py` — эталон state/labels
-- `backend/services/automation-engine/ae2lite/api_runtime_zone_routes.py` — `/state`, `/control-mode`, `/manual-step`
-- `backend/services/automation-engine/infrastructure/workflow_state_store.py` — `get_with_stale_reset()` (#2)
+- `backend/services/automation-engine/ae3lite/runtime/app.py` — `/state`, `/control-mode`, `/manual-step`
+- `backend/services/automation-engine/ae3lite/application/use_cases/get_zone_automation_state.py` — runtime state/read-model
+- `backend/services/automation-engine/ae3lite/infrastructure/repositories/zone_workflow_repository.py` — canonical `zone_workflow_state`
 
 ### Тесты frontend
 - `backend/laravel/resources/js/Pages/Zones/Tabs/__tests__/ZoneAutomationTab.spec.ts`

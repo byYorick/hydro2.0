@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
+use App\Models\AutomationConfigDocument;
+use App\Models\AutomationEffectiveBundle;
 use App\Models\GrowStageTemplate;
 use App\Models\Plant;
 use App\Models\Recipe;
@@ -237,6 +239,132 @@ class GrowCycleServiceTest extends TestCase
             'scope_id' => $zone->id,
             'source' => 'bootstrap',
         ]);
+    }
+
+    #[Test]
+    public function it_dispatches_cycle_start_only_after_cycle_documents_and_bundle_revision_are_persisted(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
+        $runtimeConfig->method('schedulerConfig')->willReturn([
+            'api_url' => 'http://automation-engine:9405',
+            'timeout_sec' => 2.0,
+            'scheduler_id' => 'laravel-scheduler',
+            'token' => 'test-token',
+        ]);
+
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+            /** @var array<string, mixed> */
+            public array $dispatchState = [];
+
+            protected function isGrowCycleStartDispatchEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            {
+                preg_match('/^gcs:z(?P<zone>\d+):c(?P<cycle>\d+):/', $idempotencyKey, $matches);
+                $cycleId = (int) ($matches['cycle'] ?? 0);
+
+                $cycle = \App\Models\GrowCycle::query()->findOrFail($cycleId);
+                $startSnapshot = \App\Models\AutomationConfigDocument::query()
+                    ->where('namespace', AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT)
+                    ->where('scope_type', AutomationConfigRegistry::SCOPE_GROW_CYCLE)
+                    ->where('scope_id', $cycleId)
+                    ->first();
+                $bundle = \App\Models\AutomationEffectiveBundle::query()
+                    ->where('scope_type', AutomationConfigRegistry::SCOPE_GROW_CYCLE)
+                    ->where('scope_id', $cycleId)
+                    ->first();
+
+                $this->dispatchState = [
+                    'zone_id' => $zoneId,
+                    'cycle_id' => $cycleId,
+                    'idempotency_key' => $idempotencyKey,
+                    'cycle_status' => $cycle->status instanceof GrowCycleStatus ? $cycle->status->value : $cycle->status,
+                    'cycle_settings_bundle_revision' => data_get($cycle->settings, 'bundle_revision'),
+                    'start_snapshot_exists' => $startSnapshot !== null,
+                    'start_snapshot_phase_id' => data_get($startSnapshot?->payload, 'phase.phase_id'),
+                    'bundle_exists' => $bundle !== null,
+                    'bundle_revision' => $bundle?->bundle_revision,
+                    'bundle_phase_id' => data_get($bundle?->config, 'cycle.start_snapshot.phase.phase_id'),
+                ];
+
+                return [
+                    'data' => [
+                        'accepted' => true,
+                        'deduplicated' => false,
+                        'task_id' => 'ae3-task-1',
+                    ],
+                ];
+            }
+        };
+
+        $cycle = $service->createCycle($zone, $revision, $plant->id, [
+            'start_immediately' => false,
+        ]);
+        $phaseSnapshot = $cycle->phases()->orderBy('phase_index')->firstOrFail();
+        $documents = app(AutomationConfigDocumentService::class);
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT,
+            AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+            (int) $cycle->id,
+            [
+                'cycle_id' => (int) $cycle->id,
+                'zone_id' => (int) $cycle->zone_id,
+                'recipe_revision_id' => (int) $cycle->recipe_revision_id,
+                'phase' => [
+                    'phase_id' => (int) $phaseSnapshot->recipe_revision_phase_id,
+                    'phase_index' => (int) $phaseSnapshot->phase_index,
+                    'name' => $phaseSnapshot->name,
+                    'ph_target' => $phaseSnapshot->ph_target,
+                    'ph_min' => $phaseSnapshot->ph_min,
+                    'ph_max' => $phaseSnapshot->ph_max,
+                    'ec_target' => $phaseSnapshot->ec_target,
+                    'ec_min' => $phaseSnapshot->ec_min,
+                    'ec_max' => $phaseSnapshot->ec_max,
+                    'irrigation_mode' => $phaseSnapshot->irrigation_mode,
+                    'irrigation_interval_sec' => $phaseSnapshot->irrigation_interval_sec,
+                    'irrigation_duration_sec' => $phaseSnapshot->irrigation_duration_sec,
+                    'extensions' => is_array($phaseSnapshot->extensions) ? $phaseSnapshot->extensions : [],
+                ],
+            ]
+        );
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES,
+            AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+            (int) $cycle->id,
+            [
+                'ph_target' => 6.0,
+                'ec_target' => 1.5,
+            ]
+        );
+
+        $startedCycle = $service->startCycle($cycle->fresh(), Carbon::now());
+
+        $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
+        $this->assertTrue($service->dispatchState['start_snapshot_exists']);
+        $this->assertTrue($service->dispatchState['bundle_exists']);
+        $this->assertSame('RUNNING', $service->dispatchState['cycle_status']);
+        $this->assertNotSame('', (string) $service->dispatchState['bundle_revision']);
+        $this->assertSame($phase->id, $service->dispatchState['start_snapshot_phase_id']);
+        $this->assertSame($phase->id, $service->dispatchState['bundle_phase_id']);
+        $this->assertSame(
+            $service->dispatchState['bundle_revision'],
+            $service->dispatchState['cycle_settings_bundle_revision']
+        );
     }
 
     #[Test]

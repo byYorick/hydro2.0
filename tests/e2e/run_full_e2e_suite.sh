@@ -136,7 +136,7 @@ run_test_with_retry "scenarios/alerts/E24_laravel_down_pending_alerts.yaml"
 run_test_with_retry "scenarios/alerts/E25_dlq_replay.yaml"
 
 echo ""
-echo "=== AUTOMATION ENGINE ТЕСТЫ (AE2-Lite compatible) ==="
+echo "=== AUTOMATION ENGINE ТЕСТЫ (AE3 regression) ==="
 run_test_with_retry "scenarios/automation_engine/E61_fail_closed_corrections.yaml"
 run_test_with_retry "scenarios/automation_engine/E64_effective_targets_only.yaml"
 run_test_with_retry "scenarios/automation_engine/E65_phase_transition_api.yaml"

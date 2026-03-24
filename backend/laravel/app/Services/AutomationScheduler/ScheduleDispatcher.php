@@ -3,7 +3,7 @@
 namespace App\Services\AutomationScheduler;
 
 use App\Services\AutomationConfigDocumentService;
-use App\Services\ZoneCorrectionConfigService;
+use App\Services\ZoneCorrectionConfigurationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -330,7 +330,7 @@ class ScheduleDispatcher
     ): array {
         try {
             app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
-            app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
+            app(ZoneCorrectionConfigurationService::class)->ensureDefaultForZone($zoneId);
 
             $intentPayload = [
                 'source' => 'laravel_scheduler',

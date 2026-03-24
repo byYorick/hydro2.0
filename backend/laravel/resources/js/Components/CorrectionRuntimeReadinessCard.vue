@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card data-testid="correction-runtime-readiness-card">
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -8,7 +8,7 @@
             Агрегированная проверка process calibration, калибровок дозирующих насосов и сохранённых PID-конфигов зоны для in-flow correction.
           </div>
         </div>
-        <Badge :variant="overallStatus.variant">
+        <Badge :variant="overallStatus.variant" data-testid="correction-runtime-readiness-status">
           {{ overallStatus.label }}
         </Badge>
       </div>
@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Card from '@/Components/Card.vue'
 import {
@@ -273,7 +273,12 @@ interface RuntimeIssueItem {
   actionLabel: string | null
 }
 
-const props = defineProps<{ zoneId: number }>()
+const props = withDefaults(defineProps<{
+  zoneId: number
+  refreshToken?: string | number | null
+}>(), {
+  refreshToken: null,
+})
 const emit = defineEmits<{
   (e: 'focus-process-calibration'): void
   (e: 'open-pump-calibration'): void
@@ -666,4 +671,11 @@ async function load(): Promise<void> {
 onMounted(() => {
   void load()
 })
+
+watch(
+  () => props.refreshToken,
+  () => {
+    void load()
+  }
+)
 </script>

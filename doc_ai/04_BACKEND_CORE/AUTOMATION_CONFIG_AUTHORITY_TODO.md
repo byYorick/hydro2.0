@@ -1,9 +1,9 @@
 # AUTOMATION_CONFIG_AUTHORITY_TODO.md
 # Что ещё недоделано после cutover на automation authority
 
-**Версия:** 1.0  
+**Версия:** 1.1  
 **Дата обновления:** 2026-03-24  
-**Статус:** Рабочий план cleanup и доводки после основного cutover
+**Статус:** Source-of-truth docs синхронизированы; открытым остаётся только финальный browser smoke в рабочем окружении
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: план предполагает окончательное удаление legacy automation config stack без compatibility layer.
@@ -32,125 +32,145 @@ Breaking-change: план предполагает окончательное у
 
 ---
 
-## 3. Недоделанное в backend/runtime
+## 3. Статус backend/runtime
 
 ### 3.1 Полный cleanup legacy имен и моделей
 
-Нужно пройтись по Laravel и Python и удалить/переименовать то, что уже не является authority, но ещё живёт как код или fixture:
+Статус: выполнено.
 
-- legacy-named модели и сервисы с именами `ZonePidConfig*`, `ZoneCorrectionConfig*`, `ZoneAutomationLogicProfile*`, `GrowCycleOverride*`;
-- relation-методы в моделях, которые ссылаются на старые таблицы как на живые runtime owner;
-- сообщения, regex и локализации, где ещё фигурируют `zone_pid_configs`, `zone_correction_configs`, `automation_runtime_overrides`.
+Сделано:
+
+- удалены legacy-named runtime owner модели и сервисы;
+- вычищены relation/runtime path на старые automation config tables;
+- authority path закреплён в Laravel и Python runtime/tests.
 
 ### 3.2 Полный DB cleanup
 
-После перевода тестов и fixtures на authority:
+Статус: выполнено.
 
-- дропнуть legacy automation tables миграциями;
-- убрать migration-time backfill код, который больше не нужен новым инсталляциям;
-- убедиться, что schema dump и clean install поднимаются уже без legacy automation stack.
+Сделано:
+
+- legacy automation tables дропнуты миграциями;
+- clean install и authority schema tests идут без legacy automation stack;
+- start-cycle authority defaults/materialization работают без старых таблиц.
 
 ### 3.3 AE3 integration tests
 
-Нужно перевести integration/e2e тесты Python automation-engine с legacy inserts на:
+Статус: выполнено.
 
-- `automation_config_documents`
-- `automation_effective_bundles`
-- `grow_cycles.settings.bundle_revision`
+Сделано:
 
-Запрещённые legacy fixtures в новых тестах:
-
-- `zone_automation_logic_profiles`
-- `zone_correction_configs`
-- `zone_process_calibrations`
-- `zone_pid_configs`
-- `grow_cycle_overrides`
-- `automation_runtime_overrides`
+- integration/unit tests переведены на `automation_config_documents`, `automation_effective_bundles`, `grow_cycles.settings.bundle_revision`;
+- закрыты сценарии correction hot-reload и fail-closed для authority bundle path;
+- `water_flow.py` обновлён и покрыт под новую семантику helper-а.
 
 ### 3.4 Cleanup guards
 
-Добавить/усилить CI-проверки:
+Статус: выполнено.
 
-- grep guard на legacy automation routes/controllers/services;
-- grep guard на чтение legacy automation tables в runtime/business path;
-- grep guard на `env()` в readiness/runtime logic;
-- grep guard на старые frontend composables/API calls.
+Сделано:
+
+- добавлен CI cleanup guard на legacy automation routes/classes/tables/frontend runtime path;
+- guard закреплён в workflow и проверяет authority-only cleanup regression.
 
 ---
 
-## 4. Недоделанное во фронтенде
+## 4. Статус во фронтенде
 
 ### 4.1 Полный аудит authority-only read path
 
-Проверить, что:
+Статус: выполнено.
+
+Закрыто:
 
 - authority payload не приходит через Inertia props;
-- локальные `FALLBACK_*` не используются как source of truth;
-- все editors и wizards читают/пишут только unified automation API.
+- `/settings`, `SystemSettings`, correction/PID/process calibration flows читают и пишут только unified automation API;
+- wizard/readiness refresh завязан на authority save path.
 
 ### 4.2 Удаление legacy типов и helpers
 
-Нужно удалить:
+Статус: выполнено.
 
-- старые TS types под legacy endpoints;
-- payload builders, которые собирали authority локально;
-- устаревшие composable-ы и mocks, которые подменяют page props вместо authority API.
+Закрыто:
+
+- удалены legacy composables/types/helpers для authority-migrated flows;
+- tests и runtime path больше не используют page-props fallback.
 
 ### 4.3 Browser e2e
 
-Сейчас нужны явные e2e-сценарии для authority flow:
+Статус: по коду выполнено, по окружению нужен финальный smoke.
 
-- settings -> save -> validate -> bundle refresh;
-- zone correction/PID/process calibration -> readiness refresh;
-- greenhouse profile -> setup wizard -> zone start;
-- preset create/apply/update/delete по correction family.
+Сделано:
+
+- добавлены browser specs для settings, correction authority flows и setup wizard greenhouse/zone flow;
+- suite собирается и листится корректно.
+
+Осталось:
+
+- прогнать full Playwright smoke в корректно поднятом web/auth окружении.
 
 ---
 
-## 5. Недоделанное в тестах
+## 5. Статус тестов
 
 ### 5.1 Laravel
 
-- feature tests должны seed-ить authority documents, а не legacy tables;
-- tests на удалённые endpoints должны явно подтверждать `404`/route absence;
-- tests на grow-cycle start должны проверять порядок:
-  `cycle docs -> bundle -> snapshot.bundle_revision -> start`.
+Статус: выполнено.
+
+Закрыто:
+
+- feature tests seed-ят authority documents;
+- route absence/removed endpoint tests закреплены;
+- grow-cycle start проверяет цепочку `cycle docs -> bundle -> snapshot.bundle_revision -> start`.
 
 ### 5.2 Python
 
-- unit/integration tests для `water_flow.py` нужно обновить под новое имя/семантику helper-а;
-- AE3 tests должны проверять reload по `bundle_revision`, а не по legacy runtime profile;
-- нужен smoke test fail-closed на missing bundle / revision mismatch.
+Статус: выполнено.
+
+Закрыто:
+
+- unit/integration tests обновлены под authority semantics;
+- reload/fail-closed path закреплён через bundle-based tests.
 
 ### 5.3 Frontend
 
-- покрыть authority history flow;
-- покрыть preset CRUD во всех correction-family editor-ах;
-- покрыть отсутствие page-prop authority fallback в migrated flows.
+Статус: выполнено для migrated authority flows.
+
+Закрыто:
+
+- authority history flow покрыт;
+- preset CRUD покрыт для correction family;
+- отсутствие page-prop fallback покрыто для migrated pages/flows.
 
 ---
 
-## 6. Недоделанное в документации
+## 6. Статус документации
 
-Ещё требуется полный sync следующих документов:
+Статус: выполнено на 2026-03-24.
+
+Синхронизированы source-of-truth документы:
 
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
+- `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
+- `04_BACKEND_CORE/REST_API_REFERENCE.md`
 - `06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md`
 - `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md`
 - `06_DOMAIN_ZONES_RECIPES/RECIPE_ENGINE_FULL.md`
 - `01_SYSTEM/LOGIC_ARCH.md`
+- `ARCHITECTURE_FLOWS.md`
 
-В этих документах ещё встречаются legacy precedence и legacy table names.
+Зафиксировано как канон:
+
+- runtime automation-engine (`AE3`) читает compiled authority bundles и operational facts через direct SQL read-model;
+- frontend/system settings/correction/PID/process calibration используют unified `/api/automation-configs/*` API;
+- `effective-targets` остаются Laravel business/read-model семантикой и diagnostics/integration contract, но не runtime read-path для automation-engine.
 
 ---
 
 ## 7. Рекомендуемый порядок добивки
 
-1. Перевести оставшиеся Laravel/Python tests и fixtures на authority tables/bundles.
-2. Добавить cleanup grep guards в CI.
-3. Дропнуть legacy automation tables миграциями и удалить мёртвые модели/relations/services.
-4. Добить browser e2e для authority flow и preset CRUD.
-5. Полностью синхронизировать оставшиеся domain/API docs.
+1. Прогнать финальный browser smoke в рабочем web/auth окружении.
+2. При новых runtime/API изменениях сразу обновлять authority docs, а не копить хвосты.
 
 ---
 
@@ -162,4 +182,5 @@ Breaking-change: план предполагает окончательное у
 - в кодовой базе нет legacy automation routes/controllers/composables;
 - clean install и test fixtures не создают legacy automation stack;
 - frontend authority data не зависит от Inertia props;
-- source-of-truth docs не содержат legacy precedence как канон.
+- source-of-truth docs не содержат legacy precedence и legacy runtime wording как канон;
+- browser smoke подтверждает authority flow в живом окружении.

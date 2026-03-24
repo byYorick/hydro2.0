@@ -211,7 +211,7 @@ class GrowCycleService
         }
 
         $phasePayload = $firstPhase ? [
-            'phase_id' => $firstPhase->phase_id,
+            'phase_id' => $firstPhase->recipe_revision_phase_id,
             'phase_index' => $firstPhase->phase_index,
             'name' => $firstPhase->name,
             'ph_target' => $firstPhase->ph_target,
@@ -321,7 +321,7 @@ class GrowCycleService
     protected function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
     {
         $this->documents->ensureZoneDefaults($zoneId);
-        app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
+        app(ZoneCorrectionConfigurationService::class)->ensureDefaultForZone($zoneId);
 
         $now = Carbon::now('UTC')->setMicroseconds(0);
         $intentPayload = [

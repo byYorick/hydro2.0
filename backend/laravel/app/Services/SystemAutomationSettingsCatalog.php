@@ -416,6 +416,10 @@ class SystemAutomationSettingsCatalog
 
     public static function fieldCatalog(string $namespace): array
     {
+        if (in_array($namespace, ['pid_defaults_ph', 'pid_defaults_ec'], true)) {
+            return self::pidDefaultsFieldCatalog($namespace);
+        }
+
         if (! array_key_exists($namespace, self::FIELD_CATALOG)) {
             throw new InvalidArgumentException("Unknown automation settings namespace: {$namespace}");
         }
@@ -433,6 +437,25 @@ class SystemAutomationSettingsCatalog
         }
 
         return $fields;
+    }
+
+    private static function pidDefaultsFieldCatalog(string $namespace): array
+    {
+        return [[
+            'key' => $namespace,
+            'label' => $namespace === 'pid_defaults_ph' ? 'PID defaults pH' : 'PID defaults EC',
+            'description' => 'Системные значения по умолчанию для PID-регулятора.',
+            'fields' => [
+                ['path' => 'target', 'label' => 'Target', 'description' => 'Целевое значение PID.', 'type' => 'number', 'min' => 0.0, 'max' => 20.0, 'step' => 0.01],
+                ['path' => 'dead_zone', 'label' => 'Dead zone', 'description' => 'Зона без коррекции.', 'type' => 'number', 'min' => 0.0, 'max' => 10.0, 'step' => 0.01],
+                ['path' => 'close_zone', 'label' => 'Close zone', 'description' => 'Ближняя зона PID.', 'type' => 'number', 'min' => 0.0, 'max' => 10.0, 'step' => 0.01],
+                ['path' => 'far_zone', 'label' => 'Far zone', 'description' => 'Дальняя зона PID.', 'type' => 'number', 'min' => 0.0, 'max' => 20.0, 'step' => 0.01],
+                ['path' => 'zone_coeffs', 'label' => 'Zone coeffs', 'description' => 'Набор коэффициентов по зонам.', 'type' => 'json'],
+                ['path' => 'max_output', 'label' => 'Max output', 'description' => 'Ограничение максимального выхода.', 'type' => 'number', 'min' => 0.0, 'max' => 1000.0, 'step' => 0.01],
+                ['path' => 'min_interval_ms', 'label' => 'Min interval ms', 'description' => 'Минимальный интервал между действиями.', 'type' => 'integer', 'min' => 0, 'max' => 86400000],
+                ['path' => 'max_integral', 'label' => 'Max integral', 'description' => 'Ограничение интегральной составляющей.', 'type' => 'number', 'min' => 0.0, 'max' => 10000.0, 'step' => 0.01],
+            ],
+        ]];
     }
 
     public static function validate(string $namespace, array $config, bool $allowPartial = true): array

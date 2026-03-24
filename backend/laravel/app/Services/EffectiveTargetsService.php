@@ -11,7 +11,7 @@ use Illuminate\Support\Collection;
 class EffectiveTargetsService
 {
     public function __construct(
-        private readonly ZoneAutomationLogicProfileService $automationLogicProfiles,
+        private readonly ZoneLogicProfileService $automationLogicProfiles,
         private readonly AutomationConfigDocumentService $documents,
     ) {
     }
@@ -354,7 +354,7 @@ class EffectiveTargetsService
             return [
                 'source' => 'zone_automation_logic_profile',
                 'mode' => $profile->mode,
-                'updated_at' => $profile->updated_at?->toIso8601String(),
+                'updated_at' => $profile->updatedAt?->toIso8601String(),
                 'subsystems' => $profile->subsystems,
             ];
         }

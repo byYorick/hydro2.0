@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\ZonePidConfigService;
+use App\Services\ZonePidConfigurationService;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $service = app(ZonePidConfigService::class);
+        $service = app(ZonePidConfigurationService::class);
 
         DB::table('zone_pid_configs')
             ->orderBy('id')
@@ -46,7 +46,7 @@ return new class extends Migration
     private function normalizeLegacyConfigForMigration(
         array $config,
         string $type,
-        ZonePidConfigService $service
+        ZonePidConfigurationService $service
     ): array {
         if (isset($config['controller']) && is_array($config['controller'])) {
             return $config;

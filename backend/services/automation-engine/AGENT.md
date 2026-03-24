@@ -9,7 +9,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для `cycle_start`.
 Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
-AE2-Lite **полностью удалён**. Директория `ae2lite/` не существует.
+Legacy runtime полностью удалён. Рабочий пакет автоматики — `ae3lite/`.
 
 ## 2. Жёсткие ограничения (инварианты из spec §2)
 
@@ -18,7 +18,7 @@ AE2-Lite **полностью удалён**. Директория `ae2lite/` н
 3. Одна активная execution task на зону — гарантируется partial unique index и ZoneLease.
 4. Успешный terminal outcome mutating-команды только `DONE`; все остальные — fail.
 5. Изменения схемы БД только через Laravel миграции (не ручной DDL).
-6. `ae3lite/*` не импортирует `ae2lite/*` (директория удалена).
+6. `ae3lite/*` не импортирует legacy runtime пакеты.
 7. Переключение `zones.automation_runtime` на `ae3` запрещено при активной task или lease.
 8. Runtime читает zone state напрямую из PostgreSQL read-model, без HTTP к Laravel.
 9. Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.

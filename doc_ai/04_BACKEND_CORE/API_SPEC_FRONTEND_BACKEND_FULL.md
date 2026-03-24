@@ -1,6 +1,6 @@
 # API_SPEC_FRONTEND_BACKEND_FULL.md
 # Полная детальная спецификация API между Frontend и Backend (2.0)
-# **ОБНОВЛЕНО ПОСЛЕ МЕГА-РЕФАКТОРИНГА 2025-12-25**
+# **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
 
 Документ описывает REST и WebSocket-API, которые использует frontend (Web/Android)
 для работы с системой 2.0.
@@ -8,8 +8,9 @@
 **КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА:**
 - ✅ Новые эндпоинты для GrowCycle: `/api/grow-cycles/*`
 - ✅ Удалены legacy эндпоинты: `/api/zones/*/attach-recipe`
-- ✅ Для AE2-Lite введен единый wake-up endpoint: `POST /zones/{id}/start-cycle`
+- ✅ Для AE3/automation-engine закреплен единый wake-up endpoint: `POST /zones/{id}/start-cycle`
 - ✅ Версионирование рецептов: `/api/recipe-revisions/*`
+- ✅ Unified authority API: `/api/automation-configs/*`, `/api/automation-bundles/*`, `/api/automation-presets/*`
 
 Задача документа:
 - зафиксировать **контракты**;
@@ -22,7 +23,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ---
 
-## 0.1 AE2-Lite Canonical Overrides (2026-02-21)
+## 0.1 Authority / AE3 Canonical Overrides (2026-03-24)
 
 Эти правила имеют приоритет над более старыми фрагментами документа:
 - внешний запуск автоматики: только `POST /zones/{id}/start-cycle`;
@@ -30,6 +31,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - runtime automation-engine использует direct SQL read-model (без runtime HTTP вызовов в `/api/internal/effective-targets/*`);
 - scheduler передает intent через БД (`zone_automation_intents`) и будит зону через `start-cycle`;
 - endpoint `POST /api/zones/{id}/automation/manual-resume` удален.
+- web-admin/system settings/correction editors не получают authority-конфиги через Inertia props и используют только unified automation API.
 
 ---
 
@@ -253,7 +255,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 **Аутентификация:** Token-based (LARAVEL_API_TOKEN)
 
-### 5.1. POST /api/internal/effective-targets/batch (NON-RUNTIME / LEGACY INTEGRATION)
+### 5.1. POST /api/internal/effective-targets/batch (DIAGNOSTICS / NON-RUNTIME)
 
 - **Описание:** Batch получение effective targets для зон
 - **Тело:** `{"zone_ids": [1, 2, 3]}`
@@ -261,8 +263,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 #### Контракт workflow execution (обязательная структура `targets.*.execution`)
 
-Этот endpoint может использоваться для диагностики/аналитики и совместимых интеграций Laravel.
-В runtime AE2-Lite не использует его как источник выполнения workflow.
+Этот endpoint может использоваться для диагностики, аналитики и integration tooling.
+В runtime automation-engine не использует его как источник выполнения workflow.
 
 Для каждого task типа допускаются ключи:
 
@@ -429,11 +431,11 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Сортировка timeline:** строго по времени события по возрастанию (`created_at ASC`, затем `id ASC`).
 - **Статус:** использовать только для исторических данных до полного cleanup.
 
-### 3.5.2. GET /api/zones/{id}/scheduler-tasks/{taskId} (LEGACY / TO BE REMOVED)
+### 3.5.2. GET /api/zones/{id}/scheduler-tasks/{taskId} (HISTORICAL / DIAGNOSTICS ONLY)
 
 - **Аутентификация:** Требуется `auth:sanctum`
 - **Описание:** Исторический endpoint статуса scheduler-task.
-- **Поведение:** в AE2-Lite runtime path не используется.
+- **Поведение:** в AE3 runtime path не используется.
 - **Допустимые `taskId`:** historical `st-*` и canonical numeric AE3 task id. Legacy `intent-*` больше не поддерживается.
 - **Источник:** в `data.source` возвращается только `automation_engine`.
 - **Дополнительно:** ответ всегда содержит:
@@ -536,7 +538,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 ### 3.5.8. POST /api/zones/{id}/automation/manual-resume (REMOVED)
 
-- Endpoint удален в AE2-Lite.
+- Endpoint удален в canonical AE3 path.
 - Для восстановления использовать:
   - `POST /api/zones/{id}/control-mode`
   - `POST /api/zones/{id}/manual-step`
@@ -563,7 +565,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`
 - **Описание:** Переключение режима управления автоматикой зоны.
 - **Поведение:** Laravel выступает proxy к `automation-engine /zones/{zone_id}/control-mode`.
-- **Семантика AE3-Lite:** 
+- **Семантика AE3:** 
   - `semi` паузит `startup` перед входом в следующую fill-фазу, пока не придёт `manual-step` (`clean_fill_start` или `solution_fill_start`);
   - `manual` паузит `startup` и check-стадии two-tank workflow, пока не придёт соответствующий `manual-step`;
   - при переключении в `auto` active `pending_manual_step` сбрасывается fail-closed.
@@ -600,7 +602,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 ### 3.5.10. POST /zones/{id}/start-cycle (internal AE wake-up)
 
 - **Аутентификация:** internal service token (`SCHEDULER_API_TOKEN` / `PY_INGEST_TOKEN`)
-- **Описание:** Каноничный wake-up endpoint AE2-Lite для запуска цикла зоны.
+- **Описание:** Каноничный wake-up endpoint automation-engine / AE3 для запуска цикла зоны.
 - **Ограничение:** endpoint принимает только минимальный payload и не принимает device-level steps.
 - **Ограничение (DB intent):** `zone_automation_intents.payload` работает в режиме wake-up only; `task_payload` и `schedule_payload` не допускаются.
 - **Важно для scheduler:** при наличии в ответе `data.task_status` этот статус приоритетнее бинарного `accepted`.
@@ -672,7 +674,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Обновление параметров зоны (название, тип, лимиты и т.п.).
-- Для AE3 rollout допускается поле `automation_runtime: "ae2" | "ae3"`.
+- Для текущего runtime допускается поле `automation_runtime: "ae3"`.
 - Если зона busy, backend возвращает `409`:
 
 ```json
@@ -1142,7 +1144,8 @@ Legacy `extensions.day_target/night_target` не записывается.
 
 - `GET /api/automation-configs/zone/{zone}/zone.correction`
   - возвращает authority-документ с `payload.base_config`, `payload.phase_overrides`, `payload.resolved_config`
-  - `payload.resolved_config.pump_calibration` обязателен для AE3-Lite runtime
+  - `payload.resolved_config.meta.version` обязан отражать фактическую ревизию authority-документа
+  - `payload.resolved_config.pump_calibration` обязателен для runtime correction path по задействованным dosing channels; отсутствие обязательной калибровки блокирует readiness/start fail-closed
   - `meta` включает defaults/catalog из authority metadata
 - `PUT /api/automation-configs/zone/{zone}/zone.correction`
   - принимает полный authority payload
@@ -1224,56 +1227,46 @@ Legacy `extensions.day_target/night_target` не записывается.
   - `laravel_scheduler_cycle_duration_seconds{dispatch_mode}` (histogram)
   - `laravel_scheduler_active_tasks_count`
 
-### 8.4. GET /api/system/automation-settings
+### 8.4. System authority namespaces
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
-- **Ответ:** словарь namespace -> payload
-- Поддерживаемые namespace:
-  - `pump_calibration`
-  - `sensor_calibration`
-  - `process_calibration_defaults`
-  - `automation_defaults`
-  - `automation_command_templates`
+Канонический system-settings API:
 
-### 8.5. GET/PUT /api/system/automation-settings/{namespace}
+- `GET /api/automation-configs/system/0/system.runtime`
+- `PUT /api/automation-configs/system/0/system.runtime`
+- `DELETE /api/automation-configs/system/0/system.runtime`
+- `GET /api/automation-configs/system/0/system.automation_defaults`
+- `PUT /api/automation-configs/system/0/system.automation_defaults`
+- `DELETE /api/automation-configs/system/0/system.automation_defaults`
+- `GET /api/automation-configs/system/0/system.command_templates`
+- `PUT /api/automation-configs/system/0/system.command_templates`
+- `DELETE /api/automation-configs/system/0/system.command_templates`
+- `GET /api/automation-configs/system/0/system.process_calibration_defaults`
+- `PUT /api/automation-configs/system/0/system.process_calibration_defaults`
+- `DELETE /api/automation-configs/system/0/system.process_calibration_defaults`
+- `GET /api/automation-configs/system/0/system.pid_defaults.ph`
+- `PUT /api/automation-configs/system/0/system.pid_defaults.ph`
+- `DELETE /api/automation-configs/system/0/system.pid_defaults.ph`
+- `GET /api/automation-configs/system/0/system.pid_defaults.ec`
+- `PUT /api/automation-configs/system/0/system.pid_defaults.ec`
+- `DELETE /api/automation-configs/system/0/system.pid_defaults.ec`
+- `GET /api/automation-configs/system/0/system.pump_calibration_policy`
+- `PUT /api/automation-configs/system/0/system.pump_calibration_policy`
+- `DELETE /api/automation-configs/system/0/system.pump_calibration_policy`
+- `GET /api/automation-configs/system/0/system.sensor_calibration_policy`
+- `PUT /api/automation-configs/system/0/system.sensor_calibration_policy`
+- `DELETE /api/automation-configs/system/0/system.sensor_calibration_policy`
 
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
-- `GET` возвращает:
-  - `namespace`
-  - `config`
-  - `meta.defaults`
-  - `meta.field_catalog`
-- `process_calibration_defaults` дополнительно используется как источник Inertia prop
-  `processCalibrationDefaults` для frontend-формы process calibration.
-- `PUT` принимает partial body:
+### 8.5. Reset system authority documents
 
-```json
-{
-  "config": {
-    "ml_per_sec_max": 25.0
-  }
-}
-```
+- **Аутентификация:** требуется `auth:sanctum`; изменение `system.*` ограничено ролями, которым разрешён system authority write path.
+- `DELETE /api/automation-configs/system/0/{namespace}` сбрасывает документ к catalog defaults или env/config-derived snapshot для `system.runtime`.
 
-- backend делает merge с текущим namespace и повторную валидацию полного payload.
+### 8.6. Inertia props для web-страниц
 
-### 8.6. POST /api/system/automation-settings/{namespace}/reset
-
-- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
-- Сбрасывает namespace к catalog defaults.
-
-### 8.7. Inertia props для web-страниц
-
-- `GET /zones/{zone}` (`Zones/Show`) дополнительно публикует:
-  - `pumpCalibrationSettings`
-  - `sensorCalibrationSettings`
-- Эти props используются frontend-компонентами:
-  - zone pump calibration panel
-  - zone pump calibration override editor
-  - sensor calibration status/wizard
-- `GET /system/settings` рендерит страницу `SystemSettings` и публикует:
-  - `settings.pump_calibration`
-  - `settings.sensor_calibration`
+- `GET /settings` и `GET /system/settings` не публикуют authority config payload через Inertia props.
+- web-страницы получают authority данные только через unified automation API.
+- `Settings/Index` и `SystemSettings` читают `system.*` документы через `/api/automation-configs/system/0/{namespace}` и используют `DELETE` для reset path.
+- Допустимые Inertia props в этих страницах: auth/user, page shell metadata, non-authority UI state.
 
 ---
 

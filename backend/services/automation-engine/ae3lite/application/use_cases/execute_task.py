@@ -45,7 +45,7 @@ class ExecuteTaskUseCase:
         command_gateway: Any,
         workflow_router: Any,
         workflow_repository: Any | None = None,
-        zone_correction_config_repository: Any | None = None,
+        correction_authority_repository: Any | None = None,
         alert_repository: Any | None = None,
         finalize_task_use_case: Any | None = None,
     ) -> None:
@@ -55,7 +55,7 @@ class ExecuteTaskUseCase:
         self._command_gateway = command_gateway
         self._workflow_router = workflow_router
         self._workflow_repository = workflow_repository
-        self._zone_correction_config_repository = zone_correction_config_repository
+        self._correction_authority_repository = correction_authority_repository
         self._alert_repository = alert_repository
         self._finalize_task_use_case = finalize_task_use_case or FinalizeTaskUseCase(task_repository=task_repository)
 
@@ -432,7 +432,7 @@ class ExecuteTaskUseCase:
         plan: Any,
         now: datetime,
     ) -> None:
-        repository = self._zone_correction_config_repository
+        repository = self._correction_authority_repository
         if repository is None:
             return
 

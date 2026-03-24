@@ -571,15 +571,57 @@ class AutomationRuntimeConfigService
             return $this->overrides;
         }
 
-        $payload = app(AutomationConfigDocumentService::class)->getPayload(
+        $document = app(AutomationConfigDocumentService::class)->getDocument(
             AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME,
             AutomationConfigRegistry::SCOPE_SYSTEM,
             0,
             true
         );
-        $this->overrides = is_array($payload) && ! array_is_list($payload) ? $payload : [];
+        $payload = $document?->payload;
+        $overrides = is_array($payload) && ! array_is_list($payload) ? $payload : [];
+
+        if ($this->matchesDefaultOverrideMap($overrides)) {
+            $overrides = [];
+        }
+
+        $this->overrides = $overrides;
 
         return $this->overrides;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function matchesDefaultOverrideMap(array $payload): bool
+    {
+        if ($payload === []) {
+            return false;
+        }
+
+        $defaults = self::defaultSettingsMapStatic();
+        if (count($payload) !== count($defaults)) {
+            return false;
+        }
+
+        foreach ($defaults as $key => $defaultValue) {
+            if (! array_key_exists($key, $payload)) {
+                return false;
+            }
+
+            $definition = self::DEFINITIONS[$key] ?? null;
+            if (! is_array($definition)) {
+                return false;
+            }
+
+            $normalizedPayloadValue = $this->normalizeStoredValue($key, $payload[$key], $definition, $defaultValue, true);
+            $normalizedDefaultValue = $this->normalizeStoredValue($key, $defaultValue, $definition, $defaultValue, true);
+
+            if ($normalizedPayloadValue !== $normalizedDefaultValue) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function hasOverride(string $key): bool

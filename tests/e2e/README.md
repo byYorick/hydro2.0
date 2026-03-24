@@ -140,7 +140,7 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 
 По умолчанию `SCENARIO_SET=full`. Wrapper прогоняет все real-hardware entrypoints
-из `automation_engine/`, `workflow/` и `ae3lite/`. Legacy AE2 names при этом
+из `automation_engine/`, `workflow/` и `ae3lite/`. Исторические legacy names при этом
 остаются отдельными YAML-файлами, но могут быть явно портированы на каноничные
 AE3 сценарии через `scenario_ref` внутри самих файлов.
 

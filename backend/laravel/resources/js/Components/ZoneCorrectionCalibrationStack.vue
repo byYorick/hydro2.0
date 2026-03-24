@@ -71,9 +71,31 @@
       </div>
 
       <div id="zone-process-calibration-panel-shared">
-        <ProcessCalibrationPanel :zone-id="zoneId" />
+        <ProcessCalibrationPanel
+          :zone-id="zoneId"
+          @saved="handleAuthorityUpdated"
+        />
       </div>
     </section>
+
+    <details
+      class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
+      data-testid="zone-correction-config-details"
+    >
+      <summary class="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-[color:var(--text-primary)]">
+        4. Correction config и presets
+        <div class="mt-1 text-xs font-normal text-[color:var(--text-dim)]">
+          Authority-редактор correction family: base config, phase overrides, history и preset lifecycle.
+        </div>
+      </summary>
+
+      <div class="border-t border-[color:var(--border-muted)] p-4">
+        <CorrectionConfigForm
+          :zone-id="zoneId"
+          @saved="handleAuthorityUpdated"
+        />
+      </div>
+    </details>
 
     <section
       v-if="showRuntimeReadiness"
@@ -90,6 +112,7 @@
 
       <CorrectionRuntimeReadinessCard
         :zone-id="zoneId"
+        :refresh-token="readinessRefreshToken"
         @focus-process-calibration="scrollToSection('zone-process-calibration-panel-shared')"
         @open-pump-calibration="$emit('open-pump-calibration')"
         @focus-pid-config="openPidConfigPanel"
@@ -126,6 +149,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import CorrectionConfigForm from '@/Components/CorrectionConfigForm.vue'
 import CorrectionRuntimeReadinessCard from '@/Components/CorrectionRuntimeReadinessCard.vue'
 import PidConfigForm from '@/Components/PidConfigForm.vue'
 import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
@@ -150,9 +174,12 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'open-pump-calibration'): void
   (e: 'pid-config-saved', config: PidConfigWithMeta): void
+  (e: 'authority-updated'): void
 }>()
 
 const pidDetailsOpen = ref(false)
+const authorityRefreshSeq = ref(0)
+const readinessRefreshToken = computed(() => `${props.saveSuccessSeq}:${props.runSuccessSeq}:${authorityRefreshSeq.value}`)
 
 const stackIntroText = computed(() => {
   if (props.showRuntimeReadiness) {
@@ -198,6 +225,12 @@ function handlePidDetailsToggle(event: Event): void {
 }
 
 function handlePidConfigSaved(config: PidConfigWithMeta): void {
+  handleAuthorityUpdated()
   emit('pid-config-saved', config)
+}
+
+function handleAuthorityUpdated(): void {
+  authorityRefreshSeq.value += 1
+  emit('authority-updated')
 }
 </script>

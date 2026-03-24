@@ -1,9 +1,0 @@
-stateDiagram-v2
-    [*] --> idle
-    idle --> tank_filling: start-cycle/startup
-    tank_filling --> tank_recirc: clean_fill + solution_fill done
-    tank_recirc --> ready: prepare_recirculation done
-    ready --> irrigating: irrigation tick/manual step
-    irrigating --> irrig_recirc: recovery needed
-    irrig_recirc --> irrigating: recovery done
-    irrigating --> ready: irrigation stop

@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card data-testid="correction-config-form">
     <div class="space-y-5">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -23,7 +23,7 @@
               <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
                 Preset
               </label>
-              <select v-model="selectedPresetId" class="input-select w-full">
+              <select v-model="selectedPresetId" class="input-select w-full" data-testid="correction-config-preset-select">
                 <option :value="null">System default</option>
                 <option v-for="preset in presets" :key="preset.id" :value="preset.id">
                   {{ preset.name }} ({{ preset.scope }})
@@ -36,17 +36,29 @@
             </div>
 
             <div class="space-y-2">
-              <Button size="sm" variant="outline" class="w-full" @click="applySelectedPreset">
+              <Button size="sm" variant="outline" class="w-full" data-testid="correction-config-apply-preset" @click="applySelectedPreset">
                 Применить preset в форму
               </Button>
-              <Button size="sm" variant="outline" class="w-full" @click="resetToDefaults">
+              <Button size="sm" variant="outline" class="w-full" data-testid="correction-config-reset-defaults" @click="resetToDefaults">
                 Сбросить к system default
+              </Button>
+              <Button
+                v-if="selectedPreset?.scope === 'custom'"
+                size="sm"
+                variant="outline"
+                class="w-full"
+                data-testid="correction-config-update-preset"
+                :disabled="loading"
+                @click="updateSelectedPreset"
+              >
+                Обновить custom preset
               </Button>
               <Button
                 v-if="selectedPreset?.scope === 'custom'"
                 size="sm"
                 variant="danger"
                 class="w-full"
+                data-testid="correction-config-delete-preset"
                 :disabled="loading"
                 @click="deleteSelectedPreset"
               >
@@ -69,6 +81,7 @@
                   :key="phase"
                   size="sm"
                   variant="outline"
+                  :data-testid="`correction-config-phase-select-${phase}`"
                   :class="{ 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]': selectedPhase === phase }"
                   @click="selectedPhase = phase"
                 >
@@ -80,9 +93,9 @@
 
           <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
             <div class="text-xs font-medium text-[color:var(--text-muted)]">Сохранить как custom preset</div>
-            <input v-model="newPresetName" type="text" class="input-field w-full" placeholder="Название preset" />
-            <textarea v-model="newPresetDescription" class="input-field w-full min-h-[88px]" placeholder="Описание"></textarea>
-            <Button size="sm" class="w-full" :disabled="loading || !newPresetName.trim()" @click="saveAsPreset">
+            <input v-model="newPresetName" type="text" class="input-field w-full" placeholder="Название preset" data-testid="correction-config-new-preset-name" />
+            <textarea v-model="newPresetDescription" class="input-field w-full min-h-[88px]" placeholder="Описание" data-testid="correction-config-new-preset-description"></textarea>
+            <Button size="sm" class="w-full" data-testid="correction-config-save-preset" :disabled="loading || !newPresetName.trim()" @click="saveAsPreset">
               Сохранить текущий config как preset
             </Button>
           </div>
@@ -138,6 +151,7 @@
                   <label v-if="field.type === 'boolean'" class="flex items-center gap-2 text-sm">
                     <input
                       :checked="Boolean(getByPath(baseForm, field.path))"
+                      :data-testid="`correction-config-base-${field.path}`"
                       type="checkbox"
                       @change="setByPath(baseForm, field.path, ($event.target as HTMLInputElement).checked)"
                     />
@@ -147,6 +161,7 @@
                   <select
                     v-else-if="field.type === 'enum'"
                     :value="String(getByPath(baseForm, field.path) ?? '')"
+                    :data-testid="`correction-config-base-${field.path}`"
                     class="input-select w-full"
                     :disabled="Boolean(field.readonly)"
                     @change="setByPath(baseForm, field.path, ($event.target as HTMLSelectElement).value)"
@@ -157,6 +172,7 @@
                   <input
                     v-else
                     :value="String(getByPath(baseForm, field.path) ?? '')"
+                    :data-testid="`correction-config-base-${field.path}`"
                     :type="field.type === 'string' ? 'text' : 'number'"
                     :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
                     :min="field.min"
@@ -292,6 +308,7 @@
                   <label v-if="field.type === 'boolean'" class="flex items-center gap-2 text-sm">
                     <input
                       :checked="Boolean(getByPath(activePhaseForm, field.path))"
+                      :data-testid="`correction-config-phase-${selectedPhase}-${field.path}`"
                       type="checkbox"
                       @change="setByPath(activePhaseForm, field.path, ($event.target as HTMLInputElement).checked)"
                     />
@@ -301,6 +318,7 @@
                   <select
                     v-else-if="field.type === 'enum'"
                     :value="String(getByPath(activePhaseForm, field.path) ?? '')"
+                    :data-testid="`correction-config-phase-${selectedPhase}-${field.path}`"
                     class="input-select w-full"
                     :disabled="Boolean(field.readonly)"
                     @change="setByPath(activePhaseForm, field.path, ($event.target as HTMLSelectElement).value)"
@@ -311,6 +329,7 @@
                   <input
                     v-else
                     :value="String(getByPath(activePhaseForm, field.path) ?? '')"
+                    :data-testid="`correction-config-phase-${selectedPhase}-${field.path}`"
                     :type="field.type === 'string' ? 'text' : 'number'"
                     :step="field.step ?? (field.type === 'integer' ? 1 : 'any')"
                     :min="field.min"
@@ -331,10 +350,10 @@
       </div>
 
       <div class="flex justify-end gap-2 border-t border-[color:var(--border-muted)] pt-4">
-        <Button type="button" variant="outline" size="sm" @click="reload">
+        <Button type="button" variant="outline" size="sm" data-testid="correction-config-reload" @click="reload">
           Перезагрузить
         </Button>
-        <Button type="button" size="sm" :disabled="loading" @click="save">
+        <Button type="button" size="sm" data-testid="correction-config-save" :disabled="loading" @click="save">
           {{ loading ? 'Сохранение...' : 'Сохранить correction config' }}
         </Button>
       </div>
@@ -346,7 +365,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
-import { useCorrectionConfig } from '@/composables/useCorrectionConfig'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import type {
   CorrectionCatalogField,
   CorrectionCatalogSection,
@@ -362,15 +381,12 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-
-const {
-  loading,
-  getZoneCorrectionConfig,
-  updateZoneCorrectionConfig,
-  getZoneCorrectionConfigHistory,
-  createCorrectionPreset,
-  deleteCorrectionPreset,
-} = useCorrectionConfig()
+const emit = defineEmits<{
+  (e: 'saved'): void
+}>()
+const CORRECTION_NAMESPACE = 'zone.correction'
+const automationConfig = useAutomationConfig()
+const { loading } = automationConfig
 
 const presets = ref<CorrectionPreset[]>([])
 const sections = ref<CorrectionCatalogSection[]>([])
@@ -632,6 +648,26 @@ function splitPresetConfig(raw: Record<string, unknown> | undefined): { base: Re
   }
 }
 
+function normalizeCorrectionPreset(preset: Partial<CorrectionPreset> & Record<string, unknown>): CorrectionPreset {
+  return {
+    id: Number(preset.id ?? 0),
+    slug: String(preset.slug ?? ''),
+    name: String(preset.name ?? 'Preset'),
+    scope: preset.scope === 'system' ? 'system' : 'custom',
+    is_locked: preset.is_locked === true,
+    is_active: preset.is_active === true,
+    description: typeof preset.description === 'string' ? preset.description : null,
+    config: (preset.config as Record<string, unknown>) ?? (preset.payload as Record<string, unknown>) ?? {},
+    created_by: typeof preset.created_by === 'number' ? preset.created_by : null,
+    updated_by: typeof preset.updated_by === 'number' ? preset.updated_by : null,
+    updated_at: typeof preset.updated_at === 'string' ? preset.updated_at : null,
+  }
+}
+
+function normalizeCorrectionPresets(presetsList: Array<Record<string, unknown>>): CorrectionPreset[] {
+  return presetsList.map((preset) => normalizeCorrectionPreset(preset))
+}
+
 function applyPayload(payload: ZoneCorrectionConfigPayload): void {
   presets.value = payload.available_presets ?? []
   sections.value = payload.meta.field_catalog ?? []
@@ -657,8 +693,8 @@ function applyPayload(payload: ZoneCorrectionConfigPayload): void {
 async function reload(): Promise<void> {
   try {
     const [payload, historyItems] = await Promise.all([
-      getZoneCorrectionConfig(props.zoneId),
-      getZoneCorrectionConfigHistory(props.zoneId),
+      automationConfig.getDocument<ZoneCorrectionConfigPayload>('zone', props.zoneId, CORRECTION_NAMESPACE),
+      automationConfig.getHistory<ZoneCorrectionConfigHistoryItem>('zone', props.zoneId, CORRECTION_NAMESPACE),
     ])
     applyPayload(payload)
     history.value = historyItems
@@ -690,13 +726,21 @@ function resetToDefaults(): void {
 
 async function save(): Promise<void> {
   try {
-    const payload = await updateZoneCorrectionConfig(props.zoneId, {
+    const payload = await automationConfig.updateDocument<
+      {
+        preset_id: number | null
+        base_config: Record<string, unknown>
+        phase_overrides: Record<CorrectionPhase, Record<string, unknown>>
+      },
+      ZoneCorrectionConfigPayload
+    >('zone', props.zoneId, CORRECTION_NAMESPACE, {
       preset_id: selectedPresetId.value,
       base_config: clone(baseForm.value),
       phase_overrides: clone(phaseForms.value),
     })
     applyPayload(payload)
-    history.value = await getZoneCorrectionConfigHistory(props.zoneId)
+    history.value = await automationConfig.getHistory<ZoneCorrectionConfigHistoryItem>('zone', props.zoneId, CORRECTION_NAMESPACE)
+    emit('saved')
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to save correction config', error)
   }
@@ -704,20 +748,43 @@ async function save(): Promise<void> {
 
 async function saveAsPreset(): Promise<void> {
   try {
-    const result = await createCorrectionPreset({
+    const createdPreset = await automationConfig.createPreset(CORRECTION_NAMESPACE, {
       name: newPresetName.value.trim(),
       description: newPresetDescription.value.trim() || null,
-      config: {
+      payload: {
         base: clone(baseForm.value),
         phases: clone(phaseForms.value),
       },
     })
-    presets.value = result.data
-    selectedPresetId.value = result.selected
+    presets.value = normalizeCorrectionPresets(
+      await automationConfig.listPresets(CORRECTION_NAMESPACE) as Array<Record<string, unknown>>
+    )
+    selectedPresetId.value = createdPreset.id
     newPresetName.value = ''
     newPresetDescription.value = ''
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to create custom preset', error)
+  }
+}
+
+async function updateSelectedPreset(): Promise<void> {
+  if (!selectedPreset.value || selectedPreset.value.scope !== 'custom') {
+    return
+  }
+
+  try {
+    const updatedPreset = await automationConfig.updatePreset(selectedPreset.value.id, {
+      payload: {
+        base: clone(baseForm.value),
+        phases: clone(phaseForms.value),
+      },
+    })
+    presets.value = normalizeCorrectionPresets(
+      await automationConfig.listPresets(CORRECTION_NAMESPACE) as Array<Record<string, unknown>>
+    )
+    selectedPresetId.value = updatedPreset.id
+  } catch (error) {
+    logger.error('[CorrectionConfigForm] Failed to update custom preset', error)
   }
 }
 
@@ -727,7 +794,10 @@ async function deleteSelectedPreset(): Promise<void> {
   }
 
   try {
-    presets.value = await deleteCorrectionPreset(selectedPreset.value.id)
+    await automationConfig.deletePreset(selectedPreset.value.id)
+    presets.value = normalizeCorrectionPresets(
+      await automationConfig.listPresets(CORRECTION_NAMESPACE) as Array<Record<string, unknown>>
+    )
     selectedPresetId.value = null
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to delete custom preset', error)

@@ -6,7 +6,7 @@
 
 Он дополняет `API_SPEC_FRONTEND_BACKEND_FULL.md`, но сфокусирован именно на списке URL и их назначении.
 
-Актуализация AE2-Lite (2026-02-21):
+Актуализация authority / AE3 (2026-03-24):
 - единый запуск workflow через `POST /zones/{id}/start-cycle` (внутренний AE endpoint);
 - legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
 - runtime path automation-engine использует direct SQL read-model.
@@ -46,7 +46,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/zones | auth:sanctum | Список зон (фильтры по теплице, статусу) |
 | POST | /api/zones | auth:sanctum (operator/admin/agronomist/engineer) | Создать зону |
 | GET | /api/zones/{id} | auth:sanctum | Детали зоны + активный рецепт |
-| PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны, включая `automation_runtime=ae2|ae3` |
+| PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны, включая `automation_runtime=ae3` |
 | DELETE| /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить зону (если нет активных зависимостей) |
 
 Доп. действия:
@@ -72,7 +72,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 
 Контракт `PATCH /api/zones/{id}`:
-- допускает `automation_runtime: "ae2" | "ae3"`
+- допускает `automation_runtime: "ae3"`
 - при busy zone возвращает `409` с `code=runtime_switch_denied_zone_busy`
 - busy zone определяется через active `ae_tasks`, active `ae_zone_leases` или indeterminate `ae_commands` state
 
@@ -408,7 +408,7 @@ Preset rules:
   (в JSON остаётся строкой для совместимости внешнего контракта);
 - если AE3-ответ не содержит canonical numeric `task_id`, Laravel scheduler трактует submit как failed/retryable
   и не создаёт fallback snapshot с `intent-*`;
-- для зон с `zones.automation_runtime='ae2'` сохраняется legacy compatibility `task_id=intent-<id>`.
+- legacy `intent-*` task snapshots удалены; runtime обязан возвращать canonical numeric `task_id`.
 
 Контракт `POST /zones/{id}/start-relay-autotune`:
 - тело запроса: `{ "pid_type": "ph" | "ec" }`;

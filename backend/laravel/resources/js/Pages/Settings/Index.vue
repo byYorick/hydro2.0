@@ -231,6 +231,7 @@
       >
         <Button
           size="sm"
+          data-testid="settings-automation-engine-save"
           :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
           @click="saveAutomationEngineSettings"
         >
@@ -239,6 +240,7 @@
         <Button
           size="sm"
           variant="secondary"
+          data-testid="settings-automation-engine-refresh"
           :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
           @click="loadAutomationEngineSettings"
         >
@@ -247,6 +249,7 @@
         <Button
           size="sm"
           variant="danger"
+          data-testid="settings-automation-engine-reset"
           :disabled="automationSettingsSaving || automationSettingsLoading || automationSettingsResetting"
           @click="resetAutomationEngineSettings"
         >
@@ -276,6 +279,7 @@
                   <select
                     v-if="item.input_type === 'boolean'"
                     v-model="automationSettingsDraft[item.key]"
+                    :data-testid="`settings-automation-engine-input-${item.key}`"
                     class="input-select w-full"
                   >
                     <option :value="true">
@@ -288,6 +292,7 @@
                   <select
                     v-else-if="item.input_type === 'select'"
                     v-model="automationSettingsDraft[item.key]"
+                    :data-testid="`settings-automation-engine-input-${item.key}`"
                     class="input-select w-full"
                   >
                     <option
@@ -301,6 +306,7 @@
                   <input
                     v-else-if="item.input_type === 'number'"
                     v-model="automationSettingsDraft[item.key]"
+                    :data-testid="`settings-automation-engine-input-${item.key}`"
                     class="input-field w-full"
                     type="number"
                     :step="item.step || 1"
@@ -310,6 +316,7 @@
                   <input
                     v-else
                     v-model="automationSettingsDraft[item.key]"
+                    :data-testid="`settings-automation-engine-input-${item.key}`"
                     class="input-field w-full"
                     type="text"
                   />
@@ -453,6 +460,7 @@ import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 import { ERROR_MESSAGES } from '@/constants/messages'
@@ -462,10 +470,13 @@ const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
-const canEditAutomationEngineSettings = computed(() => page.props.canEditAutomationEngineSettings === true)
-const automationEngineSettingsState = ref(page.props.automationEngineSettings || null)
+const canEditAutomationEngineSettings = computed(() => {
+  const role = String(currentUser.value?.role || 'viewer')
+  return ['admin', 'engineer', 'operator', 'agronomist'].includes(role)
+})
+const automationEngineSettingsState = ref(null)
 const automationEngineSettingsSections = computed(() => {
-  const sections = automationEngineSettingsState.value?.sections
+  const sections = automationEngineSettingsState.value?.snapshot?.sections
   if (!Array.isArray(sections)) return []
 
   return sections.filter((section) => {
@@ -479,7 +490,7 @@ const automationEngineSettingsSections = computed(() => {
   })
 })
 const automationEngineSettingsGeneratedAtLabel = computed(() => {
-  const raw = automationEngineSettingsState.value?.generated_at
+  const raw = automationEngineSettingsState.value?.snapshot?.generated_at
   if (typeof raw !== 'string' || raw.trim() === '') return 'неизвестно'
   const date = new Date(raw)
   if (Number.isNaN(date.getTime())) return raw
@@ -492,6 +503,7 @@ const editableAutomationSettingsItems = computed(() => {
 })
 
 const { showToast } = useToast()
+const automationConfig = useAutomationConfig(showToast)
 
 // Инициализация API с Toast
 const { api } = useApi(showToast)
@@ -593,19 +605,24 @@ const buildAutomationSettingsPayload = () => {
   return payload
 }
 
-const loadAutomationEngineSettings = async () => {
+const loadAutomationEngineSettings = async (options = {}) => {
+  const silent = options.silent === true
   automationSettingsLoading.value = true
   try {
-    const response = await api.get('/settings/automation-engine')
-    applyAutomationSettingsSnapshot(response?.data?.data || null)
-    showToast('Параметры automation runtime обновлены', 'success', TOAST_TIMEOUT.NORMAL)
+    const document = await automationConfig.getDocument('system', 0, 'system.runtime')
+    applyAutomationSettingsSnapshot(document || null)
+    if (!silent) {
+      showToast('Параметры automation runtime обновлены', 'success', TOAST_TIMEOUT.NORMAL)
+    }
   } catch (err) {
     logger.error('Failed to load automation runtime settings:', err)
-    showToast(
-      `Ошибка загрузки runtime параметров: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
-      'error',
-      TOAST_TIMEOUT.LONG
-    )
+    if (!silent) {
+      showToast(
+        `Ошибка загрузки runtime параметров: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
+        'error',
+        TOAST_TIMEOUT.LONG
+      )
+    }
   } finally {
     automationSettingsLoading.value = false
   }
@@ -614,10 +631,13 @@ const loadAutomationEngineSettings = async () => {
 const saveAutomationEngineSettings = async () => {
   automationSettingsSaving.value = true
   try {
-    const response = await api.patch('/settings/automation-engine', {
-      settings: buildAutomationSettingsPayload(),
-    })
-    applyAutomationSettingsSnapshot(response?.data?.data || null)
+    const document = await automationConfig.updateDocument(
+      'system',
+      0,
+      'system.runtime',
+      buildAutomationSettingsPayload()
+    )
+    applyAutomationSettingsSnapshot(document || null)
     showToast('Глобальные параметры автоматики сохранены и применены', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
     logger.error('Failed to save automation runtime settings:', err)
@@ -634,8 +654,8 @@ const saveAutomationEngineSettings = async () => {
 const resetAutomationEngineSettings = async () => {
   automationSettingsResetting.value = true
   try {
-    const response = await api.delete('/settings/automation-engine')
-    applyAutomationSettingsSnapshot(response?.data?.data || null)
+    const document = await automationConfig.resetDocument('system', 0, 'system.runtime')
+    applyAutomationSettingsSnapshot(document || null)
     showToast('Override параметры сброшены к значениям env/config', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
     logger.error('Failed to reset automation runtime settings:', err)
@@ -824,20 +844,15 @@ const closeModal = () => {
   userForm.role = 'operator'
 }
 
-watch(
-  () => page.props.automationEngineSettings,
-  (snapshot) => {
-    applyAutomationSettingsSnapshot(snapshot || null)
-  },
-  { immediate: true }
-)
-
 onMounted(() => {
   if (isAdmin.value) {
     loadUsers()
   }
   applyPreferences(currentUser.value?.preferences || null)
   loadPreferences()
+  if (canEditAutomationEngineSettings.value) {
+    void loadAutomationEngineSettings({ silent: true })
+  }
 })
 
 // Сбрасываем на первую страницу при изменении фильтров

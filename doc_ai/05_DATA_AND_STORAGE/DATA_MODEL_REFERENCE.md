@@ -73,7 +73,7 @@ health_status VARCHAR(16)
 hardware_profile JSONB
 capabilities JSONB
 settings JSONB
-automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae2' CHECK (automation_runtime IN ('ae2','ae3'))
+automation_runtime VARCHAR(16) NOT NULL DEFAULT 'ae3' CHECK (automation_runtime IN ('ae3'))
 created_at
 updated_at
 ```
@@ -241,7 +241,7 @@ updated_at
 Индексы:
 ```
 telemetry_last_ts_idx (last_ts)
-telemetry_last_sensor_updated_at_idx (sensor_id, updated_at) -- AE2-Lite freshness/polling
+telemetry_last_sensor_updated_at_idx (sensor_id, updated_at) -- runtime freshness/polling
 ```
 
 ---
@@ -587,7 +587,7 @@ commands_zone_status_idx (zone_id, status) -- уже существует
 commands_node_status_idx (node_id, status) -- уже существует
 commands_created_at_idx (created_at) -- уже существует
 commands_sent_at_idx (sent_at) -- уже существует
-commands_status_updated_at_idx (status, updated_at DESC) -- AE2-Lite reconcile polling
+commands_status_updated_at_idx (status, updated_at DESC) -- runtime reconcile polling
 commands_zone_node_status_idx (zone_id, node_id, status) WHERE zone_id IS NOT NULL AND node_id IS NOT NULL
 commands_ack_at_idx (ack_at) WHERE ack_at IS NOT NULL
 commands_node_channel_idx (node_id, channel) WHERE node_id IS NOT NULL AND channel IS NOT NULL
@@ -735,7 +735,7 @@ Payload:
 - каждый plan содержит `steps[]` с `channel`, `cmd`, `params`;
 - runtime использует `active_profile.command_plans` из compiled bundle, без legacy fallback.
 
-Минимальная JSON-схема `command_plans` (AE2-Lite):
+Минимальная JSON-схема `command_plans` (runtime):
 
 ```json
 {
@@ -805,7 +805,7 @@ status IN ('pending','claimed','running','completed','failed','cancelled')
 ```
 
 Назначение:
-- durable contract между Laravel scheduler-dispatch и AE2-Lite;
+- durable contract между Laravel scheduler-dispatch и automation-engine;
 - идемпотентный запуск циклов через `POST /zones/{id}/start-cycle`;
 - арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
 
@@ -836,7 +836,7 @@ Lifecycle:
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
-## 6.9. PostgreSQL NOTIFY triggers (AE2-Lite)
+## 6.9. PostgreSQL NOTIFY triggers (runtime)
 
 Источник событий для fast-path listener в `automation-engine`:
 
@@ -1198,7 +1198,7 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 - `result.commands_failed: int|null`
 
 Статус:
-- в AE2-Lite canonical runtime вместо scheduler-task используется `zone_automation_intents`.
+- в canonical runtime вместо scheduler-task используется `zone_automation_intents`.
 
 ---
 
@@ -1654,7 +1654,7 @@ zone 1—1 ae_zone_leases
 
 ---
 
-# 13. Использование данных в Python сервисах (AE2-Lite)
+# 13. Использование данных в Python сервисах
 
 **Automation-engine использует direct SQL read-model в runtime path.**
 
@@ -1695,7 +1695,7 @@ zone 1—1 ae_zone_leases
 }
 ```
 
-### 13.1. Контракт `targets.*.execution` для AE2-Lite workflow
+### 13.1. Контракт `targets.*.execution` для runtime workflow
 
 Для workflow-исполнения поддерживаются execution-конфиги
 в секциях `targets.irrigation|lighting|ventilation|solution_change|mist|diagnostics`.

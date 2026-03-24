@@ -12,6 +12,7 @@ use App\Models\ChannelBinding;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigPresetService;
 use App\Services\AutomationConfigRegistry;
+use App\Services\AutomationRuntimeConfigService;
 use App\Services\SystemAutomationSettingsCatalog;
 use App\Services\ZoneCorrectionConfigCatalog;
 use Illuminate\Http\JsonResponse;
@@ -31,7 +32,7 @@ class AutomationConfigController extends Controller
     {
         try {
             $this->assertScopeMatchesNamespace($scopeType, $namespace);
-            $this->authorizeScopeAccess($request, $scopeType, $scopeId);
+            $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, false);
             $document = $this->documents->getDocument($namespace, $scopeType, $scopeId, true);
 
             return response()->json([
@@ -59,10 +60,29 @@ class AutomationConfigController extends Controller
     {
         try {
             $this->assertScopeMatchesNamespace($scopeType, $namespace);
-            $this->authorizeScopeAccess($request, $scopeType, $scopeId);
+            $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, true);
             $payload = $request->input('payload');
             if (! is_array($payload)) {
                 throw new \InvalidArgumentException('payload must be an array/object.');
+            }
+
+            if ($namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME) {
+                app(AutomationRuntimeConfigService::class)->applyOverrides($payload, $request->user()?->id);
+                $document = $this->documents->getDocument($namespace, $scopeType, $scopeId, true);
+
+                return response()->json([
+                    'status' => 'ok',
+                    'data' => $this->serializeDocument(
+                        $namespace,
+                        $scopeType,
+                        $scopeId,
+                        $document?->id,
+                        is_array($document?->payload) ? $document->payload : [],
+                        (string) ($document?->status ?? 'valid'),
+                        $document?->updated_at?->toIso8601String(),
+                        $document?->updated_by
+                    ),
+                ]);
             }
 
             $previousDocument = $this->documents->getDocument($namespace, $scopeType, $scopeId, false);
@@ -109,7 +129,7 @@ class AutomationConfigController extends Controller
     {
         try {
             $this->assertScopeMatchesNamespace($scopeType, $namespace);
-            $this->authorizeScopeAccess($request, $scopeType, $scopeId);
+            $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, false);
 
             $versions = AutomationConfigVersion::query()
                 ->where('scope_type', $scopeType)
@@ -128,6 +148,51 @@ class AutomationConfigController extends Controller
                         $versions->count() - $index
                     );
                 })->all(),
+            ]);
+        } catch (\InvalidArgumentException $exception) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    public function destroy(Request $request, string $scopeType, int $scopeId, string $namespace): JsonResponse
+    {
+        try {
+            $this->assertScopeMatchesNamespace($scopeType, $namespace);
+            $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, true);
+
+            if ($scopeType !== AutomationConfigRegistry::SCOPE_SYSTEM || $scopeId !== 0) {
+                throw new \InvalidArgumentException('Reset is only supported for system authority documents.');
+            }
+
+            if ($namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME) {
+                app(AutomationRuntimeConfigService::class)->resetOverrides();
+                $document = $this->documents->getDocument($namespace, $scopeType, $scopeId, true);
+            } else {
+                $document = $this->documents->upsertDocument(
+                    $namespace,
+                    $scopeType,
+                    $scopeId,
+                    $this->registry->defaultPayload($namespace),
+                    $request->user()?->id,
+                    'authority_reset'
+                );
+            }
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $this->serializeDocument(
+                    $namespace,
+                    $scopeType,
+                    $scopeId,
+                    $document?->id,
+                    is_array($document?->payload) ? $document->payload : [],
+                    (string) ($document?->status ?? 'valid'),
+                    $document?->updated_at?->toIso8601String(),
+                    $document?->updated_by
+                ),
             ]);
         } catch (\InvalidArgumentException $exception) {
             return response()->json([
@@ -236,8 +301,21 @@ class AutomationConfigController extends Controller
             'updated_by' => $updatedBy,
         ];
 
+        if ($namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME) {
+            $serialized['payload'] = app(AutomationRuntimeConfigService::class)->editableSettingsMap();
+        }
+
         if ($namespace === AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION) {
             $serialized = array_merge($serialized, $this->serializeZoneCorrectionDocument($scopeId, $payload));
+        }
+
+        if ($namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME) {
+            $serialized = array_merge($serialized, $this->serializeSystemRuntimeDocument());
+        }
+
+        $legacySystemNamespace = $this->registry->authorityToLegacySystemNamespace($namespace);
+        if ($legacySystemNamespace !== null) {
+            $serialized = array_merge($serialized, $this->serializeLegacySystemDocument($legacySystemNamespace));
         }
 
         if ($namespace === AutomationConfigRegistry::NAMESPACE_GREENHOUSE_LOGIC_PROFILE) {
@@ -270,10 +348,14 @@ class AutomationConfigController extends Controller
             'preset' => $selectedPreset,
             'base_config' => is_array($payload['base_config'] ?? null) ? $payload['base_config'] : ZoneCorrectionConfigCatalog::defaults(),
             'phase_overrides' => is_array($payload['phase_overrides'] ?? null) ? $payload['phase_overrides'] : [],
-            'resolved_config' => is_array($payload['resolved_config'] ?? null) ? $payload['resolved_config'] : [
-                'base' => ZoneCorrectionConfigCatalog::defaults(),
-                'phases' => [],
-            ],
+            'resolved_config' => $this->normalizeZoneCorrectionResolvedConfig(
+                is_array($payload['resolved_config'] ?? null) ? $payload['resolved_config'] : [
+                    'base' => ZoneCorrectionConfigCatalog::defaults(),
+                    'phases' => [],
+                ],
+                is_array($payload['phase_overrides'] ?? null) ? $payload['phase_overrides'] : [],
+                $version,
+            ),
             'version' => $version > 0 ? $version : null,
             'last_applied_at' => $payload['last_applied_at'] ?? null,
             'last_applied_version' => isset($payload['last_applied_version']) ? (int) $payload['last_applied_version'] : null,
@@ -285,6 +367,30 @@ class AutomationConfigController extends Controller
             ],
             'available_presets' => $availablePresets,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $resolvedConfig
+     * @param  array<string, mixed>  $phaseOverrides
+     * @return array<string, mixed>
+     */
+    private function normalizeZoneCorrectionResolvedConfig(array $resolvedConfig, array $phaseOverrides, int $version): array
+    {
+        if ($resolvedConfig === [] || array_is_list($resolvedConfig)) {
+            $resolvedConfig = [
+                'base' => ZoneCorrectionConfigCatalog::defaults(),
+                'phases' => [],
+            ];
+        }
+
+        $meta = is_array($resolvedConfig['meta'] ?? null) && ! array_is_list($resolvedConfig['meta'])
+            ? $resolvedConfig['meta']
+            : [];
+        $meta['version'] = $version > 0 ? $version : null;
+        $meta['phase_overrides'] = $phaseOverrides;
+        $resolvedConfig['meta'] = $meta;
+
+        return $resolvedConfig;
     }
 
     /**
@@ -333,7 +439,13 @@ class AutomationConfigController extends Controller
         ];
     }
 
-    private function authorizeScopeAccess(Request $request, string $scopeType, int $scopeId): void
+    private function authorizeScopeAccess(
+        Request $request,
+        string $scopeType,
+        int $scopeId,
+        string $namespace,
+        bool $writeAccess,
+    ): void
     {
         $user = $request->user();
         if (! $user) {
@@ -341,7 +453,17 @@ class AutomationConfigController extends Controller
         }
 
         if ($scopeType === AutomationConfigRegistry::SCOPE_SYSTEM) {
-            if (! $user->isAdmin()) {
+            $role = (string) ($user->role ?? 'viewer');
+
+            if ($namespace === AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME) {
+                if (! in_array($role, ['admin', 'operator', 'engineer', 'agronomist'], true)) {
+                    abort(403, 'Forbidden: Access denied to runtime automation config');
+                }
+
+                return;
+            }
+
+            if ($writeAccess && ! $user->isAdmin()) {
                 abort(403, 'Forbidden: Access denied to system automation config');
             }
 
@@ -434,6 +556,33 @@ class AutomationConfigController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeSystemRuntimeDocument(): array
+    {
+        return [
+            'snapshot' => app(AutomationRuntimeConfigService::class)->settingsSnapshot(),
+            'meta' => [
+                'defaults' => AutomationRuntimeConfigService::defaultSettingsMapStatic(),
+                'field_catalog' => [],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeLegacySystemDocument(string $legacyNamespace): array
+    {
+        return [
+            'meta' => [
+                'defaults' => SystemAutomationSettingsCatalog::defaults($legacyNamespace),
+                'field_catalog' => SystemAutomationSettingsCatalog::fieldCatalog($legacyNamespace),
+            ],
+        ];
     }
 
     /**

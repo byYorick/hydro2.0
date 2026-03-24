@@ -8,7 +8,7 @@
 - **Центр истины:** `GrowCycle` (цикл выращивания)
 - **Версионирование рецептов:** `RecipeRevision` с фазовыми снапшотами
 - **Эффективные targets:** Структурированные данные вместо JSON
-- **Единый контракт:** Laravel API для всех Python сервисов
+- **Единый контракт:** Laravel API для UI/integration path и direct SQL read-model для AE3 runtime
 
 Цель — дать основу, на которой можно:
 
@@ -108,7 +108,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Подписка на весь namespace MQTT (`hydro/#`).
 - Разбор телеметрии → запись в БД (см. `../05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md`).
 - Получение runtime-целей через SQL read-model из PostgreSQL
-  (агрегация фаз/override/profile в automation-engine).
+  (compiled authority bundles + grow-cycle snapshot + operational facts в automation-engine).
 - Запуск контроллеров для активных циклов:
  - pH-контроллер (поддержание целевого pH);
  - EC-контроллер;
@@ -148,8 +148,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. Пользователь через UI создаёт теплицу/зону/узлы и каналы.
 2. Агроном создаёт рецепт с ревизиями и запускает цикл выращивания (Wizard).
 3. Backend сохраняет конфигурацию в PostgreSQL + создаёт снапшоты фаз (`GrowCyclePhase`).
-4. Python-сервис (AE2-Lite) собирает effective runtime-цели напрямую из БД:
- - приоритет: `phase snapshot -> cycle.phase_overrides -> cycle.manual_overrides -> zone.logic_profile(active_mode)`;
+4. Python-сервис (AE3 / automation-engine) собирает runtime-конфиг напрямую из authority bundles и operational facts:
+ - приоритет bundle compilation: `system.* -> zone.* -> cycle.*`;
+ - cycle snapshot привязывается через `grow_cycles.settings.bundle_revision`;
  - без runtime HTTP-запросов к Laravel internal API.
 5. Python-сервис синхронизирует NodeConfig с узлами:
  - через MQTT-команды и/или REST provisioning (см. `NODE_LIFECYCLE_AND_PROVISIONING.md`).
@@ -226,7 +227,7 @@ hydro/{gh}/{zone}/{node}/{channel}/status
 1. **Zone имеет активный цикл** (`grow_cycles` с `recipe_revision_id`).
 2. **Цикл имеет текущую фазу** (`current_phase_id` → `GrowCyclePhase` — снапшот).
 3. **Фаза содержит цели по колонкам** (ph_target, ec_target, irrigation_mode и т.д.).
-4. **Python (AE2-Lite) собирает runtime targets** через direct SQL read-model (с учётом overrides/profile).
+4. **Python (AE3) собирает runtime targets** через direct SQL read-model compiled bundle + operational facts.
 5. **На основании runtime targets** формирует команды узлам через `history-logger`.
 
 **Ключевые изменения после рефакторинга:**
@@ -234,7 +235,7 @@ hydro/{gh}/{zone}/{node}/{channel}/status
 - Введено версионирование рецептов (`RecipeRevision`)
 - Цели хранятся по колонкам, а не в JSON
 - Центр истины — `GrowCycle`, а не `Zone`
-- Для AE2-Lite runtime используется SQL read-model с паритетом effective-targets семантики
+- Для AE3 runtime используется SQL read-model с паритетом effective-targets семантики
 
 Принцип: **рецепты и фазы никогда не хранятся в узлах** — только в БД (через backend).
 
@@ -276,8 +277,8 @@ payload (пример):
 2. **Не переносить бизнес-логику в ESP32.**
  Любые изменения в логике pH/EC/климата — только в Python/Backend через Laravel API.
 
-3. **Использовать Laravel API для Python сервисов.**
- Python сервисы должны получать данные через `/api/internal/*` endpoints, а не прямые SQL запросы.
+3. **Не смешивать integration API и runtime read-path.**
+ Python runtime использует direct SQL read-model и compiled bundles; `/api/internal/*` остаются только integration/diagnostics path.
 
 4. **Не ломать MQTT namespace.**
  Любые новые топики должны соответствовать правилам `../03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`.

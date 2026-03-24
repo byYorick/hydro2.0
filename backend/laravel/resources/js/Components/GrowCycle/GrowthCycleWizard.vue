@@ -3,6 +3,7 @@
     :open="show"
     :title="wizardTitle"
     size="large"
+    data-testid="growth-cycle-wizard"
     @close="handleClose"
   >
     <ErrorBoundary>
@@ -844,6 +845,7 @@
           </Button>
           <Button
             v-if="currentStep < steps.length - 1"
+            data-testid="growth-cycle-wizard-next"
             :disabled="loading || !canProceed"
             @click="nextStep"
           >
@@ -851,6 +853,7 @@
           </Button>
           <Button
             v-else
+            data-testid="growth-cycle-wizard-submit"
             :disabled="!canSubmit || loading"
             @click="onSubmit"
           >

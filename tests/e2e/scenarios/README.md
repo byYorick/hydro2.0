@@ -22,11 +22,11 @@
 - `snapshot/` — snapshot и replay
 - `infrastructure/` — readiness и bindings
 - `grow_cycle/` — циклы выращивания
-- `automation_engine/` — архив legacy AE2-сценариев, не входит в поддерживаемые AE3-suite'ы
+- `automation_engine/` — архив historical legacy-сценариев, не входит в поддерживаемые AE3-suite'ы
 - `ae3lite/` — standalone AE3-Lite start-cycle и real-hardware smoke
 - `simulation/` — симуляции (live, digital twin)
 - `chaos/` — хаос‑тесты
-- `workflow/` — архив legacy AE2 two-tank workflow сценариев, не входит в поддерживаемые AE3-suite'ы
+- `workflow/` — архив historical legacy two-tank workflow сценариев, не входит в поддерживаемые AE3-suite'ы
 
 Полный список и DoD: `../../../docs/testing/E2E_SCENARIOS.md`.
 
@@ -44,10 +44,10 @@
 - `ae3lite/E99_ae3_double_execution_guard.yaml` — защита от двойного исполнения
 - `ae3lite/E100_ae3_two_tank_realhw_smoke.yaml` — AE3-Lite two-tank smoke на реальной test-node
 
-## Legacy AE2 архив
+## Legacy архив
 
 Каталоги `automation_engine/` и `workflow/` сохранены как архив исторических
-AE2-Lite сценариев. После перехода на standalone `AE3-Lite` они не входят в
+legacy runtime сценариев. После перехода на standalone `AE3-Lite` они не входят в
 поддерживаемые suite'ы `automation_engine`, `automation_engine_realhw`,
 `workflow`, `prod_readiness_realhw` и `full`: эти suite names теперь являются
 compatibility alias'ами на актуальные AE3-сценарии.

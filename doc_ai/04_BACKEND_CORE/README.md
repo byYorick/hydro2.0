@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: несовместимые изменения в защищенном pipeline запрещены; миграции AE3 выполняются через compatibility bridge (`start-cycle`, `intent-*`, legacy task_type) до cutover.
+Breaking-change: несовместимые изменения в защищенном pipeline запрещены; authority cutover завершён, legacy automation config stack выведен из runtime read-path.
 
 Канонический документ по AE3:
 - `ae3lite.md`
@@ -34,11 +34,10 @@ Breaking-change: несовместимые изменения в защищен
 - Runtime read-path
 
 #### [AUTOMATION_CONFIG_AUTHORITY_TODO.md](AUTOMATION_CONFIG_AUTHORITY_TODO.md)
-**Что ещё недоделано после cutover**
-- Cleanup legacy stack
-- Остатки тестов
-- Остатки документации
-- Порядок добивки
+**Финальный статус добивки после cutover**
+- Исторический backlog cleanup/tests/docs
+- Открытый остаток: browser smoke в рабочем окружении
+- Контроль residual regression guard-ов
 
 #### [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
 **Архитектура Python-сервисов**
@@ -106,9 +105,10 @@ Breaking-change: несовместимые изменения в защищен
 3. **API разработка?** → Прочитайте [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
 4. **REST API?** → См. [REST_API_REFERENCE.md](REST_API_REFERENCE.md)
 
-Важно: при вопросах ownership scheduler runtime использовать
-`PYTHON_SERVICES_ARCH.md` и
-`doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
+Важно: при вопросах ownership scheduler/runtime использовать
+`PYTHON_SERVICES_ARCH.md`,
+`ae3lite.md`
+и `AUTOMATION_CONFIG_AUTHORITY.md`
 как приоритетные источники.
 
 Для AE3 приоритет документов:

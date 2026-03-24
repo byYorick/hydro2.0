@@ -126,7 +126,7 @@ class ZoneService
             return;
         }
         app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
-        app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
+        app(ZoneCorrectionConfigurationService::class)->ensureDefaultForZone($zoneId);
     }
 
     private function assertAutomationRuntimeSwitchAllowed(Zone $zone, array $data): void

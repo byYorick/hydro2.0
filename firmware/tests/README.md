@@ -35,7 +35,7 @@ HIL/интеграционный тест таймингов command lifecycle:
 бизнес-процессы 2-бакового цикла (`startup/clean_fill/solution_fill/prepare_recirculation`).
 
 Проверка согласованности автоматики и `test_node` выполняется в e2e-наборе
-`tests/e2e/scenarios/automation_engine/` (актуальный AE2-Lite subset: `E61`, `E64`, `E65`, `E74`).
+`tests/e2e/scenarios/automation_engine/` (актуальный AE3 regression subset: `E61`, `E64`, `E65`, `E74`).
 
 ## Быстрый старт
 

@@ -47,7 +47,7 @@ return new class extends Migration
         }
 
         Schema::table('zones', function (Blueprint $table) {
-            $table->string('automation_runtime', 16)->default('ae2');
+            $table->string('automation_runtime', 16)->default('ae3');
             $table->index('automation_runtime', 'zones_automation_runtime_idx');
         });
     }
@@ -142,7 +142,7 @@ return new class extends Migration
             BEGIN
                 ALTER TABLE zones
                 ADD CONSTRAINT zones_automation_runtime_check
-                CHECK (automation_runtime IN ('ae2', 'ae3'));
+                CHECK (automation_runtime IN ('ae3'));
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
             END $$;

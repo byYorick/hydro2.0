@@ -436,7 +436,7 @@ return new class extends Migration
                 'grow_cycles.zone_id',
                 'grow_cycles.recipe_revision_id',
                 'grow_cycles.current_phase_id',
-                'grow_cycle_phases.phase_id',
+                'grow_cycle_phases.recipe_revision_phase_id as phase_id',
                 'grow_cycle_phases.phase_index',
                 'grow_cycle_phases.name',
                 'grow_cycle_phases.ph_target',

@@ -337,8 +337,17 @@ class PgZoneSnapshotReadModel:
             return None
 
         resolved = correction_bundle.get("resolved_config")
+        version = 1
+        if isinstance(resolved, Mapping):
+            meta = resolved.get("meta")
+            if isinstance(meta, Mapping):
+                try:
+                    version = int(meta.get("version") or version)
+                except (TypeError, ValueError):
+                    version = 1
+
         return {
-            "version": 1,
+            "version": version,
             "resolved_config": resolved if isinstance(resolved, Mapping) else {},
             "phase_overrides": correction_bundle.get("phase_overrides"),
         }

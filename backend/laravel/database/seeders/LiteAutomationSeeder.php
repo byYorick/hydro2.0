@@ -22,9 +22,11 @@ use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\ZoneAutomationLogicProfile;
 use App\Models\ZoneEvent;
+use App\Services\AutomationConfigDocumentService;
 use App\Services\GrowCycleService;
+use App\Services\ZoneLogicProfileCatalog;
+use App\Services\ZoneLogicProfileService;
 use Carbon\Carbon;
 use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
@@ -48,14 +50,13 @@ class LiteAutomationSeeder extends Seeder
 
         $this->createInfrastructure($zones, $zoneNodes);
         $this->seedPumpCalibrations($zoneNodes);
-        $this->call(ZoneProcessCalibrationDefaultsSeeder::class);
+        $this->seedAutomationAuthority($zones);
 
         [$plant, $revision] = $this->createRecipe();
         $cycles = $this->createCycles($zones, $revision, $plant->id);
 
         $this->seedTelemetry($zones, $zoneNodes, $cycles);
         $this->seedAutomationSignals($zones, $zoneNodes, $cycles);
-        $this->seedAutomationProfiles($zones);
         $this->seedIrrStateEvents($zones, $zoneNodes);
 
         $this->command->info('=== Lite Automation Engine seeding complete ===');
@@ -956,36 +957,25 @@ class LiteAutomationSeeder extends Seeder
     /**
      * @param  array{running: Zone, paused: Zone, planned: Zone, empty: Zone}  $zones
      */
-    private function seedAutomationProfiles(array $zones): void
+    private function seedAutomationAuthority(array $zones): void
     {
         $adminId = User::query()->where('role', 'admin')->value('id') ?? User::query()->value('id');
-
-        $commandPlans = $this->defaultCommandPlans();
-
-        $subsystems = [
-            'diagnostics' => [
-                'enabled' => true,
-                'execution' => [
-                    'workflow' => 'cycle_start',
-                    'topology' => 'two_tank_drip_substrate_trays',
-                ],
-            ],
-        ];
+        $documents = app(AutomationConfigDocumentService::class);
+        $profileService = app(ZoneLogicProfileService::class);
 
         foreach ($zones as $zoneKey => $zone) {
-            ZoneAutomationLogicProfile::updateOrCreate(
-                ['zone_id' => $zone->id, 'mode' => ZoneAutomationLogicProfile::MODE_WORKING],
-                [
-                    'is_active' => true,
-                    'subsystems' => $subsystems,
-                    'command_plans' => $commandPlans,
-                    'created_by' => $adminId,
-                    'updated_by' => $adminId,
-                ]
+            $documents->ensureSystemDefaults();
+            $documents->ensureZoneDefaults((int) $zone->id);
+            $profileService->upsertProfile(
+                zone: $zone,
+                mode: ZoneLogicProfileCatalog::MODE_WORKING,
+                subsystems: $this->defaultAutomationSubsystems(),
+                activate: true,
+                userId: $adminId ? (int) $adminId : null,
             );
         }
 
-        $this->command->info('Automation logic profiles seeded for '.count($zones).' zones');
+        $this->command->info('Authority automation defaults seeded for '.count($zones).' zones');
     }
 
     /**
@@ -1029,32 +1019,28 @@ class LiteAutomationSeeder extends Seeder
     /**
      * @return array<string, mixed>
      */
-    private function defaultCommandPlans(): array
+    private function defaultAutomationSubsystems(): array
     {
         return [
-            'schema_version' => 1,
-            'plan_version' => 1,
-            'source' => 'seed',
-            'plans' => [
-                'diagnostics' => [
-                    'execution' => [
-                        'workflow' => 'cycle_start',
-                        'topology' => 'two_tank_drip_substrate_trays',
-                        'required_node_types' => ['irrig'],
-                        'startup' => [
-                            'telemetry_max_age_sec' => 60,
-                            'irr_state_max_age_sec' => 30,
-                            'irr_state_wait_timeout_sec' => 5.0,
-                            'sensor_mode_stabilization_time_sec' => 10,
-                            'level_poll_interval_sec' => 10,
-                            'clean_fill_timeout_sec' => 300,
-                            'solution_fill_timeout_sec' => 600,
-                            'prepare_recirculation_timeout_sec' => 300,
-                            'clean_max_sensor_labels' => ['level_clean_max'],
-                            'clean_min_sensor_labels' => ['level_clean_min'],
-                            'solution_max_sensor_labels' => ['level_solution_max'],
-                            'solution_min_sensor_labels' => ['level_solution_min'],
-                        ],
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'required_node_types' => ['irrig'],
+                    'startup' => [
+                        'telemetry_max_age_sec' => 60,
+                        'irr_state_max_age_sec' => 30,
+                        'irr_state_wait_timeout_sec' => 5.0,
+                        'sensor_mode_stabilization_time_sec' => 10,
+                        'level_poll_interval_sec' => 10,
+                        'clean_fill_timeout_sec' => 300,
+                        'solution_fill_timeout_sec' => 600,
+                        'prepare_recirculation_timeout_sec' => 300,
+                        'clean_max_sensor_labels' => ['level_clean_max'],
+                        'clean_min_sensor_labels' => ['level_clean_min'],
+                        'solution_max_sensor_labels' => ['level_solution_max'],
+                        'solution_min_sensor_labels' => ['level_solution_min'],
                     ],
                     'steps' => [
                         ['channel' => 'storage_state', 'cmd' => 'state', 'params' => []],

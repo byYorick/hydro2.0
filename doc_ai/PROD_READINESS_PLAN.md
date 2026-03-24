@@ -396,7 +396,7 @@ async def recover_pending_tasks(laravel_client, runtime_scheduler):
     logger.info("Recovered %d scheduler tasks after restart", len(tasks))
 ```
 
-**Интеграция:** Вызвать `recover_pending_tasks()` при инициализации AE (в `main.py` или `ae2lite/main_runtime_startup.py`).
+**Интеграция:** Вызвать `recover_pending_tasks()` при инициализации AE в текущем runtime entrypoint.
 
 #### 3.2 Laravel endpoint для recovery
 

@@ -14,7 +14,7 @@ class DevBootstrapSeeder extends Seeder
             AdminUserSeeder::class,
             PresetSeeder::class,
             PlantTaxonomySeeder::class,
-            ZoneProcessCalibrationDefaultsSeeder::class,
+            ExtendedAutomationAuthoritySeeder::class,
         ]);
 
         $this->command->info('=== Dev bootstrap dataset complete ===');

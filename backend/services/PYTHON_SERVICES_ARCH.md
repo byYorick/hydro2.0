@@ -168,7 +168,7 @@ history-logger/
 
 ### 3.3. automation-engine
 
-**Назначение:** AE2-Lite рантайм автоматизации зон и scheduler wake-up оркестрация.
+**Назначение:** AE3 рантайм автоматизации зон и scheduler wake-up оркестрация.
 
 **Порты:** 
 - 9401 (Prometheus metrics)

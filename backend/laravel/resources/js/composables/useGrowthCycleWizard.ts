@@ -18,10 +18,10 @@ import {
   payloadFromZoneLogicDocument,
   resolveZoneLogicProfileEntry,
   upsertZoneLogicProfilePayload,
-} from "@/composables/zoneLogicProfileAuthority";
+} from "@/composables/zoneLogicProfileDocument";
 import { resolveRecipePhaseSystemType } from "@/composables/recipeSystemType";
-import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationPayloadBuilders";
-import type { ClimateFormState, IrrigationSystem, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
+import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationProfilePayload";
+import type { ClimateFormState, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
 import type { PumpCalibrationComponent } from "@/types/Calibration";
 import type { DeviceChannel } from "@/types/Device";
 

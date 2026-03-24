@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * AE3 cutover:
- *  1. Мигрировать все зоны с ae2 → ae3, сделать ae3 DEFAULT.
+ *  1. Нормализовать все legacy/null runtime значения к ae3 и сделать ae3 DEFAULT.
  *  2. Добавить колонку zones.control_mode с CHECK constraint.
  *
  * @see .qoder/specs/ae3-manual-mode-full-migration-plan.md §3.1 Этап 0
@@ -28,16 +28,15 @@ return new class extends Migration
             ");
         }
 
-        // 2. Мигрировать все зоны с ae2 → ae3
+        // 2. Нормализовать legacy/null runtime значения к ae3
         DB::statement("
             UPDATE zones
             SET automation_runtime = 'ae3'
-            WHERE automation_runtime = 'ae2'
-              OR automation_runtime IS NULL
+            WHERE automation_runtime IS NULL
               OR automation_runtime = ''
         ");
 
-        // 3. Сменить DEFAULT с ae2 на ae3
+        // 3. Сменить DEFAULT на ae3
         DB::statement("
             ALTER TABLE zones
             ALTER COLUMN automation_runtime SET DEFAULT 'ae3'
@@ -54,18 +53,18 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Восстановить расширенный constraint
+        // Оставить ae3 единственным допустимым runtime и удалить только control_mode.
         DB::statement('ALTER TABLE zones DROP CONSTRAINT IF EXISTS zones_automation_runtime_check');
         DB::statement("
             ALTER TABLE zones
             ADD CONSTRAINT zones_automation_runtime_check
-            CHECK (automation_runtime IN ('ae2', 'ae3'))
+            CHECK (automation_runtime IN ('ae3'))
         ");
 
         // Восстановить DEFAULT
         DB::statement("
             ALTER TABLE zones
-            ALTER COLUMN automation_runtime SET DEFAULT 'ae2'
+            ALTER COLUMN automation_runtime SET DEFAULT 'ae3'
         ");
 
         // Удалить control_mode

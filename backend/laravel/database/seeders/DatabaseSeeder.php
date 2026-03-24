@@ -38,10 +38,8 @@ class DatabaseSeeder extends Seeder
             'seeders' => [
                 ExtendedRecipesCyclesSeeder::class,
                 ExtendedGrowStagesSeeder::class,
-                ExtendedZonePidConfigsSeeder::class,
-                ZoneProcessCalibrationDefaultsSeeder::class,
                 ExtendedPlantsSeeder::class,
-                ExtendedAutomationProfilesSeeder::class,
+                ExtendedAutomationAuthoritySeeder::class,
             ],
         ],
         'operational_data' => [

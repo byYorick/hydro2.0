@@ -1,7 +1,7 @@
 # E98: AE3-Lite runtime switch denied while zone busy
 # DoD:
 # - AE3 zone имеет active task в waiting_command
-# - PATCH /api/zones/{id} с automation_runtime='ae2' возвращает 409
+# - PATCH /api/zones/{id} с non-ae3 runtime возвращает 409
 # - busy guard сообщает code=runtime_switch_denied_zone_busy и blocker=active_task
 # - runtime зоны не меняется во время busy window
 
@@ -11,7 +11,7 @@ description: |
   1) поднимаем минимальную AE3 fixture-зону,
   2) запускаем start-cycle и дожидаемся waiting_command,
   3) получаем Sanctum token через e2e auth endpoint,
-  4) вызываем PATCH /api/zones/{id} -> automation_runtime=ae2,
+  4) вызываем PATCH /api/zones/{id} -> automation_runtime=legacy,
   5) убеждаемся, что Laravel блокирует переключение runtime пока зона занята.
 
 actions:
@@ -449,7 +449,7 @@ actions:
       Content-Type: application/json
       Authorization: Bearer ${E2E_AUTH_TOKEN}
     body:
-      automation_runtime: ae2
+      automation_runtime: legacy
     capture_response: runtime_switch_response
 
   - step: load_zone_runtime_after_denial

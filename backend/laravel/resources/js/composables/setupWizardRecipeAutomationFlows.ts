@@ -11,7 +11,7 @@ import { useAutomationDefaults } from './useAutomationDefaults'
 import {
   payloadFromZoneLogicDocument,
   upsertZoneLogicProfilePayload,
-} from './zoneLogicProfileAuthority'
+} from './zoneLogicProfileDocument'
 import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
 import { resolveRecipePhaseSystemType } from './recipeSystemType'
 import type {

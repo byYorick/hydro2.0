@@ -28,16 +28,16 @@
 ## 3) Контракты и совместимость
 
 - Runtime-контракт запуска цикла: только `POST /zones/{id}/start-cycle`.
-- Runtime источник данных AE2-Lite: direct SQL read-model (PostgreSQL), без runtime-зависимости от Laravel effective-targets API.
+- Runtime источник данных AE3: direct SQL read-model (PostgreSQL), без runtime-зависимости от Laravel effective-targets API.
 - Для intent lifecycle использовать контракт из:
-  - `doc_ai/10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
+  - `doc_ai/04_BACKEND_CORE/ae3lite.md`
   - `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
 - Любые изменения контрактов отражать в документации до/вместе с кодом.
 
 ## 4) Правила изменения кода
 
 - Не использовать runtime HTTP-запросы в Laravel для read-model автоматики.
-- Прямой SQL read-model в AE2-Lite разрешен и обязателен для runtime path.
+- Прямой SQL read-model в AE3 разрешен и обязателен для runtime path.
 - Предпочитать явные схемы payload и fail-closed валидацию.
 - Ошибки и деградации сопровождать сервисными логами и infra-alert кодами.
 - Для новых API endpoint-ов добавлять тесты и негативные сценарии.

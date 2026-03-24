@@ -1,5 +1,5 @@
 # PYTHON_SERVICES_ARCH.md
-# Архитектура Python-сервисов hydro2.0 (AE2-Lite)
+# Архитектура Python-сервисов hydro2.0 (AE3)
 
 **Версия:** 3.2  
 **Дата обновления:** 2026-03-24  
@@ -12,7 +12,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 
 ## 1. Цель
 
-Зафиксировать текущую архитектуру Python-сервисов после перехода на AE2-Lite:
+Зафиксировать текущую архитектуру Python-сервисов после перехода на AE3 authority runtime:
 - единый поток команд через `history-logger`;
 - единый запуск workflow зоны через `POST /zones/{id}/start-cycle`;
 - direct SQL read-model в runtime path automation-engine;
@@ -34,7 +34,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 - `9300` REST API;
 - `9301` metrics.
 
-### 2.2 `automation-engine` (AE2-Lite)
+### 2.2 `automation-engine` (AE3)
 
 Назначение:
 - долгоживущие zone runners;
@@ -62,7 +62,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 
 Правила:
 - `automation-engine` отправляет команды только через `POST http://history-logger:9300/commands`.
-- Командный await в AE2-Lite завершается только по terminal statuses:
+- Командный await в AE3 завершается только по terminal statuses:
   `DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`.
 - `QUEUED|SENT|ACK` считаются non-terminal.
 
@@ -74,8 +74,8 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 Scheduler модель:
 1. Laravel scheduler пишет запись в `zone_automation_intents` со статусом `pending`.
 2. Laravel вызывает `POST /zones/{id}/start-cycle`.
-3. AE2-Lite claim intent (`FOR UPDATE SKIP LOCKED`) и исполняет.
-4. AE2-Lite обновляет intent lifecycle (`claimed/running/completed/failed/cancelled`).
+3. AE3 claim intent (`FOR UPDATE SKIP LOCKED`) и исполняет.
+4. AE3 обновляет intent lifecycle (`claimed/running/completed/failed/cancelled`).
 
 Контракт intent payload (wake-up only):
 - разрешены только поля metadata: `source`, `task_type=diagnostics`, `workflow=cycle_start`, `topology`, `grow_cycle_id` (опционально);
@@ -104,7 +104,7 @@ Payload-contract:
 Источник истины:
 - таблицы PostgreSQL; не runtime HTTP запросы в Laravel API.
 
-### 3.4 AE3-Lite compat hardening
+### 3.4 Runtime hardening
 
 Для AE3-совместимого runtime path действуют дополнительные правила:
 - `scheduler_intent_terminal` используется только как fast-path для `worker.kick()`; source of truth остаётся в PostgreSQL.
@@ -117,7 +117,7 @@ Payload-contract:
 
 ---
 
-## 4. Runtime-модель AE2-Lite
+## 4. Runtime-модель AE3
 
 - один event loop на процесс;
 - один долгоживущий `ZoneRunner` на зону;
@@ -247,4 +247,4 @@ Fail-closed:
 - `REST_API_REFERENCE.md`
 - `API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-- `../10_AI_DEV_GUIDES/AE2_LITE_IMPLEMENTATION_PLAN.md`
+- `ae3lite.md`

@@ -566,6 +566,114 @@ export class APITestHelper {
     return result.data;
   }
 
+  async getAutomationConfig(scopeType: 'system' | 'greenhouse' | 'zone' | 'grow_cycle', scopeId: number, namespace: string): Promise<any> {
+    const response = await this.request.get(`${baseURL}/api/automation-configs/${scopeType}/${scopeId}/${namespace}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to get automation config ${namespace}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async updateAutomationConfig(
+    scopeType: 'system' | 'greenhouse' | 'zone' | 'grow_cycle',
+    scopeId: number,
+    namespace: string,
+    payload: Record<string, any>
+  ): Promise<any> {
+    const response = await this.request.put(`${baseURL}/api/automation-configs/${scopeType}/${scopeId}/${namespace}`, {
+      headers: await this.getHeaders(),
+      data: { payload },
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to update automation config ${namespace}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async resetAutomationConfig(scopeType: 'system' | 'greenhouse' | 'zone' | 'grow_cycle', scopeId: number, namespace: string): Promise<any> {
+    const response = await this.request.delete(`${baseURL}/api/automation-configs/${scopeType}/${scopeId}/${namespace}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to reset automation config ${namespace}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async getAutomationBundle(scopeType: 'system' | 'zone' | 'grow_cycle', scopeId: number): Promise<any> {
+    const response = await this.request.get(`${baseURL}/api/automation-bundles/${scopeType}/${scopeId}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to get automation bundle ${scopeType}/${scopeId}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async validateAutomationBundle(scopeType: 'system' | 'zone' | 'grow_cycle', scopeId: number): Promise<any> {
+    const response = await this.request.post(`${baseURL}/api/automation-bundles/${scopeType}/${scopeId}/validate`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to validate automation bundle ${scopeType}/${scopeId}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async listAutomationPresets(namespace: string): Promise<any[]> {
+    const response = await this.request.get(`${baseURL}/api/automation-presets/${namespace}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to list automation presets ${namespace}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return Array.isArray(result.data) ? result.data : [];
+  }
+
+  async createAutomationPreset(namespace: string, payload: { name: string; description?: string | null; payload: Record<string, any> }): Promise<any> {
+    const response = await this.request.post(`${baseURL}/api/automation-presets/${namespace}`, {
+      headers: await this.getHeaders(),
+      data: payload,
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to create automation preset ${namespace}: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async deleteAutomationPreset(presetId: number): Promise<void> {
+    const response = await this.request.delete(`${baseURL}/api/automation-presets/${presetId}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to delete automation preset ${presetId}: ${response.status()} ${await response.text()}`);
+    }
+  }
+
   async deleteGreenhouse(id: number): Promise<void> {
     const response = await this.request.delete(`${baseURL}/api/greenhouses/${id}`, {
       headers: await this.getHeaders(),

@@ -38,7 +38,9 @@ class AutomationConfigDocumentService
         $document = $this->getDocument($namespace, $scopeType, $scopeId, $materialize);
         $payload = $document?->payload;
 
-        return is_array($payload) && ! array_is_list($payload) ? $payload : $this->registry->defaultPayload($namespace);
+        return is_array($payload) && (! array_is_list($payload) || $payload === [])
+            ? $payload
+            : $this->registry->defaultPayload($namespace);
     }
 
     /**
@@ -196,7 +198,7 @@ class AutomationConfigDocumentService
      */
     public function normalizePayload(string $namespace, array $payload): array
     {
-        if (array_is_list($payload) && $namespace !== AutomationConfigRegistry::NAMESPACE_CYCLE_MANUAL_OVERRIDES) {
+        if ($payload !== [] && array_is_list($payload) && $namespace !== AutomationConfigRegistry::NAMESPACE_CYCLE_MANUAL_OVERRIDES) {
             throw new \InvalidArgumentException("Payload for {$namespace} must be an object.");
         }
 

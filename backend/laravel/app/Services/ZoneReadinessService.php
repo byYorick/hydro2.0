@@ -6,7 +6,7 @@ use App\Models\Alert;
 use App\Models\ChannelBinding;
 use App\Models\NodeChannel;
 use App\Models\Zone;
-use App\Models\ZoneAutomationLogicProfile;
+use App\Support\Automation\ZoneLogicProfile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -34,8 +34,8 @@ class ZoneReadinessService
 
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
-        private readonly ZoneAutomationLogicProfileService $logicProfiles,
-        private readonly ZonePidConfigService $pidConfigs,
+        private readonly ZoneLogicProfileService $logicProfiles,
+        private readonly ZonePidConfigurationService $pidConfigs,
         private readonly AutomationConfigDocumentService $documents,
         private readonly AutomationConfigRegistry $registry,
     ) {
@@ -124,7 +124,7 @@ class ZoneReadinessService
         return true;
     }
 
-    private function resolveActiveAutomationProfile(Zone $zone): ?ZoneAutomationLogicProfile
+    private function resolveActiveAutomationProfile(Zone $zone): ?ZoneLogicProfile
     {
         return $this->logicProfiles->resolveActiveProfileForZone((int) $zone->id);
     }
