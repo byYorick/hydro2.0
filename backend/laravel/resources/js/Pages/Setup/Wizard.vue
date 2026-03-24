@@ -450,7 +450,7 @@
           </div>
         </template>
 
-        <template v-else-if="selectedZone?.id && sensorCalibrationSettings">
+        <template v-else-if="selectedZone?.id">
           <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-muted)]">
             Отдельный рабочий шаг для последовательной настройки calibration-контура зоны: сенсоры, дозирование и process calibration. Runtime bounds насосов и PID/autotune доступны только в расширенных настройках, а финальная readiness вынесена в шаг запуска.
           </div>
@@ -464,12 +464,6 @@
             @open-pump-calibration="openPumpCalibrationModal"
             @pid-config-saved="handleZonePidConfigSaved"
           />
-        </template>
-
-        <template v-else>
-          <div class="rounded-xl border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3 text-xs text-[color:var(--badge-warning-text)]">
-            Не удалось загрузить настройки sensor calibration. Проверьте `sensorCalibrationSettings` в Inertia props.
-          </div>
         </template>
       </section>
 
@@ -575,7 +569,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
@@ -585,18 +579,21 @@ import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useApi } from '@/composables/useApi'
 import { useSetupWizard } from '@/composables/useSetupWizard'
+import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { useToast } from '@/composables/useToast'
+import { payloadFromZoneLogicDocument, resolveZoneLogicProfileEntry } from '@/composables/zoneLogicProfileAuthority'
 import { applyAutomationFromRecipe, type LightingFormState, type WaterFormState, type ZoneClimateFormState } from '@/composables/zoneAutomationFormLogic'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import type { Device, DeviceChannel } from '@/types/Device'
-import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 import type { ZoneAutomationSectionSaveKey } from '@/Components/ZoneAutomationProfileSections.vue'
 
-const page = usePage<{ sensorCalibrationSettings?: SensorCalibrationSettings | null }>()
 const { showToast } = useToast()
 const { api } = useApi(showToast)
+const automationConfig = useAutomationConfig(showToast)
+const sensorCalibrationSettings = useSensorCalibrationSettings()
 
 const {
   canConfigure,
@@ -672,7 +669,6 @@ const pumpCalibrationLoadingSave = ref(false)
 const pumpCalibrationSaveSeq = ref(0)
 const pumpCalibrationRunSeq = ref(0)
 const pumpCalibrationLastRunToken = ref<string | null>(null)
-const sensorCalibrationSettings = computed(() => page.props.sensorCalibrationSettings ?? null)
 const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
 const committedWaterForm = ref<WaterFormState>(cloneWaterForm(automationWaterForm))
 const committedLightingForm = ref<LightingFormState>(cloneLightingForm(automationLightingForm))
@@ -865,13 +861,13 @@ async function loadCommittedZoneAutomationProfile(zoneId: number | null): Promis
   }
 
   try {
-    const response = await api.get(`/api/zones/${zoneId}/automation-logic-profile`)
-    const profile = resolveZoneAutomationProfileEntry(response.data)
+    const document = await automationConfig.getDocument<Record<string, unknown>>('zone', zoneId, 'zone.logic_profile')
+    const profile = resolveZoneLogicProfileEntry(payloadFromZoneLogicDocument(document), 'setup')
     if (!profile) {
       return
     }
 
-    applySubsystemsToCurrentForms(profile.subsystems, profile.updatedAt)
+    applySubsystemsToCurrentForms(profile.subsystems, profile.updated_at)
     buildCommittedAutomationStateFromSubsystems(profile.subsystems)
   } catch {
     // Existing zones without saved automation profile are valid; keep current form state as committed baseline.

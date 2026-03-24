@@ -1,7 +1,10 @@
-import { computed, type ComputedRef } from 'vue'
-import { usePageProp } from '@/composables/usePageProps'
+import { computed, ref } from 'vue'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import type { ZoneProcessCalibrationForm } from '@/types/ProcessCalibration'
 import type { ProcessCalibrationDefaultsSettings } from '@/types/SystemSettings'
+
+const authorityProcessCalibrationDefaults = ref<Partial<ProcessCalibrationDefaultsSettings> | null>(null)
+let authorityProcessCalibrationDefaultsRequest: Promise<void> | null = null
 
 export const FALLBACK_PROCESS_CALIBRATION_DEFAULTS: ProcessCalibrationDefaultsSettings = {
   ec_gain_per_ml: 0.11,
@@ -39,14 +42,18 @@ export function createDefaultProcessCalibrationForm(
 }
 
 export function useProcessCalibrationDefaults() {
-  let processCalibrationDefaults: ComputedRef<Partial<ProcessCalibrationDefaultsSettings> | null>
-  try {
-    processCalibrationDefaults = usePageProp<'processCalibrationDefaults', Partial<ProcessCalibrationDefaultsSettings> | null>(
-      'processCalibrationDefaults',
-    )
-  } catch {
-    processCalibrationDefaults = computed(() => null)
+  const automationConfig = useAutomationConfig()
+  if (authorityProcessCalibrationDefaults.value === null && authorityProcessCalibrationDefaultsRequest === null) {
+    authorityProcessCalibrationDefaultsRequest = automationConfig
+      .getDocument<Partial<ProcessCalibrationDefaultsSettings>>('system', 0, 'system.process_calibration_defaults')
+      .then((document) => {
+        authorityProcessCalibrationDefaults.value = document.payload ?? null
+      })
+      .catch(() => {})
+      .finally(() => {
+        authorityProcessCalibrationDefaultsRequest = null
+      })
   }
 
-  return computed(() => normalizeProcessCalibrationDefaults(processCalibrationDefaults.value))
+  return computed(() => normalizeProcessCalibrationDefaults(authorityProcessCalibrationDefaults.value))
 }

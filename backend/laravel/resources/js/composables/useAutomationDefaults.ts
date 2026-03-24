@@ -1,11 +1,14 @@
-import { computed, type ComputedRef } from 'vue'
-import { usePageProp } from '@/composables/usePageProps'
+import { computed, ref } from 'vue'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import type {
   ClimateFormState,
   LightingFormState,
   WaterFormState,
 } from '@/composables/zoneAutomationTypes'
 import type { AutomationDefaultsSettings } from '@/types/SystemSettings'
+
+const authorityAutomationDefaults = ref<Partial<AutomationDefaultsSettings> | null>(null)
+let authorityAutomationDefaultsRequest: Promise<void> | null = null
 
 export const FALLBACK_AUTOMATION_DEFAULTS: AutomationDefaultsSettings = {
   climate_enabled: true,
@@ -196,14 +199,18 @@ export function createDefaultLightingForm(defaults: AutomationDefaultsSettings):
 }
 
 export function useAutomationDefaults() {
-  let automationDefaults: ComputedRef<Partial<AutomationDefaultsSettings> | null>
-  try {
-    automationDefaults = usePageProp<'automationDefaults', Partial<AutomationDefaultsSettings> | null>(
-      'automationDefaults',
-    )
-  } catch {
-    automationDefaults = computed(() => null)
+  const automationConfig = useAutomationConfig()
+  if (authorityAutomationDefaults.value === null && authorityAutomationDefaultsRequest === null) {
+    authorityAutomationDefaultsRequest = automationConfig
+      .getDocument<Partial<AutomationDefaultsSettings>>('system', 0, 'system.automation_defaults')
+      .then((document) => {
+        authorityAutomationDefaults.value = document.payload ?? null
+      })
+      .catch(() => {})
+      .finally(() => {
+        authorityAutomationDefaultsRequest = null
+      })
   }
 
-  return computed(() => normalizeAutomationDefaults(automationDefaults.value))
+  return computed(() => normalizeAutomationDefaults(authorityAutomationDefaults.value))
 }

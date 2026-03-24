@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\GrowCycle;
-use App\Models\GrowCycleOverride;
 use App\Models\GrowCyclePhase;
 use App\Models\RecipeRevisionPhase;
 use Carbon\Carbon;
@@ -13,6 +12,7 @@ class EffectiveTargetsService
 {
     public function __construct(
         private readonly ZoneAutomationLogicProfileService $automationLogicProfiles,
+        private readonly AutomationConfigDocumentService $documents,
     ) {
     }
 
@@ -263,12 +263,17 @@ class EffectiveTargetsService
      */
     protected function getActiveOverrides(GrowCycle $cycle): Collection
     {
-        return GrowCycleOverride::where('grow_cycle_id', $cycle->id)
-            ->where('is_active', true)
-            ->get()
-            ->filter(function ($override) {
-                return $override->isCurrentlyActive();
-            });
+        return collect(
+            $this->documents->getListPayload(
+                AutomationConfigRegistry::NAMESPACE_CYCLE_MANUAL_OVERRIDES,
+                AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+                (int) $cycle->id,
+                false
+            )
+        )
+            ->filter(fn (mixed $override): bool => is_array($override))
+            ->filter(fn (array $override): bool => $this->isOverrideCurrentlyActive($override))
+            ->values();
     }
 
     /**
@@ -279,8 +284,15 @@ class EffectiveTargetsService
         $effective = $phaseTargets;
 
         foreach ($overrides as $override) {
-            $parameter = $override->parameter;
-            $value = $override->getTypedValue();
+            if (! is_array($override)) {
+                continue;
+            }
+
+            $parameter = (string) ($override['parameter'] ?? '');
+            if ($parameter === '') {
+                continue;
+            }
+            $value = $this->castOverrideValue($override['value'] ?? null, (string) ($override['value_type'] ?? 'string'));
 
             // Поддержка вложенных параметров (например, ph.target, irrigation.interval_sec)
             if (str_contains($parameter, '.')) {
@@ -298,6 +310,41 @@ class EffectiveTargetsService
         }
 
         return $effective;
+    }
+
+    /**
+     * @param  array<string, mixed>  $override
+     */
+    protected function isOverrideCurrentlyActive(array $override): bool
+    {
+        if (($override['is_active'] ?? false) !== true) {
+            return false;
+        }
+
+        $now = now();
+        $appliesFrom = isset($override['applies_from']) ? Carbon::parse((string) $override['applies_from']) : null;
+        $appliesUntil = isset($override['applies_until']) ? Carbon::parse((string) $override['applies_until']) : null;
+
+        if ($appliesFrom && $now->lt($appliesFrom)) {
+            return false;
+        }
+
+        if ($appliesUntil && $now->gt($appliesUntil)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function castOverrideValue(mixed $value, string $valueType): mixed
+    {
+        return match ($valueType) {
+            'integer' => (int) $value,
+            'decimal', 'float' => (float) $value,
+            'boolean' => filter_var($value, FILTER_VALIDATE_BOOLEAN),
+            'time' => $value,
+            default => $value,
+        };
     }
 
     protected function resolveRuntimeProfileForCycle(GrowCycle $cycle): ?array

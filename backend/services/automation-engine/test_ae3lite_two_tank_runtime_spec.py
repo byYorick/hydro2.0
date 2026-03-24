@@ -502,7 +502,7 @@ def test_resolve_two_tank_runtime_uses_phase_aware_correction_config() -> None:
     assert runtime["prepare_recirculation_timeout_sec"] == 360
 
 
-def test_resolve_two_tank_runtime_raises_when_zone_pid_configs_missing() -> None:
+def test_resolve_two_tank_runtime_raises_when_pid_authority_documents_missing() -> None:
     snap = SimpleNamespace(
         zone_id=188,
         workflow_phase="tank_filling",

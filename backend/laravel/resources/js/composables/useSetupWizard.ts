@@ -1,12 +1,20 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { useApi } from '@/composables/useApi'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
-import { extractData } from '@/utils/apiHelpers'
 import { generateUid } from '@/utils/transliterate'
 import { createSetupWizardDataFlows } from './setupWizardDataFlows'
 import { createSetupWizardRecipeAutomationFlows } from './setupWizardRecipeAutomationFlows'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import {
+  asRecord,
+  GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
+  payloadFromGreenhouseLogicDocument,
+  resolveGreenhouseProfileEntry,
+  toNodeIdArray,
+  type GreenhouseClimateBindingsState,
+} from './greenhouseLogicProfileAuthority'
 import { applyAutomationFromRecipe, buildGrowthCycleConfigPayload, syncSystemToTankLayout } from './zoneAutomationFormLogic'
 import type {
   Greenhouse,
@@ -32,26 +40,6 @@ import type {
 } from './zoneAutomationTypes'
 
 export type { Mode, SystemType, Greenhouse, GreenhouseType, Zone, Plant, Recipe, Node, RecipePhaseForm } from './setupWizardTypes'
-
-interface GreenhouseClimateBindingsState {
-  climate_sensors: number[]
-  weather_station_sensors: number[]
-  vent_actuators: number[]
-  fan_actuators: number[]
-}
-
-interface GreenhouseAutomationLogicProfileEntry {
-  mode: string
-  is_active: boolean
-  subsystems?: Record<string, unknown>
-  updated_at?: string | null
-}
-
-interface GreenhouseAutomationLogicProfilesResponse {
-  active_mode?: string | null
-  profiles?: Record<string, GreenhouseAutomationLogicProfileEntry>
-  bindings?: Partial<GreenhouseClimateBindingsState>
-}
 
 interface ZoneLaunchReadiness {
   ready: boolean
@@ -96,60 +84,6 @@ const ZONE_ASSIGNMENT_BINDING_ROLES: Record<ZoneAssignmentRole, string[]> = {
   root_vent_actuator: ['root_vent_actuator'],
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null
-  }
-
-  return value as Record<string, unknown>
-}
-
-function toNodeIdArray(value: unknown): number[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return Array.from(new Set(
-    value
-      .map((item) => Number(item))
-      .filter((item) => Number.isInteger(item) && item > 0)
-  ))
-}
-
-function resolveGreenhouseProfileEntry(data: GreenhouseAutomationLogicProfilesResponse | null): GreenhouseAutomationLogicProfileEntry | null {
-  const profiles = asRecord(data?.profiles ?? null)
-  if (!profiles) {
-    return null
-  }
-
-  const activeMode = typeof data?.active_mode === 'string' ? data.active_mode : null
-  const preferredModes = [
-    activeMode,
-    'setup',
-    'working',
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0)
-
-  for (const mode of preferredModes) {
-    const candidate = asRecord(profiles[mode])
-    if (!candidate) {
-      continue
-    }
-
-    const entryMode = typeof candidate.mode === 'string' ? candidate.mode : mode
-    const isActive = typeof candidate.is_active === 'boolean' ? candidate.is_active : mode === activeMode
-    const subsystems = asRecord(candidate.subsystems ?? null) ?? undefined
-    const updatedAt = typeof candidate.updated_at === 'string' ? candidate.updated_at : null
-
-    return {
-      mode: entryMode,
-      is_active: isActive,
-      subsystems,
-      updated_at: updatedAt,
-    }
-  }
-
-  return null
-}
 
 function nodeChannels(node: Node): string[] {
   return Array.isArray(node.channels)
@@ -239,6 +173,7 @@ export function useSetupWizard() {
 
   const { showToast } = useToast()
   const { api } = useApi(showToast)
+  const automationConfig = useAutomationConfig(showToast)
 
   const loading = reactive<SetupWizardLoadingState & { stepGreenhouseClimate: boolean }>({
     greenhouses: false,
@@ -773,8 +708,8 @@ export function useSetupWizard() {
 
     loading.stepGreenhouseClimate = true
     try {
-      const response = await api.get(`/greenhouses/${greenhouseId}/automation-logic-profile`)
-      const payload = extractData<GreenhouseAutomationLogicProfilesResponse>(response.data)
+      const response = await automationConfig.getDocument('greenhouse', greenhouseId, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
+      const payload = payloadFromGreenhouseLogicDocument(response)
       const profile = resolveGreenhouseProfileEntry(payload ?? null)
       const bindings = asRecord(payload?.bindings ?? null)
 
@@ -857,13 +792,22 @@ export function useSetupWizard() {
       }
 
       await api.post('/setup-wizard/apply-greenhouse-climate-bindings', bindingsPayload)
-      const response = await api.post(`/greenhouses/${selectedGreenhouse.value.id}/automation-logic-profile`, {
-        mode: 'setup',
-        activate: true,
-        subsystems: buildGreenhouseClimatePayload(),
+      const currentDocument = await automationConfig.getDocument('greenhouse', selectedGreenhouse.value.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
+      const currentPayload = payloadFromGreenhouseLogicDocument(currentDocument)
+      const response = await automationConfig.updateDocument('greenhouse', selectedGreenhouse.value.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE, {
+        active_mode: 'setup',
+        profiles: {
+          ...(currentPayload?.profiles ?? {}),
+          setup: {
+            mode: 'setup',
+            is_active: true,
+            subsystems: buildGreenhouseClimatePayload(),
+            updated_at: new Date().toISOString(),
+          },
+        },
       })
 
-      const payload = extractData<GreenhouseAutomationLogicProfilesResponse>(response.data)
+      const payload = payloadFromGreenhouseLogicDocument(response)
       const profile = resolveGreenhouseProfileEntry(payload ?? null)
       greenhouseClimateAppliedAt.value = typeof profile?.updated_at === 'string' ? profile.updated_at : new Date().toISOString()
       showToast('Профиль климата теплицы сохранён', 'success')

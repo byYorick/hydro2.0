@@ -10,7 +10,7 @@ from common.utils.time import utcnow
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.water_flow import (
-    _load_system_automation_settings,
+    _load_system_authority_policy,
     check_water_level,
     check_flow,
     check_dry_run_protection,
@@ -28,11 +28,11 @@ from common.water_flow import (
 
 
 @pytest.mark.asyncio
-async def test_load_system_automation_settings_uses_builtin_fallback_for_pump_calibration():
+async def test_load_system_authority_policy_uses_builtin_fallback_for_pump_calibration():
     with patch("common.water_flow.fetch", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = []
 
-        result = await _load_system_automation_settings("pump_calibration")
+        result = await _load_system_authority_policy("pump_calibration")
 
         assert result["calibration_duration_min_sec"] == 1
         assert result["calibration_duration_max_sec"] == 120
@@ -683,7 +683,7 @@ async def test_calibrate_pump_success():
         "node_status": "online",
     }
 
-    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
          patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
@@ -733,7 +733,7 @@ async def test_calibrate_pump_calculates_k_from_ec_profile():
         "node_status": "online",
     }
 
-    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
          patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
@@ -785,7 +785,7 @@ async def test_calibrate_pump_run_only_waits_for_actual_ml():
         "node_status": "online",
     }
 
-    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
          patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
@@ -827,7 +827,7 @@ async def test_calibrate_pump_skip_run_with_actual_ml_does_not_emit_skipped_even
         "node_status": "online",
     }
 
-    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
          patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \
@@ -880,7 +880,7 @@ async def test_calibrate_pump_save_after_run_requires_run_token():
         "node_status": "online",
     }
 
-    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
          patch("common.water_flow.fetch") as mock_fetch:
         mock_settings.return_value = {
             "calibration_duration_min_sec": 1, "calibration_duration_max_sec": 120,
@@ -912,7 +912,7 @@ async def test_calibrate_pump_accepts_ph_component_alias():
         "node_status": "online",
     }
 
-    with patch("common.water_flow._load_system_automation_settings", new_callable=AsyncMock) as mock_settings, \
+    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
          patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("common.water_flow.execute", new_callable=AsyncMock), \

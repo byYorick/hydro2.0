@@ -1,10 +1,9 @@
 import { computed, reactive, ref, watch } from 'vue'
-import { usePageProp } from '@/composables/usePageProps'
 import { usePidConfig } from '@/composables/usePidConfig'
+import { usePumpCalibrationSettings } from '@/composables/usePumpCalibrationSettings'
 import type { Device } from '@/types'
 import type { PumpCalibrationComponent, PumpChannelOption, PumpCalibrationSavePayload } from '@/types/Calibration'
 import type { PumpCalibrationConfig } from '@/types/Device'
-import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
 interface PumpCalibrationProps {
   show?: boolean
@@ -35,26 +34,8 @@ const componentKeywords: Record<PumpCalibrationComponent, string[]> = {
 
 export { componentOptions }
 
-const DEFAULT_PUMP_CALIBRATION_SETTINGS: PumpCalibrationSettings = {
-  ml_per_sec_min: 0.001,
-  ml_per_sec_max: 1000,
-  min_dose_ms: 1,
-  calibration_duration_min_sec: 1,
-  calibration_duration_max_sec: 60,
-  quality_score_basic: 0.5,
-  quality_score_with_k: 0.8,
-  quality_score_legacy: 0.3,
-  age_warning_days: 30,
-  age_critical_days: 60,
-  default_run_duration_sec: 20,
-}
-
 export function usePumpCalibration(props: PumpCalibrationProps) {
-  const rawSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
-  const settings = computed<PumpCalibrationSettings>(() => ({
-    ...DEFAULT_PUMP_CALIBRATION_SETTINGS,
-    ...(rawSettings.value || {}),
-  }))
+  const settings = usePumpCalibrationSettings()
   const { getPumpCalibrations } = usePidConfig()
   const form = reactive<{
     component: PumpCalibrationComponent

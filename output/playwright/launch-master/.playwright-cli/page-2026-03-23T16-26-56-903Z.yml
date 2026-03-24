@@ -1,0 +1,211 @@
+- generic [ref=e221]:
+  - complementary [ref=e222]:
+    - generic [ref=e226]:
+      - generic [ref=e227]: hydro 2.0
+      - generic [ref=e228]: agronomy deck
+    - navigation [ref=e229]:
+      - navigation [ref=e230]:
+        - link "Дашборд" [ref=e231] [cursor=pointer]:
+          - /url: /
+        - link "Центр циклов" [ref=e232] [cursor=pointer]:
+          - /url: /cycles
+        - link "Мастер запуска" [ref=e233] [cursor=pointer]:
+          - /url: /setup/wizard
+        - link "Зоны" [ref=e234] [cursor=pointer]:
+          - /url: /zones
+        - link "Теплицы" [ref=e235] [cursor=pointer]:
+          - /url: /greenhouses
+        - link "Рецепты" [ref=e236] [cursor=pointer]:
+          - /url: /recipes
+        - link "Удобрения" [ref=e237] [cursor=pointer]:
+          - /url: /nutrients
+        - link "Документация" [ref=e238] [cursor=pointer]:
+          - /url: /documentation/fertigation
+        - link "Культуры" [ref=e239] [cursor=pointer]:
+          - /url: /plants
+        - link "Устройства" [ref=e240] [cursor=pointer]:
+          - /url: /devices
+        - link "Алерты" [ref=e241] [cursor=pointer]:
+          - /url: /alerts
+        - link "Аналитика" [ref=e242] [cursor=pointer]:
+          - /url: /analytics
+        - link "Сервисы" [ref=e243] [cursor=pointer]:
+          - /url: /monitoring
+        - link "Настройки" [ref=e244] [cursor=pointer]:
+          - /url: /settings
+  - main [ref=e245]:
+    - generic [ref=e248]:
+      - generic [ref=e249]:
+        - generic [ref=e253]:
+          - generic [ref=e254]: Core
+          - generic [ref=e255]: Онлайн
+        - generic:
+          - generic: Core Service
+          - generic: "Статус: Онлайн"
+          - generic: "Обновлено: только что"
+      - generic [ref=e256]:
+        - generic [ref=e260]:
+          - generic [ref=e261]: Database
+          - generic [ref=e262]: Онлайн
+        - generic:
+          - generic: Database
+          - generic: "Статус: Онлайн"
+          - generic: "Обновлено: только что"
+      - generic [ref=e263]:
+        - generic [ref=e267]:
+          - generic [ref=e268]: WebSocket
+          - generic [ref=e269]: Подключено
+        - generic:
+          - generic: WebSocket Connection
+          - generic: "Статус: Подключено"
+          - generic:
+            - text: ✓ Соединение активно
+            - generic: "Socket ID: 41425416..."
+      - generic [ref=e270]:
+        - generic [ref=e274]:
+          - generic [ref=e275]: MQTT
+          - generic [ref=e276]: Онлайн
+        - generic:
+          - generic: MQTT Broker
+          - generic: "Статус: Онлайн"
+          - generic: ✓ Брокер доступен
+      - generic [ref=e277]:
+        - generic [ref=e278]:
+          - generic [ref=e279]: ⚠️
+          - generic [ref=e280]: "0"
+          - generic [ref=e281]: алерт.
+          - generic:
+            - generic: Активные алерты
+            - generic: "Всего: 0"
+            - generic: ✓ Нет активных алертов
+        - button "📊 Сервисы" [ref=e282] [cursor=pointer]:
+          - generic [ref=e283]: 📊
+          - generic [ref=e284]: Сервисы
+        - button "Переключить тему" [ref=e285] [cursor=pointer]:
+          - generic [ref=e288]: Светлая
+    - generic [ref=e289]:
+      - navigation "Breadcrumb" [ref=e291]:
+        - list [ref=e292]:
+          - listitem [ref=e293]:
+            - link "Панель управления" [ref=e294] [cursor=pointer]:
+              - /url: /
+            - img [ref=e295]
+          - listitem [ref=e297]:
+            - link "Настройка" [ref=e298] [cursor=pointer]:
+              - /url: /setup
+            - img [ref=e299]
+          - listitem [ref=e301]:
+            - generic [ref=e302]: Wizard
+      - generic [ref=e304]:
+        - generic [ref=e305]:
+          - heading "Мастер настройки системы" [level=1] [ref=e306]
+          - paragraph [ref=e307]: Пошаговая настройка теплицы, зоны, культуры, автоматики зоны и калибровки.
+          - generic [ref=e309]: "Прогресс: 17% (1/6)"
+        - generic [ref=e310]:
+          - heading "Сценарий запуска" [level=2] [ref=e311]
+          - list [ref=e312]:
+            - listitem [ref=e313]:
+              - generic [ref=e314]: 1. Теплица
+              - generic [ref=e315]: Теплица и общий климат
+            - listitem [ref=e316]:
+              - generic [ref=e317]: 2. Зона
+              - generic [ref=e318]: Рабочая зона выращивания
+            - listitem [ref=e319]:
+              - generic [ref=e320]: 3. Культура и рецепт
+              - generic [ref=e321]: Рецепт подтягивается по выбранной культуре
+            - listitem [ref=e322]:
+              - generic [ref=e323]: 4. Автоматика зоны
+              - generic [ref=e324]: Водный контур, климат и освещение как единые блоки
+            - listitem [ref=e325]:
+              - generic [ref=e326]: 5. Калибровка
+              - generic [ref=e327]: Сенсоры, насосы и process calibration
+            - listitem [ref=e328]:
+              - generic [ref=e329]: 6. Проверка и запуск
+              - generic [ref=e330]: Readiness и мастер цикла
+          - generic [ref=e331]:
+            - generic [ref=e332]:
+              - generic [ref=e333]: ✓
+              - text: Теплица
+            - generic [ref=e334]:
+              - generic [ref=e335]: ✓
+              - text: Климат теплицы
+            - generic [ref=e336]:
+              - generic [ref=e337]: •
+              - text: Зона
+            - generic [ref=e338]:
+              - generic [ref=e339]: •
+              - text: Культура и рецепт
+            - generic [ref=e340]:
+              - generic [ref=e341]: •
+              - text: Автоматика зоны
+            - generic [ref=e342]:
+              - generic [ref=e343]: •
+              - text: Калибровка
+        - generic [ref=e344]:
+          - generic [ref=e345]:
+            - heading "1. Теплица" [level=3] [ref=e346]
+            - generic [ref=e347]: Готово
+          - generic [ref=e348]:
+            - combobox [ref=e349]:
+              - option "Выберите теплицу"
+              - option "E2E Test Greenhouse (gh-test-1)" [selected]
+            - button "Создать" [ref=e350] [cursor=pointer]
+          - generic [ref=e402]: "Выбрано: E2E Test Greenhouse"
+          - generic [ref=e404]:
+            - generic [ref=e405]:
+              - heading "Климат теплицы" [level=4] [ref=e406]
+              - paragraph [ref=e407]: Автономная система климата теплицы. Runtime dispatcher пока в разработке, но профиль и bindings уже сохраняются.
+            - generic "Включает greenhouse-level climate profile и разрешает сохранять bindings климатических нод теплицы." [ref=e408]:
+              - checkbox "Управлять климатом" [ref=e409]
+              - text: Управлять климатом
+          - generic [ref=e410]: Климат теплицы ещё не сохранён
+        - generic [ref=e351]:
+          - generic [ref=e352]:
+            - heading "2. Зона" [level=3] [ref=e353]
+            - generic [ref=e354]: Не настроено
+          - generic [ref=e355]:
+            - combobox [ref=e356]:
+              - option "Выберите зону" [selected]
+              - option "E2E Automation Zone"
+            - button "Создать" [ref=e357] [cursor=pointer]
+        - generic [ref=e358]:
+          - generic [ref=e359]:
+            - heading "3. Культура и рецепт" [level=3] [ref=e360]
+            - generic [ref=e361]: Не настроено
+          - generic [ref=e362]:
+            - combobox [ref=e363]:
+              - option "Выберите растение" [selected]
+              - option "E2E Test Plant"
+            - button "Создать" [ref=e364] [cursor=pointer]
+          - generic [ref=e365]:
+            - generic [ref=e366]: Рецепт по выбранной культуре
+            - generic [ref=e367]: Выберите или создайте культуру, чтобы автоматически назначить рецепт.
+        - generic [ref=e368]:
+          - generic [ref=e369]:
+            - heading "4. Автоматика зоны" [level=3] [ref=e370]
+            - generic [ref=e371]: Не настроено
+          - generic [ref=e372]: Сначала создайте или выберите зону на шаге 2.
+        - generic [ref=e373]:
+          - generic [ref=e374]:
+            - heading "5. Калибровка" [level=3] [ref=e375]
+            - generic [ref=e376]: Ожидает автоматику
+          - generic [ref=e377]: Сначала создайте или выберите зону на шаге 2.
+        - generic [ref=e378]:
+          - generic [ref=e379]:
+            - heading "6. Проверка и запуск" [level=3] [ref=e380]
+            - generic [ref=e381]: Есть незавершённые шаги
+          - generic [ref=e382]: Сначала создайте или выберите зону на шаге 2.
+          - button "Открыть мастер запуска цикла" [disabled] [ref=e384]
+          - generic [ref=e385]: "Топология воды: 2 бака: чистая вода + готовый раствор"
+    - generic [ref=e413]:
+      - img [ref=e415]
+      - paragraph [ref=e418]: Теплица выбрана
+      - button [ref=e419] [cursor=pointer]:
+        - img [ref=e420]
+    - button "? Агроном" [ref=e388] [cursor=pointer]:
+      - generic [ref=e389]:
+        - generic [ref=e390]: "?"
+        - generic [ref=e392]: Агроном
+        - img [ref=e393]
+  - complementary [ref=e395]:
+    - generic [ref=e397]: события

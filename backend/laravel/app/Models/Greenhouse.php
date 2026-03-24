@@ -54,8 +54,4 @@ class Greenhouse extends Model
             ->where('owner_type', 'greenhouse');
     }
 
-    public function automationLogicProfiles(): HasMany
-    {
-        return $this->hasMany(GreenhouseAutomationLogicProfile::class);
-    }
 }

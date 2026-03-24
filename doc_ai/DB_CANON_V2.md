@@ -163,17 +163,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `created_at`, `updated_at`
 - **UNIQUE(grow_cycle_phase_id, step_index)**
 
-#### `grow_cycle_overrides`
-- `id` (PK)
-- `grow_cycle_id` (FK → grow_cycles)
-- `parameter_name` (string) — например "ph_target", "ec_target"
-- `value` (jsonb) — новое значение
-- `reason` (text nullable)
-- `created_by` (FK → users)
-- `valid_from` (timestamp)
-- `valid_until` (timestamp nullable)
-- `created_at`, `updated_at`
-- **Index:** `(grow_cycle_id, valid_from, valid_until)` для активных override'ов
+#### `cycle overrides`
+- legacy `grow_cycle_overrides` удалён из authority-path;
+- cycle overrides живут в authority-документах:
+  - `cycle.phase_overrides`
+  - `cycle.manual_overrides`
+- runtime читает их через compiled bundle `automation_effective_bundles`.
 
 #### `grow_cycle_transitions`
 - `id` (PK)

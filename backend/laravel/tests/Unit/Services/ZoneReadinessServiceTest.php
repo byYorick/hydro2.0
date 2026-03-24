@@ -8,8 +8,8 @@ use App\Models\DeviceNode;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\Zone;
-use App\Models\ZoneAutomationLogicProfile;
-use App\Models\ZonePidConfig;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneReadinessService;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -50,10 +50,13 @@ class ZoneReadinessServiceTest extends TestCase
 
     private function createPidConfigs(Zone $zone): void
     {
-        ZonePidConfig::query()->create([
-            'zone_id' => $zone->id,
-            'type' => 'ph',
-            'config' => [
+        $documents = app(AutomationConfigDocumentService::class);
+
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            [
                 'target' => 5.8,
                 'dead_zone' => 0.05,
                 'close_zone' => 0.3,
@@ -65,13 +68,14 @@ class ZoneReadinessServiceTest extends TestCase
                 'max_output' => 20.0,
                 'min_interval_ms' => 90000,
                 'max_integral' => 20.0,
-            ],
-        ]);
+            ]
+        );
 
-        ZonePidConfig::query()->create([
-            'zone_id' => $zone->id,
-            'type' => 'ec',
-            'config' => [
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            [
                 'target' => 1.6,
                 'dead_zone' => 0.1,
                 'close_zone' => 0.5,
@@ -83,8 +87,8 @@ class ZoneReadinessServiceTest extends TestCase
                 'max_output' => 50.0,
                 'min_interval_ms' => 120000,
                 'max_integral' => 100.0,
-            ],
-        ]);
+            ]
+        );
     }
 
     public function test_check_zone_readiness_detects_missing_ec_roles_when_ec_control_enabled(): void
@@ -260,16 +264,11 @@ class ZoneReadinessServiceTest extends TestCase
         $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
         $this->createPidConfigs($zone);
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => [
-                'irrigation' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'tanks_count' => 2,
-                    ],
+        $this->storeZoneLogicProfile($zone, [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'tanks_count' => 2,
                 ],
             ],
         ]);
@@ -292,16 +291,11 @@ class ZoneReadinessServiceTest extends TestCase
 
         $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => [
-                'irrigation' => [
-                    'enabled' => true,
-                    'execution' => [
-                        'tanks_count' => 3,
-                    ],
+        $this->storeZoneLogicProfile($zone, [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'tanks_count' => 3,
                 ],
             ],
         ]);
@@ -351,6 +345,28 @@ class ZoneReadinessServiceTest extends TestCase
                 'infrastructure_instance_id' => $instance->id,
                 'direction' => 'actuator',
                 'role' => $role,
+            ]
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $subsystems
+     */
+    private function storeZoneLogicProfile(Zone $zone, array $subsystems): void
+    {
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            [
+                'active_mode' => 'working',
+                'profiles' => [
+                    'working' => [
+                        'mode' => 'working',
+                        'is_active' => true,
+                        'subsystems' => $subsystems,
+                    ],
+                ],
             ]
         );
     }

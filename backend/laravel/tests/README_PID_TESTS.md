@@ -5,8 +5,8 @@
 ### Backend (Laravel) тесты
 
 **Feature тесты:**
-- `tests/Feature/ZonePidConfigControllerTest.php` - тесты API контроллера
 - `tests/Feature/ZonePidLogControllerTest.php` - тесты контроллера логов
+- `tests/Feature/LegacyAutomationConfigRoutesRemovedTest.php` - guard на отсутствие legacy PID endpoints
 
 **Unit тесты:**
 - `tests/Unit/Services/ZonePidConfigServiceTest.php` - тесты сервиса
@@ -44,7 +44,7 @@
 **PHP тесты:**
 ```bash
 cd backend
-docker-compose -f docker-compose.dev.yml exec laravel php artisan test --filter=ZonePidConfig
+docker-compose -f docker-compose.dev.yml exec laravel php artisan test --filter=ZonePid
 ```
 
 **Python тесты:**
@@ -64,7 +64,7 @@ docker-compose -f docker-compose.dev.yml exec laravel npx playwright test tests/
 **PHP тесты:**
 ```bash
 cd backend/laravel
-php artisan test --filter=ZonePidConfig
+php artisan test --filter=ZonePid
 ```
 
 **Python тесты:**
@@ -76,10 +76,8 @@ pytest tests/test_pid_config_service.py test_pid_integration.py -v
 ## Покрытие тестами
 
 ### PHP тесты покрывают:
-- ✅ CRUD операции с PID конфигами
-- ✅ Валидацию полей конфига
-- ✅ Rate limiting
-- ✅ Создание событий PID_CONFIG_UPDATED
+- ✅ Работа PID через unified authority `automation-configs`
+- ✅ Отсутствие legacy PID endpoints
 - ✅ Получение логов PID
 - ✅ Фильтрацию логов по типу
 - ✅ Пагинацию логов
@@ -87,12 +85,12 @@ pytest tests/test_pid_config_service.py test_pid_integration.py -v
 - ✅ Accessors модели
 
 ### Python тесты покрывают:
-- ✅ Загрузку конфигов из БД
+- ✅ Загрузку PID-конфигов из authority-слоя
 - ✅ Использование дефолтных конфигов
 - ✅ Кеширование конфигов
 - ✅ Инвалидацию кеша
 - ✅ Построение дефолтных конфигов
-- ✅ Интеграцию с CorrectionController
+- ✅ Интеграцию с correction runtime
 
 ### E2E тесты покрывают:
 - ✅ Отображение Automation Engine
@@ -109,4 +107,3 @@ pytest tests/test_pid_config_service.py test_pid_integration.py -v
 - Для PHP тестов: контейнер laravel должен быть запущен
 - Для Python тестов: контейнер db должен быть запущен
 - Для E2E тестов: контейнер laravel и Playwright должны быть настроены
-

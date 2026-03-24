@@ -57,7 +57,7 @@
           </div>
           <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
             <span>Источник: {{ calibrationSourceLabel }}</span>
-            <span>Активно с: {{ formatDateTime(selectedCalibration?.valid_from ?? genericCalibration?.valid_from) }}</span>
+            <span>Активно с: {{ formatDateTime(effectiveCalibration?.valid_from) }}</span>
             <span>Confidence: {{ formatConfidence(displayedConfidence) }}</span>
           </div>
         </div>
@@ -179,6 +179,13 @@ import { computed, onMounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
+import {
+  documentToZoneProcessCalibration,
+  isSavedProcessCalibration,
+  PROCESS_CALIBRATION_MODES,
+  processCalibrationNamespace,
+} from '@/composables/processCalibrationAuthority'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useApi } from '@/composables/useApi'
 import {
   createDefaultProcessCalibrationForm,
@@ -234,6 +241,7 @@ interface FieldDescriptor {
 const props = defineProps<{ zoneId: number }>()
 
 const { api } = useApi()
+const automationConfig = useAutomationConfig()
 const { showToast } = useToast()
 const processCalibrationDefaults = useProcessCalibrationDefaults()
 
@@ -367,15 +375,17 @@ const historyEvents = ref<ProcessCalibrationHistoryItem[]>([])
 
 const selectedCalibration = computed(() => calibrations.value[activeMode.value])
 const genericCalibration = computed(() => calibrations.value.generic)
-const selectedUsesFallback = computed(() => activeMode.value !== 'generic' && !selectedCalibration.value && !!genericCalibration.value)
-const selectedUsesSystemDefaults = computed(() => !selectedCalibration.value && !genericCalibration.value)
+const selectedUsesFallback = computed(() => activeMode.value !== 'generic' && !isSavedProcessCalibration(selectedCalibration.value) && isSavedProcessCalibration(genericCalibration.value))
+const selectedUsesSystemDefaults = computed(() => !isSavedProcessCalibration(selectedCalibration.value) && !selectedUsesFallback.value)
+const effectiveCalibration = computed(() => selectedUsesFallback.value ? genericCalibration.value : selectedCalibration.value)
 const activeModeDescription = computed(() => modes.find((item) => item.key === activeMode.value)?.description ?? '')
 const calibrationSourceLabel = computed(() => {
-  if (selectedCalibration.value?.source) {
-    return selectedCalibration.value.source
+  const selectedSource = effectiveCalibration.value?.source
+  if (selectedSource === 'system_default') {
+    return 'system defaults'
   }
-  if (genericCalibration.value?.source) {
-    return genericCalibration.value.source
+  if (effectiveCalibration.value?.source) {
+    return effectiveCalibration.value.source
   }
   if (selectedUsesSystemDefaults.value) {
     return 'system defaults'
@@ -384,11 +394,8 @@ const calibrationSourceLabel = computed(() => {
   return 'не задан'
 })
 const displayedConfidence = computed(() => {
-  if (selectedCalibration.value?.confidence !== null && selectedCalibration.value?.confidence !== undefined) {
-    return selectedCalibration.value.confidence
-  }
-  if (genericCalibration.value?.confidence !== null && genericCalibration.value?.confidence !== undefined) {
-    return genericCalibration.value.confidence
+  if (effectiveCalibration.value?.confidence !== null && effectiveCalibration.value?.confidence !== undefined) {
+    return effectiveCalibration.value.confidence
   }
   if (selectedUsesSystemDefaults.value) {
     return parseNumeric(form.value.confidence)
@@ -507,18 +514,20 @@ function validateForm(): boolean {
 async function loadCalibrations(): Promise<void> {
   loading.value = true
   try {
-    const response = await api.get<ApiResponse<ZoneProcessCalibration[]>>(`/api/zones/${props.zoneId}/process-calibrations`)
+    const documents = await Promise.all(
+      PROCESS_CALIBRATION_MODES.map((mode) =>
+        automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, processCalibrationNamespace(mode))
+      )
+    )
     const next: Record<ProcessCalibrationMode, ZoneProcessCalibration | null> = {
       generic: null,
       solution_fill: null,
       tank_recirc: null,
       irrigation: null,
     }
-    for (const item of response.data.data || []) {
-      if (item.mode in next) {
-        next[item.mode as ProcessCalibrationMode] = item
-      }
-    }
+    PROCESS_CALIBRATION_MODES.forEach((mode, index) => {
+      next[mode] = documentToZoneProcessCalibration(props.zoneId, mode, documents[index])
+    })
     calibrations.value = next
     hydrateForm(activeMode.value)
   } finally {
@@ -604,6 +613,7 @@ async function save(): Promise<void> {
   }
 
   const payload = {
+    mode: activeMode.value,
     ec_gain_per_ml: parseNumeric(form.value.ec_gain_per_ml),
     ph_up_gain_per_ml: parseNumeric(form.value.ph_up_gain_per_ml),
     ph_down_gain_per_ml: parseNumeric(form.value.ph_down_gain_per_ml),
@@ -612,11 +622,18 @@ async function save(): Promise<void> {
     transport_delay_sec: parseNumeric(form.value.transport_delay_sec),
     settle_sec: parseNumeric(form.value.settle_sec),
     confidence: parseNumeric(form.value.confidence),
+    source: 'manual',
+    valid_from: new Date().toISOString(),
+    valid_to: null,
+    is_active: true,
+    meta: {
+      ...(selectedCalibration.value?.meta ?? {}),
+    },
   }
 
   saving.value = true
   try {
-    await api.put<ApiResponse<ZoneProcessCalibration>>(`/api/zones/${props.zoneId}/process-calibrations/${activeMode.value}`, payload)
+    await automationConfig.updateDocument('zone', props.zoneId, processCalibrationNamespace(activeMode.value), payload)
     showToast(`Калибровка процесса для режима "${modeLabel(activeMode.value)}" сохранена.`, 'success')
     await Promise.all([loadCalibrations(), loadHistory()])
   } finally {

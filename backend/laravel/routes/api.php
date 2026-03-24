@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\AiController;
+use App\Http\Controllers\AutomationBundleController;
+use App\Http\Controllers\AutomationConfigController;
+use App\Http\Controllers\AutomationPresetController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChannelBindingController;
 use App\Http\Controllers\E2EAuthController;
-use App\Http\Controllers\GreenhouseAutomationLogicProfileController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\GreenhouseTypeController;
 use App\Http\Controllers\GrowCycleController;
@@ -31,21 +33,15 @@ use App\Http\Controllers\SetupWizardController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SimulationEventController;
 use App\Http\Controllers\SystemController;
-use App\Http\Controllers\SystemAutomationSettingsController;
 use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
-use App\Http\Controllers\ZoneAutomationLogicProfileController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
 use App\Http\Controllers\ZoneAutomationStateController;
-use App\Http\Controllers\ZoneCorrectionConfigController;
-use App\Http\Controllers\ZoneCorrectionPresetController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
-use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\ZonePumpCalibrationsController;
-use App\Http\Controllers\ZoneProcessCalibrationController;
 use App\Http\Controllers\ZoneRelayAutotuneController;
 use App\Http\Controllers\SensorCalibrationController;
 use Illuminate\Http\Request;
@@ -136,7 +132,6 @@ Route::middleware([
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);
     Route::get('greenhouses/{greenhouse}/dashboard', [GreenhouseController::class, 'dashboard']);
-    Route::get('greenhouses/{greenhouse}/automation-logic-profile', [GreenhouseAutomationLogicProfileController::class, 'show']);
     Route::get('zones', [ZoneController::class, 'index']);
     Route::get('zones/{zone}', [ZoneController::class, 'show']);
     Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
@@ -144,19 +139,13 @@ Route::middleware([
     Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
-    Route::get('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'show']);
-    Route::get('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'show']);
-    Route::get('zones/{zone}/correction-config/history', [ZoneCorrectionConfigController::class, 'history']);
-    Route::get('zones/{zone}/process-calibrations', [ZoneProcessCalibrationController::class, 'index']);
-    Route::get('zones/{zone}/process-calibrations/{mode}', [ZoneProcessCalibrationController::class, 'show']);
-    Route::get('system/automation-settings', [SystemAutomationSettingsController::class, 'index'])
-        ->middleware('role:admin');
-    Route::get('system/automation-settings/{namespace}', [SystemAutomationSettingsController::class, 'show'])
-        ->middleware('role:admin');
+    Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}/history', [AutomationConfigController::class, 'history']);
+    Route::get('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'show']);
+    Route::get('automation-bundles/{scopeType}/{scopeId}', [AutomationBundleController::class, 'show']);
+    Route::get('automation-presets/{namespace}', [AutomationPresetController::class, 'index']);
     Route::get('zones/{zone}/sensor-calibrations', [SensorCalibrationController::class, 'index']);
     Route::get('zones/{zone}/sensor-calibrations/status', [SensorCalibrationController::class, 'status']);
     Route::get('zones/{zone}/sensor-calibrations/{calibration}', [SensorCalibrationController::class, 'show']);
-    Route::get('correction-config-presets', [ZoneCorrectionPresetController::class, 'index']);
     Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
     Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
     Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive'])
@@ -196,7 +185,6 @@ Route::middleware([
         Route::put('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::patch('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::delete('greenhouses/{greenhouse}', [GreenhouseController::class, 'destroy']);
-        Route::post('greenhouses/{greenhouse}/automation-logic-profile', [GreenhouseAutomationLogicProfileController::class, 'upsert']);
 
         // Zones
         Route::post('zones', [ZoneController::class, 'store']);
@@ -218,13 +206,13 @@ Route::middleware([
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
         Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
-        Route::post('zones/{zone}/automation-logic-profile', [ZoneAutomationLogicProfileController::class, 'upsert']);
-        Route::put('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'update']);
-        Route::patch('zones/{zone}/correction-config', [ZoneCorrectionConfigController::class, 'update']);
-        Route::post('correction-config-presets', [ZoneCorrectionPresetController::class, 'store']);
-        Route::put('correction-config-presets/{preset}', [ZoneCorrectionPresetController::class, 'update']);
-        Route::patch('correction-config-presets/{preset}', [ZoneCorrectionPresetController::class, 'update']);
-        Route::delete('correction-config-presets/{preset}', [ZoneCorrectionPresetController::class, 'destroy']);
+        Route::put('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'update']);
+        Route::post('automation-bundles/{scopeType}/{scopeId}/validate', [AutomationBundleController::class, 'validate']);
+        Route::post('automation-presets/{namespace}', [AutomationPresetController::class, 'store']);
+        Route::put('automation-presets/{preset}', [AutomationPresetController::class, 'update']);
+        Route::patch('automation-presets/{preset}', [AutomationPresetController::class, 'update']);
+        Route::delete('automation-presets/{preset}', [AutomationPresetController::class, 'destroy']);
+        Route::post('automation-presets/{preset}/duplicate', [AutomationPresetController::class, 'duplicate']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);
@@ -282,13 +270,7 @@ Route::middleware([
         Route::post('nodes/{node}/commands', [NodeCommandController::class, 'store']);
 
         // PID Config (operator+)
-        Route::put('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'update']);
         Route::put('zones/{zone}/pump-calibrations/{channelId}', [ZonePumpCalibrationsController::class, 'update']);
-        Route::put('zones/{zone}/process-calibrations/{mode}', [ZoneProcessCalibrationController::class, 'update']);
-        Route::put('system/automation-settings/{namespace}', [SystemAutomationSettingsController::class, 'update'])
-            ->middleware('role:admin');
-        Route::post('system/automation-settings/{namespace}/reset', [SystemAutomationSettingsController::class, 'reset'])
-            ->middleware('role:admin');
         Route::post('zones/{zone}/sensor-calibrations', [SensorCalibrationController::class, 'create']);
         Route::post('zones/{zone}/sensor-calibrations/{calibration}/point', [SensorCalibrationController::class, 'point']);
         Route::post('zones/{zone}/sensor-calibrations/{calibration}/cancel', [SensorCalibrationController::class, 'cancel']);
@@ -318,8 +300,6 @@ Route::middleware([
     });
 
     // PID Config read-only
-    Route::get('zones/{zone}/pid-configs', [ZonePidConfigController::class, 'index']);
-    Route::get('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'show']);
     Route::get('zones/{zone}/pid-logs', [ZonePidLogController::class, 'index']);
     Route::get('zones/{zone}/pump-calibrations', [ZonePumpCalibrationsController::class, 'index']);
     Route::get('zones/{zone}/relay-autotune/status', [ZoneRelayAutotuneController::class, 'status']);

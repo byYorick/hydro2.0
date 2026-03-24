@@ -29,8 +29,8 @@
 
 **Расположение:** `backend/laravel/tests/`
 
-- `Feature/ZonePidConfigControllerTest.php` - API контроллер
 - `Feature/ZonePidLogControllerTest.php` - контроллер логов
+- `Feature/LegacyAutomationConfigRoutesRemovedTest.php` - проверка отсутствия legacy PID endpoints
 - `Unit/Services/ZonePidConfigServiceTest.php` - сервис
 - `Unit/Models/ZonePidConfigTest.php` - модель
 
@@ -42,7 +42,7 @@
 Или вручную:
 ```bash
 cd backend
-docker-compose -f docker-compose.dev.yml exec laravel php artisan test --filter=ZonePidConfig
+docker-compose -f docker-compose.dev.yml exec laravel php artisan test --filter=ZonePid
 ```
 
 ### Python тесты
@@ -81,10 +81,8 @@ docker-compose -f docker-compose.dev.yml exec laravel npx playwright test tests/
 ## Что тестируется
 
 ### PHP тесты
-- ✅ CRUD операции с PID конфигами
-- ✅ Валидация полей конфига
-- ✅ Rate limiting (10 запросов в минуту)
-- ✅ Создание событий `PID_CONFIG_UPDATED`
+- ✅ PID authority через unified `automation-configs`
+- ✅ Отсутствие legacy PID API
 - ✅ Получение логов PID
 - ✅ Фильтрация логов по типу (pH/EC)
 - ✅ Пагинация логов
@@ -97,7 +95,7 @@ docker-compose -f docker-compose.dev.yml exec laravel npx playwright test tests/
 - ✅ Кеширование конфигов (TTL 60 сек)
 - ✅ Инвалидация кеша при обновлении
 - ✅ Построение дефолтных конфигов для pH и EC
-- ✅ Интеграция с `CorrectionController`
+- ✅ Интеграция с correction runtime
 
 ### E2E тесты
 - ✅ Отображение вкладки "Automation Engine"

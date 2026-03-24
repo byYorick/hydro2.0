@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from uuid import uuid4
 
 import pytest
@@ -10,6 +11,113 @@ from ae3lite.domain.errors import SnapshotBuildError
 from ae3lite.domain.services import CycleStartPlanner
 from ae3lite.infrastructure.read_models import PgZoneSnapshotReadModel
 from common.db import execute, fetch
+
+
+def _merge_dict(base: dict, patch: dict) -> dict:
+    merged = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_dict(merged[key], value)
+            continue
+        merged[key] = value
+    return merged
+
+
+async def _resolve_active_grow_cycle_id(zone_id: int) -> int:
+    rows = await fetch(
+        """
+        SELECT id
+        FROM grow_cycles
+        WHERE zone_id = $1
+          AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        zone_id,
+    )
+    return int(rows[0]["id"])
+
+
+async def _upsert_cycle_bundle(grow_cycle_id: int, patch: dict) -> None:
+    rows = await fetch(
+        """
+        SELECT config
+        FROM automation_effective_bundles
+        WHERE scope_type = 'grow_cycle'
+          AND scope_id = $1
+        LIMIT 1
+        """,
+        grow_cycle_id,
+    )
+    current = rows[0]["config"] if rows else {}
+    if isinstance(current, str):
+        current = json.loads(current)
+    if not isinstance(current, dict):
+        current = {}
+
+    config = _merge_dict(
+        {
+            "schema_version": 1,
+            "system": {},
+            "zone": {},
+            "cycle": {
+                "start_snapshot": {},
+                "phase_overrides": {},
+                "manual_overrides": [],
+            },
+        },
+        current,
+    )
+    config = _merge_dict(config, patch)
+    bundle_revision = f"test-{uuid4().hex}"
+
+    await execute(
+        """
+        INSERT INTO automation_effective_bundles (
+            scope_type,
+            scope_id,
+            bundle_revision,
+            schema_revision,
+            config,
+            violations,
+            status,
+            compiled_at,
+            inputs_checksum,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            'grow_cycle',
+            $1,
+            $2,
+            'test-schema-v1',
+            $3::jsonb,
+            '[]'::jsonb,
+            'valid',
+            NOW(),
+            $2,
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT (scope_type, scope_id) DO UPDATE
+        SET bundle_revision = EXCLUDED.bundle_revision,
+            schema_revision = EXCLUDED.schema_revision,
+            config = EXCLUDED.config,
+            violations = EXCLUDED.violations,
+            status = EXCLUDED.status,
+            compiled_at = EXCLUDED.compiled_at,
+            inputs_checksum = EXCLUDED.inputs_checksum,
+            updated_at = EXCLUDED.updated_at
+        """,
+        grow_cycle_id,
+        bundle_revision,
+        config,
+    )
+
+
+async def _upsert_zone_bundle(zone_id: int, zone_patch: dict) -> None:
+    grow_cycle_id = await _resolve_active_grow_cycle_id(zone_id)
+    await _upsert_cycle_bundle(grow_cycle_id, {"zone": zone_patch})
 
 
 async def _insert_greenhouse(prefix: str) -> int:
@@ -187,52 +295,41 @@ async def _insert_profile(zone_id: int) -> None:
             ],
         },
     }
-    await execute(
-        """
-        INSERT INTO zone_automation_logic_profiles (
-            zone_id,
-            mode,
-            subsystems,
-            command_plans,
-            is_active,
-            created_at,
-            updated_at
-        )
-        VALUES (
-            $1,
-            'working',
-            $2::jsonb,
-            $3::jsonb,
-            TRUE,
-            NOW(),
-            NOW()
-        )
-        """,
+    await _upsert_zone_bundle(
         zone_id,
-        {"diagnostics": {"execution": execution}},
         {
-            "schema_version": 1,
-            "plan_version": 1,
-            "plans": {
-                "diagnostics": {
-                    "execution": execution,
-                    "steps": [
-                        {
-                            "name": "pump_start",
-                            "channel": "irrigation_pump",
-                            "cmd": "set_relay",
-                            "params": {"state": True},
-                            "timeout_sec": 20,
-                        }
-                    ],
-                }
-            },
+            "logic_profile": {
+                "active_mode": "working",
+                "active_profile": {
+                    "mode": "working",
+                    "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                    "subsystems": {"diagnostics": {"execution": execution}},
+                    "command_plans": {
+                        "schema_version": 1,
+                        "plan_version": 1,
+                        "plans": {
+                            "diagnostics": {
+                                "execution": execution,
+                                "steps": [
+                                    {
+                                        "name": "pump_start",
+                                        "channel": "irrigation_pump",
+                                        "cmd": "set_relay",
+                                        "params": {"state": True},
+                                        "timeout_sec": 20,
+                                    }
+                                ],
+                            }
+                        },
+                    },
+                },
+            }
         },
     )
 
 
 async def _insert_correction_config(zone_id: int) -> None:
-    """Insert a complete zone_correction_config fixture for fail-closed runtime validation."""
+    """Insert a complete authority correction bundle fixture for fail-closed runtime validation."""
     minimal_cfg = {
         "base": {
             "runtime": {
@@ -331,51 +428,38 @@ async def _insert_correction_config(zone_id: int) -> None:
         },
         "meta": {},
     }
-    await execute(
-        """
-        INSERT INTO zone_correction_configs (
-            zone_id,
-            base_config,
-            phase_overrides,
-            resolved_config,
-            version,
-            created_at,
-            updated_at
-        )
-        VALUES ($1, '{}'::jsonb, '{}'::jsonb, $2, 1, NOW(), NOW())
-        ON CONFLICT (zone_id) DO NOTHING
-        """,
+    await _upsert_zone_bundle(
         zone_id,
-        minimal_cfg,
+        {
+            "correction": {
+                "phase_overrides": {},
+                "resolved_config": minimal_cfg,
+            }
+        },
     )
 
 
 async def _insert_process_calibrations(zone_id: int) -> None:
-    await execute(
-        """
-        INSERT INTO zone_process_calibrations (
-            zone_id,
-            mode,
-            ec_gain_per_ml,
-            ph_up_gain_per_ml,
-            ph_down_gain_per_ml,
-            transport_delay_sec,
-            settle_sec,
-            confidence,
-            source,
-            valid_from,
-            valid_to,
-            is_active,
-            meta,
-            created_at,
-            updated_at
-        )
-        VALUES
-            ($1, 'solution_fill', 0.10, 0.05, -0.05, 6, 4, 0.90, 'test-fixture', NOW() - INTERVAL '1 minute', NULL, TRUE, '{}'::jsonb, NOW(), NOW()),
-            ($1, 'tank_recirc', 0.10, 0.05, -0.05, 6, 4, 0.90, 'test-fixture', NOW() - INTERVAL '1 minute', NULL, TRUE, '{}'::jsonb, NOW(), NOW()),
-            ($1, 'irrigation', 0.10, 0.05, -0.05, 6, 4, 0.90, 'test-fixture', NOW() - INTERVAL '1 minute', NULL, TRUE, '{}'::jsonb, NOW(), NOW())
-        """,
+    calibration = {
+        "ec_gain_per_ml": 0.10,
+        "ph_up_gain_per_ml": 0.05,
+        "ph_down_gain_per_ml": -0.05,
+        "transport_delay_sec": 6,
+        "settle_sec": 4,
+        "confidence": 0.90,
+        "source": "test-fixture",
+        "is_active": True,
+        "meta": {},
+    }
+    await _upsert_zone_bundle(
         zone_id,
+        {
+            "process_calibration": {
+                "solution_fill": dict(calibration),
+                "tank_recirc": dict(calibration),
+                "irrigation": dict(calibration),
+            }
+        },
     )
 
 
@@ -504,22 +588,21 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
             phase_id,
             now,
         )
-        await execute(
-            """
-            INSERT INTO grow_cycle_overrides (
-                grow_cycle_id,
-                parameter,
-                value_type,
-                value,
-                is_active,
-                created_at,
-                updated_at
-            )
-            VALUES
-                ($1, 'ph.target', 'decimal', '5.90', TRUE, NOW(), NOW()),
-                ($1, 'diagnostics.execution.startup.clean_fill_timeout_sec', 'integer', '47', TRUE, NOW(), NOW())
-            """,
+        await _upsert_cycle_bundle(
             grow_cycle_id,
+            {
+                "cycle": {
+                    "manual_overrides": [
+                        {"parameter": "ph.target", "value_type": "decimal", "value": "5.90", "is_active": True},
+                        {
+                            "parameter": "diagnostics.execution.startup.clean_fill_timeout_sec",
+                            "value_type": "integer",
+                            "value": "47",
+                            "is_active": True,
+                        },
+                    ]
+                }
+            },
         )
         await _insert_profile(zone_id)
         await _insert_correction_config(zone_id)
@@ -566,16 +649,14 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
             zone_id,
             {"window": 3},
         )
-        await execute(
-            """
-            INSERT INTO zone_pid_configs (zone_id, type, config, updated_at)
-            VALUES
-                ($1, 'ph', $2::jsonb, NOW()),
-                ($1, 'ec', $3::jsonb, NOW())
-            """,
+        await _upsert_zone_bundle(
             zone_id,
-            {"kp": 1.2, "ki": 0.4, "kd": 0.1},
-            {"kp": 1.5, "ki": 0.3, "kd": 0.0},
+            {
+                "pid": {
+                    "ph": {"config": {"kp": 1.2, "ki": 0.4, "kd": 0.1}},
+                    "ec": {"config": {"kp": 1.5, "ki": 0.3, "kd": 0.0}},
+                }
+            },
         )
 
         node_channel_ids: dict[str, int] = {}

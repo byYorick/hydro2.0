@@ -2,10 +2,12 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
-const pagePropsState = vi.hoisted(() => ({ sensorCalibrationSettings: null as Record<string, unknown> | null }))
+const sensorCalibrationSettingsState = vi.hoisted(() => ({ value: null as Record<string, unknown> | null }))
 const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPostMock = vi.hoisted(() => vi.fn())
 const apiPatchMock = vi.hoisted(() => vi.fn())
+const getDocumentMock = vi.hoisted(() => vi.fn())
+const updateDocumentMock = vi.hoisted(() => vi.fn())
 const routerVisitMock = vi.hoisted(() => vi.fn())
 const canAssignToZoneMock = vi.hoisted(() => vi.fn())
 const getStateLabelMock = vi.hoisted(() => vi.fn())
@@ -196,7 +198,6 @@ vi.mock('@inertiajs/vue3', () => ({
           role: roleState.role,
         },
       },
-      sensorCalibrationSettings: pagePropsState.sensorCalibrationSettings,
     },
   }),
   router: {
@@ -249,7 +250,160 @@ vi.mock('@/composables/useErrorHandler', () => ({
   }),
 }))
 
+vi.mock('@/composables/useAutomationConfig', () => ({
+  useAutomationConfig: () => ({
+    getDocument: getDocumentMock,
+    updateDocument: updateDocumentMock,
+  }),
+}))
+
+vi.mock('@/composables/useSensorCalibrationSettings', () => ({
+  useSensorCalibrationSettings: () => ({
+    value: sensorCalibrationSettingsState.value,
+  }),
+}))
+
 import Wizard from '../Wizard.vue'
+
+function authorityDocument(namespace: string, payload: Record<string, unknown>, scopeType: 'system' | 'zone' = 'zone', scopeId = 20) {
+  return {
+    namespace,
+    scope_type: scopeType,
+    scope_id: scopeId,
+    schema_version: 1,
+    payload,
+    status: 'valid',
+    updated_at: '2026-03-24T10:00:00Z',
+    updated_by: 5,
+  }
+}
+
+function installAuthorityMocks(zonePayload?: Record<string, unknown>) {
+  getDocumentMock.mockImplementation((scopeType: string, scopeId: number, namespace: string) => {
+    if (namespace === 'system.automation_defaults') {
+      return Promise.resolve(authorityDocument(namespace, {
+        climate_enabled: true,
+        climate_day_temp_c: 23,
+        climate_night_temp_c: 20,
+        climate_day_humidity_pct: 62,
+        climate_night_humidity_pct: 70,
+        climate_interval_min: 5,
+        climate_day_start_hhmm: '07:00',
+        climate_night_start_hhmm: '19:00',
+        climate_vent_min_pct: 15,
+        climate_vent_max_pct: 85,
+        climate_use_external_telemetry: true,
+        climate_outside_temp_min_c: 4,
+        climate_outside_temp_max_c: 34,
+        climate_outside_humidity_max_pct: 90,
+        climate_manual_override_enabled: true,
+        climate_manual_override_minutes: 30,
+        water_system_type: 'drip',
+        water_tanks_count: 2,
+        water_clean_tank_fill_l: 300,
+        water_nutrient_tank_target_l: 280,
+        water_irrigation_batch_l: 20,
+        water_interval_min: 30,
+        water_duration_sec: 120,
+        water_fill_temperature_c: 20,
+        water_fill_window_start_hhmm: '05:00',
+        water_fill_window_end_hhmm: '07:00',
+        water_target_ph: 5.8,
+        water_target_ec: 1.6,
+        water_ph_pct: 5,
+        water_ec_pct: 10,
+        water_valve_switching_enabled: true,
+        water_correction_during_irrigation: true,
+        water_drain_control_enabled: false,
+        water_drain_target_pct: 20,
+        water_diagnostics_enabled: true,
+        water_diagnostics_interval_min: 15,
+        water_cycle_start_workflow_enabled: true,
+        water_diagnostics_workflow: 'startup',
+        water_clean_tank_full_threshold: 0.95,
+        water_refill_duration_sec: 30,
+        water_refill_timeout_sec: 600,
+        water_startup_clean_fill_timeout_sec: 1200,
+        water_startup_solution_fill_timeout_sec: 1800,
+        water_startup_prepare_recirculation_timeout_sec: 1200,
+        water_startup_clean_fill_retry_cycles: 1,
+        water_startup_level_poll_interval_sec: 60,
+        water_startup_level_switch_on_threshold: 0.5,
+        water_startup_clean_max_sensor_label: 'level_clean_max',
+        water_startup_solution_max_sensor_label: 'level_solution_max',
+        water_irrigation_recovery_max_continue_attempts: 5,
+        water_irrigation_recovery_timeout_sec: 600,
+        water_irrigation_recovery_target_tolerance_ec_pct: 10,
+        water_irrigation_recovery_target_tolerance_ph_pct: 5,
+        water_irrigation_recovery_degraded_tolerance_ec_pct: 20,
+        water_irrigation_recovery_degraded_tolerance_ph_pct: 10,
+        water_prepare_tolerance_ec_pct: 25,
+        water_prepare_tolerance_ph_pct: 15,
+        water_correction_max_ec_attempts: 5,
+        water_correction_max_ph_attempts: 5,
+        water_correction_prepare_recirculation_max_attempts: 3,
+        water_correction_prepare_recirculation_max_correction_attempts: 20,
+        water_correction_stabilization_sec: 60,
+        water_two_tank_clean_fill_start_steps: 1,
+        water_two_tank_clean_fill_stop_steps: 1,
+        water_two_tank_solution_fill_start_steps: 3,
+        water_two_tank_solution_fill_stop_steps: 3,
+        water_two_tank_prepare_recirculation_start_steps: 3,
+        water_two_tank_prepare_recirculation_stop_steps: 3,
+        water_two_tank_irrigation_recovery_start_steps: 4,
+        water_two_tank_irrigation_recovery_stop_steps: 3,
+        water_refill_required_node_types_csv: 'irrig',
+        water_refill_preferred_channel: 'fill_valve',
+        water_solution_change_enabled: false,
+        water_solution_change_interval_min: 180,
+        water_solution_change_duration_sec: 120,
+        water_manual_irrigation_sec: 90,
+        lighting_enabled: true,
+        lighting_lux_day: 18000,
+        lighting_lux_night: 0,
+        lighting_hours_on: 16,
+        lighting_interval_min: 30,
+        lighting_schedule_start_hhmm: '06:00',
+        lighting_schedule_end_hhmm: '22:00',
+        lighting_manual_intensity_pct: 75,
+        lighting_manual_duration_hours: 4,
+      }, 'system', 0))
+    }
+
+    if (namespace === 'system.command_templates') {
+      return Promise.resolve(authorityDocument(namespace, {
+        clean_fill_start: [],
+        clean_fill_stop: [],
+        solution_fill_start: [],
+        solution_fill_stop: [],
+        prepare_recirculation_start: [],
+        prepare_recirculation_stop: [],
+        irrigation_recovery_start: [],
+        irrigation_recovery_stop: [],
+      }, 'system', 0))
+    }
+
+    if (namespace === 'zone.logic_profile') {
+      return Promise.resolve(authorityDocument(namespace, zonePayload ?? {
+        active_mode: 'setup',
+        profiles: {
+          setup: {
+            mode: 'setup',
+            is_active: true,
+            subsystems: {},
+            updated_at: '2026-03-24T10:00:00Z',
+          },
+        },
+      }, scopeType === 'zone' ? 'zone' : 'zone', scopeId))
+    }
+
+    return Promise.reject(new Error(`Unexpected authority namespace ${namespace}`))
+  })
+
+  updateDocumentMock.mockImplementation(async (_scopeType: string, scopeId: number, namespace: string, payload: Record<string, unknown>) =>
+    authorityDocument(namespace, payload, 'zone', scopeId)
+  )
+}
 
 function mockDefaultGet(url: string) {
   if (url === '/api/plants') {
@@ -328,16 +482,19 @@ async function createGreenhouseAndZone(wrapper: ReturnType<typeof mount>) {
 describe('Setup/Wizard.vue', () => {
   beforeEach(() => {
     roleState.role = 'agronomist'
-    pagePropsState.sensorCalibrationSettings = null
+    sensorCalibrationSettingsState.value = null
     apiGetMock.mockReset()
     apiPostMock.mockReset()
     apiPatchMock.mockReset()
+    getDocumentMock.mockReset()
+    updateDocumentMock.mockReset()
     routerVisitMock.mockReset()
     canAssignToZoneMock.mockReset()
     getStateLabelMock.mockReset()
 
     canAssignToZoneMock.mockResolvedValue(true)
     getStateLabelMock.mockReturnValue('Зарегистрирован')
+    installAuthorityMocks()
 
     apiGetMock.mockImplementation((url: string) => mockDefaultGet(url))
 
@@ -391,7 +548,7 @@ describe('Setup/Wizard.vue', () => {
   })
 
   it('открывает модалку калибровки насосов из шага 5', async () => {
-    pagePropsState.sensorCalibrationSettings = {
+    sensorCalibrationSettingsState.value = {
       ph_point_1_value: 7,
       ph_point_2_value: 4.01,
       ec_point_1_tds: 1413,
@@ -511,14 +668,7 @@ describe('Setup/Wizard.vue', () => {
       undefined,
     )
 
-    expect(apiPostMock).toHaveBeenCalledWith(
-      '/api/zones/20/automation-logic-profile',
-      expect.objectContaining({
-        mode: 'setup',
-        activate: true,
-      }),
-      undefined,
-    )
+    expect(updateDocumentMock).toHaveBeenCalledWith('zone', 20, 'zone.logic_profile', expect.any(Object))
   })
 
   it('подтягивает уже привязанные к зоне ноды в блок водного контура', async () => {
@@ -674,21 +824,11 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
     await flushPromises()
 
-    expect(apiPostMock).toHaveBeenCalledWith(
-      '/api/zones/20/automation-logic-profile',
-      expect.objectContaining({
-        mode: 'setup',
-        activate: true,
-        subsystems: expect.objectContaining({
-          lighting: expect.objectContaining({ enabled: false }),
-        }),
-      }),
-      undefined,
-    )
+    expect(updateDocumentMock).toHaveBeenCalledWith('zone', 20, 'zone.logic_profile', expect.any(Object))
 
-    const automationCall = apiPostMock.mock.calls.find(([url]) => url === '/api/zones/20/automation-logic-profile')
-    expect(automationCall?.[1]?.subsystems?.climate).toBeUndefined()
-    expect(automationCall?.[1]?.subsystems?.irrigation?.execution?.system_type).toBe('substrate_trays')
+    const automationCall = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
+    expect(automationCall?.[3]?.profiles?.setup?.subsystems?.climate).toBeUndefined()
+    expect(automationCall?.[3]?.profiles?.setup?.subsystems?.irrigation?.execution?.system_type).toBe('substrate_trays')
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/commands',
@@ -724,37 +864,26 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
     await flushPromises()
 
-    const automationCall = apiPostMock.mock.calls.find(([url]) => url === '/api/zones/20/automation-logic-profile')
-    expect(automationCall?.[1]?.subsystems?.lighting?.enabled).toBe(false)
+    const automationCall = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
+    expect(automationCall?.[3]?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(false)
   })
 
   it('сохраняет уже загруженный профиль освещения при сохранении water block', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/20/automation-logic-profile') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: {
-              active_mode: 'setup',
-              profiles: {
-                setup: {
-                  mode: 'setup',
-                  is_active: true,
-                  updated_at: '2026-03-22T12:00:00Z',
-                  subsystems: {
-                    ph: { enabled: true, execution: {} },
-                    ec: { enabled: true, execution: {} },
-                    irrigation: { enabled: true, execution: { system_type: 'substrate_trays' } },
-                    lighting: { enabled: true, execution: { interval_sec: 1800 } },
-                  },
-                },
-              },
-            },
+    installAuthorityMocks({
+      active_mode: 'setup',
+      profiles: {
+        setup: {
+          mode: 'setup',
+          is_active: true,
+          updated_at: '2026-03-22T12:00:00Z',
+          subsystems: {
+            ph: { enabled: true, execution: {} },
+            ec: { enabled: true, execution: {} },
+            irrigation: { enabled: true, execution: { system_type: 'substrate_trays' } },
+            lighting: { enabled: true, execution: { interval_sec: 1800 } },
           },
-        })
-      }
-
-      return mockDefaultGet(url)
+        },
+      },
     })
 
     const wrapper = mount(Wizard)
@@ -774,8 +903,8 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.find('[data-test="save-section-water-contour"]').trigger('click')
     await flushPromises()
 
-    const automationCall = apiPostMock.mock.calls.find(([url]) => url === '/api/zones/20/automation-logic-profile')
-    expect(automationCall?.[1]?.subsystems?.lighting?.enabled).toBe(true)
+    const automationCall = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
+    expect(automationCall?.[3]?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(true)
   })
 
   it('отправляет флаги света и zone climate из секции профиля', async () => {
@@ -802,16 +931,10 @@ describe('Setup/Wizard.vue', () => {
     await wrapper.get('[data-test="save-section-zone-climate"]').trigger('click')
     await flushPromises()
 
-    expect(apiPostMock).toHaveBeenCalledWith(
-      '/api/zones/20/automation-logic-profile',
-      expect.objectContaining({
-        subsystems: expect.objectContaining({
-          lighting: expect.objectContaining({ enabled: false }),
-          zone_climate: expect.objectContaining({ enabled: true }),
-        }),
-      }),
-      undefined,
-    )
+    expect(updateDocumentMock).toHaveBeenCalledWith('zone', 20, 'zone.logic_profile', expect.any(Object))
+    const automationCall = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
+    expect(automationCall?.[3]?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(false)
+    expect(automationCall?.[3]?.profiles?.setup?.subsystems?.zone_climate?.enabled).toBe(true)
   })
 
   it('снимает optional bindings при выключении света и климата зоны', async () => {

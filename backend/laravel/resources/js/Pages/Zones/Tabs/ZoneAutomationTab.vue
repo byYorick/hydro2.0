@@ -268,8 +268,8 @@ import Button from '@/Components/Button.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
+import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
-import { usePageProp } from '@/composables/usePageProps'
 import type {
   ClimateFormState,
   LightingFormState,
@@ -279,7 +279,6 @@ import type {
 } from '@/composables/zoneAutomationTypes'
 import { useZoneAutomationTab } from '@/composables/useZoneAutomationTab'
 import type { AutomationState } from '@/types/Automation'
-import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
 interface ZoneAutomationWizardApplyPayload {
   climateForm: ClimateFormState
@@ -484,7 +483,7 @@ const props = defineProps<ZoneAutomationTabProps>()
 const emit = defineEmits<{
   (e: 'open-pump-calibration'): void
 }>()
-const sensorCalibrationSettings = usePageProp<'sensorCalibrationSettings', SensorCalibrationSettings>('sensorCalibrationSettings')
+const sensorCalibrationSettings = useSensorCalibrationSettings()
 const automationDefaults = useAutomationDefaults()
 const automationCommandTemplates = useAutomationCommandTemplates()
 

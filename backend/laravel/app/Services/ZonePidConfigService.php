@@ -2,14 +2,18 @@
 
 namespace App\Services;
 
-use App\Models\SystemAutomationSetting;
 use App\Models\ZoneEvent;
 use App\Models\ZonePidConfig;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ZonePidConfigService
 {
+    public function __construct(
+        private readonly AutomationConfigDocumentService $documents,
+        private readonly AutomationConfigRegistry $registry,
+    ) {
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -31,9 +35,18 @@ class ZonePidConfigService
      */
     public function getConfig(int $zoneId, string $type): ?ZonePidConfig
     {
-        return ZonePidConfig::where('zone_id', $zoneId)
-            ->where('type', $type)
-            ->first();
+        $document = $this->documents->getDocument(
+            $this->registry->pidNamespace($type),
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            false
+        );
+        $payload = is_array($document?->payload) ? $document->payload : [];
+        if ($payload === []) {
+            return null;
+        }
+
+        return $this->makeTransientConfig($zoneId, $type, $payload, $document?->updated_by, $document?->updated_at, $document?->id);
     }
 
     /**
@@ -41,62 +54,53 @@ class ZonePidConfigService
      */
     public function createOrUpdate(int $zoneId, string $type, array $config, ?int $userId = null): ZonePidConfig
     {
-        return DB::transaction(function () use ($zoneId, $type, $config, $userId) {
-            $existing = $this->getConfig($zoneId, $type);
-            $oldConfig = $existing ? $existing->config : null;
+        $existing = $this->getConfig($zoneId, $type);
+        $oldConfig = $existing?->config;
+        $document = $this->documents->upsertDocument(
+            $this->registry->pidNamespace($type),
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            $config,
+            $userId,
+            'zone_pid_config'
+        );
 
-            if ($existing) {
-                // Обновляем существующий конфиг
-                $existing->config = $config;
-                $existing->updated_by = $userId;
-                $existing->updated_at = now();
-                $existing->save();
-                $pidConfig = $existing->fresh();
-            } else {
-                // Создаем новый конфиг
-                $pidConfig = ZonePidConfig::create([
-                    'zone_id' => $zoneId,
-                    'type' => $type,
-                    'config' => $config,
-                    'updated_by' => $userId,
-                ]);
-            }
-
-            // Создаем событие об обновлении конфига
-            ZoneEvent::create([
-                'zone_id' => $zoneId,
-                'type' => 'PID_CONFIG_UPDATED',
-                'payload_json' => [
-                    'type' => $type,
-                    'old_config' => $oldConfig,
-                    'new_config' => $config,
-                    'updated_by' => $userId,
-                ],
-            ]);
-
-            Log::info('PID config updated', [
-                'zone_id' => $zoneId,
+        ZoneEvent::create([
+            'zone_id' => $zoneId,
+            'type' => 'PID_CONFIG_UPDATED',
+            'payload_json' => [
                 'type' => $type,
+                'old_config' => $oldConfig,
+                'new_config' => $config,
                 'updated_by' => $userId,
-            ]);
+            ],
+        ]);
 
-            return $pidConfig;
-        });
+        Log::info('PID config updated', [
+            'zone_id' => $zoneId,
+            'type' => $type,
+            'updated_by' => $userId,
+        ]);
+
+        return $this->makeTransientConfig(
+            $zoneId,
+            $type,
+            is_array($document->payload) ? $document->payload : [],
+            $document->updated_by,
+            $document->updated_at,
+            $document->id
+        );
     }
 
     /**
      * Получить дефолтный конфиг для типа
-     * Значения берутся из system_automation_settings с fallback на встроенные каталожные defaults.
+     * Значения берутся из authority system documents с fallback на встроенные каталожные defaults.
      */
     public function getDefaultConfig(string $type): array
     {
         $namespace = $this->defaultNamespace($type);
 
-        try {
-            $config = SystemAutomationSetting::forNamespace($namespace);
-        } catch (\RuntimeException) {
-            return $this->catalogDefaultConfig($type);
-        }
+        $config = $this->documents->getSystemPayloadByLegacyNamespace($namespace, true);
 
         if (! $this->isValidDefaultConfig($config)) {
             Log::warning('PID default config is invalid, falling back to catalog defaults', [
@@ -148,14 +152,41 @@ class ZonePidConfigService
      */
     public function getAllConfigs(int $zoneId): array
     {
-        $configs = ZonePidConfig::where('zone_id', $zoneId)->get();
         $result = [];
 
-        foreach ($configs as $config) {
-            $result[$config->type] = $config;
+        foreach (['ph', 'ec'] as $type) {
+            $config = $this->getConfig($zoneId, $type);
+            if ($config instanceof ZonePidConfig) {
+                $result[$type] = $config;
+            }
         }
 
         return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function makeTransientConfig(
+        int $zoneId,
+        string $type,
+        array $payload,
+        ?int $updatedBy = null,
+        mixed $updatedAt = null,
+        ?int $documentId = null,
+    ): ZonePidConfig
+    {
+        $config = new ZonePidConfig();
+        $config->forceFill([
+            'id' => $documentId,
+            'zone_id' => $zoneId,
+            'type' => $type,
+            'config' => $payload,
+            'updated_by' => $updatedBy,
+            'updated_at' => $updatedAt ?? now(),
+        ]);
+
+        return $config;
     }
 
     private function defaultNamespace(string $type): string

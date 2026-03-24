@@ -63,7 +63,7 @@ class StoreZoneCommandRequest extends FormRequest
                 if (array_key_exists('subsystems', $params)) {
                     $validator->errors()->add(
                         'params.subsystems',
-                        'The params.subsystems field is not allowed. Persist configuration via /api/zones/{zone}/automation-logic-profile.'
+                        'The params.subsystems field is not allowed. Persist configuration via /api/automation-configs/zone/{zone}/zone.logic_profile.'
                     );
                 }
             }

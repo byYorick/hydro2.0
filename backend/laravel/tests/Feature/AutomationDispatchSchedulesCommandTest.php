@@ -6,6 +6,7 @@ use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
 use App\Models\LaravelSchedulerActiveTask;
 use App\Models\Zone;
+use App\Services\AutomationConfigRegistry;
 use App\Services\EffectiveTargetsService;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
@@ -81,14 +82,17 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             'zone_id' => $zone->id,
             'status' => 'pending',
         ]);
-        $this->assertDatabaseHas('zone_correction_configs', [
-            'zone_id' => $zone->id,
-            'version' => 1,
+        $this->assertDatabaseHas('automation_config_documents', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
+            'source' => 'bootstrap',
         ]);
-        $this->assertDatabaseHas('zone_correction_config_versions', [
-            'zone_id' => $zone->id,
-            'version' => 1,
-            'change_type' => 'bootstrap',
+        $this->assertDatabaseHas('automation_config_versions', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
+            'source' => 'bootstrap',
         ]);
         $intentRow = DB::table('zone_automation_intents')
             ->where('zone_id', $zone->id)

@@ -12,6 +12,11 @@ import type {
   RelayAutotuneStatus,
 } from '@/types/PidConfig'
 
+const PID_NAMESPACE_MAP: Record<'ph' | 'ec', string> = {
+  ph: 'zone.pid.ph',
+  ec: 'zone.pid.ec',
+}
+
 /**
  * Composable для работы с PID конфигами
  */
@@ -29,14 +34,18 @@ export function usePidConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: PidConfigWithMeta }>(
-        `/zones/${zoneId}/pid-configs/${type}`
+      const response = await api.get<{ status: string; data: { payload: PidConfig } }>(
+        `/automation-configs/zone/${zoneId}/${PID_NAMESPACE_MAP[type]}`
       )
 
-      if (response.data.status === 'ok') {
-        return response.data.data
-      } else {
-        throw new Error('Failed to fetch PID config')
+      return {
+        id: null,
+        zone_id: zoneId,
+        type,
+        config: response.data.data.payload,
+        updated_by: null,
+        updated_at: null,
+        is_default: false,
       }
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
@@ -55,15 +64,12 @@ export function usePidConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: Record<'ph' | 'ec', PidConfigWithMeta> }>(
-        `/zones/${zoneId}/pid-configs`
-      )
+      const [ph, ec] = await Promise.all([
+        getPidConfig(zoneId, 'ph'),
+        getPidConfig(zoneId, 'ec'),
+      ])
 
-      if (response.data.status === 'ok') {
-        return response.data.data
-      } else {
-        throw new Error('Failed to fetch PID configs')
-      }
+      return { ph, ec }
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -85,15 +91,19 @@ export function usePidConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.put<{ status: string; data: PidConfigWithMeta }>(
-        `/zones/${zoneId}/pid-configs/${type}`,
-        { config }
+      const response = await api.put<{ status: string; data: { payload: PidConfig } }>(
+        `/automation-configs/zone/${zoneId}/${PID_NAMESPACE_MAP[type]}`,
+        { payload: config }
       )
 
-      if (response.data.status === 'ok') {
-        return response.data.data
-      } else {
-        throw new Error(response.data.status === 'error' ? 'Failed to update PID config' : 'Unknown error')
+      return {
+        id: null,
+        zone_id: zoneId,
+        type,
+        config: response.data.data.payload,
+        updated_by: null,
+        updated_at: null,
+        is_default: false,
       }
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')

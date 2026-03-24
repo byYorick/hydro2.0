@@ -5,7 +5,8 @@ namespace Tests\Feature;
 use App\Models\GrowCycle;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\ZoneAutomationLogicProfile;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\PythonBridgeService;
 use Mockery\MockInterface;
 use Tests\RefreshDatabase;
@@ -28,26 +29,21 @@ class ZoneCommandSystemTypeLockTest extends TestCase
             ],
         ]);
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => [
-                'ph' => [
-                    'enabled' => true,
-                    'targets' => ['target' => 5.8],
-                ],
-                'ec' => [
-                    'enabled' => true,
-                    'targets' => ['target' => 1.6],
-                ],
-                'irrigation' => [
-                    'enabled' => true,
-                    'targets' => [
-                        'interval_minutes' => 20,
-                        'duration_seconds' => 30,
-                        'system_type' => 'nft',
-                    ],
+        $this->storeWorkingLogicProfile($zone, [
+            'ph' => [
+                'enabled' => true,
+                'targets' => ['target' => 5.8],
+            ],
+            'ec' => [
+                'enabled' => true,
+                'targets' => ['target' => 1.6],
+            ],
+            'irrigation' => [
+                'enabled' => true,
+                'targets' => [
+                    'interval_minutes' => 20,
+                    'duration_seconds' => 30,
+                    'system_type' => 'nft',
                 ],
             ],
         ]);
@@ -81,26 +77,21 @@ class ZoneCommandSystemTypeLockTest extends TestCase
             ],
         ]);
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => [
-                'ph' => [
-                    'enabled' => true,
-                    'targets' => ['target' => 5.8],
-                ],
-                'ec' => [
-                    'enabled' => true,
-                    'targets' => ['target' => 1.6],
-                ],
-                'irrigation' => [
-                    'enabled' => true,
-                    'targets' => [
-                        'interval_minutes' => 20,
-                        'duration_seconds' => 30,
-                        'system_type' => 'drip',
-                    ],
+        $this->storeWorkingLogicProfile($zone, [
+            'ph' => [
+                'enabled' => true,
+                'targets' => ['target' => 5.8],
+            ],
+            'ec' => [
+                'enabled' => true,
+                'targets' => ['target' => 1.6],
+            ],
+            'irrigation' => [
+                'enabled' => true,
+                'targets' => [
+                    'interval_minutes' => 20,
+                    'duration_seconds' => 30,
+                    'system_type' => 'drip',
                 ],
             ],
         ]);
@@ -132,5 +123,27 @@ class ZoneCommandSystemTypeLockTest extends TestCase
                 'profile_mode' => $profileMode,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $subsystems
+     */
+    private function storeWorkingLogicProfile(Zone $zone, array $subsystems): void
+    {
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            [
+                'active_mode' => 'working',
+                'profiles' => [
+                    'working' => [
+                        'mode' => 'working',
+                        'is_active' => true,
+                        'subsystems' => $subsystems,
+                    ],
+                ],
+            ]
+        );
     }
 }

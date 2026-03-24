@@ -153,13 +153,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
    принимается решение `done / next dose / no-effect / exhausted`.
 
 Обязательные правила:
-- `transport_delay_sec` и `settle_sec` берутся из `zone_process_calibrations`;
+- `transport_delay_sec` и `settle_sec` берутся из authority-документов `zone.process_calibration.*`;
 - runtime phase нормализуется к canonical process-calibration key:
   `tank_filling -> solution_fill`,
   `prepare_recirculation -> tank_recirc`,
   `irrigating|irrig_recirc -> irrigation`;
 - если process calibration отсутствует, новый in-flow correction path идёт fail-closed;
-- `zone_correction_configs.resolved_config` считается полным runtime-контрактом:
+- `zone.correction.payload.resolved_config` считается полным runtime-контрактом:
   если обязательный correction/runtime/tolerance/controller parameter отсутствует,
   correction path идёт fail-closed и не добирает значение из seed/default или
   legacy `diagnostics.execution.*`;

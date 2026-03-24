@@ -4,6 +4,175 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useGrowthCycleWizard, type GrowthCycleWizardEmit } from '../useGrowthCycleWizard'
 import type { useApi } from '../useApi'
 
+const getDocumentMock = vi.hoisted(() => vi.fn())
+const updateDocumentMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/composables/useAutomationConfig', () => ({
+  useAutomationConfig: () => ({
+    getDocument: getDocumentMock,
+    updateDocument: updateDocumentMock,
+  }),
+}))
+
+function authorityDocument(namespace: string, payload: Record<string, unknown>, scopeType: 'system' | 'zone' = 'zone', scopeId = 7) {
+  return {
+    namespace,
+    scope_type: scopeType,
+    scope_id: scopeId,
+    schema_version: 1,
+    payload,
+    status: 'valid',
+    updated_at: '2026-03-24T10:00:00Z',
+    updated_by: 5,
+  }
+}
+
+function installAuthorityMocks() {
+  getDocumentMock.mockImplementation((scopeType: string, scopeId: number, namespace: string) => {
+    if (namespace === 'system.automation_defaults') {
+      return Promise.resolve(authorityDocument(namespace, {
+        climate_enabled: true,
+        climate_day_temp_c: 23,
+        climate_night_temp_c: 20,
+        climate_day_humidity_pct: 62,
+        climate_night_humidity_pct: 70,
+        climate_interval_min: 5,
+        climate_day_start_hhmm: '07:00',
+        climate_night_start_hhmm: '19:00',
+        climate_vent_min_pct: 15,
+        climate_vent_max_pct: 85,
+        climate_use_external_telemetry: true,
+        climate_outside_temp_min_c: 4,
+        climate_outside_temp_max_c: 34,
+        climate_outside_humidity_max_pct: 90,
+        climate_manual_override_enabled: true,
+        climate_manual_override_minutes: 30,
+        water_system_type: 'drip',
+        water_tanks_count: 2,
+        water_clean_tank_fill_l: 300,
+        water_nutrient_tank_target_l: 280,
+        water_irrigation_batch_l: 20,
+        water_interval_min: 30,
+        water_duration_sec: 120,
+        water_fill_temperature_c: 20,
+        water_fill_window_start_hhmm: '05:00',
+        water_fill_window_end_hhmm: '07:00',
+        water_target_ph: 5.8,
+        water_target_ec: 1.6,
+        water_ph_pct: 5,
+        water_ec_pct: 10,
+        water_valve_switching_enabled: true,
+        water_correction_during_irrigation: true,
+        water_drain_control_enabled: false,
+        water_drain_target_pct: 20,
+        water_diagnostics_enabled: true,
+        water_diagnostics_interval_min: 15,
+        water_cycle_start_workflow_enabled: true,
+        water_diagnostics_workflow: 'startup',
+        water_clean_tank_full_threshold: 0.95,
+        water_refill_duration_sec: 30,
+        water_refill_timeout_sec: 600,
+        water_startup_clean_fill_timeout_sec: 1200,
+        water_startup_solution_fill_timeout_sec: 1800,
+        water_startup_prepare_recirculation_timeout_sec: 1200,
+        water_startup_clean_fill_retry_cycles: 1,
+        water_startup_level_poll_interval_sec: 60,
+        water_startup_level_switch_on_threshold: 0.5,
+        water_startup_clean_max_sensor_label: 'level_clean_max',
+        water_startup_solution_max_sensor_label: 'level_solution_max',
+        water_irrigation_recovery_max_continue_attempts: 5,
+        water_irrigation_recovery_timeout_sec: 600,
+        water_irrigation_recovery_target_tolerance_ec_pct: 10,
+        water_irrigation_recovery_target_tolerance_ph_pct: 5,
+        water_irrigation_recovery_degraded_tolerance_ec_pct: 20,
+        water_irrigation_recovery_degraded_tolerance_ph_pct: 10,
+        water_prepare_tolerance_ec_pct: 25,
+        water_prepare_tolerance_ph_pct: 15,
+        water_correction_max_ec_attempts: 5,
+        water_correction_max_ph_attempts: 5,
+        water_correction_prepare_recirculation_max_attempts: 3,
+        water_correction_prepare_recirculation_max_correction_attempts: 20,
+        water_correction_stabilization_sec: 60,
+        water_two_tank_clean_fill_start_steps: 1,
+        water_two_tank_clean_fill_stop_steps: 1,
+        water_two_tank_solution_fill_start_steps: 3,
+        water_two_tank_solution_fill_stop_steps: 3,
+        water_two_tank_prepare_recirculation_start_steps: 3,
+        water_two_tank_prepare_recirculation_stop_steps: 3,
+        water_two_tank_irrigation_recovery_start_steps: 4,
+        water_two_tank_irrigation_recovery_stop_steps: 3,
+        water_refill_required_node_types_csv: 'irrig',
+        water_refill_preferred_channel: 'fill_valve',
+        water_solution_change_enabled: false,
+        water_solution_change_interval_min: 180,
+        water_solution_change_duration_sec: 120,
+        water_manual_irrigation_sec: 90,
+        lighting_enabled: true,
+        lighting_lux_day: 18000,
+        lighting_lux_night: 0,
+        lighting_hours_on: 16,
+        lighting_interval_min: 30,
+        lighting_schedule_start_hhmm: '06:00',
+        lighting_schedule_end_hhmm: '22:00',
+        lighting_manual_intensity_pct: 75,
+        lighting_manual_duration_hours: 4,
+      }, 'system', 0))
+    }
+
+    if (namespace === 'system.command_templates') {
+      return Promise.resolve(authorityDocument(namespace, {
+        clean_fill_start: [],
+        clean_fill_stop: [],
+        solution_fill_start: [],
+        solution_fill_stop: [],
+        prepare_recirculation_start: [],
+        prepare_recirculation_stop: [],
+        irrigation_recovery_start: [],
+        irrigation_recovery_stop: [],
+      }, 'system', 0))
+    }
+
+    if (namespace === 'zone.logic_profile') {
+      return Promise.resolve(authorityDocument(namespace, {
+        active_mode: 'setup',
+        profiles: {
+          setup: {
+            mode: 'setup',
+            is_active: true,
+            subsystems: {},
+            updated_at: '2026-03-24T10:00:00Z',
+          },
+        },
+      }, scopeType === 'zone' ? 'zone' : 'zone', scopeId))
+    }
+
+    return Promise.reject(new Error(`Unexpected authority namespace ${namespace}`))
+  })
+
+  updateDocumentMock.mockImplementation(async (_scopeType: string, scopeId: number, namespace: string, payload: Record<string, unknown>) =>
+    authorityDocument(namespace, payload, 'zone', scopeId)
+  )
+}
+
+function nodeResponseWithPump(nodeChannelId = 101) {
+  return {
+    data: {
+      status: 'ok',
+      data: [{
+        id: 12,
+        uid: 'mix-node-1',
+        channels: [{
+          id: nodeChannelId,
+          node_channel_id: nodeChannelId,
+          type: 'ACTUATOR',
+          channel: 'ph_down_pump',
+          actuator_type: 'ph_acid_pump',
+        }],
+      }],
+    },
+  }
+}
+
 function mountWizardHarness(options?: {
   show?: boolean
   zoneId?: number
@@ -90,7 +259,13 @@ afterEach(() => {
 })
 
 describe('useGrowthCycleWizard', () => {
+  afterEach(() => {
+    getDocumentMock.mockReset()
+    updateDocumentMock.mockReset()
+  })
+
   it('нормализует tanksCount и drain при переключении на drip', async () => {
+    installAuthorityMocks()
     const { wizard } = mountWizardHarness()
     const waterForm = wizard.waterForm.value
 
@@ -109,6 +284,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('нормализует diagnosticsWorkflow при смене топологии на 3 бака', async () => {
+    installAuthorityMocks()
     const { wizard } = mountWizardHarness()
     const waterForm = wizard.waterForm.value
 
@@ -121,6 +297,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('блокирует переход со шага автоматики при невалидных vent границах', async () => {
+    installAuthorityMocks()
     const { wizard, showToast } = mountWizardHarness()
     const currentStep = wizard.currentStep
     const climateForm = wizard.climateForm.value
@@ -138,6 +315,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('не даёт пройти шаг калибровки без загруженных насосов и явного skip', () => {
+    installAuthorityMocks()
     const { wizard } = mountWizardHarness()
 
     wizard.currentStep.value = 5
@@ -147,6 +325,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('не восстанавливает draft сразу на confirm и сбрасывает скрытый skip', async () => {
+    installAuthorityMocks()
     localStorage.setItem('growthCycleWizardDraft:zone-1', JSON.stringify({
       currentStep: 6,
       calibrationSkipped: true,
@@ -155,13 +334,6 @@ describe('useGrowthCycleWizard', () => {
       waterForm: { systemType: 'drip' },
       lightingForm: { enabled: false },
     }))
-
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      status: 404,
-      ok: false,
-      json: vi.fn(),
-    }))
-
     const { wizard } = mountWizardHarness({
       show: true,
       zoneId: 1,
@@ -181,6 +353,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('перед submit пытается загрузить насосы и не стартует цикл без калибровок', async () => {
+    installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
 
     wizard.currentStep.value = 6
@@ -201,6 +374,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('не запускает цикл, если readiness сообщает о несохранённых PID-конфигах', async () => {
+    installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
 
     wizard.currentStep.value = 6
@@ -249,22 +423,15 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('сохраняет automation profile и калибровки до старта цикла', async () => {
+    installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
     const callOrder: string[] = []
 
-    wizard.currentStep.value = 6
     wizard.form.value.zoneId = 7
+    await nextTick()
     wizard.form.value.startedAt = '2026-03-24T10:00'
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
-    wizard.zoneChannelsLoaded.value = true
-    wizard.form.value.calibrations = [{
-      node_channel_id: 101,
-      component: 'ph_down',
-      channel_label: 'pH Down',
-      ml_per_sec: 1.2,
-      skip: false,
-    }]
 
     vi.mocked(api.get).mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
       if (url === '/plants') {
@@ -273,6 +440,10 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/api/nodes?zone_id=7') {
+        return Promise.resolve(nodeResponseWithPump(101))
       }
 
       if (url === '/api/zones/7/health') {
@@ -293,13 +464,12 @@ describe('useGrowthCycleWizard', () => {
       return Promise.resolve({ data: { status: 'ok', data: [] }, config })
     })
 
+    updateDocumentMock.mockImplementation(async (_scopeType: string, scopeId: number, namespace: string, payload: Record<string, unknown>) => {
+      callOrder.push('automation-profile')
+      return authorityDocument(namespace, payload, 'zone', scopeId)
+    })
     vi.mocked(api.post).mockImplementation((url: string) => {
-      if (url === '/api/zones/7/automation-logic-profile') {
-        callOrder.push('automation-profile')
-        return Promise.resolve({ data: { status: 'ok' } })
-      }
-
-      if (url === '/api/zones/7/calibrate-pump') {
+      if (url.includes('/calibrate-pump')) {
         callOrder.push('pump-calibration')
         return Promise.resolve({ data: { status: 'ok' } })
       }
@@ -312,6 +482,13 @@ describe('useGrowthCycleWizard', () => {
       return Promise.resolve({ data: { status: 'ok' } })
     })
 
+    wizard.currentStep.value = 6
+    await flushPromises()
+    wizard.form.value.calibrations = wizard.form.value.calibrations.map((entry) => ({
+      ...entry,
+      ml_per_sec: 1.2,
+    }))
+
     await wizard.onSubmit()
 
     const automationIndex = callOrder.indexOf('automation-profile')
@@ -323,8 +500,9 @@ describe('useGrowthCycleWizard', () => {
     expect(calibrationIndex).toBeGreaterThan(automationIndex)
     expect(finalReadinessIndex).toBeGreaterThan(calibrationIndex)
     expect(growCycleIndex).toBeGreaterThan(finalReadinessIndex)
-    expect(api.post).toHaveBeenCalledWith('/api/zones/7/automation-logic-profile', expect.any(Object))
-    expect(api.post).toHaveBeenCalledWith('/api/zones/7/calibrate-pump', expect.objectContaining({
+    expect(updateDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.logic_profile', expect.any(Object))
+    const calibrationCall = vi.mocked(api.post).mock.calls.find(([url]) => typeof url === 'string' && url.includes('/calibrate-pump'))
+    expect(calibrationCall?.[1]).toEqual(expect.objectContaining({
       node_channel_id: 101,
       manual_override: true,
       skip_run: true,
@@ -342,21 +520,14 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('не стартует цикл, если сохранение калибровок завершилось ошибкой', async () => {
+    installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
 
-    wizard.currentStep.value = 6
     wizard.form.value.zoneId = 7
+    await nextTick()
     wizard.form.value.startedAt = '2026-03-24T10:00'
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
-    wizard.zoneChannelsLoaded.value = true
-    wizard.form.value.calibrations = [{
-      node_channel_id: 101,
-      component: 'ph_down',
-      channel_label: 'pH Down',
-      ml_per_sec: 1.2,
-      skip: false,
-    }]
 
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/plants') {
@@ -365,6 +536,10 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/api/nodes?zone_id=7') {
+        return Promise.resolve(nodeResponseWithPump(101))
       }
 
       if (url === '/api/zones/7/health') {
@@ -385,11 +560,7 @@ describe('useGrowthCycleWizard', () => {
     })
 
     vi.mocked(api.post).mockImplementation((url: string) => {
-      if (url === '/api/zones/7/automation-logic-profile') {
-        return Promise.resolve({ data: { status: 'ok' } })
-      }
-
-      if (url === '/api/zones/7/calibrate-pump') {
+      if (url.includes('/calibrate-pump')) {
         return Promise.reject(new Error('save calibration failed'))
       }
 
@@ -399,6 +570,13 @@ describe('useGrowthCycleWizard', () => {
 
       return Promise.resolve({ data: { status: 'ok' } })
     })
+
+    wizard.currentStep.value = 6
+    await flushPromises()
+    wizard.form.value.calibrations = wizard.form.value.calibrations.map((entry) => ({
+      ...entry,
+      ml_per_sec: 1.2,
+    }))
 
     await wizard.onSubmit()
 
@@ -412,12 +590,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('загружает все страницы рецептов для визарда', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      status: 404,
-      ok: false,
-      json: vi.fn(),
-    }))
-
+    installAuthorityMocks()
     const { wrapper, wizard, api } = mountWizardHarness({
       show: false,
       zoneId: 1,
@@ -489,6 +662,7 @@ describe('useGrowthCycleWizard', () => {
   })
 
   it('берет system_type из recipe phase и не подменяет drip на substrate_trays', async () => {
+    installAuthorityMocks()
     const { wizard, api } = mountWizardHarness()
 
     wizard.selectedRecipe.value = {

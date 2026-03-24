@@ -320,7 +320,7 @@ Planner:
 1. `zones`
 2. `grow_cycles`
 3. `grow_cycle_phases`
-4. `grow_cycle_overrides`
+4. `automation_effective_bundles`
 5. `zone_workflow_state`
 6. `telemetry_last`
 7. `nodes`
@@ -328,17 +328,17 @@ Planner:
 9. `channel_bindings`
 10. `pump_calibrations`
 11. `pid_state`
-12. `zone_pid_configs`
+12. `automation_config_documents`
 
 ### 5.3 Требования к read consistency
 
 1. `ZoneSnapshot` должен читаться в одной DB transaction.
 2. Runtime обязан использовать фиксированный порядок резолва runtime config:
-   `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles(active mode)`.
+   `phase snapshot -> cycle.phase_overrides -> cycle.manual_overrides -> zone.logic_profile(active mode)`.
 3. Если snapshot не может быть собран консистентно, task завершается fail-closed.
 4. Hardcoded default targets запрещены.
 5. Stale critical telemetry должна приводить к fail-closed.
-6. `zone_correction_configs.resolved_config` для AE3 correction runtime считается полным обязательным контрактом:
+6. `zone.correction.payload.resolved_config` для AE3 correction runtime считается полным обязательным контрактом:
    отсутствие required field в `runtime/timing/dosing/retry/tolerance/controllers/safety`
    должно приводить к fail-closed, без silent fallback на catalog defaults или legacy
    `diagnostics.execution.*`.

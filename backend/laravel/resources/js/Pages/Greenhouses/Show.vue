@@ -288,12 +288,20 @@ import ZoneCreateWizard from '@/Components/ZoneCreateWizard.vue'
 import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useSimpleModal } from '@/composables/useModal'
 import { useToast } from '@/composables/useToast'
+import {
+  asRecord,
+  GREENHOUSE_LOGIC_PROFILE_NAMESPACE,
+  payloadFromGreenhouseLogicDocument,
+  resolveGreenhouseProfileEntry,
+  toNodeIdArray,
+  type GreenhouseClimateBindingsState,
+} from '@/composables/greenhouseLogicProfileAuthority'
 import { applyAutomationFromRecipe, buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
 import { extractCollection } from '@/composables/setupWizardCollection'
 import { formatTime } from '@/utils/formatTime'
-import { extractData } from '@/utils/apiHelpers'
 import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
 import type { ClimateFormState, LightingFormState, WaterFormState, ZoneClimateFormState } from '@/composables/zoneAutomationTypes'
 import type { Zone } from '@/types'
@@ -335,26 +343,6 @@ interface PageProps {
   [key: string]: unknown
 }
 
-interface GreenhouseClimateBindingsState {
-  climate_sensors: number[]
-  weather_station_sensors: number[]
-  vent_actuators: number[]
-  fan_actuators: number[]
-}
-
-interface GreenhouseAutomationLogicProfileEntry {
-  mode: string
-  is_active: boolean
-  subsystems?: Record<string, unknown>
-  updated_at?: string | null
-}
-
-interface GreenhouseAutomationLogicProfilesResponse {
-  active_mode?: string | null
-  profiles?: Record<string, GreenhouseAutomationLogicProfileEntry>
-  bindings?: Partial<GreenhouseClimateBindingsState>
-}
-
 type MaintenanceTargetState = 'MAINTENANCE' | 'ACTIVE'
 type GreenhouseNodeOption = Device & { channels?: Array<{ channel?: string; type?: string }> }
 
@@ -376,6 +364,7 @@ const canOperateGreenhouse = computed(() => role.value === 'agronomist' || role.
 
 const { showToast } = useToast()
 const { api } = useApi(showToast)
+const automationConfig = useAutomationConfig(showToast)
 const { isOpen: showZoneWizard, open: openZoneWizard, close: closeZoneWizard } = useSimpleModal()
 
 const climateSubmitting = ref(false)
@@ -479,52 +468,6 @@ const lightingForm = reactive<LightingFormState>({
 
 const zoneClimateForm = reactive<ZoneClimateFormState>({ enabled: false })
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null
-  }
-
-  return value as Record<string, unknown>
-}
-
-function toNodeIdArray(value: unknown): number[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return Array.from(new Set(
-    value
-      .map((item) => Number(item))
-      .filter((item) => Number.isInteger(item) && item > 0)
-  ))
-}
-
-function resolveProfileEntry(data: GreenhouseAutomationLogicProfilesResponse | null): GreenhouseAutomationLogicProfileEntry | null {
-  const profiles = asRecord(data?.profiles ?? null)
-  if (!profiles) {
-    return null
-  }
-
-  const activeMode = typeof data?.active_mode === 'string' ? data.active_mode : null
-  const preferredModes = [activeMode, 'setup', 'working'].filter((value): value is string => Boolean(value))
-
-  for (const mode of preferredModes) {
-    const rawEntry = asRecord(profiles[mode])
-    if (!rawEntry) {
-      continue
-    }
-
-    return {
-      mode: typeof rawEntry.mode === 'string' ? rawEntry.mode : mode,
-      is_active: typeof rawEntry.is_active === 'boolean' ? rawEntry.is_active : mode === activeMode,
-      subsystems: asRecord(rawEntry.subsystems ?? null) ?? undefined,
-      updated_at: typeof rawEntry.updated_at === 'string' ? rawEntry.updated_at : null,
-    }
-  }
-
-  return null
-}
-
 function buildGreenhouseClimateSubsystem(): Record<string, unknown> {
   const payload = buildGrowthCycleConfigPayload(
     {
@@ -577,9 +520,9 @@ async function loadManagedGreenhouseNodes(): Promise<void> {
 
 async function loadGreenhouseClimate(): Promise<void> {
   try {
-    const response = await api.get(`/greenhouses/${props.greenhouse.id}/automation-logic-profile`)
-    const payload = extractData<GreenhouseAutomationLogicProfilesResponse>(response.data)
-    const entry = resolveProfileEntry(payload ?? null)
+    const document = await automationConfig.getDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
+    const payload = payloadFromGreenhouseLogicDocument(document)
+    const entry = resolveGreenhouseProfileEntry(payload ?? null)
     const bindings = asRecord(payload?.bindings ?? null)
 
     greenhouseClimateBindings.climate_sensors = toNodeIdArray(bindings?.climate_sensors)
@@ -636,14 +579,23 @@ async function saveGreenhouseClimate(): Promise<void> {
     }
 
     await api.post('/setup-wizard/apply-greenhouse-climate-bindings', bindingsPayload)
-    const response = await api.post(`/greenhouses/${props.greenhouse.id}/automation-logic-profile`, {
-      mode: 'setup',
-      activate: true,
-      subsystems: buildGreenhouseClimateSubsystem(),
+    const currentDocument = await automationConfig.getDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
+    const currentPayload = payloadFromGreenhouseLogicDocument(currentDocument)
+    const response = await automationConfig.updateDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE, {
+      active_mode: 'setup',
+      profiles: {
+        ...(currentPayload?.profiles ?? {}),
+        setup: {
+          mode: 'setup',
+          is_active: true,
+          subsystems: buildGreenhouseClimateSubsystem(),
+          updated_at: new Date().toISOString(),
+        },
+      },
     })
 
-    const payload = extractData<GreenhouseAutomationLogicProfilesResponse>(response.data)
-    const entry = resolveProfileEntry(payload ?? null)
+    const payload = payloadFromGreenhouseLogicDocument(response)
+    const entry = resolveGreenhouseProfileEntry(payload ?? null)
     lastClimateSavedAt.value = typeof entry?.updated_at === 'string' ? entry.updated_at : new Date().toISOString()
     showToast('Климат теплицы сохранён.', 'success', TOAST_TIMEOUT.NORMAL)
     await loadGreenhouseClimate()

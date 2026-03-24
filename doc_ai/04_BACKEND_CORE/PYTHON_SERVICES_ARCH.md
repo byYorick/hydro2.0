@@ -1,8 +1,8 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE2-Lite)
 
-**Версия:** 3.1  
-**Дата обновления:** 2026-03-12  
+**Версия:** 3.2  
+**Дата обновления:** 2026-03-24  
 **Статус:** Актуально (канонично для runtime)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -143,18 +143,26 @@ Payload-contract:
 
 ## 5. Источник runtime-данных (direct SQL read-model)
 
-AE2-Lite в runtime читает данные напрямую из PostgreSQL:
+AE runtime читает данные напрямую из PostgreSQL:
 - `zones`, `nodes`, `node_channels`, `infrastructure_instances`, `channel_bindings`;
 - `grow_cycles`, `grow_cycle_phases`;
-- `zone_automation_logic_profiles`;
+- `automation_effective_bundles`;
+- `automation_config_violations`;
 - `telemetry_last`, `telemetry_samples`;
 - `commands`, `zone_events`, `zone_workflow_state`, `pid_state`.
 
-Приоритет резолва runtime-настроек:
-`phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode)`.
+Канонический runtime-конфиг:
+- authority state живёт в `automation_config_documents`;
+- runtime не читает raw documents на hot path;
+- runtime использует compiled bundle по `grow_cycles.settings.bundle_revision`.
 
-Требование:
-- runtime path не зависит от `/api/internal/effective-targets/*`.
+Compile precedence:
+`system.* -> zone.* -> cycle.*`
+
+Требования:
+- runtime path не зависит от `/api/internal/effective-targets/*`;
+- runtime path не читает legacy automation config tables как source of truth;
+- missing bundle / revision mismatch обрабатываются fail-closed.
 
 ---
 
@@ -190,8 +198,9 @@ AE2-Lite в runtime читает данные напрямую из PostgreSQL:
 
 Изменения схемы только через Laravel migrations.
 
-Ключевые сущности AE2-Lite:
-- `zone_automation_logic_profiles.command_plans` (JSONB, явный приоритет);
+Ключевые сущности runtime:
+- `automation_effective_bundles` (compiled runtime config);
+- `automation_config_violations` (machine-readable config errors);
 - `zone_automation_intents` (scheduler -> automation контракт);
 - `zone_workflow_state` (workflow snapshot);
 - `zone_automation_state` (rich UI state snapshot);

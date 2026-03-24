@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
 use App\Models\Alert;
+use App\Models\AutomationConfigDocument;
 use App\Models\ChannelBinding;
 use App\Models\GrowCycle;
 use App\Models\DeviceNode;
@@ -13,9 +14,10 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use App\Models\ZonePidConfig;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycleService;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
@@ -130,10 +132,12 @@ class GrowCycleControllerTest extends TestCase
 
     private function createPidConfigs(Zone $zone): void
     {
-        ZonePidConfig::query()->create([
-            'zone_id' => $zone->id,
-            'type' => 'ph',
-            'config' => [
+        $documents = app(AutomationConfigDocumentService::class);
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            [
                 'target' => 5.8,
                 'dead_zone' => 0.05,
                 'close_zone' => 0.3,
@@ -145,13 +149,13 @@ class GrowCycleControllerTest extends TestCase
                 'max_output' => 20.0,
                 'min_interval_ms' => 90000,
                 'max_integral' => 20.0,
-            ],
-        ]);
-
-        ZonePidConfig::query()->create([
-            'zone_id' => $zone->id,
-            'type' => 'ec',
-            'config' => [
+            ]
+        );
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            [
                 'target' => 1.6,
                 'dead_zone' => 0.1,
                 'close_zone' => 0.5,
@@ -163,8 +167,20 @@ class GrowCycleControllerTest extends TestCase
                 'max_output' => 50.0,
                 'min_interval_ms' => 120000,
                 'max_integral' => 100.0,
-            ],
-        ]);
+            ]
+        );
+    }
+
+    private function pidAuthorityDocumentCount(Zone $zone): int
+    {
+        return AutomationConfigDocument::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zone->id)
+            ->whereIn('namespace', [
+                AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+                AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            ])
+            ->count();
     }
 
     #[Test]
@@ -216,9 +232,9 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_immediate_start_when_required_zone_pid_configs_are_not_saved(): void
+    public function it_rejects_immediate_start_when_required_zone_pid_authority_documents_are_not_saved(): void
     {
-        $this->assertSame(0, ZonePidConfig::query()->where('zone_id', $this->zone->id)->count());
+        $this->assertSame(0, $this->pidAuthorityDocumentCount($this->zone));
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
@@ -236,7 +252,7 @@ class GrowCycleControllerTest extends TestCase
         $errors = $response->json('readiness_errors', []);
         $this->assertContains('PID-настройки pH не сохранены для зоны', $errors);
         $this->assertContains('PID-настройки EC не сохранены для зоны', $errors);
-        $this->assertSame(0, ZonePidConfig::query()->where('zone_id', $this->zone->id)->count());
+        $this->assertSame(0, $this->pidAuthorityDocumentCount($this->zone));
     }
 
     #[Test]

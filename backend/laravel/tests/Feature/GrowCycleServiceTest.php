@@ -9,6 +9,8 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
@@ -224,14 +226,16 @@ class GrowCycleServiceTest extends TestCase
         $this->assertArrayNotHasKey('task_payload', $payload);
         $this->assertArrayNotHasKey('schedule_payload', $payload);
 
-        $this->assertDatabaseHas('zone_correction_configs', [
-            'zone_id' => $zone->id,
-            'version' => 1,
+        $this->assertDatabaseHas('automation_config_documents', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
         ]);
-        $this->assertDatabaseHas('zone_correction_config_versions', [
-            'zone_id' => $zone->id,
-            'version' => 1,
-            'change_type' => 'bootstrap',
+        $this->assertDatabaseHas('automation_config_versions', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
+            'source' => 'bootstrap',
         ]);
     }
 
@@ -251,7 +255,7 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig) extends GrowCycleService {
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
             protected function isGrowCycleStartDispatchEnabled(): bool
             {
                 return true;

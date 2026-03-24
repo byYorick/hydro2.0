@@ -3,9 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
-use App\Models\SystemAutomationSetting;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
+use App\Services\AutomationConfigDocumentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +33,7 @@ class ZonePumpCalibrationsController extends Controller
     public function index(Request $request, Zone $zone): JsonResponse
     {
         $this->authorizeZoneAccess($request, $zone);
-        $settings = SystemAutomationSetting::forNamespace('pump_calibration');
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('pump_calibration', true);
 
         $latestCalibrations = DB::table('pump_calibrations as p')
             ->select(
@@ -126,7 +126,7 @@ class ZonePumpCalibrationsController extends Controller
     public function update(Request $request, Zone $zone, int $channelId): JsonResponse
     {
         $this->authorizeZoneAccess($request, $zone);
-        $settings = SystemAutomationSetting::forNamespace('pump_calibration');
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('pump_calibration', true);
 
         $data = $request->validate([
             'ml_per_sec' => ['required', 'numeric', 'min:'.$settings['ml_per_sec_min'], 'max:'.$settings['ml_per_sec_max']],

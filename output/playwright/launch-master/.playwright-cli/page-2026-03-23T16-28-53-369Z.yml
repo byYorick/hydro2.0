@@ -1,0 +1,418 @@
+- generic [ref=e221]:
+  - complementary [ref=e222]:
+    - generic [ref=e226]:
+      - generic [ref=e227]: hydro 2.0
+      - generic [ref=e228]: agronomy deck
+    - navigation [ref=e229]:
+      - navigation [ref=e230]:
+        - link "Дашборд" [ref=e231] [cursor=pointer]:
+          - /url: /
+        - link "Центр циклов" [ref=e232] [cursor=pointer]:
+          - /url: /cycles
+        - link "Мастер запуска" [ref=e233] [cursor=pointer]:
+          - /url: /setup/wizard
+        - link "Зоны" [ref=e234] [cursor=pointer]:
+          - /url: /zones
+        - link "Теплицы" [ref=e235] [cursor=pointer]:
+          - /url: /greenhouses
+        - link "Рецепты" [ref=e236] [cursor=pointer]:
+          - /url: /recipes
+        - link "Удобрения" [ref=e237] [cursor=pointer]:
+          - /url: /nutrients
+        - link "Документация" [ref=e238] [cursor=pointer]:
+          - /url: /documentation/fertigation
+        - link "Культуры" [ref=e239] [cursor=pointer]:
+          - /url: /plants
+        - link "Устройства" [ref=e240] [cursor=pointer]:
+          - /url: /devices
+        - link "Алерты" [ref=e241] [cursor=pointer]:
+          - /url: /alerts
+        - link "Аналитика" [ref=e242] [cursor=pointer]:
+          - /url: /analytics
+        - link "Сервисы" [ref=e243] [cursor=pointer]:
+          - /url: /monitoring
+        - link "Настройки" [ref=e244] [cursor=pointer]:
+          - /url: /settings
+  - main [ref=e245]:
+    - generic [ref=e248]:
+      - generic [ref=e249]:
+        - generic [ref=e253]:
+          - generic [ref=e254]: Core
+          - generic [ref=e255]: Онлайн
+        - generic:
+          - generic: Core Service
+          - generic: "Статус: Онлайн"
+          - generic: "Обновлено: только что"
+      - generic [ref=e256]:
+        - generic [ref=e260]:
+          - generic [ref=e261]: Database
+          - generic [ref=e262]: Онлайн
+        - generic:
+          - generic: Database
+          - generic: "Статус: Онлайн"
+          - generic: "Обновлено: только что"
+      - generic [ref=e263]:
+        - generic [ref=e267]:
+          - generic [ref=e268]: WebSocket
+          - generic [ref=e269]: Подключено
+        - generic:
+          - generic: WebSocket Connection
+          - generic: "Статус: Подключено"
+          - generic:
+            - text: ✓ Соединение активно
+            - generic: "Socket ID: 41425416..."
+      - generic [ref=e270]:
+        - generic [ref=e274]:
+          - generic [ref=e275]: MQTT
+          - generic [ref=e276]: Онлайн
+        - generic:
+          - generic: MQTT Broker
+          - generic: "Статус: Онлайн"
+          - generic: ✓ Брокер доступен
+      - generic [ref=e277]:
+        - generic [ref=e278]:
+          - generic [ref=e279]: ⚠️
+          - generic [ref=e280]: "0"
+          - generic [ref=e281]: алерт.
+          - generic:
+            - generic: Активные алерты
+            - generic: "Всего: 0"
+            - generic: ✓ Нет активных алертов
+        - button "📊 Сервисы" [ref=e282] [cursor=pointer]:
+          - generic [ref=e283]: 📊
+          - generic [ref=e284]: Сервисы
+        - button "Переключить тему" [ref=e285] [cursor=pointer]:
+          - generic [ref=e288]: Светлая
+    - generic [ref=e289]:
+      - navigation "Breadcrumb" [ref=e291]:
+        - list [ref=e292]:
+          - listitem [ref=e293]:
+            - link "Панель управления" [ref=e294] [cursor=pointer]:
+              - /url: /
+            - img [ref=e295]
+          - listitem [ref=e297]:
+            - link "Настройка" [ref=e298] [cursor=pointer]:
+              - /url: /setup
+            - img [ref=e299]
+          - listitem [ref=e301]:
+            - generic [ref=e302]: Wizard
+      - generic [ref=e304]:
+        - generic [ref=e305]:
+          - heading "Мастер настройки системы" [level=1] [ref=e306]
+          - paragraph [ref=e307]: Пошаговая настройка теплицы, зоны, культуры, автоматики зоны и калибровки.
+          - generic [ref=e309]: "Прогресс: 33% (2/6)"
+        - generic [ref=e310]:
+          - heading "Сценарий запуска" [level=2] [ref=e311]
+          - list [ref=e312]:
+            - listitem [ref=e313]:
+              - generic [ref=e314]: 1. Теплица
+              - generic [ref=e315]: Теплица и общий климат
+            - listitem [ref=e316]:
+              - generic [ref=e317]: 2. Зона
+              - generic [ref=e318]: Рабочая зона выращивания
+            - listitem [ref=e319]:
+              - generic [ref=e320]: 3. Культура и рецепт
+              - generic [ref=e321]: Рецепт подтягивается по выбранной культуре
+            - listitem [ref=e322]:
+              - generic [ref=e323]: 4. Автоматика зоны
+              - generic [ref=e324]: Водный контур, климат и освещение как единые блоки
+            - listitem [ref=e325]:
+              - generic [ref=e326]: 5. Калибровка
+              - generic [ref=e327]: Сенсоры, насосы и process calibration
+            - listitem [ref=e328]:
+              - generic [ref=e329]: 6. Проверка и запуск
+              - generic [ref=e330]: Readiness и мастер цикла
+          - generic [ref=e331]:
+            - generic [ref=e332]:
+              - generic [ref=e333]: ✓
+              - text: Теплица
+            - generic [ref=e334]:
+              - generic [ref=e335]: ✓
+              - text: Климат теплицы
+            - generic [ref=e336]:
+              - generic [ref=e337]: ✓
+              - text: Зона
+            - generic [ref=e338]:
+              - generic [ref=e339]: •
+              - text: Культура и рецепт
+            - generic [ref=e340]:
+              - generic [ref=e341]: •
+              - text: Автоматика зоны
+            - generic [ref=e342]:
+              - generic [ref=e343]: •
+              - text: Калибровка
+        - generic [ref=e344]:
+          - generic [ref=e345]:
+            - heading "1. Теплица" [level=3] [ref=e346]
+            - generic [ref=e347]: Готово
+          - generic [ref=e348]:
+            - combobox [ref=e349]:
+              - option "Выберите теплицу"
+              - option "E2E Test Greenhouse (gh-test-1)" [selected]
+            - button "Создать" [ref=e350] [cursor=pointer]
+          - generic [ref=e402]: "Выбрано: E2E Test Greenhouse"
+          - generic [ref=e404]:
+            - generic [ref=e405]:
+              - heading "Климат теплицы" [level=4] [ref=e406]
+              - paragraph [ref=e407]: Автономная система климата теплицы. Runtime dispatcher пока в разработке, но профиль и bindings уже сохраняются.
+            - generic "Включает greenhouse-level climate profile и разрешает сохранять bindings климатических нод теплицы." [ref=e408]:
+              - checkbox "Управлять климатом" [ref=e409]
+              - text: Управлять климатом
+          - generic [ref=e410]: Климат теплицы ещё не сохранён
+        - generic [ref=e351]:
+          - generic [ref=e352]:
+            - heading "2. Зона" [level=3] [ref=e353]
+            - generic [ref=e354]: Готово
+          - generic [ref=e431]:
+            - combobox [ref=e432]:
+              - option "Выберите зону"
+              - option "E2E Automation Zone"
+              - option "Зона A" [selected]
+            - button "Создать" [ref=e433] [cursor=pointer]
+          - generic [ref=e434]: "Выбрано: Зона A"
+        - generic [ref=e358]:
+          - generic [ref=e359]:
+            - heading "3. Культура и рецепт" [level=3] [ref=e360]
+            - generic [ref=e361]: Не настроено
+          - generic [ref=e362]:
+            - combobox [ref=e363]:
+              - option "Выберите растение" [selected]
+              - option "E2E Test Plant"
+            - button "Создать" [ref=e364] [cursor=pointer]
+          - generic [ref=e365]:
+            - generic [ref=e366]: Рецепт по выбранной культуре
+            - generic [ref=e367]: Выберите или создайте культуру, чтобы автоматически назначить рецепт.
+        - generic [ref=e368]:
+          - generic [ref=e369]:
+            - heading "4. Автоматика зоны" [level=3] [ref=e370]
+            - generic [ref=e371]: Не настроено
+          - generic [ref=e435]: "Автоматика зоны собрана в три блока. `Водный контур` включает обязательные ноды и water runtime, `Климат зоны` и `Освещение` включаются switch-ом и раскрывают привязку нод вместе с логикой подсистемы."
+          - generic [ref=e436]:
+            - group [ref=e438]:
+              - 'generic "Водный контур Обязательные ноды зоны и вся логика water runtime: topology, irrigation и correction. Основной блок" [ref=e439] [cursor=pointer]':
+                - generic [ref=e440]:
+                  - heading "Водный контур" [level=4] [ref=e441]
+                  - paragraph [ref=e442]: "Обязательные ноды зоны и вся логика water runtime: topology, irrigation и correction."
+                - generic [ref=e443]: Основной блок
+              - generic [ref=e444]:
+                - generic [ref=e445]:
+                  - generic [ref=e446]:
+                    - generic [ref=e447]:
+                      - heading "Привязка обязательных нод" [level=5] [ref=e448]
+                      - paragraph [ref=e449]: Полив, pH и EC обязательны. Без них water runtime не считается готовым.
+                    - generic [ref=e450]: 3/3
+                  - generic [ref=e451]:
+                    - generic [ref=e452]:
+                      - generic "Основная нода полива зоны. Через неё runtime ожидает каналы запуска полива и refill/flow-команды для водного узла." [ref=e453]:
+                        - text: Узел полива
+                        - combobox "Узел полива" [ref=e454]:
+                          - option "Выберите узел полива"
+                          - 'option "Test: irrigation" [selected]'
+                      - generic [ref=e455]:
+                        - button "Привязка..." [disabled] [ref=e690]
+                        - button "Обновить" [disabled] [ref=e457]
+                    - generic [ref=e458]:
+                      - generic "Нода pH-коррекции. Должна содержать pH sensor и/или dosing channels для кислотной или щелочной коррекции." [ref=e459]:
+                        - text: Узел коррекции pH
+                        - combobox "Узел коррекции pH" [ref=e460]:
+                          - option "Выберите узел pH"
+                          - 'option "Test: pH correction" [selected]'
+                      - generic [ref=e461]:
+                        - button "Привязка..." [disabled] [ref=e691]
+                        - button "Обновить" [disabled] [ref=e463]
+                    - generic [ref=e464]:
+                      - generic "Нода EC-коррекции. Используется для EC sensor и дозирующих насосов удобрений в контуре correction runtime." [ref=e465]:
+                        - text: Узел коррекции EC
+                        - combobox "Узел коррекции EC" [ref=e466]:
+                          - option "Выберите узел EC"
+                          - 'option "Test: EC correction" [selected]'
+                      - generic [ref=e467]:
+                        - button "Привязка..." [disabled] [ref=e692]
+                        - button "Обновить" [disabled] [ref=e469]
+                - generic [ref=e470]:
+                  - generic "Базовая гидравлическая схема зоны. От system type зависят допустимые targets, tank layout и runtime command plans." [ref=e471]:
+                    - text: Тип системы
+                    - combobox "Тип системы" [ref=e472]:
+                      - option "drip" [selected]
+                      - option "substrate_trays"
+                      - option "nft (скоро)" [disabled]
+                  - generic "Количество баков в контуре. 2 бака включают чистую воду и раствор, 3 бака добавляют отдельный дренажный контур." [ref=e473]:
+                    - text: Количество баков
+                    - spinbutton "Количество баков" [disabled] [ref=e474]: "2"
+                  - generic "Включает контроль процента дренажа. Имеет смысл только для 3-баковой схемы с отдельным drain контуром." [ref=e475]:
+                    - text: Контроль дренажа
+                    - combobox "Контроль дренажа" [disabled] [ref=e476]:
+                      - option "Включен"
+                      - option "Выключен" [selected]
+                  - generic "Целевой процент дренажа относительно подачи. Используется как ориентир для режима с drain control." [ref=e477]:
+                    - text: Цель по дренажу (%)
+                    - spinbutton "Цель по дренажу (%)" [disabled] [ref=e478]: "20"
+                - group [ref=e479]:
+                  - generic "Расширенные настройки" [ref=e480] [cursor=pointer]
+                  - option "Включено" [selected]
+                  - option "Выключено"
+                - generic [ref=e481]:
+                  - heading "Полив" [level=5] [ref=e482]
+                  - paragraph [ref=e483]: Основной цикл полива, окна приготовления и рабочие объёмы контура.
+                  - generic [ref=e484]:
+                    - generic "Период между штатными поливами. Чем меньше интервал, тем чаще scheduler будет инициировать irrigation workflow." [ref=e485]:
+                      - text: Интервал полива (мин)
+                      - spinbutton "Интервал полива (мин)" [ref=e486]: "30"
+                    - generic "Длительность одного поливочного окна. Это прямое время работы исполнительного контура полива." [ref=e487]:
+                      - text: Длительность полива (сек)
+                      - spinbutton "Длительность полива (сек)" [ref=e488]: "120"
+                    - generic "Целевой объём одной порции полива. Используется как агрономический ориентир при настройке цикла." [ref=e489]:
+                      - text: Порция полива (л)
+                      - spinbutton "Порция полива (л)" [ref=e490]: "20"
+                    - generic "Желаемая температура воды на стадии заполнения бака. Нужна как target для приготовления раствора." [ref=e491]:
+                      - text: Температура набора (°C)
+                      - spinbutton "Температура набора (°C)" [ref=e492]: "20"
+                    - generic "Рабочий объём чистого бака, который runtime стремится набрать перед приготовлением раствора." [ref=e493]:
+                      - text: Объём чистого бака (л)
+                      - spinbutton "Объём чистого бака (л)" [ref=e494]: "300"
+                    - generic "Целевой объём бака раствора после подготовки nutrient mix." [ref=e495]:
+                      - text: Объём бака раствора (л)
+                      - spinbutton "Объём бака раствора (л)" [ref=e496]: "280"
+                    - generic "Начало разрешённого окна, в которое системе можно запускать набор воды." [ref=e497]:
+                      - text: "Окно набора воды: от"
+                      - 'textbox "Окно набора воды: от" [ref=e498]': 05:00
+                    - generic "Конец разрешённого окна набора воды. Вне окна runtime не должен инициировать fill workflow." [ref=e499]:
+                      - text: "Окно набора воды: до"
+                      - 'textbox "Окно набора воды: до" [ref=e500]': 07:00
+                - generic [ref=e501]:
+                  - heading "Раствор и коррекция" [level=5] [ref=e502]
+                  - paragraph [ref=e503]: Целевые параметры раствора и ограничения correction runtime.
+                  - generic [ref=e504]:
+                    - generic "Основной target pH для готового раствора. Используется при merge effective targets и correction runtime." [ref=e505]:
+                      - text: Целевой pH
+                      - spinbutton "Целевой pH" [ref=e506]: "5.8"
+                    - generic "Основной target EC для готового раствора. Используется planner-ом для nutrient correction." [ref=e507]:
+                      - text: Целевой EC
+                      - spinbutton "Целевой EC" [ref=e508]: "1.6"
+                    - generic "Разрешает correction runtime работать прямо во время irrigation path, а не только до него." [ref=e509]:
+                      - text: Коррекция во время полива
+                      - combobox "Коррекция во время полива" [ref=e510]:
+                        - option "Включена" [selected]
+                        - option "Выключена"
+                    - generic "Дополнительное время ожидания после дозы, чтобы измерения стабилизировались перед следующим решением." [ref=e511]:
+                      - text: Стабилизация после дозирования (сек)
+                      - spinbutton "Стабилизация после дозирования (сек)" [ref=e512]: "30"
+                  - group [ref=e513]:
+                    - generic "Расширенные настройки коррекции" [ref=e514] [cursor=pointer]
+                - generic [ref=e515]:
+                  - generic [ref=e516]: "Сохраняет блок целиком: обязательные ноды и логику водного контура."
+                  - button "Сохранить блок" [disabled] [ref=e517]
+            - group [ref=e519]:
+              - generic "Освещение Опциональная подсистема досветки для этой зоны. Опционально" [ref=e520] [cursor=pointer]:
+                - generic [ref=e521]:
+                  - heading "Освещение" [level=4] [ref=e522]
+                  - paragraph [ref=e523]: Опциональная подсистема досветки для этой зоны.
+                - generic [ref=e524]: Опционально
+            - group [ref=e526]:
+              - generic "Климат зоны Отдельная зональная подсистема для CO2 и прикорневой вентиляции. Опционально" [ref=e527] [cursor=pointer]:
+                - generic [ref=e528]:
+                  - heading "Климат зоны" [level=4] [ref=e529]
+                  - paragraph [ref=e530]: Отдельная зональная подсистема для CO2 и прикорневой вентиляции.
+                - generic [ref=e531]: Опционально
+          - generic [ref=e532]:
+            - generic [ref=e533]: "Ожидается нод: 3"
+            - generic [ref=e618]: Привязка нод ещё не подтверждена
+            - button "Обновить ноды" [ref=e535] [cursor=pointer]
+          - generic [ref=e536]: Профиль автоматики зоны ещё не применён
+        - generic [ref=e373]:
+          - generic [ref=e374]:
+            - heading "5. Калибровка" [level=3] [ref=e375]
+            - generic [ref=e376]: Ожидает автоматику
+          - generic [ref=e537]: "Сначала сохраните автоматику зоны на шаге 4. После этого шаг 5 проходится последовательно: sensor calibration, pump calibration и process calibration. Финальная readiness-проверка и запуск объединены в шаге 6."
+        - generic [ref=e378]:
+          - generic [ref=e379]:
+            - heading "6. Проверка и запуск" [level=3] [ref=e380]
+            - generic [ref=e381]: Есть незавершённые шаги
+          - generic [ref=e538]: "Финальный шаг: сначала проверьте correction runtime readiness, затем запускайте цикл. Если есть блокеры, используйте ссылки карточки, чтобы вернуться к нужной настройке."
+          - generic [ref=e540]:
+            - generic [ref=e541]:
+              - generic [ref=e542]:
+                - generic [ref=e543]: Готовность correction runtime
+                - generic [ref=e544]: Агрегированная проверка process calibration, калибровок дозирующих насосов и сохранённых PID-конфигов зоны для in-flow correction.
+              - generic [ref=e545]: Блокировано
+            - generic [ref=e546]:
+              - generic [ref=e547]:
+                - generic [ref=e548]: Есть обязательные runtime-контракты, которые ещё не сохранены.
+                - generic [ref=e549]: "process calibration: Наполнение, Рециркуляция, Полив. PID: PID pH, PID EC. Сначала сохраните отсутствующие настройки, затем проверяйте correction cycle."
+                - generic [ref=e550]:
+                  - button "Перейти к калибровке процесса" [ref=e551] [cursor=pointer]
+                  - button "Открыть калибровку насосов" [ref=e552] [cursor=pointer]
+                  - button "Открыть PID-настройки" [ref=e553] [cursor=pointer]
+              - generic [ref=e554]:
+                - generic [ref=e555]:
+                  - generic [ref=e556]: Калибровка процесса
+                  - generic [ref=e557]:
+                    - generic [ref=e558]:
+                      - generic [ref=e559]: Наполнение
+                      - generic [ref=e560]: Блокировано
+                    - generic [ref=e561]: Для этой фазы не заданы ни отдельная, ни generic-калибровка процесса, поэтому correction runtime не должен дозировать.
+                  - generic [ref=e562]:
+                    - generic [ref=e563]:
+                      - generic [ref=e564]: Рециркуляция
+                      - generic [ref=e565]: Блокировано
+                    - generic [ref=e566]: Для этой фазы не заданы ни отдельная, ни generic-калибровка процесса, поэтому correction runtime не должен дозировать.
+                  - generic [ref=e567]:
+                    - generic [ref=e568]:
+                      - generic [ref=e569]: Полив
+                      - generic [ref=e570]: Блокировано
+                    - generic [ref=e571]: Для этой фазы не заданы ни отдельная, ни generic-калибровка процесса, поэтому correction runtime не должен дозировать.
+                - generic [ref=e572]:
+                  - generic [ref=e573]: Калибровка насосов
+                  - generic [ref=e574]:
+                    - generic [ref=e575]:
+                      - generic [ref=e576]: Контур дозирования pH
+                      - generic [ref=e577]: Нужна калибровка
+                    - generic [ref=e578]: "Не хватает калибровки для: насос pH кислоты, насос pH щёлочи."
+                  - generic [ref=e579]:
+                    - generic [ref=e580]:
+                      - generic [ref=e581]: Контур дозирования EC
+                      - generic [ref=e582]: Нужна калибровка
+                    - generic [ref=e583]: "Не хватает калибровки для: насос EC NPK, насос EC Calcium, насос EC Magnesium, насос EC Micro."
+                - generic [ref=e584]:
+                  - generic [ref=e585]: PID-конфиги зоны
+                  - generic [ref=e586]:
+                    - generic [ref=e587]:
+                      - generic [ref=e588]: PID pH
+                      - generic [ref=e589]: Нужно сохранить
+                    - generic [ref=e590]: Сейчас доступен только системный default для редактирования. Откройте PID-форму и явно сохраните конфиг зоны.
+                  - generic [ref=e591]:
+                    - generic [ref=e592]:
+                      - generic [ref=e593]: PID EC
+                      - generic [ref=e594]: Нужно сохранить
+                    - generic [ref=e595]: Сейчас доступен только системный default для редактирования. Откройте PID-форму и явно сохраните конфиг зоны.
+          - generic [ref=e383]:
+            - button "Открыть мастер запуска цикла" [disabled] [ref=e384]
+            - link "Перейти к зоне" [ref=e596] [cursor=pointer]:
+              - /url: /zones/2
+          - generic [ref=e385]: "Топология воды: 2 бака: чистая вода + готовый раствор"
+          - generic [ref=e597]:
+            - generic [ref=e598]: "До запуска нужно закрыть обязательные пункты:"
+            - list [ref=e599]:
+              - listitem [ref=e600]: Нет привязанных нод в зоне
+              - listitem [ref=e601]: Основная помпа не привязана к каналу
+              - listitem [ref=e602]: Дренаж не привязан к каналу
+              - listitem [ref=e603]: PID-настройки pH не сохранены для зоны
+              - listitem [ref=e604]: PID-настройки EC не сохранены для зоны
+    - generic:
+      - generic [ref=e695]:
+        - img [ref=e697]
+        - paragraph [ref=e700]: Отправляем конфиг на выбранные ноды...
+        - button [ref=e701] [cursor=pointer]:
+          - img [ref=e702]
+      - generic [ref=e708]:
+        - img [ref=e710]
+        - paragraph [ref=e713]: Нода "nd-test-ec-1" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...
+        - button [ref=e714] [cursor=pointer]:
+          - img [ref=e715]
+    - button "? Агроном" [ref=e388] [cursor=pointer]:
+      - generic [ref=e389]:
+        - generic [ref=e390]: "?"
+        - generic [ref=e392]: Агроном
+        - img [ref=e393]
+  - complementary [ref=e395]:
+    - generic [ref=e397]: события

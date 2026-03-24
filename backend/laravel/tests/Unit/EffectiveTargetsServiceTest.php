@@ -4,13 +4,13 @@ namespace Tests\Unit;
 
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
-use App\Models\GrowCycleOverride;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\NutrientProduct;
 use App\Models\Zone;
-use App\Models\ZoneAutomationLogicProfile;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\EffectiveTargetsService;
 use App\Enums\GrowCycleStatus;
 use Tests\RefreshDatabase;
@@ -143,15 +143,14 @@ class EffectiveTargetsServiceTest extends TestCase
         $cycle->update(['current_phase_id' => $snapshotPhase->id]);
 
         // Создаем override для pH (используем точечную нотацию для вложенных параметров)
-        GrowCycleOverride::factory()->create([
-            'grow_cycle_id' => $cycle->id,
+        $this->storeManualOverrides($cycle->id, [[
             'parameter' => 'ph.target',
             'value' => '6.5',
             'value_type' => 'decimal',
             'is_active' => true,
-            'applies_from' => now()->subDay(),
+            'applies_from' => now()->subDay()->toIso8601String(),
             'applies_until' => null,
-        ]);
+        ]]);
 
         $result = $this->service->getEffectiveTargets($cycle->id);
 
@@ -319,11 +318,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'status' => GrowCycleStatus::RUNNING,
         ]);
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => [
+        $this->storeZoneLogicProfile($zone->id, 'working', [
                 'ph' => [
                     'enabled' => true,
                     'execution' => [
@@ -396,8 +391,7 @@ class EffectiveTargetsServiceTest extends TestCase
                         'duration_seconds' => 120,
                     ],
                 ],
-            ],
-        ]);
+        ], true);
 
         $snapshotPhase = GrowCyclePhase::factory()->create([
             'grow_cycle_id' => $cycle->id,
@@ -551,11 +545,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'status' => GrowCycleStatus::RUNNING,
         ]);
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => false,
-            'subsystems' => [
+        $this->storeZoneLogicProfile($zone->id, 'working', [
                 'ph' => [
                     'enabled' => true,
                     'execution' => [
@@ -575,8 +565,7 @@ class EffectiveTargetsServiceTest extends TestCase
                         'duration_seconds' => 15,
                     ],
                 ],
-            ],
-        ]);
+        ], false);
 
         $snapshotPhase = GrowCyclePhase::factory()->create([
             'grow_cycle_id' => $cycle->id,
@@ -622,19 +611,14 @@ class EffectiveTargetsServiceTest extends TestCase
             'status' => GrowCycleStatus::RUNNING,
         ]);
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => [
+        $this->storeZoneLogicProfile($zone->id, 'working', [
                 'lighting' => [
                     'enabled' => true,
                     'execution' => [
                         'force_skip' => false,
                     ],
                 ],
-            ],
-        ]);
+        ], true);
 
         $snapshotPhase = GrowCyclePhase::factory()->create([
             'grow_cycle_id' => $cycle->id,
@@ -757,5 +741,58 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertEquals('Haifa', $result['targets']['nutrition']['components']['micro']['manufacturer']);
         $this->assertEquals(12, $result['targets']['nutrition']['dose_delay_sec']);
         $this->assertEquals(0.07, $result['targets']['nutrition']['ec_stop_tolerance']);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $overrides
+     */
+    private function storeManualOverrides(int $growCycleId, array $overrides): void
+    {
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_CYCLE_MANUAL_OVERRIDES,
+            AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+            $growCycleId,
+            $overrides,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $subsystems
+     */
+    private function storeZoneLogicProfile(int $zoneId, string $mode, array $subsystems, bool $active): void
+    {
+        /** @var AutomationConfigDocumentService $documents */
+        $documents = app(AutomationConfigDocumentService::class);
+        $payload = $documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            true
+        );
+        $profiles = is_array($payload['profiles'] ?? null) ? $payload['profiles'] : [];
+        $profiles[$mode] = [
+            'mode' => $mode,
+            'is_active' => $active,
+            'subsystems' => $subsystems,
+        ];
+
+        if ($active) {
+            foreach ($profiles as $profileMode => &$profilePayload) {
+                if ($profileMode !== $mode && is_array($profilePayload)) {
+                    $profilePayload['is_active'] = false;
+                }
+            }
+            unset($profilePayload);
+        }
+
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            [
+                'active_mode' => $active ? $mode : ($payload['active_mode'] ?? null),
+                'profiles' => $profiles,
+            ],
+        );
     }
 }

@@ -125,6 +125,7 @@ class ZoneService
         if ($zoneId <= 0) {
             return;
         }
+        app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
         app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
     }
 

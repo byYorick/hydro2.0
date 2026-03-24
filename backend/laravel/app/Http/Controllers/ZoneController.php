@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\NodeChannel;
-use App\Models\SystemAutomationSetting;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
 use App\Services\EffectiveTargetsService;
 use App\Services\ZoneDataService;
 use App\Services\ZoneLifecycleService;
@@ -362,7 +362,7 @@ class ZoneController extends Controller
     {
         $this->authorizeZoneAccess($request->user(), $zone);
 
-        $settings = SystemAutomationSetting::forNamespace('pump_calibration');
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('pump_calibration', true);
         $durationMinSec = max(1, (int) ($settings['calibration_duration_min_sec'] ?? 1));
         $durationMaxSec = max($durationMinSec, (int) ($settings['calibration_duration_max_sec'] ?? 120));
 

@@ -208,6 +208,13 @@
 import { computed, onMounted, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Card from '@/Components/Card.vue'
+import {
+  documentToZoneProcessCalibration,
+  isSavedProcessCalibration,
+  PROCESS_CALIBRATION_MODES,
+  processCalibrationNamespace,
+} from '@/composables/processCalibrationAuthority'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useApi } from '@/composables/useApi'
 import { usePidConfig } from '@/composables/usePidConfig'
 import type { PidConfigWithMeta, PumpCalibration } from '@/types/PidConfig'
@@ -274,6 +281,7 @@ const emit = defineEmits<{
 }>()
 
 const { api } = useApi()
+const automationConfig = useAutomationConfig()
 const { getAllPidConfigs, getPumpCalibrations } = usePidConfig()
 
 const loading = ref(true)
@@ -335,7 +343,7 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
 
   return modes.map((mode) => {
     const specific = byMode.get(mode)
-    if (specific) {
+    if (isSavedProcessCalibration(specific)) {
       return {
         mode,
         label: phaseLabels[mode],
@@ -346,7 +354,7 @@ const phaseCoverage = computed<PhaseCoverageItem[]>(() => {
       }
     }
 
-    if (generic) {
+    if (isSavedProcessCalibration(generic)) {
       return {
         mode,
         label: phaseLabels[mode],
@@ -378,7 +386,7 @@ const pidConfigStatuses = computed<PidConfigStatusItem[]>(() => {
       label: pidTypeLabels[type],
       ready,
       message: ready
-        ? 'Конфиг сохранён в zone_pid_configs и будет использован automation-engine.'
+        ? 'Зонный PID-конфиг сохранён в authority-документе и будет использован automation-engine.'
         : 'Сейчас доступен только системный default для редактирования. Откройте PID-форму и явно сохраните конфиг зоны.',
     }
   })
@@ -624,8 +632,12 @@ async function load(): Promise<void> {
   loading.value = true
 
   try {
-    const [processResponse, pumps, allPidConfigs, eventsResponse] = await Promise.all([
-      api.get<ApiResponse<ZoneProcessCalibration[]>>(`/api/zones/${props.zoneId}/process-calibrations`),
+    const [processDocuments, pumps, allPidConfigs, eventsResponse] = await Promise.all([
+      Promise.all(
+        PROCESS_CALIBRATION_MODES.map((mode) =>
+          automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, processCalibrationNamespace(mode))
+        )
+      ),
       getPumpCalibrations(props.zoneId),
       getAllPidConfigs(props.zoneId),
       api.get<ApiResponse<ZoneApiEvent[]>>(`/api/zones/${props.zoneId}/events`, {
@@ -635,7 +647,9 @@ async function load(): Promise<void> {
       }),
     ])
 
-    processCalibrations.value = Array.isArray(processResponse.data.data) ? processResponse.data.data : []
+    processCalibrations.value = PROCESS_CALIBRATION_MODES.map((mode, index) =>
+      documentToZoneProcessCalibration(props.zoneId, mode, processDocuments[index])
+    )
     pumpCalibrations.value = Array.isArray(pumps) ? pumps : []
     pidConfigs.value = allPidConfigs
     runtimeEvents.value = Array.isArray(eventsResponse.data.data)

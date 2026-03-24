@@ -142,10 +142,9 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import { useApi } from '@/composables/useApi'
-import { usePageProp } from '@/composables/usePageProps'
 import { usePidConfig } from '@/composables/usePidConfig'
+import { usePumpCalibrationSettings } from '@/composables/usePumpCalibrationSettings'
 import type { PumpCalibration } from '@/types/PidConfig'
-import type { PumpCalibrationSettings } from '@/types/SystemSettings'
 
 interface ZoneApiEvent {
   event_id?: number
@@ -185,26 +184,7 @@ const historyEvents = ref<PumpCalibrationHistoryItem[]>([])
 
 const { api } = useApi()
 const { getPumpCalibrations } = usePidConfig()
-const settings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
-
-const DEFAULT_PUMP_SETTINGS: PumpCalibrationSettings = {
-  ml_per_sec_min: 0.001,
-  ml_per_sec_max: 20,
-  min_dose_ms: 50,
-  calibration_duration_min_sec: 10,
-  calibration_duration_max_sec: 120,
-  quality_score_basic: 70,
-  quality_score_with_k: 85,
-  quality_score_legacy: 60,
-  age_warning_days: 30,
-  age_critical_days: 60,
-  default_run_duration_sec: 30,
-}
-
-const pumpSettings = computed<PumpCalibrationSettings>(() => ({
-  ...DEFAULT_PUMP_SETTINGS,
-  ...(settings.value ?? {}),
-}))
+const pumpSettings = usePumpCalibrationSettings()
 
 const hasUncalibrated = computed(() => calibrations.value.some((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0))
 const uncalibratedCount = computed(() => calibrations.value.filter((pump) => !pump.ml_per_sec || pump.ml_per_sec <= 0).length)

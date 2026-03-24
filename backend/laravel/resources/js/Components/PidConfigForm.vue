@@ -58,7 +58,7 @@
             : 'text-[color:var(--badge-warning-text)]'"
         >
           <template v-if="allPidConfigsSaved">
-            Оба PID-конфига сохранены в `zone_pid_configs`.
+            Оба PID-конфига сохранены в authority-документах зоны.
           </template>
           <template v-else>
             Системные defaults подставляются только для редактирования. Для запуска цикла нужно явно сохранить и `pH`, и `EC`.

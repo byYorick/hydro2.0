@@ -149,7 +149,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 2. Агроном создаёт рецепт с ревизиями и запускает цикл выращивания (Wizard).
 3. Backend сохраняет конфигурацию в PostgreSQL + создаёт снапшоты фаз (`GrowCyclePhase`).
 4. Python-сервис (AE2-Lite) собирает effective runtime-цели напрямую из БД:
- - приоритет: `phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles`;
+ - приоритет: `phase snapshot -> cycle.phase_overrides -> cycle.manual_overrides -> zone.logic_profile(active_mode)`;
  - без runtime HTTP-запросов к Laravel internal API.
 5. Python-сервис синхронизирует NodeConfig с узлами:
  - через MQTT-команды и/или REST provisioning (см. `NODE_LIFECYCLE_AND_PROVISIONING.md`).

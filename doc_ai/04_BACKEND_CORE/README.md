@@ -9,6 +9,9 @@ Breaking-change: несовместимые изменения в защищен
 Канонический документ по AE3:
 - `ae3lite.md`
 
+Канонический документ по automation/runtime authority:
+- `AUTOMATION_CONFIG_AUTHORITY.md`
+
 ---
 
 ## 📋 Документы раздела
@@ -22,6 +25,20 @@ Breaking-change: несовместимые изменения в защищен
 - Основные модули
 - Взаимодействие с Python-сервисом
 - Интеграция с фронтендом
+
+#### [AUTOMATION_CONFIG_AUTHORITY.md](AUTOMATION_CONFIG_AUTHORITY.md)
+**Единый authority automation/runtime-конфигов**
+- Namespace map
+- Documents / bundles / violations / presets
+- Unified API
+- Runtime read-path
+
+#### [AUTOMATION_CONFIG_AUTHORITY_TODO.md](AUTOMATION_CONFIG_AUTHORITY_TODO.md)
+**Что ещё недоделано после cutover**
+- Cleanup legacy stack
+- Остатки тестов
+- Остатки документации
+- Порядок добивки
 
 #### [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
 **Архитектура Python-сервисов**

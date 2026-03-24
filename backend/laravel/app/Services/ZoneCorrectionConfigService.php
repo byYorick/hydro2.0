@@ -2,62 +2,48 @@
 
 namespace App\Services;
 
-use App\Models\SystemAutomationSetting;
+use App\Models\AutomationConfigPreset;
+use App\Models\AutomationConfigVersion;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneCorrectionConfig;
 use App\Models\ZoneCorrectionConfigVersion;
-use App\Models\ZoneCorrectionPreset;
 use App\Models\ZoneEvent;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class ZoneCorrectionConfigService
 {
+    public function __construct(
+        private readonly AutomationConfigDocumentService $documents,
+        private readonly AutomationConfigPresetService $presets,
+    ) {
+    }
+
     public function getOrCreateForZone(Zone|int $zone): ZoneCorrectionConfig
     {
         $zoneId = $zone instanceof Zone ? $zone->id : (int) $zone;
+        $this->documents->ensureZoneDefaults($zoneId);
+        $document = $this->documents->getDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            true
+        );
 
-        $config = ZoneCorrectionConfig::query()
-            ->with(['preset', 'updatedBy'])
-            ->where('zone_id', $zoneId)
-            ->first();
-
-        if ($config) {
-            return $config;
-        }
-
-        return DB::transaction(function () use ($zoneId) {
-            $existing = ZoneCorrectionConfig::query()->where('zone_id', $zoneId)->first();
-            if ($existing) {
-                return $existing->loadMissing(['preset', 'updatedBy']);
-            }
-
-            $resolved = $this->buildResolvedConfig(
-                preset: null,
-                baseConfig: [],
-                phaseOverrides: [],
-            );
-            $created = ZoneCorrectionConfig::query()->create([
-                'zone_id' => $zoneId,
-                'preset_id' => null,
-                'base_config' => [],
-                'phase_overrides' => [],
-                'resolved_config' => $resolved,
-                'version' => 1,
-                'updated_by' => null,
-            ]);
-
-            $this->recordVersion($created, changedBy: null, changeType: 'bootstrap');
-
-            return $created->loadMissing(['preset', 'updatedBy']);
-        });
+        return $this->makeTransientConfig(
+            $zoneId,
+            is_array($document?->payload) ? $document->payload : [],
+            $document?->updated_by,
+            $document?->updated_at,
+            $this->latestVersionNumber($zoneId),
+            $document?->id
+        );
     }
 
     public function getResponsePayload(Zone|int $zone): array
     {
         $config = $this->getOrCreateForZone($zone);
-        $pumpDefaults = SystemAutomationSetting::forNamespace('pump_calibration');
+        $pumpDefaults = $this->documents->getSystemPayloadByLegacyNamespace('pump_calibration', true);
         $pumpOverride = $this->extractPumpCalibrationOverride($config->base_config ?? []);
         $resolvedConfig = $config->resolved_config;
         if (! is_array($resolvedConfig) || array_is_list($resolvedConfig)) {
@@ -95,23 +81,30 @@ class ZoneCorrectionConfigService
     {
         $zoneId = $zone instanceof Zone ? $zone->id : (int) $zone;
 
-        return ZoneCorrectionConfigVersion::query()
-            ->with(['preset', 'changedBy'])
-            ->where('zone_id', $zoneId)
-            ->orderByDesc('version')
+        return AutomationConfigVersion::query()
+            ->with('changedBy')
+            ->where('namespace', AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION)
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zoneId)
             ->orderByDesc('id')
             ->get()
-            ->map(fn (ZoneCorrectionConfigVersion $version) => [
-                'id' => $version->id,
-                'version' => $version->version,
-                'change_type' => $version->change_type,
-                'preset' => $version->preset ? $this->serializePreset($version->preset) : null,
-                'changed_by' => $version->changed_by,
-                'changed_at' => optional($version->changed_at)->toISOString(),
-                'base_config' => $version->base_config ?? [],
-                'phase_overrides' => $version->phase_overrides ?? [],
-                'resolved_config' => $version->resolved_config ?? [],
-            ])
+            ->map(function (AutomationConfigVersion $version): array {
+                $payload = is_array($version->payload) ? $version->payload : [];
+                $presetId = isset($payload['preset_id']) ? (int) $payload['preset_id'] : null;
+                $preset = $presetId ? $this->findCorrectionPreset($presetId) : null;
+
+                return [
+                    'id' => $version->id,
+                    'version' => (int) $version->id,
+                    'change_type' => (string) ($version->source ?? 'updated'),
+                    'preset' => $preset ? $this->serializePreset($preset) : null,
+                    'changed_by' => $version->changed_by,
+                    'changed_at' => optional($version->changed_at)->toISOString(),
+                    'base_config' => is_array($payload['base_config'] ?? null) ? $payload['base_config'] : [],
+                    'phase_overrides' => is_array($payload['phase_overrides'] ?? null) ? $payload['phase_overrides'] : [],
+                    'resolved_config' => is_array($payload['resolved_config'] ?? null) ? $payload['resolved_config'] : [],
+                ];
+            })
             ->all();
     }
 
@@ -128,17 +121,14 @@ class ZoneCorrectionConfigService
 
         $preset = null;
         if ($presetId !== null) {
-            $preset = ZoneCorrectionPreset::query()
-                ->where('id', (int) $presetId)
-                ->where('is_active', true)
-                ->firstOrFail();
+            $preset = $this->presets->findOrFail((int) $presetId, AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION);
         }
 
-        return DB::transaction(function () use ($zoneId, $preset, $baseConfig, $phaseOverrides, $userId) {
-            $pumpDefaults = SystemAutomationSetting::forNamespace('pump_calibration');
+        return DB::transaction(function () use ($zoneId, $preset, $baseConfig, $phaseOverrides, $userId): ZoneCorrectionConfig {
+            $pumpDefaults = $this->documents->getSystemPayloadByLegacyNamespace('pump_calibration', true);
             [$baseConfigWithoutPump, $pumpOverride] = $this->splitPumpCalibrationOverride($baseConfig);
             SystemAutomationSettingsCatalog::validate('pump_calibration', $pumpOverride, true);
-            [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->config);
+            [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->payload);
             $presetBase = is_array($presetBaseConfig) && ! array_is_list($presetBaseConfig)
                 ? $presetBaseConfig
                 : [];
@@ -156,8 +146,6 @@ class ZoneCorrectionConfigService
                 phaseOverrides: $phaseOverrides,
             );
 
-            $config = $this->getOrCreateForZone($zoneId);
-
             $resolved = $this->buildResolvedConfig(
                 preset: $preset,
                 baseConfig: $storedBaseConfig,
@@ -167,46 +155,55 @@ class ZoneCorrectionConfigService
                 ZoneCorrectionConfigCatalog::validateResolvedConfig($resolved);
             }
 
-            $config->fill([
-                'preset_id' => $preset?->id,
-                'base_config' => $storedBaseConfig,
-                'phase_overrides' => $storedPhaseOverrides,
-                'resolved_config' => $resolved,
-                'version' => (int) $config->version + 1,
-                'updated_by' => $userId,
-            ]);
-            $config->save();
-
-            $this->recordVersion($config, changedBy: $userId, changeType: 'updated');
+            $document = $this->documents->upsertDocument(
+                AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+                AutomationConfigRegistry::SCOPE_ZONE,
+                $zoneId,
+                [
+                    'preset_id' => $preset?->id,
+                    'base_config' => $storedBaseConfig,
+                    'phase_overrides' => $storedPhaseOverrides,
+                    'resolved_config' => $resolved,
+                ],
+                $userId,
+                'zone_correction_config'
+            );
 
             ZoneEvent::query()->create([
                 'zone_id' => $zoneId,
                 'type' => 'CORRECTION_CONFIG_UPDATED',
                 'payload_json' => [
-                    'version' => $config->version,
-                    'preset_id' => $config->preset_id,
+                    'version' => $this->latestVersionNumber($zoneId),
+                    'preset_id' => $preset?->id,
                     'updated_by' => $userId,
                     'hot_reload' => true,
                 ],
             ]);
 
-            return $config->loadMissing(['preset', 'updatedBy']);
+            return $this->makeTransientConfig(
+                $zoneId,
+                is_array($document->payload) ? $document->payload : [],
+                $document->updated_by,
+                $document->updated_at,
+                $this->latestVersionNumber($zoneId),
+                $document->id
+            );
         });
     }
 
     public function buildResolvedConfig(
-        ?ZoneCorrectionPreset $preset,
+        ?AutomationConfigPreset $preset,
         array $baseConfig,
         array $phaseOverrides,
     ): array {
-        [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->config);
+        [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->payload);
         [$baseConfigWithoutPump, $pumpOverride] = $this->splitPumpCalibrationOverride($baseConfig);
         $resolvedBase = is_array($presetBaseConfig) && ! array_is_list($presetBaseConfig)
             ? $presetBaseConfig
             : [];
         $resolvedBase = ZoneCorrectionConfigCatalog::merge($resolvedBase, $baseConfigWithoutPump);
         $resolvedPumpCalibration = $this->resolvePumpCalibrationConfig(
-            SystemAutomationSetting::forNamespace('pump_calibration'),
+            $this->documents->getSystemPayloadByLegacyNamespace('pump_calibration', true),
             $pumpOverride,
         );
 
@@ -250,14 +247,11 @@ class ZoneCorrectionConfigService
 
     public function ensureDefaultForZone(int $zoneId): void
     {
-        if (! Schema::hasTable('zone_correction_configs')) {
-            return;
-        }
-
-        $this->getOrCreateForZone($zoneId);
+        $this->documents->ensureZoneDefaults($zoneId);
+        $this->resolveMissingBootstrapAlert($zoneId);
     }
 
-    public function serializePreset(ZoneCorrectionPreset $preset): array
+    public function serializePreset(AutomationConfigPreset $preset): array
     {
         return [
             'id' => $preset->id,
@@ -265,13 +259,66 @@ class ZoneCorrectionConfigService
             'name' => $preset->name,
             'scope' => $preset->scope,
             'is_locked' => $preset->is_locked,
-            'is_active' => $preset->is_active,
+            'is_active' => true,
             'description' => $preset->description,
-            'config' => $preset->config ?? [],
-            'created_by' => $preset->created_by,
+            'config' => $preset->payload ?? [],
+            'created_by' => null,
             'updated_by' => $preset->updated_by,
             'updated_at' => optional($preset->updated_at)->toISOString(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function makeTransientConfig(
+        int $zoneId,
+        array $payload,
+        ?int $updatedBy,
+        mixed $updatedAt,
+        int $version,
+        ?int $documentId = null,
+    ): ZoneCorrectionConfig {
+        $presetId = isset($payload['preset_id']) ? (int) $payload['preset_id'] : null;
+        $config = new ZoneCorrectionConfig();
+        $config->forceFill([
+            'id' => $documentId,
+            'zone_id' => $zoneId,
+            'preset_id' => $presetId,
+            'base_config' => is_array($payload['base_config'] ?? null) ? $payload['base_config'] : [],
+            'phase_overrides' => is_array($payload['phase_overrides'] ?? null) ? $payload['phase_overrides'] : [],
+            'resolved_config' => is_array($payload['resolved_config'] ?? null) ? $payload['resolved_config'] : [],
+            'version' => $version,
+            'updated_by' => $updatedBy,
+            'updated_at' => $updatedAt,
+            'last_applied_at' => null,
+            'last_applied_version' => null,
+        ]);
+
+        if ($presetId) {
+            $preset = $this->findCorrectionPreset($presetId);
+            if ($preset) {
+                $config->setRelation('preset', $preset);
+            }
+        }
+
+        return $config;
+    }
+
+    private function latestVersionNumber(int $zoneId): int
+    {
+        return (int) (AutomationConfigVersion::query()
+            ->where('namespace', AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION)
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zoneId)
+            ->max('id') ?? 0);
+    }
+
+    private function findCorrectionPreset(int $presetId): ?AutomationConfigPreset
+    {
+        return AutomationConfigPreset::query()
+            ->where('namespace', AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION)
+            ->find($presetId);
     }
 
     private function recordVersion(
@@ -291,6 +338,84 @@ class ZoneCorrectionConfigService
             'changed_by' => $changedBy,
             'changed_at' => now(),
         ]);
+    }
+
+    private function createBootstrapPlaceholderConfig(int $zoneId): ZoneCorrectionConfig
+    {
+        $resolved = $this->buildResolvedConfig(
+            preset: null,
+            baseConfig: [],
+            phaseOverrides: [],
+        );
+
+        $created = ZoneCorrectionConfig::query()->create([
+            'zone_id' => $zoneId,
+            'preset_id' => null,
+            'base_config' => [],
+            'phase_overrides' => [],
+            'resolved_config' => $resolved,
+            'version' => 1,
+            'updated_by' => null,
+        ]);
+
+        $this->recordVersion($created, changedBy: null, changeType: 'bootstrap');
+
+        return $created;
+    }
+
+    private function createBootstrapDefaultConfig(int $zoneId): ZoneCorrectionConfig
+    {
+        $defaults = ZoneCorrectionConfigCatalog::defaults();
+        $resolved = $this->buildResolvedConfig(
+            preset: null,
+            baseConfig: $defaults,
+            phaseOverrides: [],
+        );
+
+        $created = ZoneCorrectionConfig::query()->create([
+            'zone_id' => $zoneId,
+            'preset_id' => null,
+            'base_config' => $defaults,
+            'phase_overrides' => [],
+            'resolved_config' => $resolved,
+            'version' => 1,
+            'updated_by' => null,
+        ]);
+
+        $this->recordVersion($created, changedBy: null, changeType: 'bootstrap');
+
+        return $created;
+    }
+
+    private function resolveMissingBootstrapAlert(int $zoneId): void
+    {
+        app(AlertService::class)->resolveByCode($zoneId, 'biz_zone_correction_config_missing', [
+            'resolved_by' => 'zone_correction_bootstrap',
+            'resolved_via' => 'auto',
+            'reason' => 'correction_config_bootstrap_defaults_applied',
+        ]);
+    }
+
+    private function isUninitializedBootstrapConfig(ZoneCorrectionConfig $config): bool
+    {
+        if ((int) $config->preset_id !== 0) {
+            return false;
+        }
+
+        $baseConfig = is_array($config->base_config) && ! array_is_list($config->base_config)
+            ? $config->base_config
+            : [];
+        $phaseOverrides = is_array($config->phase_overrides) && ! array_is_list($config->phase_overrides)
+            ? $config->phase_overrides
+            : [];
+        $resolvedConfig = is_array($config->resolved_config) && ! array_is_list($config->resolved_config)
+            ? $config->resolved_config
+            : [];
+        $resolvedBase = is_array($resolvedConfig['base'] ?? null) && ! array_is_list($resolvedConfig['base'])
+            ? $resolvedConfig['base']
+            : [];
+
+        return $baseConfig === [] && $phaseOverrides === [] && $resolvedBase === [];
     }
 
     private function validatePhaseOverrides(array $phaseOverrides): void

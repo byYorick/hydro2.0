@@ -423,14 +423,27 @@ class GrowCycleController extends Controller
 
         try {
             $revision = RecipeRevision::findOrFail($data['recipe_revision_id']);
+            $createPayload = $data;
+            $createPayload['start_immediately'] = false;
+
             $cycle = $this->growCycleService->createCycle(
                 $zone,
                 $revision,
                 $data['plant_id'],
-                $data,
+                $createPayload,
                 $user->id
             );
-            $this->applyPhaseOverrides($cycle, $data);
+            $this->growCycleService->syncCycleConfigDocuments($cycle, $data, $user->id);
+
+            if ($startImmediately) {
+                $cycle = $this->growCycleService->startCycle(
+                    $cycle->fresh(),
+                    isset($data['planting_at']) && $data['planting_at']
+                        ? \Carbon\Carbon::parse($data['planting_at'])
+                        : now()
+                );
+            }
+
             $cycle->refresh()->load('recipeRevision', 'currentPhase', 'plant');
 
             return response()->json([
@@ -453,30 +466,6 @@ class GrowCycleController extends Controller
                 'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-    }
-
-    /**
-     * Применить overrides к первой фазе цикла после штатного копирования фаз из рецепта.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function applyPhaseOverrides(GrowCycle $cycle, array $data): void
-    {
-        $rawOverrides = $data['phase_overrides'] ?? null;
-        if (! is_array($rawOverrides)) {
-            return;
-        }
-
-        $overrides = array_filter(
-            $rawOverrides,
-            static fn ($value): bool => $value !== null
-        );
-        if ($overrides === []) {
-            return;
-        }
-
-        $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
-        $firstPhase?->update($overrides);
     }
 
     /**

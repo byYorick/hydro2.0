@@ -7,6 +7,8 @@ import type {
   ZoneCorrectionConfigPayload,
 } from '@/types/CorrectionConfig'
 
+const CORRECTION_PRESET_NAMESPACE = 'zone.correction'
+
 export function useCorrectionConfig(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
@@ -17,9 +19,9 @@ export function useCorrectionConfig(showToast?: ToastHandler) {
     loading.value = true
     error.value = null
 
-    try {
+  try {
       const response = await api.get<{ status: string; data: ZoneCorrectionConfigPayload }>(
-        `/zones/${zoneId}/correction-config`
+        `/automation-configs/zone/${zoneId}/zone.correction`
       )
       if (response.data.status !== 'ok') {
         throw new Error('Failed to fetch zone correction config')
@@ -45,10 +47,10 @@ export function useCorrectionConfig(showToast?: ToastHandler) {
     loading.value = true
     error.value = null
 
-    try {
+  try {
       const response = await api.put<{ status: string; data: ZoneCorrectionConfigPayload }>(
-        `/zones/${zoneId}/correction-config`,
-        payload
+        `/automation-configs/zone/${zoneId}/zone.correction`,
+        { payload }
       )
       if (response.data.status !== 'ok') {
         throw new Error('Failed to update zone correction config')
@@ -67,9 +69,9 @@ export function useCorrectionConfig(showToast?: ToastHandler) {
     loading.value = true
     error.value = null
 
-    try {
+  try {
       const response = await api.get<{ status: string; data: ZoneCorrectionConfigHistoryItem[] }>(
-        `/zones/${zoneId}/correction-config/history`
+        `/automation-configs/zone/${zoneId}/zone.correction/history`
       )
       if (response.data.status !== 'ok') {
         throw new Error('Failed to fetch correction config history')
@@ -93,14 +95,24 @@ export function useCorrectionConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ status: string; data: CorrectionPreset[]; selected: number }>(
-        '/correction-config-presets',
-        payload
+      const createResponse = await api.post<{ status: string; data: { id: number } }>(
+        `/automation-presets/${CORRECTION_PRESET_NAMESPACE}`,
+        {
+          name: payload.name,
+          description: payload.description,
+          payload: payload.config,
+        }
       )
-      if (response.data.status !== 'ok') {
-        throw new Error('Failed to create correction preset')
+      const listResponse = await api.get<{ status: string; data: Array<CorrectionPreset & { payload?: Record<string, unknown> }> }>(
+        `/automation-presets/${CORRECTION_PRESET_NAMESPACE}`
+      )
+
+      return {
+        data: Array.isArray(listResponse.data.data)
+          ? listResponse.data.data.map(normalizePreset)
+          : [],
+        selected: createResponse.data.data.id,
       }
-      return { data: response.data.data, selected: response.data.selected }
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -115,13 +127,12 @@ export function useCorrectionConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.delete<{ status: string; data: CorrectionPreset[] }>(
-        `/correction-config-presets/${presetId}`
+      await api.delete(`/automation-presets/${presetId}`)
+      const response = await api.get<{ status: string; data: Array<CorrectionPreset & { payload?: Record<string, unknown> }> }>(
+        `/automation-presets/${CORRECTION_PRESET_NAMESPACE}`
       )
-      if (response.data.status !== 'ok') {
-        throw new Error('Failed to delete correction preset')
-      }
-      return response.data.data
+
+      return Array.isArray(response.data.data) ? response.data.data.map(normalizePreset) : []
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -139,5 +150,12 @@ export function useCorrectionConfig(showToast?: ToastHandler) {
     getZoneCorrectionConfigHistory,
     createCorrectionPreset,
     deleteCorrectionPreset,
+  }
+}
+
+function normalizePreset(preset: CorrectionPreset & { payload?: Record<string, unknown> }): CorrectionPreset {
+  return {
+    ...preset,
+    config: preset.config ?? preset.payload ?? {},
   }
 }

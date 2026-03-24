@@ -30,6 +30,7 @@ from test_ae3lite_zone_snapshot_read_model_integration import (
     _insert_recipe_revision,
     _insert_sensor,
     _insert_zone,
+    _upsert_zone_bundle,
 )
 
 
@@ -87,6 +88,7 @@ class _TwoTankHistoryLoggerStub:
 
 
 async def _insert_ph_ec_support_nodes(*, zone_id: int, greenhouse_id: int) -> None:
+    pid_patch: dict[str, dict[str, dict[str, float]]] = {}
     for node_type, sensor_type, sensor_label in (("ph", "PH", "ph_sensor"), ("ec", "EC", "ec_sensor")):
         rows = await fetch(
             """
@@ -133,18 +135,14 @@ async def _insert_ph_ec_support_nodes(*, zone_id: int, greenhouse_id: int) -> No
             zone_id,
             5.8 if sensor_type == "PH" else 1.4,
         )
-        await execute(
-            """
-            INSERT INTO zone_pid_configs (zone_id, type, config, updated_at)
-            VALUES ($1, $2, $3::jsonb, NOW())
-            ON CONFLICT (zone_id, type) DO UPDATE
-            SET config = EXCLUDED.config,
-                updated_at = EXCLUDED.updated_at
-            """,
-            zone_id,
-            node_type,
-            {"kp": 1.2 if node_type == "ph" else 1.5, "ki": 0.4 if node_type == "ph" else 0.3, "kd": 0.1 if node_type == "ph" else 0.0},
-        )
+        pid_patch[node_type] = {
+            "config": {
+                "kp": 1.2 if node_type == "ph" else 1.5,
+                "ki": 0.4 if node_type == "ph" else 0.3,
+                "kd": 0.1 if node_type == "ph" else 0.0,
+            }
+        }
+    await _upsert_zone_bundle(zone_id, {"pid": pid_patch})
 
 
 async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, solution_full: bool) -> tuple[int, int]:
@@ -230,7 +228,7 @@ async def _insert_two_tank_runtime_zone(prefix: str, *, clean_full: bool, soluti
 
 
 async def _insert_correction_config(zone_id: int) -> None:
-    """Insert a complete zone_correction_config fixture for fail-closed runtime validation."""
+    """Insert a complete authority correction bundle fixture for fail-closed runtime validation."""
     minimal_cfg = {
         "base": {
             "runtime": {
@@ -329,22 +327,14 @@ async def _insert_correction_config(zone_id: int) -> None:
         },
         "meta": {},
     }
-    await execute(
-        """
-        INSERT INTO zone_correction_configs (
-            zone_id,
-            base_config,
-            phase_overrides,
-            resolved_config,
-            version,
-            created_at,
-            updated_at
-        )
-        VALUES ($1, '{}'::jsonb, '{}'::jsonb, $2, 1, NOW(), NOW())
-        ON CONFLICT (zone_id) DO NOTHING
-        """,
+    await _upsert_zone_bundle(
         zone_id,
-        minimal_cfg,  # Python dict — jsonb codec in common.db pool encodes it via json.dumps
+        {
+            "correction": {
+                "phase_overrides": {},
+                "resolved_config": minimal_cfg,
+            }
+        },
     )
 
 

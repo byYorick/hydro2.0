@@ -5,8 +5,13 @@ import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
+import { useAutomationConfig } from './useAutomationConfig'
 import { useAutomationCommandTemplates } from './useAutomationCommandTemplates'
 import { useAutomationDefaults } from './useAutomationDefaults'
+import {
+  payloadFromZoneLogicDocument,
+  upsertZoneLogicProfilePayload,
+} from './zoneLogicProfileAuthority'
 import { buildGrowthCycleConfigPayload, validateForms } from './zoneAutomationFormLogic'
 import { resolveRecipePhaseSystemType } from './recipeSystemType'
 import type {
@@ -77,6 +82,7 @@ function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
 }
 
 export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecipeAutomationFlowsOptions) {
+  const automationConfig = useAutomationConfig(options.showToast)
   const automationDefaults = useAutomationDefaults()
   const automationCommandTemplates = useAutomationCommandTemplates()
   const {
@@ -258,11 +264,14 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
         automationDefaults: automationDefaults.value,
         automationCommandTemplates: automationCommandTemplates.value,
       })
-      await api.post(`/zones/${selectedZone.value.id}/automation-logic-profile`, {
-        mode: 'setup',
-        activate: true,
-        subsystems: payload.subsystems,
-      })
+      const currentDocument = await automationConfig.getDocument<Record<string, unknown>>('zone', selectedZone.value.id, 'zone.logic_profile')
+      const nextPayload = upsertZoneLogicProfilePayload(
+        payloadFromZoneLogicDocument(currentDocument),
+        'setup',
+        (payload.subsystems ?? {}) as Record<string, unknown>,
+        true
+      )
+      await automationConfig.updateDocument('zone', selectedZone.value.id, 'zone.logic_profile', nextPayload as unknown as Record<string, unknown>)
 
       await api.post(`/zones/${selectedZone.value.id}/commands`, {
         type: 'GROWTH_CYCLE_CONFIG',

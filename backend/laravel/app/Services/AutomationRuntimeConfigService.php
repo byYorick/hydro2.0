@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\AutomationRuntimeOverride;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
@@ -345,9 +344,26 @@ class AutomationRuntimeConfigService
     ];
 
     /**
-     * @var array<string, string>|null
+     * @var array<string, mixed>|null
      */
     private ?array $overrides = null;
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function defaultSettingsMapStatic(): array
+    {
+        $result = [];
+        foreach (self::DEFINITIONS as $key => $definition) {
+            if (! (bool) ($definition['editable'] ?? false)) {
+                continue;
+            }
+
+            $result[$key] = $definition['default'];
+        }
+
+        return $result;
+    }
 
     public function schedulerEnabled(): bool
     {
@@ -498,8 +514,7 @@ class AutomationRuntimeConfigService
     public function applyOverrides(array $settings, ?int $userId = null): void
     {
         $errors = [];
-        $rows = [];
-        $now = now();
+        $mergedPayload = $this->loadOverrides();
 
         foreach ($settings as $key => $value) {
             $key = trim((string) $key);
@@ -516,33 +531,39 @@ class AutomationRuntimeConfigService
                 continue;
             }
 
-            $rows[] = [
-                'key' => $key,
-                'value' => $this->serializeStoredValue($key, $normalized),
-                'updated_by' => $userId,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
+            $mergedPayload[$key] = $normalized;
         }
 
         if (! empty($errors)) {
             throw ValidationException::withMessages($errors);
         }
 
-        if (! empty($rows)) {
-            AutomationRuntimeOverride::query()->upsert($rows, ['key'], ['value', 'updated_by', 'updated_at']);
-        }
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            $mergedPayload,
+            $userId,
+            'runtime_settings'
+        );
         $this->overrides = null;
     }
 
     public function resetOverrides(): void
     {
-        AutomationRuntimeOverride::query()->delete();
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            self::defaultSettingsMapStatic(),
+            null,
+            'runtime_settings_reset'
+        );
         $this->overrides = null;
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     private function loadOverrides(): array
     {
@@ -550,10 +571,13 @@ class AutomationRuntimeConfigService
             return $this->overrides;
         }
 
-        $this->overrides = AutomationRuntimeOverride::query()
-            ->pluck('value', 'key')
-            ->mapWithKeys(static fn ($value, $key) => [(string) $key => (string) $value])
-            ->all();
+        $payload = app(AutomationConfigDocumentService::class)->getPayload(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            true
+        );
+        $this->overrides = is_array($payload) && ! array_is_list($payload) ? $payload : [];
 
         return $this->overrides;
     }

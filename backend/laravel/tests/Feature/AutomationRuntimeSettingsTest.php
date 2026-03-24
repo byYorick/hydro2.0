@@ -2,8 +2,9 @@
 
 namespace Tests\Feature;
 
-use App\Models\AutomationRuntimeOverride;
 use App\Models\User;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
 use Inertia\Testing\AssertableInertia;
 use Illuminate\Support\Facades\Config;
@@ -84,17 +85,14 @@ class AutomationRuntimeSettingsTest extends TestCase
         $this->assertSame(45, $item['value']);
         $this->assertSame('override', $item['source']);
 
-        $this->assertDatabaseHas('automation_runtime_overrides', [
-            'key' => 'automation_engine.scheduler_due_grace_sec',
-            'value' => '45',
-            'updated_by' => $admin->id,
-        ]);
-
-        $this->assertDatabaseHas('automation_runtime_overrides', [
-            'key' => 'automation_engine.scheduler_catchup_policy',
-            'value' => 'skip',
-            'updated_by' => $admin->id,
-        ]);
+        $payload = app(AutomationConfigDocumentService::class)->getPayload(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            false
+        );
+        $this->assertSame(45, $payload['automation_engine.scheduler_due_grace_sec'] ?? null);
+        $this->assertSame('skip', $payload['automation_engine.scheduler_catchup_policy'] ?? null);
 
         $runtimeConfig = app(AutomationRuntimeConfigService::class);
         $schedulerConfig = $runtimeConfig->schedulerConfig();
@@ -146,18 +144,22 @@ class AutomationRuntimeSettingsTest extends TestCase
         Config::set('services.automation_engine.scheduler_due_grace_sec', 15);
 
         $admin = User::factory()->create(['role' => 'admin']);
-        AutomationRuntimeOverride::query()->create([
-            'key' => 'automation_engine.scheduler_due_grace_sec',
-            'value' => '50',
-            'updated_by' => $admin->id,
-        ]);
+        app(AutomationRuntimeConfigService::class)->applyOverrides([
+            'automation_engine.scheduler_due_grace_sec' => 50,
+        ], $admin->id);
 
         $this->actingAs($admin)
             ->deleteJson('/settings/automation-engine')
             ->assertOk()
             ->assertJsonPath('status', 'ok');
 
-        $this->assertDatabaseCount('automation_runtime_overrides', 0);
+        $payload = app(AutomationConfigDocumentService::class)->getPayload(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_RUNTIME,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            false
+        );
+        $this->assertSame(15, $payload['automation_engine.scheduler_due_grace_sec'] ?? null);
 
         $runtimeConfig = app(AutomationRuntimeConfigService::class);
         $schedulerConfig = $runtimeConfig->schedulerConfig();

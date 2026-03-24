@@ -29,8 +29,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 1.2. Источник конфигурации
 
-Параметры PID (kp, ki, kd и др.) читаются **из `correction_config`** зоны
-в runtime snapshot (таблица `zone_correction_configs`). Класс
+Параметры PID (kp, ki, kd и др.) читаются из authority-документов
+`zone.pid.ph` и `zone.pid.ec`, а в AE3 runtime попадают через compiled
+bundle `automation_effective_bundles.config.zone.pid.*`. Класс
 `AutomationSettings` в `config/settings.py` **не является** источником
 PID-параметров — те поля были удалены как dead code.
 
@@ -54,10 +55,11 @@ duration_ms = dose_ml / ml_per_sec * 1000
 
 ---
 
-## 2. Структура `correction_config`
+## 2. Структура correction bundle
 
-Конфиг хранится в `zone_correction_configs.config` (JSONB) и может иметь
-секции `base` + `phases` (с override'ами по фазе).
+Correction runtime-контракт хранится в authority-документе `zone.correction`
+и materialized в `payload.resolved_config`, а PID-настройки хранятся отдельно
+в `zone.pid.ph` и `zone.pid.ec`.
 
 ```json
 {

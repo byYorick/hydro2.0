@@ -2,6 +2,7 @@
 
 namespace App\Services\AutomationScheduler;
 
+use App\Services\AutomationConfigDocumentService;
 use App\Services\ZoneCorrectionConfigService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
@@ -328,6 +329,7 @@ class ScheduleDispatcher
         CarbonImmutable $triggerTime,
     ): array {
         try {
+            app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
             app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
 
             $intentPayload = [

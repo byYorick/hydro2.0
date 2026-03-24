@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import GreenhouseShow from '../Show.vue'
 
 const sendZoneCommandMock = vi.hoisted(() => vi.fn())
+const apiGetMock = vi.hoisted(() => vi.fn())
+const apiPostMock = vi.hoisted(() => vi.fn())
+const getDocumentMock = vi.hoisted(() => vi.fn())
+const updateDocumentMock = vi.hoisted(() => vi.fn())
+const showToastMock = vi.hoisted(() => vi.fn())
 
 const usePageMock = vi.hoisted(() => vi.fn(() => ({
   props: {
@@ -31,7 +36,7 @@ vi.mock('@/Components/Card.vue', () => ({
 }))
 
 vi.mock('@/Components/Button.vue', () => ({
-  default: { name: 'Button', props: ['size', 'variant'], template: '<button><slot /></button>' },
+  default: { name: 'Button', props: ['size', 'variant', 'disabled'], template: '<button :disabled="disabled"><slot /></button>' },
 }))
 
 vi.mock('@/Components/Badge.vue', () => ({
@@ -40,6 +45,25 @@ vi.mock('@/Components/Badge.vue', () => ({
 
 vi.mock('@/Components/MetricCard.vue', () => ({
   default: { name: 'MetricCard', props: ['label', 'value'], template: '<div class="metric">{{ label }}{{ value }}</div>' },
+}))
+
+vi.mock('@/Components/GreenhouseClimateConfiguration.vue', () => ({
+  default: {
+    name: 'GreenhouseClimateConfiguration',
+    props: ['canConfigure', 'applying', 'applyLabel'],
+    emits: ['apply', 'update:enabled'],
+    template: `
+      <div class="greenhouse-climate-configuration">
+        <button
+          class="greenhouse-climate-apply"
+          :disabled="!canConfigure || applying"
+          @click="$emit('apply')"
+        >
+          {{ applyLabel }}
+        </button>
+      </div>
+    `,
+  },
 }))
 
 vi.mock('@/Pages/Zones/ZoneCard.vue', () => ({
@@ -75,14 +99,22 @@ vi.mock('@/composables/useCommands', () => ({
 vi.mock('@/composables/useApi', () => ({
   useApi: () => ({
     api: {
-      post: vi.fn().mockResolvedValue({ data: {} }),
+      get: apiGetMock,
+      post: apiPostMock,
     },
+  }),
+}))
+
+vi.mock('@/composables/useAutomationConfig', () => ({
+  useAutomationConfig: () => ({
+    getDocument: getDocumentMock,
+    updateDocument: updateDocumentMock,
   }),
 }))
 
 vi.mock('@/composables/useToast', () => ({
   useToast: () => ({
-    showToast: vi.fn(),
+    showToast: showToastMock,
   }),
 }))
 
@@ -122,6 +154,44 @@ describe('Greenhouses/Show.vue', () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     sendZoneCommandMock.mockReset()
     sendZoneCommandMock.mockResolvedValue({ id: 1 })
+    apiGetMock.mockReset()
+    apiPostMock.mockReset()
+    getDocumentMock.mockReset()
+    updateDocumentMock.mockReset()
+    showToastMock.mockReset()
+    apiGetMock.mockResolvedValue({ data: { data: [] } })
+    apiPostMock.mockResolvedValue({ data: { status: 'ok' } })
+    getDocumentMock.mockResolvedValue({
+      payload: {
+        active_mode: null,
+        profiles: {},
+      },
+      bindings: {
+        climate_sensors: [],
+        weather_station_sensors: [],
+        vent_actuators: [],
+        fan_actuators: [],
+      },
+    })
+    updateDocumentMock.mockResolvedValue({
+      payload: {
+        active_mode: 'setup',
+        profiles: {
+          setup: {
+            mode: 'setup',
+            is_active: true,
+            subsystems: { climate: { enabled: true, execution: {} } },
+            updated_at: '2026-03-24T04:00:00Z',
+          },
+        },
+      },
+      bindings: {
+        climate_sensors: [],
+        weather_station_sensors: [],
+        vent_actuators: [],
+        fan_actuators: [],
+      },
+    })
   })
 
   it('показывает активную кнопку управления климатом для агронома', () => {
@@ -135,9 +205,9 @@ describe('Greenhouses/Show.vue', () => {
       },
     })
 
-    const button = findButton(wrapper, 'Управление климатом')
+    const button = findButton(wrapper, 'Сохранить климат теплицы')
     expect(button).toBeDefined()
-    expect(button?.attributes('disabled')).toBeUndefined()
+    expect(button?.element.hasAttribute('disabled')).toBe(false)
   })
 
   it('блокирует управление климатом для не агронома', () => {
@@ -153,9 +223,9 @@ describe('Greenhouses/Show.vue', () => {
       },
     })
 
-    const button = findButton(wrapper, 'Управление климатом')
+    const button = findButton(wrapper, 'Сохранить климат теплицы')
     expect(button).toBeDefined()
-    expect(button?.attributes('disabled')).toBeDefined()
+    expect(button?.element.hasAttribute('disabled')).toBe(true)
   })
 
   it('учитывает только климат-узлы для обслуживания', () => {
@@ -173,58 +243,62 @@ describe('Greenhouses/Show.vue', () => {
 
     const maintenanceButton = findButton(wrapper, 'В обслуживание')
     expect(maintenanceButton).toBeDefined()
-    expect(maintenanceButton?.attributes('disabled')).toBeDefined()
+    expect(maintenanceButton?.element.hasAttribute('disabled')).toBe(true)
   })
 
   it('разрешает обслуживание для климат-узлов', () => {
+    apiGetMock.mockResolvedValue({
+      data: {
+        data: [
+          { id: 2, uid: 'climate-1', type: 'climate', status: 'online', lifecycle_state: 'ACTIVE' },
+        ],
+      },
+    })
+
     const wrapper = mount(GreenhouseShow, {
       props: {
         greenhouse: baseGreenhouse,
         zones: [baseZone],
-        nodes: [
-          { id: 2, uid: 'climate-1', type: 'climate', status: 'online', lifecycle_state: 'ACTIVE' },
-        ],
-        nodeSummary: baseNodeSummary,
-        activeAlerts: 0,
-      },
-    })
-
-    const maintenanceButton = findButton(wrapper, 'В обслуживание')
-    expect(maintenanceButton).toBeDefined()
-    expect(maintenanceButton?.attributes('disabled')).toBeUndefined()
-  })
-
-  it('показывает список ошибок применения климата', async () => {
-    sendZoneCommandMock
-      .mockResolvedValueOnce({ id: 1 })
-      .mockRejectedValueOnce({ message: 'Нода недоступна' })
-
-    const wrapper = mount(GreenhouseShow, {
-      props: {
-        greenhouse: baseGreenhouse,
-        zones: [
-          baseZone,
-          { ...baseZone, id: 11, uid: 'zone-11', name: 'Zone B' },
-        ],
         nodes: [],
         nodeSummary: baseNodeSummary,
         activeAlerts: 0,
       },
     })
 
-    const climateButton = findButton(wrapper, 'Управление климатом')
-    expect(climateButton).toBeDefined()
-    await climateButton?.trigger('click')
+    return flushPromises().then(() => {
+      const maintenanceButton = findButton(wrapper, 'В обслуживание')
+      expect(maintenanceButton).toBeDefined()
+      expect(maintenanceButton?.element.hasAttribute('disabled')).toBe(false)
+    })
+  })
 
-    const modal = wrapper.findComponent({ name: 'ZoneActionModal' })
-    expect(modal.exists()).toBe(true)
-    modal.vm.$emit('submit', { params: { target_temp: 22, target_humidity: 60 } })
+  it('сохраняет климат теплицы через unified authority', async () => {
+    apiPostMock.mockResolvedValue({ data: { status: 'ok' } })
+
+    const wrapper = mount(GreenhouseShow, {
+      props: {
+        greenhouse: baseGreenhouse,
+        zones: [baseZone],
+        nodes: [],
+        nodeSummary: baseNodeSummary,
+        activeAlerts: 0,
+      },
+    })
 
     await flushPromises()
 
-    const failureBlock = wrapper.find('[data-testid="climate-failures"]')
-    expect(failureBlock.exists()).toBe(true)
-    expect(failureBlock.text()).toContain('Zone B')
-    expect(failureBlock.text()).toContain('Нода недоступна')
+    const maintenanceButton = findButton(wrapper, 'В обслуживание')
+    const climateButton = findButton(wrapper, 'Сохранить климат теплицы')
+    expect(climateButton).toBeDefined()
+    await climateButton?.trigger('click')
+
+    await flushPromises()
+    expect(maintenanceButton).toBeDefined()
+    expect(apiPostMock).toHaveBeenCalledWith('/setup-wizard/apply-greenhouse-climate-bindings', expect.any(Object))
+    expect(updateDocumentMock).toHaveBeenCalledWith('greenhouse', 1, 'greenhouse.logic_profile', expect.objectContaining({
+      active_mode: 'setup',
+      profiles: expect.any(Object),
+    }))
+    expect(showToastMock).toHaveBeenCalledWith('Климат теплицы сохранён.', 'success', expect.any(Number))
   })
 })

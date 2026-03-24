@@ -242,7 +242,7 @@ def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
     pid_configs = getattr(snapshot, "pid_configs", None)
     if not isinstance(pid_configs, Mapping):
         raise PlannerConfigurationError(
-            f"Zone {zone_id} has no pid_configs mapping; fail-closed for critical correction parameters",
+            f"Zone {zone_id} has no pid authority mapping; fail-closed for critical correction parameters",
             code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
         )
 
@@ -255,7 +255,7 @@ def _require_pid_configs(*, snapshot: Any, zone_id: int) -> None:
 
     if missing_types:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} missing required zone_pid_configs for pid_type={', '.join(sorted(missing_types))}; "
+            f"Zone {zone_id} missing required pid authority documents for pid_type={', '.join(sorted(missing_types))}; "
             "fail-closed for critical correction parameters",
             code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
         )
@@ -393,7 +393,7 @@ def _collect_missing_paths(*, config: Mapping[str, Any], template: Mapping[str, 
 
     if missing_types:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} missing required zone_pid_configs for pid_type={', '.join(sorted(missing_types))}; "
+            f"Zone {zone_id} missing required pid authority documents for pid_type={', '.join(sorted(missing_types))}; "
             "fail-closed for critical correction parameters",
             code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
         )

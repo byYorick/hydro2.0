@@ -14,9 +14,10 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use App\Models\SystemAutomationSetting;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycleService;
 use Illuminate\Support\Facades\Bus;
 use Tests\RefreshDatabase;
@@ -135,14 +136,17 @@ class ZonesTest extends TestCase
 
         $zoneId = (int) $resp->json('data.id');
         $this->assertGreaterThan(0, $zoneId);
-        $this->assertDatabaseHas('zone_correction_configs', [
-            'zone_id' => $zoneId,
-            'version' => 1,
+        $this->assertDatabaseHas('automation_config_documents', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zoneId,
+            'source' => 'bootstrap',
         ]);
-        $this->assertDatabaseHas('zone_correction_config_versions', [
-            'zone_id' => $zoneId,
-            'version' => 1,
-            'change_type' => 'bootstrap',
+        $this->assertDatabaseHas('automation_config_versions', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zoneId,
+            'source' => 'bootstrap',
         ]);
     }
 
@@ -508,9 +512,11 @@ class ZonesTest extends TestCase
             'config' => [],
         ]);
 
-        SystemAutomationSetting::query()->updateOrCreate(
-            ['namespace' => 'pump_calibration'],
-            ['config' => [
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            [
                 'ml_per_sec_min' => 0.001,
                 'ml_per_sec_max' => 1000,
                 'min_dose_ms' => 1,
@@ -522,7 +528,9 @@ class ZonesTest extends TestCase
                 'age_warning_days' => 30,
                 'age_critical_days' => 60,
                 'default_run_duration_sec' => 20,
-            ]],
+            ],
+            null,
+            'test'
         );
 
         \Illuminate\Support\Facades\Http::fake([

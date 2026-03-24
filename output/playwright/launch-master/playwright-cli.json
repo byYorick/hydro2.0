@@ -1,0 +1,15 @@
+{
+  "browser": {
+    "launchOptions": {
+      "headless": true,
+      "executablePath": "/snap/bin/chromium",
+      "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+    },
+    "contextOptions": {
+      "viewport": {
+        "width": 1440,
+        "height": 1200
+      }
+    }
+  }
+}

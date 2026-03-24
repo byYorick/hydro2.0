@@ -5,20 +5,30 @@ namespace App\Services;
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 class ZoneAutomationLogicProfileService
 {
+    public function __construct(
+        private readonly AutomationConfigDocumentService $documents,
+    ) {
+    }
+
     /**
      * Получить профили логики автоматики зоны, сгруппированные по режимам.
      */
     public function getProfilesPayload(Zone $zone): array
     {
+        $payload = $this->documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            true
+        );
         $profiles = $this->getProfilesForZone($zone->id);
         $activeProfile = $this->resolveActiveProfileForZone($zone->id);
 
         return [
-            'active_mode' => $activeProfile?->mode,
+            'active_mode' => is_string($payload['active_mode'] ?? null) ? $payload['active_mode'] : $activeProfile?->mode,
             'profiles' => $this->mapProfilesForResponse($profiles),
         ];
     }
@@ -30,41 +40,58 @@ class ZoneAutomationLogicProfileService
     {
         $normalizedSubsystems = $this->normalizeSubsystemsForStorage($subsystems);
         $commandPlans = $this->buildCommandPlans($normalizedSubsystems);
+        $payload = $this->documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            true
+        );
+        $profiles = is_array($payload['profiles'] ?? null) && ! array_is_list($payload['profiles'])
+            ? $payload['profiles']
+            : [];
+        $profiles[$mode] = [
+            'mode' => $mode,
+            'is_active' => $activate || (($profiles[$mode]['is_active'] ?? false) === true),
+            'subsystems' => $normalizedSubsystems,
+            'command_plans' => $commandPlans,
+            'updated_at' => now()->toIso8601String(),
+            'updated_by' => $userId,
+            'created_by' => $profiles[$mode]['created_by'] ?? $userId,
+            'created_at' => $profiles[$mode]['created_at'] ?? now()->toIso8601String(),
+        ];
 
-        return DB::transaction(function () use ($zone, $mode, $normalizedSubsystems, $commandPlans, $activate, $userId): ZoneAutomationLogicProfile {
-            if ($activate) {
-                ZoneAutomationLogicProfile::query()
-                    ->where('zone_id', $zone->id)
-                    ->where('mode', '!=', $mode)
-                    ->where('is_active', true)
-                    ->update(['is_active' => false, 'updated_by' => $userId]);
+        if ($activate) {
+            foreach ($profiles as $profileMode => &$profilePayload) {
+                if ($profileMode === $mode || ! is_array($profilePayload)) {
+                    continue;
+                }
+                $profilePayload['is_active'] = false;
             }
+            unset($profilePayload);
+            $payload['active_mode'] = $mode;
+        } elseif (! isset($payload['active_mode']) || $payload['active_mode'] === null) {
+            $payload['active_mode'] = $mode;
+        }
 
-            $profile = ZoneAutomationLogicProfile::query()->firstOrNew([
-                'zone_id' => $zone->id,
-                'mode' => $mode,
-            ]);
+        $payload['profiles'] = $profiles;
+        $this->documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            $payload,
+            $userId,
+            'zone_logic_profile'
+        );
 
-            if (!$profile->exists) {
-                $profile->created_by = $userId;
-            }
+        $this->emitProfileUpdatedZoneEvent(
+            zoneId: (int) $zone->id,
+            profileId: 0,
+            mode: $mode,
+            subsystems: $normalizedSubsystems,
+            userId: $userId,
+        );
 
-            $profile->subsystems = $normalizedSubsystems;
-            $profile->command_plans = $commandPlans;
-            $profile->is_active = $activate || (bool) $profile->is_active;
-            $profile->updated_by = $userId;
-            $profile->save();
-
-            $this->emitProfileUpdatedZoneEvent(
-                zoneId: (int) $zone->id,
-                profileId: (int) ($profile->id ?? 0),
-                mode: $mode,
-                subsystems: $normalizedSubsystems,
-                userId: $userId,
-            );
-
-            return $profile->fresh() ?? $profile;
-        });
+        return $this->makeTransientProfile((int) $zone->id, $profiles[$mode]);
     }
 
     /**
@@ -72,33 +99,17 @@ class ZoneAutomationLogicProfileService
      */
     public function resolveActiveProfileForZone(int $zoneId): ?ZoneAutomationLogicProfile
     {
-        $allowedModes = ZoneAutomationLogicProfile::allowedModes();
+        $payload = $this->documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            false
+        );
+        $activeMode = is_string($payload['active_mode'] ?? null) ? $payload['active_mode'] : null;
+        $profiles = is_array($payload['profiles'] ?? null) && ! array_is_list($payload['profiles']) ? $payload['profiles'] : [];
+        $activeProfile = is_string($activeMode) && is_array($profiles[$activeMode] ?? null) ? $profiles[$activeMode] : null;
 
-        $activeAllowedProfile = ZoneAutomationLogicProfile::query()
-            ->where('zone_id', $zoneId)
-            ->where('is_active', true)
-            ->whereIn('mode', $allowedModes)
-            ->orderByDesc('updated_at')
-            ->first();
-        if ($activeAllowedProfile instanceof ZoneAutomationLogicProfile) {
-            return $activeAllowedProfile;
-        }
-
-        $hasUnsupportedActiveProfile = ZoneAutomationLogicProfile::query()
-            ->where('zone_id', $zoneId)
-            ->where('is_active', true)
-            ->whereNotIn('mode', $allowedModes)
-            ->exists();
-        if (! $hasUnsupportedActiveProfile) {
-            return null;
-        }
-
-        return ZoneAutomationLogicProfile::query()
-            ->where('zone_id', $zoneId)
-            ->whereIn('mode', $allowedModes)
-            ->orderByRaw("CASE mode WHEN 'working' THEN 0 WHEN 'setup' THEN 1 ELSE 2 END")
-            ->orderByDesc('updated_at')
-            ->first();
+        return is_array($activeProfile) ? $this->makeTransientProfile($zoneId, $activeProfile) : null;
     }
 
     /**
@@ -106,20 +117,32 @@ class ZoneAutomationLogicProfileService
      */
     public function resolveProfileByMode(int $zoneId, string $mode): ?ZoneAutomationLogicProfile
     {
-        return ZoneAutomationLogicProfile::query()
-            ->where('zone_id', $zoneId)
-            ->where('mode', $mode)
-            ->first();
+        $payload = $this->documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            false
+        );
+        $profile = data_get($payload, "profiles.{$mode}");
+
+        return is_array($profile) ? $this->makeTransientProfile($zoneId, $profile) : null;
     }
 
     protected function getProfilesForZone(int $zoneId): Collection
     {
-        return ZoneAutomationLogicProfile::query()
-            ->where('zone_id', $zoneId)
-            ->orderByDesc('is_active')
-            ->orderByRaw("CASE mode WHEN 'working' THEN 0 WHEN 'setup' THEN 1 ELSE 2 END")
-            ->orderByDesc('updated_at')
-            ->get();
+        $payload = $this->documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            false
+        );
+        $profiles = is_array($payload['profiles'] ?? null) && ! array_is_list($payload['profiles']) ? $payload['profiles'] : [];
+
+        return collect($profiles)
+            ->filter(fn (mixed $profile): bool => is_array($profile))
+            ->map(fn (array $profile): ZoneAutomationLogicProfile => $this->makeTransientProfile($zoneId, $profile))
+            ->sortByDesc(fn (ZoneAutomationLogicProfile $profile): bool => (bool) $profile->is_active)
+            ->values();
     }
 
     protected function mapProfilesForResponse(Collection $profiles): array
@@ -143,6 +166,27 @@ class ZoneAutomationLogicProfileService
         }
 
         return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function makeTransientProfile(int $zoneId, array $payload): ZoneAutomationLogicProfile
+    {
+        $profile = new ZoneAutomationLogicProfile();
+        $profile->forceFill([
+            'zone_id' => $zoneId,
+            'mode' => (string) ($payload['mode'] ?? ''),
+            'subsystems' => is_array($payload['subsystems'] ?? null) ? $payload['subsystems'] : [],
+            'command_plans' => is_array($payload['command_plans'] ?? null) ? $payload['command_plans'] : [],
+            'is_active' => (bool) ($payload['is_active'] ?? false),
+            'created_by' => $payload['created_by'] ?? null,
+            'updated_by' => $payload['updated_by'] ?? null,
+            'created_at' => $payload['created_at'] ?? null,
+            'updated_at' => $payload['updated_at'] ?? null,
+        ]);
+
+        return $profile;
     }
 
     protected function normalizeSubsystemsForStorage(array $subsystems): array

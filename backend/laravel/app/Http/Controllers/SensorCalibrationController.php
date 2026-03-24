@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\NodeChannel;
 use App\Models\SensorCalibration;
-use App\Models\SystemAutomationSetting;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
 use App\Services\SensorCalibrationCommandService;
 use DomainException;
 use Illuminate\Http\JsonResponse;
@@ -57,7 +57,7 @@ class SensorCalibrationController extends Controller
     {
         $this->authorizeZoneAccess($request, $zone);
 
-        $settings = SystemAutomationSetting::forNamespace('sensor_calibration');
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('sensor_calibration', true);
         $warningDays = (int) $settings['reminder_days'];
         $criticalDays = (int) $settings['critical_days'];
 
@@ -189,7 +189,7 @@ class SensorCalibrationController extends Controller
             'reference_value' => ['required', 'numeric'],
         ]);
 
-        $settings = SystemAutomationSetting::forNamespace('sensor_calibration');
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('sensor_calibration', true);
         $stage = (int) $data['stage'];
         $referenceValue = (float) $data['reference_value'];
         try {
@@ -318,7 +318,7 @@ class SensorCalibrationController extends Controller
 
     private function referenceDefaults(string $sensorType): array
     {
-        $settings = SystemAutomationSetting::forNamespace('sensor_calibration');
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('sensor_calibration', true);
 
         return $sensorType === 'ph'
             ? [

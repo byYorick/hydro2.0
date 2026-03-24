@@ -1,5 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { useApi } from "@/composables/useApi";
+import { useAutomationConfig } from "@/composables/useAutomationConfig";
 import type { useToast } from "@/composables/useToast";
 import type { useZones } from "@/composables/useZones";
 import { logger } from "@/utils/logger";
@@ -13,6 +14,11 @@ import {
   useAutomationDefaults,
 } from "@/composables/useAutomationDefaults";
 import { applyAutomationFromRecipe, syncSystemToTankLayout, validateForms } from "@/composables/zoneAutomationFormLogic";
+import {
+  payloadFromZoneLogicDocument,
+  resolveZoneLogicProfileEntry,
+  upsertZoneLogicProfilePayload,
+} from "@/composables/zoneLogicProfileAuthority";
 import { resolveRecipePhaseSystemType } from "@/composables/recipeSystemType";
 import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationPayloadBuilders";
 import type { ClimateFormState, IrrigationSystem, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
@@ -222,54 +228,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return value as Record<string, unknown>;
-}
-
-function extractAutomationSubsystems(payload: unknown): Record<string, unknown> | null {
-  const root = asRecord(payload);
-  if (!root) {
-    return null;
-  }
-
-  const data = asRecord(root.data) || root;
-  const directSubsystems = asRecord(data.subsystems);
-  if (directSubsystems) {
-    return directSubsystems;
-  }
-
-  const profiles = asRecord(data.profiles);
-  if (!profiles) {
-    return null;
-  }
-
-  const activeMode = typeof data.active_mode === "string" ? data.active_mode : null;
-  const preferredModes = [activeMode, "working", "setup"].filter((mode): mode is string => Boolean(mode));
-
-  for (const mode of preferredModes) {
-    const entry = asRecord(profiles[mode]);
-    const subsystems = asRecord(entry?.subsystems);
-    if (subsystems) {
-      return subsystems;
-    }
-  }
-
-  for (const value of Object.values(profiles)) {
-    const entry = asRecord(value);
-    if (entry?.is_active === true) {
-      const subsystems = asRecord(entry.subsystems);
-      if (subsystems) {
-        return subsystems;
-      }
-    }
-  }
-
-  for (const value of Object.values(profiles)) {
-    const subsystems = asRecord(asRecord(value)?.subsystems);
-    if (subsystems) {
-      return subsystems;
-    }
-  }
-
-  return null;
 }
 
 function resolveNodeChannelId(channel: DeviceChannel): number | null {
@@ -497,6 +455,7 @@ export function useGrowthCycleWizard({
   showToast,
   fetchZones,
 }: UseGrowthCycleWizardOptions) {
+  const automationConfig = useAutomationConfig(showToast);
   const automationDefaults = useAutomationDefaults();
   const automationCommandTemplates = useAutomationCommandTemplates();
   const currentStep = ref(0);
@@ -825,37 +784,9 @@ export function useGrowthCycleWizard({
   async function loadAutomationProfile(zoneId: number): Promise<void> {
     loading.value = true;
     try {
-      const response = await fetch(`/api/zones/${zoneId}/automation-logic-profile`, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          Accept: "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-      });
-
-      if (response.status === 404) {
-        logger.warn("[GrowthCycleWizard] Automation profile not found", { zoneId });
-        return;
-      }
-
-      if (!response.ok) {
-        logger.warn("[GrowthCycleWizard] Failed to load automation profile", {
-          zoneId,
-          status: response.status,
-        });
-        return;
-      }
-
-      let payload: unknown = null;
-      try {
-        payload = await response.json();
-      } catch {
-        logger.warn("[GrowthCycleWizard] Failed to parse automation profile JSON", { zoneId });
-        return;
-      }
-
-      const subsystems = extractAutomationSubsystems(payload);
+      const document = await automationConfig.getDocument<Record<string, unknown>>("zone", zoneId, "zone.logic_profile");
+      const profile = resolveZoneLogicProfileEntry(payloadFromZoneLogicDocument(document), "setup");
+      const subsystems = profile?.subsystems ?? null;
       if (!subsystems) {
         logger.warn("[GrowthCycleWizard] Automation profile payload has no subsystems", { zoneId });
         return;
@@ -1400,23 +1331,15 @@ export function useGrowthCycleWizard({
   }
 
   async function saveAutomationProfile(zoneId: number, subsystems: Record<string, unknown>): Promise<void> {
-    const payload = {
-      mode: "setup",
-      activate: true,
+    const currentDocument = await automationConfig.getDocument<Record<string, unknown>>("zone", zoneId, "zone.logic_profile");
+    const nextPayload = upsertZoneLogicProfilePayload(
+      payloadFromZoneLogicDocument(currentDocument),
+      "setup",
       subsystems,
-    };
+      true,
+    );
 
-    try {
-      await api.post(`/api/zones/${zoneId}/automation-logic-profile`, payload);
-      return;
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status !== 404) {
-        throw err;
-      }
-    }
-
-    await api.post(`/api/zones/${zoneId}/automation-logic-profiles`, payload);
+    await automationConfig.updateDocument("zone", zoneId, "zone.logic_profile", nextPayload as unknown as Record<string, unknown>);
   }
 
   async function savePumpCalibrations(zoneId: number): Promise<string[]> {

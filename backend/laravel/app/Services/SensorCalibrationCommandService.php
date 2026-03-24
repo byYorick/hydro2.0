@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\NodeChannel;
 use App\Models\SensorCalibration;
-use App\Models\SystemAutomationSetting;
 use App\Models\Zone;
 use DomainException;
 use Illuminate\Http\Client\RequestException;
@@ -76,7 +75,7 @@ class SensorCalibrationCommandService
 
     public function sensorSettings(): array
     {
-        return SystemAutomationSetting::forNamespace('sensor_calibration');
+        return app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('sensor_calibration', true);
     }
 
     private function buildPayload(

@@ -512,7 +512,7 @@
       "severity": "critical",
       "title": "Не настроен PID-контур зоны",
       "description": "Для зоны отсутствует обязательная PID-конфигурация коррекции.",
-      "recommendation": "Проверьте zone_pid_configs для pH и EC и заполните обязательные параметры.",
+      "recommendation": "Проверьте authority-документы zone.pid.ph и zone.pid.ec и заполните обязательные параметры.",
       "node_related": false
     },
     {

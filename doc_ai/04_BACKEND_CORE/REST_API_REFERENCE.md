@@ -64,9 +64,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
-| GET | /api/zones/{id}/correction-config | auth:sanctum | Текущий correction config зоны + `resolved_config.pump_calibration` |
-| PUT/PATCH | /api/zones/{id}/correction-config | auth:sanctum (operator/admin/agronomist/engineer) | Обновить zone override correction config, включая `base_config.pump_calibration` |
-| GET | /api/zones/{id}/correction-config/history | auth:sanctum | История версий correction config зоны |
 | GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
 | GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
 | POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
@@ -83,7 +80,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - не блокируется по `zones.status`;
 - требует, чтобы `node_channel_id` принадлежал выбранной зоне;
 - физический прогон помпы (`skip_run=false`) валидируется по online-статусу конкретной ноды уже в `history-logger/common.water_flow`, а не по coarse-grained статусу зоны.
-- `duration_sec` валидируется по `system_automation_settings(namespace='pump_calibration')`, а не по hardcoded controller-bound;
+- `duration_sec` валидируется по `system.pump_calibration_policy`, а не по hardcoded controller-bound;
 - первый шаг (`skip_run=false`, без `actual_ml`) возвращает `data.run_token` для двухшагового UX `run -> measure -> save`;
 - второй шаг (`skip_run=true`, с `actual_ml`) требует `run_token`, если это сохранение после физического прогона; для явного manual persist без correlated run используется `manual_override=true`;
 - mirror в `node_channels.config.pump_calibration` обновляется merge-патчем и не должен затирать соседние config-ключи канала.
@@ -118,8 +115,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправка низкоуровневых команд |
 | PATCH | /api/node-channels/{id} | verify.python.service | Сервисное обновление `node_channels.config` (калибровки) |
-| GET | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum | Получить greenhouse climate profile и greenhouse bindings |
-| POST | /api/greenhouses/{id}/automation-logic-profile | auth:sanctum (operator/admin/agronomist/engineer) | Сохранить greenhouse-owned automation profile (`climate`) |
 | POST | /api/setup-wizard/validate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация zonal bindings внутри шага `4. Автоматика зоны` |
 | POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод внутри блоков шага `4. Автоматика зоны` |
 | POST | /api/setup-wizard/validate-greenhouse-climate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация greenhouse climate nodes для шага `1. Теплица` |
@@ -217,30 +212,73 @@ Legacy `extensions.day_target/night_target` больше не используе
 | GET | /api/system/config/full | verify.python.service (Sanctum или service token) | Экспорт полной конфигурации (для Python сервисов) |
 | GET | /api/system/health | public | Проверка здоровья сервиса |
 | GET | /api/system/scheduler/metrics | public | Prometheus exposition для Laravel scheduler (`dispatches`, `cycle_duration`, `active_tasks`); `counter`/`histogram` читаются из персистентных aggregate tables, а не из `scheduler_logs` |
-| GET | /api/system/automation-settings | auth:sanctum (admin) | Список системных automation settings namespaces (`pump_calibration`, `sensor_calibration`, `process_calibration_defaults`, `automation_defaults`, `automation_command_templates`) |
-| GET | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Получить config и field catalog namespace |
-| PUT | /api/system/automation-settings/{namespace} | auth:sanctum (admin) | Частично обновить namespace через merge с defaults |
-| POST | /api/system/automation-settings/{namespace}/reset | auth:sanctum (admin) | Сбросить namespace к catalog defaults |
+| GET | /api/automation-configs/system/0/{namespace} | auth:sanctum (admin) | Получить system authority document |
+| PUT | /api/automation-configs/system/0/{namespace} | auth:sanctum (admin) | Обновить system authority document |
+| GET | /api/automation-configs/system/0/{namespace}/history | auth:sanctum (admin) | История версий system authority document |
+| GET | /api/automation-bundles/system/0 | auth:sanctum (admin) | Получить compiled system bundle |
+| POST | /api/automation-bundles/system/0/validate | auth:sanctum (admin) | Пересобрать и провалидировать system bundle |
 
-- `process_calibration_defaults` используется Laravel Inertia middleware как shared prop
-  `processCalibrationDefaults` для первичного заполнения формы `ProcessCalibrationPanel`
-  при отсутствии сохранённых `zone_process_calibrations`.
+Поддерживаемые system namespace:
+- `system.runtime`
+- `system.automation_defaults`
+- `system.command_templates`
+- `system.process_calibration_defaults`
+- `system.pid_defaults.ph`
+- `system.pid_defaults.ec`
+- `system.pump_calibration_policy`
+- `system.sensor_calibration_policy`
+
+Authority-конфиги больше не публикуются в Inertia props для web-страниц.
 
 ---
 
 ## 10. Presets
 
 | Метод | Путь | Auth | Описание |
-|-------|--------------------------|------|-------------------------------------|
-| GET | /api/presets | auth:sanctum | Список пресетов |
-| POST | /api/presets | auth:sanctum (operator/admin/agronomist/engineer) | Создать пресет |
-| GET | /api/presets/{id} | auth:sanctum | Детали пресета |
-| PATCH | /api/presets/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить пресет |
-| DELETE| /api/presets/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить пресет |
+|-------|------------------------------------------|------|-------------------------------------|
+| GET | /api/automation-presets/{namespace} | auth:sanctum | Список preset-ов correction family по namespace |
+| POST | /api/automation-presets/{namespace} | auth:sanctum (operator/admin/agronomist/engineer) | Создать custom preset |
+| PUT/PATCH | /api/automation-presets/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить custom preset |
+| DELETE | /api/automation-presets/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить custom preset |
+| POST | /api/automation-presets/{id}/duplicate | auth:sanctum (operator/admin/agronomist/engineer) | Дублировать preset в custom copy |
+
+Preset rules:
+- system preset read-only;
+- custom preset editable;
+- preset не является runtime authority, пока payload не сохранён в authority document.
 
 ---
 
-## 11. Reports & Analytics
+## 11. Automation Authority API
+
+| Метод | Путь | Auth | Описание |
+|-------|---------------------------------------------------------------|------|-------------------------------------|
+| GET | /api/automation-configs/{scopeType}/{scopeId}/{namespace} | auth:sanctum | Получить authority document |
+| PUT | /api/automation-configs/{scopeType}/{scopeId}/{namespace} | auth:sanctum (scope-dependent role) | Обновить authority document |
+| GET | /api/automation-configs/{scopeType}/{scopeId}/{namespace}/history | auth:sanctum | История версий authority document |
+| GET | /api/automation-bundles/{scopeType}/{scopeId} | auth:sanctum | Получить compiled bundle |
+| POST | /api/automation-bundles/{scopeType}/{scopeId}/validate | auth:sanctum (scope-dependent role) | Пересобрать и провалидировать bundle |
+
+Поддерживаемые `scopeType`:
+
+- `system`
+- `zone`
+- `grow_cycle`
+
+Примеры namespace по scope:
+
+- `system`: `system.runtime`, `system.automation_defaults`, `system.command_templates`
+- `zone`: `zone.logic_profile`, `zone.correction`, `zone.pid.ph`, `zone.pid.ec`, `zone.process_calibration.*`
+- `grow_cycle`: `cycle.start_snapshot`, `cycle.phase_overrides`, `cycle.manual_overrides`
+
+Исключение:
+
+- `greenhouse.logic_profile` читается и сохраняется через `/api/automation-configs/greenhouse/{id}/greenhouse.logic_profile`
+- bundle endpoint для `greenhouse` не является частью текущего контракта
+
+---
+
+## 12. Reports & Analytics
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
@@ -251,7 +289,7 @@ Legacy `extensions.day_target/night_target` больше не используе
 
 ---
 
-## 12. AI
+## 13. AI
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
@@ -262,7 +300,7 @@ Legacy `extensions.day_target/night_target` больше не используе
 
 ---
 
-## 13. Simulations (Digital Twin)
+## 14. Simulations (Digital Twin)
 
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------------|------|-------------------------------------------|
@@ -273,7 +311,7 @@ Legacy `extensions.day_target/night_target` больше не используе
 
 ---
 
-## 14. Admin (минимальный CRUD)
+## 15. Admin (минимальный CRUD)
 
 | Метод | Путь | Auth | Описание |
 |-------|----------------------------------------|------|-------------------------------------------|
@@ -517,18 +555,18 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Контракт `PUT /api/zones/{zone}/pump-calibrations/{channelId}`:
 - request body: `{ "ml_per_sec": number, "k_ms_per_ml_l"?: number }`;
-- min/max validation и default duration берутся из `system_automation_settings(namespace='pump_calibration')`;
+- min/max validation и default duration берутся из `system.pump_calibration_policy`;
 - деактивирует предыдущую активную калибровку `node_channel_id`;
 - создаёт `zone_event` типа `PUMP_CALIBRATION_SAVED`.
 
-Контракт `GET/PUT /api/zones/{zone}/correction-config`:
-- `resolved_config.pump_calibration` обязателен для AE3-Lite runtime;
-- `base_config.pump_calibration` хранит только zone-level override diff;
-- response meta включает `pump_calibration_defaults` и `pump_calibration_field_catalog`.
+Контракт `GET/PUT /api/automation-configs/zone/{zone}/zone.correction`:
+- `payload.resolved_config.pump_calibration` обязателен для correction runtime;
+- `payload.base_config.pump_calibration` хранит только zone-level override diff;
+- история документа доступна через `GET /api/automation-configs/zone/{zone}/zone.correction/history`.
 
 Контракт `POST /api/zones/{zone}/sensor-calibrations/{id}/point`:
 - request body: `{ "stage": 1|2, "reference_value": number }`;
-- `reference_value` валидируется против `system_automation_settings(namespace='sensor_calibration')`;
+- `reference_value` валидируется против `system.sensor_calibration_policy`;
 - `stage=1` допустим только из `started`;
 - `stage=2` допустим только из `point_1_done`;
 - publish calibration command запрещён для offline-ноды и возвращает `422`, не переводя сессию в pending по timeout-path;

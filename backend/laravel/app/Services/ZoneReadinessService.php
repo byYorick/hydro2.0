@@ -7,7 +7,6 @@ use App\Models\ChannelBinding;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
-use App\Models\ZonePidConfig;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -34,8 +33,13 @@ class ZoneReadinessService
     ];
 
     public function __construct(
-        private readonly AutomationRuntimeConfigService $runtimeConfig
-    ) {}
+        private readonly AutomationRuntimeConfigService $runtimeConfig,
+        private readonly ZoneAutomationLogicProfileService $logicProfiles,
+        private readonly ZonePidConfigService $pidConfigs,
+        private readonly AutomationConfigDocumentService $documents,
+        private readonly AutomationConfigRegistry $registry,
+    ) {
+    }
 
     /**
      * Получить список обязательных bindings для зоны.
@@ -46,8 +50,7 @@ class ZoneReadinessService
     private function getRequiredBindings(Zone $zone): array
     {
         // В E2E режиме strict-проверки можно отключать полностью для изолированных тестовых сценариев.
-        $env = env('APP_ENV', 'production');
-        if (config('zones.readiness.e2e_mode', false) || $env === 'e2e') {
+        if (config('zones.readiness.e2e_mode', false) || app()->environment('e2e')) {
             return [];
         }
 
@@ -123,12 +126,7 @@ class ZoneReadinessService
 
     private function resolveActiveAutomationProfile(Zone $zone): ?ZoneAutomationLogicProfile
     {
-        if ($zone->relationLoaded('activeAutomationLogicProfile')) {
-            $loaded = $zone->getRelation('activeAutomationLogicProfile');
-            return $loaded instanceof ZoneAutomationLogicProfile ? $loaded : null;
-        }
-
-        return $zone->activeAutomationLogicProfile()->first();
+        return $this->logicProfiles->resolveActiveProfileForZone((int) $zone->id);
     }
 
     private function extractIrrigationTanksCount(array $subsystems): ?int
@@ -197,6 +195,7 @@ class ZoneReadinessService
         ));
         $missingCalibrations = [];
         $missingPidConfigTypes = [];
+        $missingProcessCalibrationModes = [];
         if (! empty($requiredBindings)) {
             $missingBindings = $this->checkRequiredBindings($zone, $requiredBindings);
             if (! empty($missingBindings)) {
@@ -234,6 +233,15 @@ class ZoneReadinessService
                     'required' => $requiredPidConfigTypes,
                 ];
             }
+        }
+
+        $missingProcessCalibrationModes = $this->checkRequiredProcessCalibrations($zone);
+        if ($missingProcessCalibrationModes !== []) {
+            $errorDetails[] = [
+                'type' => 'missing_process_calibrations',
+                'message' => 'Required zone process calibrations are missing: '.implode(', ', $missingProcessCalibrationModes),
+                'modes' => $missingProcessCalibrationModes,
+            ];
         }
 
         $dispatchEnabled = $this->isGrowCycleStartDispatchEnabled();
@@ -282,12 +290,17 @@ class ZoneReadinessService
             $pidConfigChecks["pid_config_{$pidType}"] = ! in_array($pidType, $missingPidConfigTypes, true);
         }
 
+        $processCalibrationChecks = [];
+        foreach (['generic', 'solution_fill', 'tank_recirc', 'irrigation'] as $mode) {
+            $processCalibrationChecks["process_calibration_{$mode}"] = ! in_array($mode, $missingProcessCalibrationModes, true);
+        }
+
         $checks = array_merge($requiredAssets, $calibrationChecks, [
             'has_nodes' => $hasNodes,
             'online_nodes' => $hasOnlineNodes,
             'dispatch_enabled' => $dispatchEnabled,
             'blocking_alerts_clear' => $blockingAlerts === [],
-        ], $pidConfigChecks);
+        ], $pidConfigChecks, $processCalibrationChecks);
 
         $readiness = [
             'ready' => empty($errorDetails),
@@ -301,6 +314,7 @@ class ZoneReadinessService
             'missing_calibrations' => $missingCalibrations,
             'required_pid_config_types' => $requiredPidConfigTypes,
             'missing_pid_config_types' => $missingPidConfigTypes,
+            'missing_process_calibration_modes' => $missingProcessCalibrationModes,
             'required_assets' => $requiredAssets,
             'optional_assets' => $optionalAssets,
             'nodes' => [
@@ -359,6 +373,12 @@ class ZoneReadinessService
             'ph' => 'PID-настройки pH не сохранены для зоны',
             'ec' => 'PID-настройки EC не сохранены для зоны',
         ];
+        $processCalibrationMessages = [
+            'generic' => 'Process calibration generic не сохранён для зоны',
+            'solution_fill' => 'Process calibration solution_fill не сохранён для зоны',
+            'tank_recirc' => 'Process calibration tank_recirc не сохранён для зоны',
+            'irrigation' => 'Process calibration irrigation не сохранён для зоны',
+        ];
 
         foreach ($roleMessages as $role => $message) {
             if (array_key_exists($role, $checks) && ! $checks[$role]) {
@@ -397,7 +417,7 @@ class ZoneReadinessService
                 continue;
             }
 
-            if (! in_array($type, ['missing_bindings', 'missing_calibrations', 'missing_pid_configs'], true)) {
+            if (! in_array($type, ['missing_bindings', 'missing_calibrations', 'missing_pid_configs', 'missing_process_calibrations'], true)) {
                 continue;
             }
 
@@ -409,6 +429,19 @@ class ZoneReadinessService
                     }
 
                     $errors[] = $pidMessages[$pidType] ?? "Не сохранён обязательный PID-конфиг: {$pidType}";
+                }
+
+                continue;
+            }
+
+            if ($type === 'missing_process_calibrations') {
+                $modes = is_array($issue['modes'] ?? null) ? $issue['modes'] : [];
+                foreach ($modes as $mode) {
+                    if (! is_string($mode) || $mode === '') {
+                        continue;
+                    }
+
+                    $errors[] = $processCalibrationMessages[$mode] ?? "Не сохранён обязательный process calibration: {$mode}";
                 }
 
                 continue;
@@ -679,8 +712,7 @@ class ZoneReadinessService
      */
     private function getRequiredPidConfigTypes(Zone $zone): array
     {
-        $env = env('APP_ENV', 'production');
-        if (config('zones.readiness.e2e_mode', false) || $env === 'e2e') {
+        if (config('zones.readiness.e2e_mode', false) || app()->environment('e2e')) {
             return [];
         }
 
@@ -701,30 +733,68 @@ class ZoneReadinessService
             return [];
         }
 
-        if (! DB::getSchemaBuilder()->hasTable('zone_pid_configs')) {
-            Log::error('zone_pid_configs table does not exist; readiness PID check is fail-closed', [
-                'zone_id' => $zone->id,
-                'required_pid_config_types' => $requiredTypes,
-            ]);
+        $missing = [];
 
-            return array_values($requiredTypes);
+        foreach ($requiredTypes as $type) {
+            $config = $this->pidConfigs->getConfig((int) $zone->id, $type);
+            $payload = is_array($config?->config) ? $config->config : [];
+
+            if ($payload === [] || array_is_list($payload)) {
+                $missing[] = $type;
+                continue;
+            }
+
+            try {
+                $this->pidConfigs->validateConfig($payload, $type);
+            } catch (\InvalidArgumentException $exception) {
+                Log::warning('Zone PID config failed readiness semantic validation', [
+                    'zone_id' => $zone->id,
+                    'pid_type' => $type,
+                    'error' => $exception->getMessage(),
+                ]);
+                $missing[] = $type;
+            }
         }
 
-        $existingTypes = ZonePidConfig::query()
-            ->where('zone_id', $zone->id)
-            ->whereIn('type', $requiredTypes)
-            ->get(['type', 'config'])
-            ->filter(function (ZonePidConfig $config): bool {
-                $payload = $config->config;
+        return array_values(array_unique($missing));
+    }
 
-                return is_array($payload) && ! empty($payload) && ! array_is_list($payload);
-            })
-            ->pluck('type')
-            ->unique()
-            ->values()
-            ->toArray();
+    /**
+     * @return array<int, string>
+     */
+    private function checkRequiredProcessCalibrations(Zone $zone): array
+    {
+        if (config('zones.readiness.e2e_mode', false) || app()->environment('e2e')) {
+            return [];
+        }
 
-        return array_values(array_diff($requiredTypes, $existingTypes));
+        if (! config('zones.readiness.strict_mode', true)) {
+            return [];
+        }
+
+        $missing = [];
+        foreach (['generic', 'solution_fill', 'tank_recirc', 'irrigation'] as $mode) {
+            $payload = $this->documents->getPayload(
+                $this->registry->processCalibrationNamespaceForMode($mode),
+                AutomationConfigRegistry::SCOPE_ZONE,
+                (int) $zone->id,
+                true
+            );
+
+            $hasPrimaryGain = false;
+            foreach (['ec_gain_per_ml', 'ph_up_gain_per_ml', 'ph_down_gain_per_ml'] as $key) {
+                if (array_key_exists($key, $payload) && $payload[$key] !== null && is_numeric($payload[$key])) {
+                    $hasPrimaryGain = true;
+                    break;
+                }
+            }
+
+            if (! $hasPrimaryGain) {
+                $missing[] = $mode;
+            }
+        }
+
+        return $missing;
     }
 
     private function nodeChannelHasActiveCalibration(?NodeChannel $channel): bool

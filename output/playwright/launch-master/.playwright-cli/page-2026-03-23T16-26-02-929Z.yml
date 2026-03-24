@@ -1,0 +1,52 @@
+- main [ref=e3]:
+  - generic [ref=e5]:
+    - complementary [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]:
+          - generic [ref=e10]: GI
+          - generic [ref=e11]: Greenhouse Intelligence
+        - heading "Точное земледелие для устойчивого будущего." [level=1] [ref=e12]
+        - paragraph [ref=e13]: Мониторинг зон в реальном времени с управлением теплицей, автоматизацией и телеметрией в одном интерфейсе.
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - paragraph [ref=e16]: Статус
+          - generic [ref=e19]: Системы в норме
+        - generic [ref=e20]:
+          - paragraph [ref=e21]: Активные узлы
+          - paragraph [ref=e22]: 1 248 датчиков
+      - generic:
+        - generic: GI
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - heading "С возвращением" [level=2] [ref=e26]
+        - paragraph [ref=e27]: Войдите в панель управления вашей лабораторией
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - text: Корпоративная почта
+          - generic [ref=e30]:
+            - generic:
+              - img
+            - textbox "Корпоративная почта" [active] [ref=e31]:
+              - /placeholder: name@precisionlabs.org
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - generic [ref=e34]: Токен безопасности
+            - link "Забыл?" [ref=e35] [cursor=pointer]:
+              - /url: http://localhost:8080/forgot-password
+          - generic [ref=e36]:
+            - generic:
+              - img
+            - textbox "Токен безопасности" [ref=e37]:
+              - /placeholder: ••••••••
+            - button "Показать пароль" [ref=e38] [cursor=pointer]:
+              - img [ref=e39]
+        - generic [ref=e42]:
+          - checkbox "Запомнить меня" [ref=e43]
+          - generic [ref=e44]: Запомнить меня
+        - button "Войти в систему" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Войти в систему
+          - img [ref=e47]
+        - paragraph [ref=e49]:
+          - text: Нет аккаунта?
+          - link "Зарегистрироваться" [ref=e50] [cursor=pointer]:
+            - /url: http://localhost:8080/register

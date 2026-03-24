@@ -9,7 +9,7 @@ export interface PidZoneCoeffs {
 
 /**
  * PID конфигурация зоны (pH или EC).
- * Хранится в zone_pid_configs.config (JSONB).
+ * Хранится в authority zone PID document payload.
  */
 export interface PidConfig {
   target: number

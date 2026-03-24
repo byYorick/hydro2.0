@@ -149,7 +149,7 @@ class _PlannerMissingDosingCalibrationCritical:
 class _PlannerMissingPidConfigCritical:
     def build(self, *, task, snapshot):
         raise PlannerConfigurationError(
-            "Zone 99 missing required zone_pid_configs for pid_type=ec, ph; fail-closed for critical correction parameters",
+            "Zone 99 missing required pid authority documents for pid_type=ec, ph; fail-closed for critical correction parameters",
             code="zone_pid_config_missing_critical",
         )
 

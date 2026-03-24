@@ -1,7 +1,7 @@
 # DATA_MODEL_REFERENCE.md
 # Полный справочник моделей данных системы 2.0
 # PostgreSQL • Laravel Models • Python ORM • Связи • Ограничения
-# **ОБНОВЛЕНО ПОСЛЕ МЕГА-РЕФАКТОРИНГА 2025-12-25**
+# **ОБНОВЛЕНО ПОСЛЕ AUTHORITY CUTOVER 2026-03-24**
 
 Документ описывает всю структуру данных системы 2.0:
 таблицы, связи, ключи, индексы, правила и использование.
@@ -163,10 +163,11 @@ updated_at
 - оперативная калибровка канала насоса хранится в `node_channels.config.pump_calibration` как last-known mirror:
   `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`,
   `k_ms_per_ml_l`, `test_volume_l`, `ec_before_ms`, `ec_after_ms`, `delta_ec_ms`, `temperature_c`.
-- системные пороги и UI/runtime defaults для pump calibration хранятся в `system_automation_settings(namespace='pump_calibration')`.
-- zone-level override для runtime pump calibration хранится в
-  `zone_correction_configs.base_config.pump_calibration` и раскрывается в
-  `zone_correction_configs.resolved_config.pump_calibration`.
+- системные пороги и UI/runtime defaults для pump calibration хранятся в
+  `automation_config_documents(namespace='system.pump_calibration_policy', scope_type='system', scope_id=0)`.
+- zone-level correction runtime contract хранится в
+  `automation_config_documents(namespace='zone.correction', scope_type='zone', scope_id={zone_id})`
+  и materialized bundle `automation_effective_bundles(scope_type='zone', scope_id={zone_id})`.
 - `component` для EC-питания поддерживает: `npk`, `calcium`, `magnesium`, `micro` (для pH — `acid`/`base`).
 - Для новой логики питания не используется legacy 3-компонентная схема: актуальна только 4-компонентная модель.
 
@@ -356,7 +357,7 @@ INDEX: recipe_revision_phase_idx (recipe_revision_id)
 
 Правила валидации для топологии `2 бака`:
 - область применения: только при активной runtime-топологии
-  `zone_automation_logic_profiles.subsystems.diagnostics.execution.topology = "two_tank_drip_substrate_trays"`.
+  `zone.logic_profile.active_profile.subsystems.diagnostics.execution.topology = "two_tank_drip_substrate_trays"`.
 - для фаз со статусом ревизии `PUBLISHED` обязательны поля:
   - `nutrient_npk_ratio_pct`
   - `nutrient_calcium_ratio_pct`
@@ -516,27 +517,27 @@ UNIQUE: (grow_cycle_phase_id, step_index)
 INDEX: grow_cycle_phase_step_phase_idx (grow_cycle_phase_id)
 ```
 
-## 6.4. grow_cycle_overrides (перекрытия параметров)
-```
-id BIGSERIAL PK
-grow_cycle_id BIGINT FK → grow_cycles CASCADE
-parameter VARCHAR -- 'ph.target', 'irrigation.interval_sec', etc
-value_type ENUM('numeric', 'string', 'boolean', 'json')
-numeric_value DECIMAL(10,4) NULL
-string_value VARCHAR NULL
-boolean_value BOOLEAN NULL
-json_value JSONB NULL
+## 6.4. cycle.phase_overrides / cycle.manual_overrides
 
-is_active BOOLEAN DEFAULT TRUE
-reason TEXT NULL
-created_by BIGINT FK → users NULL
+Legacy таблица `grow_cycle_overrides` удалена из authority-path.
+Cycle-level overrides теперь хранятся в `automation_config_documents`:
 
-created_at TIMESTAMP
-updated_at TIMESTAMP
+- `namespace='cycle.phase_overrides'`, `scope_type='grow_cycle'`
+- `namespace='cycle.manual_overrides'`, `scope_type='grow_cycle'`
 
-INDEX: grow_cycle_override_cycle_active_idx (grow_cycle_id, is_active)
-INDEX: grow_cycle_override_parameter_idx (parameter)
-```
+`cycle.phase_overrides`:
+- объект с phase snapshot override-полями (`ph_target`, `ec_target`, `irrigation_interval_sec`, ...).
+
+`cycle.manual_overrides`:
+- массив объектов:
+  - `parameter`
+  - `value_type`
+  - `value`
+  - `is_active`
+  - `applies_from`
+  - `applies_until`
+  - `reason`
+  - `created_by`
 
 ## 6.5. grow_cycle_transitions (история переходов фаз)
 ```
@@ -710,31 +711,29 @@ zone_workflow_state_scheduler_task_id_idx (scheduler_task_id)
 - `irrigating`
 - `irrig_recirc`
 
-## 6.7. zone_automation_logic_profiles
+## 6.7. zone.logic_profile
 
-```
-id PK
-zone_id FK → zones
-mode VARCHAR(16) -- setup|working
-subsystems JSONB -- runtime-конфиг подсистем
-command_plans JSONB NOT NULL DEFAULT '{}'::jsonb -- планы команд two-tank
-is_active BOOLEAN DEFAULT false
-created_by FK → users NULL
-updated_by FK → users NULL
-created_at TIMESTAMP
-updated_at TIMESTAMP
-UNIQUE (zone_id, mode)
-```
+Legacy таблица `zone_automation_logic_profiles` удалена из authority-path.
+Runtime profile зоны хранится в:
 
-Индексы:
-```
-zone_automation_logic_profiles_zone_id_is_active_index
-```
+`automation_config_documents(namespace='zone.logic_profile', scope_type='zone', scope_id={zone_id})`
+
+Payload:
+- `active_mode`
+- `profiles.setup|profiles.working`
+  - `mode`
+  - `is_active`
+  - `subsystems`
+  - `command_plans`
+  - `created_by`
+  - `updated_by`
+  - `created_at`
+  - `updated_at`
 
 Требования к `command_plans`:
 - содержит `schema_version` и `plan_version`;
 - каждый plan содержит `steps[]` с `channel`, `cmd`, `params`;
-- приоритет runtime-резолва: `command_plans` (колонка) -> legacy fallback только на период миграции.
+- runtime использует `active_profile.command_plans` из compiled bundle, без legacy fallback.
 
 Минимальная JSON-схема `command_plans` (AE2-Lite):
 
@@ -860,7 +859,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Правило runtime:
 - `NOTIFY` используется как fast-path;
 - reconcile polling обязателен как fallback на случай пропуска notify-событий.
-- изменение runtime profile (`zone_automation_logic_profiles`) должно порождать `zone_events`
+- изменение runtime profile (`zone.logic_profile`) должно порождать `zone_events`
   типа `AUTOMATION_LOGIC_PROFILE_UPDATED`, чтобы инициировать `ae_signal_update` по `kind=zone_event`.
 
 Рекомендуемая структура `subsystems` для startup/recovery в `2 бака`:
@@ -1344,30 +1343,154 @@ lszc_cursor_at_idx (cursor_at)
 
 ---
 
-## 8.7. automation_runtime_overrides (ACTIVE: runtime overrides for Laravel scheduler/AE bridge)
+## 8.7. automation_config_documents
 
-Хранилище runtime-переопределений для глобальных параметров автоматики
-(`services.automation_engine.*`, `services.python_bridge.*`) с приоритетом над env/config.
-Используется UI `/settings` и сервисом `AutomationRuntimeConfigService`.
+Каноническое authority-хранилище automation/runtime-конфигов.
 
 ```
 id BIGSERIAL PK
-key VARCHAR(128) UNIQUE NOT NULL
-value TEXT NULL
+namespace VARCHAR(128) NOT NULL
+scope_type VARCHAR(32) NOT NULL
+scope_id BIGINT NOT NULL
+schema_version INT NOT NULL DEFAULT 1
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+status VARCHAR(32) NOT NULL DEFAULT 'valid'
+source VARCHAR(32) NOT NULL DEFAULT 'migration'
+checksum VARCHAR(64) NOT NULL
 updated_by BIGINT FK -> users NULL ON DELETE SET NULL
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+
+UNIQUE(namespace, scope_type, scope_id)
+INDEX(scope_type, scope_id)
+```
+
+Ключевые namespace:
+
+- `system.runtime`
+- `system.automation_defaults`
+- `system.command_templates`
+- `system.process_calibration_defaults`
+- `system.pid_defaults.ph`
+- `system.pid_defaults.ec`
+- `system.pump_calibration_policy`
+- `system.sensor_calibration_policy`
+- `greenhouse.logic_profile`
+- `zone.logic_profile`
+- `zone.correction`
+- `zone.pid.ph`
+- `zone.pid.ec`
+- `zone.process_calibration.generic`
+- `zone.process_calibration.solution_fill`
+- `zone.process_calibration.tank_recirc`
+- `zone.process_calibration.irrigation`
+- `cycle.start_snapshot`
+- `cycle.phase_overrides`
+- `cycle.manual_overrides`
+
+## 8.8. automation_config_versions
+
+История всех изменений authority documents.
+
+```
+id BIGSERIAL PK
+document_id BIGINT FK -> automation_config_documents CASCADE
+namespace VARCHAR(128) NOT NULL
+scope_type VARCHAR(32) NOT NULL
+scope_id BIGINT NOT NULL
+schema_version INT NOT NULL DEFAULT 1
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+status VARCHAR(32) NOT NULL DEFAULT 'valid'
+source VARCHAR(32) NOT NULL DEFAULT 'migration'
+checksum VARCHAR(64) NOT NULL
+changed_by BIGINT FK -> users NULL ON DELETE SET NULL
+changed_at TIMESTAMPTZ NOT NULL
 created_at TIMESTAMPTZ
 updated_at TIMESTAMPTZ
 ```
 
-Индексы:
+## 8.9. automation_effective_bundles
+
+Materialized runtime bundles. Это единственный runtime read-path для automation config.
+
 ```
-automation_runtime_overrides_key_unique (key) UNIQUE
+id BIGSERIAL PK
+scope_type VARCHAR(32) NOT NULL
+scope_id BIGINT NOT NULL
+bundle_revision VARCHAR(64) NOT NULL
+schema_revision VARCHAR(64) NOT NULL
+config JSONB NOT NULL DEFAULT '{}'::jsonb
+violations JSONB NOT NULL DEFAULT '[]'::jsonb
+status VARCHAR(32) NOT NULL DEFAULT 'valid'
+compiled_at TIMESTAMPTZ NOT NULL
+inputs_checksum VARCHAR(64) NOT NULL
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+
+UNIQUE(scope_type, scope_id)
+INDEX(bundle_revision)
 ```
 
-Назначение:
-- безопасное runtime-редактирование timeout/retry/dispatch-параметров без `config:clear`;
-- мгновенный подхват параметров scheduler/контроллерами через чтение из БД;
-- аудит автора последнего изменения (`updated_by`).
+Compile precedence:
+`system.* -> zone.* -> cycle.*`
+
+## 8.10. automation_config_violations
+
+Machine-readable ошибки и предупреждения compiler/validator pipeline.
+
+```
+id BIGSERIAL PK
+scope_type VARCHAR(32) NOT NULL
+scope_id BIGINT NOT NULL
+namespace VARCHAR(128) NOT NULL
+path VARCHAR(255) NOT NULL DEFAULT ''
+code VARCHAR(128) NOT NULL
+severity VARCHAR(32) NOT NULL
+blocking BOOLEAN NOT NULL DEFAULT FALSE
+message TEXT NOT NULL
+detected_at TIMESTAMPTZ NOT NULL
+
+INDEX(scope_type, scope_id)
+```
+
+## 8.11. automation_config_presets
+
+Preset storage для correction family. Preset не является runtime authority.
+
+```
+id BIGSERIAL PK
+namespace VARCHAR(128) NOT NULL
+scope VARCHAR(32) NOT NULL DEFAULT 'custom'
+is_locked BOOLEAN NOT NULL DEFAULT FALSE
+name VARCHAR NOT NULL
+slug VARCHAR UNIQUE NOT NULL
+description TEXT NULL
+schema_version INT NOT NULL DEFAULT 1
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+updated_by BIGINT FK -> users NULL ON DELETE SET NULL
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+
+INDEX(namespace, scope)
+```
+
+## 8.12. automation_config_preset_versions
+
+История изменений preset-ов.
+
+```
+id BIGSERIAL PK
+preset_id BIGINT FK -> automation_config_presets CASCADE
+namespace VARCHAR(128) NOT NULL
+scope VARCHAR(32) NOT NULL
+schema_version INT NOT NULL DEFAULT 1
+payload JSONB NOT NULL DEFAULT '{}'::jsonb
+checksum VARCHAR(64) NOT NULL
+changed_by BIGINT FK -> users NULL ON DELETE SET NULL
+changed_at TIMESTAMPTZ NOT NULL
+created_at TIMESTAMPTZ
+updated_at TIMESTAMPTZ
+```
 
 ---
 
@@ -1446,7 +1569,10 @@ created_at
 greenhouse 1—N zones
 users N—N greenhouses (user_greenhouses)
 users N—N zones (user_zones)
-users 1—N automation_runtime_overrides (updated_by)
+users 1—N automation_config_documents (updated_by)
+users 1—N automation_config_versions (changed_by)
+users 1—N automation_config_presets (updated_by)
+users 1—N automation_config_preset_versions (changed_by)
 zone 1—1 grow_cycle (активный: PLANNED/RUNNING/PAUSED)
 grow_cycle 1—1 recipe_revision (зафиксированная версия)
 recipe 1—N recipe_revisions
@@ -1455,8 +1581,8 @@ recipe_revision_phase 1—N recipe_revision_phase_steps
 
 grow_cycle 1—N grow_cycle_phases (снапшоты)
 grow_cycle_phase 1—N grow_cycle_phase_steps (снапшоты)
-grow_cycle 1—N grow_cycle_overrides
 grow_cycle 1—N grow_cycle_transitions
+scope(system|greenhouse|zone|grow_cycle) 1—1 automation_effective_bundle
 ```
 
 **Оборудование и телеметрия:**
@@ -1530,12 +1656,12 @@ zone 1—1 ae_zone_leases
 
 # 13. Использование данных в Python сервисах (AE2-Lite)
 
-**Automation-engine (AE2-Lite) использует direct SQL read-model в runtime path.**
+**Automation-engine использует direct SQL read-model в runtime path.**
 
 **Основной контракт runtime:**
-- чтение таблиц `grow_cycles`, `grow_cycle_phases`, `zone_automation_logic_profiles`,
-  `telemetry_last`, `zone_workflow_state`, `zone_events`, `commands`;
-- приоритет резолва: `phase snapshot -> grow_cycle_overrides -> active logic profile`;
+- чтение таблиц `grow_cycles`, `grow_cycle_phases`, `automation_effective_bundles`,
+  `automation_config_violations`, `telemetry_last`, `zone_workflow_state`, `zone_events`, `commands`;
+- приоритет compile: `system.* -> zone.* -> cycle.*`;
 - отсутствие runtime-зависимости от `/api/internal/effective-targets/*`.
 
 **Структура ответа:**
@@ -1585,31 +1711,27 @@ zone 1—1 ae_zone_leases
 - `duration_sec: number`
 - `fallback_mode: \"none\"|\"zone_service\"|\"event_only\"` (optional)
 
-### 13.2. Runtime-конфиг автоматики (`zone_automation_logic_profiles` -> runtime DTO)
+### 13.2. Runtime-конфиг автоматики (authority documents -> bundle DTO)
 
-Источник runtime-настроек фронтового конфигуратора: `zone_automation_logic_profiles.subsystems`.
+Источник runtime-настроек фронтового конфигуратора:
 
-Актуальная ownership-модель:
+- `automation_config_documents(namespace='zone.logic_profile', scope_type='zone', scope_id={zone_id})`
+- `automation_config_documents(namespace='greenhouse.logic_profile', scope_type='greenhouse', scope_id={greenhouse_id})`
 
-- `zone_automation_logic_profiles` хранит только zonal profile:
-  - `ph`
-  - `ec`
-  - `irrigation`
-  - `lighting`
-  - `diagnostics`
-  - `solution_change`
-  - optional `zone_climate`
-- общий climate теплицы вынесен из zonal profile в отдельную таблицу
-  `greenhouse_automation_logic_profiles`.
+Каноническая ownership-модель:
 
-При формировании runtime DTO применяется приоритет:
+- zonal automation profile живёт в `zone.logic_profile`;
+- greenhouse climate profile живёт в `greenhouse.logic_profile`;
+- runtime path читает не raw profile document, а compiled bundle.
 
-`phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles (active mode runtime)`.
+При формировании runtime DTO применяется precedence:
+
+`system.* -> zone.* -> cycle.*`
 
 Применение runtime-профиля:
-- фронтенд сохраняет профиль через `POST /api/zones/{zone}/automation-logic-profile`
+- фронтенд сохраняет профиль через unified `/api/automation-configs/*`;
 - scheduler/оператор формирует intent;
-- AE2-Lite читает профиль напрямую из БД и применяет в зоне.
+- AE runtime читает compiled bundle напрямую из БД и применяет его в зоне.
 
 Нормализация runtime-полей в automation контракт:
 
@@ -1644,26 +1766,19 @@ zone 1—1 ae_zone_leases
 
 Runtime-снимок подсистем отражается в `zone_automation_state` для UI/диагностики.
 
-### 13.3. Runtime-конфиг greenhouse climate (`greenhouse_automation_logic_profiles`)
+### 13.3. Runtime-конфиг greenhouse climate (`greenhouse.logic_profile`)
 
-Назначение таблицы: хранить greenhouse-owned profile общего климата теплицы.
+Назначение authority-документа: хранить greenhouse-owned profile общего климата теплицы.
 
-Ключевые поля:
+Ключевые поля payload:
 
-- `greenhouse_id`
-- `mode: \"setup\"|\"working\"`
-- `subsystems`
-- `command_plans`
-- `is_active`
-- `created_by`
-- `updated_by`
-- `created_at`
-- `updated_at`
+- `active_mode`
+- `profiles`
 
 Ограничение v1:
 
 - поддерживается только subsystem `climate`;
-- runtime-dispatch ещё не активирован, но таблица уже является source of truth для UI и дальнейшего rollout.
+- runtime-dispatch ещё не активирован, но authority document уже является source of truth для UI и дальнейшего rollout.
 
 Связанные bindings не хранятся в самой таблице. Они описываются через:
 
@@ -1742,70 +1857,31 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 
 ---
 
-# 16. Calibration Settings Domain Model (2026-03-14)
+# 16. Calibration Settings And Automation Authority (2026-03-24)
 
-Добавлены системные automation settings и backend-managed tracking калибровок сенсоров.
-`node_channels.config.pump_calibration` сохранён как operational mirror/manual calibration payload,
-но не является source of truth для системных порогов runtime.
+Automation settings, PID defaults, correction runtime config и process calibration
+переведены в единый authority layer. `node_channels.config.pump_calibration` сохранён
+как operational mirror/manual payload, но не является source of truth для system policy.
 
-### 16.1. Таблица `system_automation_settings`
+### 16.1. System authority namespaces
 
-- Назначение: системный source of truth для automation-wide defaults и validation bounds.
-- Ключевые поля:
-  - `namespace` (unique string)
-  - `config` (jsonb)
-  - `updated_by` (nullable FK -> `users.id`)
-  - `created_at`, `updated_at`
-- Поддерживаемые namespace:
-  - `pump_calibration`
-  - `sensor_calibration`
-  - `process_calibration_defaults`
-  - `automation_defaults`
-  - `automation_command_templates`
-  - internal backend-owned: `pid_defaults_ph`, `pid_defaults_ec`
-- Для `pump_calibration` хранятся:
-  - `ml_per_sec_min`, `ml_per_sec_max`
-  - `min_dose_ms`
-  - `calibration_duration_min_sec`, `calibration_duration_max_sec`
-  - `quality_score_basic`, `quality_score_with_k`, `quality_score_legacy`
-  - `age_warning_days`, `age_critical_days`
-  - `default_run_duration_sec`
-- Для `sensor_calibration` хранятся:
-  - `ph_point_1_value`, `ph_point_2_value`
-  - `ec_point_1_tds`, `ec_point_2_tds`
-  - `reminder_days`, `critical_days`
-  - `command_timeout_sec`
-- Для `process_calibration_defaults` хранятся рекомендуемые значения для UI
-  создания/редактирования `zone_process_calibrations`:
-  - `ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`
-  - `ph_per_ec_ml`, `ec_per_ph_ml`
-  - `transport_delay_sec`, `settle_sec`
-  - `confidence`
-- Для `automation_defaults` хранятся scalar/default значения для automation UI и
-  `GROWTH_CYCLE_CONFIG` сборки:
-  - рекомендуемые значения `climate_*`, `water_*`, `lighting_*`
-  - runtime defaults для startup/correction/recovery:
-    `water_startup_*`, `water_prepare_tolerance_*`,
-    `water_correction_*`, `water_irrigation_recovery_*`
-  - UI/runtime строки `water_refill_required_node_types_csv`,
-    `water_refill_preferred_channel`,
-    `water_startup_clean_max_sensor_label`,
-    `water_startup_solution_max_sensor_label`
-- Для `automation_command_templates` хранятся JSON-массивы relay-команд для
-  `two_tank_commands.*`:
-  - `clean_fill_start`, `clean_fill_stop`
-  - `solution_fill_start`, `solution_fill_stop`
-  - `prepare_recirculation_start`, `prepare_recirculation_stop`
-  - `irrigation_recovery_start`, `irrigation_recovery_stop`
-- Для `pid_defaults_ph` и `pid_defaults_ec` хранятся default PID configs для `ZonePidConfigService`
-  с тем же shape, что и `zone_pid_configs.config`.
-- `pid_defaults_*` не обязаны быть публично редактируемыми через общий System Settings UI,
-  но являются runtime source of truth и позволяют менять PID defaults без redeploy.
-  - `ph_reference_min`, `ph_reference_max`
-  - `ec_tds_reference_max`
-- Laravel дополнительно шарит `processCalibrationDefaults` в Inertia props, чтобы
-  пустая process calibration форма поднималась из `system_automation_settings`,
-  а не из локальных хардкодов.
+Системные defaults и policy хранятся в `automation_config_documents` со scope:
+
+- `scope_type='system'`
+- `scope_id=0`
+
+Поддерживаемые system namespace:
+
+- `system.runtime`
+- `system.automation_defaults`
+- `system.command_templates`
+- `system.process_calibration_defaults`
+- `system.pid_defaults.ph`
+- `system.pid_defaults.ec`
+- `system.pump_calibration_policy`
+- `system.sensor_calibration_policy`
+
+Frontend не должен получать эти данные через Inertia props; authority-read идёт через unified API.
 
 ### 16.2. Таблица `sensor_calibrations`
 
@@ -1859,54 +1935,49 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
   - `ml_per_sec` обязан попадать в диапазон `0.01 .. 100.0`;
   - значение вне диапазона считается невалидной runtime-calibration и блокируется DB CHECK constraint.
 
-### 16.3.1. Таблица `zone_process_calibrations`
+### 16.3.1. Zone process calibration authority
 
-- Назначение: process-gain и observation-window contract для in-flow correction runtime.
-- Ключевые поля:
-  - `zone_id` (FK -> `zones.id`)
-  - `mode` (`generic|solution_fill|tank_recirc|irrigation`)
-  - `ec_gain_per_ml`, `ph_up_gain_per_ml`, `ph_down_gain_per_ml`
-  - `ph_per_ec_ml`, `ec_per_ph_ml`
-  - `transport_delay_sec`, `settle_sec` (DB default: `0`)
-  - `confidence` (DB default: `1.00`), `source`, `meta`
-  - `valid_from`, `valid_to`, `is_active`
-- Инварианты:
-  - в каждый момент времени допускается не более одной active calibration на пару `(zone_id, mode)`;
-  - canonical storage keys ограничены `generic|solution_fill|tank_recirc|irrigation`;
-  - runtime aliases нормализуются до canonical storage keys:
-    `tank_filling -> solution_fill`,
-    `prepare_recirculation -> tank_recirc`,
-    `irrigating|irrig_recirc -> irrigation`;
-  - primary gain-и не добираются runtime-ом из legacy/default источников;
-  - `transport_delay_sec` и `settle_sec` являются частью обязательного observe-window contract.
+Process-gain и observe-window contract хранятся в zone-scoped authority documents:
 
-### 16.4. Zone correction config: pump calibration override
+- `zone.process_calibration.generic`
+- `zone.process_calibration.solution_fill`
+- `zone.process_calibration.tank_recirc`
+- `zone.process_calibration.irrigation`
 
-- `zone_correction_configs.base_config.pump_calibration` хранит только zone-level diff относительно
-  `system_automation_settings(namespace='pump_calibration')`.
-- `zone_correction_configs.resolved_config.pump_calibration` хранит fully resolved runtime payload
-  для Automation-Engine.
-- `zone_correction_config_versions.resolved_config.pump_calibration` versioned вместе с остальным correction config.
-- AE3-Lite использует `resolved_config.pump_calibration` как canonical runtime source.
+Инварианты:
+- runtime aliases нормализуются до canonical keys:
+  `tank_filling -> solution_fill`,
+  `prepare_recirculation -> tank_recirc`,
+  `irrigating|irrig_recirc -> irrigation`;
+- `transport_delay_sec` и `settle_sec` являются обязательной частью observe-window contract;
+- readiness и start path проверяют эти payload semantically через compiled bundle.
+
+### 16.4. Zone correction authority
+
+- `zone.correction` хранит zonal correction payload:
+  `preset_id`, `base_config`, `phase_overrides`, `resolved_config`;
+- `resolved_config` materialized compiler/service layer и входит в zone/grow-cycle bundle;
+- zone correction history хранится в `automation_config_versions`;
+- AE runtime использует correction payload из compiled bundle, а не legacy table напрямую.
 
 ### 16.5. Zone correction config: timing contract
 
-- `zone_correction_configs.base_config.timing` и `zone_correction_configs.resolved_config.timing`
+- `zone.correction.base_config.timing` и `zone.correction.resolved_config.timing`
   больше не содержат legacy wait-поля correction timing.
-- `zone_correction_configs.base_config` больше не содержит секцию adaptive timing.
-- `zone_correction_configs.*.retry.prepare_recirculation_max_correction_attempts`
+- `zone.correction.base_config` больше не содержит секцию adaptive timing.
+- `zone.correction.*.retry.prepare_recirculation_max_correction_attempts`
   хранит только явный конечный лимит correction-loop внутри recirculation window;
   если field не задан, runtime использует `max(max_ec_correction_attempts, max_ph_correction_attempts)`.
-- `zone_correction_configs.*.retry.max_ec_correction_attempts` и
-  `zone_correction_configs.*.retry.max_ph_correction_attempts`
+- `zone.correction.*.retry.max_ec_correction_attempts` и
+  `zone.correction.*.retry.max_ph_correction_attempts`
   тоже хранят только конечные значения внутри контрактной верхней границы.
-- `zone_correction_configs.*.retry.telemetry_stale_retry_sec`,
-  `zone_correction_configs.*.retry.decision_window_retry_sec` и
-  `zone_correction_configs.*.retry.low_water_retry_sec`
+- `zone.correction.*.retry.telemetry_stale_retry_sec`,
+  `zone.correction.*.retry.decision_window_retry_sec` и
+  `zone.correction.*.retry.low_water_retry_sec`
   задают delay для временных retry-path в `corr_check`/`corr_wait_{ec|ph}`.
 - stage-level wait в correction path задаётся только через `timing.stabilization_sec`.
 - observation hold-window для `EC`/`pH` задаётся только через
-  `zone_process_calibrations.transport_delay_sec` + `zone_process_calibrations.settle_sec`
+  `zone.process_calibration.*.transport_delay_sec` + `zone.process_calibration.*.settle_sec`
   и observe-параметры контроллеров.
 
 ### 16.6. Таблица `node_channels` (activity sync)
@@ -1921,8 +1992,9 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 
 ### 16.7. Совместимость чтения
 
-- Automation-Engine читает runtime bounds из `zone_correction_configs.resolved_config.pump_calibration`.
-- Ручная pump calibration панели Laravel читает активную запись из `pump_calibrations`.
+- Automation runtime читает system/zone/cycle config только из `automation_effective_bundles`.
+- Laravel editors читают raw authority documents через `/api/automation-configs/*`.
+- Ручная pump calibration панель Laravel читает активную запись из `pump_calibrations`.
 - `node_channels.config.pump_calibration` допустим как read-through mirror/manual payload, но не как source of truth
   для системных default/min/max порогов.
 

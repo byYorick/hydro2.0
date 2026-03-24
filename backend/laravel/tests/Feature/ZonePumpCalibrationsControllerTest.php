@@ -4,9 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
-use App\Models\SystemAutomationSetting;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\RefreshDatabase;
@@ -58,10 +59,17 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $setting = SystemAutomationSetting::query()->firstWhere('namespace', 'pump_calibration');
-        $config = $setting->config;
+        $documents = app(AutomationConfigDocumentService::class);
+        $config = $documents->getSystemPayloadByLegacyNamespace('pump_calibration', true);
         $config['ml_per_sec_max'] = 2.0;
-        $setting->update(['config' => $config]);
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            $config,
+            null,
+            'test'
+        );
 
         $this->putJson("/api/zones/{$zone->id}/pump-calibrations/{$channel->id}", [
             'ml_per_sec' => 3.0,

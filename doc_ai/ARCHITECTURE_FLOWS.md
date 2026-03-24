@@ -1,8 +1,8 @@
 # ARCHITECTURE_FLOWS.md
 # Ключевые архитектурные потоки hydro 2.0 (AE2-Lite + AE3-Lite target)
 
-**Версия:** 3.2  
-**Дата обновления:** 2026-03-12  
+**Версия:** 3.3  
+**Дата обновления:** 2026-03-24  
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -68,11 +68,20 @@ Single-writer fallback:
 
 `automation-engine -> PostgreSQL (direct SQL read-model)`
 
-Приоритет резолва runtime targets/config:
-`phase snapshot -> grow_cycle_overrides -> zone_automation_logic_profiles(active mode)`
+Канонический runtime read-path для automation/runtime-конфига:
 
-Ограничение:
-- runtime path не зависит от `/api/internal/effective-targets/*`.
+- raw authority state хранится в `automation_config_documents`;
+- compiler собирает `automation_effective_bundles`;
+- AE3 читает bundle по `grow_cycles.settings.bundle_revision`;
+- Laravel readiness/start path читает bundle и `automation_config_violations`.
+
+Precedence compile:
+`system.* -> zone.* -> cycle.*`
+
+Ограничения:
+- runtime path не зависит от `/api/internal/effective-targets/*`;
+- runtime path не читает legacy automation config tables как source of truth;
+- fallback на чтении не допускается.
 
 ---
 
@@ -94,6 +103,7 @@ API:
 
 - `SYSTEM_ARCH_FULL.md`
 - `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
+- `04_BACKEND_CORE/AUTOMATION_CONFIG_AUTHORITY.md`
 - `04_BACKEND_CORE/ae3lite.md`
 - `04_BACKEND_CORE/REST_API_REFERENCE.md`
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`

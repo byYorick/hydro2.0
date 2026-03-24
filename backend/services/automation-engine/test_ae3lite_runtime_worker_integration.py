@@ -66,6 +66,7 @@ from test_ae3lite_zone_snapshot_read_model_integration import (
     _insert_recipe_revision,
     _insert_sensor,
     _insert_zone,
+    _upsert_zone_bundle,
 )
 
 
@@ -160,44 +161,33 @@ async def _insert_single_step_profile(zone_id: int) -> None:
         "topology": "generic_cycle_start",
         "required_node_types": ["irrig"],
     }
-    await execute(
-        """
-        INSERT INTO zone_automation_logic_profiles (
-            zone_id,
-            mode,
-            subsystems,
-            command_plans,
-            is_active,
-            created_at,
-            updated_at
-        )
-        VALUES (
-            $1,
-            'working',
-            $2::jsonb,
-            $3::jsonb,
-            TRUE,
-            NOW(),
-            NOW()
-        )
-        """,
+    await _upsert_zone_bundle(
         zone_id,
-        {"diagnostics": {"execution": execution}},
         {
-            "schema_version": 1,
-            "plan_version": 1,
-            "plans": {
-                "diagnostics": {
-                    "steps": [
-                        {
-                            "name": "pump_start",
-                            "channel": "irrigation_pump",
-                            "cmd": "set_relay",
-                            "params": {"state": True},
-                        }
-                    ]
-                }
-            },
+            "logic_profile": {
+                "active_mode": "working",
+                "active_profile": {
+                    "mode": "working",
+                    "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                    "subsystems": {"diagnostics": {"execution": execution}},
+                    "command_plans": {
+                        "schema_version": 1,
+                        "plan_version": 1,
+                        "plans": {
+                            "diagnostics": {
+                                "steps": [
+                                    {
+                                        "name": "pump_start",
+                                        "channel": "irrigation_pump",
+                                        "cmd": "set_relay",
+                                        "params": {"state": True},
+                                    }
+                                ]
+                            }
+                        },
+                    },
+                },
+            }
         },
     )
 

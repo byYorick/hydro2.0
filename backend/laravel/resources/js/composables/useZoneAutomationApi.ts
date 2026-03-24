@@ -1,6 +1,12 @@
 import { logger } from '@/utils/logger'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
+import {
+  payloadFromZoneLogicDocument,
+  resolveZoneLogicProfileEntry,
+  upsertZoneLogicProfilePayload,
+} from '@/composables/zoneLogicProfileAuthority'
 import {
   applyAutomationFromRecipe,
   buildGrowthCycleConfigPayload,
@@ -18,21 +24,6 @@ import type { ToastVariant } from '@/composables/useToast'
 
 // ─── Internal types ───────────────────────────────────────────────────────────
 
-interface AutomationLogicProfileEntry {
-  mode: string
-  is_active: boolean
-  subsystems?: Record<string, unknown>
-  updated_at?: string | null
-}
-
-interface AutomationLogicProfilesResponse {
-  status: string
-  data?: {
-    active_mode?: string | null
-    profiles?: Record<string, AutomationLogicProfileEntry>
-  }
-}
-
 // ─── Private module-level helpers ─────────────────────────────────────────────
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -40,32 +31,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return null
   }
   return value as Record<string, unknown>
-}
-
-function toAutomationLogicProfileEntry(value: unknown): AutomationLogicProfileEntry | null {
-  const record = asRecord(value)
-  if (!record) {
-    return null
-  }
-
-  const mode = typeof record.mode === 'string' ? record.mode : null
-  const isActive = typeof record.is_active === 'boolean' ? record.is_active : null
-  if (!mode || isActive === null) {
-    return null
-  }
-
-  const subsystems = asRecord(record.subsystems ?? null) ?? undefined
-  let updatedAt: string | null = null
-  if (typeof record.updated_at === 'string') {
-    updatedAt = record.updated_at
-  }
-
-  return {
-    mode,
-    is_active: isActive,
-    subsystems,
-    updated_at: updatedAt,
-  }
 }
 
 // ─── State interface ──────────────────────────────────────────────────────────
@@ -100,9 +65,10 @@ export function useZoneAutomationApi(
   state: ZoneAutomationApiState,
   deps: ZoneAutomationApiDeps
 ) {
+  const automationConfig = useAutomationConfig()
   const automationDefaults = useAutomationDefaults()
   const automationCommandTemplates = useAutomationCommandTemplates()
-  const { get, post, showToast, sendZoneCommand } = deps
+  const { showToast, sendZoneCommand } = deps
   const {
     climateForm,
     waterForm,
@@ -120,43 +86,23 @@ export function useZoneAutomationApi(
   } = state
 
   // ─── Private functions ─────────────────────────────────────────────────────
-
-  function resolveAutomationProfileEntry(
-    data: AutomationLogicProfilesResponse['data']
-  ): AutomationLogicProfileEntry | null {
-    const profiles = asRecord(data?.profiles ?? null)
-    if (!profiles) {
-      return null
-    }
-
-    const activeMode = normalizeAutomationLogicMode(data?.active_mode, automationLogicMode.value)
-    automationLogicMode.value = activeMode
-    const activeEntry = toAutomationLogicProfileEntry(profiles[activeMode])
-    if (activeEntry) {
-      return activeEntry
-    }
-
-    const workingEntry = toAutomationLogicProfileEntry(profiles.working)
-    if (workingEntry) {
-      automationLogicMode.value = 'working'
-      return workingEntry
-    }
-
-    const setupEntry = toAutomationLogicProfileEntry(profiles.setup)
-    if (setupEntry) {
-      automationLogicMode.value = 'setup'
-      return setupEntry
-    }
-
-    return null
-  }
-
-  function applyServerProfileToForms(data: AutomationLogicProfilesResponse['data']): void {
-    const selectedEntry = resolveAutomationProfileEntry(data)
+  function applyServerProfileToForms(documentPayload: Record<string, unknown>): void {
+    const payload = payloadFromZoneLogicDocument({
+      namespace: 'zone.logic_profile',
+      scope_type: 'zone',
+      scope_id: Number(props.zoneId ?? 0),
+      schema_version: 1,
+      payload: documentPayload,
+      status: 'valid',
+      updated_at: null,
+      updated_by: null,
+    })
+    const selectedEntry = resolveZoneLogicProfileEntry(payload, normalizeAutomationLogicMode(payload.active_mode, automationLogicMode.value))
     if (!selectedEntry) {
       return
     }
 
+    automationLogicMode.value = normalizeAutomationLogicMode(payload.active_mode, selectedEntry.mode)
     const subsystems = asRecord(selectedEntry.subsystems ?? null)
     if (!subsystems) {
       return
@@ -183,9 +129,9 @@ export function useZoneAutomationApi(
 
     const requestedZoneId = props.zoneId
     try {
-      const response = await get<AutomationLogicProfilesResponse>(`/api/zones/${requestedZoneId}/automation-logic-profile`)
+      const document = await automationConfig.getDocument<Record<string, unknown>>('zone', requestedZoneId, 'zone.logic_profile')
       if (props.zoneId !== requestedZoneId) return
-      applyServerProfileToForms((response.data as AutomationLogicProfilesResponse)?.data)
+      applyServerProfileToForms(document.payload ?? {})
     } catch (error) {
       if (props.zoneId !== requestedZoneId) return
       logger.warn('[ZoneAutomationTab] Failed to fetch automation logic profile', { error, zoneId: requestedZoneId })
@@ -199,15 +145,15 @@ export function useZoneAutomationApi(
 
     isSyncingAutomationLogicProfile.value = true
     try {
-      const response = await post<AutomationLogicProfilesResponse>(
-        `/api/zones/${props.zoneId}/automation-logic-profile`,
-        {
-          mode: automationLogicMode.value,
-          activate: true,
-          subsystems,
-        }
+      const currentDocument = await automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, 'zone.logic_profile')
+      const nextPayload = upsertZoneLogicProfilePayload(
+        payloadFromZoneLogicDocument(currentDocument),
+        automationLogicMode.value,
+        subsystems,
+        true
       )
-      applyServerProfileToForms((response.data as AutomationLogicProfilesResponse)?.data)
+      const updatedDocument = await automationConfig.updateDocument('zone', props.zoneId, 'zone.logic_profile', nextPayload as unknown as Record<string, unknown>)
+      applyServerProfileToForms(updatedDocument.payload ?? {})
       return true
     } catch (error) {
       logger.error('[ZoneAutomationTab] Failed to persist automation logic profile', {

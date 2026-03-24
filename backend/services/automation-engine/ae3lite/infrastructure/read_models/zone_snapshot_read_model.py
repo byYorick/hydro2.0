@@ -39,6 +39,7 @@ class PgZoneSnapshotReadModel:
                         z.automation_runtime,
                         gc.id AS grow_cycle_id,
                         gc.current_phase_id,
+                        gc.settings AS cycle_settings,
                         gcp.name AS phase_name,
                         COALESCE(zws.workflow_phase, 'idle') AS workflow_phase,
                         COALESCE(zws.version, 0) AS workflow_version,
@@ -83,32 +84,44 @@ class PgZoneSnapshotReadModel:
                 if zone_row.get("current_phase_id") is None:
                     raise SnapshotBuildError(f"Zone {zone_id} has no current_phase_id for active grow_cycle")
 
-                override_rows = await conn.fetch(
+                bundle_row = await conn.fetchrow(
                     """
-                    SELECT parameter, value_type, value
-                    FROM grow_cycle_overrides
-                    WHERE grow_cycle_id = $1
-                      AND is_active = TRUE
-                      AND (applies_from IS NULL OR applies_from <= NOW())
-                      AND (applies_until IS NULL OR applies_until >= NOW())
-                    ORDER BY id ASC
+                    SELECT scope_type, scope_id, bundle_revision, config
+                    FROM automation_effective_bundles
+                    WHERE scope_type = 'grow_cycle'
+                      AND scope_id = $1
+                    LIMIT 1
                     """,
                     grow_cycle_id,
                 )
+                if bundle_row is None:
+                    raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has no automation_effective_bundle")
 
-                profile_row = await conn.fetchrow(
-                    """
-                    SELECT mode, updated_at, command_plans, subsystems
-                    FROM zone_automation_logic_profiles
-                    WHERE zone_id = $1
-                      AND is_active = TRUE
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    zone_id,
-                )
-                if profile_row is None:
-                    raise SnapshotBuildError(f"Zone {zone_id} has no active zone_automation_logic_profile")
+                bundle_config = bundle_row.get("config")
+                if not isinstance(bundle_config, Mapping):
+                    raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has invalid automation bundle config")
+
+                zone_bundle = bundle_config.get("zone")
+                if not isinstance(zone_bundle, Mapping):
+                    raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has no zone bundle")
+
+                logic_profile = zone_bundle.get("logic_profile")
+                if not isinstance(logic_profile, Mapping):
+                    raise SnapshotBuildError(f"Zone {zone_id} has no active logic profile bundle")
+
+                active_profile = logic_profile.get("active_profile")
+                if not isinstance(active_profile, Mapping):
+                    raise SnapshotBuildError(f"Zone {zone_id} has no active automation logic profile")
+
+                profile_row = {
+                    "mode": logic_profile.get("active_mode"),
+                    "updated_at": active_profile.get("updated_at"),
+                    "command_plans": active_profile.get("command_plans"),
+                    "subsystems": active_profile.get("subsystems"),
+                }
+
+                cycle_bundle = bundle_config.get("cycle")
+                override_rows = self._bundle_override_rows(cycle_bundle)
 
                 telemetry_rows = await conn.fetch(
                     """
@@ -157,52 +170,9 @@ class PgZoneSnapshotReadModel:
                     zone_id,
                 )
 
-                pid_config_rows = await conn.fetch(
-                    """
-                    SELECT type, config, updated_at
-                    FROM zone_pid_configs
-                    WHERE zone_id = $1
-                    ORDER BY type ASC
-                    """,
-                    zone_id,
-                )
-
-                correction_config_row = await conn.fetchrow(
-                    """
-                    SELECT version, resolved_config, phase_overrides
-                    FROM zone_correction_configs
-                    WHERE zone_id = $1
-                    """,
-                    zone_id,
-                )
-
-                process_calibration_rows = await conn.fetch(
-                    """
-                    SELECT
-                        mode,
-                        ec_gain_per_ml,
-                        ph_up_gain_per_ml,
-                        ph_down_gain_per_ml,
-                        ph_per_ec_ml,
-                        ec_per_ph_ml,
-                        transport_delay_sec,
-                        settle_sec,
-                        confidence,
-                        source,
-                        valid_from,
-                        valid_to,
-                        is_active,
-                        meta,
-                        updated_at
-                    FROM zone_process_calibrations
-                    WHERE zone_id = $1
-                      AND is_active = TRUE
-                      AND valid_from <= NOW()
-                      AND (valid_to IS NULL OR valid_to > NOW())
-                    ORDER BY mode ASC, valid_from DESC, id DESC
-                    """,
-                    zone_id,
-                )
+                pid_config_rows = self._bundle_pid_config_rows(zone_bundle)
+                correction_config_row = self._bundle_correction_config_row(zone_bundle)
+                process_calibration_rows = self._bundle_process_calibration_rows(zone_bundle)
 
                 actuator_rows = await conn.fetch(
                     """
@@ -307,6 +277,102 @@ class PgZoneSnapshotReadModel:
             process_calibrations=process_calibrations,
             correction_config=correction_config,
         )
+
+    @staticmethod
+    def _bundle_override_rows(cycle_bundle: Any) -> List[Mapping[str, Any]]:
+        if not isinstance(cycle_bundle, Mapping):
+            return []
+
+        rows: List[Mapping[str, Any]] = []
+        phase_overrides = cycle_bundle.get("phase_overrides")
+        if isinstance(phase_overrides, Mapping):
+            phase_map = {
+                "ph_target": ("ph.target", "decimal"),
+                "ph_min": ("ph.min", "decimal"),
+                "ph_max": ("ph.max", "decimal"),
+                "ec_target": ("ec.target", "decimal"),
+                "ec_min": ("ec.min", "decimal"),
+                "ec_max": ("ec.max", "decimal"),
+                "irrigation_mode": ("irrigation.mode", "string"),
+                "irrigation_interval_sec": ("irrigation.interval_sec", "integer"),
+                "irrigation_duration_sec": ("irrigation.duration_sec", "integer"),
+            }
+            for legacy_key, value in phase_overrides.items():
+                mapping = phase_map.get(str(legacy_key).strip())
+                if mapping is None or value is None:
+                    continue
+                parameter, value_type = mapping
+                rows.append({"parameter": parameter, "value_type": value_type, "value": value})
+
+        manual_overrides = cycle_bundle.get("manual_overrides")
+        if isinstance(manual_overrides, list):
+            rows.extend(item for item in manual_overrides if isinstance(item, Mapping))
+
+        return rows
+
+    @staticmethod
+    def _bundle_pid_config_rows(zone_bundle: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+        pid_bundle = zone_bundle.get("pid")
+        if not isinstance(pid_bundle, Mapping):
+            return []
+
+        rows: List[Mapping[str, Any]] = []
+        for pid_type in ("ec", "ph"):
+            entry = pid_bundle.get(pid_type)
+            if not isinstance(entry, Mapping):
+                continue
+            rows.append(
+                {
+                    "type": pid_type,
+                    "config": entry.get("config"),
+                    "updated_at": None,
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _bundle_correction_config_row(zone_bundle: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+        correction_bundle = zone_bundle.get("correction")
+        if not isinstance(correction_bundle, Mapping):
+            return None
+
+        resolved = correction_bundle.get("resolved_config")
+        return {
+            "version": 1,
+            "resolved_config": resolved if isinstance(resolved, Mapping) else {},
+            "phase_overrides": correction_bundle.get("phase_overrides"),
+        }
+
+    @staticmethod
+    def _bundle_process_calibration_rows(zone_bundle: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+        calibrations = zone_bundle.get("process_calibration")
+        if not isinstance(calibrations, Mapping):
+            return []
+
+        rows: List[Mapping[str, Any]] = []
+        for mode, payload in calibrations.items():
+            if not isinstance(payload, Mapping):
+                continue
+            rows.append(
+                {
+                    "mode": mode,
+                    "ec_gain_per_ml": payload.get("ec_gain_per_ml"),
+                    "ph_up_gain_per_ml": payload.get("ph_up_gain_per_ml"),
+                    "ph_down_gain_per_ml": payload.get("ph_down_gain_per_ml"),
+                    "ph_per_ec_ml": payload.get("ph_per_ec_ml"),
+                    "ec_per_ph_ml": payload.get("ec_per_ph_ml"),
+                    "transport_delay_sec": payload.get("transport_delay_sec"),
+                    "settle_sec": payload.get("settle_sec"),
+                    "confidence": payload.get("confidence"),
+                    "source": payload.get("source"),
+                    "valid_from": payload.get("valid_from"),
+                    "valid_to": payload.get("valid_to"),
+                    "is_active": payload.get("is_active", True),
+                    "meta": payload.get("meta"),
+                    "updated_at": payload.get("updated_at"),
+                }
+            )
+        return rows
 
     def _build_targets(
         self,

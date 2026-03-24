@@ -209,17 +209,17 @@ class AlertLocalizationService
             return 'Отсутствует обязательная PID-конфигурация зоны; критические параметры коррекции переведены в fail-closed режим.';
         }
 
-        if (preg_match('/^Zone (\d+) missing required zone_pid_configs for pid_type=(.+); fail-closed for critical correction parameters$/i', $normalized, $matches) === 1) {
+        if (preg_match('/^Zone (\d+) missing required pid authority documents for pid_type=(.+); fail-closed for critical correction parameters$/i', $normalized, $matches) === 1) {
             return sprintf(
-                'В зоне %d отсутствуют обязательные zone_pid_configs для pid_type=%s; критические параметры коррекции переведены в fail-closed режим.',
+                'В зоне %d отсутствуют обязательные PID authority-документы для pid_type=%s; критические параметры коррекции переведены в fail-closed режим.',
                 (int) $matches[1],
                 $matches[2],
             );
         }
 
-        if (preg_match('/^Zone (\d+) has no pid_configs mapping; fail-closed for critical correction parameters$/i', $normalized, $matches) === 1) {
+        if (preg_match('/^Zone (\d+) has no pid authority mapping; fail-closed for critical correction parameters$/i', $normalized, $matches) === 1) {
             return sprintf(
-                'В зоне %d отсутствует mapping pid_configs; критические параметры коррекции переведены в fail-closed режим.',
+                'В зоне %d отсутствует mapping PID authority-конфига; критические параметры коррекции переведены в fail-closed режим.',
                 (int) $matches[1],
             );
         }

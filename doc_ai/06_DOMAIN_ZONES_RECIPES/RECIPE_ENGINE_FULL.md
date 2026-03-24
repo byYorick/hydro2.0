@@ -104,8 +104,8 @@ CREATE TABLE recipe_revision_phases (
 ### 3.2. Работа Python контроллеров
 
 1. **Получение runtime targets** через SQL read-model (AE2-Lite):
-   - чтение `grow_cycles/grow_cycle_phases/grow_cycle_overrides/zone_automation_logic_profiles`;
-   - приоритет: `phase snapshot -> grow_cycle_overrides -> active logic profile`.
+   - чтение `grow_cycles/grow_cycle_phases` и `automation_effective_bundles`;
+   - runtime precedence: `phase snapshot -> cycle.phase_overrides -> cycle.manual_overrides -> zone.logic_profile(active_mode)`.
 
 2. **Ответ содержит** цели из текущей фазы с учётом overrides:
    ```json
@@ -146,8 +146,8 @@ CREATE TABLE recipe_revision_phases (
 ### 3.4. Overrides (перекрытия)
 
 - Агроном может временно перекрыть параметры цикла
-- Хранятся в `grow_cycle_overrides` с `is_active` флагом
-- Включаются в effective targets автоматически
+- Хранятся в authority-документах `cycle.phase_overrides` и `cycle.manual_overrides`
+- Включаются в effective targets через compiled bundle, без legacy-table merge path
 
 ---
 

@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiGetMock = vi.hoisted(() => vi.fn())
+const getDocumentMock = vi.hoisted(() => vi.fn())
 const getAllPidConfigsMock = vi.hoisted(() => vi.fn())
 const getPumpCalibrationsMock = vi.hoisted(() => vi.fn())
 
@@ -28,6 +29,12 @@ vi.mock('@/composables/useApi', () => ({
   }),
 }))
 
+vi.mock('@/composables/useAutomationConfig', () => ({
+  useAutomationConfig: () => ({
+    getDocument: getDocumentMock,
+  }),
+}))
+
 vi.mock('@/composables/usePidConfig', () => ({
   usePidConfig: () => ({
     getAllPidConfigs: getAllPidConfigsMock,
@@ -37,29 +44,83 @@ vi.mock('@/composables/usePidConfig', () => ({
 
 import CorrectionRuntimeReadinessCard from '../CorrectionRuntimeReadinessCard.vue'
 
+function calibrationDocument(
+  namespace: string,
+  payload: Record<string, unknown>,
+  scopeId = 42,
+) {
+  return {
+    namespace,
+    scope_type: 'zone',
+    scope_id: scopeId,
+    schema_version: 1,
+    payload,
+    status: 'valid',
+    updated_at: '2026-03-17T10:00:00Z',
+    updated_by: 5,
+  }
+}
+
+function processNamespace(mode: 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation'): string {
+  return `zone.process_calibration.${mode}`
+}
+
+function systemDefaultPayload(mode: 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation') {
+  return {
+    mode,
+    source: 'system_default',
+    is_active: true,
+    ec_gain_per_ml: 0.11,
+    ph_up_gain_per_ml: 0.08,
+    ph_down_gain_per_ml: 0.07,
+    ph_per_ec_ml: -0.015,
+    ec_per_ph_ml: 0.02,
+    transport_delay_sec: 20,
+    settle_sec: 45,
+    confidence: 0.75,
+  }
+}
+
+function savedPayload(mode: 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation', confidence: number) {
+  return {
+    ...systemDefaultPayload(mode),
+    source: 'learned',
+    confidence,
+  }
+}
+
+function installProcessDocuments(overrides: Partial<Record<'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation', Record<string, unknown>>>) {
+  getDocumentMock.mockImplementation((_scopeType: string, _scopeId: number, namespace: string) => {
+    if (namespace === processNamespace('generic')) {
+      return Promise.resolve(calibrationDocument(namespace, overrides.generic ?? systemDefaultPayload('generic')))
+    }
+
+    if (namespace === processNamespace('solution_fill')) {
+      return Promise.resolve(calibrationDocument(namespace, overrides.solution_fill ?? systemDefaultPayload('solution_fill')))
+    }
+
+    if (namespace === processNamespace('tank_recirc')) {
+      return Promise.resolve(calibrationDocument(namespace, overrides.tank_recirc ?? systemDefaultPayload('tank_recirc')))
+    }
+
+    if (namespace === processNamespace('irrigation')) {
+      return Promise.resolve(calibrationDocument(namespace, overrides.irrigation ?? systemDefaultPayload('irrigation')))
+    }
+
+    return Promise.reject(new Error(`Unexpected namespace ${namespace}`))
+  })
+}
+
 describe('CorrectionRuntimeReadinessCard.vue', () => {
   beforeEach(() => {
     apiGetMock.mockReset()
+    getDocumentMock.mockReset()
     getAllPidConfigsMock.mockReset()
     getPumpCalibrationsMock.mockReset()
-  })
 
-  it('показывает готовность с generic fallback, когда насосы откалиброваны', async () => {
+    installProcessDocuments({})
+
     apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/42/process-calibrations') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [
-              {
-                mode: 'generic',
-                confidence: 0.82,
-              },
-            ],
-          },
-        })
-      }
-
       if (url === '/api/zones/42/events') {
         return Promise.resolve({
           data: {
@@ -70,6 +131,12 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       }
 
       return Promise.reject(new Error(`Unexpected url: ${url}`))
+    })
+  })
+
+  it('показывает готовность с generic fallback, когда насосы откалиброваны', async () => {
+    installProcessDocuments({
+      generic: savedPayload('generic', 0.82),
     })
     getAllPidConfigsMock.mockResolvedValue({
       ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
@@ -90,7 +157,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
 
     await flushPromises()
 
-    expect(apiGetMock).toHaveBeenCalledWith('/api/zones/42/process-calibrations')
+    expect(getDocumentMock).toHaveBeenCalledWith('zone', 42, 'zone.process_calibration.generic')
     expect(apiGetMock).toHaveBeenCalledWith('/api/zones/42/events', {
       params: {
         limit: 80,
@@ -106,18 +173,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
   })
 
   it('показывает fail-closed и отсутствующие pump calibration', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/42/process-calibrations' || url === '/api/zones/42/events') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [],
-          },
-        })
-      }
-
-      return Promise.reject(new Error(`Unexpected url: ${url}`))
-    })
+    installProcessDocuments({})
     getAllPidConfigsMock.mockResolvedValue({
       ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
       ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
@@ -142,18 +198,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
   })
 
   it('эмитит действия для исправления process и pump gaps', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/42/process-calibrations' || url === '/api/zones/42/events') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [],
-          },
-        })
-      }
-
-      return Promise.reject(new Error(`Unexpected url: ${url}`))
-    })
+    installProcessDocuments({})
     getAllPidConfigsMock.mockResolvedValue({
       ph: { type: 'ph', config: { target: 5.8 }, is_default: true },
       ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
@@ -178,20 +223,12 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
   })
 
   it('показывает последние runtime blockers и эмитит action из них', async () => {
+    installProcessDocuments({
+      solution_fill: savedPayload('solution_fill', 0.91),
+      tank_recirc: savedPayload('tank_recirc', 0.88),
+      irrigation: savedPayload('irrigation', 0.84),
+    })
     apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/42/process-calibrations') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [
-              { mode: 'solution_fill', confidence: 0.91 },
-              { mode: 'tank_recirc', confidence: 0.88 },
-              { mode: 'irrigation', confidence: 0.84 },
-            ],
-          },
-        })
-      }
-
       if (url === '/api/zones/42/events') {
         return Promise.resolve({
           data: {

@@ -26,6 +26,7 @@ class GrowCycleService
 {
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
+        private readonly AutomationConfigDocumentService $documents,
     ) {
     }
 
@@ -192,6 +193,52 @@ class GrowCycleService
         return $startedCycle->fresh();
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function syncCycleConfigDocuments(GrowCycle $cycle, array $data = [], ?int $userId = null): void
+    {
+        $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
+        if ($firstPhase && is_array($data['phase_overrides'] ?? null)) {
+            $overrides = array_filter(
+                $data['phase_overrides'],
+                static fn ($value): bool => $value !== null
+            );
+            if ($overrides !== []) {
+                $firstPhase->update($overrides);
+                $firstPhase->refresh();
+            }
+        }
+
+        $phasePayload = $firstPhase ? [
+            'phase_id' => $firstPhase->phase_id,
+            'phase_index' => $firstPhase->phase_index,
+            'name' => $firstPhase->name,
+            'ph_target' => $firstPhase->ph_target,
+            'ph_min' => $firstPhase->ph_min,
+            'ph_max' => $firstPhase->ph_max,
+            'ec_target' => $firstPhase->ec_target,
+            'ec_min' => $firstPhase->ec_min,
+            'ec_max' => $firstPhase->ec_max,
+            'irrigation_mode' => $firstPhase->irrigation_mode,
+            'irrigation_interval_sec' => $firstPhase->irrigation_interval_sec,
+            'irrigation_duration_sec' => $firstPhase->irrigation_duration_sec,
+            'extensions' => is_array($firstPhase->extensions) ? $firstPhase->extensions : [],
+        ] : [];
+
+        $this->documents->upsertCycleDocuments((int) $cycle->id, [
+            AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT => [
+                'cycle_id' => (int) $cycle->id,
+                'zone_id' => (int) $cycle->zone_id,
+                'recipe_revision_id' => (int) $cycle->recipe_revision_id,
+                'phase' => $phasePayload,
+            ],
+            AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES => is_array($data['phase_overrides'] ?? null)
+                ? $data['phase_overrides']
+                : [],
+        ], $userId);
+    }
+
     protected function dispatchAutomationStartCycle(GrowCycle $cycle): void
     {
         if (! $this->isGrowCycleStartDispatchEnabled()) {
@@ -273,6 +320,7 @@ class GrowCycleService
 
     protected function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
     {
+        $this->documents->ensureZoneDefaults($zoneId);
         app(ZoneCorrectionConfigService::class)->ensureDefaultForZone($zoneId);
 
         $now = Carbon::now('UTC')->setMicroseconds(0);

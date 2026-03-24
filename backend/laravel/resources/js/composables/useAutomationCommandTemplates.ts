@@ -1,9 +1,12 @@
-import { computed, type ComputedRef } from 'vue'
-import { usePageProp } from '@/composables/usePageProps'
+import { computed, ref } from 'vue'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import type {
   AutomationCommandTemplateStep,
   AutomationCommandTemplatesSettings,
 } from '@/types/SystemSettings'
+
+const authorityCommandTemplates = ref<Partial<AutomationCommandTemplatesSettings> | null>(null)
+let authorityCommandTemplatesRequest: Promise<void> | null = null
 
 export const FALLBACK_AUTOMATION_COMMAND_TEMPLATES: AutomationCommandTemplatesSettings = {
   clean_fill_start: [
@@ -105,14 +108,18 @@ export function normalizeAutomationCommandTemplates(
 }
 
 export function useAutomationCommandTemplates() {
-  let commandTemplates: ComputedRef<Partial<AutomationCommandTemplatesSettings> | null>
-  try {
-    commandTemplates = usePageProp<'automationCommandTemplates', Partial<AutomationCommandTemplatesSettings> | null>(
-      'automationCommandTemplates',
-    )
-  } catch {
-    commandTemplates = computed(() => null)
+  const automationConfig = useAutomationConfig()
+  if (authorityCommandTemplates.value === null && authorityCommandTemplatesRequest === null) {
+    authorityCommandTemplatesRequest = automationConfig
+      .getDocument<Partial<AutomationCommandTemplatesSettings>>('system', 0, 'system.command_templates')
+      .then((document) => {
+        authorityCommandTemplates.value = document.payload ?? null
+      })
+      .catch(() => {})
+      .finally(() => {
+        authorityCommandTemplatesRequest = null
+      })
   }
 
-  return computed(() => normalizeAutomationCommandTemplates(commandTemplates.value))
+  return computed(() => normalizeAutomationCommandTemplates(authorityCommandTemplates.value))
 }

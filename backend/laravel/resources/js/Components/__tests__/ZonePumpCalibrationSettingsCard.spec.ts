@@ -4,6 +4,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPutMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
+const defaultPumpSettings = vi.hoisted(() => ({
+  ml_per_sec_min: 0.001,
+  ml_per_sec_max: 1000,
+  min_dose_ms: 1,
+  calibration_duration_min_sec: 1,
+  calibration_duration_max_sec: 60,
+  quality_score_basic: 0.5,
+  quality_score_with_k: 0.8,
+  quality_score_legacy: 0.3,
+  age_warning_days: 30,
+  age_critical_days: 60,
+  default_run_duration_sec: 20,
+}))
 const pumpSettingsState = vi.hoisted(() => ({
   value: {
     ml_per_sec_min: 0.01,
@@ -51,9 +64,15 @@ vi.mock('@/composables/useToast', () => ({
   }),
 }))
 
-vi.mock('@/composables/usePageProps', () => ({
-  usePageProp: () => ({
-    value: pumpSettingsState.value,
+vi.mock('@/composables/usePumpCalibrationSettings', () => ({
+  usePumpCalibrationSettings: () => ({
+    __v_isRef: true,
+    get value() {
+      return {
+        ...defaultPumpSettings,
+        ...(pumpSettingsState.value ?? {}),
+      }
+    },
   }),
 }))
 
@@ -113,7 +132,7 @@ describe('ZonePumpCalibrationSettingsCard.vue', () => {
     expect(wrapper.text()).toContain('Effective: 0.01')
   })
 
-  it('не падает без pumpCalibrationSettings в page props', async () => {
+  it('не падает без authority pump calibration settings', async () => {
     pumpSettingsState.value = undefined
 
     const wrapper = mount(ZonePumpCalibrationSettingsCard, {

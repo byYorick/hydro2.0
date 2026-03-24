@@ -27,7 +27,7 @@ DRY_RUN_CHECK_DELAY_SEC = 3  # Задержка перед проверкой fl
 
 _IRRIGATION_ACTIVE_PHASES = {"irrig_recirc", "irrigating"}
 
-_SYSTEM_AUTOMATION_SETTINGS_FALLBACKS: Dict[str, Dict[str, Any]] = {
+_SYSTEM_AUTOMATION_CONFIG_FALLBACKS: Dict[str, Dict[str, Any]] = {
     "pump_calibration": {
         "ml_per_sec_min": 0.01,
         "ml_per_sec_max": 20.0,
@@ -47,28 +47,37 @@ import logging as _logging
 _wf_logger = _logging.getLogger(__name__)
 
 
-async def _load_system_automation_settings(namespace: str) -> Dict[str, Any]:
+async def _load_system_authority_policy(namespace: str) -> Dict[str, Any]:
+    authority_namespace = {
+        "pump_calibration": "system.pump_calibration_policy",
+    }.get(namespace)
+
+    if authority_namespace is None:
+        raise RuntimeError(f"unsupported system authority namespace '{namespace}'")
+
     rows = await fetch(
         """
-        SELECT config
-        FROM system_automation_settings
+        SELECT payload
+        FROM automation_config_documents
         WHERE namespace = $1
+          AND scope_type = 'system'
+          AND scope_id = 0
         LIMIT 1
         """,
-        namespace,
+        authority_namespace,
     )
     if not rows:
-        fallback = _SYSTEM_AUTOMATION_SETTINGS_FALLBACKS.get(namespace)
+        fallback = _SYSTEM_AUTOMATION_CONFIG_FALLBACKS.get(namespace)
         if fallback is None:
-            raise RuntimeError(f"system_automation_settings namespace '{namespace}' not found")
+            raise RuntimeError(f"system authority namespace '{namespace}' not found")
 
         _wf_logger.warning(
-            "system_automation_settings namespace '%s' not found; using built-in fallback",
+            "system authority namespace '%s' not found; using built-in fallback",
             namespace,
         )
         return dict(fallback)
 
-    config = rows[0]["config"]
+    config = rows[0]["payload"]
     return json.loads(config) if isinstance(config, str) else dict(config)
 
 
@@ -989,7 +998,7 @@ async def calibrate_pump(
     if not HTTPX_AVAILABLE:
         raise RuntimeError("httpx is required for pump calibration")
 
-    settings = await _load_system_automation_settings("pump_calibration")
+    settings = await _load_system_authority_policy("pump_calibration")
     duration_min_sec = int(settings["calibration_duration_min_sec"])
     duration_max_sec = int(settings["calibration_duration_max_sec"])
 

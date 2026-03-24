@@ -5,6 +5,8 @@ namespace Tests\Unit\Services;
 use App\Models\Zone;
 use App\Models\ZoneAutomationLogicProfile;
 use App\Models\User;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneAutomationLogicProfileService;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
@@ -27,62 +29,57 @@ class ZoneAutomationLogicProfileServiceTest extends TestCase
     {
         $zone = Zone::factory()->create();
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_SETUP,
-            'is_active' => false,
-            'subsystems' => ['irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 300]]],
-        ]);
-
-        $working = ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
-            'is_active' => true,
-            'subsystems' => ['irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 60]]],
+        $this->storeProfiles($zone->id, [
+            'active_mode' => ZoneAutomationLogicProfile::MODE_WORKING,
+            'profiles' => [
+                ZoneAutomationLogicProfile::MODE_SETUP => [
+                    'mode' => ZoneAutomationLogicProfile::MODE_SETUP,
+                    'is_active' => false,
+                    'subsystems' => ['irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 300]]],
+                ],
+                ZoneAutomationLogicProfile::MODE_WORKING => [
+                    'mode' => ZoneAutomationLogicProfile::MODE_WORKING,
+                    'is_active' => true,
+                    'subsystems' => ['irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 60]]],
+                ],
+            ],
         ]);
 
         $resolved = $this->service->resolveActiveProfileForZone($zone->id);
 
         $this->assertNotNull($resolved);
-        $this->assertSame($working->id, $resolved?->id);
         $this->assertSame(ZoneAutomationLogicProfile::MODE_WORKING, $resolved?->mode);
     }
 
-    public function test_it_falls_back_to_allowed_profile_when_only_unsupported_mode_is_active(): void
+    public function test_it_returns_null_when_no_active_mode_is_set(): void
     {
         $zone = Zone::factory()->create();
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => 'auto',
-            'is_active' => true,
-            'subsystems' => ['irrigation' => ['execution' => ['topology' => 'two_tank_drip_substrate_trays']]],
-        ]);
-
-        $setup = ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => ZoneAutomationLogicProfile::MODE_SETUP,
-            'is_active' => false,
-            'subsystems' => ['irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 1800]]],
+        $this->storeProfiles($zone->id, [
+            'active_mode' => null,
+            'profiles' => [
+                ZoneAutomationLogicProfile::MODE_SETUP => [
+                    'mode' => ZoneAutomationLogicProfile::MODE_SETUP,
+                    'is_active' => false,
+                    'subsystems' => ['irrigation' => ['enabled' => true, 'execution' => ['interval_sec' => 1800]]],
+                ],
+            ],
         ]);
 
         $resolved = $this->service->resolveActiveProfileForZone($zone->id);
         $payload = $this->service->getProfilesPayload($zone);
 
-        $this->assertNotNull($resolved);
-        $this->assertSame($setup->id, $resolved?->id);
-        $this->assertSame(ZoneAutomationLogicProfile::MODE_SETUP, $payload['active_mode']);
+        $this->assertNull($resolved);
+        $this->assertNull($payload['active_mode']);
     }
 
     public function test_it_returns_null_when_no_allowed_profiles_exist(): void
     {
         $zone = Zone::factory()->create();
 
-        ZoneAutomationLogicProfile::query()->create([
-            'zone_id' => $zone->id,
-            'mode' => 'auto',
-            'is_active' => true,
-            'subsystems' => ['irrigation' => ['execution' => ['topology' => 'two_tank_drip_substrate_trays']]],
+        $this->storeProfiles($zone->id, [
+            'active_mode' => null,
+            'profiles' => [],
         ]);
 
         $resolved = $this->service->resolveActiveProfileForZone($zone->id);
@@ -129,5 +126,18 @@ class ZoneAutomationLogicProfileServiceTest extends TestCase
         $this->assertIsArray($payload);
         $this->assertSame((int) $user->id, $payload['user_id'] ?? null);
         $this->assertSame(ZoneAutomationLogicProfile::MODE_SETUP, $payload['mode'] ?? null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function storeProfiles(int $zoneId, array $payload): void
+    {
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zoneId,
+            $payload,
+        );
     }
 }

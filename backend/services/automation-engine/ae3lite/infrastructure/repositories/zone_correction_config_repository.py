@@ -10,14 +10,23 @@ from common.db import execute
 _logger = logging.getLogger(__name__)
 
 _SQL_MARK_APPLIED = """
-    UPDATE zone_correction_configs
+    UPDATE automation_config_documents
     SET
-        last_applied_at = $3,
-        last_applied_version = $2,
+        payload = jsonb_set(
+            jsonb_set(
+                COALESCE(payload, '{}'::jsonb),
+                '{last_applied_at}',
+                to_jsonb($3::text),
+                true
+            ),
+            '{last_applied_version}',
+            to_jsonb($2),
+            true
+        ),
         updated_at = GREATEST(updated_at, $4)
-    WHERE zone_id = $1
-      AND version = $2
-      AND (last_applied_version IS DISTINCT FROM $2 OR last_applied_at IS NULL)
+    WHERE namespace = 'zone.correction'
+      AND scope_type = 'zone'
+      AND scope_id = $1
 """
 
 

@@ -89,6 +89,15 @@ PostgreSQL
 - валидацию конфигурации при изменениях;
 - публикацию обновлений для Python-сервиса (через очередь/события).
 
+Отдельный подмодуль automation authority отвечает за:
+
+- schema-first registry automation/runtime namespace;
+- versioned config documents;
+- compiled effective bundles;
+- config violations;
+- presets correction family;
+- unified automation config API для web-admin.
+
 ### 3.2. Recipe & Scheduler Module
 
 - Управление рецептами и фазами:
@@ -132,11 +141,10 @@ PostgreSQL
 
 ### 4.1. Поток конфигурации
 
-- Backend является основным владельцем конфигурации.
-- Python-сервис периодически либо по вебхуку/событию:
- - делает запросы вида `/api/system/config/full` или `/api/zones/{id}/config`;
- - кэширует конфигурацию локально;
- - реагирует на изменения (перезапуск контроллеров зон и т.п.).
+- Backend является основным владельцем automation/runtime-конфигурации.
+- Automation authority хранится в versioned documents и materialized bundles.
+- Python runtime не должен собирать business config через `env()` или legacy config tables.
+- AE3 читает compiled bundle из PostgreSQL по `bundle_revision`, привязанному к cycle snapshot.
 
 ### 4.2. Поток телеметрии
 
@@ -162,7 +170,8 @@ PostgreSQL
 ## 5. Интеграция с фронтендом (Inertia + Vue 3)
 
 - Все страницы UI = Inertia-views.
-- Контроллеры возвращают Inertia-ответы с данными; Vue-компоненты рендерят всё на стороне клиента.
+- Контроллеры возвращают Inertia-ответы с route context и page bootstrap, но authority-конфиги не должны шариться через Inertia props.
+- Vue-компоненты читают и сохраняют automation/runtime-конфиги через unified automation API.
 - Фронт **никогда** не ходит в MQTT и Python-сервис напрямую — только через backend API.
 
 Структура проекта описана в `TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md`.
@@ -178,6 +187,7 @@ PostgreSQL
  Любое взаимодействие с MQTT должно идти через Python-слой.
 4. **Соблюдать единый стиль код-стайла Laravel и структуру каталогов.**
 5. **Все новые публичные эндпоинты описывать в `REST_API_REFERENCE.md` и `API_SPEC_FRONTEND_BACKEND_FULL.md`.**
+6. **Automation/runtime authority документировать в `AUTOMATION_CONFIG_AUTHORITY.md` и `DATA_MODEL_REFERENCE.md`.**
 
 ---
 

@@ -85,16 +85,19 @@ class GuardSolutionTankStartupResetUseCase:
     async def _load_solution_min_sensor_cfg(self, *, zone_id: int) -> dict[str, Any]:
         rows = await self._fetch_fn(
             """
-            SELECT subsystems
-            FROM zone_automation_logic_profiles
-            WHERE zone_id = $1
-              AND is_active = TRUE
-            ORDER BY id DESC
+            SELECT config
+            FROM automation_effective_bundles
+            WHERE scope_type = 'zone'
+              AND scope_id = $1
             LIMIT 1
             """,
             zone_id,
         )
-        subsystems = rows[0].get("subsystems") if rows else None
+        config = rows[0].get("config") if rows else None
+        zone_bundle = config.get("zone") if isinstance(config, Mapping) else None
+        logic_profile = zone_bundle.get("logic_profile") if isinstance(zone_bundle, Mapping) else None
+        active_profile = logic_profile.get("active_profile") if isinstance(logic_profile, Mapping) else None
+        subsystems = active_profile.get("subsystems") if isinstance(active_profile, Mapping) else None
         diagnostics = self._mapping_get(subsystems, "diagnostics")
         execution = self._mapping_get(diagnostics, "execution")
         startup = self._mapping_get(execution, "startup")

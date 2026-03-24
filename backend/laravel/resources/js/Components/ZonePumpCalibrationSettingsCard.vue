@@ -79,7 +79,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import { useApi } from '@/composables/useApi'
-import { usePageProp } from '@/composables/usePageProps'
+import { usePumpCalibrationSettings } from '@/composables/usePumpCalibrationSettings'
 import { useToast } from '@/composables/useToast'
 import type { PumpCalibrationSettings, SystemSettingsField, SystemSettingsSection } from '@/types/SystemSettings'
 
@@ -96,21 +96,7 @@ const props = defineProps<{ zoneId: number }>()
 
 const { api } = useApi()
 const { showToast } = useToast()
-const systemSettings = usePageProp<'pumpCalibrationSettings', PumpCalibrationSettings>('pumpCalibrationSettings')
-
-const DEFAULT_PUMP_SETTINGS: PumpCalibrationSettings = {
-  ml_per_sec_min: 0.001,
-  ml_per_sec_max: 20,
-  min_dose_ms: 50,
-  calibration_duration_min_sec: 10,
-  calibration_duration_max_sec: 120,
-  quality_score_basic: 70,
-  quality_score_with_k: 85,
-  quality_score_legacy: 60,
-  age_warning_days: 30,
-  age_critical_days: 60,
-  default_run_duration_sec: 30,
-}
+const systemSettings = usePumpCalibrationSettings()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -120,10 +106,7 @@ const presetId = ref<number | null>(null)
 const overrideConfig = ref<Partial<PumpCalibrationSettings>>({})
 const fields = ref<SystemSettingsField[]>([])
 
-const resolvedSystemSettings = computed<PumpCalibrationSettings>(() => ({
-  ...DEFAULT_PUMP_SETTINGS,
-  ...(systemSettings.value ?? {}),
-}))
+const resolvedSystemSettings = computed<PumpCalibrationSettings>(() => systemSettings.value)
 
 const hasOverrides = computed(() => Object.keys(overrideConfig.value).length > 0)
 
@@ -160,7 +143,7 @@ function updateField(path: string, rawValue: string): void {
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const response = await api.get(`/api/zones/${props.zoneId}/correction-config`)
+    const response = await api.get(`/api/automation-configs/zone/${props.zoneId}/zone.correction`)
     const payload = response.data.data as CorrectionConfigResponse
     presetId.value = payload.preset?.id ?? null
     baseConfig.value = payload.base_config || {}
@@ -179,10 +162,12 @@ async function save(): Promise<void> {
       ...baseConfig.value,
       pump_calibration: overrideConfig.value,
     }
-    await api.put(`/api/zones/${props.zoneId}/correction-config`, {
-      preset_id: presetId.value,
-      base_config: nextBaseConfig,
-      phase_overrides: phaseOverrides.value,
+    await api.put(`/api/automation-configs/zone/${props.zoneId}/zone.correction`, {
+      payload: {
+        preset_id: presetId.value,
+        base_config: nextBaseConfig,
+        phase_overrides: phaseOverrides.value,
+      },
     })
     showToast('Pump calibration override сохранён', 'success')
     await load()
