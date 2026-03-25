@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -278,7 +278,7 @@ class _CommandRepositoryWithStartupProbeTimeout:
             "uid": node_uid,
             "node_type": "irrig",
             "node_status": "online",
-            "last_seen_at": NOW.replace(minute=58),
+            "last_seen_at": NOW - timedelta(seconds=120),
         }
 
 

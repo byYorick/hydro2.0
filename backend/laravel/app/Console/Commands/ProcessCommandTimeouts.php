@@ -38,9 +38,9 @@ class ProcessCommandTimeouts extends Command
         // Ищем команды в статусах SENT/ACK, которые старше timeout
         $timeoutCommands = DB::table('commands as c')
             ->leftJoin('nodes as n', 'n.id', '=', 'c.node_id')
-            ->whereIn('status', ['SENT', 'ACK'])
-            ->whereNotNull('sent_at')
-            ->where('sent_at', '<', $cutoff)
+            ->whereIn('c.status', ['SENT', 'ACK'])
+            ->whereNotNull('c.sent_at')
+            ->where('c.sent_at', '<', $cutoff)
             ->select([
                 'c.*',
                 'n.uid as node_uid',

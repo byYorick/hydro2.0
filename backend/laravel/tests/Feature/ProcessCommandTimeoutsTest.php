@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Command;
-use App\Models\Node;
+use App\Models\DeviceNode;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
@@ -19,7 +19,7 @@ class ProcessCommandTimeoutsTest extends TestCase
         Config::set('commands.timeout_minutes', 5);
 
         $zone = Zone::factory()->create();
-        $node = Node::query()->create([
+        $node = DeviceNode::query()->create([
             'zone_id' => $zone->id,
             'uid' => 'nd-test-irrig-1',
             'type' => 'irrig',
