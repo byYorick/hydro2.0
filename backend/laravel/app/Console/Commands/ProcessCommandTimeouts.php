@@ -86,7 +86,7 @@ class ProcessCommandTimeouts extends Command
                     if ($command->zone_id) {
                         $nodeLastSeenAt = $command->node_last_seen_at ? Carbon::parse($command->node_last_seen_at) : null;
                         $nodeLastSeenAgeSec = $nodeLastSeenAt instanceof CarbonInterface
-                            ? max(0, $nodeLastSeenAt->diffInSeconds(now()))
+                            ? (int) max(0, $nodeLastSeenAt->diffInSeconds(now()))
                             : null;
                         $nodeStatus = $command->node_status ? strtolower((string) $command->node_status) : null;
 
