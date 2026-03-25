@@ -111,8 +111,8 @@ cleanup:
   type: database_execute
 - query: |
     DELETE FROM pending_alerts
-    WHERE node_uid = 'nd-ph-test-1'
-       OR hardware_id = 'nd-ph-test-1'
+    WHERE details->>'node_uid' = 'nd-ph-test-1'
+       OR details->>'hardware_id' = 'nd-ph-test-1'
   step: cleanup_pending_alerts
   type: database_execute
 - optional: true
