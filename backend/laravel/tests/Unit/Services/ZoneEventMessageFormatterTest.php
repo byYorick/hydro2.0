@@ -263,6 +263,42 @@ class ZoneEventMessageFormatterTest extends TestCase
         $this->assertSame('Коррекция: нет наблюдаемого эффекта (EC, эффект 0.0200 < 0.1000, лимит 3)', $message);
     }
 
+    public function test_format_command_timeout_contains_node_context_and_stale_online_hint(): void
+    {
+        $message = $this->formatter->format('COMMAND_TIMEOUT', [
+            'cmd_id' => 'ae3-t1-z1-s1',
+            'node_uid' => 'nd-test-irrig-1',
+            'channel' => 'storage_state',
+            'timeout_minutes' => 5,
+            'node_status' => 'online',
+            'node_last_seen_age_sec' => 182,
+            'node_stale_online_candidate' => true,
+        ]);
+
+        $this->assertSame(
+            'Таймаут команды (команда ae3-t1-z1-s1, нода nd-test-irrig-1, канал storage_state, таймаут 5 мин, статус узла online, last_seen 182 с назад, узел числится online, но heartbeat устарел)',
+            $message
+        );
+    }
+
+    public function test_format_ae_startup_probe_timeout_contains_probe_and_node_context(): void
+    {
+        $message = $this->formatter->format('AE_STARTUP_PROBE_TIMEOUT', [
+            'probe_name' => 'irr_state_probe',
+            'cmd_id' => 'ae3-t1-z1-s1',
+            'node_uid' => 'nd-test-irrig-1',
+            'channel' => 'storage_state',
+            'node_status' => 'online',
+            'node_last_seen_age_sec' => 182,
+            'node_stale_online_candidate' => true,
+        ]);
+
+        $this->assertSame(
+            'Стартовый probe ирригационного контура не ответил (probe irr_state_probe, команда ae3-t1-z1-s1, нода nd-test-irrig-1, канал storage_state, статус online, last_seen 182 с назад, online-статус выглядел устаревшим)',
+            $message
+        );
+    }
+
     public function test_format_correction_observation_evaluated_contains_effect_metrics(): void
     {
         $message = $this->formatter->format('CORRECTION_OBSERVATION_EVALUATED', [

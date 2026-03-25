@@ -129,6 +129,7 @@ def build_ae3_runtime_bundle(
             workflow_repository=workflow_repository,
             correction_authority_repository=correction_authority_repository,
             alert_repository=alert_repository,
+            command_repository=command_repository,
         ),
         startup_recovery_use_case=StartupRecoveryUseCase(
             task_repository=task_repository,

@@ -183,7 +183,11 @@ class AlertLocalizationService
         $reasonRaw = $this->stringValue($details, ['error_message', 'message', 'reason', 'msg']) ?? $message;
         $reason = null;
 
-        if ($reasonCode !== '' && $reasonCode !== 'biz_ae3_task_failed') {
+        if ($reasonCode === 'command_timeout') {
+            $reason = $this->translateCommandTimeoutReason($details);
+        }
+
+        if ($reason === null && $reasonCode !== '' && $reasonCode !== 'biz_ae3_task_failed') {
             $reason = $this->translateByCode($reasonCode, $reasonRaw, $details);
         }
 
@@ -233,6 +237,60 @@ class AlertLocalizationService
         }
 
         return $summary.' Причина: '.$reason;
+    }
+
+    /**
+     * @param array<string, mixed> $details
+     */
+    private function translateCommandTimeoutReason(array $details): ?string
+    {
+        $timeoutDetails = $details['timed_out_command'] ?? $details['startup_probe_timeout'] ?? null;
+        if (! is_array($timeoutDetails)) {
+            return null;
+        }
+
+        $probeName = $this->stringValue($timeoutDetails, ['probe_name']);
+        $cmdId = $this->stringValue($timeoutDetails, ['cmd_id']);
+        $nodeUid = $this->stringValue($timeoutDetails, ['node_uid']);
+        $channel = $this->stringValue($timeoutDetails, ['channel']);
+        $nodeStatus = $this->stringValue($timeoutDetails, ['node_status']);
+        $lastSeenAgeSec = $this->integerValue($timeoutDetails, ['node_last_seen_age_sec']);
+        $staleCandidate = filter_var($timeoutDetails['node_stale_online_candidate'] ?? false, FILTER_VALIDATE_BOOL);
+
+        $parts = [];
+        if ($probeName !== null) {
+            $parts[] = "probe {$probeName}";
+        }
+        if ($cmdId !== null) {
+            $parts[] = "команда {$cmdId}";
+        }
+        if ($nodeUid !== null) {
+            $parts[] = "нода {$nodeUid}";
+        }
+        if ($channel !== null) {
+            $parts[] = "канал {$channel}";
+        }
+
+        $message = $parts !== []
+            ? 'Не дождались ответа: '.implode(', ', $parts).'.'
+            : 'Команда не вернула ACK или terminal response до истечения timeout.';
+
+        $context = [];
+        if ($nodeStatus !== null) {
+            $context[] = "статус узла {$nodeStatus}";
+        }
+        if ($lastSeenAgeSec !== null) {
+            $context[] = "last_seen {$lastSeenAgeSec} с назад";
+        }
+        if ($staleCandidate) {
+            $context[] = 'online-статус уже выглядел устаревшим';
+        }
+
+        if ($context !== []) {
+            $message .= ' Контекст: '.implode(', ', $context).'.';
+        }
+
+        return $message;
     }
 
     private function translateRawMessage(string $message): ?string

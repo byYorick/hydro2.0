@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Events\CommandStatusUpdated;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -30,13 +32,21 @@ class ProcessCommandTimeouts extends Command
     {
         $timeoutMinutes = config('commands.timeout_minutes', 5);
         $cutoff = now()->subMinutes($timeoutMinutes);
+        $nodeOfflineTimeoutSec = max(1, (int) env('NODE_OFFLINE_TIMEOUT_SEC', 120));
         $this->info("Processing command timeouts (timeout: {$timeoutMinutes} minutes)");
 
         // Ищем команды в статусах SENT/ACK, которые старше timeout
-        $timeoutCommands = DB::table('commands')
+        $timeoutCommands = DB::table('commands as c')
+            ->leftJoin('nodes as n', 'n.id', '=', 'c.node_id')
             ->whereIn('status', ['SENT', 'ACK'])
             ->whereNotNull('sent_at')
             ->where('sent_at', '<', $cutoff)
+            ->select([
+                'c.*',
+                'n.uid as node_uid',
+                'n.status as node_status',
+                'n.last_seen_at as node_last_seen_at',
+            ])
             ->get();
 
         if ($timeoutCommands->isEmpty()) {
@@ -49,7 +59,7 @@ class ProcessCommandTimeouts extends Command
         $processed = 0;
         foreach ($timeoutCommands as $command) {
             try {
-                $wasTimedOut = DB::transaction(function () use ($command, $timeoutMinutes, $cutoff) {
+                $wasTimedOut = DB::transaction(function () use ($command, $timeoutMinutes, $cutoff, $nodeOfflineTimeoutSec) {
                     // Обновляем статус на TIMEOUT
                     $updated = DB::table('commands')
                         ->where('id', $command->id)
@@ -74,12 +84,28 @@ class ProcessCommandTimeouts extends Command
 
                     // Создаем событие в zone_events
                     if ($command->zone_id) {
+                        $nodeLastSeenAt = $command->node_last_seen_at ? Carbon::parse($command->node_last_seen_at) : null;
+                        $nodeLastSeenAgeSec = $nodeLastSeenAt instanceof CarbonInterface
+                            ? max(0, $nodeLastSeenAt->diffInSeconds(now()))
+                            : null;
+                        $nodeStatus = $command->node_status ? strtolower((string) $command->node_status) : null;
+
                         DB::table('zone_events')->insert([
                             'zone_id' => $command->zone_id,
                             'type' => 'COMMAND_TIMEOUT',
                             'payload_json' => json_encode([
                                 'command_id' => $command->id,
                                 'cmd_id' => $command->cmd_id ?? null,
+                                'command' => $command->cmd ?? null,
+                                'source' => $command->source ?? null,
+                                'channel' => $command->channel ?? null,
+                                'node_uid' => $command->node_uid ?? null,
+                                'node_status' => $nodeStatus,
+                                'node_last_seen_at' => $nodeLastSeenAt?->toIso8601String(),
+                                'node_last_seen_age_sec' => $nodeLastSeenAgeSec,
+                                'node_stale_online_candidate' => $nodeStatus === 'online'
+                                    && $nodeLastSeenAgeSec !== null
+                                    && $nodeLastSeenAgeSec >= $nodeOfflineTimeoutSec,
                                 'timeout_minutes' => $timeoutMinutes,
                                 'sent_at' => $command->sent_at,
                             ]),

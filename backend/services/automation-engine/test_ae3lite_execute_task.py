@@ -239,6 +239,49 @@ class _AlertRepositoryRecorder:
         return 101
 
 
+class _CommandRepositoryWithStartupProbeTimeout:
+    async def get_latest_for_task(self, *, task_id):
+        assert task_id == 99
+        return {
+            "id": 501,
+            "task_id": task_id,
+            "node_uid": "nd-test-irrig-1",
+            "channel": "storage_state",
+            "payload": {
+                "cmd_id": "ae3-t99-z99-s1",
+                "cmd": "state",
+                "name": "irr_state_probe",
+                "params": {},
+            },
+            "external_id": "77",
+            "publish_status": "accepted",
+            "terminal_status": "TIMEOUT",
+        }
+
+    async def get_legacy_command_by_id(self, *, external_id):
+        assert external_id == "77"
+        return {
+            "id": 77,
+            "status": "TIMEOUT",
+            "sent_at": NOW,
+            "ack_at": None,
+            "failed_at": NOW,
+            "node_uid": "nd-test-irrig-1",
+        }
+
+    async def get_legacy_command_by_cmd_id(self, *, zone_id, cmd_id):
+        raise AssertionError("unexpected fallback lookup")
+
+    async def get_node_runtime_context(self, *, node_uid):
+        assert node_uid == "nd-test-irrig-1"
+        return {
+            "uid": node_uid,
+            "node_type": "irrig",
+            "node_status": "online",
+            "last_seen_at": NOW.replace(minute=58),
+        }
+
+
 class _WorkflowRepoRecorder:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -396,6 +439,61 @@ async def test_execute_task_fail_closed_creates_task_failed_alert() -> None:
     assert details["error_code"] == "unsupported_command_plan_steps"
     assert details["stage"] == "startup"
     assert details["topology"] == "generic_cycle_start"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_command_timeout_enriches_alert_and_emits_startup_probe_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+
+    task = _make_task(stage="startup", topology="two_tank_drip_substrate_trays")
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+
+    class _PlannerCommandTimeout:
+        def build(self, *, task, snapshot):
+            raise PlannerConfigurationError("TIMEOUT", code="command_timeout")
+
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerCommandTimeout(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        command_repository=_CommandRepositoryWithStartupProbeTimeout(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "command_timeout"
+    details = alerts.calls[0]["details"]
+    assert details["error_code"] == "command_timeout"
+    assert details["timed_out_command"]["cmd_id"] == "ae3-t99-z99-s1"
+    assert details["timed_out_command"]["channel"] == "storage_state"
+    assert details["timed_out_command"]["node_uid"] == "nd-test-irrig-1"
+    assert details["timed_out_command"]["node_status"] == "online"
+    assert details["timed_out_command"]["node_last_seen_age_sec"] == 120
+    assert details["timed_out_command"]["node_stale_online_candidate"] is True
+    assert details["startup_probe_timeout"]["probe_name"] == "irr_state_probe"
+
+    assert [event[1] for event in recorded_events] == [
+        "AE_STARTUP_PROBE_TIMEOUT",
+        "AE_TASK_FAILED",
+    ]
+    assert recorded_events[0][2]["cmd_id"] == "ae3-t99-z99-s1"
+    assert recorded_events[0][2]["node_stale_online_candidate"] is True
+    assert recorded_events[1][2]["timed_out_command"]["node_last_seen_age_sec"] == 120
 
 
 @pytest.mark.asyncio

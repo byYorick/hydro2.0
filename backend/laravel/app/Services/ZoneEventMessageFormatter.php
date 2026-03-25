@@ -73,6 +73,7 @@ class ZoneEventMessageFormatter
             'PROCESS_CALIBRATION_SAVED' => $this->formatProcessCalibrationSaved($payload),
             'IRR_STATE_SNAPSHOT' => $this->formatIrrStateSnapshot($payload),
             'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
+            'AE_STARTUP_PROBE_TIMEOUT' => $this->formatAeStartupProbeTimeout($payload),
             'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
             'SOLUTION_FILL_COMPLETED' => 'Наполнение раствором завершено',
             'AE_TASK_STARTED' => $this->formatAeTaskStarted($payload),
@@ -997,19 +998,76 @@ class ZoneEventMessageFormatter
     private function formatCommandTimeout(array $details): string
     {
         $cmdId = $this->toStringOrNull($details['cmd_id'] ?? null);
+        $nodeUid = $this->toStringOrNull($details['node_uid'] ?? null);
+        $channel = $this->toStringOrNull($details['channel'] ?? null);
         $timeoutMinutes = isset($details['timeout_minutes']) && is_numeric($details['timeout_minutes'])
             ? (int) $details['timeout_minutes']
             : null;
+        $nodeStatus = $this->toStringOrNull($details['node_status'] ?? null);
+        $nodeLastSeenAgeSec = isset($details['node_last_seen_age_sec']) && is_numeric($details['node_last_seen_age_sec'])
+            ? (int) $details['node_last_seen_age_sec']
+            : null;
+        $staleCandidate = filter_var($details['node_stale_online_candidate'] ?? false, FILTER_VALIDATE_BOOL);
 
         $parts = [];
         if ($cmdId !== null) {
             $parts[] = "команда {$cmdId}";
         }
+        if ($nodeUid !== null) {
+            $parts[] = "нода {$nodeUid}";
+        }
+        if ($channel !== null) {
+            $parts[] = "канал {$channel}";
+        }
         if ($timeoutMinutes !== null) {
             $parts[] = "таймаут {$timeoutMinutes} мин";
         }
+        if ($nodeStatus !== null) {
+            $parts[] = "статус узла {$nodeStatus}";
+        }
+        if ($nodeLastSeenAgeSec !== null) {
+            $parts[] = "last_seen {$nodeLastSeenAgeSec} с назад";
+        }
+        if ($staleCandidate) {
+            $parts[] = 'узел числится online, но heartbeat устарел';
+        }
 
         return 'Таймаут команды'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatAeStartupProbeTimeout(array $details): string
+    {
+        $probeName = $this->toStringOrNull($details['probe_name'] ?? null) ?? 'irr_state_probe';
+        $cmdId = $this->toStringOrNull($details['cmd_id'] ?? null);
+        $nodeUid = $this->toStringOrNull($details['node_uid'] ?? null);
+        $channel = $this->toStringOrNull($details['channel'] ?? null);
+        $nodeStatus = $this->toStringOrNull($details['node_status'] ?? null);
+        $nodeLastSeenAgeSec = isset($details['node_last_seen_age_sec']) && is_numeric($details['node_last_seen_age_sec'])
+            ? (int) $details['node_last_seen_age_sec']
+            : null;
+        $staleCandidate = filter_var($details['node_stale_online_candidate'] ?? false, FILTER_VALIDATE_BOOL);
+
+        $parts = ["probe {$probeName}"];
+        if ($cmdId !== null) {
+            $parts[] = "команда {$cmdId}";
+        }
+        if ($nodeUid !== null) {
+            $parts[] = "нода {$nodeUid}";
+        }
+        if ($channel !== null) {
+            $parts[] = "канал {$channel}";
+        }
+        if ($nodeStatus !== null) {
+            $parts[] = "статус {$nodeStatus}";
+        }
+        if ($nodeLastSeenAgeSec !== null) {
+            $parts[] = "last_seen {$nodeLastSeenAgeSec} с назад";
+        }
+        if ($staleCandidate) {
+            $parts[] = 'online-статус выглядел устаревшим';
+        }
+
+        return 'Стартовый probe ирригационного контура не ответил'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
     }
 
     private function formatPumpCalibrationFinished(array $details): string

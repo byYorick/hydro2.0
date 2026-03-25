@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Command;
+use App\Models\Node;
 use App\Models\Zone;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -17,11 +19,20 @@ class ProcessCommandTimeoutsTest extends TestCase
         Config::set('commands.timeout_minutes', 5);
 
         $zone = Zone::factory()->create();
+        $node = Node::query()->create([
+            'zone_id' => $zone->id,
+            'uid' => 'nd-test-irrig-1',
+            'type' => 'irrig',
+            'status' => 'online',
+            'last_seen_at' => now()->subMinutes(3),
+        ]);
         $command = Command::create([
             'zone_id' => $zone->id,
+            'node_id' => $node->id,
             'cmd_id' => 'cmd-ack-timeout-001',
             'status' => Command::STATUS_ACK,
             'cmd' => 'test_command',
+            'channel' => 'storage_state',
             'sent_at' => now()->subMinutes(10),
             'ack_at' => now()->subMinutes(9),
         ]);
@@ -39,6 +50,19 @@ class ProcessCommandTimeoutsTest extends TestCase
             'zone_id' => $zone->id,
             'type' => 'COMMAND_TIMEOUT',
         ]);
+
+        $event = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'COMMAND_TIMEOUT')
+            ->latest('id')
+            ->first();
+
+        $payload = json_decode((string) $event->payload_json, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('nd-test-irrig-1', $payload['node_uid']);
+        $this->assertSame('storage_state', $payload['channel']);
+        $this->assertSame('online', $payload['node_status']);
+        $this->assertTrue($payload['node_stale_online_candidate']);
+        $this->assertIsInt($payload['node_last_seen_age_sec']);
     }
 
     public function test_process_timeouts_does_not_touch_recent_ack_command(): void

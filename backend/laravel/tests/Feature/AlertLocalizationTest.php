@@ -118,4 +118,52 @@ class AlertLocalizationTest extends TestCase
                 'Задача AE3 #77 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 1. Причина: Выполнение задачи превысило допустимый runtime timeout.'
             );
     }
+
+    public function test_alerts_api_returns_enriched_message_for_ae3_command_timeout_with_startup_probe_context(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'Ошибка задачи автоматики',
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'error',
+            'details' => [
+                'task_id' => 1,
+                'task_type' => 'cycle_start',
+                'stage' => 'startup',
+                'workflow_phase' => 'idle',
+                'topology' => 'two_tank_drip_substrate_trays',
+                'stage_retry_count' => 0,
+                'error_code' => 'command_timeout',
+                'error_message' => 'TIMEOUT',
+                'message' => 'TIMEOUT',
+                'timed_out_command' => [
+                    'probe_name' => 'irr_state_probe',
+                    'cmd_id' => 'ae3-t1-z1-s1',
+                    'node_uid' => 'nd-test-irrig-1',
+                    'channel' => 'storage_state',
+                    'node_status' => 'online',
+                    'node_last_seen_age_sec' => 182,
+                    'node_stale_online_candidate' => true,
+                ],
+            ],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath(
+                'data.data.0.message',
+                'Задача AE3 #1 (cycle_start) завершилась с ошибкой (код: command_timeout): этап startup, workflow idle, topology two_tank_drip_substrate_trays. Причина: Не дождались ответа: probe irr_state_probe, команда ae3-t1-z1-s1, нода nd-test-irrig-1, канал storage_state. Контекст: статус узла online, last_seen 182 с назад, online-статус уже выглядел устаревшим.'
+            );
+    }
 }
