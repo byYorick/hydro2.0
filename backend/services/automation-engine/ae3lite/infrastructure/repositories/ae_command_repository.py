@@ -184,9 +184,28 @@ class PgAeCommandRepository:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT id, cmd_id, status, ack_at, sent_at, failed_at, updated_at, created_at, error_message
-                FROM commands
-                WHERE id = $1
+                SELECT
+                    c.id,
+                    c.zone_id,
+                    c.node_id,
+                    n.uid AS node_uid,
+                    c.channel,
+                    c.cmd,
+                    c.params,
+                    c.source,
+                    c.cycle_id,
+                    c.cmd_id,
+                    c.status,
+                    c.ack_at,
+                    c.sent_at,
+                    c.failed_at,
+                    c.updated_at,
+                    c.created_at,
+                    c.error_message
+                FROM commands c
+                LEFT JOIN nodes n
+                    ON n.id = c.node_id
+                WHERE c.id = $1
                 LIMIT 1
                 """,
                 int(external_id),
@@ -198,15 +217,56 @@ class PgAeCommandRepository:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT id, cmd_id, status, ack_at, sent_at, failed_at, updated_at, created_at, error_message
-                FROM commands
-                WHERE zone_id = $1
-                  AND cmd_id = $2
-                ORDER BY created_at DESC, id DESC
+                SELECT
+                    c.id,
+                    c.zone_id,
+                    c.node_id,
+                    n.uid AS node_uid,
+                    c.channel,
+                    c.cmd,
+                    c.params,
+                    c.source,
+                    c.cycle_id,
+                    c.cmd_id,
+                    c.status,
+                    c.ack_at,
+                    c.sent_at,
+                    c.failed_at,
+                    c.updated_at,
+                    c.created_at,
+                    c.error_message
+                FROM commands c
+                LEFT JOIN nodes n
+                    ON n.id = c.node_id
+                WHERE c.zone_id = $1
+                  AND c.cmd_id = $2
+                ORDER BY c.created_at DESC, c.id DESC
                 LIMIT 1
                 """,
                 zone_id,
                 cmd_id,
+            )
+        return dict(row) if row is not None else None
+
+    async def get_node_runtime_context(self, *, node_uid: str) -> Optional[Mapping[str, Any]]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    n.id,
+                    n.uid,
+                    LOWER(COALESCE(n.type, '')) AS node_type,
+                    LOWER(COALESCE(n.status, '')) AS node_status,
+                    n.zone_id,
+                    n.last_seen_at,
+                    n.last_heartbeat_at,
+                    n.updated_at
+                FROM nodes n
+                WHERE n.uid = $1
+                LIMIT 1
+                """,
+                node_uid,
             )
         return dict(row) if row is not None else None
 

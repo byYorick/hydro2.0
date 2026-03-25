@@ -51,6 +51,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
 #define TASK_STACK_STATE_COMMAND_WORKER 4096
 #define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
+#define TASK_STACK_MQTT_REANNOUNCE 3584
+#define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 3072
 #define CLEAN_FILL_MIN_DELAY_SEC 10
 #define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
@@ -87,6 +89,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TRANSIENT_DELAY_SCALE_MAX_MS 6500
 #define CONFIG_REPORT_RETRY_DELAY_MS 250
 #define CONFIG_REPORT_NODE_SPACING_MS 120
+#define MQTT_REANNOUNCE_NODE_SPACING_MS 180
+#define MQTT_REANNOUNCE_RETRY_DELAY_MS 1200
 #define MIN_VALID_UNIX_TS_SEC 1000000000LL
 #define COMMAND_DEDUP_WINDOW_SEC 180
 #define COMMAND_DEDUP_CACHE_SIZE 32
@@ -293,8 +297,14 @@ static volatile bool s_config_report_on_connect_pending = false;
 static bool s_state_command_fastpath_enabled = false;
 static volatile bool s_command_worker_busy = false;
 static volatile int64_t s_last_non_state_command_rx_ms = 0;
+static TaskHandle_t s_mqtt_reannounce_task_handle = NULL;
+static volatile bool s_mqtt_reannounce_active = false;
 
 static void publish_telemetry_for_node(const char *node_uid, const char *channel, const char *metric_type, float value);
+static esp_err_t publish_status_for_node(const char *node_uid, const char *status);
+static esp_err_t publish_node_hello_for_node(const virtual_node_t *node);
+static bool perform_virtual_node_reannounce_batch(bool with_spacing);
+static void task_mqtt_reannounce(void *pv_parameters);
 
 typedef struct {
     char cmd_id[96];
@@ -1476,29 +1486,43 @@ static esp_err_t build_topic(char *buffer, size_t buffer_size, const char *node_
     return ESP_OK;
 }
 
-static void publish_status_for_node(const char *node_uid, const char *status) {
+static esp_err_t publish_status_for_node(const char *node_uid, const char *status) {
     char topic[192];
     cJSON *json;
+    esp_err_t publish_err = ESP_FAIL;
 
     if (build_topic(topic, sizeof(topic), node_uid, NULL, "status") != ESP_OK) {
         ESP_LOGE(TAG, "Failed to build status topic for %s", node_uid);
-        return;
+        return ESP_FAIL;
     }
 
     json = cJSON_CreateObject();
     if (!json) {
-        return;
+        return ESP_ERR_NO_MEM;
     }
     cJSON_AddStringToObject(json, "status", status);
     cJSON_AddNumberToObject(json, "ts", (double)get_timestamp_seconds());
 
-    publish_json_payload(topic, json, 1, 1);
+    publish_err = publish_json_payload(topic, json, 1, 1);
     test_node_ui_set_node_status(node_uid, status);
     if (status && strcmp(status, "ONLINE") != 0) {
         test_node_ui_mark_node_lwt(node_uid);
     }
-    ui_logf(node_uid, "status %s", status ? status : "UNKNOWN");
+    if (publish_err == ESP_OK) {
+        ui_logf(node_uid, "status %s", status ? status : "UNKNOWN");
+    } else {
+        ui_logf(node_uid, "status publish FAIL");
+        ESP_LOGW(
+            TAG,
+            "Failed to publish status for %s: status=%s err=0x%x (%s)",
+            node_uid ? node_uid : "unknown",
+            status ? status : "UNKNOWN",
+            (unsigned)publish_err,
+            esp_err_to_name(publish_err)
+        );
+    }
     cJSON_Delete(json);
+    return publish_err;
 }
 
 static void publish_heartbeat_for_node(const char *node_uid) {
@@ -1822,7 +1846,7 @@ static const char *resolve_node_hello_name(const virtual_node_t *node) {
     return "Test node";
 }
 
-static void publish_node_hello_for_node(const virtual_node_t *node) {
+static esp_err_t publish_node_hello_for_node(const virtual_node_t *node) {
     char payload_buf[1024];
     cJSON *hello;
     cJSON *capabilities;
@@ -1830,12 +1854,12 @@ static void publish_node_hello_for_node(const virtual_node_t *node) {
     size_t index;
 
     if (!node || !node->node_uid) {
-        return;
+        return ESP_ERR_INVALID_ARG;
     }
 
     hello = cJSON_CreateObject();
     if (!hello) {
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     cJSON_AddStringToObject(hello, "message_type", "node_hello");
@@ -1905,6 +1929,76 @@ static void publish_node_hello_for_node(const virtual_node_t *node) {
     }
 
     cJSON_Delete(hello);
+    return publish_err;
+}
+
+static bool perform_virtual_node_reannounce_batch(bool with_spacing) {
+    size_t index;
+    size_t preconfig_count = 0;
+    bool batch_ok = true;
+
+    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
+        bool node_preconfig_mode = false;
+        char node_gh_uid[64] = {0};
+        char node_zone_uid[64] = {0};
+
+        if (!mqtt_manager_is_connected()) {
+            ESP_LOGW(TAG, "MQTT disconnected during virtual node reannounce, stopping batch");
+            batch_ok = false;
+            break;
+        }
+
+        if (get_node_namespace(
+            VIRTUAL_NODES[index].node_uid,
+            node_gh_uid,
+            sizeof(node_gh_uid),
+            node_zone_uid,
+            sizeof(node_zone_uid),
+            &node_preconfig_mode
+        )) {
+            if (node_preconfig_mode) {
+                preconfig_count++;
+            }
+        }
+
+        if (publish_node_hello_for_node(&VIRTUAL_NODES[index]) != ESP_OK) {
+            batch_ok = false;
+        }
+        if (!mqtt_manager_is_connected()) {
+            batch_ok = false;
+            break;
+        }
+        if (publish_status_for_node(VIRTUAL_NODES[index].node_uid, "ONLINE") != ESP_OK) {
+            batch_ok = false;
+        }
+        if (
+            with_spacing &&
+            mqtt_manager_is_connected() &&
+            (index + 1) < VIRTUAL_NODE_COUNT
+        ) {
+            vTaskDelay(pdMS_TO_TICKS(MQTT_REANNOUNCE_NODE_SPACING_MS));
+        }
+    }
+
+    if (batch_ok && mqtt_manager_is_connected()) {
+        s_config_report_on_connect_pending = true;
+        test_node_ui_show_step("MQTT connected: virtual nodes ONLINE");
+        ESP_LOGI(
+            TAG,
+            "Virtual nodes reannounce completed (preconfig=%u/%u)",
+            (unsigned)preconfig_count,
+            (unsigned)VIRTUAL_NODE_COUNT
+        );
+    } else {
+        ESP_LOGW(
+            TAG,
+            "Virtual nodes reannounce incomplete (preconfig=%u/%u), will retry",
+            (unsigned)preconfig_count,
+            (unsigned)VIRTUAL_NODE_COUNT
+        );
+    }
+
+    return batch_ok;
 }
 
 static bool parse_command_topic(
@@ -3817,11 +3911,11 @@ static void task_publish_telemetry(void *pv_parameters) {
         wifi_connected = wifi_manager_is_connected();
         mqtt_connected = mqtt_manager_is_connected();
 
-        if (mqtt_connected) {
+        if (mqtt_connected && !s_mqtt_reannounce_active) {
             publish_virtual_telemetry_batch();
         } else {
-            // В offline режиме продолжаем обновлять виртуальное состояние,
-            // но не шлём telemetry в MQTT, чтобы не засорять лог ошибками publish.
+            // В offline режиме и во время throttled reannounce продолжаем
+            // обновлять виртуальное состояние без публикации в MQTT.
             apply_passive_drift();
             s_telemetry_tick++;
         }
@@ -3849,11 +3943,11 @@ static void task_publish_telemetry(void *pv_parameters) {
             last_mqtt_connected = mqtt_connected;
         }
 
-        if (mqtt_connected) {
+        if (mqtt_connected && !s_mqtt_reannounce_active) {
             refresh_wildcard_subscriptions("telemetry_loop");
         }
 
-        if (mqtt_connected) {
+        if (mqtt_connected && !s_mqtt_reannounce_active) {
             if (s_config_report_on_connect_pending) {
                 bool batch_ok = publish_all_config_reports("mqtt_connected_deferred");
                 s_config_report_on_connect_pending = !batch_ok;
@@ -3890,6 +3984,31 @@ static void task_publish_telemetry(void *pv_parameters) {
     }
 }
 
+static void task_mqtt_reannounce(void *pv_parameters) {
+    (void)pv_parameters;
+
+    s_mqtt_reannounce_task_handle = xTaskGetCurrentTaskHandle();
+    ESP_LOGI(TAG, "MQTT reannounce task started");
+
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        while (mqtt_manager_is_connected()) {
+            s_mqtt_reannounce_active = true;
+            if (perform_virtual_node_reannounce_batch(true)) {
+                break;
+            }
+            s_mqtt_reannounce_active = false;
+            if (!mqtt_manager_is_connected()) {
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(MQTT_REANNOUNCE_RETRY_DELAY_MS));
+        }
+
+        s_mqtt_reannounce_active = false;
+    }
+}
+
 static void wifi_connected_callback(bool connected, void *user_ctx) {
     (void)user_ctx;
 
@@ -3903,12 +4022,12 @@ static void wifi_connected_callback(bool connected, void *user_ctx) {
 
 static void mqtt_connected_callback(bool connected, void *user_ctx) {
     size_t index;
-    size_t preconfig_count = 0;
     (void)user_ctx;
 
     if (!connected) {
         s_wildcard_subscriptions_ready = false;
         s_wildcard_subscribe_warned = false;
+        s_mqtt_reannounce_active = false;
         // При разрыве соединения сохраняем отложенный флаг,
         // чтобы после reconnect гарантированно перепослать config_report.
         s_config_report_on_connect_pending = true;
@@ -3934,44 +4053,14 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     // Подписываем wildcard сразу после reconnect, чтобы не терять ранние команды.
     refresh_wildcard_subscriptions("mqtt_connected_cb");
 
-    for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
-        bool node_preconfig_mode = false;
-        char node_gh_uid[64] = {0};
-        char node_zone_uid[64] = {0};
-
-        if (!mqtt_manager_is_connected()) {
-            ESP_LOGW(TAG, "MQTT disconnected during virtual node sync, stopping batch");
-            break;
-        }
-
-        if (get_node_namespace(
-            VIRTUAL_NODES[index].node_uid,
-            node_gh_uid,
-            sizeof(node_gh_uid),
-            node_zone_uid,
-            sizeof(node_zone_uid),
-            &node_preconfig_mode
-        )) {
-            if (node_preconfig_mode) {
-                preconfig_count++;
-            }
-        }
-
-        publish_node_hello_for_node(&VIRTUAL_NODES[index]);
-        publish_status_for_node(VIRTUAL_NODES[index].node_uid, "ONLINE");
+    s_mqtt_reannounce_active = true;
+    if (s_mqtt_reannounce_task_handle != NULL) {
+        test_node_ui_show_step("MQTT connected: reannounce scheduled");
+        xTaskNotifyGive(s_mqtt_reannounce_task_handle);
+    } else {
+        perform_virtual_node_reannounce_batch(false);
+        s_mqtt_reannounce_active = false;
     }
-
-    if (mqtt_manager_is_connected()) {
-        s_config_report_on_connect_pending = true;
-    }
-    test_node_ui_show_step("MQTT connected: virtual nodes ONLINE");
-
-    ESP_LOGI(
-        TAG,
-        "Virtual nodes status published (preconfig=%u/%u)",
-        (unsigned)preconfig_count,
-        (unsigned)VIRTUAL_NODE_COUNT
-    );
 }
 
 static esp_err_t run_setup_portal_blocking(void) {
@@ -4182,14 +4271,20 @@ static esp_err_t start_worker_task(
     uint32_t stack_size,
     uint32_t fallback_stack_size,
     UBaseType_t priority,
-    bool required
+    bool required,
+    TaskHandle_t *out_handle
 ) {
     BaseType_t created = pdFAIL;
     char step_line[96];
     uint32_t free_heap_before = esp_get_free_heap_size();
     uint32_t used_stack = stack_size;
+    TaskHandle_t created_handle = NULL;
 
-    created = xTaskCreate(task_fn, task_name, stack_size, NULL, priority, NULL);
+    if (out_handle) {
+        *out_handle = NULL;
+    }
+
+    created = xTaskCreate(task_fn, task_name, stack_size, NULL, priority, &created_handle);
     if (created != pdPASS && fallback_stack_size > 0 && fallback_stack_size < stack_size) {
         ESP_LOGW(
             TAG,
@@ -4199,7 +4294,8 @@ static esp_err_t start_worker_task(
             (unsigned)fallback_stack_size,
             (unsigned)free_heap_before
         );
-        created = xTaskCreate(task_fn, task_name, fallback_stack_size, NULL, priority, NULL);
+        created_handle = NULL;
+        created = xTaskCreate(task_fn, task_name, fallback_stack_size, NULL, priority, &created_handle);
         used_stack = fallback_stack_size;
     }
 
@@ -4229,6 +4325,10 @@ static esp_err_t start_worker_task(
             (unsigned)free_heap_before
         );
         return ESP_FAIL;
+    }
+
+    if (out_handle) {
+        *out_handle = created_handle;
     }
 
     ESP_LOGI(
@@ -4492,7 +4592,8 @@ esp_err_t test_node_app_init(void) {
         TASK_STACK_COMMAND_WORKER,
         TASK_STACK_COMMAND_WORKER_FALLBACK,
         6,
-        true
+        true,
+        NULL
     );
     if (err != ESP_OK) {
         cleanup_init_runtime_resources();
@@ -4506,7 +4607,8 @@ esp_err_t test_node_app_init(void) {
             TASK_STACK_STATE_COMMAND_WORKER,
             TASK_STACK_STATE_COMMAND_WORKER_FALLBACK,
             7,
-            false
+            false,
+            NULL
         );
         if (err == ESP_OK) {
             s_state_command_fastpath_enabled = true;
@@ -4520,12 +4622,29 @@ esp_err_t test_node_app_init(void) {
     }
 
     err = start_worker_task(
+        task_mqtt_reannounce,
+        "mqtt_reannounce",
+        TASK_STACK_MQTT_REANNOUNCE,
+        TASK_STACK_MQTT_REANNOUNCE_FALLBACK,
+        5,
+        false,
+        &s_mqtt_reannounce_task_handle
+    );
+    if (err == ESP_OK) {
+        test_node_ui_show_step("App init: mqtt reannounce ON");
+    } else {
+        s_mqtt_reannounce_task_handle = NULL;
+        test_node_ui_show_step("App init: mqtt reannounce fallback");
+    }
+
+    err = start_worker_task(
         task_publish_telemetry,
         "telemetry_task",
         TASK_STACK_TELEMETRY,
         TASK_STACK_TELEMETRY_FALLBACK,
         5,
-        true
+        true,
+        NULL
     );
     if (err != ESP_OK) {
         cleanup_init_runtime_resources();

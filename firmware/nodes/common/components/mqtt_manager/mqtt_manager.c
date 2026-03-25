@@ -24,6 +24,7 @@
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
 // Слабые символы для опциональной зависимости от oled_ui
 // Если oled_ui не включен, эти функции будут NULL
@@ -93,6 +94,32 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain);
 static esp_err_t mqtt_manager_create_client(void);
 static void mqtt_manager_reset_rx_assembly(void);
+static void mqtt_manager_log_error_details(const esp_mqtt_error_codes_t *error_handle);
+
+static void mqtt_manager_log_error_details(const esp_mqtt_error_codes_t *error_handle) {
+    if (error_handle == NULL) {
+        return;
+    }
+
+    ESP_LOGE(
+        TAG,
+        "MQTT error details: type=%d tls_last_esp_err=0x%x tls_stack_err=%d cert_flags=0x%x connect_rc=%d"
+#ifdef CONFIG_MQTT_PROTOCOL_5
+        " disconnect_rc=%d"
+#endif
+        " sock_errno=%d (%s)",
+        error_handle->error_type,
+        (unsigned)error_handle->esp_tls_last_esp_err,
+        error_handle->esp_tls_stack_err,
+        error_handle->esp_tls_cert_verify_flags,
+        error_handle->connect_return_code,
+#ifdef CONFIG_MQTT_PROTOCOL_5
+        error_handle->disconnect_return_code,
+#endif
+        error_handle->esp_transport_sock_errno,
+        error_handle->esp_transport_sock_errno != 0 ? strerror(error_handle->esp_transport_sock_errno) : "n/a"
+    );
+}
 
 /**
  * @brief Построение MQTT топика
@@ -1243,8 +1270,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         case MQTT_EVENT_ERROR:
             ESP_LOGE(TAG, "MQTT error");
             if (event->error_handle) {
-                ESP_LOGE(TAG, "Error type: %d", event->error_handle->error_type);
-                esp_mqtt_error_type_t err_type = event->error_handle->error_type;
+                const esp_mqtt_error_codes_t *error_handle = event->error_handle;
+                ESP_LOGE(TAG, "Error type: %d", error_handle->error_type);
+                mqtt_manager_log_error_details(error_handle);
+                esp_mqtt_error_type_t err_type = error_handle->error_type;
                 if (err_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                     ESP_LOGE(TAG, "TCP transport error");
                     // Для TCP ошибок считаем соединение потерянным и ждём reconnect
