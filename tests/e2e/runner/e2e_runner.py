@@ -1779,7 +1779,7 @@ class E2ERunner:
                 duration = time.time() - step_start_time
                 error_msg = str(e)
                 if optional:
-                    logger.warning(f"Optional action '{step_name}' ({step_type}) failed: {error_msg}")
+                    logger.info(f"Optional action '{step_name}' ({step_type}) failed: {error_msg}")
                     self.reporter.add_test_case(
                         name=step_name,
                         status="skipped",
@@ -1819,7 +1819,7 @@ class E2ERunner:
                 duration = time.time() - step_start_time
                 error_msg = str(e)
                 if optional:
-                    logger.warning(f"Optional assertion '{name}' skipped due to error: {error_msg}")
+                    logger.info(f"Optional assertion '{name}' skipped due to error: {error_msg}")
                     self.reporter.add_test_case(
                         name=name,
                         status="skipped",

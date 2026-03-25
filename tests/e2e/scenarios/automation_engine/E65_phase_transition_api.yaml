@@ -42,6 +42,14 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: cleanup_zone_runtime_intents
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   - step: set_capabilities_without_ph_ec_requirements
     type: database_execute
     query: |
@@ -203,27 +211,41 @@ actions:
             AND ii.owner_id = zc.zone_id
             AND ii.label = st.label
         )
-        RETURNING id
+        RETURNING id, label
       ),
-      upsert_bindings AS (
-        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+      resolved_instances AS (
         SELECT
-          ii.id,
-          nc.id,
-          'actuator',
           st.role,
-          NOW(),
-          NOW()
+          st.node_channel_id,
+          ii.id AS infrastructure_instance_id
         FROM zone_ctx zc
         JOIN selected_targets st ON TRUE
-        JOIN target_node tn ON TRUE
-        JOIN node_channels nc
-          ON nc.id = st.node_channel_id
-         AND nc.node_id = tn.id
         JOIN infrastructure_instances ii
           ON ii.owner_type = 'zone'
          AND ii.owner_id = zc.zone_id
          AND ii.label = st.label
+        UNION ALL
+        SELECT
+          st.role,
+          st.node_channel_id,
+          ei.id AS infrastructure_instance_id
+        FROM ensure_instances ei
+        JOIN selected_targets st ON st.label = ei.label
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ri.infrastructure_instance_id,
+          nc.id,
+          'actuator',
+          ri.role,
+          NOW(),
+          NOW()
+        FROM resolved_instances ri
+        JOIN target_node tn ON TRUE
+        JOIN node_channels nc
+          ON nc.id = ri.node_channel_id
+         AND nc.node_id = tn.id
         ON CONFLICT (node_channel_id) DO UPDATE SET
           infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
           direction = EXCLUDED.direction,
@@ -426,13 +448,16 @@ cleanup:
     endpoint: /api/grow-cycles/${cycle_id}/abort
     payload: {}
     optional: true
+    condition: ${cycle_id}
 
   - step: delete_recipe
     type: api_delete
     endpoint: /api/recipes/${recipe_response.data.id}
     optional: true
+    condition: ${recipe_response.data.id}
 
   - step: delete_plant
     type: api_delete
     endpoint: /api/plants/${plant_response.data.id}
     optional: true
+    condition: ${plant_response.data.id}

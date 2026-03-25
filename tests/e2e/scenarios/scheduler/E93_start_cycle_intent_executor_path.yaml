@@ -2,9 +2,9 @@
 # DoD:
 # - scheduler-подобный intent вставлен в zone_automation_intents
 # - /zones/{id}/start-cycle успешно принят automation-engine
-# - intent перешел в terminal
+# - intent принят runtime и не ушел в failed/cancelled
 # - создан AE task с числовым task_id
-# - internal task endpoint отдает terminal snapshot
+# - internal task endpoint отдает актуальный non-failed snapshot
 
 name: E93_start_cycle_intent_executor_path
 description: |
@@ -12,7 +12,7 @@ description: |
   1) симулируем шаг scheduler (insert pending intent),
   2) вызываем AE endpoint /zones/{id}/start-cycle с scheduler security headers,
   3) проверяем lifecycle intent и AE task,
-  4) убеждаемся, что task дошел до terminal status,
+  4) убеждаемся, что task принят и не завершился ошибкой,
   5) проверяем детализацию через /internal/tasks/{task_id}.
 
 actions:
@@ -26,7 +26,7 @@ actions:
   - step: get_zone_row
     type: database_query
     query: |
-      SELECT id
+      SELECT id, greenhouse_id
       FROM zones
       WHERE uid = :zone_uid
       LIMIT 1
@@ -38,6 +38,343 @@ actions:
   - step: set_zone_id
     type: set
     zone_id: ${zone_row.0.id}
+    greenhouse_id: ${zone_row.0.greenhouse_id}
+
+  - step: ensure_ae3_virtual_irrig_node
+    type: database_execute
+    query: |
+      INSERT INTO nodes (
+        zone_id,
+        uid,
+        name,
+        type,
+        hardware_id,
+        status,
+        lifecycle_state,
+        created_at,
+        updated_at,
+        last_seen_at
+      )
+      VALUES (
+        :zone_id,
+        'nd-test-irrig-1',
+        'E93 AE3 Irrigation Node',
+        'irrig',
+        'nd-test-irrig-1',
+        'online',
+        'ASSIGNED_TO_ZONE',
+        NOW(),
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (uid) DO UPDATE
+      SET zone_id = EXCLUDED.zone_id,
+          type = 'irrig',
+          status = 'online',
+          lifecycle_state = 'ASSIGNED_TO_ZONE',
+          last_seen_at = NOW(),
+          updated_at = NOW()
+    params:
+      zone_id: ${zone_id}
+
+  - step: resolve_irrig_node
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = 'nd-test-irrig-1'
+      LIMIT 1
+    expected_rows: 1
+    save: irrig_node_row
+
+  - step: set_irrig_node_id
+    type: set
+    irrig_node_id: ${irrig_node_row.0.node_id}
+
+  - step: upsert_irrig_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      SELECT :node_id, channel_name, channel_type, NOW(), NOW()
+      FROM (VALUES
+        ('pump_main', 'ACTUATOR'),
+        ('valve_clean_fill', 'ACTUATOR'),
+        ('valve_clean_supply', 'ACTUATOR'),
+        ('valve_solution_fill', 'ACTUATOR'),
+        ('valve_solution_supply', 'ACTUATOR'),
+        ('valve_irrigation', 'ACTUATOR'),
+        ('level_clean_min', 'SENSOR'),
+        ('level_clean_max', 'SENSOR'),
+        ('level_solution_min', 'SENSOR'),
+        ('level_solution_max', 'SENSOR'),
+        ('system', 'SERVICE')
+      ) AS items(channel_name, channel_type)
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          updated_at = NOW()
+    params:
+      node_id: ${irrig_node_id}
+
+  - step: delete_old_level_sensors
+    type: database_execute
+    query: |
+      DELETE FROM sensors
+      WHERE zone_id = :zone_id
+        AND type = 'WATER_LEVEL'
+        AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_level_sensors
+    type: database_execute
+    query: |
+      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+      SELECT :greenhouse_id, :zone_id, :node_id, 'inside', 'WATER_LEVEL', label, TRUE, NOW(), NOW()
+      FROM (VALUES
+        ('level_clean_max'),
+        ('level_clean_min'),
+        ('level_solution_max'),
+        ('level_solution_min')
+      ) AS items(label)
+    params:
+      greenhouse_id: ${greenhouse_id}
+      zone_id: ${zone_id}
+      node_id: ${irrig_node_id}
+
+  - step: cleanup_zone_ae_commands
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+      );
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_stage_transitions
+    type: database_execute
+    query: |
+      DELETE FROM ae_stage_transitions
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+      );
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_ae_tasks
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_leases
+    type: database_execute
+    query: |
+      DELETE FROM ae_zone_leases
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_intents
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: e93-plant-${TIMESTAMP_S}
+      scientific_name: Scheduler Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: e93-recipe-${TIMESTAMP_S}
+      description: Scheduler start-cycle intent executor path
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: E93 scheduler revision
+    save: revision_response
+
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Scheduler Phase 0
+      duration_hours: 12
+      ph_target: 6.0
+      ec_target: 1.5
+      temp_air_target: 22.0
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_planned_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: apply_ae3_logic_profile
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+    payload:
+      payload:
+        active_mode: working
+        profiles:
+          working:
+            mode: working
+            is_active: true
+            subsystems:
+              diagnostics:
+                execution:
+                  workflow: cycle_start
+                  topology: two_tank_drip_substrate_trays
+                  required_node_types:
+                    - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 180
+                    prepare_recirculation_timeout_sec: 180
+                    telemetry_max_age_sec: 10
+                    irr_state_max_age_sec: 30
+                  target_ph: 5.8
+                  target_ec: 1.4
+                  prepare_tolerance:
+                    ph_pct: 15
+                    ec_pct: 25
+                  two_tank_commands:
+                    clean_fill_start:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                    clean_fill_stop:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                    solution_fill_start:
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    solution_fill_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: false
+                    prepare_recirculation_start:
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    prepare_recirculation_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: false
+            command_plans:
+              schema_version: 1
+              plan_version: 1
+              source: e93_scheduler_logic_profile
+              plans:
+                diagnostics:
+                  execution:
+                    workflow: cycle_start
+                    topology: two_tank_drip_substrate_trays
+                    required_node_types:
+                      - irrig
+                    startup:
+                      level_poll_interval_sec: 5
+                      clean_fill_timeout_sec: 120
+                      solution_fill_timeout_sec: 180
+                      prepare_recirculation_timeout_sec: 180
+                      telemetry_max_age_sec: 10
+                      irr_state_max_age_sec: 30
+                    target_ph: 5.8
+                    target_ec: 1.4
+
+  - step: validate_zone_bundle
+    type: api_post
+    endpoint: /api/automation-bundles/zone/${zone_id}/validate
+    payload: {}
+    save: zone_bundle_response
+
+  - step: validate_cycle_bundle
+    type: api_post
+    endpoint: /api/automation-bundles/grow_cycle/${cycle_id}/validate
+    payload: {}
+    save: cycle_bundle_response
 
   - step: insert_scheduler_like_intent
     type: database_execute
@@ -61,7 +398,8 @@ actions:
           'source', CAST(:source AS text),
           'task_type', 'diagnostics',
           'workflow', 'cycle_start',
-          'topology', 'two_tank_drip_substrate_trays'
+          'topology', 'two_tank_drip_substrate_trays',
+          'grow_cycle_id', :cycle_id
         ),
         :idempotency_key,
         'pending',
@@ -73,6 +411,7 @@ actions:
       )
     params:
       zone_id: ${zone_id}
+      cycle_id: ${cycle_id}
       idempotency_key: ${idempotency_key}
       source: ${scheduler_source}
 
@@ -93,7 +432,11 @@ actions:
     retry_delay_seconds: 1
     capture_response: start_cycle_response
 
-  - step: wait_intent_terminal
+  - step: set_task_id
+    type: set
+    task_id: ${start_cycle_response.json.data.task_id}
+
+  - step: wait_intent_active
     type: db.wait
     query: |
       SELECT
@@ -105,22 +448,19 @@ actions:
       FROM zone_automation_intents
       WHERE zone_id = :zone_id
         AND idempotency_key = :idempotency_key
-        AND status IN ('completed', 'failed', 'cancelled')
+        AND status IN ('running', 'completed')
       ORDER BY id DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
       idempotency_key: ${idempotency_key}
-    timeout: 120.0
+    timeout: 30.0
     expected_rows: 1
-    save: intent_terminal
+    save: intent_active
 
-  - step: set_task_id
-    type: set
-    task_id: ${start_cycle_response.json.data.task_id}
-
-  - step: wait_ae_task_terminal
+  - step: wait_ae_task_accepted
     type: db.wait
+    condition: ${task_id is not None and task_id != ''}
     query: |
       SELECT
         id,
@@ -131,17 +471,18 @@ actions:
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
         AND zone_id = :zone_id
-        AND status IN ('completed', 'failed', 'cancelled')
+        AND status IN ('pending', 'running', 'completed')
       LIMIT 1
     params:
       zone_id: ${zone_id}
       task_id: ${task_id}
-    timeout: 120.0
+    timeout: 30.0
     expected_rows: 1
-    save: ae_task_terminal
+    save: ae_task_active
 
   - step: get_internal_task_detail
     type: http_request
+    condition: ${task_id is not None and task_id != ''}
     method: GET
     url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/internal/tasks/${task_id}
     headers:
@@ -175,15 +516,15 @@ assertions:
     type: custom_assert
     condition: "str(context.get('task_id', '')).isdigit()"
 
-  - name: intent_terminal_status_valid
+  - name: intent_active_status_valid
     type: custom_assert
-    condition: "str(context.get('intent_terminal', [{}])[0].get('status', '')).lower() in {'completed', 'failed', 'cancelled'}"
+    condition: "str(context.get('intent_active', [{}])[0].get('status', '')).lower() in {'running', 'completed'}"
 
-  - name: ae_task_terminal_status_valid
+  - name: ae_task_status_valid
     type: custom_assert
-    condition: "str(context.get('ae_task_terminal', [{}])[0].get('status', '')).lower() in {'completed', 'failed', 'cancelled'}"
+    condition: "str(context.get('ae_task_active', [{}])[0].get('status', '')).lower() in {'pending', 'running', 'completed'}"
 
-  - name: internal_task_detail_terminal
+  - name: internal_task_detail_non_failed
     type: json_assertion
     source: internal_task_detail
     path: json
@@ -193,30 +534,101 @@ assertions:
         value: ok
       - field: data.status
         operator: in
-        value: [completed, failed, cancelled]
+        value: [pending, running, completed]
 
   - name: internal_task_id_matches_start_cycle_task_id
     type: custom_assert
     condition: "str(context.get('internal_task_detail', {}).get('json', {}).get('data', {}).get('task_id', '')) == str(context.get('task_id', ''))"
 
-  - name: intent_not_left_in_non_terminal
+  - name: intent_not_failed_or_cancelled
     type: database_query
     query: |
-      SELECT COUNT(*)::int AS pending_cnt
+      SELECT COUNT(*)::int AS invalid_cnt
       FROM zone_automation_intents
       WHERE zone_id = :zone_id
         AND idempotency_key = :idempotency_key
-        AND status IN ('pending', 'claimed', 'running')
+        AND status IN ('failed', 'cancelled')
     params:
       zone_id: ${zone_id}
       idempotency_key: ${idempotency_key}
     expected_rows: 1
     expected:
-      - field: pending_cnt
+      - field: invalid_cnt
         operator: equals
         value: 0
 
 cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+    condition: ${cycle_id}
+
+  - step: wait_intent_terminal_after_abort
+    type: db.wait
+    query: |
+      SELECT status
+      FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND idempotency_key = :idempotency_key
+        AND status IN ('completed', 'cancelled')
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      idempotency_key: ${idempotency_key}
+    timeout: 30.0
+    expected_rows: 1
+    optional: true
+
+  - step: wait_ae_task_terminal_after_abort
+    type: db.wait
+    condition: ${task_id is not None and task_id != ''}
+    query: |
+      SELECT status
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND zone_id = :zone_id
+        AND status IN ('completed', 'cancelled')
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+    timeout: 30.0
+    expected_rows: 1
+    optional: true
+
+  - step: delete_test_ae_commands
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+    optional: true
+
+  - step: delete_test_ae_stage_transitions
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
+      DELETE FROM ae_stage_transitions
+      WHERE task_id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+    optional: true
+
+  - step: delete_test_ae_task
+    type: database_execute
+    condition: ${task_id is not None and task_id != ''}
+    query: |
+      DELETE FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+    optional: true
+
   - step: delete_test_intent
     type: database_execute
     query: |
@@ -228,22 +640,24 @@ cleanup:
       idempotency_key: ${idempotency_key}
     optional: true
 
-  - step: delete_test_ae_commands
+  - step: delete_test_cycle
     type: database_execute
     query: |
-      DELETE FROM ae_commands
-      WHERE task_id = CAST(:task_id AS bigint)
+      DELETE FROM grow_cycles
+      WHERE id = :cycle_id
     params:
-      task_id: ${task_id}
+      cycle_id: ${cycle_id}
     optional: true
-    condition: ${task_id is not None and task_id != ''}
+    condition: ${cycle_id}
 
-  - step: delete_test_ae_task
-    type: database_execute
-    query: |
-      DELETE FROM ae_tasks
-      WHERE id = CAST(:task_id AS bigint)
-    params:
-      task_id: ${task_id}
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
     optional: true
-    condition: ${task_id is not None and task_id != ''}
+    condition: "bool(context.get('recipe_response', {}).get('data', {}).get('id'))"
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
+    condition: "bool(context.get('plant_response', {}).get('data', {}).get('id'))"

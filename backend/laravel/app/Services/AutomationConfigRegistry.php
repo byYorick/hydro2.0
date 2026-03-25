@@ -221,7 +221,7 @@ class AutomationConfigRegistry
 
             case self::NAMESPACE_CYCLE_START_SNAPSHOT:
             case self::NAMESPACE_CYCLE_PHASE_OVERRIDES:
-                if (array_is_list($payload)) {
+                if ($payload !== [] && array_is_list($payload)) {
                     throw new InvalidArgumentException("Payload for {$namespace} must be an object.");
                 }
                 return;

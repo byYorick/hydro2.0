@@ -20,22 +20,22 @@ _SQL_MARK_APPLIED = """
                 true
             ),
             '{last_applied_version}',
-            to_jsonb($2),
+            to_jsonb($2::bigint),
             true
         ),
-        updated_at = GREATEST(updated_at, $4)
+        updated_at = GREATEST(updated_at, $4::timestamp)
     WHERE namespace = 'zone.correction'
       AND scope_type = 'zone'
-      AND scope_id = $1
+      AND scope_id = $1::bigint
 """
 
 
 class PgZoneCorrectionAuthorityRepository:
     """Stores the last correction authority version actually accepted by AE."""
 
-    def _normalize_applied_at(self, value: datetime) -> datetime:
+    def _normalize_applied_at(self, value: datetime) -> str:
         normalized = value.astimezone(timezone.utc) if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-        return normalized.replace(microsecond=0)
+        return normalized.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     def _normalize_updated_at(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value

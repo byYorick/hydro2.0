@@ -11,6 +11,7 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
+use App\Services\AutomationConfigCompiler;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
@@ -242,6 +243,38 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_treats_empty_cycle_start_snapshot_placeholder_as_valid_bundle_state(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+        $documents = app(AutomationConfigDocumentService::class);
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT,
+            AutomationConfigRegistry::SCOPE_GROW_CYCLE,
+            (int) $cycle->id,
+            [],
+            null,
+            'test'
+        );
+
+        $bundle = app(AutomationConfigCompiler::class)->compileGrowCycleBundle((int) $cycle->id);
+
+        $this->assertSame('valid', $bundle->status);
+        $this->assertSame([], $bundle->violations);
+    }
+
+    #[Test]
     public function it_dispatches_cycle_start_only_after_cycle_documents_and_bundle_revision_are_persisted(): void
     {
         $zone = Zone::factory()->create();
@@ -269,6 +302,11 @@ class GrowCycleServiceTest extends TestCase
             public array $dispatchState = [];
 
             protected function isGrowCycleStartDispatchEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
             {
                 return true;
             }
@@ -384,7 +422,14 @@ class GrowCycleServiceTest extends TestCase
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
         $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+            public int $dispatchAttempts = 0;
+
             protected function isGrowCycleStartDispatchEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
             {
                 return true;
             }
@@ -401,6 +446,8 @@ class GrowCycleServiceTest extends TestCase
 
             protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
             {
+                $this->dispatchAttempts++;
+
                 throw new \RuntimeException('automation_engine_start_cycle_http_error_v2:500:boom');
             }
         };
@@ -408,6 +455,7 @@ class GrowCycleServiceTest extends TestCase
         $cycle = $service->createCycle($zone, $revision, $plant->id);
         $startedCycle = $service->startCycle($cycle, Carbon::now());
 
+        $this->assertSame(1, $service->dispatchAttempts);
         $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertSame('RUNNING', $zone->fresh()->status);
         $this->assertDatabaseHas('grow_cycles', [
@@ -416,7 +464,260 @@ class GrowCycleServiceTest extends TestCase
         ]);
         $this->assertDatabaseHas('zone_automation_intents', [
             'zone_id' => $zone->id,
+            'status' => 'failed',
+            'error_code' => 'automation_engine_start_cycle_http_error',
+        ]);
+    }
+
+    #[Test]
+    public function it_retries_zone_not_found_before_marking_start_cycle_dispatch_as_failed(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+            public int $dispatchAttempts = 0;
+
+            protected function isGrowCycleStartDispatchEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
+            {
+                return true;
+            }
+
+            protected function automationStartCycleConfig(): array
+            {
+                return [
+                    'api_url' => 'http://automation-engine:9405',
+                    'timeout_sec' => 2.0,
+                    'scheduler_id' => 'laravel-scheduler',
+                    'token' => 'test-token',
+                ];
+            }
+
+            protected function growCycleStartDispatchRetryDelayMs(int $attempt): int
+            {
+                return 1;
+            }
+
+            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            {
+                $this->dispatchAttempts++;
+
+                if ($this->dispatchAttempts < 3) {
+                    throw new \RuntimeException(sprintf(
+                        'automation_engine_start_cycle_http_error_v2:404:{"detail":"Zone \'%d\' not found"}',
+                        $zoneId
+                    ));
+                }
+
+                return [
+                    'data' => [
+                        'accepted' => true,
+                        'deduplicated' => false,
+                        'task_id' => 'ae3-task-retry-ok',
+                    ],
+                ];
+            }
+        };
+
+        $cycle = $service->createCycle($zone, $revision, $plant->id);
+        $startedCycle = $service->startCycle($cycle, Carbon::now());
+
+        $this->assertSame(3, $service->dispatchAttempts);
+        $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
             'status' => 'pending',
+        ]);
+    }
+
+    #[Test]
+    public function it_skips_automation_start_cycle_dispatch_when_zone_two_tank_topology_is_incomplete(): void
+    {
+        $zone = Zone::factory()->create([
+            'automation_runtime' => 'ae3',
+        ]);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+            public int $dispatchAttempts = 0;
+
+            protected function isGrowCycleStartDispatchEnabled(): bool
+            {
+                return true;
+            }
+
+            protected function postAutomationStartCycle(int $zoneId, string $idempotencyKey, array $cfg): array
+            {
+                $this->dispatchAttempts++;
+
+                return [
+                    'data' => [
+                        'accepted' => true,
+                        'deduplicated' => false,
+                        'task_id' => 'should-not-run',
+                    ],
+                ];
+            }
+        };
+
+        $cycle = $service->createCycle($zone, $revision, $plant->id);
+        $startedCycle = $service->startCycle($cycle, Carbon::now());
+
+        $this->assertSame(0, $service->dispatchAttempts);
+        $this->assertSame(GrowCycleStatus::RUNNING, $startedCycle->status);
+        $this->assertDatabaseMissing('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'intent_type' => 'DIAGNOSTICS_TICK',
+        ]);
+    }
+
+    #[Test]
+    public function it_cancels_related_ae3_start_cycle_runtime_state_when_cycle_is_aborted(): void
+    {
+        $zone = Zone::factory()->create([
+            'automation_runtime' => 'ae3',
+        ]);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id, [
+            'start_immediately' => false,
+        ]);
+        $idempotencyKey = sprintf(
+            'gcs:z%d:c%d:%s',
+            $zone->id,
+            $cycle->id,
+            substr(hash('sha256', sprintf('grow-cycle-start|zone:%d|cycle:%d', $zone->id, $cycle->id)), 0, 24)
+        );
+        $schedulerKey = sprintf('e93-start-cycle-%d', $cycle->id);
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+
+        DB::table('zone_automation_intents')->insert([
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'DIAGNOSTICS_TICK',
+                'payload' => json_encode([
+                    'source' => 'laravel_grow_cycle_start',
+                    'task_type' => 'diagnostics',
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'grow_cycle_id' => $cycle->id,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'idempotency_key' => $idempotencyKey,
+                'status' => 'pending',
+                'not_before' => $now,
+                'retry_count' => 0,
+                'max_retries' => 3,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'DIAGNOSTICS_TICK',
+                'payload' => json_encode([
+                    'source' => 'laravel_scheduler',
+                    'task_type' => 'diagnostics',
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'grow_cycle_id' => $cycle->id,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'idempotency_key' => $schedulerKey,
+                'status' => 'running',
+                'not_before' => $now,
+                'retry_count' => 0,
+                'max_retries' => 3,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'running',
+            'idempotency_key' => $schedulerKey,
+            'topology' => 'two_tank_drip_substrate_trays',
+            'current_stage' => 'solution_fill_start',
+            'workflow_phase' => 'tank_filling',
+            'control_mode_snapshot' => 'auto',
+            'intent_source' => 'laravel_scheduler',
+            'intent_trigger' => 'irrigate_once',
+            'intent_meta' => json_encode([
+                'intent_payload' => [
+                    'workflow' => 'cycle_start',
+                    'grow_cycle_id' => $cycle->id,
+                ],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'scheduled_for' => $now,
+            'due_at' => $now,
+            'stage_entered_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('ae_zone_leases')->insert([
+            'zone_id' => $zone->id,
+            'owner' => 'worker:test',
+            'leased_until' => $now->copy()->addMinute(),
+            'updated_at' => $now,
+        ]);
+
+        $aborted = $this->service->abort($cycle->fresh(), ['notes' => 'test abort'], 7);
+
+        $this->assertSame(GrowCycleStatus::ABORTED, $aborted->status);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $idempotencyKey,
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_aborted',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $schedulerKey,
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_aborted',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $schedulerKey,
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_aborted',
+        ]);
+        $this->assertDatabaseHas('ae_zone_leases', [
+            'zone_id' => $zone->id,
         ]);
     }
 }

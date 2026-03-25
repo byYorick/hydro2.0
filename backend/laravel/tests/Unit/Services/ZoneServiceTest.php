@@ -2,10 +2,12 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\AutomationConfigDocument;
 use App\Models\DeviceNode;
 use App\Models\GrowCycle;
 use App\Models\RecipeRevision;
 use App\Models\Zone;
+use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneService;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -39,6 +41,19 @@ class ZoneServiceTest extends TestCase
             'id' => $zone->id,
             'name' => 'Test Zone',
         ]);
+        $this->assertDatabaseHas('automation_config_documents', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
+        ]);
+
+        $logicProfile = AutomationConfigDocument::query()
+            ->where('namespace', AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE)
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zone->id)
+            ->first();
+
+        $this->assertSame('working', data_get($logicProfile?->payload, 'active_mode'));
     }
 
     public function test_update_zone(): void

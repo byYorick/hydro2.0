@@ -119,8 +119,27 @@ assertions:
     optional: true
 
 cleanup:
+  - step: delete_test_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
   # Удаляем тестовую зону
   - step: delete_test_zone
     type: api_delete
     endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_test_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_test_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
     optional: true

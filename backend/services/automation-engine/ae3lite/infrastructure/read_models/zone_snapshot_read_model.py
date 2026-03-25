@@ -101,6 +101,13 @@ class PgZoneSnapshotReadModel:
                 if not isinstance(bundle_config, Mapping):
                     raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has invalid automation bundle config")
 
+                system_bundle = bundle_config.get("system")
+                pump_calibration_policy = (
+                    system_bundle.get("pump_calibration_policy")
+                    if isinstance(system_bundle, Mapping)
+                    else None
+                )
+
                 zone_bundle = bundle_config.get("zone")
                 if not isinstance(zone_bundle, Mapping):
                     raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has no zone bundle")
@@ -250,7 +257,10 @@ class PgZoneSnapshotReadModel:
                 node_channel_id=int(row["node_channel_id"]),
                 channel_type=str(row.get("channel_type") or "ACTUATOR").strip().upper() or "ACTUATOR",
                 role=str(row.get("role") or "").strip().lower() or None,
-                pump_calibration=self._extract_pump_calibration(row),
+                pump_calibration=self._extract_pump_calibration(
+                    row,
+                    pump_calibration_policy=pump_calibration_policy,
+                ),
             )
             for row in actuator_rows
             if str(row.get("node_uid") or "").strip()
@@ -644,28 +654,55 @@ class PgZoneSnapshotReadModel:
                 return value
         return value
 
-    def _extract_pump_calibration(self, row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-        if row.get("calibration_ml_per_sec") is not None:
-            return {
-                "ml_per_sec": self._to_float(row.get("calibration_ml_per_sec")),
-                "k_ms_per_ml_l": self._to_float(row.get("calibration_k_ms_per_ml_l")),
-                "component": row.get("calibration_component"),
-                "source": row.get("calibration_source"),
-                "quality_score": self._to_float(row.get("calibration_quality_score")),
-                "sample_count": int(row.get("calibration_sample_count") or 0),
-                "valid_from": row.get("calibration_valid_from"),
-            }
+    def _extract_pump_calibration(
+        self,
+        row: Mapping[str, Any],
+        *,
+        pump_calibration_policy: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        result: Dict[str, Any] = {}
+        if isinstance(pump_calibration_policy, Mapping):
+            result.update(
+                {
+                    "min_dose_ms": pump_calibration_policy.get("min_dose_ms"),
+                    "ml_per_sec_min": self._to_float(pump_calibration_policy.get("ml_per_sec_min")),
+                    "ml_per_sec_max": self._to_float(pump_calibration_policy.get("ml_per_sec_max")),
+                }
+            )
 
         channel_config = row.get("channel_config")
         legacy_calibration = channel_config.get("pump_calibration") if isinstance(channel_config, Mapping) else None
-        if not isinstance(legacy_calibration, Mapping):
-            return None
-        return {
-            **dict(legacy_calibration),
-            "ml_per_sec": self._to_float(legacy_calibration.get("ml_per_sec")),
-            "k_ms_per_ml_l": self._to_float(legacy_calibration.get("k_ms_per_ml_l")),
-            "source": legacy_calibration.get("source") or "node_channels.config.pump_calibration",
-        }
+        if isinstance(legacy_calibration, Mapping):
+            result.update(dict(legacy_calibration))
+            result.update(
+                {
+                    "min_dose_ms": legacy_calibration.get("min_dose_ms", result.get("min_dose_ms")),
+                    "ml_per_sec_min": self._to_float(
+                        legacy_calibration.get("ml_per_sec_min", result.get("ml_per_sec_min"))
+                    ),
+                    "ml_per_sec_max": self._to_float(
+                        legacy_calibration.get("ml_per_sec_max", result.get("ml_per_sec_max"))
+                    ),
+                    "ml_per_sec": self._to_float(legacy_calibration.get("ml_per_sec")),
+                    "k_ms_per_ml_l": self._to_float(legacy_calibration.get("k_ms_per_ml_l")),
+                    "source": legacy_calibration.get("source") or "node_channels.config.pump_calibration",
+                }
+            )
+
+        if row.get("calibration_ml_per_sec") is not None:
+            result.update(
+                {
+                    "ml_per_sec": self._to_float(row.get("calibration_ml_per_sec")),
+                    "k_ms_per_ml_l": self._to_float(row.get("calibration_k_ms_per_ml_l")),
+                    "component": row.get("calibration_component"),
+                    "source": row.get("calibration_source"),
+                    "quality_score": self._to_float(row.get("calibration_quality_score")),
+                    "sample_count": int(row.get("calibration_sample_count") or 0),
+                    "valid_from": row.get("calibration_valid_from"),
+                }
+            )
+
+        return result or None
 
     def _apply_overrides(
         self,

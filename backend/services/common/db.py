@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import threading
@@ -16,6 +17,11 @@ logger = logging.getLogger(__name__)
 _state_lock = threading.Lock()
 _pools: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncpg.pool.Pool]" = weakref.WeakKeyDictionary()
 _pool_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+_STALE_SCHEMA_ERROR_FRAGMENTS = (
+    "could not open relation with oid",
+    "cache lookup failed for relation",
+    "cached plan must not change result type",
+)
 
 
 def _get_pool_lock(loop: asyncio.AbstractEventLoop) -> asyncio.Lock:
@@ -40,6 +46,15 @@ def _get_pool_for_loop(loop: asyncio.AbstractEventLoop) -> Optional[asyncpg.pool
 def _set_pool_for_loop(loop: asyncio.AbstractEventLoop, pool: asyncpg.pool.Pool) -> None:
     with _state_lock:
         _pools[loop] = pool
+
+
+def _drop_pool_for_loop(loop: asyncio.AbstractEventLoop, pool: asyncpg.pool.Pool) -> bool:
+    with _state_lock:
+        current_pool = _pools.get(loop)
+        if current_pool is not pool:
+            return False
+        _pools.pop(loop, None)
+        return True
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
@@ -102,16 +117,71 @@ async def get_pool() -> asyncpg.pool.Pool:
         return pool
 
 
-async def execute(query: str, *args: Any) -> str:
+def _is_stale_schema_error(exc: Exception) -> bool:
+    if isinstance(exc, (asyncpg.InvalidCachedStatementError, asyncpg.OutdatedSchemaCacheError)):
+        return True
+    if isinstance(exc, asyncpg.InternalServerError):
+        message = str(exc).lower()
+        return any(fragment in message for fragment in _STALE_SCHEMA_ERROR_FRAGMENTS)
+
+    message = str(exc).lower()
+    return any(fragment in message for fragment in _STALE_SCHEMA_ERROR_FRAGMENTS)
+
+
+async def _expire_pool_connections(pool: asyncpg.pool.Pool) -> None:
+    expire_connections = getattr(pool, "expire_connections", None)
+    if callable(expire_connections):
+        maybe_awaitable = expire_connections()
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
+        return
+
+    loop = asyncio.get_running_loop()
+    should_close = _drop_pool_for_loop(loop, pool)
+    if should_close:
+        await pool.close()
+
+
+async def _run_query(operation: str, query: str, *args: Any):
     pool = await get_pool()
+
     async with pool.acquire() as conn:
-        return await conn.execute(query, *args)
+        try:
+            return await getattr(conn, operation)(query, *args)
+        except Exception as exc:
+            if not _is_stale_schema_error(exc):
+                raise
+
+            logger.warning(
+                "Detected stale PostgreSQL schema cache during %s; refreshing pool connections and retrying once: %s",
+                operation,
+                exc,
+            )
+            reload_schema_state = getattr(conn, "reload_schema_state", None)
+            if callable(reload_schema_state):
+                try:
+                    maybe_awaitable = reload_schema_state()
+                    if inspect.isawaitable(maybe_awaitable):
+                        await maybe_awaitable
+                except Exception:
+                    logger.warning(
+                        "Failed to reload PostgreSQL schema state after stale cache error",
+                        exc_info=True,
+                    )
+
+    await _expire_pool_connections(pool)
+
+    retry_pool = await get_pool()
+    async with retry_pool.acquire() as conn:
+        return await getattr(conn, operation)(query, *args)
+
+
+async def execute(query: str, *args: Any) -> str:
+    return await _run_query("execute", query, *args)
 
 
 async def fetch(query: str, *args: Any):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        return await conn.fetch(query, *args)
+    return await _run_query("fetch", query, *args)
 
 
 async def upsert_telemetry_last(

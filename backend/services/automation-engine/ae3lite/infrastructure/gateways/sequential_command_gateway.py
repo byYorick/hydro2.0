@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 from ae3lite.domain.entities import PlannedCommand
-from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
+from ae3lite.domain.errors import CommandPublishError, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.metrics import (
     COMMAND_DISPATCH_DURATION,
     COMMAND_DISPATCHED,
@@ -85,6 +85,16 @@ class SequentialCommandGateway:
     async def recover_waiting_command(self, *, task: Any, now: datetime) -> Mapping[str, Any]:
         ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
         if ae_command is None:
+            current_task = await self._task_repository.get_by_id(task_id=task.id)
+            current_status = str(getattr(current_task, "status", "") or "").strip().lower()
+            if current_task is None or current_status in {"cancelled", "completed"}:
+                return {
+                    "state": "done",
+                    "task": current_task or task,
+                    "legacy_status": None,
+                    "external_id": None,
+                    "cmd_id": None,
+                }
             raise TaskExecutionError("ae3_missing_ae_command", f"Task {task.id} has no ae_command for recovery")
         legacy_row, external_id, cmd_id = await self._resolve_legacy_command(task=task, ae_command=ae_command)
         if legacy_row is None:
@@ -196,6 +206,12 @@ class SequentialCommandGateway:
                 poll_iterations=poll_iterations,
             )
             task_state = result["task"]
+            task_status = str(getattr(task_state, "status", "") or "").strip().lower()
+            if task_state is not None and task_status in {"cancelled", "completed", "failed"}:
+                raise TaskTerminalStateReached(
+                    task=task_state,
+                    message=f"Task {task.id} became {task_status} during command roundtrip",
+                )
             status_entry = {
                 **status_entry,
                 "external_id": result.get("external_id"),
@@ -298,7 +314,14 @@ class SequentialCommandGateway:
                 now=now,
             )
             if resumed_task is None:
-                raise TaskExecutionError("ae3_running_transition_failed", f"Task {task.id} could not resume running after DONE")
+                current_task = await self._task_repository.get_by_id(task_id=task.id)
+                return {
+                    "state": "done",
+                    "task": current_task or task,
+                    "legacy_status": terminal_status,
+                    "external_id": external_id,
+                    "cmd_id": cmd_id,
+                }
             return {"state": "done", "task": resumed_task, "legacy_status": terminal_status, "external_id": external_id, "cmd_id": cmd_id}
 
         COMMAND_TERMINAL.labels(terminal_status=terminal_status).inc()

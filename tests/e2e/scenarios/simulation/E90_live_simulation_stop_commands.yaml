@@ -111,21 +111,6 @@ actions:
     params:
       node_id: ${node_id}
 
-  - step: fetch_published_recipe
-    type: database_query
-    query: |
-      SELECT recipe_id
-      FROM recipe_revisions
-      WHERE status = 'PUBLISHED'
-      ORDER BY revision_number DESC
-      LIMIT 1
-    expected_rows: 1
-    save: recipe_row
-
-  - step: set_recipe_id
-    type: set
-    recipe_id: ${recipe_row.0.recipe_id}
-
   - step: capture_anchor_time
     type: database_query
     query: |
@@ -144,7 +129,6 @@ actions:
       duration_hours: 24
       step_minutes: 10
       sim_duration_minutes: 1
-      recipe_id: ${recipe_id}
     save: simulate_response
 
   - step: set_job_id
@@ -307,5 +291,197 @@ assertions:
         value: [200, 404]
 
 cleanup:
+  - step: wait_for_sim_runtime_tasks_terminal
+    type: db_wait
+    query: |
+      SELECT id
+      FROM ae_tasks
+      WHERE zone_id = :sim_zone_id
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+    params:
+      sim_zone_id: ${sim_zone_id}
+    expected_rows: 0
+    timeout: 45.0
+    optional: true
+
+  - step: wait_for_sim_runtime_lease_released
+    type: db_wait
+    query: |
+      SELECT zone_id
+      FROM ae_zone_leases
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    expected_rows: 0
+    timeout: 45.0
+    optional: true
+
+  - step: delete_simulation_events
+    type: database_execute
+    query: |
+      DELETE FROM simulation_events
+      WHERE simulation_id = :simulation_id
+    params:
+      simulation_id: ${simulation_id}
+    optional: true
+
+  - step: delete_simulation_reports
+    type: database_execute
+    query: |
+      DELETE FROM simulation_reports
+      WHERE simulation_id = :simulation_id
+    params:
+      simulation_id: ${simulation_id}
+    optional: true
+
+  - step: cleanup_sim_ae_commands
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :sim_zone_id
+      )
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_commands
+    type: database_execute
+    query: |
+      DELETE FROM commands
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_ae_leases
+    type: database_execute
+    query: |
+      DELETE FROM ae_zone_leases
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_ae_tasks
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_intents
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_alerts
+    type: database_execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_zone_events
+    type: database_execute
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_channel_bindings
+    type: database_execute
+    query: |
+      DELETE FROM channel_bindings
+      WHERE infrastructure_instance_id IN (
+        SELECT id
+        FROM infrastructure_instances
+        WHERE owner_type = 'zone'
+          AND owner_id = :sim_zone_id
+      )
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_infrastructure
+    type: database_execute
+    query: |
+      DELETE FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_node_channels
+    type: database_execute
+    query: |
+      DELETE FROM node_channels
+      WHERE node_id IN (
+        SELECT id
+        FROM nodes
+        WHERE zone_id = :sim_zone_id
+      )
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_nodes
+    type: database_execute
+    query: |
+      DELETE FROM nodes
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_workflow_state
+    type: database_execute
+    query: |
+      DELETE FROM zone_workflow_state
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: cleanup_sim_grow_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
+  - step: delete_zone_simulation_row
+    type: database_execute
+    query: |
+      DELETE FROM zone_simulations
+      WHERE id = :simulation_id
+    params:
+      simulation_id: ${simulation_id}
+    optional: true
+
+  - step: delete_sim_zone
+    type: database_execute
+    query: |
+      DELETE FROM zones
+      WHERE id = :sim_zone_id
+    params:
+      sim_zone_id: ${sim_zone_id}
+    optional: true
+
   - step: stop_node_simulator
     type: stop_simulator

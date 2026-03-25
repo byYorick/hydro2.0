@@ -99,6 +99,60 @@ run_test_with_retry() {
     return 1
 }
 
+run_post_suite_audit() {
+    echo ""
+    echo "=== POST-SUITE AUDIT ==="
+
+    local audit_sql="
+      SELECT 'alerts_total', COUNT(*) FROM alerts;
+      SELECT 'active_alerts', COUNT(*) FROM alerts WHERE status = 'ACTIVE';
+      SELECT 'ae_tasks_total', COUNT(*) FROM ae_tasks;
+      SELECT 'zone_automation_intents_total', COUNT(*) FROM zone_automation_intents;
+      SELECT 'invalid_bundles', COUNT(*) FROM automation_effective_bundles WHERE status <> 'valid';
+      SELECT 'commands_error_total', COUNT(*) FROM commands WHERE status = 'ERROR';
+      SELECT 'commands_empty_error', COUNT(*) FROM commands WHERE status = 'ERROR' AND COALESCE(error_message, '') = '';
+      SELECT 'pending_alerts_total', COUNT(*) FROM pending_alerts;
+      SELECT 'unassigned_node_errors_total', COUNT(*) FROM unassigned_node_errors;
+      SELECT 'jobs_total', COUNT(*) FROM jobs;
+      SELECT 'failed_jobs_total', COUNT(*) FROM failed_jobs;
+      SELECT 'zone_simulations_total', COUNT(*) FROM zone_simulations;
+      SELECT 'simulation_clone_zones', COUNT(*) FROM zones WHERE uid LIKE 'sim-%' OR settings->'simulation'->>'source_zone_id' IS NOT NULL;
+    "
+
+    local audit_output
+    audit_output=$("${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
+      psql -U hydro -d hydro_e2e -At -F '|' -c "$audit_sql")
+
+    echo "$audit_output" | while IFS='|' read -r metric value; do
+      echo "  - ${metric}=${value}"
+    done
+
+    local failed=0
+    while IFS='|' read -r metric value; do
+      if [ "${value}" != "0" ]; then
+        echo "❌ Пост-suite audit не прошел: ${metric}=${value}"
+        failed=1
+      fi
+    done <<< "$audit_output"
+
+    if [ "$failed" -ne 0 ]; then
+      echo "Последние активные хвосты в БД:"
+      "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
+        psql -U hydro -d hydro_e2e -P pager=off -c "
+          SELECT id, code, status, zone_id, node_uid FROM alerts ORDER BY id;
+          SELECT id, status, task_type, zone_id, error_message FROM ae_tasks ORDER BY id;
+          SELECT id, status, intent_type, zone_id, error_code, error_message FROM zone_automation_intents ORDER BY id;
+          SELECT id, zone_id, status, error_message FROM commands WHERE status='ERROR' ORDER BY id;
+          SELECT id, hardware_id, error_code, created_at FROM unassigned_node_errors ORDER BY id;
+          SELECT id, node_uid, hardware_id, code, status FROM pending_alerts ORDER BY id;
+          SELECT id, queue, attempts, available_at FROM jobs ORDER BY id;
+          SELECT id, connection, queue, failed_at FROM failed_jobs ORDER BY id;
+          SELECT id, zone_id, status, scenario FROM zone_simulations ORDER BY id;
+        " || true
+      return 1
+    fi
+}
+
 # Запуск тестов по категориям
 
 echo ""
@@ -160,8 +214,8 @@ echo "=== CHAOS ТЕСТЫ ==="
 run_test_with_retry "scenarios/chaos/E70_mqtt_down_recovery.yaml"
 run_test_with_retry "scenarios/chaos/E71_db_flaky.yaml"
 
+run_post_suite_audit
+
 echo ""
 echo "🎉 ПОЛНЫЙ E2E-НАБОР ЗАВЕРШЕН!"
 echo "Время окончания: $(date)"
-
-

@@ -120,6 +120,16 @@ assertions:
     optional: true
 
 cleanup:
+  - step: cleanup_db_flaky_alert
+    type: database_execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+        AND code = 'node_error_test_db_flaky_test'
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
   - step: ensure_postgres_running
     type: fault.inject
     service: postgres

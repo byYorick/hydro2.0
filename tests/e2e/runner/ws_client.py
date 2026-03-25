@@ -414,7 +414,7 @@ class WSClient:
         while True:
             elapsed = time.time() - start_time
             if elapsed >= timeout:
-                logger.warning(f"Timeout waiting for event: {event_type}")
+                logger.info(f"Timeout waiting for event: {event_type}")
                 # Логируем последние сообщения для отладки
                 recent_messages = self._message_queue[-10:]
                 logger.debug(f"Recent messages: {[msg.get('data', {}).get('event') for msg in recent_messages]}")

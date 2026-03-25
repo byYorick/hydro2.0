@@ -148,6 +148,16 @@ assertions:
       )
 
 cleanup:
+  - step: cleanup_gap_alert
+    type: database_execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+        AND code = 'node_error_sensor_infra_sensor_stuck_i2c'
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
   - step: disconnect_ws_final
     type: websocket_disconnect
   - step: stop_node_simulator

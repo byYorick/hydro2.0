@@ -18,10 +18,11 @@ class TaskStatus(str, Enum):
     WAITING_COMMAND = "waiting_command"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
     @property
     def is_terminal(self) -> bool:
-        return self in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+        return self in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)
 
     @property
     def is_active(self) -> bool:
@@ -191,6 +192,14 @@ class TaskExecutionError(Ae3LiteError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = str(code or "ae3_task_execution_failed").strip() or "ae3_task_execution_failed"
+
+
+class TaskTerminalStateReached(Ae3LiteError):
+    """Raised when a task becomes terminal externally during command reconciliation."""
+
+    def __init__(self, *, task: object, message: str) -> None:
+        super().__init__(message)
+        self.task = task
 
 
 class ManualControlError(Ae3LiteError):

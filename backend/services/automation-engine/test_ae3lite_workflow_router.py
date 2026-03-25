@@ -100,11 +100,12 @@ class _StubHandler:
 
 
 class _MockTaskRepo:
-    def __init__(self, *, return_task: AutomationTask | None = None):
+    def __init__(self, *, return_task: AutomationTask | None = None, current_task: AutomationTask | None = None):
         self.update_stage_calls: list[dict] = []
         self.mark_completed_calls: list = []
         self.record_transition_calls: list[dict] = []
         self._return_task = return_task
+        self._current_task = current_task
 
     async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now):
         self.update_stage_calls.append({
@@ -115,6 +116,9 @@ class _MockTaskRepo:
     async def mark_completed(self, *, task_id, owner, now):
         self.mark_completed_calls.append(task_id)
         return self._return_task
+
+    async def get_by_id(self, *, task_id):
+        return self._current_task
 
     async def record_transition(self, *, task_id, from_stage, to_stage, workflow_phase, now, **kwargs):
         self.record_transition_calls.append({
@@ -231,6 +235,38 @@ async def test_router_applies_transition_outcome():
     # Audit trail
     assert len(tr.record_transition_calls) == 1
     assert tr.record_transition_calls[0]["to_stage"] == "clean_fill_check"
+
+
+async def test_router_returns_cancelled_task_when_transition_persist_races_with_abort():
+    outcome = StageOutcome(kind="transition", next_stage="clean_fill_check")
+    task = _make_task(stage="clean_fill_start")
+    cancelled_task = AutomationTask.from_row({
+        "id": 99, "zone_id": 99, "task_type": "cycle_start", "status": "cancelled",
+        "idempotency_key": "k99", "scheduled_for": NOW, "due_at": NOW,
+        "claimed_by": "w1", "claimed_at": NOW, "error_code": "grow_cycle_aborted", "error_message": "aborted",
+        "created_at": NOW, "updated_at": NOW, "completed_at": NOW,
+        "topology": "two_tank", "intent_source": None, "intent_trigger": None,
+        "intent_id": None, "intent_meta": {},
+        "current_stage": "clean_fill_start", "workflow_phase": "idle",
+        "stage_deadline_at": None, "stage_retry_count": 0,
+        "stage_entered_at": NOW, "clean_fill_cycle": 0,
+        "control_mode_snapshot": "auto", "pending_manual_step": None,
+        "corr_step": None,
+    })
+    tr = _MockTaskRepo(return_task=None, current_task=cancelled_task)
+    wr = _MockWorkflowRepo()
+    router = WorkflowRouter(
+        task_repository=tr,
+        workflow_repository=wr,
+        topology_registry=TopologyRegistry(),
+        runtime_monitor=_MockRuntimeMonitor(),
+        command_gateway=_MockCommandGateway(),
+    )
+    router._handlers["command"] = _StubHandler(outcome)
+
+    result = await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert result.status == "cancelled"
 
 
 async def test_router_transition_preserves_control_mode_and_clears_pending_manual_step():

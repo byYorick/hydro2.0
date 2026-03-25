@@ -20,7 +20,7 @@ import pytest
 from prometheus_client import REGISTRY
 
 from ae3lite.domain.entities.planned_command import PlannedCommand
-from ae3lite.domain.errors import CommandPublishError, TaskExecutionError
+from ae3lite.domain.errors import CommandPublishError, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.gateways import sequential_command_gateway as sequential_command_gateway_module
 from ae3lite.infrastructure.gateways.sequential_command_gateway import SequentialCommandGateway
 from ae3lite.infrastructure.metrics import COMMAND_POLL_ITERATIONS
@@ -127,15 +127,19 @@ def _mock_task(task_id=1, **kwargs):
 
 
 class _FakeTaskRepo:
-    def __init__(self, *, resumed_task=None, failed_task=None):
+    def __init__(self, *, resumed_task=None, failed_task=None, current_task=None):
         self._resumed = resumed_task or _mock_task(error_code=None, error_message=None)
         self._failed = failed_task or _mock_task(error_code="command_error", error_message="hw_error")
+        self._current = current_task
 
     async def mark_waiting_command(self, *, task_id, owner, now):
         return _mock_task(task_id=task_id, claimed_by=owner)
 
     async def resume_after_waiting_command(self, *, task_id, owner, now):
         return self._resumed
+
+    async def get_by_id(self, *, task_id):
+        return self._current
 
     async def mark_failed(self, *, task_id, owner, error_code, error_message, now):
         m = MagicMock(id=task_id, zone_id=1, error_code=error_code, error_message=error_message)
@@ -277,12 +281,59 @@ async def test_recover_waiting_command_no_ae_command_raises():
 
 
 @pytest.mark.asyncio
+async def test_recover_waiting_command_no_ae_command_after_cancel_returns_done():
+    cmd_repo = _FakeCommandRepo(ae_command_row=None)
+
+    async def _none(*a, **kw):
+        return None
+
+    cmd_repo.get_latest_for_task = _none
+    cancelled_task = _mock_task(status="cancelled")
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        task_repo=_FakeTaskRepo(current_task=cancelled_task),
+    )
+    result = await gw.recover_waiting_command(task=_make_task(), now=NOW)
+    assert result["state"] == "done"
+    assert result["task"] is cancelled_task
+
+
+@pytest.mark.asyncio
 async def test_recover_waiting_command_done_returns_done_state():
     cmd_repo = _FakeCommandRepo(legacy_row=_DONE_ROW)
     gw = _make_gw(command_repo=cmd_repo)
     result = await gw.recover_waiting_command(task=_make_task(), now=NOW)
     assert result["state"] == "done"
     assert result["legacy_status"] == "DONE"
+
+
+@pytest.mark.asyncio
+async def test_recover_waiting_command_done_after_task_cancel_returns_done_state():
+    cmd_repo = _FakeCommandRepo(legacy_row=_DONE_ROW)
+    cancelled_task = _mock_task(status="cancelled")
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        task_repo=_FakeTaskRepo(resumed_task=None, current_task=cancelled_task),
+    )
+    result = await gw.recover_waiting_command(task=_make_task(), now=NOW)
+    assert result["state"] == "done"
+    assert result["task"] is cancelled_task
+    assert result["legacy_status"] == "DONE"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_done_after_task_cancel_raises_terminal_state():
+    cmd_repo = _FakeCommandRepo(legacy_row=_DONE_ROW)
+    cancelled_task = _mock_task(status="cancelled")
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        task_repo=_FakeTaskRepo(resumed_task=None, current_task=cancelled_task),
+    )
+
+    with pytest.raises(TaskTerminalStateReached) as exc_info:
+        await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+
+    assert exc_info.value.task is cancelled_task
 
 
 @pytest.mark.asyncio

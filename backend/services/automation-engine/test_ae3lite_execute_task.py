@@ -10,7 +10,7 @@ import pytest
 from ae3lite.application.dto import ZoneActuatorRef
 from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase, TASK_EXECUTION_TIMEOUT_CANCEL_MSG
 from ae3lite.domain.entities.automation_task import AutomationTask
-from ae3lite.domain.errors import PlannerConfigurationError, SnapshotBuildError
+from ae3lite.domain.errors import PlannerConfigurationError, SnapshotBuildError, TaskTerminalStateReached
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
@@ -211,6 +211,14 @@ class _WorkflowRouterCancelledByTimeout:
         raise asyncio.CancelledError(TASK_EXECUTION_TIMEOUT_CANCEL_MSG)
 
 
+class _WorkflowRouterTerminalTask:
+    def __init__(self, *, task):
+        self._task = task
+
+    async def run(self, *, task, plan, now):
+        raise TaskTerminalStateReached(task=self._task, message="task cancelled externally")
+
+
 class _AlertRepositoryRecorder:
     def __init__(self, *, should_fail: bool = False) -> None:
         self.calls: list[dict[str, object]] = []
@@ -258,6 +266,29 @@ async def test_execute_task_uses_passed_now_for_fail_closed() -> None:
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["now"] == NOW
+
+
+@pytest.mark.asyncio
+async def test_execute_task_returns_cancelled_task_without_fail_closed_or_alert() -> None:
+    finalize = _FinalizeTaskUseCase()
+    alert_repo = _AlertRepositoryRecorder()
+    task = _make_task(stage="startup")
+    cancelled_task = replace(task, status="cancelled", error_code="grow_cycle_aborted", completed_at=NOW)
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=object(),
+        workflow_router=_WorkflowRouterTerminalTask(task=cancelled_task),
+        alert_repository=alert_repo,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "cancelled"
+    assert finalize.calls == []
+    assert alert_repo.calls == []
 
 
 @pytest.mark.asyncio

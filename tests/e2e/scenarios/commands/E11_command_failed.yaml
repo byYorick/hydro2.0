@@ -191,6 +191,16 @@ assertions:
     optional: true
 
 cleanup:
+  - step: delete_failed_command
+    type: database_execute
+    query: |
+      DELETE FROM commands
+      WHERE cmd_id = :command_id
+    params:
+      command_id: ${command_id}
+    condition: ${command_id && command_id != '' && command_id != null}
+    optional: true
+
   - step: start_node_simulator
     type: start_simulator
     optional: true

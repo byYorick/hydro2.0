@@ -633,10 +633,9 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
                 hardware_id,
             )
             if not node_rows:
-                _log_transient_info(
-                    "heartbeat_hardware_missing",
+                logger.debug(
+                    "[HEARTBEAT] Temp heartbeat buffered by registration flow: hardware_id=%s",
                     hardware_id,
-                    f"[HEARTBEAT] Node not found for hardware_id: {hardware_id}",
                 )
                 return
             node_uid = node_rows[0]["uid"]
@@ -1191,12 +1190,13 @@ async def handle_config_report(topic: str, payload: bytes) -> None:
                 hardware_id,
             )
             if not node_rows:
-                logger.info(
-                    f"[CONFIG_REPORT] Node not found for hardware_id {hardware_id}, buffering config_report until registration"
+                logger.debug(
+                    "[CONFIG_REPORT] Temp config_report buffered by registration flow: hardware_id=%s",
+                    hardware_id,
                 )
                 CONFIG_REPORT_ERROR.labels(node_uid="unknown").inc()
                 await _store_pending_config_report(hardware_id, topic, payload)
-                logger.info(
+                logger.debug(
                     "[CONFIG_REPORT] Buffered config_report until node registration: hardware_id=%s",
                     hardware_id,
                 )
@@ -1858,6 +1858,10 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             details["error_code"] = data.get("error_code")
         if "error_message" in data and data.get("error_message") is not None:
             details["error_message"] = data.get("error_message")
+        elif "message" in data and data.get("message") is not None:
+            details["error_message"] = data.get("message")
+        elif "error" in data and data.get("error") is not None:
+            details["error_message"] = data.get("error")
         details.update({
             "raw_status": str(raw_status),
             "response_ts": response_ts,

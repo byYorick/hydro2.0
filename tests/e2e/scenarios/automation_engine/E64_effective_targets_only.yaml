@@ -218,27 +218,41 @@ actions:
             AND ii.owner_id = zc.zone_id
             AND ii.label = st.label
         )
-        RETURNING id
+        RETURNING id, label
       ),
-      upsert_bindings AS (
-        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+      resolved_instances AS (
         SELECT
-          ii.id,
-          nc.id,
-          'actuator',
           st.role,
-          NOW(),
-          NOW()
+          st.node_channel_id,
+          ii.id AS infrastructure_instance_id
         FROM zone_ctx zc
         JOIN selected_targets st ON TRUE
-        JOIN target_node tn ON TRUE
-        JOIN node_channels nc
-          ON nc.id = st.node_channel_id
-         AND nc.node_id = tn.id
         JOIN infrastructure_instances ii
           ON ii.owner_type = 'zone'
          AND ii.owner_id = zc.zone_id
          AND ii.label = st.label
+        UNION ALL
+        SELECT
+          st.role,
+          st.node_channel_id,
+          ei.id AS infrastructure_instance_id
+        FROM ensure_instances ei
+        JOIN selected_targets st ON st.label = ei.label
+      ),
+      upsert_bindings AS (
+        INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+        SELECT
+          ri.infrastructure_instance_id,
+          nc.id,
+          'actuator',
+          ri.role,
+          NOW(),
+          NOW()
+        FROM resolved_instances ri
+        JOIN target_node tn ON TRUE
+        JOIN node_channels nc
+          ON nc.id = ri.node_channel_id
+         AND nc.node_id = tn.id
         ON CONFLICT (node_channel_id) DO UPDATE SET
           infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
           direction = EXCLUDED.direction,
@@ -349,36 +363,27 @@ actions:
     endpoint: /api/zones/${zone_id}/effective-targets
     save: initial_effective_targets
 
-  # Override targets через overrides
-  - step: override_ph_target
-    type: database_execute
-    query: |
-      INSERT INTO grow_cycle_overrides (
-        grow_cycle_id, parameter, value_type, value, is_active, created_at, updated_at
-      )
-      VALUES (:cycle_id, 'ph.target', 'decimal', '6.5', true, NOW(), NOW());
-    params:
-      cycle_id: ${cycle_id}
-
-  - step: override_ec_target
-    type: database_execute
-    query: |
-      INSERT INTO grow_cycle_overrides (
-        grow_cycle_id, parameter, value_type, value, is_active, created_at, updated_at
-      )
-      VALUES (:cycle_id, 'ec.target', 'decimal', '1.8', true, NOW(), NOW());
-    params:
-      cycle_id: ${cycle_id}
-
-  - step: override_temp_target
-    type: database_execute
-    query: |
-      INSERT INTO grow_cycle_overrides (
-        grow_cycle_id, parameter, value_type, value, is_active, created_at, updated_at
-      )
-      VALUES (:cycle_id, 'climate_request.temp_air_target', 'decimal', '25.0', true, NOW(), NOW());
-    params:
-      cycle_id: ${cycle_id}
+  # Override targets через authority cycle.manual_overrides
+  - step: apply_manual_target_overrides
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${cycle_id}/cycle.manual_overrides
+    payload:
+      payload:
+        - parameter: ph.target
+          value_type: decimal
+          value: 6.5
+          is_active: true
+          reason: e2e-override
+        - parameter: ec.target
+          value_type: decimal
+          value: 1.8
+          is_active: true
+          reason: e2e-override
+        - parameter: climate_request.temp_air_target
+          value_type: decimal
+          value: 25.0
+          is_active: true
+          reason: e2e-override
 
   - step: wait_for_override_effective
     type: sleep
@@ -428,9 +433,12 @@ assertions:
     type: database_query
     query: |
       SELECT COUNT(*)::int AS active_override_count
-      FROM grow_cycle_overrides
-      WHERE grow_cycle_id = :cycle_id
-        AND is_active = TRUE
+      FROM automation_config_documents d
+      CROSS JOIN LATERAL jsonb_array_elements(d.payload) AS override_item(item)
+      WHERE d.namespace = 'cycle.manual_overrides'
+        AND d.scope_type = 'grow_cycle'
+        AND d.scope_id = :cycle_id
+        AND COALESCE((override_item.item->>'is_active')::boolean, false) = TRUE
     params:
       cycle_id: ${cycle_id}
     expected:
@@ -444,22 +452,24 @@ cleanup:
     endpoint: /api/grow-cycles/${cycle_id}/abort
     payload: {}
     optional: true
+    condition: ${cycle_id}
 
-  - step: delete_overrides
-    type: database_execute
-    query: |
-      DELETE FROM grow_cycle_overrides
-      WHERE grow_cycle_id = :cycle_id;
-    params:
-      cycle_id: ${cycle_id}
+  - step: reset_manual_overrides
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${cycle_id}/cycle.manual_overrides
+    payload:
+      payload: []
     optional: true
+    condition: ${cycle_id}
 
   - step: delete_recipe
     type: api_delete
     endpoint: /api/recipes/${recipe_response.data.id}
     optional: true
+    condition: ${recipe_response.data.id}
 
   - step: delete_plant
     type: api_delete
     endpoint: /api/plants/${plant_response.data.id}
     optional: true
+    condition: ${plant_response.data.id}

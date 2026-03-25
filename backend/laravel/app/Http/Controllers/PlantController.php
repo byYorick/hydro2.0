@@ -182,9 +182,16 @@ class PlantController extends Controller
         ]);
     }
 
-    public function destroy(Plant $plant): RedirectResponse
+    public function destroy(Request $request, Plant $plant): RedirectResponse|JsonResponse
     {
         $plant->delete();
+
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'message' => 'Растение удалено',
+            ]);
+        }
 
         return back()->with('flash', [
             'success' => 'Растение удалено',

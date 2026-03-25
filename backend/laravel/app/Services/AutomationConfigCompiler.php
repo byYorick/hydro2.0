@@ -251,7 +251,7 @@ class AutomationConfigCompiler
 
         if ($scopeType === AutomationConfigRegistry::SCOPE_GROW_CYCLE) {
             $startSnapshot = data_get($config, 'cycle.start_snapshot');
-            if (! is_array($startSnapshot) || array_is_list($startSnapshot)) {
+            if (! is_array($startSnapshot) || (array_is_list($startSnapshot) && $startSnapshot !== [])) {
                 $violations[] = $this->violation(
                     AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT,
                     '',

@@ -305,6 +305,49 @@ def test_cycle_start_planner_builds_native_two_tank_with_short_alias() -> None:
     assert plan.named_plans["irr_state_probe"][0].channel == "storage_state"
 
 
+def test_cycle_start_planner_ignores_empty_generic_steps_for_native_two_tank_topology() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "command_plans": {
+                "schema_version": 1,
+                "plan_version": 1,
+                "plans": {
+                    "diagnostics": {
+                        "steps": [],
+                    }
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+
+    plan = planner.build(task=_task(now), snapshot=snapshot)
+
+    assert plan.topology == "two_tank_drip_substrate_trays"
+    assert plan.steps == ()
+    assert "clean_fill_start" in plan.named_plans
+
+
 def test_cycle_start_planner_resolves_legacy_dosing_aliases_from_bound_pumps() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()

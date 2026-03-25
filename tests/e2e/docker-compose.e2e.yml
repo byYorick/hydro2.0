@@ -397,6 +397,8 @@ services:
     build:
       context: ../../tests/node_sim
       dockerfile: Dockerfile
+    profiles:
+    - workflow-sim
     environment:
     - PYTHONUNBUFFERED=1
     - MQTT_HOST=mosquitto
@@ -465,8 +467,6 @@ services:
       redis:
         condition: service_healthy
       node-sim:
-        condition: service_started
-      node-sim-workflow:
         condition: service_started
       node-sim-test-node:
         condition: service_started

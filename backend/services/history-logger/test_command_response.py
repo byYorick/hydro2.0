@@ -276,6 +276,38 @@ async def test_handle_command_response_missing_details_keeps_metadata():
 
 
 @pytest.mark.asyncio
+async def test_handle_command_response_uses_top_level_message_as_error_message():
+    from mqtt_handlers import handle_command_response
+    from common.command_status_queue import CommandStatus
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps(
+        {
+            "cmd_id": "cmd-error-message",
+            "status": "ERROR",
+            "message": "Command failed: invalid channel",
+            "ts": 1737979200008,
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "set_relay"}]
+        mock_send.return_value = True
+
+        await handle_command_response(topic, payload)
+
+        mock_send.assert_awaited_once()
+        call_args = mock_send.call_args[0]
+        assert call_args[0] == "cmd-error-message"
+        assert call_args[1] == CommandStatus.ERROR
+        details = call_args[2]
+        assert details["error_message"] == "Command failed: invalid channel"
+        mock_record.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_handle_command_response_missing_ts_rejected():
     """Missing ts should be rejected and not forwarded."""
     from mqtt_handlers import handle_command_response

@@ -6,6 +6,7 @@ use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Events\ZoneUpdated;
 use App\Models\NodeChannel;
 use App\Models\Zone;
+use App\Services\ZoneLogicProfileCatalog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -28,6 +29,7 @@ class ZoneService
 
             $zone = Zone::create($data);
             $this->ensureCorrectionConfigBootstrap((int) $zone->id);
+            $this->ensureLogicProfileBootstrap($zone->fresh());
             Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
 
             // Dispatch event для уведомления Python-сервиса
@@ -111,6 +113,7 @@ class ZoneService
             $zone = $zone->fresh();
             if ((string) ($zone->automation_runtime ?? '') === 'ae3') {
                 $this->ensureCorrectionConfigBootstrap((int) $zone->id);
+                $this->ensureLogicProfileBootstrap($zone);
             }
 
             // Dispatch event для уведомления Python-сервиса
@@ -127,6 +130,43 @@ class ZoneService
         }
         app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
         app(ZoneCorrectionConfigurationService::class)->ensureDefaultForZone($zoneId);
+    }
+
+    private function ensureLogicProfileBootstrap(Zone $zone): void
+    {
+        $zoneId = (int) $zone->id;
+        if ($zoneId <= 0) {
+            return;
+        }
+
+        $profiles = app(ZoneLogicProfileService::class);
+        if ($profiles->resolveActiveProfileForZone($zoneId) !== null) {
+            return;
+        }
+
+        $profiles->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_WORKING,
+            subsystems: $this->defaultAutomationSubsystems(),
+            activate: true,
+            userId: null,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultAutomationSubsystems(): array
+    {
+        return [
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                ],
+            ],
+        ];
     }
 
     private function assertAutomationRuntimeSwitchAllowed(Zone $zone, array $data): void

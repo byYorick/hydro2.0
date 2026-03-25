@@ -3,8 +3,12 @@
 namespace Tests\Unit;
 
 use App\Jobs\RunSimulationJob;
+use App\Jobs\RunSimulationReportJob;
 use App\Models\DeviceNode;
 use App\Models\GrowCycle;
+use App\Models\Plant;
+use App\Models\Recipe;
+use App\Models\RecipeRevision;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\DigitalTwinClient;
@@ -81,5 +85,67 @@ class RunSimulationJobTest extends TestCase
         $this->assertSame($simZone->id, $cached['simulation_zone_id'] ?? null);
         $this->assertSame($simCycle->id, $cached['simulation_grow_cycle_id'] ?? null);
 
+    }
+
+    public function test_live_simulation_without_recipe_id_switches_to_full_simulation(): void
+    {
+        Queue::fake();
+
+        $zone = Zone::factory()->create(['uid' => 'zn-sim-no-recipe']);
+        $simZone = Zone::factory()->create(['greenhouse_id' => $zone->greenhouse_id]);
+        $simCycle = GrowCycle::factory()->create(['zone_id' => $simZone->id]);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+
+        $orchestrator = Mockery::mock(SimulationOrchestratorService::class);
+        $orchestrator
+            ->shouldReceive('createSimulationContext')
+            ->once()
+            ->with(
+                Mockery::on(fn ($zoneArg) => $zoneArg instanceof Zone && $zoneArg->id === $zone->id),
+                null,
+                ['full_simulation' => true]
+            )
+            ->andReturn([
+                'zone' => $simZone,
+                'grow_cycle' => $simCycle,
+                'plant' => $plant,
+                'recipe' => $recipe,
+                'recipe_revision' => $revision,
+            ]);
+        $this->app->instance(SimulationOrchestratorService::class, $orchestrator);
+
+        $client = Mockery::mock(DigitalTwinClient::class);
+        $client
+            ->shouldReceive('startLiveSimulation')
+            ->once()
+            ->with(Mockery::on(function (array $payload) use ($simZone, $recipe) {
+                return (int) ($payload['zone_id'] ?? 0) === $simZone->id
+                    && (int) data_get($payload, 'scenario.recipe_id', 0) === $recipe->id
+                    && (bool) data_get($payload, 'scenario.simulation.full_simulation', false) === true;
+            }))
+            ->andReturn(['simulation_id' => 88]);
+
+        $job = new RunSimulationJob($zone->id, [
+            'duration_hours' => 12,
+            'step_minutes' => 10,
+            'scenario' => [],
+            'sim_duration_minutes' => 3,
+        ], 'sim-job-no-recipe');
+
+        $job->handle($client, $orchestrator);
+
+        $cached = Cache::get('simulation:sim-job-no-recipe');
+        $this->assertNotNull($cached);
+        $this->assertSame('processing', $cached['status'] ?? null);
+        $this->assertSame(88, $cached['simulation_id'] ?? null);
+        $this->assertSame($simZone->id, $cached['simulation_zone_id'] ?? null);
+        $this->assertSame($simCycle->id, $cached['simulation_grow_cycle_id'] ?? null);
+
+        Queue::assertPushed(RunSimulationReportJob::class);
     }
 }

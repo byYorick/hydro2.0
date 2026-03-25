@@ -104,6 +104,7 @@ class SingleZoneServiceSeeder extends Seeder
             ],
             'max_output' => 100.0,
             'min_interval_ms' => 60000,
+            'max_integral' => 20.0,
             'enable_autotune' => false,
             'adaptation_rate' => 0.02,
         ];

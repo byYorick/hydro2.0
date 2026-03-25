@@ -50,10 +50,6 @@ class CycleStartPlanner:
         if not isinstance(diagnostics, Mapping):
             raise PlannerConfigurationError("command_plans.plans.diagnostics is required")
 
-        steps = diagnostics.get("steps")
-        if not isinstance(steps, Sequence) or not steps:
-            raise PlannerConfigurationError("command_plans.plans.diagnostics.steps must be a non-empty array")
-
         execution = snapshot.diagnostics_execution if isinstance(snapshot.diagnostics_execution, Mapping) else {}
         workflow = str(execution.get("workflow") or "").strip().lower()
         topology = str(execution.get("topology") or "").strip().lower()
@@ -63,6 +59,10 @@ class CycleStartPlanner:
             raise PlannerConfigurationError("diagnostics execution topology is required")
         if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
             return self._build_two_tank_plan(task=task, snapshot=snapshot, workflow=workflow, topology=topology)
+
+        steps = diagnostics.get("steps")
+        if not isinstance(steps, Sequence) or not steps:
+            raise PlannerConfigurationError("command_plans.plans.diagnostics.steps must be a non-empty array")
 
         default_node_types = self._normalize_node_types(execution.get("required_node_types"))
         planned_steps: List[PlannedCommand] = []

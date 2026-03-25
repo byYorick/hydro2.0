@@ -124,6 +124,18 @@ class PlantsTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_delete_plant_via_api(): void
+    {
+        $user = $this->makeUser();
+        $plant = Plant::factory()->create();
+
+        $response = $this->actingAs($user)->deleteJson("/api/plants/{$plant->id}");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok');
+        $this->assertDatabaseMissing('plants', ['id' => $plant->id]);
+    }
+
     public function test_admin_can_create_plant_with_recipe_atomically(): void
     {
         $user = $this->makeUser();

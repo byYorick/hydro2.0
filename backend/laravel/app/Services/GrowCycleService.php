@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Enums\GrowCycleStatus;
 use App\Events\GrowCycleUpdated;
 use App\Events\ZoneUpdated;
+use App\Models\DeviceNode;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
+use App\Models\NodeChannel;
 use App\Models\GrowStageTemplate;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
@@ -24,6 +26,28 @@ use Illuminate\Support\Str;
 
 class GrowCycleService
 {
+    private const TWO_TANK_REQUIRED_NODE_TYPES = ['irrig', 'ph', 'ec'];
+
+    private const TWO_TANK_REQUIRED_CHANNELS_BY_TYPE = [
+        'irrig' => [
+            'pump_main',
+            'valve_clean_fill',
+            'valve_solution_fill',
+            'valve_solution_supply',
+            'valve_irrigation',
+            'level_clean_max',
+            'level_clean_min',
+            'level_solution_max',
+            'level_solution_min',
+        ],
+        'ph' => [
+            'ph_sensor',
+        ],
+        'ec' => [
+            'ec_sensor',
+        ],
+    ];
+
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly AutomationConfigDocumentService $documents,
@@ -251,6 +275,10 @@ class GrowCycleService
             return;
         }
 
+        if (! $this->shouldDispatchAutomationStartCycleForZone($zoneId)) {
+            return;
+        }
+
         try {
             $cfg = $this->automationStartCycleConfig();
             $idempotencyKey = $this->buildGrowCycleStartIdempotencyKey($zoneId, $cycleId);
@@ -261,29 +289,165 @@ class GrowCycleService
                 idempotencyKey: $idempotencyKey
             );
 
-            $response = $this->postAutomationStartCycle(
+            $attempt = 0;
+            $maxAttempts = $this->growCycleStartDispatchMaxAttempts();
+            $lastError = null;
+
+            while ($attempt < $maxAttempts) {
+                $attempt++;
+
+                try {
+                    $response = $this->postAutomationStartCycle(
+                        zoneId: $zoneId,
+                        idempotencyKey: $idempotencyKey,
+                        cfg: $cfg
+                    );
+                    $taskId = trim((string) data_get($response, 'data.task_id', ''));
+                    Log::info('Grow cycle start-cycle dispatched to automation-engine', [
+                        'zone_id' => $zoneId,
+                        'cycle_id' => $cycleId,
+                        'idempotency_key' => $idempotencyKey,
+                        'task_id' => $taskId !== '' ? $taskId : null,
+                        'accepted' => (bool) data_get($response, 'data.accepted', false),
+                        'deduplicated' => (bool) data_get($response, 'data.deduplicated', false),
+                        'attempt' => $attempt,
+                    ]);
+
+                    return;
+                } catch (\Throwable $e) {
+                    $lastError = $e;
+                    if ($attempt >= $maxAttempts || ! $this->shouldRetryGrowCycleStartDispatch($e, $zoneId)) {
+                        break;
+                    }
+
+                    usleep($this->growCycleStartDispatchRetryDelayMs($attempt) * 1000);
+                }
+            }
+
+            $this->markGrowCycleStartIntentFailed(
                 zoneId: $zoneId,
                 idempotencyKey: $idempotencyKey,
-                cfg: $cfg
+                error: $lastError,
             );
 
-            $taskId = trim((string) data_get($response, 'data.task_id', ''));
-            Log::info('Grow cycle start-cycle dispatched to automation-engine', [
+            Log::warning('Grow cycle start-cycle dispatch failed after cycle commit', [
                 'zone_id' => $zoneId,
                 'cycle_id' => $cycleId,
                 'idempotency_key' => $idempotencyKey,
-                'task_id' => $taskId !== '' ? $taskId : null,
-                'accepted' => (bool) data_get($response, 'data.accepted', false),
-                'deduplicated' => (bool) data_get($response, 'data.deduplicated', false),
+                'attempts' => $attempt,
+                'error' => $lastError?->getMessage(),
+                'exception_type' => $lastError !== null ? get_class($lastError) : null,
             ]);
         } catch (\Throwable $e) {
-            Log::warning('Grow cycle start-cycle dispatch failed after cycle commit', [
+            Log::warning('Grow cycle start-cycle dispatch failed before request dispatch', [
                 'zone_id' => $zoneId,
                 'cycle_id' => $cycleId,
                 'error' => $e->getMessage(),
                 'exception_type' => get_class($e),
             ]);
         }
+    }
+
+    protected function growCycleStartDispatchMaxAttempts(): int
+    {
+        return 3;
+    }
+
+    protected function growCycleStartDispatchRetryDelayMs(int $attempt): int
+    {
+        return min(750, max(1, $attempt) * 150);
+    }
+
+    protected function shouldDispatchAutomationStartCycleForZone(int $zoneId): bool
+    {
+        $zone = Zone::query()->find($zoneId);
+        if (! $zone) {
+            return false;
+        }
+
+        if (strtolower(trim((string) $zone->automation_runtime)) !== 'ae3') {
+            Log::info('Skipping grow cycle start-cycle dispatch for non-AE3 zone', [
+                'zone_id' => $zoneId,
+                'automation_runtime' => $zone->automation_runtime,
+            ]);
+
+            return false;
+        }
+
+        $missingRequirements = $this->resolveGrowCycleStartDispatchMissingRequirements($zoneId);
+        if ($missingRequirements === []) {
+            return true;
+        }
+
+        Log::info('Skipping grow cycle start-cycle dispatch because zone topology is not ready', [
+            'zone_id' => $zoneId,
+            'missing_requirements' => $missingRequirements,
+        ]);
+
+        return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function resolveGrowCycleStartDispatchMissingRequirements(int $zoneId): array
+    {
+        $onlineNodes = DeviceNode::query()
+            ->where('zone_id', $zoneId)
+            ->where('status', 'online')
+            ->get(['id', 'type']);
+
+        $missingRequirements = [];
+        $nodeIdsByType = [];
+
+        foreach ($onlineNodes as $node) {
+            $type = strtolower(trim((string) $node->type));
+            if ($type === '') {
+                continue;
+            }
+            $nodeIdsByType[$type] ??= [];
+            $nodeIdsByType[$type][] = (int) $node->id;
+        }
+
+        foreach (self::TWO_TANK_REQUIRED_NODE_TYPES as $requiredType) {
+            if (empty($nodeIdsByType[$requiredType])) {
+                $missingRequirements[] = 'node_type:'.$requiredType;
+            }
+        }
+
+        foreach (self::TWO_TANK_REQUIRED_CHANNELS_BY_TYPE as $type => $requiredChannels) {
+            $nodeIds = $nodeIdsByType[$type] ?? [];
+            if ($nodeIds === []) {
+                continue;
+            }
+
+            $availableChannels = NodeChannel::query()
+                ->whereIn('node_id', $nodeIds)
+                ->where('is_active', true)
+                ->pluck('channel')
+                ->map(static fn ($channel): string => strtolower(trim((string) $channel)))
+                ->filter(static fn (string $channel): bool => $channel !== '')
+                ->unique()
+                ->all();
+
+            foreach ($requiredChannels as $requiredChannel) {
+                if (! in_array($requiredChannel, $availableChannels, true)) {
+                    $missingRequirements[] = sprintf('channel:%s:%s', $type, $requiredChannel);
+                }
+            }
+        }
+
+        sort($missingRequirements);
+
+        return $missingRequirements;
+    }
+
+    protected function shouldRetryGrowCycleStartDispatch(\Throwable $error, int $zoneId): bool
+    {
+        $message = $error->getMessage();
+
+        return str_contains($message, 'automation_engine_start_cycle_http_error_v2:404:')
+            && str_contains($message, sprintf("Zone '%d' not found", $zoneId));
     }
 
     protected function isGrowCycleStartDispatchEnabled(): bool
@@ -367,6 +531,47 @@ class GrowCycleService
             'idempotency_key' => $idempotencyKey,
             'intent_exists' => $intentExists,
         ]);
+    }
+
+    protected function markGrowCycleStartIntentFailed(int $zoneId, string $idempotencyKey, ?\Throwable $error): void
+    {
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+
+        DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
+            ->where('idempotency_key', $idempotencyKey)
+            ->whereIn('status', ['pending', 'claimed'])
+            ->update([
+                'status' => 'failed',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => $this->growCycleStartDispatchErrorCode($error),
+                'error_message' => $error?->getMessage(),
+            ]);
+    }
+
+    protected function growCycleStartDispatchErrorCode(?\Throwable $error): string
+    {
+        $message = trim((string) $error?->getMessage());
+
+        if ($message === '') {
+            return 'automation_engine_start_cycle_dispatch_failed';
+        }
+
+        if (str_starts_with($message, 'automation_engine_start_cycle_connection_error:')) {
+            return 'automation_engine_start_cycle_connection_error';
+        }
+
+        if (str_contains($message, 'automation_engine_start_cycle_http_error_v2:404:')
+            && str_contains($message, "Zone '")) {
+            return 'automation_engine_start_cycle_zone_not_found';
+        }
+
+        if (str_starts_with($message, 'automation_engine_start_cycle_http_error_v2:')) {
+            return 'automation_engine_start_cycle_http_error';
+        }
+
+        return 'automation_engine_start_cycle_dispatch_failed';
     }
 
     /**
@@ -571,7 +776,7 @@ class GrowCycleService
             return $templatesById->get($phase->stage_template_id);
         }
 
-        $code = $this->inferStageCode($revision->recipe?->name ?? '', $phase->name ?? '', $phase->phase_index);
+        $code = $this->inferStageCode('', $phase->name ?? '', $phase->phase_index);
 
         return $templatesByCode->get($code)
             ?? $templatesByCode->get('VEG')
@@ -801,6 +1006,7 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->cancelGrowCycleStartRuntimeState($cycle, $zone);
             $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
@@ -828,6 +1034,75 @@ class GrowCycleService
 
             return $cycle->fresh();
         });
+    }
+
+    protected function cancelGrowCycleStartRuntimeState(GrowCycle $cycle, Zone $zone): void
+    {
+        if (strtolower(trim((string) $zone->automation_runtime)) !== 'ae3') {
+            return;
+        }
+
+        $zoneId = (int) $cycle->zone_id;
+        $cycleId = (int) $cycle->id;
+        if ($zoneId <= 0 || $cycleId <= 0) {
+            return;
+        }
+
+        $idempotencyKey = $this->buildGrowCycleStartIdempotencyKey($zoneId, $cycleId);
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+        $errorCode = 'grow_cycle_aborted';
+        $errorMessage = sprintf(
+            'Grow cycle %d aborted before AE3 start-cycle task completed',
+            $cycleId
+        );
+
+        DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
+            ->whereIn('status', ['pending', 'claimed', 'running'])
+            ->where(function ($query) use ($idempotencyKey, $cycleId) {
+                $query->where('idempotency_key', $idempotencyKey)
+                    ->orWhere(function ($cycleQuery) use ($cycleId) {
+                        $cycleQuery
+                            ->where('intent_type', 'DIAGNOSTICS_TICK')
+                            ->whereRaw("COALESCE(payload->>'workflow', '') = 'cycle_start'")
+                            ->whereRaw(
+                                "COALESCE(NULLIF(payload->>'grow_cycle_id', ''), '0')::bigint = ?",
+                                [$cycleId]
+                            );
+                    });
+            })
+            ->update([
+                'status' => 'cancelled',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+            ]);
+
+        $cancelledTasks = DB::table('ae_tasks')
+            ->where('zone_id', $zoneId)
+            ->whereIn('status', ['pending', 'claimed', 'running', 'waiting_command'])
+            ->where(function ($query) use ($idempotencyKey, $cycleId) {
+                $query->where('idempotency_key', $idempotencyKey)
+                    ->orWhere(function ($cycleQuery) use ($cycleId) {
+                        $cycleQuery
+                            ->where('task_type', 'cycle_start')
+                            ->whereRaw(
+                                "COALESCE(NULLIF(intent_meta->'intent_payload'->>'grow_cycle_id', ''), '0')::bigint = ?",
+                                [$cycleId]
+                            );
+                    });
+            })
+            ->update([
+                'status' => 'cancelled',
+                'completed_at' => $now,
+                'updated_at' => $now,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+            ]);
+
+        // AE3 worker owns the lease lifecycle. Abort marks task/intent cancelled and
+        // lets the worker release the zone lease in its normal finally-path.
     }
 
     private function syncZoneStatus(Zone $zone, string $status): void

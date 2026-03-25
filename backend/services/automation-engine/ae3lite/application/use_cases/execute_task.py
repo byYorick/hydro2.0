@@ -16,6 +16,7 @@ from ae3lite.domain.errors import (
     SnapshotBuildError,
     TaskFinalizeError,
     TaskExecutionError,
+    TaskTerminalStateReached,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ class ExecuteTaskUseCase:
             topology = running_task.topology
             if topology in ("two_tank", "two_tank_drip_substrate_trays"):
                 final_task = await self._workflow_router.run(task=running_task, plan=plan, now=now)
+                if final_task is not None and not bool(getattr(final_task, "is_active", False)):
+                    return final_task
                 await self._mark_correction_config_applied_if_needed(
                     task=final_task,
                     snapshot=snapshot,
@@ -132,6 +135,20 @@ class ExecuteTaskUseCase:
                 now=now,
             )
             return completed_task
+        except TaskTerminalStateReached as exc:
+            terminal_task = await self._load_terminal_task_or_none(
+                task_id=int(getattr(exc.task, "id", 0) or getattr(running_task, "id", 0) or 0),
+                fallback_task=exc.task,
+            )
+            if terminal_task is not None:
+                logger.info(
+                    "AE3 task execution stopped after external terminal transition: zone_id=%s task_id=%s status=%s",
+                    getattr(terminal_task, "zone_id", None),
+                    getattr(terminal_task, "id", None),
+                    getattr(terminal_task, "status", None),
+                )
+                return terminal_task
+            raise
         except asyncio.CancelledError as exc:
             if not self._is_timeout_cancellation(exc):
                 raise
@@ -158,6 +175,19 @@ class ExecuteTaskUseCase:
                 now=timeout_now,
             )
         except (SnapshotBuildError, PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
+            terminal_task = await self._load_terminal_task_or_none(
+                task_id=int(getattr(running_task, "id", 0) or 0),
+                fallback_task=running_task,
+            )
+            if terminal_task is not None:
+                logger.info(
+                    "AE3 task execution stopped after external terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
+                    getattr(terminal_task, "zone_id", None),
+                    getattr(terminal_task, "id", None),
+                    getattr(terminal_task, "status", None),
+                    getattr(exc, "code", type(exc).__name__),
+                )
+                return terminal_task
             error_code = getattr(exc, "code", "ae3_task_execution_failed")
             logger.error(
                 "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
@@ -457,3 +487,24 @@ class ExecuteTaskUseCase:
 
     def _is_timeout_cancellation(self, exc: asyncio.CancelledError) -> bool:
         return any(str(arg) == TASK_EXECUTION_TIMEOUT_CANCEL_MSG for arg in getattr(exc, "args", ()))
+
+    async def _load_terminal_task_or_none(self, *, task_id: int, fallback_task: Any) -> Any | None:
+        if task_id <= 0:
+            task = fallback_task
+        else:
+            get_task_by_id = getattr(self._task_repository, "get_by_id", None)
+            if callable(get_task_by_id):
+                try:
+                    task = await get_task_by_id(task_id=task_id)
+                except Exception:
+                    logger.warning(
+                        "AE3 failed to load current task state for terminal short-circuit: task_id=%s",
+                        task_id,
+                        exc_info=True,
+                    )
+                    task = fallback_task
+            else:
+                task = fallback_task
+        if task is None or bool(getattr(task, "is_active", False)):
+            return None
+        return task

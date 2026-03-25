@@ -102,6 +102,19 @@ assertions:
     '
   type: database_query
 cleanup:
+- params:
+    hardware_id: nd-ph-test-1
+  query: |
+    DELETE FROM unassigned_node_errors
+    WHERE hardware_id = :hardware_id
+  step: cleanup_unassigned_node_errors
+  type: database_execute
+- query: |
+    DELETE FROM pending_alerts
+    WHERE node_uid = 'nd-ph-test-1'
+       OR hardware_id = 'nd-ph-test-1'
+  step: cleanup_pending_alerts
+  type: database_execute
 - optional: true
   step: stop_node_simulator
   type: stop_simulator

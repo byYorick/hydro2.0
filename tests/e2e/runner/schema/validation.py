@@ -201,6 +201,9 @@ class SchemaValidator:
             "presence-hydro.",
             "public-hydro.",
             "private-App.",
+            "private-commands.",
+            "commands.",
+            "hydro.zones.",
         ]
 
         if not any(channel.startswith(prefix) for prefix in valid_prefixes):

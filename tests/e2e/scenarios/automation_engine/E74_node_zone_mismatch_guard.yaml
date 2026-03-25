@@ -247,3 +247,14 @@ cleanup:
     params:
       mismatch_zone_id: ${mismatch_zone_id}
     optional: true
+
+  - step: cleanup_mismatch_alert
+    type: database_execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+        AND source = 'infra'
+        AND code = 'infra_command_node_zone_mismatch'
+    params:
+      zone_id: ${zone_id}
+    optional: true

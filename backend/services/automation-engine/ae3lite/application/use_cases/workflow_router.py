@@ -184,13 +184,19 @@ class WorkflowRouter:
         await self._upsert_workflow_phase(
             task=task, workflow_phase=workflow.workflow_phase, now=now,
         )
-        return await self._task_repo.update_stage(
+        updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
             workflow=workflow,
             correction=task.correction,
             due_at=due_at,
             now=now,
+        )
+        return await self._resolve_inactive_terminal_task(
+            task_id=task.id,
+            updated_task=updated_task,
+            error_code="ae3_poll_apply_failed",
+            error_message=f"Task {task.id} could not persist poll outcome",
         )
 
     async def _apply_transition(
@@ -265,13 +271,19 @@ class WorkflowRouter:
         )
 
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
-        return await self._task_repo.update_stage(
+        updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
             workflow=new_workflow,
             correction=None,  # Clear correction on transition
             due_at=due_at,
             now=now,
+        )
+        return await self._resolve_inactive_terminal_task(
+            task_id=task.id,
+            updated_task=updated_task,
+            error_code="ae3_transition_apply_failed",
+            error_message=f"Task {task.id} could not transition to {next_stage}",
         )
 
     async def _apply_enter_correction(
@@ -299,13 +311,19 @@ class WorkflowRouter:
         )
 
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
-        return await self._task_repo.update_stage(
+        updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
             workflow=workflow,
             correction=corr,
             due_at=due_at,
             now=now,
+        )
+        return await self._resolve_inactive_terminal_task(
+            task_id=task.id,
+            updated_task=updated_task,
+            error_code="ae3_correction_apply_failed",
+            error_message=f"Task {task.id} could not persist correction state",
         )
 
     async def _apply_exit_correction(
@@ -343,12 +361,12 @@ class WorkflowRouter:
         completed = await self._task_repo.mark_completed(
             task_id=task.id, owner=str(task.claimed_by or ""), now=now,
         )
-        if completed is None:
-            raise TaskExecutionError(
-                "ae3_complete_transition_failed",
-                f"Task {task.id} could not transition to completed",
-            )
-        return completed
+        return await self._resolve_inactive_terminal_task(
+            task_id=task.id,
+            updated_task=completed,
+            error_code="ae3_complete_transition_failed",
+            error_message=f"Task {task.id} could not transition to completed",
+        )
 
     async def _fail_task(
         self, *, task: Any, now: datetime, error_code: str, error_message: str,
@@ -398,3 +416,20 @@ class WorkflowRouter:
                 scheduler_task_id=str(task.id),
                 now=now,
             )
+
+    async def _resolve_inactive_terminal_task(
+        self,
+        *,
+        task_id: int,
+        updated_task: Any,
+        error_code: str,
+        error_message: str,
+    ) -> Any:
+        if updated_task is not None:
+            return updated_task
+        get_task_by_id = getattr(self._task_repo, "get_by_id", None)
+        if callable(get_task_by_id):
+            current_task = await get_task_by_id(task_id=task_id)
+            if current_task is not None and not bool(getattr(current_task, "is_active", False)):
+                return current_task
+        raise TaskExecutionError(error_code, error_message)

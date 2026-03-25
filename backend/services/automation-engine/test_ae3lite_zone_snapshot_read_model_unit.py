@@ -312,6 +312,38 @@ def test_build_correction_config_preserves_runtime_contract_fields() -> None:
     assert result["meta"]["phase_overrides"]["solution_fill"]["timing"]["stabilization_sec"] == 31
 
 
+def test_extract_pump_calibration_merges_policy_with_db_calibration() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._extract_pump_calibration(
+        {
+            "channel_config": {},
+            "calibration_ml_per_sec": 1.75,
+            "calibration_k_ms_per_ml_l": 12.5,
+            "calibration_component": "ec_a",
+            "calibration_source": "e2e_realhw_setup_ready",
+            "calibration_quality_score": 0.97,
+            "calibration_sample_count": 4,
+            "calibration_valid_from": "2026-03-25T00:00:00Z",
+        },
+        pump_calibration_policy={
+            "min_dose_ms": 50,
+            "ml_per_sec_min": 0.01,
+            "ml_per_sec_max": 20.0,
+        },
+    )
+
+    assert result is not None
+    assert result["min_dose_ms"] == 50
+    assert result["ml_per_sec_min"] == 0.01
+    assert result["ml_per_sec_max"] == 20.0
+    assert result["ml_per_sec"] == 1.75
+    assert result["k_ms_per_ml_l"] == 12.5
+    assert result["component"] == "ec_a"
+    assert result["source"] == "e2e_realhw_setup_ready"
+    assert result["sample_count"] == 4
+
+
 def test_bundle_correction_config_row_uses_bundle_meta_version() -> None:
     read_model = PgZoneSnapshotReadModel()
 
