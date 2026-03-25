@@ -49,6 +49,39 @@ class SettingsUsersApiTest extends TestCase
             ->assertJsonPath('data.email', 'updated-operator@example.com');
     }
 
+    public function test_admin_can_manage_agronomist_user_via_settings_api(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $create = $this->actingAs($admin)->postJson('/settings/users', [
+            'name' => 'Агроном',
+            'email' => 'agronomist-user@example.com',
+            'password' => 'password123',
+            'role' => 'agronomist',
+        ]);
+
+        $create
+            ->assertCreated()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.email', 'agronomist-user@example.com')
+            ->assertJsonPath('data.role', 'agronomist');
+
+        $userId = (int) $create->json('data.id');
+
+        $update = $this->actingAs($admin)->patchJson("/settings/users/{$userId}", [
+            'name' => 'Инженер автоматики',
+            'email' => 'automation-engineer@example.com',
+            'role' => 'engineer',
+        ]);
+
+        $update
+            ->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.name', 'Инженер автоматики')
+            ->assertJsonPath('data.email', 'automation-engineer@example.com')
+            ->assertJsonPath('data.role', 'engineer');
+    }
+
     public function test_admin_cannot_delete_self_via_settings_api(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);

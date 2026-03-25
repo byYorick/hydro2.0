@@ -128,6 +128,39 @@ class ZoneLogicProfileServiceTest extends TestCase
         $this->assertNull($profile->id);
     }
 
+    public function test_it_builds_command_plans_when_profile_is_upserted(): void
+    {
+        $zone = Zone::factory()->create();
+        $user = User::factory()->create();
+
+        $profile = $this->service->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_SETUP,
+            subsystems: [
+                'diagnostics' => [
+                    'enabled' => true,
+                    'execution' => [
+                        'workflow' => 'startup',
+                        'two_tank_commands' => [
+                            'clean_fill_start' => [
+                                [
+                                    'channel' => 'valve_clean_fill',
+                                    'cmd' => 'set_relay',
+                                    'params' => ['state' => true],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            activate: true,
+            userId: (int) $user->id,
+        );
+
+        $this->assertSame('cycle_start', data_get($profile->commandPlans, 'plans.diagnostics.execution.workflow'));
+        $this->assertCount(1, data_get($profile->commandPlans, 'plans.diagnostics.steps', []));
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */

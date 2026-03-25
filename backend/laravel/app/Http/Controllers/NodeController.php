@@ -8,6 +8,7 @@ use App\Jobs\PublishNodeConfigJob;
 use App\Http\Requests\UpdateNodeRequest;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
+use App\Support\PumpCalibrationCatalog;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
@@ -68,10 +69,9 @@ class NodeController extends Controller
         $query = DeviceNode::query()
             ->select('id', 'uid', 'name', 'type', 'zone_id', 'status', 'lifecycle_state', 'fw_version', 'hardware_revision', 'hardware_id', 'validated', 'first_seen_at', 'created_at', 'updated_at')
             ->with(['zone:id,name,status', 'channels' => function ($channelQuery) {
-                // Исключаем полный config из каналов, но безопасно извлекаем actuator_type/pump_component для UI.
+                // Исключаем полный config из каналов, но безопасно извлекаем actuator_type и binding_role для UI.
                 $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit',
                     DB::raw("config->>'actuator_type' as actuator_type"),
-                    DB::raw("config->'pump_calibration'->>'component' as pump_component"),
                     DB::raw("(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role"));
             }]);
 
@@ -155,6 +155,7 @@ class NodeController extends Controller
             unset($node->config);
             foreach ($node->channels as $channel) {
                 unset($channel->config);
+                $channel->pump_component = PumpCalibrationCatalog::componentForRole($channel->binding_role);
             }
 
             return $node;

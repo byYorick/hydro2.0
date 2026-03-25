@@ -40,3 +40,4 @@ class ZoneSnapshot:
     actuators: Tuple[ZoneActuatorRef, ...]
     process_calibrations: Optional[Mapping[str, Any]] = None
     correction_config: Optional[Mapping[str, Any]] = None
+    phase_targets: Optional[Mapping[str, Any]] = None

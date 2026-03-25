@@ -324,7 +324,7 @@ class ZoneReadinessServiceTest extends TestCase
             'type' => 'actuator',
             'metric' => 'pump',
             'unit' => null,
-            'config' => $withCalibration ? ['pump_calibration' => ['ml_per_sec' => 1.25]] : [],
+            'config' => [],
         ]);
 
         $instance = InfrastructureInstance::query()->firstOrCreate(
@@ -347,6 +347,29 @@ class ZoneReadinessServiceTest extends TestCase
                 'role' => $role,
             ]
         );
+
+        if ($withCalibration) {
+            $component = match ($role) {
+                'ph_acid_pump' => 'ph_down',
+                'ph_base_pump' => 'ph_up',
+                'ec_npk_pump' => 'npk',
+                'ec_calcium_pump' => 'calcium',
+                'ec_magnesium_pump' => 'magnesium',
+                'ec_micro_pump' => 'micro',
+                default => 'unknown',
+            };
+
+            \Illuminate\Support\Facades\DB::table('pump_calibrations')->insert([
+                'node_channel_id' => $nodeChannel->id,
+                'component' => $component,
+                'ml_per_sec' => 1.25,
+                'source' => 'manual',
+                'valid_from' => now(),
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 
     /**

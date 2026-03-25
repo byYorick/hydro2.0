@@ -108,7 +108,7 @@ class AutomationRuntimeConfigService
             'label' => 'Grow-cycle auto dispatch enabled',
             'description' => 'Автозапуск start-cycle при старте grow-cycle.',
             'config_path' => 'services.automation_engine.grow_cycle_start_dispatch_enabled',
-            'default' => false,
+            'default' => true,
             'type' => 'bool',
             'input_type' => 'boolean',
             'editable' => true,

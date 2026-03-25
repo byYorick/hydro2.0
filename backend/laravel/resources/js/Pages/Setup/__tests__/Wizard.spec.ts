@@ -391,6 +391,14 @@ function installAuthorityMocks(zonePayload?: Record<string, unknown>) {
             mode: 'setup',
             is_active: true,
             subsystems: {},
+            command_plans: {
+              schema_version: 1,
+              plans: {
+                diagnostics: {
+                  steps: [{ channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: true } }],
+                },
+              },
+            },
             updated_at: '2026-03-24T10:00:00Z',
           },
         },
@@ -829,6 +837,7 @@ describe('Setup/Wizard.vue', () => {
     const automationCall = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 20 && namespace === 'zone.logic_profile')
     expect(automationCall?.[3]?.profiles?.setup?.subsystems?.climate).toBeUndefined()
     expect(automationCall?.[3]?.profiles?.setup?.subsystems?.irrigation?.execution?.system_type).toBe('substrate_trays')
+    expect(automationCall?.[3]?.profiles?.setup?.command_plans?.schema_version).toBe(1)
 
     expect(apiPostMock).toHaveBeenCalledWith(
       '/api/zones/20/commands',
@@ -1040,6 +1049,88 @@ describe('Setup/Wizard.vue', () => {
     const openLaunchButton = wrapper.findAll('button').find((btn) => btn.text().includes('Открыть мастер запуска цикла'))
     expect(openLaunchButton).toBeTruthy()
     expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('разрешает открыть мастер запуска, если readiness готов даже без восстановленного plant/recipe контекста', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/greenhouses') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 10, uid: 'gh-main', name: 'Main GH' }],
+          },
+        })
+      }
+
+      if (url === '/api/greenhouses/10') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 10, uid: 'gh-main', name: 'Main GH' },
+          },
+        })
+      }
+
+      if (url === '/api/zones') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 20, name: 'Zone A', greenhouse_id: 10 }],
+          },
+        })
+      }
+
+      if (url === '/api/zones/20/health') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              readiness: {
+                ready: true,
+                errors: [],
+              },
+            },
+          },
+        })
+      }
+
+      if (url === '/api/zones/20') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 20, name: 'Zone A', greenhouse_id: 10 },
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="setup-wizard-greenhouse-select"]').setValue('10')
+    await flushPromises()
+    await wrapper.get('[data-testid="setup-wizard-zone-select"]').setValue('20')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Можно запускать')
+
+    const openLaunchButton = wrapper.findAll('button').find((btn) => btn.text().includes('Открыть мастер запуска цикла'))
+    expect(openLaunchButton).toBeTruthy()
+    expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(false)
+
+    await openLaunchButton?.trigger('click')
+    await flushPromises()
+
+    expect(routerVisitMock).toHaveBeenCalledTimes(1)
+    const [targetUrl] = routerVisitMock.mock.calls[0] ?? []
+    expect(targetUrl).toContain('/zones/20?')
+    expect(targetUrl).toContain('start_cycle=1')
+    expect(targetUrl).toContain('source=setup_wizard')
+    expect(targetUrl).not.toContain('recipe_id=')
+    expect(targetUrl).not.toContain('plant_id=')
   })
 
   it('обновляет список доступных нод по кнопке "Обновить ноды"', async () => {

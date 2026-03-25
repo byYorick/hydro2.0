@@ -13,6 +13,14 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    public const AVAILABLE_ROLES = [
+        'admin',
+        'operator',
+        'viewer',
+        'agronomist',
+        'engineer',
+    ];
+
     /**
      * The attributes that are mass assignable.
      *
@@ -53,6 +61,14 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return ($this->role ?? 'operator') === 'admin';
+    }
+
+    /**
+     * Допустимые роли для создания и редактирования пользователей.
+     */
+    public static function availableRoles(): array
+    {
+        return self::AVAILABLE_ROLES;
     }
 
     /**

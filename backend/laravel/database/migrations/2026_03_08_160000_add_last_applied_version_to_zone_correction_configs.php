@@ -15,8 +15,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('zone_correction_configs', function (Blueprint $table): void {
-            $table->dropColumn('last_applied_version');
-        });
+        // Legacy zone_correction_configs is removed by authority cleanup.
+        // Rolling this schema tweak back is intentionally a no-op.
     }
 };

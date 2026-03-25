@@ -120,8 +120,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         raise PlannerConfigurationError(
             f"Zone {zone_id} correction_config.base/phases.solution_fill.runtime.required_node_type is required"
         )
-    target_ph = _resolve_target(snapshot.targets, execution, "ph")
-    target_ec = _resolve_target(snapshot.targets, execution, "ec")
+    target_ph = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ph")
+    target_ec = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ec")
     runtime: dict[str, Any] = {
         "required_node_types": required_node_types,
         "clean_fill_timeout_sec": _require_int(
@@ -201,10 +201,10 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         ),
         "target_ph": target_ph,
         "target_ec": target_ec,
-        "target_ph_min": _resolve_target_bound(snapshot.targets, execution, "ph", "min", fallback=target_ph),
-        "target_ph_max": _resolve_target_bound(snapshot.targets, execution, "ph", "max", fallback=target_ph),
-        "target_ec_min": _resolve_target_bound(snapshot.targets, execution, "ec", "min", fallback=target_ec),
-        "target_ec_max": _resolve_target_bound(snapshot.targets, execution, "ec", "max", fallback=target_ec),
+        "target_ph_min": _resolve_phase_target_bound(snapshot=snapshot, key="ph", bound="min", fallback=target_ph),
+        "target_ph_max": _resolve_phase_target_bound(snapshot=snapshot, key="ph", bound="max", fallback=target_ph),
+        "target_ec_min": _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="min", fallback=target_ec),
+        "target_ec_max": _resolve_phase_target_bound(snapshot=snapshot, key="ec", bound="max", fallback=target_ec),
         "prepare_tolerance": dict(default_prepare_tolerance),
         "prepare_tolerance_by_phase": prepare_tolerance_by_phase,
         "pid_state": dict(snapshot.pid_state) if isinstance(getattr(snapshot, "pid_state", None), Mapping) else {},
@@ -531,42 +531,31 @@ def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> in
     )
 
 
-def _resolve_target(targets: Mapping[str, Any], execution: Mapping[str, Any], key: str) -> float:
+def _resolve_phase_target(*, snapshot: Any, zone_id: int, key: str) -> float:
     upper = 20.0 if key == "ec" else 14.0
-    direct = execution.get(f"target_{key}")
-    if direct is not None:
-        try:
-            return max(0.0, min(upper, float(direct)))
-        except (TypeError, ValueError):
-            raise PlannerConfigurationError(f"target_{key} in execution config is not numeric: {direct!r}")
-    section = targets.get(key) if isinstance(targets.get(key), Mapping) else {}
+    phase_targets = getattr(snapshot, "phase_targets", None)
+    section = phase_targets.get(key) if isinstance(phase_targets, Mapping) and isinstance(phase_targets.get(key), Mapping) else {}
     candidate = section.get("target")
     if candidate is None:
-        candidate = targets.get(f"target_{key}")
-    if candidate is None:
         raise PlannerConfigurationError(
-            f"No target_{key} configured for zone; hardcoded defaults are forbidden (spec §5.3.4)"
+            f"Zone {zone_id} current recipe phase has no target_{key}; "
+            "automation requires recipe-phase pH/EC targets and forbids defaults or runtime overrides",
+            code=ErrorCodes.ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL,
         )
     try:
         return max(0.0, min(upper, float(candidate)))
     except (TypeError, ValueError):
-        raise PlannerConfigurationError(f"target_{key} value is not numeric: {candidate!r}")
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} current recipe phase target_{key} is not numeric: {candidate!r}",
+            code=ErrorCodes.ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL,
+        )
 
 
-def _resolve_target_bound(
-    targets: Mapping[str, Any],
-    execution: Mapping[str, Any],
-    key: str,
-    bound: str,
-    *,
-    fallback: float,
-) -> float:
+def _resolve_phase_target_bound(*, snapshot: Any, key: str, bound: str, fallback: float) -> float:
     upper = 20.0 if key == "ec" else 14.0
-    direct = execution.get(f"{key}_{bound}")
-    if direct is None:
-        direct = execution.get(f"target_{key}_{bound}")
-    section = targets.get(key) if isinstance(targets.get(key), Mapping) else {}
-    candidate = direct if direct is not None else section.get(bound)
+    phase_targets = getattr(snapshot, "phase_targets", None)
+    section = phase_targets.get(key) if isinstance(phase_targets, Mapping) and isinstance(phase_targets.get(key), Mapping) else {}
+    candidate = section.get(bound)
     if candidate is None:
         return float(fallback)
     try:

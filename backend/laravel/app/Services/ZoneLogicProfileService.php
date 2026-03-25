@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Zone;
+use App\Support\Automation\ZoneLogicProfileNormalizer;
 use App\Support\Automation\ZoneLogicProfile;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -12,6 +13,7 @@ class ZoneLogicProfileService
 {
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
+        private readonly ZoneLogicProfileNormalizer $normalizer,
     ) {
     }
 
@@ -40,8 +42,8 @@ class ZoneLogicProfileService
      */
     public function upsertProfile(Zone $zone, string $mode, array $subsystems, bool $activate, ?int $userId): ZoneLogicProfile
     {
-        $normalizedSubsystems = $this->normalizeSubsystemsForStorage($subsystems);
-        $commandPlans = $this->buildCommandPlans($normalizedSubsystems);
+        $normalizedSubsystems = $this->normalizer->normalizeSubsystems($subsystems);
+        $commandPlans = $this->normalizer->buildCommandPlans($normalizedSubsystems);
         $payload = $this->documents->getPayload(
             AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE,
             AutomationConfigRegistry::SCOPE_ZONE,
@@ -187,181 +189,6 @@ class ZoneLogicProfileService
             createdAt: $this->coerceDateTime($payload['created_at'] ?? null),
             updatedAt: $this->coerceDateTime($payload['updated_at'] ?? null),
         );
-    }
-
-    protected function normalizeSubsystemsForStorage(array $subsystems): array
-    {
-        $normalized = [];
-
-        foreach ($subsystems as $name => $subsystem) {
-            if (!is_string($name) || !is_array($subsystem) || array_is_list($subsystem)) {
-                continue;
-            }
-
-            $entry = [];
-            if (array_key_exists('enabled', $subsystem)) {
-                $entry['enabled'] = (bool) $subsystem['enabled'];
-            }
-
-            $execution = [];
-            if (isset($subsystem['execution']) && is_array($subsystem['execution'])) {
-                $execution = $subsystem['execution'];
-                if ($name === 'diagnostics') {
-                    $execution = $this->normalizeDiagnosticsExecution($execution);
-                }
-            }
-
-            if (!empty($execution)) {
-                $entry['execution'] = $execution;
-            }
-
-            if (!empty($entry)) {
-                $normalized[$name] = $entry;
-            }
-        }
-
-        return $normalized;
-    }
-
-    /**
-     * @param  array<string, mixed>  $execution
-     * @return array<string, mixed>
-     */
-    protected function normalizeDiagnosticsExecution(array $execution): array
-    {
-        $workflow = $execution['workflow'] ?? null;
-        if (is_string($workflow) && strtolower(trim($workflow)) === 'startup') {
-            $execution['workflow'] = 'cycle_start';
-        }
-
-        return $execution;
-    }
-
-    /**
-     * @param  array<string, mixed>  $subsystems
-     * @return array<string, mixed>
-     */
-    protected function buildCommandPlans(array $subsystems): array
-    {
-        $execution = data_get($subsystems, 'diagnostics.execution');
-        $execution = is_array($execution) && ! array_is_list($execution) ? $execution : [];
-
-        $twoTankCommands = data_get($execution, 'two_tank_commands');
-        $twoTankCommands = is_array($twoTankCommands) && ! array_is_list($twoTankCommands) ? $twoTankCommands : [];
-
-        $steps = $this->resolveCommandPlanSteps($execution, $twoTankCommands);
-
-        return [
-            'schema_version' => 1,
-            'plan_version' => 1,
-            'source' => 'automation_logic_profile_upsert',
-            'plans' => [
-                'diagnostics' => [
-                    'execution' => $execution,
-                    'two_tank_commands' => $twoTankCommands,
-                    'steps' => $steps,
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $execution
-     * @param  array<string, mixed>  $twoTankCommands
-     * @return array<int, array<string, mixed>>
-     */
-    protected function resolveCommandPlanSteps(array $execution, array $twoTankCommands): array
-    {
-        $fromTwoTankSteps = data_get($twoTankCommands, 'steps');
-        if (is_array($fromTwoTankSteps) && ! empty($fromTwoTankSteps)) {
-            $normalized = $this->normalizeCommandPlanSteps($fromTwoTankSteps);
-            if (! empty($normalized)) {
-                return $normalized;
-            }
-        }
-
-        $rawExecutionSteps = data_get($execution, 'steps');
-        if (is_array($rawExecutionSteps) && ! empty($rawExecutionSteps)) {
-            $normalized = $this->normalizeCommandPlanSteps($rawExecutionSteps);
-            if (! empty($normalized)) {
-                return $normalized;
-            }
-        }
-
-        return $this->buildFallbackStepsFromTwoTankCommands($twoTankCommands);
-    }
-
-    /**
-     * @param  array<int, mixed>  $rawSteps
-     * @return array<int, array<string, mixed>>
-     */
-    protected function normalizeCommandPlanSteps(array $rawSteps): array
-    {
-        $steps = [];
-
-        foreach ($rawSteps as $index => $rawStep) {
-            if (! is_array($rawStep) || array_is_list($rawStep)) {
-                continue;
-            }
-
-            $channel = trim((string) ($rawStep['channel'] ?? ''));
-            $cmd = trim((string) ($rawStep['cmd'] ?? ''));
-            $params = $rawStep['params'] ?? [];
-            if ($channel === '' || $cmd === '' || ! is_array($params)) {
-                continue;
-            }
-
-            $steps[] = [
-                'name' => isset($rawStep['name']) ? (string) $rawStep['name'] : 'step_'.((int) $index + 1),
-                'channel' => $channel,
-                'cmd' => $cmd,
-                'params' => $params,
-                'timeout_sec' => isset($rawStep['timeout_sec']) ? (int) $rawStep['timeout_sec'] : null,
-                'allow_no_effect' => (bool) ($rawStep['allow_no_effect'] ?? false),
-                'dedupe_bypass' => (bool) ($rawStep['dedupe_bypass'] ?? false),
-            ];
-        }
-
-        return $steps;
-    }
-
-    /**
-     * @param  array<string, mixed>  $twoTankCommands
-     * @return array<int, array<string, mixed>>
-     */
-    protected function buildFallbackStepsFromTwoTankCommands(array $twoTankCommands): array
-    {
-        $steps = [];
-
-        foreach ($twoTankCommands as $planName => $planCommands) {
-            if (! is_string($planName) || ! is_array($planCommands) || ! array_is_list($planCommands)) {
-                continue;
-            }
-
-            foreach ($planCommands as $position => $rawStep) {
-                if (! is_array($rawStep) || array_is_list($rawStep)) {
-                    continue;
-                }
-
-                $channel = trim((string) ($rawStep['channel'] ?? ''));
-                $cmd = trim((string) ($rawStep['cmd'] ?? ''));
-                $params = $rawStep['params'] ?? [];
-                if ($channel === '' || $cmd === '' || ! is_array($params)) {
-                    continue;
-                }
-
-                $steps[] = [
-                    'name' => $planName.'_'.((int) $position + 1),
-                    'channel' => $channel,
-                    'cmd' => $cmd,
-                    'params' => $params,
-                    'allow_no_effect' => (bool) ($rawStep['allow_no_effect'] ?? false),
-                    'dedupe_bypass' => (bool) ($rawStep['dedupe_bypass'] ?? false),
-                ];
-            }
-        }
-
-        return $steps;
     }
 
     /**

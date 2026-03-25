@@ -598,55 +598,49 @@
           <div>
             <h3 class="text-sm font-semibold">Калибровка насосов</h3>
             <p class="text-xs text-[color:var(--text-muted)] mt-1">
-              Укажите расход каждого дозирующего насоса в ml/sec.
+              Используется тот же calibration flow, что и в setup wizard. Сохранённые значения берутся только из backend `pump_calibrations`.
             </p>
           </div>
           <Button
             size="sm"
-            variant="secondary"
-            @click="form.calibrationSkipped = !form.calibrationSkipped"
+            variant="primary"
+            :disabled="!form.zoneId || loadingPumpCalibrationRun || loadingPumpCalibrationSave"
+            @click="openPumpCalibrationModal"
           >
-            {{ form.calibrationSkipped ? "Вернуть калибровку" : "Пропустить шаг" }}
+            Открыть калибровку насосов
           </Button>
         </div>
 
         <div
-          v-if="form.calibrationSkipped"
-          class="p-3 rounded-lg bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] text-sm text-[color:var(--badge-warning-text)]"
-        >
-          Калибровка пропущена. Коррекция EC может работать некорректно.
-        </div>
-
-        <div
-          v-if="isZoneChannelsLoading"
+          v-if="isZoneDevicesLoading"
           class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm text-[color:var(--text-muted)]"
         >
-          Загружаю каналы насосов...
+          Загружаю насосы зоны...
         </div>
 
         <div
-          v-else-if="zoneChannelsError"
+          v-else-if="zoneDevicesError"
           class="p-4 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)] text-sm text-[color:var(--badge-danger-text)] space-y-2"
         >
-          <div>{{ zoneChannelsError }}</div>
+          <div>{{ zoneDevicesError }}</div>
           <Button
             size="sm"
             variant="secondary"
-            @click="fetchZoneChannels(true)"
+            @click="refreshPumpCalibrationData(true)"
           >
             Повторить
           </Button>
         </div>
 
         <div
-          v-else-if="!hasCalibrationChannels"
+          v-else-if="pumpChannels.length === 0"
           class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm text-[color:var(--text-muted)] space-y-2"
         >
-          <div>Насосы не найдены, настройте привязку нод.</div>
+          <div>В зоне не найдены дозирующие насосы для calibration flow.</div>
           <Button
             size="sm"
             variant="secondary"
-            @click="fetchZoneChannels(true)"
+            @click="refreshPumpCalibrationData(true)"
           >
             Обновить список
           </Button>
@@ -654,43 +648,64 @@
 
         <div
           v-else
-          class="space-y-2"
+          class="space-y-3"
         >
           <div
-            v-for="entry in form.calibrations"
-            :key="entry.node_channel_id"
-            class="p-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+            class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-3"
           >
-            <div class="grid grid-cols-1 md:grid-cols-[1fr_160px_130px] gap-3 items-end">
+            <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div class="flex items-center gap-2">
-                  <span class="inline-flex items-center justify-center h-6 px-2 rounded-md bg-[color:var(--bg-surface-strong)] text-xs font-semibold">
-                    {{ getCalibrationComponentLabel(entry.component) }}
-                  </span>
-                  <span class="text-sm font-medium">{{ entry.channel_label }}</span>
+                <div class="text-sm font-medium">
+                  Сохранено {{ calibratedChannels.length }} из {{ mappedPumpComponents.length }} ожидаемых pump calibration.
+                </div>
+                <div class="text-xs text-[color:var(--text-muted)] mt-1">
+                  Launch wizard не записывает `ml/sec` локально. Сначала сохраните калибровки через общую модалку, затем readiness автоматически разрешит запуск.
                 </div>
               </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="loadingPumpCalibrationRun || loadingPumpCalibrationSave"
+                @click="refreshPumpCalibrationData(true)"
+              >
+                Обновить статус
+              </Button>
+            </div>
 
-              <label class="text-sm">
-                <span class="font-medium mb-1 block">ml/sec</span>
-                <input
-                  v-model.number="entry.ml_per_sec"
-                  type="number"
-                  min="0.01"
-                  max="100"
-                  step="0.01"
-                  class="input-field w-full"
-                  :disabled="entry.skip"
-                />
-              </label>
+            <div class="flex flex-wrap gap-2">
+              <span
+                v-for="item in mappedPumpComponents"
+                :key="item.component"
+                class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs"
+                :class="item.calibrated
+                  ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]'
+                  : 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'"
+              >
+                {{ item.label }}: {{ item.calibrated ? 'готово' : 'не сохранено' }}
+              </span>
+            </div>
+          </div>
 
-              <label class="inline-flex items-center gap-2 text-sm h-10">
-                <input
-                  v-model="entry.skip"
-                  type="checkbox"
-                />
-                Пропустить насос
-              </label>
+          <div
+            v-if="missingPumpComponents.length > 0"
+            class="p-3 rounded-lg bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] text-sm text-[color:var(--badge-warning-text)]"
+          >
+            Для correction runtime ещё не сохранены: {{ missingPumpComponents.join(', ') }}.
+          </div>
+
+          <div
+            v-if="calibratedChannels.length > 0"
+            class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+          >
+            <div class="text-xs text-[color:var(--text-dim)] mb-2">Уже сохранено</div>
+            <div class="space-y-1">
+              <div
+                v-for="channel in calibratedChannels"
+                :key="channel.id"
+                class="text-sm text-[color:var(--text-primary)]"
+              >
+                {{ channel.label }}: {{ channel.calibration?.ml_per_sec ?? '-' }} мл/сек
+              </div>
             </div>
           </div>
         </div>
@@ -759,10 +774,7 @@
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
             <div class="text-xs text-[color:var(--text-dim)] mb-1">Калибровка насосов</div>
             <div class="text-sm font-medium">
-              <span v-if="form.calibrationSkipped">Пропущена</span>
-              <span v-else>
-                {{ form.calibrations.filter((entry) => !entry.skip && entry.ml_per_sec > 0).length }} насосов будет сохранено
-              </span>
+              {{ calibratedChannels.length }} сохранено, {{ missingPumpComponents.length }} требуют внимания
             </div>
           </div>
 
@@ -870,10 +882,25 @@
       </div>
     </template>
   </Modal>
+
+  <PumpCalibrationModal
+    v-if="showPumpCalibrationModal"
+    :show="showPumpCalibrationModal"
+    :zone-id="form.zoneId"
+    :devices="zoneDevices"
+    :loading-run="loadingPumpCalibrationRun"
+    :loading-save="loadingPumpCalibrationSave"
+    :save-success-seq="pumpCalibrationSaveSeq"
+    :run-success-seq="pumpCalibrationRunSeq"
+    :last-run-token="pumpCalibrationLastRunToken"
+    @close="closePumpCalibrationModal"
+    @start="startPumpCalibration"
+    @save="savePumpCalibration"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useZones } from "@/composables/useZones";
@@ -881,8 +908,11 @@ import Modal from "@/Components/Modal.vue";
 import Button from "@/Components/Button.vue";
 import ErrorBoundary from "@/Components/ErrorBoundary.vue";
 import ReadinessChecklist from "@/Components/GrowCycle/ReadinessChecklist.vue";
+import PumpCalibrationModal from "@/Components/PumpCalibrationModal.vue";
 import RecipeCreateWizard from "@/Components/RecipeCreateWizard.vue";
+import { usePumpCalibration } from "@/composables/usePumpCalibration";
 import { useGrowthCycleWizard, type GrowthCycleWizardProps, type GrowthCycleWizardEmit } from "@/composables/useGrowthCycleWizard";
+import type { PumpCalibrationComponent, PumpCalibrationRunPayload, PumpCalibrationSavePayload } from "@/types/Calibration";
 
 interface Props extends GrowthCycleWizardProps {
   show: boolean;
@@ -941,18 +971,18 @@ const {
   canSubmit,
   canProceed,
   nextStepBlockedReason,
-  isZoneChannelsLoading,
-  zoneChannelsError,
-  hasCalibrationChannels,
+  zoneDevices,
+  isZoneDevicesLoading,
+  zoneDevicesError,
   zoneReadiness,
   zoneReadinessLoading,
-  getCalibrationComponentLabel,
   formatDateTime,
   formatDate,
   onZoneSelected,
   onRecipeSelected,
   onRecipeCreated,
-  fetchZoneChannels,
+  fetchZoneDevices,
+  loadZoneReadiness,
   nextStep,
   prevStep,
   onSubmit,
@@ -971,4 +1001,141 @@ const automationTabs = [
   { id: 2, label: "Водный узел" },
   { id: 3, label: "Досветка" },
 ] as const;
+
+const showPumpCalibrationModal = ref(false);
+const loadingPumpCalibrationRun = ref(false);
+const loadingPumpCalibrationSave = ref(false);
+const pumpCalibrationSaveSeq = ref(0);
+const pumpCalibrationRunSeq = ref(0);
+const pumpCalibrationLastRunToken = ref<string | null>(null);
+
+const componentLabels: Record<PumpCalibrationComponent, string> = {
+  npk: "NPK",
+  calcium: "Calcium",
+  magnesium: "Magnesium",
+  micro: "Micro",
+  ph_up: "pH Up",
+  ph_down: "pH Down",
+};
+
+const {
+  componentOptions,
+  pumpChannels,
+  calibratedChannels,
+  autoComponentMap,
+  channelById,
+  refreshDbCalibrations,
+} = usePumpCalibration({
+  get show() {
+    return showPumpCalibrationModal.value;
+  },
+  get zoneId() {
+    return form.value.zoneId;
+  },
+  get devices() {
+    return zoneDevices.value;
+  },
+  get saveSuccessSeq() {
+    return pumpCalibrationSaveSeq.value;
+  },
+  get runSuccessSeq() {
+    return pumpCalibrationRunSeq.value;
+  },
+  get lastRunToken() {
+    return pumpCalibrationLastRunToken.value;
+  },
+});
+
+const mappedPumpComponents = computed(() => {
+  return componentOptions
+    .map((option) => {
+      const channelId = autoComponentMap.value[option.value];
+      const channel = channelId ? channelById.value.get(channelId) || null : null;
+      const calibrated = Number(channel?.calibration?.ml_per_sec ?? 0) > 0;
+
+      return {
+        component: option.value,
+        label: componentLabels[option.value],
+        calibrated,
+      };
+    })
+    .filter((item) => Boolean(autoComponentMap.value[item.component]));
+});
+
+const missingPumpComponents = computed(() => {
+  return mappedPumpComponents.value
+    .filter((item) => !item.calibrated)
+    .map((item) => item.label);
+});
+
+async function refreshPumpCalibrationData(force = false): Promise<void> {
+  await fetchZoneDevices(force);
+  await refreshDbCalibrations();
+  if (form.value.zoneId) {
+    await loadZoneReadiness(form.value.zoneId);
+  }
+}
+
+function openPumpCalibrationModal(): void {
+  if (!form.value.zoneId) {
+    showToast("Сначала выберите зону.", "warning");
+    return;
+  }
+
+  showPumpCalibrationModal.value = true;
+}
+
+function closePumpCalibrationModal(): void {
+  showPumpCalibrationModal.value = false;
+}
+
+async function startPumpCalibration(payload: PumpCalibrationRunPayload): Promise<void> {
+  if (!form.value.zoneId) {
+    return;
+  }
+
+  loadingPumpCalibrationRun.value = true;
+  try {
+    const response = await api.post(`/api/zones/${form.value.zoneId}/calibrate-pump`, payload);
+    const runToken = response?.data?.data?.run_token;
+    pumpCalibrationLastRunToken.value = typeof runToken === "string" && runToken !== "" ? runToken : null;
+    pumpCalibrationRunSeq.value += 1;
+    showToast("Запуск калибровки отправлен. После прогона сохраните фактический объём.", "success");
+  } catch {
+    showToast("Не удалось запустить калибровку насоса.", "error");
+  } finally {
+    loadingPumpCalibrationRun.value = false;
+  }
+}
+
+async function savePumpCalibration(payload: PumpCalibrationSavePayload): Promise<void> {
+  if (!form.value.zoneId) {
+    return;
+  }
+
+  loadingPumpCalibrationSave.value = true;
+  try {
+    await api.post(`/api/zones/${form.value.zoneId}/calibrate-pump`, { ...payload, skip_run: true });
+    await refreshPumpCalibrationData(true);
+    pumpCalibrationLastRunToken.value = null;
+    pumpCalibrationSaveSeq.value += 1;
+    showToast("Калибровка насоса сохранена.", "success");
+  } catch {
+    showToast("Не удалось сохранить калибровку насоса.", "error");
+  } finally {
+    loadingPumpCalibrationSave.value = false;
+  }
+}
+
+watch(
+  () => [props.show, currentStep.value, form.value.zoneId],
+  ([isOpen, step, zoneId]) => {
+    if (!isOpen || !zoneId || (step !== 5 && step !== 6)) {
+      return;
+    }
+
+    void refreshPumpCalibrationData(step === 6);
+  },
+  { immediate: true },
+);
 </script>

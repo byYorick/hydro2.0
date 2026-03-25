@@ -6,6 +6,7 @@ export interface ZoneAutomationLogicProfileEntry {
   mode: ZoneAutomationLogicMode
   is_active: boolean
   subsystems: Record<string, unknown>
+  command_plans?: Record<string, unknown>
   updated_at: string | null
   updated_by?: number | null
   created_at?: string | null
@@ -41,10 +42,13 @@ function normalizeEntry(value: unknown, fallbackMode?: ZoneAutomationLogicMode):
     return null
   }
 
+  const commandPlans = asRecord(record.command_plans)
+
   return {
     mode,
     is_active: record.is_active === true,
     subsystems,
+    command_plans: commandPlans ?? undefined,
     updated_at: typeof record.updated_at === 'string' ? record.updated_at : null,
     updated_by: typeof record.updated_by === 'number' ? record.updated_by : null,
     created_at: typeof record.created_at === 'string' ? record.created_at : null,
@@ -125,6 +129,7 @@ export function upsertZoneLogicProfilePayload(
     mode,
     is_active: activate || previousEntry?.is_active === true,
     subsystems,
+    command_plans: previousEntry?.command_plans,
     updated_at: now,
     updated_by: previousEntry?.updated_by ?? null,
     created_at: previousEntry?.created_at ?? now,

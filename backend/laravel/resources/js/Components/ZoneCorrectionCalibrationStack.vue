@@ -138,6 +138,7 @@
         <section class="grid gap-4 xl:grid-cols-2">
           <PidConfigForm
             :zone-id="zoneId"
+            :phase-targets="phaseTargets"
             @saved="handlePidConfigSaved"
           />
           <RelayAutotuneTrigger :zone-id="zoneId" />
@@ -156,16 +157,19 @@ import ProcessCalibrationPanel from '@/Components/ProcessCalibrationPanel.vue'
 import PumpCalibrationsPanel from '@/Components/PumpCalibrationsPanel.vue'
 import RelayAutotuneTrigger from '@/Components/RelayAutotuneTrigger.vue'
 import SensorCalibrationStatus from '@/Components/SensorCalibrationStatus.vue'
+import type { RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import type { PidConfigWithMeta } from '@/types/PidConfig'
 import type { SensorCalibrationSettings } from '@/types/SystemSettings'
 
 const props = withDefaults(defineProps<{
   zoneId: number
   sensorCalibrationSettings: SensorCalibrationSettings
+  phaseTargets?: RecipePhasePidTargets | null
   showRuntimeReadiness?: boolean
   saveSuccessSeq?: number
   runSuccessSeq?: number
 }>(), {
+  phaseTargets: null,
   showRuntimeReadiness: true,
   saveSuccessSeq: 0,
   runSuccessSeq: 0,

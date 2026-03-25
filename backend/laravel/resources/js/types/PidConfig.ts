@@ -49,6 +49,8 @@ export interface PidConfigWithMeta {
   updated_by?: number
 }
 
+export type PidConfigRecord = Record<'ph' | 'ec', PidConfigWithMeta | null>
+
 /**
  * Лог PID вывода (из zone_events PID_OUTPUT / PID_CONFIG_UPDATED).
  */

@@ -222,10 +222,14 @@ class GrowCycleService
      */
     public function syncCycleConfigDocuments(GrowCycle $cycle, array $data = [], ?int $userId = null): void
     {
+        $phaseOverrides = is_array($data['phase_overrides'] ?? null) && ! array_is_list($data['phase_overrides'])
+            ? $data['phase_overrides']
+            : [];
+
         $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
-        if ($firstPhase && is_array($data['phase_overrides'] ?? null)) {
+        if ($firstPhase && $phaseOverrides !== []) {
             $overrides = array_filter(
-                $data['phase_overrides'],
+                $phaseOverrides,
                 static fn ($value): bool => $value !== null
             );
             if ($overrides !== []) {
@@ -257,9 +261,7 @@ class GrowCycleService
                 'recipe_revision_id' => (int) $cycle->recipe_revision_id,
                 'phase' => $phasePayload,
             ],
-            AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES => is_array($data['phase_overrides'] ?? null)
-                ? $data['phase_overrides']
-                : [],
+            AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES => $phaseOverrides,
         ], $userId);
     }
 

@@ -42,20 +42,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (! Schema::hasTable('system_automation_settings')) {
-            return;
-        }
-
-        $defaultNamespaces = array_keys(SystemAutomationSettingsCatalog::allDefaults());
-
-        foreach ($defaultNamespaces as $namespace) {
-            $defaultConfig = json_encode(SystemAutomationSettingsCatalog::defaults($namespace), JSON_THROW_ON_ERROR);
-
-            DB::table('system_automation_settings')
-                ->where('namespace', $namespace)
-                ->whereNull('updated_by')
-                ->where('config', $defaultConfig)
-                ->delete();
-        }
+        // Legacy system_automation_settings is removed by authority cleanup.
+        // Rolling this data-only backfill migration back is intentionally a no-op.
     }
 };

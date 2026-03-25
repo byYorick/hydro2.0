@@ -171,6 +171,35 @@ def test_build_process_calibrations_prefers_first_active_profile_per_mode() -> N
     assert result["generic"]["settle_sec"] == 30
 
 
+def test_build_phase_targets_uses_recipe_phase_without_runtime_overrides() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._build_phase_targets(
+        zone_row={
+            "ph_target": 5.7,
+            "ph_min": 5.5,
+            "ph_max": 5.9,
+            "ec_target": 1.4,
+            "ec_min": 1.2,
+            "ec_max": 1.6,
+            "phase_extensions": {
+                "targets": {
+                    "diagnostics": {
+                        "execution": {
+                            "target_ph": 9.9,
+                            "target_ec": 9.9,
+                        }
+                    }
+                }
+            },
+        }
+    )
+
+    assert result["ph"]["target"] == 5.7
+    assert result["ec"]["target"] == 1.4
+    assert result["diagnostics"]["execution"]["target_ph"] == 9.9
+
+
 def test_build_process_calibrations_normalizes_legacy_mode_aliases() -> None:
     read_model = PgZoneSnapshotReadModel()
 

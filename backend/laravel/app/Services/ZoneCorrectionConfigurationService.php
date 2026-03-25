@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Support\Automation\ZoneCorrectionConfiguration;
+use App\Support\Automation\ZoneCorrectionResolvedConfigBuilder;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -16,6 +17,7 @@ class ZoneCorrectionConfigurationService
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
         private readonly AutomationConfigPresetService $presets,
+        private readonly ZoneCorrectionResolvedConfigBuilder $zoneCorrectionResolvedConfigBuilder,
     ) {
     }
 
@@ -196,35 +198,7 @@ class ZoneCorrectionConfigurationService
         array $baseConfig,
         array $phaseOverrides,
     ): array {
-        [$presetBaseConfig, $presetPhaseConfigs] = $this->splitPresetConfig($preset?->payload);
-        [$baseConfigWithoutPump, $pumpOverride] = $this->splitPumpCalibrationOverride($baseConfig);
-        $resolvedBase = is_array($presetBaseConfig) && ! array_is_list($presetBaseConfig)
-            ? $presetBaseConfig
-            : [];
-        $resolvedBase = ZoneCorrectionConfigCatalog::merge($resolvedBase, $baseConfigWithoutPump);
-        $resolvedPumpCalibration = $this->resolvePumpCalibrationConfig(
-            $this->documents->getSystemPayloadByLegacyNamespace('pump_calibration', true),
-            $pumpOverride,
-        );
-
-        $resolvedByPhase = [];
-        foreach (ZoneCorrectionConfigCatalog::PHASES as $phase) {
-            $presetPhaseConfig = is_array($presetPhaseConfigs[$phase] ?? null) ? $presetPhaseConfigs[$phase] : [];
-            $override = is_array($phaseOverrides[$phase] ?? null) ? $phaseOverrides[$phase] : [];
-            $phaseBase = ZoneCorrectionConfigCatalog::merge($resolvedBase, $presetPhaseConfig);
-            $resolvedByPhase[$phase] = ZoneCorrectionConfigCatalog::merge($phaseBase, $override);
-        }
-
-        return [
-            'base' => $resolvedBase,
-            'pump_calibration' => $resolvedPumpCalibration,
-            'phases' => $resolvedByPhase,
-            'meta' => [
-                'preset_id' => $preset?->id,
-                'preset_slug' => $preset?->slug,
-                'preset_name' => $preset?->name,
-            ],
-        ];
+        return $this->zoneCorrectionResolvedConfigBuilder->build($preset, $baseConfig, $phaseOverrides);
     }
 
     private function hasNonPumpCorrectionData(array $baseConfig, array $phaseOverrides): bool

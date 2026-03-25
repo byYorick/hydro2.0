@@ -536,5 +536,6 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
     moveToNextComponent,
     buildSavePayload,
     formatDateTime,
+    refreshDbCalibrations,
   }
 }

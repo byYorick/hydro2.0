@@ -110,6 +110,13 @@ class AlertLocalizationService
     {
         $rawMessage = $this->stringValue($details, ['message', 'msg', 'reason', 'error_message']);
 
+        if ($code === 'biz_ae3_task_failed') {
+            $translatedTaskFailure = $this->translateByCode($code, $rawMessage, $details);
+            if ($translatedTaskFailure !== null) {
+                return $translatedTaskFailure;
+            }
+        }
+
         if ($rawMessage !== null && $this->looksLocalized($rawMessage)) {
             return $rawMessage;
         }
@@ -140,6 +147,7 @@ class AlertLocalizationService
     private function translateByCode(string $code, ?string $rawMessage, array $details): ?string
     {
         return match ($code) {
+            'biz_ae3_task_failed' => $this->translateAe3TaskFailed($rawMessage, $details),
             'biz_correction_exhausted' => 'Цикл коррекции исчерпал все настроенные попытки.',
             'biz_clean_fill_timeout' => 'Превышено время ожидания заполнения бака чистой водой после всех циклов повтора.',
             'biz_solution_fill_timeout' => 'Превышено время ожидания заполнения бака раствором до завершения этапа.',
@@ -150,11 +158,81 @@ class AlertLocalizationService
             'infra_command_ack_command_not_found' => $rawMessage ?? 'Laravel не нашёл команду при обработке ACK.',
             'biz_zone_correction_config_missing', 'zone_correction_config_missing_critical' => $this->translateCorrectionConfigMissing($rawMessage),
             'biz_zone_pid_config_missing', 'zone_pid_config_missing_critical' => $this->translatePidConfigMissing($rawMessage),
+            'biz_zone_recipe_phase_targets_missing', 'zone_recipe_phase_targets_missing_critical' => $this->translateRecipePhaseTargetsMissing($rawMessage),
             'biz_zone_dosing_calibration_missing', 'zone_dosing_calibration_missing_critical' => $this->translateDosingCalibrationMissing($rawMessage),
             'biz_ph_correction_no_effect', 'biz_ec_correction_no_effect' => $this->translateCorrectionNoEffect($rawMessage, $details),
             'ae3_api_http_5xx' => $this->translateAe3HttpMessage($rawMessage),
             default => null,
         };
+    }
+
+    /**
+     * @param array<string, mixed> $details
+     */
+    private function translateAe3TaskFailed(?string $message, array $details): string
+    {
+        $taskId = $this->scalarValue($details, ['task_id']);
+        $taskType = $this->stringValue($details, ['task_type']);
+        $stage = $this->stringValue($details, ['stage']);
+        $workflowPhase = $this->stringValue($details, ['workflow_phase']);
+        $topology = $this->stringValue($details, ['topology']);
+        $corrStep = $this->stringValue($details, ['corr_step']);
+        $retryCount = $this->integerValue($details, ['stage_retry_count']);
+
+        $reasonCode = $this->alertCatalogService->normalizeCode($details['error_code'] ?? null);
+        $reasonRaw = $this->stringValue($details, ['error_message', 'message', 'reason', 'msg']) ?? $message;
+        $reason = null;
+
+        if ($reasonCode !== '' && $reasonCode !== 'biz_ae3_task_failed') {
+            $reason = $this->translateByCode($reasonCode, $reasonRaw, $details);
+        }
+
+        if ($reason === null && $reasonRaw !== null) {
+            $reason = $this->translateRawMessage($reasonRaw) ?? $reasonRaw;
+        }
+
+        if ($reason === null || trim($reason) === '') {
+            $reason = 'Проверьте логи automation-engine для точной причины ошибки.';
+        }
+
+        $messageParts = ['Задача AE3'];
+        if ($taskId !== null) {
+            $messageParts[] = '#'.$taskId;
+        }
+
+        $headline = implode(' ', $messageParts);
+        if ($taskType !== null) {
+            $headline .= sprintf(' (%s)', $taskType);
+        }
+
+        $context = [];
+        if ($stage !== null) {
+            $context[] = 'этап '.$stage;
+        }
+        if ($workflowPhase !== null && $workflowPhase !== $stage) {
+            $context[] = 'workflow '.$workflowPhase;
+        }
+        if ($topology !== null) {
+            $context[] = 'topology '.$topology;
+        }
+        if ($corrStep !== null) {
+            $context[] = 'corr_step '.$corrStep;
+        }
+        if ($retryCount !== null && $retryCount > 0) {
+            $context[] = 'retry '.$retryCount;
+        }
+
+        $summary = $headline.' завершилась с ошибкой';
+        if ($reasonCode !== '') {
+            $summary .= sprintf(' (код: %s)', $reasonCode);
+        }
+        if ($context !== []) {
+            $summary .= ': '.implode(', ', $context).'.';
+        } else {
+            $summary .= '.';
+        }
+
+        return $summary.' Причина: '.$reason;
     }
 
     private function translateRawMessage(string $message): ?string
@@ -221,6 +299,33 @@ class AlertLocalizationService
             return sprintf(
                 'В зоне %d отсутствует mapping PID authority-конфига; критические параметры коррекции переведены в fail-closed режим.',
                 (int) $matches[1],
+            );
+        }
+
+        return null;
+    }
+
+    private function translateRecipePhaseTargetsMissing(?string $message): ?string
+    {
+        $normalized = trim((string) $message);
+        if ($normalized === '') {
+            return 'В актуальной фазе рецепта отсутствуют обязательные pH/EC target; automation переведена в fail-closed режим.';
+        }
+
+        if (preg_match('/^Zone (\d+) current recipe phase has no target_(ph|ec); automation requires recipe-phase pH\/EC targets and forbids defaults or runtime overrides$/i', $normalized, $matches) === 1) {
+            return sprintf(
+                'В зоне %d в актуальной фазе рецепта отсутствует target_%s; automation переведена в fail-closed режим без defaults и runtime override.',
+                (int) $matches[1],
+                strtolower($matches[2]),
+            );
+        }
+
+        if (preg_match('/^Zone (\d+) current recipe phase target_(ph|ec) is not numeric: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf(
+                'В зоне %d в актуальной фазе рецепта target_%s имеет нечисловое значение: %s.',
+                (int) $matches[1],
+                strtolower($matches[2]),
+                $matches[3],
             );
         }
 
@@ -378,6 +483,55 @@ class AlertLocalizationService
             $normalized = trim($value);
             if ($normalized !== '') {
                 return $normalized;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $details
+     * @param string[] $keys
+     */
+    private function scalarValue(array $details, array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $details)) {
+                continue;
+            }
+
+            $value = $details[$key];
+            if (! is_scalar($value)) {
+                continue;
+            }
+
+            $normalized = trim((string) $value);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $details
+     * @param string[] $keys
+     */
+    private function integerValue(array $details, array $keys): ?int
+    {
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $details)) {
+                continue;
+            }
+
+            $value = $details[$key];
+            if (is_int($value)) {
+                return $value;
+            }
+
+            if (is_string($value) && preg_match('/^-?\d+$/', trim($value)) === 1) {
+                return (int) trim($value);
             }
         }
 

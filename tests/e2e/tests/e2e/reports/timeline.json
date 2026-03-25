@@ -1,160 +1,153 @@
 {
-  "test_suite": "E71_db_flaky",
-  "generated_at": "2026-03-25T07:46:49.512556",
+  "test_suite": "E61_fail_closed_corrections",
+  "generated_at": "2026-03-24T17:02:28.723257",
   "test_cases": [
     {
-      "name": "set_test_uids",
+      "name": "set_test_context",
       "status": "passed",
-      "duration": 1.5735626220703125e-05,
+      "duration": 3.719329833984375e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "set_test_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:33.721569"
+      "timestamp": "2026-03-24T17:02:28.268428"
     },
     {
-      "name": "fetch_node_id",
+      "name": "capture_scenario_window",
       "status": "passed",
-      "duration": 0.0013012886047363281,
+      "duration": 0.0015039443969726562,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_node_id",
+          "name": "capture_scenario_window",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:33.722909"
+      "timestamp": "2026-03-24T17:02:28.269968"
     },
     {
-      "name": "get_zones",
+      "name": "load_zone_context",
       "status": "passed",
-      "duration": 0.17372870445251465,
+      "duration": 0.005254983901977539,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "load_zone_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:33.896673"
+      "timestamp": "2026-03-24T17:02:28.275309"
     },
     {
-      "name": "set_zone_id",
+      "name": "set_zone_context",
       "status": "passed",
-      "duration": 3.5762786865234375e-06,
+      "duration": 1.0967254638671875e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "set_zone_context",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:33.896716"
+      "timestamp": "2026-03-24T17:02:28.275433"
     },
     {
-      "name": "pause_postgres",
+      "name": "resolve_irrig_node",
       "status": "passed",
-      "duration": 0.2045423984527588,
+      "duration": 0.006546974182128906,
       "error_message": null,
       "steps": [
         {
-          "name": "pause_postgres",
+          "name": "resolve_irrig_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:34.101283"
+      "timestamp": "2026-03-24T17:02:28.282037"
     },
     {
-      "name": "wait_during_pause",
+      "name": "attach_irrig_node_to_zone",
       "status": "passed",
-      "duration": 5.005127906799316,
+      "duration": 0.0029065608978271484,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_during_pause",
+          "name": "attach_irrig_node_to_zone",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:39.106439"
+      "timestamp": "2026-03-24T17:02:28.285059"
     },
     {
-      "name": "publish_error_during_db_pause",
+      "name": "resolve_ph_node",
       "status": "passed",
-      "duration": 0.00022363662719726562,
+      "duration": 0.0012865066528320312,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_error_during_db_pause",
+          "name": "resolve_ph_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:39.106759"
+      "timestamp": "2026-03-24T17:02:28.286469"
     },
     {
-      "name": "unpause_postgres",
+      "name": "attach_ph_node_to_zone",
       "status": "passed",
-      "duration": 0.2052626609802246,
+      "duration": 0.0013630390167236328,
       "error_message": null,
       "steps": [
         {
-          "name": "unpause_postgres",
+          "name": "attach_ph_node_to_zone",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-03-25T07:46:39.312049"
+      "timestamp": "2026-03-24T17:02:28.287940"
     },
     {
-      "name": "wait_after_recovery",
-      "status": "passed",
-      "duration": 10.009365797042847,
-      "error_message": null,
+      "name": "resolve_ec_node",
+      "status": "failed",
+      "duration": 0.001190185546875,
+      "error_message": "Expected 1 rows from database_query, got 0",
       "steps": [
         {
-          "name": "wait_after_recovery",
-          "status": "passed"
+          "name": "resolve_ec_node",
+          "status": "failed",
+          "error": "Expected 1 rows from database_query, got 0"
         }
       ],
-      "timestamp": "2026-03-25T07:46:49.321451"
+      "timestamp": "2026-03-24T17:02:28.289427"
     },
     {
-      "name": "system_still_responding",
-      "status": "passed",
-      "duration": 0.0014300346374511719,
-      "error_message": null,
+      "name": "reset_zero_level_telemetry_ready",
+      "status": "failed",
+      "duration": 0.0001232624053955078,
+      "error_message": "Assertion condition is false: int(context.get('zero_levels_row', [{}])[0].get('zero_levels', 0)) == 4",
       "steps": [
         {
-          "name": "system_still_responding",
-          "status": "passed"
+          "name": "reset_zero_level_telemetry_ready",
+          "status": "failed",
+          "error": "Assertion condition is false: int(context.get('zero_levels_row', [{}])[0].get('zero_levels', 0)) == 4"
         }
       ],
-      "timestamp": "2026-03-25T07:46:49.322913"
-    },
-    {
-      "name": "data_queued_and_processed",
-      "status": "passed",
-      "duration": 0.0026047229766845703,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "data_queued_and_processed",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-03-25T07:46:49.325532"
+      "timestamp": "2026-03-24T17:02:28.289642"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E71_db_flaky": {
+    "E61_fail_closed_corrections": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "node_id": 1
+        "zone_id": 105,
+        "zone_uid": "zn-test-1",
+        "node_id": 4,
+        "node_uid": "nd-ph-esp32una",
+        "scheduler_trace_id": "ae3-realhw-trace-1774360948000",
+        "greenhouse_id": 105
       }
     }
   }

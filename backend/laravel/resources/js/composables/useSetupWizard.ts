@@ -530,14 +530,18 @@ export function useSetupWizard() {
       : []
   })
 
+  const launchReadinessSatisfied = computed(() => {
+    if (zoneLaunchReady.value) {
+      return true
+    }
+
+    return automationAppliedAt.value !== null
+      && zoneLaunchReadinessErrors.value.length === 0
+  })
+
   const canLaunch = computed(() => {
-    return stepGreenhouseDone.value
-      && stepGreenhouseClimateDone.value
-      && stepZoneDone.value
-      && stepPlantDone.value
-      && stepRecipeDone.value
-      && stepZoneAutomationDone.value
-      && zoneLaunchReady.value
+    return stepZoneDone.value
+      && launchReadinessSatisfied.value
       && !selectedZoneHasActiveCycle.value
   })
 
@@ -555,12 +559,9 @@ export function useSetupWizard() {
   const progressPercent = computed(() => Math.min(100, Math.round((completedSteps.value / 6) * 100)))
 
   const launchChecklist = computed(() => [
-    { id: 'greenhouse', label: 'Теплица', done: stepGreenhouseDone.value },
-    { id: 'greenhouse-climate', label: 'Климат теплицы', done: stepGreenhouseClimateDone.value },
-    { id: 'zone', label: 'Зона', done: stepZoneDone.value },
-    { id: 'plant', label: 'Культура и рецепт', done: stepPlantDone.value && stepRecipeDone.value },
-    { id: 'zone-automation', label: 'Автоматика зоны', done: stepZoneAutomationDone.value },
-    { id: 'zone-calibration', label: 'Калибровка', done: stepZoneCalibrationReady.value },
+    { id: 'zone', label: 'Зона выбрана', done: stepZoneDone.value },
+    { id: 'runtime', label: 'Correction runtime готов', done: zoneLaunchReady.value },
+    { id: 'cycle', label: 'Нет активного цикла', done: stepZoneDone.value && !selectedZoneHasActiveCycle.value },
   ])
 
   const stepItems = computed(() => [
@@ -986,7 +987,22 @@ export function useSetupWizard() {
     if (selectedZoneId.value && selectedZoneId.value !== previousZoneId) {
       zoneMode.value = 'select'
       resetZoneAutomationAssignments()
+      await refreshAvailableNodes()
+      syncZoneAssignmentsFromAvailableNodes({ preserveManualSelections: false })
+      await refreshZoneLaunchReadiness(selectedZoneId.value)
     }
+  }
+
+  async function selectZoneAndRefresh(): Promise<void> {
+    await dataFlows.selectZone()
+
+    if (!selectedZoneId.value) {
+      return
+    }
+
+    await refreshAvailableNodes()
+    syncZoneAssignmentsFromAvailableNodes({ preserveManualSelections: false })
+    await refreshZoneLaunchReadiness(selectedZoneId.value)
   }
 
   watch(
@@ -1175,7 +1191,7 @@ export function useSetupWizard() {
     createGreenhouse: createGreenhouseAndSelectMode,
     selectGreenhouse: dataFlows.selectGreenhouse,
     createZone: createZoneAndSelectMode,
-    selectZone: dataFlows.selectZone,
+    selectZone: selectZoneAndRefresh,
     createPlant: dataFlows.createPlant,
     selectPlant: dataFlows.selectPlant,
     createRecipe: recipeAutomationFlows.createRecipe,

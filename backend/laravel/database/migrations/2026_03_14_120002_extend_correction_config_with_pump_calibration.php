@@ -44,16 +44,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement(
-            "UPDATE zone_correction_configs
-             SET resolved_config = resolved_config - 'pump_calibration'
-             WHERE jsonb_exists(resolved_config, 'pump_calibration')"
-        );
-
-        DB::statement(
-            "UPDATE zone_correction_config_versions
-             SET resolved_config = resolved_config - 'pump_calibration'
-             WHERE jsonb_exists(resolved_config, 'pump_calibration')"
-        );
+        // Legacy correction config tables are removed by authority cleanup.
+        // Rolling this data back is intentionally a no-op.
     }
 };

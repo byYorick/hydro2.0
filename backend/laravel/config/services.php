@@ -62,7 +62,7 @@ return [
             'AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN',
             env('SCHEDULER_API_TOKEN', env('PY_INGEST_TOKEN', env('PY_API_TOKEN')))
         ),
-        'grow_cycle_start_dispatch_enabled' => env('AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED', false),
+        'grow_cycle_start_dispatch_enabled' => env('AUTOMATION_GROW_CYCLE_START_DISPATCH_ENABLED', true),
         'scheduler_due_grace_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_DUE_GRACE_SEC', 15),
         'scheduler_expires_after_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_EXPIRES_AFTER_SEC', 600),
         'scheduler_hard_stale_after_sec' => env('AUTOMATION_LARAVEL_SCHEDULER_HARD_STALE_AFTER_SEC', 1200),

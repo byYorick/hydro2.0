@@ -803,12 +803,6 @@ class ZoneReadinessService
             return false;
         }
 
-        $config = is_array($channel->config) ? $channel->config : [];
-        $legacyMlPerSec = data_get($config, 'pump_calibration.ml_per_sec');
-        if (is_numeric($legacyMlPerSec) && (float) $legacyMlPerSec > 0) {
-            return true;
-        }
-
         if (! DB::getSchemaBuilder()->hasTable('pump_calibrations')) {
             return false;
         }

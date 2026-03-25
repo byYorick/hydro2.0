@@ -7,12 +7,14 @@ use App\Models\AutomationConfigViolation;
 use App\Models\AutomationEffectiveBundle;
 use App\Models\GrowCycle;
 use App\Models\Zone;
+use App\Support\Automation\ZoneCorrectionResolvedConfigBuilder;
 use Illuminate\Support\Facades\DB;
 
 class AutomationConfigCompiler
 {
     public function __construct(
         private readonly AutomationConfigRegistry $registry,
+        private readonly ZoneCorrectionResolvedConfigBuilder $zoneCorrectionResolvedConfigBuilder,
     ) {
     }
 
@@ -98,10 +100,10 @@ class AutomationConfigCompiler
                 'correction' => $this->zoneCorrectionPayload($zoneId),
                 'pid' => [
                     'ph' => [
-                        'config' => $this->payload(AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH, AutomationConfigRegistry::SCOPE_ZONE, $zoneId),
+                        'config' => $this->zonePidPayload(AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH, $zoneId),
                     ],
                     'ec' => [
-                        'config' => $this->payload(AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC, AutomationConfigRegistry::SCOPE_ZONE, $zoneId),
+                        'config' => $this->zonePidPayload(AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC, $zoneId),
                     ],
                 ],
                 'process_calibration' => [
@@ -145,22 +147,17 @@ class AutomationConfigCompiler
      */
     public function resolveCorrectionConfig(array $baseConfig, array $phaseOverrides): array
     {
-        $resolvedBase = ZoneCorrectionConfigCatalog::merge(ZoneCorrectionConfigCatalog::defaults(), $baseConfig);
-        $phases = [];
-
-        foreach (ZoneCorrectionConfigCatalog::PHASES as $phase) {
-            $phasePayload = is_array($phaseOverrides[$phase] ?? null) ? $phaseOverrides[$phase] : [];
-            $phases[$phase] = ZoneCorrectionConfigCatalog::merge($resolvedBase, $phasePayload);
-        }
-
-        $resolved = [
-            'base' => $resolvedBase,
-            'phases' => $phases,
-            'meta' => [
-                'version' => 1,
-                'phase_overrides' => $phaseOverrides,
-            ],
-        ];
+        $resolved = $this->zoneCorrectionResolvedConfigBuilder->build(
+            preset: null,
+            baseConfig: $baseConfig,
+            phaseOverrides: $phaseOverrides,
+        );
+        $meta = is_array($resolved['meta'] ?? null) && ! array_is_list($resolved['meta'])
+            ? $resolved['meta']
+            : [];
+        $meta['version'] = 1;
+        $meta['phase_overrides'] = $phaseOverrides;
+        $resolved['meta'] = $meta;
 
         ZoneCorrectionConfigCatalog::validateResolvedConfig($resolved);
 
@@ -339,6 +336,28 @@ class AutomationConfigCompiler
         return is_array($payload) && ! array_is_list($payload)
             ? $payload
             : app(AutomationConfigDocumentService::class)->getPayload($namespace, $scopeType, $scopeId, true);
+    }
+
+    /**
+     * Bootstrap-materialized zone PID defaults are not a valid runtime source of truth.
+     *
+     * @return array<string, mixed>
+     */
+    private function zonePidPayload(string $namespace, int $zoneId): array
+    {
+        $document = AutomationConfigDocument::query()
+            ->where('namespace', $namespace)
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zoneId)
+            ->first();
+
+        if ($document === null || $document->source === 'bootstrap') {
+            return [];
+        }
+
+        $payload = $document->payload;
+
+        return is_array($payload) && ! array_is_list($payload) ? $payload : [];
     }
 
     /**

@@ -140,6 +140,14 @@ function installAuthorityMocks() {
             mode: 'setup',
             is_active: true,
             subsystems: {},
+            command_plans: {
+              schema_version: 1,
+              plans: {
+                diagnostics: {
+                  steps: [{ channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: true } }],
+                },
+              },
+            },
             updated_at: '2026-03-24T10:00:00Z',
           },
         },
@@ -152,25 +160,6 @@ function installAuthorityMocks() {
   updateDocumentMock.mockImplementation(async (_scopeType: string, scopeId: number, namespace: string, payload: Record<string, unknown>) =>
     authorityDocument(namespace, payload, 'zone', scopeId)
   )
-}
-
-function nodeResponseWithPump(nodeChannelId = 101) {
-  return {
-    data: {
-      status: 'ok',
-      data: [{
-        id: 12,
-        uid: 'mix-node-1',
-        channels: [{
-          id: nodeChannelId,
-          node_channel_id: nodeChannelId,
-          type: 'ACTUATOR',
-          channel: 'ph_down_pump',
-          actuator_type: 'ph_acid_pump',
-        }],
-      }],
-    },
-  }
 }
 
 function mountWizardHarness(options?: {
@@ -314,21 +303,20 @@ describe('useGrowthCycleWizard', () => {
     expect(showToast.mock.calls[0][0]).toContain('форточек')
   })
 
-  it('не даёт пройти шаг калибровки без загруженных насосов и явного skip', () => {
+  it('не блокирует шаг калибровки локальными legacy-данными', () => {
     installAuthorityMocks()
     const { wizard } = mountWizardHarness()
 
     wizard.currentStep.value = 5
 
-    expect(wizard.canProceed.value).toBe(false)
-    expect(wizard.nextStepBlockedReason.value).toContain('Загрузите список насосов')
+    expect(wizard.canProceed.value).toBe(true)
+    expect(wizard.nextStepBlockedReason.value).toBe('')
   })
 
-  it('не восстанавливает draft сразу на confirm и сбрасывает скрытый skip', async () => {
+  it('не восстанавливает draft сразу на submit-шаг', async () => {
     installAuthorityMocks()
     localStorage.setItem('growthCycleWizardDraft:zone-1', JSON.stringify({
       currentStep: 6,
-      calibrationSkipped: true,
       startedAt: '2026-03-14T10:00',
       climateForm: { enabled: true },
       waterForm: { systemType: 'drip' },
@@ -348,11 +336,10 @@ describe('useGrowthCycleWizard', () => {
     await flushPromises()
     await nextTick()
 
-    expect(wizard.currentStep.value).toBe(4)
-    expect(wizard.form.value.calibrationSkipped).toBe(false)
+    expect(wizard.currentStep.value).toBe(5)
   })
 
-  it('перед submit пытается загрузить насосы и не стартует цикл без калибровок', async () => {
+  it('не запускает цикл, если readiness сообщает об отсутствующих pump calibration', async () => {
     installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
 
@@ -362,15 +349,42 @@ describe('useGrowthCycleWizard', () => {
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
 
-    vi.mocked(api.get).mockResolvedValueOnce({ data: { status: 'ok', data: [] } })
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/api/zones/7/health') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              readiness: {
+                ready: false,
+                errors: ['Required pump calibrations are missing: ec_npk_pump'],
+              },
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
 
     await wizard.onSubmit()
 
-    expect(api.get).toHaveBeenCalledWith('/api/nodes?zone_id=7')
-    expect(api.post).not.toHaveBeenCalled()
-    expect(wizard.currentStep.value).toBe(5)
-    expect(showToast).toHaveBeenCalledTimes(1)
-    expect(showToast.mock.calls[0][0]).toContain('Заполните калибровки насосов')
+    expect(api.post).not.toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.anything())
+    expect(api.post).not.toHaveBeenCalledWith('/api/zones/7/calibrate-pump', expect.anything())
+    expect(wizard.error.value).toContain('Required pump calibrations are missing')
+    expect(showToast).toHaveBeenCalledWith(
+      'Required pump calibrations are missing: ec_npk_pump',
+      'error',
+      expect.any(Number),
+    )
   })
 
   it('не запускает цикл, если readiness сообщает о несохранённых PID-конфигах', async () => {
@@ -380,7 +394,6 @@ describe('useGrowthCycleWizard', () => {
     wizard.currentStep.value = 6
     wizard.form.value.zoneId = 7
     wizard.form.value.startedAt = '2026-03-14T10:00'
-    wizard.form.value.calibrationSkipped = true
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
 
@@ -422,7 +435,7 @@ describe('useGrowthCycleWizard', () => {
     )
   })
 
-  it('сохраняет automation profile и калибровки до старта цикла', async () => {
+  it('сохраняет automation profile и запускает цикл без legacy pump calibration submit-а', async () => {
     installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
     const callOrder: string[] = []
@@ -440,10 +453,6 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
-      }
-
-      if (url === '/api/nodes?zone_id=7') {
-        return Promise.resolve(nodeResponseWithPump(101))
       }
 
       if (url === '/api/zones/7/health') {
@@ -469,11 +478,6 @@ describe('useGrowthCycleWizard', () => {
       return authorityDocument(namespace, payload, 'zone', scopeId)
     })
     vi.mocked(api.post).mockImplementation((url: string) => {
-      if (url.includes('/calibrate-pump')) {
-        callOrder.push('pump-calibration')
-        return Promise.resolve({ data: { status: 'ok' } })
-      }
-
       if (url === '/api/zones/7/grow-cycles') {
         callOrder.push('grow-cycle')
         return Promise.resolve({ data: { status: 'ok', data: { id: 77 } } })
@@ -484,29 +488,21 @@ describe('useGrowthCycleWizard', () => {
 
     wizard.currentStep.value = 6
     await flushPromises()
-    wizard.form.value.calibrations = wizard.form.value.calibrations.map((entry) => ({
-      ...entry,
-      ml_per_sec: 1.2,
-    }))
 
     await wizard.onSubmit()
 
     const automationIndex = callOrder.indexOf('automation-profile')
-    const calibrationIndex = callOrder.indexOf('pump-calibration')
     const finalReadinessIndex = callOrder.lastIndexOf('readiness')
     const growCycleIndex = callOrder.indexOf('grow-cycle')
 
     expect(automationIndex).toBeGreaterThanOrEqual(0)
-    expect(calibrationIndex).toBeGreaterThan(automationIndex)
-    expect(finalReadinessIndex).toBeGreaterThan(calibrationIndex)
+    expect(finalReadinessIndex).toBeGreaterThan(automationIndex)
     expect(growCycleIndex).toBeGreaterThan(finalReadinessIndex)
     expect(updateDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.logic_profile', expect.any(Object))
-    const calibrationCall = vi.mocked(api.post).mock.calls.find(([url]) => typeof url === 'string' && url.includes('/calibrate-pump'))
-    expect(calibrationCall?.[1]).toEqual(expect.objectContaining({
-      node_channel_id: 101,
-      manual_override: true,
-      skip_run: true,
-    }))
+    const automationPayload = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 7 && namespace === 'zone.logic_profile')?.[3]
+    expect(automationPayload?.profiles?.setup?.command_plans?.schema_version).toBe(1)
+    expect(automationPayload?.profiles?.setup?.command_plans?.plans?.diagnostics?.steps).toHaveLength(1)
+    expect(api.post).not.toHaveBeenCalledWith(expect.stringContaining('/calibrate-pump'), expect.anything())
     expect(api.post).toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.objectContaining({
       start_immediately: true,
       recipe_revision_id: 3,
@@ -519,9 +515,9 @@ describe('useGrowthCycleWizard', () => {
     )
   })
 
-  it('не стартует цикл, если сохранение калибровок завершилось ошибкой', async () => {
+  it('на submit не делает запросов к legacy calibrate-pump endpoint', async () => {
     installAuthorityMocks()
-    const { wizard, api, showToast } = mountWizardHarness()
+    const { wizard, api } = mountWizardHarness()
 
     wizard.form.value.zoneId = 7
     await nextTick()
@@ -536,10 +532,6 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
-      }
-
-      if (url === '/api/nodes?zone_id=7') {
-        return Promise.resolve(nodeResponseWithPump(101))
       }
 
       if (url === '/api/zones/7/health') {
@@ -560,10 +552,6 @@ describe('useGrowthCycleWizard', () => {
     })
 
     vi.mocked(api.post).mockImplementation((url: string) => {
-      if (url.includes('/calibrate-pump')) {
-        return Promise.reject(new Error('save calibration failed'))
-      }
-
       if (url === '/api/zones/7/grow-cycles') {
         return Promise.resolve({ data: { status: 'ok', data: { id: 77 } } })
       }
@@ -573,20 +561,11 @@ describe('useGrowthCycleWizard', () => {
 
     wizard.currentStep.value = 6
     await flushPromises()
-    wizard.form.value.calibrations = wizard.form.value.calibrations.map((entry) => ({
-      ...entry,
-      ml_per_sec: 1.2,
-    }))
 
     await wizard.onSubmit()
 
-    expect(api.post).not.toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.anything())
-    expect(wizard.error.value).toContain('Не удалось сохранить калибровки насосов')
-    expect(showToast).toHaveBeenCalledWith(
-      expect.stringContaining('Не удалось сохранить калибровки насосов'),
-      'error',
-      expect.any(Number),
-    )
+    expect(api.post).not.toHaveBeenCalledWith(expect.stringContaining('/calibrate-pump'), expect.anything())
+    expect(api.post).toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.any(Object))
   })
 
   it('загружает все страницы рецептов для визарда', async () => {

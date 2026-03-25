@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Alert;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
@@ -103,6 +104,50 @@ class ZoneShowEventsFormattingTest extends TestCase
                     ->where(
                         'events.0.message',
                         'В зоне 1 в correction_config.base отсутствуют обязательные поля: runtime, timing, dosing, retry, tolerance, controllers, safety; критические параметры коррекции переведены в fail-closed режим.'
+                    );
+            });
+    }
+
+    public function test_zone_show_exposes_expanded_ae3_task_failed_alert_message(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'Ошибка задачи автоматики',
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'error',
+            'details' => [
+                'task_id' => 314,
+                'task_type' => 'cycle_start',
+                'stage' => 'tank_recirc',
+                'workflow_phase' => 'ready',
+                'topology' => 'two_tank',
+                'stage_retry_count' => 2,
+                'error_code' => 'ae3_task_execution_timeout',
+                'error_message' => 'Task execution exceeded runtime timeout',
+                'message' => 'Task execution exceeded runtime timeout',
+            ],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get("/zones/{$zone->id}")
+            ->assertStatus(200)
+            ->assertInertia(function (AssertableInertia $page): void {
+                $page->component('Zones/Show')
+                    ->has('alerts', 1)
+                    ->where('alerts.0.title', 'Ошибка задачи автоматики')
+                    ->where(
+                        'alerts.0.message',
+                        'Задача AE3 #314 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 2. Причина: Выполнение задачи превысило допустимый runtime timeout.'
                     );
             });
     }

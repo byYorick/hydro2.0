@@ -6,6 +6,7 @@ import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
 import type {
   PidConfig,
+  PidConfigRecord,
   PidConfigWithMeta,
   PidLog,
   PumpCalibration,
@@ -29,14 +30,18 @@ export function usePidConfig(showToast?: ToastHandler) {
   /**
    * Получить PID конфиг для зоны и типа
    */
-  async function getPidConfig(zoneId: number, type: 'ph' | 'ec'): Promise<PidConfigWithMeta> {
+  async function getPidConfig(zoneId: number, type: 'ph' | 'ec'): Promise<PidConfigWithMeta | null> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: { payload: PidConfig } }>(
+      const response = await api.get<{ status: string; data: { payload: PidConfig } | null }>(
         `/automation-configs/zone/${zoneId}/${PID_NAMESPACE_MAP[type]}`
       )
+
+      if (!response.data.data || typeof response.data.data !== 'object') {
+        return null
+      }
 
       return {
         id: null,
@@ -59,7 +64,7 @@ export function usePidConfig(showToast?: ToastHandler) {
   /**
    * Получить все PID конфиги для зоны
    */
-  async function getAllPidConfigs(zoneId: number): Promise<Record<'ph' | 'ec', PidConfigWithMeta>> {
+  async function getAllPidConfigs(zoneId: number): Promise<PidConfigRecord> {
     loading.value = true
     error.value = null
 

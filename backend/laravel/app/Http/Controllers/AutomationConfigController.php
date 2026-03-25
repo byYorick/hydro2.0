@@ -33,7 +33,19 @@ class AutomationConfigController extends Controller
         try {
             $this->assertScopeMatchesNamespace($scopeType, $namespace);
             $this->authorizeScopeAccess($request, $scopeType, $scopeId, $namespace, false);
-            $document = $this->documents->getDocument($namespace, $scopeType, $scopeId, true);
+            $document = $this->documents->getDocument(
+                $namespace,
+                $scopeType,
+                $scopeId,
+                ! $this->isZonePidNamespace($namespace)
+            );
+
+            if ($this->isZonePidNamespace($namespace) && ($document === null || $document->source === 'bootstrap')) {
+                return response()->json([
+                    'status' => 'ok',
+                    'data' => null,
+                ]);
+            }
 
             return response()->json([
                 'status' => 'ok',
@@ -273,6 +285,14 @@ class AutomationConfigController extends Controller
         if ($this->registry->scopeType($namespace) !== $scopeType) {
             throw new \InvalidArgumentException("Namespace {$namespace} must be addressed in scope {$this->registry->scopeType($namespace)}.");
         }
+    }
+
+    private function isZonePidNamespace(string $namespace): bool
+    {
+        return in_array($namespace, [
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+        ], true);
     }
 
     /**

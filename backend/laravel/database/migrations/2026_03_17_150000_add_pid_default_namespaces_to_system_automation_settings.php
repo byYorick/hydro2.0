@@ -30,12 +30,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (! Schema::hasTable('system_automation_settings')) {
-            return;
-        }
-
-        DB::table('system_automation_settings')
-            ->whereIn('namespace', ['pid_defaults_ph', 'pid_defaults_ec'])
-            ->delete();
+        // Legacy system_automation_settings is removed by authority cleanup.
+        // Rolling this data-only migration back is intentionally a no-op.
     }
 };

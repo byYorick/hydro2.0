@@ -37,6 +37,9 @@ class ZoneCorrectionConfigurationServiceTest extends TestCase
         $this->assertSame([], $config->phaseOverrides);
         $this->assertSame('irrig', data_get($config->resolvedConfig, 'base.runtime.required_node_type'));
         $this->assertSame('cross_coupled_pi_d', data_get($config->resolvedConfig, 'base.controllers.ph.mode'));
+        $this->assertSame(50, data_get($config->resolvedConfig, 'pump_calibration.min_dose_ms'));
+        $this->assertSame(0.01, data_get($config->resolvedConfig, 'pump_calibration.ml_per_sec_min'));
+        $this->assertSame(20, data_get($config->resolvedConfig, 'pump_calibration.ml_per_sec_max'));
 
         $this->assertDatabaseHas('automation_config_documents', [
             'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
@@ -80,6 +83,7 @@ class ZoneCorrectionConfigurationServiceTest extends TestCase
         $this->assertSame('cross_coupled_pi_d', data_get($config->baseConfig, 'controllers.ph.mode'));
         $this->assertSame([], $config->phaseOverrides);
         $this->assertSame('irrig', data_get($config->resolvedConfig, 'base.runtime.required_node_type'));
+        $this->assertSame(50, data_get($config->resolvedConfig, 'pump_calibration.min_dose_ms'));
 
         $this->assertDatabaseHas('automation_config_versions', [
             'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
@@ -107,6 +111,7 @@ class ZoneCorrectionConfigurationServiceTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(1, data_get($bundle->config, 'zone.correction.resolved_config.meta.version'));
+        $this->assertSame(50, data_get($bundle->config, 'zone.correction.resolved_config.pump_calibration.min_dose_ms'));
 
         $current = $this->service->getOrCreateForZone($zone->id);
         $nextBaseConfig = $current->baseConfig;

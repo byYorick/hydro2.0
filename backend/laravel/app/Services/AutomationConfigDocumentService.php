@@ -4,14 +4,16 @@ namespace App\Services;
 
 use App\Models\AutomationConfigDocument;
 use App\Models\AutomationConfigVersion;
-use App\Models\GrowCycle;
-use App\Models\Zone;
+use App\Support\Automation\ZoneCorrectionResolvedConfigBuilder;
+use App\Support\Automation\ZoneLogicProfileNormalizer;
 use Illuminate\Support\Facades\DB;
 
 class AutomationConfigDocumentService
 {
     public function __construct(
         private readonly AutomationConfigRegistry $registry,
+        private readonly ZoneLogicProfileNormalizer $logicProfileNormalizer,
+        private readonly ZoneCorrectionResolvedConfigBuilder $zoneCorrectionResolvedConfigBuilder,
     ) {
     }
 
@@ -215,18 +217,15 @@ class AutomationConfigDocumentService
      */
     private function normalizeZoneCorrectionPayload(array $payload): array
     {
-        $baseConfig = is_array($payload['base_config'] ?? null) && ! array_is_list($payload['base_config'])
-            ? $payload['base_config']
-            : ZoneCorrectionConfigCatalog::defaults();
-        $phaseOverrides = is_array($payload['phase_overrides'] ?? null) && ! array_is_list($payload['phase_overrides'])
-            ? $payload['phase_overrides']
-            : [];
-
         return [
             'preset_id' => isset($payload['preset_id']) ? (int) $payload['preset_id'] : null,
-            'base_config' => $baseConfig,
-            'phase_overrides' => $phaseOverrides,
-            'resolved_config' => app(AutomationConfigCompiler::class)->resolveCorrectionConfig($baseConfig, $phaseOverrides),
+            'base_config' => is_array($payload['base_config'] ?? null) && ! array_is_list($payload['base_config'])
+                ? $payload['base_config']
+                : ZoneCorrectionConfigCatalog::defaults(),
+            'phase_overrides' => is_array($payload['phase_overrides'] ?? null) && ! array_is_list($payload['phase_overrides'])
+                ? $payload['phase_overrides']
+                : [],
+            'resolved_config' => $this->zoneCorrectionResolvedConfigBuilder->buildFromPayload($payload),
             'last_applied_at' => $payload['last_applied_at'] ?? null,
             'last_applied_version' => isset($payload['last_applied_version']) ? (int) $payload['last_applied_version'] : null,
         ];
@@ -240,13 +239,27 @@ class AutomationConfigDocumentService
         $profiles = is_array($payload['profiles'] ?? null) && ! array_is_list($payload['profiles'])
             ? $payload['profiles']
             : [];
+        $normalizedProfiles = [];
+
+        foreach ($profiles as $mode => $profile) {
+            if (! is_string($mode) || ! is_array($profile) || array_is_list($profile)) {
+                continue;
+            }
+
+            $normalizedProfiles[$mode] = $this->logicProfileNormalizer->normalizeProfile(
+                $mode,
+                $profile,
+                'automation_logic_profile_document_normalized'
+            );
+        }
+
         $activeMode = isset($payload['active_mode']) && is_string($payload['active_mode'])
             ? $payload['active_mode']
             : null;
 
         return [
             'active_mode' => $activeMode,
-            'profiles' => $profiles,
+            'profiles' => $normalizedProfiles,
         ];
     }
 

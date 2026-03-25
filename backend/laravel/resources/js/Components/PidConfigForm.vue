@@ -63,9 +63,17 @@
             Оба PID-конфига сохранены в authority-документах зоны.
           </template>
           <template v-else>
-            Системные defaults подставляются только для редактирования. Для запуска цикла нужно явно сохранить и `pH`, и `EC`.
+            Для запуска цикла нужно явно сохранить и `pH`, и `EC` с target из актуальной recipe phase.
           </template>
         </div>
+      </div>
+
+      <div
+        v-if="!phaseTargetAvailable"
+        class="rounded-md border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3 text-xs text-[color:var(--badge-danger-text)]"
+        data-testid="pid-config-phase-target-missing"
+      >
+        В актуальной recipe phase отсутствует `{{ selectedType.toUpperCase() }}` target. PID-конфиг сохранить нельзя, automation должна перейти в fail-closed.
       </div>
 
       <form
@@ -78,7 +86,7 @@
               Целевое значение (target)
             </label>
             <input
-              v-model.number="form.target"
+              :value="phaseTargetDisplay"
               type="number"
               data-testid="pid-config-input-target"
               :step="selectedType === 'ph' ? 0.01 : 0.01"
@@ -86,10 +94,16 @@
               :max="selectedType === 'ph' ? 9 : 10"
               class="input-field w-full"
               :title="fieldHelp('target')"
-              required
+              :placeholder="selectedType === 'ph' ? 'target pH не задан в recipe phase' : 'target EC не задан в recipe phase'"
+              readonly
             />
             <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              {{ selectedType === 'ph' ? 'Диапазон: 4.0-9.0' : 'Диапазон: 0.0-10.0' }}
+              <template v-if="phaseTargetAvailable">
+                {{ phaseTargetSourceHint }}
+              </template>
+              <template v-else>
+                Runtime не будет подставлять defaults или manual override вместо отсутствующего recipe phase target.
+              </template>
             </p>
           </div>
 
@@ -330,7 +344,7 @@
             type="submit"
             size="sm"
             data-testid="pid-config-save"
-            :disabled="loading"
+            :disabled="loading || !phaseTargetAvailable"
           >
             {{ loading ? 'Сохранение...' : (needsConfirmation && !confirmed ? 'Подтвердить и сохранить' : 'Сохранить') }}
           </Button>
@@ -342,7 +356,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { resolveRecipePhasePidTargets, type RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { usePidConfig } from '@/composables/usePidConfig'
+import { useApi } from '@/composables/useApi'
 import { logger } from '@/utils/logger'
 import Card from './Card.vue'
 import Button from './Button.vue'
@@ -350,9 +366,12 @@ import type { PidConfig, PidConfigWithMeta } from '@/types/PidConfig'
 
 interface Props {
   zoneId: number
+  phaseTargets?: RecipePhasePidTargets | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  phaseTargets: null,
+})
 
 const FIELD_HELP: Record<string, string> = {
   target: 'Целевое значение PID-контура. Для pH это рабочая кислотность раствора, для EC - целевая электропроводность.',
@@ -409,10 +428,12 @@ const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
 
 const selectedType = ref<'ph' | 'ec'>('ph')
 const confirmed = ref(false)
+const resolvedPhaseTargets = ref<RecipePhasePidTargets | null>(props.phaseTargets)
 const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({
   ph: false,
   ec: false,
 })
+const { api } = useApi()
 const { getPidConfig, getAllPidConfigs, updatePidConfig, loading } = usePidConfig()
 
 const form = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
@@ -423,6 +444,15 @@ const pidSaveStatuses = computed(() => [
 ])
 
 const allPidConfigsSaved = computed(() => pidSaveStatuses.value.every((item) => item.saved))
+const phaseTarget = computed(() => resolvedPhaseTargets.value?.[selectedType.value] ?? null)
+const phaseTargetAvailable = computed(() => typeof phaseTarget.value === 'number' && Number.isFinite(phaseTarget.value))
+const phaseTargetDisplay = computed(() => phaseTargetAvailable.value ? String(phaseTarget.value) : '')
+const phaseTargetSourceHint = computed(() => {
+  const phaseLabel = resolvedPhaseTargets.value?.phaseLabel
+  const base = phaseLabel ? `Target подтянут из recipe phase «${phaseLabel}».` : 'Target подтянут из актуальной recipe phase.'
+
+  return `${base} Ручное редактирование target запрещено.`
+})
 
 const intervalMinutes = computed({
   get: () => Number(form.value.min_interval_ms || 0) / 60000,
@@ -442,6 +472,12 @@ const needsConfirmation = computed(() => {
 
 function cloneConfig(config: PidConfig): PidConfig {
   return JSON.parse(JSON.stringify(config)) as PidConfig
+}
+
+function applyPhaseTargetToForm(): void {
+  if (phaseTargetAvailable.value) {
+    form.value.target = Number(phaseTarget.value)
+  }
 }
 
 function toNumberOr(value: unknown, fallback: number): number {
@@ -480,13 +516,15 @@ function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' 
 async function loadConfig() {
   try {
     const config = await getPidConfig(props.zoneId, selectedType.value)
-    const source = config.config || DEFAULT_CONFIGS[selectedType.value]
+    const source = config?.config ?? DEFAULT_CONFIGS[selectedType.value]
     form.value = normalizeConfig(source, selectedType.value)
-    pidConfigSavedState.value[selectedType.value] = config.is_default !== true
+    applyPhaseTargetToForm()
+    pidConfigSavedState.value[selectedType.value] = Boolean(config) && config.is_default !== true
     confirmed.value = false
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID config:', error)
     form.value = cloneConfig(DEFAULT_CONFIGS[selectedType.value])
+    applyPhaseTargetToForm()
   }
 }
 
@@ -494,22 +532,73 @@ async function loadStatuses(): Promise<void> {
   try {
     const configs = await getAllPidConfigs(props.zoneId)
     pidConfigSavedState.value = {
-      ph: configs.ph?.is_default !== true,
-      ec: configs.ec?.is_default !== true,
+      ph: Boolean(configs.ph) && configs.ph?.is_default !== true,
+      ec: Boolean(configs.ec) && configs.ec?.is_default !== true,
     }
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID status map:', error)
   }
 }
 
+function extractCurrentPhase(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+
+  const payload = raw as Record<string, unknown>
+  const activeGrowCycle = (
+    payload.activeGrowCycle && typeof payload.activeGrowCycle === 'object' && !Array.isArray(payload.activeGrowCycle)
+      ? payload.activeGrowCycle
+      : (payload.active_grow_cycle && typeof payload.active_grow_cycle === 'object' && !Array.isArray(payload.active_grow_cycle)
+        ? payload.active_grow_cycle
+        : null)
+  ) as Record<string, unknown> | null
+
+  if (!activeGrowCycle) {
+    return null
+  }
+
+  return activeGrowCycle.currentPhase ?? activeGrowCycle.current_phase ?? null
+}
+
+async function hydratePhaseTargets(): Promise<void> {
+  if (props.phaseTargets) {
+    resolvedPhaseTargets.value = props.phaseTargets
+    applyPhaseTargetToForm()
+    return
+  }
+
+  try {
+    const response = await api.get<{ status: string; data?: unknown }>(`/zones/${props.zoneId}`)
+    resolvedPhaseTargets.value = resolveRecipePhasePidTargets(extractCurrentPhase(response.data.data))
+    applyPhaseTargetToForm()
+  } catch (error) {
+    logger.error('[PidConfigForm] Failed to load current recipe phase targets:', error)
+    resolvedPhaseTargets.value = null
+  }
+}
+
 async function onSubmit() {
+  if (!phaseTargetAvailable.value) {
+    logger.warn('[PidConfigForm] Refusing to save PID config without recipe phase target', {
+      zoneId: props.zoneId,
+      pidType: selectedType.value,
+    })
+    return
+  }
+
   if (needsConfirmation.value && !confirmed.value) {
     confirmed.value = true
     return
   }
 
   try {
-    const saved = await updatePidConfig(props.zoneId, selectedType.value, form.value)
+    const saved = await updatePidConfig(props.zoneId, selectedType.value, {
+      ...form.value,
+      target: Number(phaseTarget.value),
+    })
+    form.value = normalizeConfig(saved.config, selectedType.value)
+    applyPhaseTargetToForm()
     pidConfigSavedState.value[selectedType.value] = true
     await loadStatuses()
     emit('saved', saved)
@@ -528,6 +617,18 @@ watch(selectedType, () => {
 })
 
 watch(
+  () => props.phaseTargets,
+  (targets) => {
+    resolvedPhaseTargets.value = targets
+    applyPhaseTargetToForm()
+  }
+)
+
+watch(phaseTarget, () => {
+  applyPhaseTargetToForm()
+})
+
+watch(
   form,
   () => {
     if (confirmed.value) {
@@ -538,6 +639,7 @@ watch(
 )
 
 onMounted(() => {
+  void hydratePhaseTargets()
   void loadStatuses()
   void loadConfig()
 })

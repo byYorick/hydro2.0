@@ -154,6 +154,14 @@ class _PlannerMissingPidConfigCritical:
         )
 
 
+class _PlannerMissingRecipePhaseTargetsCritical:
+    def build(self, *, task, snapshot):
+        raise PlannerConfigurationError(
+            "Zone 99 current recipe phase has no target_ec; automation requires recipe-phase pH/EC targets and forbids defaults or runtime overrides",
+            code="zone_recipe_phase_targets_missing_critical",
+        )
+
+
 class _GatewayOk:
     async def run_batch(self, *, task, commands, now, **kwargs):
         return {"success": True, "task": task}
@@ -502,6 +510,33 @@ async def test_execute_task_missing_pid_config_emits_blocking_alert_and_shutdown
         command.payload.get("params", {}).get("state") is False
         for command in gateway.calls[0]["commands"]
     )
+
+
+@pytest.mark.asyncio
+async def test_execute_task_missing_recipe_phase_targets_emits_critical_alert_and_shutdown() -> None:
+    task = _make_task(stage="startup", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerMissingRecipePhaseTargetsCritical(),
+        command_gateway=gateway,
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "zone_recipe_phase_targets_missing_critical"
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_zone_recipe_phase_targets_missing"
+    assert alerts.calls[0]["severity"] == "critical"
+    assert alerts.calls[0]["details"]["error_code"] == "zone_recipe_phase_targets_missing_critical"
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
 
 
 @pytest.mark.asyncio

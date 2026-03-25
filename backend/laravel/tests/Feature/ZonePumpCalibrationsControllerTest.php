@@ -37,7 +37,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             'type' => 'actuator',
             'metric' => 'PUMP',
             'unit' => '',
-            'config' => ['pump_calibration' => ['component' => 'ph_down']],
+            'config' => [],
         ]);
 
         $infraId = DB::table('infrastructure_instances')->insertGetId([
@@ -61,7 +61,7 @@ class ZonePumpCalibrationsControllerTest extends TestCase
 
         $documents = app(AutomationConfigDocumentService::class);
         $config = $documents->getSystemPayloadByLegacyNamespace('pump_calibration', true);
-        $config['ml_per_sec_max'] = 2.0;
+        $config['ml_per_sec_max'] = 5.2;
         $documents->upsertDocument(
             AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
             AutomationConfigRegistry::SCOPE_SYSTEM,
@@ -72,11 +72,61 @@ class ZonePumpCalibrationsControllerTest extends TestCase
         );
 
         $this->putJson("/api/zones/{$zone->id}/pump-calibrations/{$channel->id}", [
-            'ml_per_sec' => 3.0,
+            'ml_per_sec' => 6.0,
         ])->assertStatus(422);
 
         $this->putJson("/api/zones/{$zone->id}/pump-calibrations/{$channel->id}", [
-            'ml_per_sec' => 1.5,
+            'ml_per_sec' => 5.0,
         ])->assertOk();
+
+        $this->assertDatabaseHas('pump_calibrations', [
+            'node_channel_id' => $channel->id,
+            'component' => 'ph_down',
+            'ml_per_sec' => 5.0,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_index_returns_component_from_binding_role_without_legacy_channel_config(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => '',
+            'config' => [],
+        ]);
+
+        $infraId = DB::table('infrastructure_instances')->insertGetId([
+            'owner_type' => 'zone',
+            'owner_id' => $zone->id,
+            'asset_type' => 'PUMP',
+            'label' => 'EC NPK Pump',
+            'required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('channel_bindings')->insert([
+            'infrastructure_instance_id' => $infraId,
+            'node_channel_id' => $channel->id,
+            'direction' => 'actuator',
+            'role' => 'ec_npk_pump',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/pump-calibrations");
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.node_channel_id', $channel->id)
+            ->assertJsonPath('data.0.role', 'ec_npk_pump')
+            ->assertJsonPath('data.0.component', 'npk');
     }
 }

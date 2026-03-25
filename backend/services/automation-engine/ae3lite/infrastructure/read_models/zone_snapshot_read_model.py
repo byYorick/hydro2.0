@@ -234,6 +234,7 @@ class PgZoneSnapshotReadModel:
             raise SnapshotBuildError(f"Zone {zone_id} has empty command_plans")
 
         normalized_overrides = self._normalize_override_rows(override_rows)
+        phase_targets = self._build_phase_targets(zone_row=zone_row)
         targets = self._build_targets(
             zone_row=zone_row,
             override_rows=normalized_overrides,
@@ -278,6 +279,7 @@ class PgZoneSnapshotReadModel:
             workflow_phase=str(zone_row.get("workflow_phase") or "idle").strip().lower() or "idle",
             workflow_version=int(zone_row.get("workflow_version") or 0),
             targets=targets,
+            phase_targets=phase_targets,
             diagnostics_execution=diagnostics_execution,
             command_plans=command_plans,
             telemetry_last=telemetry_last,
@@ -400,14 +402,7 @@ class PgZoneSnapshotReadModel:
         override_rows: List[Mapping[str, Any]],
         profile_row: Mapping[str, Any],
     ) -> Dict[str, Any]:
-        targets = build_base_targets(dict(zone_row))
-
-        phase_extensions = zone_row.get("phase_extensions")
-        if isinstance(phase_extensions, Mapping):
-            phase_extension_targets = phase_extensions.get("targets")
-            if isinstance(phase_extension_targets, Mapping):
-                targets = merge_recursive(targets, dict(phase_extension_targets))
-
+        targets = self._build_phase_targets(zone_row=zone_row)
         targets = self._apply_overrides(payload=targets, override_rows=override_rows)
         targets = merge_runtime_profile(
             targets,
@@ -418,6 +413,21 @@ class PgZoneSnapshotReadModel:
             },
         )
         targets = self._merge_diagnostics_runtime_targets(targets=targets, profile_row=profile_row)
+        return clean_null_values(targets)
+
+    def _build_phase_targets(
+        self,
+        *,
+        zone_row: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        targets = build_base_targets(dict(zone_row))
+
+        phase_extensions = zone_row.get("phase_extensions")
+        if isinstance(phase_extensions, Mapping):
+            phase_extension_targets = phase_extensions.get("targets")
+            if isinstance(phase_extension_targets, Mapping):
+                targets = merge_recursive(targets, dict(phase_extension_targets))
+
         return clean_null_values(targets)
 
     def _merge_diagnostics_runtime_targets(

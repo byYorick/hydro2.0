@@ -303,11 +303,13 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       return
     }
 
-    await ensureRecipeForPlant(false)
-
-    if (!selectedZone.value?.id || !selectedRecipe.value?.id) {
-      showToast('Не найден рецепт для выбранной культуры. Создайте культуру или рецепт.', 'warning', TOAST_TIMEOUT.NORMAL)
+    if (!selectedZone.value?.id) {
+      showToast('Сначала выберите зону.', 'warning', TOAST_TIMEOUT.NORMAL)
       return
+    }
+
+    if (selectedPlantId.value) {
+      await ensureRecipeForPlant(false)
     }
 
     loading.stepLaunch = true
@@ -324,8 +326,8 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
         return
       }
 
-      const recipeRevisionId = selectedRecipe.value.latest_published_revision_id
-        ?? selectedRecipe.value.latest_draft_revision_id
+      const recipeRevisionId = selectedRecipe.value?.latest_published_revision_id
+        ?? selectedRecipe.value?.latest_draft_revision_id
         ?? null
       const now = new Date()
       const offsetMs = now.getTimezoneOffset() * 60_000
@@ -333,9 +335,12 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       const queryParams = new URLSearchParams({
         start_cycle: '1',
         source: 'setup_wizard',
-        recipe_id: String(selectedRecipe.value.id),
         started_at: startedAt,
       })
+
+      if (selectedRecipe.value?.id) {
+        queryParams.set('recipe_id', String(selectedRecipe.value.id))
+      }
 
       if (selectedPlantId.value) {
         queryParams.set('plant_id', String(selectedPlantId.value))

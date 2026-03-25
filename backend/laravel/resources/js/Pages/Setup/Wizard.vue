@@ -461,6 +461,7 @@
           <ZoneCorrectionCalibrationStack
             :zone-id="selectedZone.id"
             :sensor-calibration-settings="sensorCalibrationSettings"
+            :phase-targets="selectedRecipePhaseTargets"
             :show-runtime-readiness="false"
             :save-success-seq="pumpCalibrationSaveSeq"
             :run-success-seq="pumpCalibrationRunSeq"
@@ -587,6 +588,7 @@ import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrati
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useApi } from '@/composables/useApi'
+import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { useToast } from '@/composables/useToast'
@@ -682,6 +684,24 @@ const committedLightingForm = ref<LightingFormState>(cloneLightingForm(automatio
 const committedZoneClimateForm = ref<ZoneClimateFormState>(cloneZoneClimateForm(zoneClimateForm))
 const wizardReadinessRefreshToken = computed(
   () => `${pumpCalibrationSaveSeq.value}:${pumpCalibrationRunSeq.value}:${zoneCorrectionAuthoritySeq.value}`
+)
+const selectedRecipePhaseTargets = computed(() => {
+  const phases = Array.isArray(selectedRecipe.value?.phases) ? [...selectedRecipe.value.phases] : []
+  const firstPhase = phases.sort((left, right) => (left.phase_index ?? 0) - (right.phase_index ?? 0))[0] ?? null
+
+  return resolveRecipePhasePidTargets(firstPhase)
+})
+
+watch(
+  () => [selectedZone.value?.id ?? null, wizardReadinessRefreshToken.value] as const,
+  async ([zoneId]) => {
+    if (!zoneId) {
+      return
+    }
+
+    await refreshZoneLaunchReadiness(zoneId)
+  },
+  { immediate: true }
 )
 
 const pumpCalibrationDevices = computed<Device[]>(() => {

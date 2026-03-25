@@ -204,6 +204,10 @@ def _snapshot(
             "correction": correction,
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8},
+            "ec": {"target": 2.2},
+        },
         pid_configs=_minimal_pid_configs(),
         process_calibrations=process_calibrations if process_calibrations is not None else default_process_calibrations,
         correction_config=effective_correction_config,
@@ -230,6 +234,10 @@ def test_resolve_target_bound_handles_zero_value() -> None:
             "correction": {},
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8, "min": 0.0},
+            "ec": {"target": 2.2, "min": 0.0},
+        },
         pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "tank_recirc": {
@@ -243,6 +251,31 @@ def test_resolve_target_bound_handles_zero_value() -> None:
     # 0.0 is a valid bound and must be preserved (not replaced by fallback=target)
     assert runtime["target_ec_min"] == 0.0
     assert runtime["target_ph_min"] == 0.0
+
+
+def test_resolve_two_tank_runtime_uses_recipe_phase_targets_instead_of_execution_targets() -> None:
+    snap = _snapshot(correction={})
+    snap.phase_targets = {
+        "ph": {"target": 6.4},
+        "ec": {"target": 1.1},
+    }
+
+    runtime = resolve_two_tank_runtime(snap)
+
+    assert runtime["target_ph"] == 6.4
+    assert runtime["target_ec"] == 1.1
+
+
+def test_resolve_two_tank_runtime_raises_when_recipe_phase_target_missing() -> None:
+    snap = _snapshot(correction={})
+    snap.phase_targets = {
+        "ph": {"target": 5.8},
+    }
+
+    with pytest.raises(PlannerConfigurationError) as exc_info:
+        resolve_two_tank_runtime(snap)
+
+    assert getattr(exc_info.value, "code", "") == "zone_recipe_phase_targets_missing_critical"
 
 
 def test_resolve_two_tank_runtime_uses_split_retry_contract() -> None:
@@ -326,6 +359,10 @@ def test_resolve_two_tank_runtime_accepts_timeout_equal_to_observe_window_plus_s
             "correction": {},
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8},
+            "ec": {"target": 2.2},
+        },
         pid_configs=_minimal_pid_configs(),
         correction_config=_with_legacy_runtime_overrides(
             correction_config={},
@@ -358,6 +395,10 @@ def test_resolve_two_tank_runtime_raises_when_timeout_less_than_observe_window_p
             "correction": {},
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8},
+            "ec": {"target": 2.2},
+        },
         pid_configs=_minimal_pid_configs(),
         correction_config=_with_legacy_runtime_overrides(
             correction_config={},
@@ -431,6 +472,10 @@ def test_resolve_two_tank_runtime_raises_when_zone_correction_config_missing() -
             "correction": {},
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8},
+            "ec": {"target": 2.2},
+        },
         pid_configs=_minimal_pid_configs(),
         correction_config=None,
     )
@@ -516,6 +561,10 @@ def test_resolve_two_tank_runtime_raises_when_pid_authority_documents_missing() 
             "correction": {},
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8},
+            "ec": {"target": 2.2},
+        },
         pid_configs={},
         process_calibrations={
             "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},
@@ -548,6 +597,10 @@ def test_resolve_two_tank_runtime_raises_when_zone_correction_field_missing() ->
             "correction": {},
         },
         targets={},
+        phase_targets={
+            "ph": {"target": 5.8},
+            "ec": {"target": 2.2},
+        },
         pid_configs=_minimal_pid_configs(),
         process_calibrations={
             "solution_fill": {"transport_delay_sec": 10, "settle_sec": 10},

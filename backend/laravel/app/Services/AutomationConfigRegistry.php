@@ -305,7 +305,7 @@ class AutomationConfigRegistry
             'scope_type' => self::SCOPE_ZONE,
             'schema_version' => 1,
             'default_payload' => SystemAutomationSettingsCatalog::defaults($type === 'ph' ? 'pid_defaults_ph' : 'pid_defaults_ec'),
-            'required' => true,
+            'required' => false,
         ];
     }
 

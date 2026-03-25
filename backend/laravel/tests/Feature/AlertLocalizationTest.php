@@ -77,4 +77,45 @@ class AlertLocalizationTest extends TestCase
             ->assertJsonPath('data.data.0.title', 'Узел офлайн')
             ->assertJsonPath('data.data.0.message', 'Узел офлайн');
     }
+
+    public function test_alerts_api_returns_expanded_message_for_ae3_task_failed(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'Ошибка задачи автоматики',
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'error',
+            'details' => [
+                'task_id' => 77,
+                'task_type' => 'cycle_start',
+                'stage' => 'tank_recirc',
+                'workflow_phase' => 'ready',
+                'topology' => 'two_tank',
+                'stage_retry_count' => 1,
+                'error_code' => 'ae3_task_execution_timeout',
+                'error_message' => 'Task execution exceeded runtime timeout',
+                'message' => 'Task execution exceeded runtime timeout',
+            ],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath('data.data.0.code', 'biz_ae3_task_failed')
+            ->assertJsonPath('data.data.0.title', 'Ошибка задачи автоматики')
+            ->assertJsonPath(
+                'data.data.0.message',
+                'Задача AE3 #77 (cycle_start) завершилась с ошибкой (код: ae3_task_execution_timeout): этап tank_recirc, workflow ready, topology two_tank, retry 1. Причина: Выполнение задачи превысило допустимый runtime timeout.'
+            );
+    }
 }

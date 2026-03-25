@@ -6,30 +6,13 @@ use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Services\AutomationConfigDocumentService;
+use App\Support\PumpCalibrationCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ZonePumpCalibrationsController extends Controller
 {
-    private const DOSING_ROLES = [
-        'ph_acid_pump',
-        'ph_base_pump',
-        'ec_npk_pump',
-        'ec_calcium_pump',
-        'ec_magnesium_pump',
-        'ec_micro_pump',
-    ];
-
-    private const ROLE_COMPONENT_MAP = [
-        'ph_acid_pump' => 'ph_down',
-        'ph_base_pump' => 'ph_up',
-        'ec_npk_pump' => 'npk',
-        'ec_calcium_pump' => 'calcium',
-        'ec_magnesium_pump' => 'magnesium',
-        'ec_micro_pump' => 'micro',
-    ];
-
     public function index(Request $request, Zone $zone): JsonResponse
     {
         $this->authorizeZoneAccess($request, $zone);
@@ -75,15 +58,15 @@ class ZonePumpCalibrationsController extends Controller
             ->where('ii.owner_type', 'zone')
             ->where('ii.owner_id', $zone->id)
             ->where('cb.direction', 'actuator')
-            ->whereIn('cb.role', self::DOSING_ROLES)
+            ->whereIn('cb.role', PumpCalibrationCatalog::dosingRoles())
             ->selectRaw(
                 "nc.id AS node_channel_id,
                  cb.role,
                  n.uid AS node_uid,
                  nc.channel,
-                 COALESCE(pc.component, nc.config->'pump_calibration'->>'component', 'unknown') AS component,
                  COALESCE(nc.config->>'label', nc.channel) AS channel_label,
                  pc.ml_per_sec,
+                 pc.component AS calibration_component,
                  pc.k_ms_per_ml_l,
                  pc.source,
                  pc.valid_from,
@@ -101,7 +84,7 @@ class ZonePumpCalibrationsController extends Controller
             return [
                 'node_channel_id' => (int) $row->node_channel_id,
                 'role' => (string) $row->role,
-                'component' => (string) ($row->component ?? 'unknown'),
+                'component' => (string) ($row->calibration_component ?: PumpCalibrationCatalog::componentForRole($row->role) ?: 'unknown'),
                 'channel_label' => (string) ($row->channel_label ?? $row->channel),
                 'node_uid' => (string) $row->node_uid,
                 'channel' => (string) $row->channel,
@@ -138,7 +121,7 @@ class ZonePumpCalibrationsController extends Controller
             ->where('ii.owner_type', 'zone')
             ->where('ii.owner_id', $zone->id)
             ->where('cb.direction', 'actuator')
-            ->whereIn('cb.role', self::DOSING_ROLES)
+            ->whereIn('cb.role', PumpCalibrationCatalog::dosingRoles())
             ->where('cb.node_channel_id', $channelId)
             ->select('cb.role')
             ->first();
@@ -151,12 +134,7 @@ class ZonePumpCalibrationsController extends Controller
         }
 
         $role = (string) $binding->role;
-        $component = DB::table('node_channels')
-            ->where('id', $channelId)
-            ->value(DB::raw("config->'pump_calibration'->>'component'"));
-        if (! is_string($component) || trim($component) === '') {
-            $component = self::ROLE_COMPONENT_MAP[$role] ?? 'unknown';
-        }
+        $component = PumpCalibrationCatalog::componentForRole($role) ?? 'unknown';
 
         $now = now();
 

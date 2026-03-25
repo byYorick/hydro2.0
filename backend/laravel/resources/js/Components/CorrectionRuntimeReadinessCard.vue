@@ -217,7 +217,7 @@ import {
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useApi } from '@/composables/useApi'
 import { usePidConfig } from '@/composables/usePidConfig'
-import type { PidConfigWithMeta, PumpCalibration } from '@/types/PidConfig'
+import type { PidConfigRecord, PumpCalibration } from '@/types/PidConfig'
 import type { ProcessCalibrationMode, ZoneProcessCalibration } from '@/types/ProcessCalibration'
 
 interface ApiResponse<T> {
@@ -292,7 +292,7 @@ const { getAllPidConfigs, getPumpCalibrations } = usePidConfig()
 const loading = ref(true)
 const processCalibrations = ref<ZoneProcessCalibration[]>([])
 const pumpCalibrations = ref<PumpCalibration[]>([])
-const pidConfigs = ref<Record<'ph' | 'ec', PidConfigWithMeta> | null>(null)
+const pidConfigs = ref<PidConfigRecord | null>(null)
 const runtimeEvents = ref<RuntimeIssueItem[]>([])
 
 const phaseLabels: Record<Exclude<ProcessCalibrationMode, 'generic'>, string> = {
@@ -392,7 +392,7 @@ const pidConfigStatuses = computed<PidConfigStatusItem[]>(() => {
       ready,
       message: ready
         ? 'Зонный PID-конфиг сохранён в authority-документе и будет использован automation-engine.'
-        : 'Сейчас доступен только системный default для редактирования. Откройте PID-форму и явно сохраните конфиг зоны.',
+        : 'Зонный PID-конфиг ещё не сохранён. Откройте PID-форму и сохраните конфиг с target из текущей recipe phase.',
     }
   })
 })

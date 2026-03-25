@@ -114,6 +114,7 @@
         <ZoneCorrectionCalibrationStack
           :zone-id="Number(zoneId)"
           :sensor-calibration-settings="sensorCalibrationSettings"
+          :phase-targets="currentRecipePhaseTargets"
           :save-success-seq="props.pumpCalibrationSaveSeq ?? 0"
           :run-success-seq="props.pumpCalibrationRunSeq ?? 0"
           @open-pump-calibration="emit('open-pump-calibration')"
@@ -268,6 +269,7 @@ import Button from '@/Components/Button.vue'
 import ZoneAutomationEditWizard from '@/Pages/Zones/Tabs/ZoneAutomationEditWizard.vue'
 import { useAutomationCommandTemplates } from '@/composables/useAutomationCommandTemplates'
 import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
+import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
 import { buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
 import type {
@@ -480,6 +482,7 @@ function formatAutomationEngineSettingValue(item: AutomationEngineSettingItem): 
 }
 
 const props = defineProps<ZoneAutomationTabProps>()
+const currentRecipePhaseTargets = computed(() => resolveRecipePhasePidTargets(props.currentRecipePhase ?? null))
 const emit = defineEmits<{
   (e: 'open-pump-calibration'): void
 }>()

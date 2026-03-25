@@ -14,6 +14,7 @@ use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
+use App\Support\PumpCalibrationCatalog;
 use App\Services\ZoneEventMessageFormatter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -1066,7 +1067,20 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ->where('zone_id', $zoneIdInt)
                 ->with([
                     'zone:id,name',
-                    'channels:id,node_id,channel,type,metric,unit,config,last_seen_at,is_active',
+                    'channels' => function ($query) {
+                        $query->select([
+                            'id',
+                            'node_id',
+                            'channel',
+                            'type',
+                            'metric',
+                            'unit',
+                            'config',
+                            'last_seen_at',
+                            'is_active',
+                            DB::raw("(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role"),
+                        ]);
+                    },
                 ])
                 ->get();
 
@@ -1115,9 +1129,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             $devices = $devices->map(function (\App\Models\DeviceNode $device) use ($calibrationByChannelId) {
                     $channels = $device->channels->map(function (\App\Models\NodeChannel $channel) use ($calibrationByChannelId) {
                         $config = is_array($channel->config) ? $channel->config : [];
-                        $legacyPumpCalibration = isset($config['pump_calibration']) && is_array($config['pump_calibration'])
-                            ? $config['pump_calibration']
-                            : null;
 
                         $calibrationRow = $calibrationByChannelId->get($channel->id);
                         $pumpCalibration = null;
@@ -1139,10 +1150,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                                 'calibrated_at' => optional($calibrationRow->valid_from)->toIso8601String()
                                     ?? (is_string($calibrationRow->valid_from) ? $calibrationRow->valid_from : null),
                             ];
-                        } elseif ($legacyPumpCalibration) {
-                            // Backward-compatible fallback на период миграции данных.
-                            $pumpCalibration = $legacyPumpCalibration;
-                            $pumpCalibration['source'] = $pumpCalibration['source'] ?? 'legacy_config_fallback';
                         }
 
                         return [
@@ -1153,6 +1160,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                             'metric' => $channel->metric,
                             'unit' => $channel->unit,
                             'pump_calibration' => $pumpCalibration,
+                            'pump_component' => PumpCalibrationCatalog::componentForRole($channel->binding_role),
+                            'binding_role' => $channel->binding_role,
                             'last_seen_at' => $channel->last_seen_at?->toIso8601String(),
                             'is_active' => (bool) ($channel->is_active ?? true),
                         ];
@@ -1615,7 +1624,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'name' => ['required', 'string', 'max:255'],
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
                 'password' => ['required', 'string', 'min:8'],
-                'role' => ['required', 'string', 'in:admin,operator,viewer'],
+                'role' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Models\User::availableRoles())],
             ]);
 
             $user = \App\Models\User::create([
@@ -1638,7 +1647,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'name' => ['required', 'string', 'max:255'],
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,'.$id],
                 'password' => ['nullable', 'string', 'min:8'],
-                'role' => ['required', 'string', 'in:admin,operator,viewer'],
+                'role' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Models\User::availableRoles())],
             ]);
 
             $user->name = $data['name'];

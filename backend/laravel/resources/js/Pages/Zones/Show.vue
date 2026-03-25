@@ -64,6 +64,7 @@
         :targets="targets"
         :telemetry="telemetry"
         :active-grow-cycle="activeGrowCycle"
+        :current-recipe-phase="activeGrowCycle?.currentPhase ?? null"
         :pump-calibration-save-seq="pumpCalibrationSaveSeq"
         :pump-calibration-run-seq="pumpCalibrationRunSeq"
         @open-pump-calibration="openPumpCalibrationModal"

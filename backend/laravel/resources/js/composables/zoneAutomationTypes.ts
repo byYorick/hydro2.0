@@ -107,6 +107,7 @@ export interface ZoneAutomationTabProps {
   targets: ZoneTargetsType | PredictionTargets
   telemetry?: ZoneTelemetry | null
   activeGrowCycle?: { status?: string | null } | null
+  currentRecipePhase?: unknown | null
   pumpCalibrationSaveSeq?: number
   pumpCalibrationRunSeq?: number
 }

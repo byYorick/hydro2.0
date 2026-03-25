@@ -22,53 +22,7 @@ import {
 import { resolveRecipePhaseSystemType } from "@/composables/recipeSystemType";
 import { buildGrowthCycleConfigPayload } from "@/composables/zoneAutomationProfilePayload";
 import type { ClimateFormState, LightingFormState, WaterFormState } from "@/composables/zoneAutomationTypes";
-import type { PumpCalibrationComponent } from "@/types/Calibration";
-import type { DeviceChannel } from "@/types/Device";
-
-const PUMP_ACTUATOR_TYPES = [
-  "ph_acid_pump",
-  "ph_base_pump",
-  "ec_npk_pump",
-  "ec_calcium_pump",
-  "ec_magnesium_pump",
-  "ec_micro_pump",
-] as const;
-
-const ACTUATOR_ALIAS_MAP: Record<string, typeof PUMP_ACTUATOR_TYPES[number]> = {
-  ph_down: "ph_acid_pump",
-  ph_up: "ph_base_pump",
-};
-
-const ACTUATOR_COMPONENT_MAP: Record<string, PumpCalibrationComponent> = {
-  ph_acid_pump: "ph_down",
-  ph_base_pump: "ph_up",
-  ec_npk_pump: "npk",
-  ec_calcium_pump: "calcium",
-  ec_magnesium_pump: "magnesium",
-  ec_micro_pump: "micro",
-};
-
-const PUMP_COMPONENT_TO_ACTUATOR_MAP: Record<string, typeof PUMP_ACTUATOR_TYPES[number]> = {
-  ph_down: "ph_acid_pump",
-  acid: "ph_acid_pump",
-  ph_up: "ph_base_pump",
-  base: "ph_base_pump",
-  npk: "ec_npk_pump",
-  calcium: "ec_calcium_pump",
-  magnesium: "ec_magnesium_pump",
-  micro: "ec_micro_pump",
-};
-
-const DEFAULT_ML_PER_SEC_BY_ACTUATOR: Record<string, number> = {
-  ph_acid_pump: 0.5,
-  ph_down: 0.5,
-  ph_base_pump: 0.5,
-  ph_up: 0.5,
-  ec_npk_pump: 1,
-  ec_calcium_pump: 1,
-  ec_magnesium_pump: 0.8,
-  ec_micro_pump: 0.8,
-};
+import type { Device, DeviceChannel } from "@/types/Device";
 
 type WizardStepKey = "zone" | "plant" | "recipe" | "logic" | "automation" | "calibration" | "confirm";
 
@@ -94,21 +48,10 @@ interface WizardRecipePhase {
   extensions?: Record<string, unknown> | null;
 }
 
-
-interface WizardCalibrationEntry {
-  node_channel_id: number;
-  component: PumpCalibrationComponent;
-  channel_label: string;
-  ml_per_sec: number;
-  skip: boolean;
-}
-
 interface WizardFormState {
   zoneId: number | null;
   startedAt: string;
   expectedHarvestAt: string;
-  calibrations: WizardCalibrationEntry[];
-  calibrationSkipped: boolean;
 }
 
 interface GrowthCycleSubmitPayload {
@@ -198,8 +141,6 @@ function createDefaultForm(zoneId?: number): WizardFormState {
     zoneId: zoneId || null,
     startedAt: getNowLocalDatetimeValue(),
     expectedHarvestAt: "",
-    calibrations: [],
-    calibrationSkipped: false,
   };
 }
 
@@ -228,20 +169,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return value as Record<string, unknown>;
-}
-
-function resolveNodeChannelId(channel: DeviceChannel): number | null {
-  const directId = toFiniteNumber(channel.node_channel_id);
-  if (directId && directId > 0) {
-    return directId;
-  }
-
-  const fallbackId = toFiniteNumber(channel.id);
-  if (fallbackId && fallbackId > 0) {
-    return fallbackId;
-  }
-
-  return null;
 }
 
 function normalizeDatetimeLocal(value: string | null | undefined): string | null {
@@ -364,90 +291,6 @@ function extractPaginatedCollection<T>(raw: unknown): PaginatedCollectionPayload
   };
 }
 
-function normalizeActuatorType(channel: DeviceChannel): string | null {
-  const directType = String(channel.actuator_type || "").trim().toLowerCase();
-  if (directType) {
-    const normalizedDirectType = ACTUATOR_ALIAS_MAP[directType] || directType;
-    if (PUMP_ACTUATOR_TYPES.includes(normalizedDirectType as typeof PUMP_ACTUATOR_TYPES[number])) {
-      return normalizedDirectType;
-    }
-  }
-
-  const config = channel.config && typeof channel.config === "object" ? channel.config : {};
-  const bindingRoleRaw = String(
-    channel.binding_role
-      || (config as Record<string, unknown>).zone_role
-      || (config as Record<string, unknown>).binding_role
-      || "",
-  )
-    .trim()
-    .toLowerCase();
-  if (bindingRoleRaw) {
-    const normalizedBindingRole = ACTUATOR_ALIAS_MAP[bindingRoleRaw] || bindingRoleRaw;
-    if (PUMP_ACTUATOR_TYPES.includes(normalizedBindingRole as typeof PUMP_ACTUATOR_TYPES[number])) {
-      return normalizedBindingRole;
-    }
-  }
-
-  const cfgActuatorType = String((config as Record<string, unknown>).actuator_type || "")
-    .trim()
-    .toLowerCase();
-  if (cfgActuatorType) {
-    const normalizedCfgType = ACTUATOR_ALIAS_MAP[cfgActuatorType] || cfgActuatorType;
-    if (PUMP_ACTUATOR_TYPES.includes(normalizedCfgType as typeof PUMP_ACTUATOR_TYPES[number])) {
-      return normalizedCfgType;
-    }
-  }
-
-  const pumpComponentRaw = String(channel.pump_component || channel.pump_calibration?.component || "")
-    .trim()
-    .toLowerCase();
-  if (pumpComponentRaw && PUMP_COMPONENT_TO_ACTUATOR_MAP[pumpComponentRaw]) {
-    return PUMP_COMPONENT_TO_ACTUATOR_MAP[pumpComponentRaw];
-  }
-
-  const cfgPumpCalibration = (config as Record<string, unknown>).pump_calibration;
-  if (cfgPumpCalibration && typeof cfgPumpCalibration === "object") {
-    const cfgPumpComponent = String((cfgPumpCalibration as Record<string, unknown>).component || "")
-      .trim()
-      .toLowerCase();
-    if (cfgPumpComponent && PUMP_COMPONENT_TO_ACTUATOR_MAP[cfgPumpComponent]) {
-      return PUMP_COMPONENT_TO_ACTUATOR_MAP[cfgPumpComponent];
-    }
-  }
-
-  const channelName = String(channel.channel || "").toLowerCase();
-  if (channelName.includes("acid") || channelName.includes("ph_down")) {
-    return "ph_acid_pump";
-  }
-  if (channelName.includes("base") || channelName.includes("ph_up")) {
-    return "ph_base_pump";
-  }
-  if (channelName.includes("npk") || channelName === "pump_a") {
-    return "ec_npk_pump";
-  }
-  if (channelName.includes("calcium") || channelName === "pump_b") {
-    return "ec_calcium_pump";
-  }
-  if (channelName.includes("magnesium") || channelName === "pump_c") {
-    return "ec_magnesium_pump";
-  }
-  if (channelName.includes("micro") || channelName === "pump_d") {
-    return "ec_micro_pump";
-  }
-
-  return null;
-}
-
-function resolvePumpComponent(actuatorType: string): PumpCalibrationComponent | null {
-  return ACTUATOR_COMPONENT_MAP[actuatorType] || null;
-}
-
-function defaultMlPerSecFor(actuatorType: string): number {
-  return DEFAULT_ML_PER_SEC_BY_ACTUATOR[actuatorType] || 1;
-}
-
-
 export function useGrowthCycleWizard({
   props,
   emit,
@@ -485,10 +328,10 @@ export function useGrowthCycleWizard({
   const selectedRevisionRequestId = ref(0);
   const selectedPlantId = ref<number | null>(null);
 
-  const zoneChannels = ref<DeviceChannel[]>([]);
-  const isZoneChannelsLoading = ref(false);
-  const zoneChannelsLoaded = ref(false);
-  const zoneChannelsError = ref<string | null>(null);
+  const zoneDevices = ref<Device[]>([]);
+  const isZoneDevicesLoading = ref(false);
+  const zoneDevicesLoaded = ref(false);
+  const zoneDevicesError = ref<string | null>(null);
   const zoneReadiness = ref<ZoneLaunchReadiness | null>(null);
   const zoneReadinessLoading = ref(false);
 
@@ -518,35 +361,6 @@ export function useGrowthCycleWizard({
       ? selectedRevisionData.value
       : null;
   });
-
-  function getCalibrationBlockingReason(): string | null {
-    if (form.value.calibrationSkipped) {
-      return null;
-    }
-
-    if (isZoneChannelsLoading.value) {
-      return "Дождитесь загрузки каналов насосов.";
-    }
-
-    if (zoneChannelsError.value) {
-      return zoneChannelsError.value;
-    }
-
-    if (!zoneChannelsLoaded.value) {
-      return "Загрузите список насосов перед продолжением.";
-    }
-
-    if (form.value.calibrations.length === 0) {
-      return "Заполните калибровки насосов или явно пропустите этот шаг.";
-    }
-
-    const invalidEntry = form.value.calibrations.find((entry) => !entry.skip && entry.ml_per_sec <= 0);
-    if (invalidEntry) {
-      return `Укажите корректный ml/sec для ${invalidEntry.channel_label} или пометьте насос как пропущенный.`;
-    }
-
-    return null;
-  }
 
   const steps: WizardStep[] = [
     { key: "zone", label: "Зона" },
@@ -607,7 +421,7 @@ export function useGrowthCycleWizard({
       case 4:
         return true;
       case 5:
-        return getCalibrationBlockingReason() === null;
+        return true;
       default:
         return true;
     }
@@ -615,8 +429,7 @@ export function useGrowthCycleWizard({
 
   const canSubmit = computed(() => {
     if (currentStep.value === 6) {
-      return getCalibrationBlockingReason() === null
-        && validationErrors.value.length === 0
+      return validationErrors.value.length === 0
         && zoneReadinessLoading.value === false
         && zoneReadiness.value?.ready === true;
     }
@@ -624,7 +437,6 @@ export function useGrowthCycleWizard({
     return canProceed.value && validationErrors.value.length === 0;
   });
 
-  const hasCalibrationChannels = computed(() => form.value.calibrations.length > 0);
   const zoneReadinessErrors = computed(() => {
     return Array.isArray(zoneReadiness.value?.errors) ? zoneReadiness.value?.errors ?? [] : [];
   });
@@ -663,10 +475,6 @@ export function useGrowthCycleWizard({
       if (startDate < now) {
         return "Дата начала не может быть в прошлом.";
       }
-    }
-
-    if (currentStep.value === 5) {
-      return getCalibrationBlockingReason() || "";
     }
 
     return "";
@@ -738,19 +546,6 @@ export function useGrowthCycleWizard({
 
     climateForm.value.enabled = true;
     lightingForm.value.enabled = true;
-  }
-
-  function getCalibrationComponentLabel(component: PumpCalibrationComponent): string {
-    const labels: Record<PumpCalibrationComponent, string> = {
-      npk: "NPK",
-      calcium: "Ca",
-      magnesium: "Mg",
-      micro: "Micro",
-      ph_up: "pH+",
-      ph_down: "pH-",
-    };
-
-    return labels[component];
   }
 
   async function loadZones(): Promise<void> {
@@ -906,9 +701,9 @@ export function useGrowthCycleWizard({
   }
 
   function onZoneSelected(): void {
-    zoneChannelsLoaded.value = false;
-    zoneChannels.value = [];
-    form.value.calibrations = [];
+    zoneDevicesLoaded.value = false;
+    zoneDevices.value = [];
+    zoneDevicesError.value = null;
     zoneReadiness.value = null;
   }
 
@@ -1099,7 +894,6 @@ export function useGrowthCycleWizard({
         climateForm: climateForm.value,
         waterForm: waterForm.value,
         lightingForm: lightingForm.value,
-        calibrationSkipped: form.value.calibrationSkipped,
         currentStep: currentStep.value,
       };
 
@@ -1126,7 +920,6 @@ export function useGrowthCycleWizard({
         climateForm: Partial<ClimateFormState>;
         waterForm: Partial<WaterFormState>;
         lightingForm: Partial<LightingFormState>;
-        calibrationSkipped: boolean;
         currentStep: number;
       }>;
       let hasLoadedForms = false;
@@ -1179,17 +972,7 @@ export function useGrowthCycleWizard({
 
       if (typeof draft.currentStep === "number") {
         const restoredStep = clamp(Math.round(draft.currentStep), 0, steps.length - 1);
-        if (restoredStep >= 5) {
-          currentStep.value = 4;
-          form.value.calibrationSkipped = false;
-        } else {
-          currentStep.value = restoredStep;
-          if (typeof draft.calibrationSkipped === "boolean") {
-            form.value.calibrationSkipped = draft.calibrationSkipped;
-          }
-        }
-      } else if (typeof draft.calibrationSkipped === "boolean") {
-        form.value.calibrationSkipped = draft.calibrationSkipped;
+        currentStep.value = restoredStep >= 6 ? 5 : restoredStep;
       }
     } catch (err) {
       logger.warn("[GrowthCycleWizard] Failed to load draft", err);
@@ -1209,109 +992,40 @@ export function useGrowthCycleWizard({
     return extractNodesFromResponse(fallbackResponse.data);
   }
 
-  function buildCalibrationEntries(channels: DeviceChannel[]): void {
-    const currentByChannelId = new Map<number, WizardCalibrationEntry>(
-      form.value.calibrations.map((entry) => [entry.node_channel_id, entry]),
-    );
-
-    const entries: WizardCalibrationEntry[] = [];
-
-    channels.forEach((channel) => {
-      const channelId = resolveNodeChannelId(channel);
-      if (!channelId) {
-        return;
-      }
-
-      const actuatorType = normalizeActuatorType(channel);
-      if (!actuatorType || !PUMP_ACTUATOR_TYPES.includes(actuatorType as typeof PUMP_ACTUATOR_TYPES[number])) {
-        return;
-      }
-
-      const component = resolvePumpComponent(actuatorType);
-      if (!component) {
-        return;
-      }
-
-      const existing = currentByChannelId.get(channelId);
-      const calibratedMl = toFiniteNumber(channel.pump_calibration?.ml_per_sec);
-      const mlPerSec = existing?.ml_per_sec
-        ?? (calibratedMl !== null && calibratedMl > 0 ? calibratedMl : defaultMlPerSecFor(actuatorType));
-
-      entries.push({
-        node_channel_id: channelId,
-        component,
-        channel_label: existing?.channel_label || String((channel as any).__label || channel.channel || `Channel #${channelId}`),
-        ml_per_sec: Number(mlPerSec.toFixed(2)),
-        skip: existing?.skip ?? false,
-      });
-    });
-
-    const componentOrder: PumpCalibrationComponent[] = ["ph_down", "ph_up", "npk", "calcium", "magnesium", "micro"];
-    entries.sort((a, b) => {
-      const left = componentOrder.indexOf(a.component);
-      const right = componentOrder.indexOf(b.component);
-      if (left !== right) {
-        return left - right;
-      }
-
-      return a.channel_label.localeCompare(b.channel_label, "ru");
-    });
-
-    form.value.calibrations = entries;
-  }
-
-  async function fetchZoneChannels(force = false): Promise<void> {
+  async function fetchZoneDevices(force = false): Promise<void> {
     const zoneId = form.value.zoneId;
     if (!zoneId) {
-      zoneChannels.value = [];
-      form.value.calibrations = [];
+      zoneDevices.value = [];
       return;
     }
 
-    if (zoneChannelsLoaded.value && !force) {
+    if (zoneDevicesLoaded.value && !force) {
       return;
     }
 
-    isZoneChannelsLoading.value = true;
-    zoneChannelsError.value = null;
+    isZoneDevicesLoading.value = true;
+    zoneDevicesError.value = null;
 
     try {
       const nodes = await requestZoneNodes(zoneId);
-      const channels: DeviceChannel[] = [];
-
-      nodes.forEach((node) => {
-        const nodeLabel = node.uid || node.name || (node.id ? `Node #${node.id}` : "Node");
-        (node.channels || []).forEach((channel) => {
-          const channelType = String(channel.type || "").toUpperCase();
-          if (channelType !== "ACTUATOR") {
-            return;
-          }
-
-          const actuatorType = normalizeActuatorType(channel);
-          if (!actuatorType || !PUMP_ACTUATOR_TYPES.includes(actuatorType as typeof PUMP_ACTUATOR_TYPES[number])) {
-            return;
-          }
-
-          channels.push({
-            ...channel,
-            actuator_type: actuatorType,
-            // Внутреннее поле только для UI-лейбла в wizard.
-            ...( { __label: `${nodeLabel} / ${channel.channel}` } as any ),
-          });
-        });
-      });
-
-      zoneChannels.value = channels;
-      buildCalibrationEntries(channels);
-      zoneChannelsLoaded.value = true;
+      zoneDevices.value = nodes
+        .filter((node) => typeof node.id === "number" && Number.isInteger(node.id))
+        .map((node) => ({
+          id: node.id as number,
+          uid: node.uid || `node-${node.id}`,
+          name: node.name,
+          type: "unknown",
+          status: "unknown",
+          channels: Array.isArray(node.channels) ? node.channels.map((channel) => ({ ...channel })) as DeviceChannel[] : [],
+        }));
+      zoneDevicesLoaded.value = true;
     } catch (err) {
-      logger.error("[GrowthCycleWizard] Failed to fetch zone channels", err);
-      zoneChannelsError.value = "Не удалось загрузить каналы насосов";
-      zoneChannelsLoaded.value = false;
-      zoneChannels.value = [];
-      form.value.calibrations = [];
+      logger.error("[GrowthCycleWizard] Failed to fetch zone devices", err);
+      zoneDevicesError.value = "Не удалось загрузить насосы зоны";
+      zoneDevicesLoaded.value = false;
+      zoneDevices.value = [];
     } finally {
-      isZoneChannelsLoading.value = false;
+      isZoneDevicesLoading.value = false;
     }
   }
 
@@ -1342,39 +1056,7 @@ export function useGrowthCycleWizard({
     await automationConfig.updateDocument("zone", zoneId, "zone.logic_profile", nextPayload as unknown as Record<string, unknown>);
   }
 
-  async function savePumpCalibrations(zoneId: number): Promise<string[]> {
-    if (form.value.calibrationSkipped) {
-      return [];
-    }
-
-    const activeCalibrations = form.value.calibrations.filter((entry) => !entry.skip && entry.ml_per_sec > 0);
-    if (activeCalibrations.length === 0) {
-      return [];
-    }
-
-    const failedChannels: string[] = [];
-
-    await Promise.allSettled(
-      activeCalibrations.map(async (entry) => {
-        try {
-          await api.post(`/api/zones/${zoneId}/calibrate-pump`, {
-            node_channel_id: entry.node_channel_id,
-            component: entry.component,
-            actual_ml: entry.ml_per_sec,
-            duration_sec: 1,
-            skip_run: true,
-            manual_override: true,
-          });
-        } catch {
-          failedChannels.push(entry.channel_label);
-        }
-      }),
-    );
-
-    return failedChannels;
-  }
-
-  async function persistLaunchPrerequisites(zoneId: number): Promise<string[] | null> {
+  async function persistLaunchPrerequisites(zoneId: number): Promise<void> {
     const configPayload = buildGrowthCycleConfigPayload({
       climateForm: climateForm.value,
       waterForm: waterForm.value,
@@ -1385,13 +1067,6 @@ export function useGrowthCycleWizard({
     });
 
     await saveAutomationProfile(zoneId, (configPayload.subsystems || {}) as Record<string, unknown>);
-
-    const failedCalibrations = await savePumpCalibrations(zoneId);
-    if (failedCalibrations.length > 0) {
-      return failedCalibrations;
-    }
-
-    return null;
   }
 
   async function onSubmit(): Promise<void> {
@@ -1404,36 +1079,13 @@ export function useGrowthCycleWizard({
       return;
     }
 
-    if (!form.value.calibrationSkipped && (!zoneChannelsLoaded.value || form.value.calibrations.length === 0)) {
-      await fetchZoneChannels(true);
-    }
-
-    const calibrationBlockingReason = getCalibrationBlockingReason();
-    if (calibrationBlockingReason) {
-      currentStep.value = 5;
-      validationErrors.value = [calibrationBlockingReason];
-      error.value = calibrationBlockingReason;
-      errorDetails.value = [];
-      showToast(calibrationBlockingReason, "error", TOAST_TIMEOUT.NORMAL);
-      return;
-    }
-
     const zoneId = form.value.zoneId;
     loading.value = true;
     error.value = null;
     errorDetails.value = [];
 
     try {
-      const failedCalibrations = await persistLaunchPrerequisites(zoneId);
-      if (failedCalibrations && failedCalibrations.length > 0) {
-        const calibrationError = `Не удалось сохранить калибровки насосов: ${failedCalibrations.join(", ")}`;
-        validationErrors.value = [calibrationError];
-        error.value = calibrationError;
-        errorDetails.value = failedCalibrations;
-        showToast(calibrationError, "error", TOAST_TIMEOUT.LONG);
-        return;
-      }
-
+      await persistLaunchPrerequisites(zoneId);
       await loadZoneReadiness(zoneId);
       if (zoneReadiness.value?.ready !== true) {
         const readinessErrors = zoneReadinessErrors.value;
@@ -1528,10 +1180,10 @@ export function useGrowthCycleWizard({
     selectedRevisionData.value = null;
     selectedRevisionRequestId.value = 0;
 
-    zoneChannels.value = [];
-    isZoneChannelsLoading.value = false;
-    zoneChannelsLoaded.value = false;
-    zoneChannelsError.value = null;
+    zoneDevices.value = [];
+    isZoneDevicesLoading.value = false;
+    zoneDevicesLoaded.value = false;
+    zoneDevicesError.value = null;
     zoneReadiness.value = null;
     zoneReadinessLoading.value = false;
   }
@@ -1576,6 +1228,7 @@ export function useGrowthCycleWizard({
           void loadAutomationProfile(newZoneId);
         }
         if (props.show) {
+          void fetchZoneDevices(true);
           void loadZoneReadiness(newZoneId);
         }
       }
@@ -1590,11 +1243,15 @@ export function useGrowthCycleWizard({
       }
 
       if (!zoneId) {
+        zoneDevices.value = [];
+        zoneDevicesLoaded.value = false;
+        zoneDevicesError.value = null;
         zoneReadiness.value = null;
         zoneReadinessLoading.value = false;
         return;
       }
 
+      void fetchZoneDevices(true);
       void loadZoneReadiness(zoneId);
     },
   );
@@ -1685,6 +1342,7 @@ export function useGrowthCycleWizard({
         return;
       }
 
+      void fetchZoneDevices(true);
       void loadAutomationProfile(zoneId);
       void loadZoneReadiness(zoneId);
     },
@@ -1694,21 +1352,11 @@ export function useGrowthCycleWizard({
     () => currentStep.value,
     (step) => {
       const stepKey = steps[step]?.key;
-      if (!form.value.calibrationSkipped && (stepKey === "calibration" || stepKey === "confirm")) {
-        void fetchZoneChannels(stepKey === "confirm");
+      if (stepKey === "calibration" || stepKey === "confirm") {
+        void fetchZoneDevices(stepKey === "confirm");
       }
       if (stepKey === "confirm" && form.value.zoneId) {
         void loadZoneReadiness(form.value.zoneId);
-      }
-    },
-  );
-
-  watch(
-    () => form.value.calibrationSkipped,
-    (calibrationSkipped) => {
-      const stepKey = steps[currentStep.value]?.key;
-      if (!calibrationSkipped && !zoneChannelsLoaded.value && (stepKey === "calibration" || stepKey === "confirm")) {
-        void fetchZoneChannels(true);
       }
     },
   );
@@ -1753,21 +1401,19 @@ export function useGrowthCycleWizard({
     canProceed,
     canSubmit,
     nextStepBlockedReason,
-    zoneChannels,
-    isZoneChannelsLoading,
-    zoneChannelsLoaded,
-    zoneChannelsError,
-    hasCalibrationChannels,
+    zoneDevices,
+    isZoneDevicesLoading,
+    zoneDevicesLoaded,
+    zoneDevicesError,
     zoneReadiness,
     zoneReadinessLoading,
     zoneReadinessErrors,
-    getCalibrationComponentLabel,
     formatDateTime,
     formatDate,
     onZoneSelected,
     onRecipeSelected,
     onRecipeCreated,
-    fetchZoneChannels,
+    fetchZoneDevices,
     loadZoneReadiness,
     nextStep,
     prevStep,

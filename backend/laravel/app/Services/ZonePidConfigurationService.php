@@ -41,6 +41,10 @@ class ZonePidConfigurationService
             $zoneId,
             false
         );
+        if ($document?->source === 'bootstrap') {
+            return null;
+        }
+
         $payload = is_array($document?->payload) ? $document->payload : [];
         if ($payload === []) {
             return null;

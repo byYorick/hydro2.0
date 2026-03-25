@@ -16,11 +16,11 @@ _SQL_MARK_APPLIED = """
             jsonb_set(
                 COALESCE(payload, '{}'::jsonb),
                 '{last_applied_at}',
-                to_jsonb($3::text),
+                to_jsonb($3::timestamptz),
                 true
             ),
             '{last_applied_version}',
-            to_jsonb($2::bigint),
+            to_jsonb($2::integer),
             true
         ),
         updated_at = GREATEST(updated_at, $4::timestamp)

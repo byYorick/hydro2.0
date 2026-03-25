@@ -35,7 +35,7 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
-            'role' => ['nullable', 'string', Rule::in(['admin', 'operator', 'viewer'])],
+            'role' => ['nullable', 'string', Rule::in(User::availableRoles())],
         ]);
         $data['password'] = Hash::make($data['password']);
         $data['role'] = $data['role'] ?? 'operator';
@@ -60,7 +60,7 @@ class UserController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'email' => ['sometimes', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password' => ['sometimes', 'string', 'min:8'],
-            'role' => ['sometimes', 'string', Rule::in(['admin', 'operator', 'viewer'])],
+            'role' => ['sometimes', 'string', Rule::in(User::availableRoles())],
         ]);
         if (isset($data['password'])) {
             $data['password'] = Hash::make($data['password']);
@@ -85,4 +85,3 @@ class UserController extends Controller
         return response()->json(['status' => 'ok']);
     }
 }
-

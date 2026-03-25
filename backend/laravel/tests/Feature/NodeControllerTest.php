@@ -88,17 +88,28 @@ class NodeControllerTest extends TestCase
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
 
-        NodeChannel::query()->create([
+        $channel = NodeChannel::query()->create([
             'node_id' => $node->id,
             'channel' => 'pump_a',
             'type' => 'ACTUATOR',
             'metric' => 'PUMP',
             'unit' => null,
-            'config' => [
-                'pump_calibration' => [
-                    'component' => 'npk',
-                ],
-            ],
+            'config' => [],
+        ]);
+
+        $instance = InfrastructureInstance::query()->create([
+            'owner_type' => 'zone',
+            'owner_id' => $zone->id,
+            'asset_type' => 'PUMP',
+            'label' => 'EC NPK Pump',
+            'required' => true,
+        ]);
+
+        ChannelBinding::query()->create([
+            'infrastructure_instance_id' => $instance->id,
+            'node_channel_id' => $channel->id,
+            'direction' => 'actuator',
+            'role' => 'ec_npk_pump',
         ]);
 
         $response = $this->actingAs($user)->getJson("/api/nodes?zone_id={$zone->id}");

@@ -133,6 +133,7 @@ class ErrorCodes:
     ZONE_CORRECTION_CONFIG_MISSING_CRITICAL = "zone_correction_config_missing_critical"
     ZONE_DOSING_CALIBRATION_MISSING_CRITICAL = "zone_dosing_calibration_missing_critical"
     ZONE_PID_CONFIG_MISSING_CRITICAL = "zone_pid_config_missing_critical"
+    ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL = "zone_recipe_phase_targets_missing_critical"
 
 
 class Ae3LiteError(Exception):
