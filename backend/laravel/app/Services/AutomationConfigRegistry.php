@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\Automation\ZonePidDefaults;
+use App\Support\Automation\ZoneProcessCalibrationDefaults;
 use InvalidArgumentException;
 
 class AutomationConfigRegistry
@@ -15,8 +17,6 @@ class AutomationConfigRegistry
     public const NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS = 'system.automation_defaults';
     public const NAMESPACE_SYSTEM_COMMAND_TEMPLATES = 'system.command_templates';
     public const NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS = 'system.process_calibration_defaults';
-    public const NAMESPACE_SYSTEM_PID_DEFAULTS_PH = 'system.pid_defaults.ph';
-    public const NAMESPACE_SYSTEM_PID_DEFAULTS_EC = 'system.pid_defaults.ec';
     public const NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY = 'system.pump_calibration_policy';
     public const NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY = 'system.sensor_calibration_policy';
     public const NAMESPACE_GREENHOUSE_LOGIC_PROFILE = 'greenhouse.logic_profile';
@@ -57,8 +57,6 @@ class AutomationConfigRegistry
             self::NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS => $this->systemDefinition('automation_defaults'),
             self::NAMESPACE_SYSTEM_COMMAND_TEMPLATES => $this->systemDefinition('automation_command_templates'),
             self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS => $this->systemDefinition('process_calibration_defaults'),
-            self::NAMESPACE_SYSTEM_PID_DEFAULTS_PH => $this->systemDefinition('pid_defaults_ph'),
-            self::NAMESPACE_SYSTEM_PID_DEFAULTS_EC => $this->systemDefinition('pid_defaults_ec'),
             self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY => $this->systemDefinition('pump_calibration'),
             self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY => $this->systemDefinition('sensor_calibration'),
             self::NAMESPACE_GREENHOUSE_LOGIC_PROFILE => [
@@ -240,8 +238,6 @@ class AutomationConfigRegistry
             self::NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS => 'automation_defaults',
             self::NAMESPACE_SYSTEM_COMMAND_TEMPLATES => 'automation_command_templates',
             self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS => 'process_calibration_defaults',
-            self::NAMESPACE_SYSTEM_PID_DEFAULTS_PH => 'pid_defaults_ph',
-            self::NAMESPACE_SYSTEM_PID_DEFAULTS_EC => 'pid_defaults_ec',
             self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY => 'pump_calibration',
             self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY => 'sensor_calibration',
             default => null,
@@ -254,8 +250,6 @@ class AutomationConfigRegistry
             'automation_defaults' => self::NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS,
             'automation_command_templates' => self::NAMESPACE_SYSTEM_COMMAND_TEMPLATES,
             'process_calibration_defaults' => self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS,
-            'pid_defaults_ph' => self::NAMESPACE_SYSTEM_PID_DEFAULTS_PH,
-            'pid_defaults_ec' => self::NAMESPACE_SYSTEM_PID_DEFAULTS_EC,
             'pump_calibration' => self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
             'sensor_calibration' => self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY,
             default => null,
@@ -304,7 +298,7 @@ class AutomationConfigRegistry
         return [
             'scope_type' => self::SCOPE_ZONE,
             'schema_version' => 1,
-            'default_payload' => SystemAutomationSettingsCatalog::defaults($type === 'ph' ? 'pid_defaults_ph' : 'pid_defaults_ec'),
+            'default_payload' => ZonePidDefaults::forType($type),
             'required' => false,
         ];
     }
@@ -318,7 +312,7 @@ class AutomationConfigRegistry
             'scope_type' => self::SCOPE_ZONE,
             'schema_version' => 1,
             'default_payload' => array_merge(
-                SystemAutomationSettingsCatalog::defaults('process_calibration_defaults'),
+                ZoneProcessCalibrationDefaults::forMode($mode),
                 [
                     'mode' => $mode,
                     'source' => 'system_default',
@@ -372,13 +366,25 @@ class AutomationConfigRegistry
             throw new InvalidArgumentException("zone.pid.{$type} must be an object.");
         }
 
-        foreach ([
-            'target',
+        $allowedKeys = [
             'dead_zone',
             'close_zone',
             'far_zone',
-            'max_output',
-            'min_interval_ms',
+            'zone_coeffs',
+            'max_integral',
+        ];
+
+        foreach (array_keys($payload) as $key) {
+            if (! in_array($key, $allowedKeys, true)) {
+                throw new InvalidArgumentException("zone.pid.{$type}.{$key} is not supported.");
+            }
+        }
+
+        foreach ([
+            'dead_zone',
+            'close_zone',
+            'far_zone',
+            'zone_coeffs',
             'max_integral',
         ] as $key) {
             if (! array_key_exists($key, $payload)) {
@@ -392,11 +398,26 @@ class AutomationConfigRegistry
         if (($payload['far_zone'] ?? 0) <= ($payload['close_zone'] ?? 0)) {
             throw new InvalidArgumentException('far_zone должна быть больше close_zone');
         }
-        if ($type === 'ph' && (($payload['target'] ?? 0) < 4 || ($payload['target'] ?? 0) > 9)) {
-            throw new InvalidArgumentException('target для pH должен быть в диапазоне 4-9');
+
+        if (! is_array($payload['zone_coeffs']) || array_is_list($payload['zone_coeffs'])) {
+            throw new InvalidArgumentException("zone.pid.{$type}.zone_coeffs must be an object.");
         }
-        if ($type === 'ec' && (($payload['target'] ?? 0) < 0 || ($payload['target'] ?? 0) > 10)) {
-            throw new InvalidArgumentException('target для EC должен быть в диапазоне 0-10');
+
+        foreach (['close', 'far'] as $zone) {
+            $coeffs = $payload['zone_coeffs'][$zone] ?? null;
+            if (! is_array($coeffs) || array_is_list($coeffs)) {
+                throw new InvalidArgumentException("zone.pid.{$type}.zone_coeffs.{$zone} must be an object.");
+            }
+
+            foreach (['kp', 'ki', 'kd'] as $coeffKey) {
+                if (! array_key_exists($coeffKey, $coeffs) || ! is_numeric($coeffs[$coeffKey])) {
+                    throw new InvalidArgumentException("zone.pid.{$type}.zone_coeffs.{$zone}.{$coeffKey} must be numeric.");
+                }
+            }
+        }
+
+        if (! is_numeric($payload['max_integral']) || (float) $payload['max_integral'] <= 0) {
+            throw new InvalidArgumentException("zone.pid.{$type}.max_integral must be positive.");
         }
     }
 

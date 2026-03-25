@@ -57,7 +57,6 @@ class ZoneReadinessServiceTest extends TestCase
             AutomationConfigRegistry::SCOPE_ZONE,
             (int) $zone->id,
             [
-                'target' => 5.8,
                 'dead_zone' => 0.05,
                 'close_zone' => 0.3,
                 'far_zone' => 1.0,
@@ -65,8 +64,6 @@ class ZoneReadinessServiceTest extends TestCase
                     'close' => ['kp' => 5.0, 'ki' => 0.05, 'kd' => 0.0],
                     'far' => ['kp' => 8.0, 'ki' => 0.02, 'kd' => 0.0],
                 ],
-                'max_output' => 20.0,
-                'min_interval_ms' => 90000,
                 'max_integral' => 20.0,
             ]
         );
@@ -76,7 +73,6 @@ class ZoneReadinessServiceTest extends TestCase
             AutomationConfigRegistry::SCOPE_ZONE,
             (int) $zone->id,
             [
-                'target' => 1.6,
                 'dead_zone' => 0.1,
                 'close_zone' => 0.5,
                 'far_zone' => 1.5,
@@ -84,8 +80,6 @@ class ZoneReadinessServiceTest extends TestCase
                     'close' => ['kp' => 30.0, 'ki' => 0.3, 'kd' => 0.0],
                     'far' => ['kp' => 50.0, 'ki' => 0.1, 'kd' => 0.0],
                 ],
-                'max_output' => 50.0,
-                'min_interval_ms' => 120000,
                 'max_integral' => 100.0,
             ]
         );

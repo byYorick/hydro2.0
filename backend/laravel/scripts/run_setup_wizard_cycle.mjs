@@ -443,7 +443,6 @@ async function main() {
 
     const pidConfigs = {
       ph: {
-        target: 5.8,
         dead_zone: 0.05,
         close_zone: 0.3,
         far_zone: 1.0,
@@ -451,12 +450,9 @@ async function main() {
           close: { kp: 5.0, ki: 0.05, kd: 0.0 },
           far: { kp: 8.0, ki: 0.02, kd: 0.0 },
         },
-        max_output: 20.0,
-        min_interval_ms: 90_000,
         max_integral: 20.0,
       },
       ec: {
-        target: 1.6,
         dead_zone: 0.1,
         close_zone: 0.5,
         far_zone: 1.5,
@@ -464,14 +460,17 @@ async function main() {
           close: { kp: 30.0, ki: 0.3, kd: 0.0 },
           far: { kp: 50.0, ki: 0.1, kd: 0.0 },
         },
-        max_output: 50.0,
-        min_interval_ms: 120_000,
         max_integral: 100.0,
       },
     }
 
+    const pidNamespaces = {
+      ph: 'zone.pid.ph',
+      ec: 'zone.pid.ec',
+    }
+
     for (const [type, config] of Object.entries(pidConfigs)) {
-      const pidResult = await page.evaluate(async ({ zoneId, pidType, configPayload }) => {
+      const pidResult = await page.evaluate(async ({ zoneId, namespace, configPayload }) => {
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
         const headers = {
           'Content-Type': 'application/json',
@@ -482,11 +481,11 @@ async function main() {
           headers['X-CSRF-TOKEN'] = csrf
         }
 
-        const response = await fetch(`/api/zones/${zoneId}/pid-configs/${pidType}`, {
+        const response = await fetch(`/api/automation-configs/zone/${zoneId}/${namespace}`, {
           method: 'PUT',
           credentials: 'include',
           headers,
-          body: JSON.stringify({ config: configPayload }),
+          body: JSON.stringify({ payload: configPayload }),
         })
 
         return {
@@ -494,7 +493,7 @@ async function main() {
           ok: response.ok,
           body: await response.json().catch(() => null),
         }
-      }, { zoneId: created.zoneId, pidType: type, configPayload: config })
+      }, { zoneId: created.zoneId, namespace: pidNamespaces[type], configPayload: config })
       console.log(`PID_SAVE_${type.toUpperCase()}:`, JSON.stringify(pidResult, null, 2))
     }
     await page.waitForTimeout(1000)

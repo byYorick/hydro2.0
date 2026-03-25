@@ -44,7 +44,16 @@ class AutomationConfigControllerZonePidTest extends TestCase
             'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
             'scope_id' => $zone->id,
             'schema_version' => 1,
-            'payload' => ['target' => 5.8],
+            'payload' => [
+                'dead_zone' => 0.05,
+                'close_zone' => 0.3,
+                'far_zone' => 1.0,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 5.0, 'ki' => 0.05, 'kd' => 0.0],
+                    'far' => ['kp' => 8.0, 'ki' => 0.02, 'kd' => 0.0],
+                ],
+                'max_integral' => 20.0,
+            ],
             'status' => 'valid',
             'source' => 'bootstrap',
             'checksum' => 'bootstrap-pid-ph',
@@ -65,8 +74,26 @@ class AutomationConfigControllerZonePidTest extends TestCase
         $zone = Zone::factory()->create();
 
         foreach ([
-            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH => ['target' => 5.8],
-            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC => ['target' => 1.6],
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH => [
+                'dead_zone' => 0.05,
+                'close_zone' => 0.3,
+                'far_zone' => 1.0,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 5.0, 'ki' => 0.05, 'kd' => 0.0],
+                    'far' => ['kp' => 8.0, 'ki' => 0.02, 'kd' => 0.0],
+                ],
+                'max_integral' => 20.0,
+            ],
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC => [
+                'dead_zone' => 0.1,
+                'close_zone' => 0.5,
+                'far_zone' => 1.5,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 30.0, 'ki' => 0.3, 'kd' => 0.0],
+                    'far' => ['kp' => 50.0, 'ki' => 0.1, 'kd' => 0.0],
+                ],
+                'max_integral' => 100.0,
+            ],
         ] as $namespace => $payload) {
             AutomationConfigDocument::query()->create([
                 'namespace' => $namespace,

@@ -143,6 +143,225 @@ def test_build_dose_plan_uses_process_calibration_and_min_effective_ml() -> None
     assert dose_plan.ph_duration_ms == 187
 
 
+def test_build_dose_plan_uses_close_zone_pid_coefficients_for_small_gap() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.7,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 9.0,
+                "ki": 0.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 50.0,
+            }
+        ),
+        workflow_phase="solution_fill",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_configs={
+            "ec": {
+                "config": {
+                    "dead_zone": 0.1,
+                    "close_zone": 0.5,
+                    "far_zone": 1.5,
+                    "zone_coeffs": {
+                        "close": {"kp": 0.5, "ki": 0.0, "kd": 0.0},
+                        "far": {"kp": 0.9, "ki": 0.0, "kd": 0.0},
+                    },
+                }
+            }
+        },
+        ec_component_policy={},
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 1.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.ec_pid_zone == "close"
+    assert dose_plan.ec_pid_coeffs == {"kp": 0.5, "ki": 0.0, "kd": 0.0}
+    assert dose_plan.ec_amount_ml == pytest.approx(0.15)
+    assert dose_plan.ec_duration_ms == 150
+
+
+def test_build_dose_plan_uses_far_zone_pid_coefficients_for_large_gap() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=0.8,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 9.0,
+                "ki": 0.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 50.0,
+            }
+        ),
+        workflow_phase="solution_fill",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_configs={
+            "ec": {
+                "config": {
+                    "dead_zone": 0.1,
+                    "close_zone": 0.5,
+                    "far_zone": 1.5,
+                    "zone_coeffs": {
+                        "close": {"kp": 0.5, "ki": 0.0, "kd": 0.0},
+                        "far": {"kp": 0.9, "ki": 0.0, "kd": 0.0},
+                    },
+                }
+            }
+        },
+        ec_component_policy={},
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 1.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.ec_pid_zone == "far"
+    assert dose_plan.ec_pid_coeffs == {"kp": 0.9, "ki": 0.0, "kd": 0.0}
+    assert dose_plan.ec_amount_ml == pytest.approx(1.08)
+    assert dose_plan.ec_duration_ms == 1080
+
+
+def test_build_dose_plan_uses_pid_dead_zone_as_deadband_override() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.95,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 1.0,
+                "ki": 0.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+            }
+        ),
+        workflow_phase="solution_fill",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_configs={
+            "ec": {
+                "config": {
+                    "dead_zone": 0.1,
+                    "close_zone": 0.5,
+                    "far_zone": 1.5,
+                    "zone_coeffs": {
+                        "close": {"kp": 0.5, "ki": 0.0, "kd": 0.0},
+                        "far": {"kp": 0.9, "ki": 0.0, "kd": 0.0},
+                    },
+                }
+            }
+        },
+        ec_component_policy={},
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 10.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_any is False
+    assert dose_plan.dead_zone_details["ec_deadband"] == pytest.approx(0.1)
+    assert dose_plan.dead_zone_details["ec_pid_zone"] == "close"
+
+
+def test_build_dose_plan_blends_learned_runtime_gain_from_pid_state_stats() -> None:
+    planner = CorrectionPlanner()
+
+    baseline = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.4,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.0,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0}
+        ),
+        workflow_phase="solution_fill",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={"ec": {}},
+        ec_component_policy={},
+        ec_actuator={"node_uid": "ec-node", "channel": "ec_pump", "calibration": {"ml_per_sec": 1.0}},
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    adaptive = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.4,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.0,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.0, "min_interval_sec": 0}
+        ),
+        workflow_phase="solution_fill",
+        process_calibrations={"solution_fill": {"ec_gain_per_ml": 1.0}},
+        pid_state={
+            "ec": {
+                "stats": {
+                    "adaptive": {
+                        "retention_ema": 1.0,
+                        "wave_score_ema": 0.0,
+                        "gains": {
+                            "ec_gain_per_ml": {
+                                "ema": 0.5,
+                                "observations": 8,
+                            }
+                        },
+                    }
+                }
+            }
+        },
+        ec_component_policy={},
+        ec_actuator={"node_uid": "ec-node", "channel": "ec_pump", "calibration": {"ml_per_sec": 1.0}},
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert baseline.ec_amount_ml == pytest.approx(0.6)
+    assert adaptive.ec_amount_ml == pytest.approx(1.2)
+    assert adaptive.ec_duration_ms == 1200
+
+
 def test_build_dose_plan_caps_ph_down_by_modeled_closure_dose() -> None:
     planner = CorrectionPlanner()
 

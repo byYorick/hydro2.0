@@ -139,8 +139,8 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       generic: savedPayload('generic', 0.82),
     })
     getAllPidConfigsMock.mockResolvedValue({
-      ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
-      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+      ph: { type: 'ph', config: { dead_zone: 0.05 }, is_default: false },
+      ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: 0.5 },
@@ -175,8 +175,8 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
   it('показывает fail-closed и отсутствующие pump calibration', async () => {
     installProcessDocuments({})
     getAllPidConfigsMock.mockResolvedValue({
-      ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
-      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+      ph: { type: 'ph', config: { dead_zone: 0.05 }, is_default: false },
+      ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: 0.4 },
@@ -200,8 +200,8 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
   it('эмитит действия для исправления process и pump gaps', async () => {
     installProcessDocuments({})
     getAllPidConfigsMock.mockResolvedValue({
-      ph: { type: 'ph', config: { target: 5.8 }, is_default: true },
-      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+      ph: { type: 'ph', config: { dead_zone: 0.05 }, is_default: true },
+      ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: null },
@@ -277,8 +277,8 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       return Promise.reject(new Error(`Unexpected url: ${url}`))
     })
     getAllPidConfigsMock.mockResolvedValue({
-      ph: { type: 'ph', config: { target: 5.8 }, is_default: false },
-      ec: { type: 'ec', config: { target: 1.6 }, is_default: false },
+      ph: { type: 'ph', config: { dead_zone: 0.05 }, is_default: false },
+      ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },
     })
     getPumpCalibrationsMock.mockResolvedValue([
       { role: 'ph_acid_pump', ml_per_sec: 0.5 },

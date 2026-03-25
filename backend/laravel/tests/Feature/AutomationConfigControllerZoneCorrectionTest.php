@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Zone;
-use App\Services\ZoneCorrectionConfigurationService;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
+use App\Services\ZoneCorrectionConfigCatalog;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,18 +17,28 @@ class AutomationConfigControllerZoneCorrectionTest extends TestCase
     public function test_zone_correction_show_returns_current_revision_in_resolved_config_meta(): void
     {
         $zone = Zone::factory()->create();
-        $service = app(ZoneCorrectionConfigurationService::class);
+        $documents = app(AutomationConfigDocumentService::class);
 
-        $service->ensureDefaultForZone($zone->id);
-
-        $current = $service->getOrCreateForZone($zone->id);
-        $nextBaseConfig = $current->baseConfig;
+        $documents->ensureZoneDefaults($zone->id);
+        $current = $documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id
+        );
+        $nextBaseConfig = is_array($current['base_config'] ?? null)
+            ? $current['base_config']
+            : ZoneCorrectionConfigCatalog::defaults();
         data_set($nextBaseConfig, 'timing.stabilization_sec', 75);
 
-        $service->upsert($zone->id, [
-            'base_config' => $nextBaseConfig,
-            'phase_overrides' => [],
-        ]);
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            [
+                'base_config' => $nextBaseConfig,
+                'phase_overrides' => [],
+            ]
+        );
 
         $viewer = User::factory()->create(['role' => 'viewer']);
 

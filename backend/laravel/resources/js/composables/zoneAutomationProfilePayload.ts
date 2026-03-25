@@ -38,6 +38,23 @@ function normalizeStepCount(value: unknown, fallback: number): number {
   return clamp(Math.round(normalizeNumber(value, fallback)), 1, 12)
 }
 
+const MIN_TWO_TANK_COMMAND_STEPS: Record<string, number> = {
+  clean_fill_start: 1,
+  clean_fill_stop: 1,
+  solution_fill_start: 3,
+  solution_fill_stop: 3,
+  prepare_recirculation_start: 3,
+  prepare_recirculation_stop: 3,
+  irrigation_recovery_start: 4,
+  irrigation_recovery_stop: 3,
+}
+
+function normalizeTwoTankPlanStepCount(planName: string, value: unknown, fallback: number): number {
+  const minimum = MIN_TWO_TANK_COMMAND_STEPS[planName] ?? 1
+
+  return clamp(Math.round(normalizeNumber(value, fallback)), minimum, 12)
+}
+
 function cloneRelayCommand(command: AutomationCommandTemplateStep): AutomationCommandTemplateStep {
   return {
     channel: command.channel,
@@ -224,35 +241,43 @@ export function buildGrowthCycleConfigPayload(
     3600
   )
   const twoTankCommandSteps = {
-    clean_fill_start: normalizeStepCount(
+    clean_fill_start: normalizeTwoTankPlanStepCount(
+      'clean_fill_start',
       waterForm.twoTankCleanFillStartSteps,
       automationCommandTemplates.clean_fill_start.length
     ),
-    clean_fill_stop: normalizeStepCount(
+    clean_fill_stop: normalizeTwoTankPlanStepCount(
+      'clean_fill_stop',
       waterForm.twoTankCleanFillStopSteps,
       automationCommandTemplates.clean_fill_stop.length
     ),
-    solution_fill_start: normalizeStepCount(
+    solution_fill_start: normalizeTwoTankPlanStepCount(
+      'solution_fill_start',
       waterForm.twoTankSolutionFillStartSteps,
       automationCommandTemplates.solution_fill_start.length
     ),
-    solution_fill_stop: normalizeStepCount(
+    solution_fill_stop: normalizeTwoTankPlanStepCount(
+      'solution_fill_stop',
       waterForm.twoTankSolutionFillStopSteps,
       automationCommandTemplates.solution_fill_stop.length
     ),
-    prepare_recirculation_start: normalizeStepCount(
+    prepare_recirculation_start: normalizeTwoTankPlanStepCount(
+      'prepare_recirculation_start',
       waterForm.twoTankPrepareRecirculationStartSteps,
       automationCommandTemplates.prepare_recirculation_start.length
     ),
-    prepare_recirculation_stop: normalizeStepCount(
+    prepare_recirculation_stop: normalizeTwoTankPlanStepCount(
+      'prepare_recirculation_stop',
       waterForm.twoTankPrepareRecirculationStopSteps,
       automationCommandTemplates.prepare_recirculation_stop.length
     ),
-    irrigation_recovery_start: normalizeStepCount(
+    irrigation_recovery_start: normalizeTwoTankPlanStepCount(
+      'irrigation_recovery_start',
       waterForm.twoTankIrrigationRecoveryStartSteps,
       automationCommandTemplates.irrigation_recovery_start.length
     ),
-    irrigation_recovery_stop: normalizeStepCount(
+    irrigation_recovery_stop: normalizeTwoTankPlanStepCount(
+      'irrigation_recovery_stop',
       waterForm.twoTankIrrigationRecoveryStopSteps,
       automationCommandTemplates.irrigation_recovery_stop.length
     ),

@@ -100,4 +100,60 @@ class AutomationConfigControllerZoneLogicProfileTest extends TestCase
             data_get($bundle->config, 'zone.logic_profile.active_profile.command_plans.plans.diagnostics.steps', [])
         );
     }
+
+    public function test_update_rejects_invalid_two_tank_command_contract(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        $payload = [
+            'active_mode' => 'setup',
+            'profiles' => [
+                'setup' => [
+                    'mode' => 'setup',
+                    'is_active' => true,
+                    'subsystems' => [
+                        'diagnostics' => [
+                            'enabled' => true,
+                            'execution' => [
+                                'workflow' => 'cycle_start',
+                                'topology' => 'two_tank_drip_substrate_trays',
+                                'two_tank_commands' => [
+                                    'solution_fill_start' => [
+                                        [
+                                            'channel' => 'valve_clean_supply',
+                                            'cmd' => 'set_relay',
+                                            'params' => ['state' => true],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($admin)
+            ->putJson("/api/automation-configs/zone/{$zone->id}/zone.logic_profile", [
+                'payload' => $payload,
+            ]);
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'error');
+
+        $this->assertStringContainsString(
+            'two_tank_commands.solution_fill_start',
+            (string) $response->json('message')
+        );
+        $this->assertStringContainsString(
+            'valve_solution_fill',
+            (string) $response->json('message')
+        );
+        $this->assertStringContainsString(
+            'pump_main',
+            (string) $response->json('message')
+        );
+    }
 }

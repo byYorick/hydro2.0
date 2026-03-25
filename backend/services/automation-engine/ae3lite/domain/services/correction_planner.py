@@ -56,6 +56,10 @@ class DosePlan:
     dose_discarded_details: Mapping[str, Any] = field(default_factory=dict)
     dead_zone_details: Mapping[str, Any] = field(default_factory=dict)
     pid_state_updates: Mapping[str, Any] = field(default_factory=dict)
+    ec_pid_zone: str = ""
+    ph_pid_zone: str = ""
+    ec_pid_coeffs: Mapping[str, Any] = field(default_factory=dict)
+    ph_pid_coeffs: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def needs_any(self) -> bool:
@@ -117,6 +121,7 @@ class CorrectionPlanner:
         process_calibrations: Optional[Mapping[str, Any]] = None,
         ec_component_policy: Optional[Mapping[str, Any]] = None,
         pid_state: Optional[Mapping[str, Any]] = None,
+        pid_configs: Optional[Mapping[str, Any]] = None,
         now: Optional[datetime] = None,
         ph_min: float | None = None,
         ph_max: float | None = None,
@@ -131,6 +136,7 @@ class CorrectionPlanner:
         process_cfg = _phase_mapping(process_calibrations).get(phase_key, {})
         process_cfg = process_cfg if isinstance(process_cfg, Mapping) else {}
         pid_state = pid_state if isinstance(pid_state, Mapping) else {}
+        pid_configs = pid_configs if isinstance(pid_configs, Mapping) else {}
         now = _to_utc_naive(now or datetime.now(UTC))
 
         ph_lo, ph_hi = _resolve_bounds(
@@ -174,8 +180,21 @@ class CorrectionPlanner:
         ph_up_gap = max(0.0, (ph_lo - predicted_ph) if ph_has_explicit_window else (target_ph - predicted_ph))
         ph_down_gap = max(0.0, (predicted_ph - ph_hi) if ph_has_explicit_window else (predicted_ph - target_ph))
 
-        ec_deadband = _non_negative_float(controller_ec.get("deadband"), 0.0)
-        ph_deadband = _non_negative_float(controller_ph.get("deadband"), 0.0)
+        ec_controller_cfg, ec_pid_zone, ec_pid_coeffs = _resolve_pid_controller_cfg(
+            controller_cfg=controller_ec,
+            pid_configs=pid_configs,
+            pid_type="ec",
+            gap=ec_gap,
+        )
+        ph_controller_cfg, ph_pid_zone, ph_pid_coeffs = _resolve_pid_controller_cfg(
+            controller_cfg=controller_ph,
+            pid_configs=pid_configs,
+            pid_type="ph",
+            gap=max(ph_up_gap, ph_down_gap),
+        )
+
+        ec_deadband = _non_negative_float(ec_controller_cfg.get("deadband"), 0.0)
+        ph_deadband = _non_negative_float(ph_controller_cfg.get("deadband"), 0.0)
 
         ec_needs = ec_gap > 0.0 if ec_has_explicit_window else ec_gap > ec_deadband
         ph_needs_up = ph_up_gap > 0.0 if ph_has_explicit_window else ph_up_gap > ph_deadband
@@ -226,7 +245,7 @@ class CorrectionPlanner:
                     gap=ec_gap,
                     lower_bound=ec_lo,
                     current_value=current_ec,
-                    controller_cfg=controller_ec,
+                    controller_cfg=ec_controller_cfg,
                     correction_config=correction_config,
                     process_cfg=process_cfg,
                     calibration=calibration,
@@ -235,6 +254,8 @@ class CorrectionPlanner:
                     now=now,
                 )
                 if ec_pid_update:
+                    if ec_pid_zone:
+                        ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
                     pid_updates["ec"] = ec_pid_update
                 ec_duration_ms, ec_discarded_reason, ec_discarded_details = _dose_ml_to_ms(
                     ec_amount_ml, calibration, correction_config,
@@ -272,7 +293,7 @@ class CorrectionPlanner:
                     gap=ph_gap,
                     lower_bound=ph_lo if ph_needs_up else ph_hi,
                     current_value=predicted_ph,
-                    controller_cfg=controller_ph,
+                    controller_cfg=ph_controller_cfg,
                     correction_config=correction_config,
                     process_cfg=process_cfg,
                     calibration=calibration,
@@ -281,6 +302,8 @@ class CorrectionPlanner:
                     now=now,
                 )
                 if ph_pid_update:
+                    if ph_pid_zone:
+                        ph_pid_update = {**ph_pid_update, "current_zone": ph_pid_zone}
                     pid_updates["ph"] = ph_pid_update
                 ph_duration_ms, ph_discarded_reason, ph_discarded_details = _dose_ml_to_ms(
                     ph_amount_ml, calibration, correction_config,
@@ -307,9 +330,11 @@ class CorrectionPlanner:
         dead_zone_details = {
             "ec_gap": round(ec_gap, 6),
             "ec_deadband": round(ec_deadband, 6),
+            "ec_pid_zone": ec_pid_zone or None,
             "ph_up_gap": round(ph_up_gap, 6),
             "ph_down_gap": round(ph_down_gap, 6),
             "ph_deadband": round(ph_deadband, 6),
+            "ph_pid_zone": ph_pid_zone or None,
             "ph_has_explicit_window": ph_has_explicit_window,
             "ec_has_explicit_window": ec_has_explicit_window,
         }
@@ -333,6 +358,10 @@ class CorrectionPlanner:
             dose_discarded_details=ec_discarded_details or ph_discarded_details,
             dead_zone_details=dead_zone_details,
             pid_state_updates=pid_updates,
+            ec_pid_zone=ec_pid_zone,
+            ph_pid_zone=ph_pid_zone,
+            ec_pid_coeffs=ec_pid_coeffs,
+            ph_pid_coeffs=ph_pid_coeffs,
         )
 
 
@@ -364,6 +393,54 @@ def _controller_cfg(correction_config: Mapping[str, Any], kind: str) -> Mapping[
     if isinstance(controller, Mapping):
         return controller
     return {}
+
+
+def _resolve_pid_controller_cfg(
+    *,
+    controller_cfg: Mapping[str, Any],
+    pid_configs: Mapping[str, Any],
+    pid_type: str,
+    gap: float,
+) -> tuple[Mapping[str, Any], str, Mapping[str, Any]]:
+    entry = pid_configs.get(pid_type)
+    pid_cfg = entry.get("config") if isinstance(entry, Mapping) else None
+    if not isinstance(pid_cfg, Mapping):
+        return controller_cfg, "", {}
+
+    zone_coeffs = pid_cfg.get("zone_coeffs")
+    if not isinstance(zone_coeffs, Mapping):
+        return _merge_pid_deadband(controller_cfg=controller_cfg, pid_cfg=pid_cfg), "", {}
+
+    close_zone = _non_negative_float(pid_cfg.get("close_zone"), 0.0)
+    far_zone = _non_negative_float(pid_cfg.get("far_zone"), 0.0)
+    zone_name = "close" if gap <= close_zone or far_zone <= close_zone else "far"
+    coeffs = zone_coeffs.get(zone_name)
+    if not isinstance(coeffs, Mapping):
+        return _merge_pid_deadband(controller_cfg=controller_cfg, pid_cfg=pid_cfg), "", {}
+
+    merged = dict(_merge_pid_deadband(controller_cfg=controller_cfg, pid_cfg=pid_cfg))
+    selected_coeffs: dict[str, float] = {}
+    for key in ("kp", "ki", "kd"):
+        value = coeffs.get(key)
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        merged[key] = numeric
+        selected_coeffs[key] = numeric
+    return merged, zone_name, selected_coeffs
+
+
+def _merge_pid_deadband(*, controller_cfg: Mapping[str, Any], pid_cfg: Mapping[str, Any]) -> Mapping[str, Any]:
+    merged = dict(controller_cfg)
+    dead_zone = pid_cfg.get("dead_zone")
+    try:
+        deadband = float(dead_zone)
+    except (TypeError, ValueError):
+        return merged
+    if deadband >= 0:
+        merged["deadband"] = deadband
+    return merged
 
 
 def _resolve_ec_actuator(
@@ -459,7 +536,7 @@ def _compute_amount_ml(
     pid_entry: Mapping[str, Any],
     now: datetime,
 ) -> tuple[float, Mapping[str, Any]]:
-    gain = _process_gain(kind=kind, process_cfg=process_cfg)
+    gain = _process_gain(kind=kind, process_cfg=process_cfg, pid_entry=pid_entry)
     pid_update = _next_pid_state(
         kind=kind,
         gap=gap,
@@ -504,7 +581,12 @@ def _compute_amount_ml(
     return dose_ml, pid_update
 
 
-def _process_gain(*, kind: str, process_cfg: Mapping[str, Any]) -> float | None:
+def _process_gain(
+    *,
+    kind: str,
+    process_cfg: Mapping[str, Any],
+    pid_entry: Mapping[str, Any],
+) -> float | None:
     key = {
         "ec": "ec_gain_per_ml",
         "ph_up": "ph_up_gain_per_ml",
@@ -519,7 +601,34 @@ def _process_gain(*, kind: str, process_cfg: Mapping[str, Any]) -> float | None:
         value = float(raw)
     except (TypeError, ValueError):
         return None
-    return value if value > 0 else None
+    if value <= 0:
+        return None
+
+    stats = pid_entry.get("stats") if isinstance(pid_entry.get("stats"), Mapping) else {}
+    adaptive = stats.get("adaptive") if isinstance(stats.get("adaptive"), Mapping) else {}
+    gains = adaptive.get("gains") if isinstance(adaptive.get("gains"), Mapping) else {}
+    learned_entry = gains.get(key) if isinstance(gains.get(key), Mapping) else {}
+
+    try:
+        learned_gain = float(learned_entry.get("ema"))
+    except (TypeError, ValueError):
+        learned_gain = 0.0
+    try:
+        observations = int(learned_entry.get("observations") or 0)
+    except (TypeError, ValueError):
+        observations = 0
+    if learned_gain <= 0 or observations <= 0:
+        return value
+
+    retention_ema = _coerce_ratio(adaptive.get("retention_ema"))
+    wave_score_ema = _coerce_ratio(adaptive.get("wave_score_ema"))
+    weight = min(1.0, observations / 6.0)
+    if retention_ema is not None:
+        weight *= max(0.25, retention_ema)
+    if wave_score_ema is not None:
+        weight *= max(0.35, 1.0 - min(0.65, wave_score_ema))
+    effective = value * (1.0 - weight) + learned_gain * weight
+    return max(value * 0.25, min(value * 4.0, effective))
 
 
 def _next_pid_state(
@@ -579,6 +688,7 @@ def _reset_pid_state_if_inside_bounds(
             # dt from now — not from a stale pre-reset timestamp, which would
             # cause an integral spike on re-entry.
             "last_measurement_at": now,
+            "current_zone": "dead",
         }
     if ec_lo <= current_ec <= ec_hi and "ec" in pid_state:
         updates["ec"] = {
@@ -586,6 +696,7 @@ def _reset_pid_state_if_inside_bounds(
             "prev_error": 0.0,
             "prev_derivative": 0.0,
             "last_measurement_at": now,
+            "current_zone": "dead",
         }
     return updates
 
@@ -686,3 +797,13 @@ def _non_negative_float(raw: Any, default: float) -> float:
 def _min_positive(*values: Optional[int]) -> Optional[int]:
     candidates = [int(value) for value in values if value is not None and int(value) > 0]
     return min(candidates) if candidates else None
+
+
+def _coerce_ratio(raw: Any) -> float | None:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return max(0.0, min(1.0, value))

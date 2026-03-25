@@ -64,6 +64,7 @@ class ZoneEventMessageFormatter
             'CORRECTION_SKIPPED_WATER_LEVEL' => $this->formatCorrectionSkippedWaterLevel($payload),
             'CORRECTION_SKIPPED_FRESHNESS' => $this->formatCorrectionSkippedFreshness($payload),
             'CORRECTION_SKIPPED_WINDOW_NOT_READY' => $this->formatCorrectionSkippedWindowNotReady($payload),
+            'CORRECTION_OBSERVATION_EVALUATED' => $this->formatCorrectionObservationEvaluated($payload),
             'CORRECTION_NO_EFFECT' => $this->formatCorrectionNoEffect($payload),
             'RELAY_AUTOTUNE_COMPLETE', 'RELAY_AUTOTUNE_COMPLETED' => $this->formatRelayAutotuneComplete($payload),
             'PUMP_CALIBRATION_SAVED' => $this->formatPumpCalibrationSaved($payload),
@@ -894,6 +895,37 @@ class ZoneEventMessageFormatter
         }
 
         return 'Коррекция: окно наблюдения не готово'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
+    }
+
+    private function formatCorrectionObservationEvaluated(array $details): string
+    {
+        $pidType = $this->toStringOrNull($details['pid_type'] ?? null);
+        $actualEffect = $this->toFloatOrNull($details['actual_effect'] ?? null);
+        $expectedEffect = $this->toFloatOrNull($details['expected_effect'] ?? null);
+        $thresholdEffect = $this->toFloatOrNull($details['threshold_effect'] ?? null);
+        $noEffect = $details['is_no_effect'] ?? null;
+        $nextCount = isset($details['no_effect_count_next']) && is_numeric($details['no_effect_count_next'])
+            ? (int) $details['no_effect_count_next']
+            : null;
+
+        $parts = [];
+        if ($pidType !== null) {
+            $parts[] = strtoupper($pidType);
+        }
+        if ($actualEffect !== null && $expectedEffect !== null) {
+            $parts[] = sprintf('эффект %.4f / ожидалось %.4f', $actualEffect, $expectedEffect);
+        }
+        if ($thresholdEffect !== null) {
+            $parts[] = sprintf('порог %.4f', $thresholdEffect);
+        }
+        if (is_bool($noEffect)) {
+            $parts[] = $noEffect ? 'no_effect=yes' : 'no_effect=no';
+        }
+        if ($nextCount !== null) {
+            $parts[] = sprintf('счётчик %d', $nextCount);
+        }
+
+        return 'Коррекция: оценка отклика'.($parts !== [] ? ' ('.implode(', ', $parts).')' : '');
     }
 
     private function formatCorrectionNoEffect(array $details): string

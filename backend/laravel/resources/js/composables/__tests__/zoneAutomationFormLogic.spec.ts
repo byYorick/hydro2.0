@@ -370,6 +370,29 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.lighting.execution.photoperiod.hours_on).toBe(24)
   })
 
+  it('не даёт урезать критические two-tank command plans ниже безопасного минимума', () => {
+    const forms = createForms()
+
+    forms.waterForm.systemType = 'drip'
+    forms.waterForm.tanksCount = 2
+    forms.waterForm.twoTankSolutionFillStartSteps = 1
+    forms.waterForm.twoTankSolutionFillStopSteps = 1
+    forms.waterForm.twoTankPrepareRecirculationStartSteps = 1
+    forms.waterForm.twoTankPrepareRecirculationStopSteps = 1
+    forms.waterForm.twoTankIrrigationRecoveryStartSteps = 1
+    forms.waterForm.twoTankIrrigationRecoveryStopSteps = 1
+
+    const payload = buildGrowthCycleConfigPayload(forms) as any
+    const twoTankCommands = payload.subsystems.diagnostics.execution.two_tank_commands
+
+    expect(twoTankCommands.solution_fill_start).toHaveLength(3)
+    expect(twoTankCommands.solution_fill_stop).toHaveLength(3)
+    expect(twoTankCommands.prepare_recirculation_start).toHaveLength(3)
+    expect(twoTankCommands.prepare_recirculation_stop).toHaveLength(3)
+    expect(twoTankCommands.irrigation_recovery_start).toHaveLength(4)
+    expect(twoTankCommands.irrigation_recovery_stop).toHaveLength(3)
+  })
+
   it('buildGrowthCycleConfigPayload может не отправлять system_type для активного цикла', () => {
     const forms = createForms()
 

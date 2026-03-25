@@ -40,8 +40,6 @@ Authority покрывает только automation/runtime-конфиги:
 - `system.automation_defaults`
 - `system.command_templates`
 - `system.process_calibration_defaults`
-- `system.pid_defaults.ph`
-- `system.pid_defaults.ec`
 - `system.pump_calibration_policy`
 - `system.sensor_calibration_policy`
 - `greenhouse.logic_profile`

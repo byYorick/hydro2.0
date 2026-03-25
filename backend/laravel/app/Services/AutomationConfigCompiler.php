@@ -65,10 +65,6 @@ class AutomationConfigCompiler
             'automation_defaults' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
             'command_templates' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_COMMAND_TEMPLATES, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
             'process_calibration_defaults' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
-            'pid_defaults' => [
-                'ph' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_PID_DEFAULTS_PH, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
-                'ec' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_PID_DEFAULTS_EC, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
-            ],
             'pump_calibration_policy' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
             'sensor_calibration_policy' => $this->payload(AutomationConfigRegistry::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY, AutomationConfigRegistry::SCOPE_SYSTEM, 0),
         ];

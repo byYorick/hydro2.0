@@ -133,12 +133,12 @@ class ZonePidLogControllerTest extends TestCase
                 'type' => 'ph',
                 'updated_by' => 77,
                 'new_config' => [
-                    'target' => 5.8,
-                    'max_output' => 20.0,
-                    'min_interval_ms' => 90000,
+                    'dead_zone' => 0.05,
+                    'close_zone' => 0.3,
+                    'max_integral' => 20.0,
                 ],
                 'old_config' => [
-                    'target' => 6.0,
+                    'dead_zone' => 0.08,
                 ],
             ],
         ]);
@@ -149,7 +149,7 @@ class ZonePidLogControllerTest extends TestCase
             ->assertJsonPath('data.0.type', 'config_updated')
             ->assertJsonPath('data.0.pid_type', 'ph')
             ->assertJsonPath('data.0.updated_by', 77)
-            ->assertJsonPath('data.0.new_config.target', 5.8)
+            ->assertJsonPath('data.0.new_config.dead_zone', 0.05)
             ->assertJsonPath('data.1.type', 'ph')
             ->assertJsonPath('data.1.integral_term', 1.75)
             ->assertJsonPath('data.1.zone_state', 'far');

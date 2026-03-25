@@ -262,44 +262,6 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[color:var(--border-muted)] pt-4">
           <div>
             <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
-              Максимальная доза (мл)
-            </label>
-            <input
-              v-model.number="form.max_output"
-              type="number"
-              step="0.1"
-              min="0.1"
-              max="500"
-              class="input-field w-full"
-              :title="fieldHelp('max_output')"
-              required
-            />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              pH: 20 мл, EC: 50 мл — рекомендуемые значения
-            </p>
-          </div>
-
-          <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
-              Пауза между дозами (мин)
-            </label>
-            <input
-              v-model.number="intervalMinutes"
-              type="number"
-              step="0.5"
-              min="0.5"
-              max="60"
-              class="input-field w-full"
-              :title="fieldHelp('interval_minutes')"
-              required
-            />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">
-              pH: 1.5 мин, EC: 2 мин — рекомендуемые значения
-            </p>
-          </div>
-
-          <div>
-            <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
               Лимит интеграла (max_integral)
             </label>
             <input
@@ -326,7 +288,7 @@
             Внимание
           </div>
           <div class="text-xs text-[color:var(--badge-warning-text)]">
-            Обнаружены агрессивные настройки (Kp &gt; 200 или пауза &lt; 30 сек).
+            Обнаружены агрессивные настройки (Kp &gt; 200).
             <span v-if="!confirmed"> Нажмите кнопку сохранения ещё раз для подтверждения.</span>
           </div>
         </div>
@@ -374,7 +336,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const FIELD_HELP: Record<string, string> = {
-  target: 'Целевое значение PID-контура. Для pH это рабочая кислотность раствора, для EC - целевая электропроводность.',
+  target: 'Целевое значение PID-контура. Берётся только из актуальной recipe phase и не сохраняется в zone.pid.*.',
   dead_zone: 'Зона, в которой отклонение считается слишком малым для dosing-реакции. Помогает избежать дрожания регулятора.',
   close_zone: 'Окно умеренного отклонения рядом с target. В этой зоне обычно используются более мягкие коэффициенты PID.',
   far_zone: 'Окно крупного отклонения от target. В нём runtime может использовать более агрессивные коэффициенты.',
@@ -384,8 +346,6 @@ const FIELD_HELP: Record<string, string> = {
   'far.kp': 'Пропорциональный коэффициент для дальней зоны, когда отклонение от target ещё велико.',
   'far.ki': 'Интегральный коэффициент для дальней зоны. Обычно требует осторожной настройки, чтобы не накопить лишнюю дозу.',
   'far.kd': 'Дифференциальный коэффициент для дальней зоны. Помогает стабилизировать aggressive-коррекцию.',
-  max_output: 'Максимальная доза за одно решение PID. Ограничивает объём добавки и защищает систему от слишком резкой коррекции.',
-  interval_minutes: 'Минимальная пауза между dosing-циклами PID. Даёт раствору время дойти до датчиков и стабилизироваться.',
   max_integral: 'Предел накопления интегральной ошибки. Нужен, чтобы интегральная часть не разгоняла контур в saturation.',
 }
 
@@ -399,7 +359,6 @@ const emit = defineEmits<{
 
 const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
   ph: {
-    target: 5.8,
     dead_zone: 0.05,
     close_zone: 0.3,
     far_zone: 1.0,
@@ -407,12 +366,9 @@ const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
       close: { kp: 5.0, ki: 0.05, kd: 0.0 },
       far: { kp: 8.0, ki: 0.02, kd: 0.0 },
     },
-    max_output: 20.0,
-    min_interval_ms: 90_000,
     max_integral: 20.0,
   },
   ec: {
-    target: 1.6,
     dead_zone: 0.1,
     close_zone: 0.5,
     far_zone: 1.5,
@@ -420,8 +376,6 @@ const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
       close: { kp: 30.0, ki: 0.3, kd: 0.0 },
       far: { kp: 50.0, ki: 0.1, kd: 0.0 },
     },
-    max_output: 50.0,
-    min_interval_ms: 120_000,
     max_integral: 100.0,
   },
 }
@@ -451,33 +405,18 @@ const phaseTargetSourceHint = computed(() => {
   const phaseLabel = resolvedPhaseTargets.value?.phaseLabel
   const base = phaseLabel ? `Target подтянут из recipe phase «${phaseLabel}».` : 'Target подтянут из актуальной recipe phase.'
 
-  return `${base} Ручное редактирование target запрещено.`
-})
-
-const intervalMinutes = computed({
-  get: () => Number(form.value.min_interval_ms || 0) / 60000,
-  set: (val: number) => {
-    const safeValue = Number.isFinite(val) ? Math.max(0, val) : 0
-    form.value.min_interval_ms = Math.round(safeValue * 60000)
-  },
+  return `${base} Ручное редактирование target запрещено, в zone.pid.* он не сохраняется.`
 })
 
 const needsConfirmation = computed(() => {
   return (
     form.value.zone_coeffs.close.kp > 200 ||
-    form.value.zone_coeffs.far.kp > 200 ||
-    form.value.min_interval_ms < 30_000
+    form.value.zone_coeffs.far.kp > 200
   )
 })
 
 function cloneConfig(config: PidConfig): PidConfig {
   return JSON.parse(JSON.stringify(config)) as PidConfig
-}
-
-function applyPhaseTargetToForm(): void {
-  if (phaseTargetAvailable.value) {
-    form.value.target = Number(phaseTarget.value)
-  }
 }
 
 function toNumberOr(value: unknown, fallback: number): number {
@@ -491,7 +430,6 @@ function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' 
   const farRaw: Partial<PidConfig['zone_coeffs']['far']> = raw?.zone_coeffs?.far ?? {}
 
   return {
-    target: toNumberOr(raw?.target, defaults.target),
     dead_zone: toNumberOr(raw?.dead_zone, defaults.dead_zone),
     close_zone: toNumberOr(raw?.close_zone, defaults.close_zone),
     far_zone: toNumberOr(raw?.far_zone, defaults.far_zone),
@@ -507,8 +445,6 @@ function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' 
         kd: toNumberOr(farRaw.kd, defaults.zone_coeffs.far.kd),
       },
     },
-    max_output: toNumberOr(raw?.max_output, defaults.max_output),
-    min_interval_ms: Math.max(1000, Math.round(toNumberOr(raw?.min_interval_ms, defaults.min_interval_ms))),
     max_integral: toNumberOr(raw?.max_integral, defaults.max_integral),
   }
 }
@@ -518,13 +454,11 @@ async function loadConfig() {
     const config = await getPidConfig(props.zoneId, selectedType.value)
     const source = config?.config ?? DEFAULT_CONFIGS[selectedType.value]
     form.value = normalizeConfig(source, selectedType.value)
-    applyPhaseTargetToForm()
     pidConfigSavedState.value[selectedType.value] = Boolean(config) && config.is_default !== true
     confirmed.value = false
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID config:', error)
     form.value = cloneConfig(DEFAULT_CONFIGS[selectedType.value])
-    applyPhaseTargetToForm()
   }
 }
 
@@ -564,14 +498,12 @@ function extractCurrentPhase(raw: unknown): unknown {
 async function hydratePhaseTargets(): Promise<void> {
   if (props.phaseTargets) {
     resolvedPhaseTargets.value = props.phaseTargets
-    applyPhaseTargetToForm()
     return
   }
 
   try {
     const response = await api.get<{ status: string; data?: unknown }>(`/zones/${props.zoneId}`)
     resolvedPhaseTargets.value = resolveRecipePhasePidTargets(extractCurrentPhase(response.data.data))
-    applyPhaseTargetToForm()
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load current recipe phase targets:', error)
     resolvedPhaseTargets.value = null
@@ -593,12 +525,8 @@ async function onSubmit() {
   }
 
   try {
-    const saved = await updatePidConfig(props.zoneId, selectedType.value, {
-      ...form.value,
-      target: Number(phaseTarget.value),
-    })
+    const saved = await updatePidConfig(props.zoneId, selectedType.value, form.value)
     form.value = normalizeConfig(saved.config, selectedType.value)
-    applyPhaseTargetToForm()
     pidConfigSavedState.value[selectedType.value] = true
     await loadStatuses()
     emit('saved', saved)
@@ -620,13 +548,8 @@ watch(
   () => props.phaseTargets,
   (targets) => {
     resolvedPhaseTargets.value = targets
-    applyPhaseTargetToForm()
   }
 )
-
-watch(phaseTarget, () => {
-  applyPhaseTargetToForm()
-})
 
 watch(
   form,

@@ -102,6 +102,28 @@ class LegacyAutomationConfigRoutesRemovedTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_removed_system_pid_defaults_authority_namespaces_are_rejected(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)
+            ->getJson('/api/automation-configs/system/0/system.pid_defaults.ph')
+            ->assertStatus(422);
+
+        $this->actingAs($admin)
+            ->putJson('/api/automation-configs/system/0/system.pid_defaults.ec', [
+                'dead_zone' => 0.1,
+                'close_zone' => 0.5,
+                'far_zone' => 1.5,
+                'zone_coeffs' => [
+                    'close' => ['kp' => 1, 'ki' => 1, 'kd' => 0],
+                    'far' => ['kp' => 1, 'ki' => 1, 'kd' => 0],
+                ],
+                'max_integral' => 100,
+            ])
+            ->assertStatus(422);
+    }
+
     public function test_greenhouse_legacy_automation_routes_are_not_registered(): void
     {
         $greenhouse = Greenhouse::factory()->create();

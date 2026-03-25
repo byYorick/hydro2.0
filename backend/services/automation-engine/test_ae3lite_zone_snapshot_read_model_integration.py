@@ -678,7 +678,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
                 """,
                 node_id,
                 channel,
-                {"pump_calibration": {"ml_per_sec": 7.5, "source": "legacy_config"}} if channel == "pump_main" else {},
+                {},
             )
             node_channel_ids[channel] = int(rows[0]["id"])
         node_channel_id = node_channel_ids["pump_main"]

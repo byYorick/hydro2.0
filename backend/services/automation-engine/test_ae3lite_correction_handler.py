@@ -597,13 +597,158 @@ async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: py
     assert outcome.next_stage == "solution_fill_check"
     send_alert.assert_awaited_once()
     assert send_alert.await_args.kwargs["message"] == "EC correction produced no observable response 3 times in a row."
-    create_event.assert_awaited_once()
-    assert create_event.await_args.args[1] == "CORRECTION_NO_EFFECT"
-    payload = create_event.await_args.args[2]
+    assert create_event.await_count == 2
+    observation_call = create_event.await_args_list[0]
+    assert observation_call.args[1] == "CORRECTION_OBSERVATION_EVALUATED"
+    observation_payload = observation_call.args[2]
+    assert observation_payload["pid_type"] == "ec"
+    assert observation_payload["actual_effect"] == pytest.approx(0.01)
+    assert observation_payload["expected_effect"] == pytest.approx(0.4)
+    assert observation_payload["threshold_effect"] == pytest.approx(0.1)
+    assert observation_payload["is_no_effect"] is True
+    assert observation_payload["no_effect_count_next"] == 3
+    assert observation_payload["dose_amount_ml"] == pytest.approx(2.0)
+    no_effect_call = create_event.await_args_list[1]
+    assert no_effect_call.args[1] == "CORRECTION_NO_EFFECT"
+    payload = no_effect_call.args[2]
     assert payload["pid_type"] == "ec"
-    assert payload["actual_effect"] == pytest.approx(0.01)
+    assert payload["actual_effect"] == pytest.approx(0.02)
     assert payload["threshold_effect"] == pytest.approx(0.1)
     assert payload["no_effect_limit"] == 3
+
+
+async def test_corr_wait_ec_logs_observation_evaluation_for_reaction(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=4,
+        ec_attempt=3,
+        ph_attempt=2,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 1,
+        }
+    }
+    task = _make_task(corr=corr)
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.40},
+        {"ts": NOW, "value": 1.45},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.attempt == 0
+    assert outcome.correction.ec_attempt == 0
+    assert outcome.correction.ph_attempt == 0
+    assert create_event.await_count == 1
+    assert create_event.await_args.args[1] == "CORRECTION_OBSERVATION_EVALUATED"
+    payload = create_event.await_args.args[2]
+    assert payload["pid_type"] == "ec"
+    assert payload["actual_effect"] == pytest.approx(0.4)
+    assert payload["peak_effect"] == pytest.approx(0.45)
+    assert payload["expected_effect"] == pytest.approx(0.4)
+    assert payload["threshold_effect"] == pytest.approx(0.1)
+    assert payload["is_no_effect"] is False
+    assert payload["no_effect_count_next"] == 0
+    assert payload["dose_amount_ml"] == pytest.approx(2.0)
+
+
+async def test_corr_wait_ec_wave_response_does_not_increment_attempts(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=3,
+        ec_attempt=2,
+        ph_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 1,
+        }
+    }
+    task = _make_task(corr=corr)
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    pid_repo = _MockPidStateRepository()
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.14},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.07},
+        {"ts": NOW, "value": 1.05},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.attempt == 0
+    assert outcome.correction.ec_attempt == 0
+    assert create_event.await_count == 1
+    payload = create_event.await_args.args[2]
+    assert payload["is_no_effect"] is False
+    assert payload["wave_detected"] is True
+    assert payload["peak_effect"] == pytest.approx(0.14)
+    assert payload["actual_effect"] == pytest.approx(0.07)
+    assert payload["retention_ratio"] == pytest.approx(0.5)
+    assert pid_repo.upsert_calls
+    adaptive_stats = pid_repo.upsert_calls[-1]["updates"][0]["stats"]["adaptive"]
+    assert adaptive_stats["gains"]["ec_gain_per_ml"]["observations"] == 1
+    assert adaptive_stats["wave_score_ema"] == pytest.approx(0.5)
+
+
+async def test_corr_dose_ec_uses_learned_observation_timing_from_pid_state_stats():
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=900,
+        ec_amount_ml=2.0,
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "stats": {
+                "adaptive": {
+                    "timing": {
+                        "transport_delay_sec_ema": 9,
+                        "settle_sec_ema": 7,
+                        "observations": 4,
+                    }
+                }
+            }
+        }
+    }
+    task = _make_task(corr=corr)
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(pid_repo=pid_repo)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.due_delay_sec == 16
+    assert pid_repo.upsert_calls[-1]["updates"][0]["hold_until"] == NOW + timedelta(seconds=16)
 
 
 async def test_corr_wait_ec_stale_telemetry_logs_freshness_event(monkeypatch: pytest.MonkeyPatch):

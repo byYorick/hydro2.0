@@ -96,8 +96,6 @@ const SYSTEM_NAMESPACE_MAP: Record<string, string> = {
   automation_defaults: 'system.automation_defaults',
   automation_command_templates: 'system.command_templates',
   process_calibration_defaults: 'system.process_calibration_defaults',
-  pid_defaults_ph: 'system.pid_defaults.ph',
-  pid_defaults_ec: 'system.pid_defaults.ec',
   pump_calibration: 'system.pump_calibration_policy',
   sensor_calibration: 'system.sensor_calibration_policy',
 }

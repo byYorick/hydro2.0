@@ -4,6 +4,17 @@ namespace App\Support\Automation;
 
 class ZoneLogicProfileNormalizer
 {
+    private const TWO_TANK_REQUIRED_PLAN_CHANNELS = [
+        'clean_fill_start' => ['valve_clean_fill'],
+        'clean_fill_stop' => ['valve_clean_fill'],
+        'solution_fill_start' => ['valve_clean_supply', 'valve_solution_fill', 'pump_main'],
+        'solution_fill_stop' => ['pump_main', 'valve_solution_fill', 'valve_clean_supply'],
+        'prepare_recirculation_start' => ['valve_solution_supply', 'valve_solution_fill', 'pump_main'],
+        'prepare_recirculation_stop' => ['pump_main', 'valve_solution_fill', 'valve_solution_supply'],
+        'irrigation_recovery_start' => ['valve_irrigation', 'valve_solution_supply', 'valve_solution_fill', 'pump_main'],
+        'irrigation_recovery_stop' => ['pump_main', 'valve_solution_fill', 'valve_solution_supply'],
+    ];
+
     /**
      * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
@@ -72,6 +83,7 @@ class ZoneLogicProfileNormalizer
 
         $twoTankCommands = data_get($execution, 'two_tank_commands');
         $twoTankCommands = is_array($twoTankCommands) && ! array_is_list($twoTankCommands) ? $twoTankCommands : [];
+        $this->assertTwoTankCommandContract($execution, $twoTankCommands);
 
         $steps = $this->resolveCommandPlanSteps($execution, $twoTankCommands);
 
@@ -200,5 +212,45 @@ class ZoneLogicProfileNormalizer
         }
 
         return $steps;
+    }
+
+    /**
+     * @param  array<string, mixed>  $execution
+     * @param  array<string, mixed>  $twoTankCommands
+     */
+    private function assertTwoTankCommandContract(array $execution, array $twoTankCommands): void
+    {
+        $topology = strtolower(trim((string) ($execution['topology'] ?? '')));
+        if (! in_array($topology, ['two_tank', 'two_tank_drip_substrate_trays'], true)) {
+            return;
+        }
+
+        foreach (self::TWO_TANK_REQUIRED_PLAN_CHANNELS as $planName => $requiredChannels) {
+            $planCommands = $twoTankCommands[$planName] ?? null;
+            if (! is_array($planCommands) || ! array_is_list($planCommands) || $planCommands === []) {
+                continue;
+            }
+
+            $presentChannels = [];
+            foreach ($planCommands as $command) {
+                if (! is_array($command) || array_is_list($command)) {
+                    continue;
+                }
+
+                $channel = strtolower(trim((string) ($command['channel'] ?? '')));
+                if ($channel !== '') {
+                    $presentChannels[] = $channel;
+                }
+            }
+
+            $missingChannels = array_values(array_diff($requiredChannels, array_values(array_unique($presentChannels))));
+            if ($missingChannels !== []) {
+                throw new \InvalidArgumentException(sprintf(
+                    'zone.logic_profile.profiles.*.subsystems.diagnostics.execution.two_tank_commands.%s is invalid: missing required channels [%s].',
+                    $planName,
+                    implode(', ', $missingChannels)
+                ));
+            }
+        }
     }
 }

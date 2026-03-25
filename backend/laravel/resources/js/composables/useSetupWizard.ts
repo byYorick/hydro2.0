@@ -323,8 +323,8 @@ export function useSetupWizard() {
     manualIrrigationSeconds: 90,
     twoTankCleanFillStartSteps: 1,
     twoTankCleanFillStopSteps: 1,
-    twoTankSolutionFillStartSteps: 1,
-    twoTankSolutionFillStopSteps: 1,
+    twoTankSolutionFillStartSteps: 3,
+    twoTankSolutionFillStopSteps: 3,
   })
 
   const automationLightingForm = reactive<LightingFormState>({

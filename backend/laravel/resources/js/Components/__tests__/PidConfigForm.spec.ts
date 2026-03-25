@@ -42,7 +42,6 @@ describe('PidConfigForm.vue', () => {
     getPidConfigMock.mockResolvedValue({
       type: 'ph',
       config: {
-        target: 9.9,
         dead_zone: 0.05,
         close_zone: 0.3,
         far_zone: 1.0,
@@ -50,8 +49,6 @@ describe('PidConfigForm.vue', () => {
           close: { kp: 5, ki: 0.05, kd: 0 },
           far: { kp: 8, ki: 0.02, kd: 0 },
         },
-        max_output: 20,
-        min_interval_ms: 90_000,
         max_integral: 20,
       },
       is_default: false,
@@ -70,7 +67,7 @@ describe('PidConfigForm.vue', () => {
     })
   })
 
-  it('сохраняет target из recipe phase, а не из существующего PID-документа', async () => {
+  it('сохраняет только canonical PID tuning и не отправляет target в PID-документ', async () => {
     const wrapper = mount(PidConfigForm, {
       props: {
         zoneId: 7,
@@ -98,7 +95,15 @@ describe('PidConfigForm.vue', () => {
     expect(updatePidConfigMock).toHaveBeenCalledWith(
       7,
       'ph',
-      expect.objectContaining({ target: 5.7 })
+      expect.not.objectContaining({ target: expect.anything() })
+    )
+    expect(updatePidConfigMock).toHaveBeenCalledWith(
+      7,
+      'ph',
+      expect.objectContaining({
+        dead_zone: 0.05,
+        max_integral: 20,
+      })
     )
   })
 

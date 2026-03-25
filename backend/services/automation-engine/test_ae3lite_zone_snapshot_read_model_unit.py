@@ -373,6 +373,45 @@ def test_extract_pump_calibration_merges_policy_with_db_calibration() -> None:
     assert result["sample_count"] == 4
 
 
+def test_extract_pump_calibration_ignores_legacy_node_channel_config() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._extract_pump_calibration(
+        {
+            "channel_config": {
+                "pump_calibration": {
+                    "ml_per_sec": 7.5,
+                    "k_ms_per_ml_l": 11.0,
+                    "source": "legacy_config",
+                    "min_dose_ms": 999,
+                    "ml_per_sec_min": 9.9,
+                    "ml_per_sec_max": 99.9,
+                }
+            },
+            "calibration_ml_per_sec": None,
+            "calibration_k_ms_per_ml_l": None,
+            "calibration_component": None,
+            "calibration_source": None,
+            "calibration_quality_score": None,
+            "calibration_sample_count": None,
+            "calibration_valid_from": None,
+        },
+        pump_calibration_policy={
+            "min_dose_ms": 50,
+            "ml_per_sec_min": 0.01,
+            "ml_per_sec_max": 20.0,
+        },
+    )
+
+    assert result is not None
+    assert result["min_dose_ms"] == 50
+    assert result["ml_per_sec_min"] == 0.01
+    assert result["ml_per_sec_max"] == 20.0
+    assert "ml_per_sec" not in result
+    assert "k_ms_per_ml_l" not in result
+    assert result.get("source") is None
+
+
 def test_bundle_correction_config_row_uses_bundle_meta_version() -> None:
     read_model = PgZoneSnapshotReadModel()
 

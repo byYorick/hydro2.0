@@ -7,6 +7,7 @@ use App\Models\AutomationConfigVersion;
 use App\Support\Automation\ZoneCorrectionResolvedConfigBuilder;
 use App\Support\Automation\ZoneLogicProfileNormalizer;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AutomationConfigDocumentService
 {
@@ -136,6 +137,7 @@ class AutomationConfigDocumentService
         }
 
         app(AutomationConfigCompiler::class)->compileZoneBundle($zoneId);
+        $this->resolveZoneCorrectionBootstrapAlert($zoneId);
     }
 
     /**
@@ -319,5 +321,18 @@ class AutomationConfigDocumentService
     public function checksum(array $payload): string
     {
         return sha1(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    }
+
+    private function resolveZoneCorrectionBootstrapAlert(int $zoneId): void
+    {
+        if ($zoneId <= 0 || ! Schema::hasTable('alerts')) {
+            return;
+        }
+
+        app(AlertService::class)->resolveByCode($zoneId, 'biz_zone_correction_config_missing', [
+            'resolved_by' => 'zone_correction_bootstrap',
+            'resolved_via' => 'auto',
+            'reason' => 'correction_config_bootstrap_defaults_applied',
+        ]);
     }
 }

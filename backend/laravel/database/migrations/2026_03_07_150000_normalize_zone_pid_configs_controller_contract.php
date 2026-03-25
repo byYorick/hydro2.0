@@ -1,6 +1,5 @@
 <?php
 
-use App\Services\ZonePidConfigurationService;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -8,11 +7,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $service = app(ZonePidConfigurationService::class);
-
         DB::table('zone_pid_configs')
             ->orderBy('id')
-            ->chunkById(100, function ($rows) use ($service): void {
+            ->chunkById(100, function ($rows): void {
                 foreach ($rows as $row) {
                     $config = json_decode((string) $row->config, true);
                     if (! is_array($config)) {
@@ -21,15 +18,14 @@ return new class extends Migration
 
                     $normalized = $this->normalizeLegacyConfigForMigration(
                         $config,
-                        (string) $row->type,
-                        $service
+                        (string) $row->type
                     );
 
                     DB::table('zone_pid_configs')
                         ->where('id', $row->id)
                         ->update([
                             'config' => json_encode(
-                                $service->sanitizeConfig($normalized, (string) $row->type),
+                                $this->sanitizeConfig($normalized),
                                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
                             ),
                             'updated_at' => now(),
@@ -46,14 +42,12 @@ return new class extends Migration
     private function normalizeLegacyConfigForMigration(
         array $config,
         string $type,
-        ZonePidConfigurationService $service
     ): array {
         if (isset($config['controller']) && is_array($config['controller'])) {
             return $config;
         }
 
-        $defaults = $service->getDefaultConfig($type);
-        $controller = is_array($defaults['controller'] ?? null) ? $defaults['controller'] : [];
+        $controller = $this->defaultLegacyController($type);
         $closeCoeffs = is_array(data_get($config, 'zone_coeffs.close')) ? data_get($config, 'zone_coeffs.close') : [];
 
         $controller['kp'] = (float) ($config['kp'] ?? $closeCoeffs['kp'] ?? $controller['kp']);
@@ -72,5 +66,38 @@ return new class extends Migration
             'controller' => $controller,
             'autotune_meta' => is_array($config['autotune_meta'] ?? null) ? $config['autotune_meta'] : null,
         ];
+    }
+
+    private function sanitizeConfig(array $config): array
+    {
+        return array_is_list($config) ? [] : $config;
+    }
+
+    /**
+     * @return array<string, float|int>
+     */
+    private function defaultLegacyController(string $type): array
+    {
+        return $type === 'ph'
+            ? [
+                'kp' => 5.0,
+                'ki' => 0.05,
+                'kd' => 0.0,
+                'deadband' => 0.05,
+                'min_interval_sec' => 90,
+                'max_dose_ml' => 20.0,
+                'max_integral' => 20.0,
+                'derivative_filter_alpha' => 0.35,
+            ]
+            : [
+                'kp' => 30.0,
+                'ki' => 0.3,
+                'kd' => 0.0,
+                'deadband' => 0.1,
+                'min_interval_sec' => 120,
+                'max_dose_ml' => 50.0,
+                'max_integral' => 100.0,
+                'derivative_filter_alpha' => 0.35,
+            ];
     }
 };

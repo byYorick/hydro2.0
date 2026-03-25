@@ -219,56 +219,14 @@ class SystemAutomationSettingsCatalog
                 'ec_tds_reference_max' => 10000,
             ],
             'process_calibration_defaults' => [
-                'ec_gain_per_ml' => 0.11,
-                'ph_up_gain_per_ml' => 0.08,
-                'ph_down_gain_per_ml' => 0.07,
-                'ph_per_ec_ml' => -0.015,
-                'ec_per_ph_ml' => 0.02,
-                'transport_delay_sec' => 20,
-                'settle_sec' => 45,
-                'confidence' => 0.75,
-            ],
-            'pid_defaults_ph' => [
-                'target' => 5.8,
-                'dead_zone' => 0.05,
-                'close_zone' => 0.3,
-                'far_zone' => 1.0,
-                'zone_coeffs' => [
-                    'close' => [
-                        'kp' => 5.0,
-                        'ki' => 0.05,
-                        'kd' => 0.0,
-                    ],
-                    'far' => [
-                        'kp' => 8.0,
-                        'ki' => 0.02,
-                        'kd' => 0.0,
-                    ],
-                ],
-                'max_output' => 20.0,
-                'min_interval_ms' => 90000,
-                'max_integral' => 20.0,
-            ],
-            'pid_defaults_ec' => [
-                'target' => 1.6,
-                'dead_zone' => 0.1,
-                'close_zone' => 0.5,
-                'far_zone' => 1.5,
-                'zone_coeffs' => [
-                    'close' => [
-                        'kp' => 30.0,
-                        'ki' => 0.3,
-                        'kd' => 0.0,
-                    ],
-                    'far' => [
-                        'kp' => 50.0,
-                        'ki' => 0.1,
-                        'kd' => 0.0,
-                    ],
-                ],
-                'max_output' => 50.0,
-                'min_interval_ms' => 120000,
-                'max_integral' => 100.0,
+                'ec_gain_per_ml' => 0.006,
+                'ph_up_gain_per_ml' => 0.015,
+                'ph_down_gain_per_ml' => 0.015,
+                'ph_per_ec_ml' => -0.002,
+                'ec_per_ph_ml' => 0.001,
+                'transport_delay_sec' => 4,
+                'settle_sec' => 12,
+                'confidence' => 0.85,
             ],
             'automation_defaults' => [
                 'climate_enabled' => true,
@@ -314,7 +272,7 @@ class SystemAutomationSettingsCatalog
                 'water_refill_timeout_sec' => 600,
                 'water_startup_clean_fill_timeout_sec' => 1200,
                 'water_startup_solution_fill_timeout_sec' => 1800,
-                'water_startup_prepare_recirculation_timeout_sec' => 1200,
+                'water_startup_prepare_recirculation_timeout_sec' => 900,
                 'water_startup_clean_fill_retry_cycles' => 1,
                 'water_startup_level_poll_interval_sec' => 60,
                 'water_startup_level_switch_on_threshold' => 0.5,
@@ -322,17 +280,17 @@ class SystemAutomationSettingsCatalog
                 'water_startup_solution_max_sensor_label' => 'level_solution_max',
                 'water_irrigation_recovery_max_continue_attempts' => 5,
                 'water_irrigation_recovery_timeout_sec' => 600,
-                'water_irrigation_recovery_target_tolerance_ec_pct' => 10.0,
-                'water_irrigation_recovery_target_tolerance_ph_pct' => 5.0,
-                'water_irrigation_recovery_degraded_tolerance_ec_pct' => 20.0,
-                'water_irrigation_recovery_degraded_tolerance_ph_pct' => 10.0,
-                'water_prepare_tolerance_ec_pct' => 25.0,
-                'water_prepare_tolerance_ph_pct' => 15.0,
-                'water_correction_max_ec_attempts' => 5,
-                'water_correction_max_ph_attempts' => 5,
-                'water_correction_prepare_recirculation_max_attempts' => 3,
-                'water_correction_prepare_recirculation_max_correction_attempts' => 20,
-                'water_correction_stabilization_sec' => 60,
+                'water_irrigation_recovery_target_tolerance_ec_pct' => 8.0,
+                'water_irrigation_recovery_target_tolerance_ph_pct' => 4.0,
+                'water_irrigation_recovery_degraded_tolerance_ec_pct' => 16.0,
+                'water_irrigation_recovery_degraded_tolerance_ph_pct' => 8.0,
+                'water_prepare_tolerance_ec_pct' => 10.0,
+                'water_prepare_tolerance_ph_pct' => 5.0,
+                'water_correction_max_ec_attempts' => 8,
+                'water_correction_max_ph_attempts' => 8,
+                'water_correction_prepare_recirculation_max_attempts' => 4,
+                'water_correction_prepare_recirculation_max_correction_attempts' => 40,
+                'water_correction_stabilization_sec' => 8,
                 'water_two_tank_clean_fill_start_steps' => 1,
                 'water_two_tank_clean_fill_stop_steps' => 1,
                 'water_two_tank_solution_fill_start_steps' => 3,
@@ -416,10 +374,6 @@ class SystemAutomationSettingsCatalog
 
     public static function fieldCatalog(string $namespace): array
     {
-        if (in_array($namespace, ['pid_defaults_ph', 'pid_defaults_ec'], true)) {
-            return self::pidDefaultsFieldCatalog($namespace);
-        }
-
         if (! array_key_exists($namespace, self::FIELD_CATALOG)) {
             throw new InvalidArgumentException("Unknown automation settings namespace: {$namespace}");
         }
@@ -437,25 +391,6 @@ class SystemAutomationSettingsCatalog
         }
 
         return $fields;
-    }
-
-    private static function pidDefaultsFieldCatalog(string $namespace): array
-    {
-        return [[
-            'key' => $namespace,
-            'label' => $namespace === 'pid_defaults_ph' ? 'PID defaults pH' : 'PID defaults EC',
-            'description' => 'Системные значения по умолчанию для PID-регулятора.',
-            'fields' => [
-                ['path' => 'target', 'label' => 'Target', 'description' => 'Целевое значение PID.', 'type' => 'number', 'min' => 0.0, 'max' => 20.0, 'step' => 0.01],
-                ['path' => 'dead_zone', 'label' => 'Dead zone', 'description' => 'Зона без коррекции.', 'type' => 'number', 'min' => 0.0, 'max' => 10.0, 'step' => 0.01],
-                ['path' => 'close_zone', 'label' => 'Close zone', 'description' => 'Ближняя зона PID.', 'type' => 'number', 'min' => 0.0, 'max' => 10.0, 'step' => 0.01],
-                ['path' => 'far_zone', 'label' => 'Far zone', 'description' => 'Дальняя зона PID.', 'type' => 'number', 'min' => 0.0, 'max' => 20.0, 'step' => 0.01],
-                ['path' => 'zone_coeffs', 'label' => 'Zone coeffs', 'description' => 'Набор коэффициентов по зонам.', 'type' => 'json'],
-                ['path' => 'max_output', 'label' => 'Max output', 'description' => 'Ограничение максимального выхода.', 'type' => 'number', 'min' => 0.0, 'max' => 1000.0, 'step' => 0.01],
-                ['path' => 'min_interval_ms', 'label' => 'Min interval ms', 'description' => 'Минимальный интервал между действиями.', 'type' => 'integer', 'min' => 0, 'max' => 86400000],
-                ['path' => 'max_integral', 'label' => 'Max integral', 'description' => 'Ограничение интегральной составляющей.', 'type' => 'number', 'min' => 0.0, 'max' => 10000.0, 'step' => 0.01],
-            ],
-        ]];
     }
 
     public static function validate(string $namespace, array $config, bool $allowPartial = true): array

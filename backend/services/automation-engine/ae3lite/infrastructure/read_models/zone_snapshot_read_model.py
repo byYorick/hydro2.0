@@ -680,25 +680,6 @@ class PgZoneSnapshotReadModel:
                 }
             )
 
-        channel_config = row.get("channel_config")
-        legacy_calibration = channel_config.get("pump_calibration") if isinstance(channel_config, Mapping) else None
-        if isinstance(legacy_calibration, Mapping):
-            result.update(dict(legacy_calibration))
-            result.update(
-                {
-                    "min_dose_ms": legacy_calibration.get("min_dose_ms", result.get("min_dose_ms")),
-                    "ml_per_sec_min": self._to_float(
-                        legacy_calibration.get("ml_per_sec_min", result.get("ml_per_sec_min"))
-                    ),
-                    "ml_per_sec_max": self._to_float(
-                        legacy_calibration.get("ml_per_sec_max", result.get("ml_per_sec_max"))
-                    ),
-                    "ml_per_sec": self._to_float(legacy_calibration.get("ml_per_sec")),
-                    "k_ms_per_ml_l": self._to_float(legacy_calibration.get("k_ms_per_ml_l")),
-                    "source": legacy_calibration.get("source") or "node_channels.config.pump_calibration",
-                }
-            )
-
         if row.get("calibration_ml_per_sec") is not None:
             result.update(
                 {

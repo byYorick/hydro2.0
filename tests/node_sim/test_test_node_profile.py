@@ -42,7 +42,7 @@ def test_build_config_report_matches_test_node_channels():
     assert len(payload["channels"]) == 10
     pump_main = next(item for item in payload["channels"] if item["name"] == "pump_main")
     assert pump_main["actuator_type"] == "PUMP"
-    assert pump_main["safe_limits"]["max_duration_ms"] == 10000
+    assert pump_main["safe_limits"]["max_duration_ms"] == 3600000
     level_clean_min = next(item for item in payload["channels"] if item["name"] == "level_clean_min")
     assert level_clean_min["metric"] == "WATER_LEVEL_SWITCH"
     assert level_clean_min["poll_interval_ms"] == 5000
@@ -56,6 +56,23 @@ def test_staged_clean_fill_min_switch_after_delay():
     sim.state.clean_fill_started_at = sim.get_timestamp_seconds() - 10
 
     assert sim.resolve_clean_min_switch_value() == 1.0
+
+
+def test_staged_solution_fill_max_switch_after_three_minutes():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+
+    sim.state.solution_fill_stage_active = True
+    sim.state.solution_fill_started_at = sim.get_timestamp_seconds() - 179
+    sim.apply_passive_drift()
+
+    assert sim.state.solution_max_latched is False
+
+    sim.state.solution_fill_stage_active = True
+    sim.state.solution_fill_started_at = sim.get_timestamp_seconds() - 180
+    sim.apply_passive_drift()
+
+    assert sim.state.solution_max_latched is True
 
 
 def test_state_query_includes_fault_modes_after_set_fault_mode():

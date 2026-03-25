@@ -328,6 +328,7 @@ class BaseStageHandler:
         kind: str,
         correction_cfg: Mapping[str, Any],
         process_cfg: Mapping[str, Any],
+        pid_entry: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         controllers = correction_cfg.get("controllers") if isinstance(correction_cfg.get("controllers"), Mapping) else {}
         controller_cfg = controllers.get(kind) if isinstance(controllers.get(kind), Mapping) else {}
@@ -381,6 +382,14 @@ class BaseStageHandler:
                 "corr_process_calibration_missing",
                 f"Process calibration transport_delay_sec/settle_sec is required for {kind}",
             )
+
+        adaptive_timing = self._adaptive_observation_timing(pid_entry=pid_entry)
+        learned_transport = adaptive_timing.get("transport_delay_sec")
+        learned_settle = adaptive_timing.get("settle_sec")
+        if learned_transport is not None:
+            transport_delay_sec = max(transport_delay_sec, learned_transport)
+        if learned_settle is not None:
+            settle_sec = max(settle_sec, learned_settle)
         return {
             "transport_delay_sec": transport_delay_sec,
             "settle_sec": settle_sec,
@@ -425,6 +434,36 @@ class BaseStageHandler:
                 ),
             ),
         }
+
+    def _adaptive_observation_timing(self, *, pid_entry: Mapping[str, Any] | None) -> dict[str, int]:
+        if not isinstance(pid_entry, Mapping):
+            return {}
+        stats = pid_entry.get("stats")
+        if not isinstance(stats, Mapping):
+            return {}
+        adaptive = stats.get("adaptive")
+        if not isinstance(adaptive, Mapping):
+            return {}
+        timing = adaptive.get("timing")
+        if not isinstance(timing, Mapping):
+            return {}
+        try:
+            observations = int(timing.get("observations") or adaptive.get("observations") or 0)
+        except (TypeError, ValueError):
+            observations = 0
+        if observations < 3:
+            return {}
+
+        result: dict[str, int] = {}
+        for key in ("transport_delay_sec", "settle_sec"):
+            raw = timing.get(f"{key}_ema")
+            try:
+                value = int(round(float(raw)))
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                result[key] = value
+        return result
 
     def _summarize_metric_window(
         self,

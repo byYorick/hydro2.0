@@ -223,8 +223,6 @@ Legacy `extensions.day_target/night_target` больше не используе
 - `system.automation_defaults`
 - `system.command_templates`
 - `system.process_calibration_defaults`
-- `system.pid_defaults.ph`
-- `system.pid_defaults.ec`
 - `system.pump_calibration_policy`
 - `system.sensor_calibration_policy`
 

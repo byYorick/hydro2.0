@@ -35,7 +35,6 @@ class ZoneReadinessService
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly ZoneLogicProfileService $logicProfiles,
-        private readonly ZonePidConfigurationService $pidConfigs,
         private readonly AutomationConfigDocumentService $documents,
         private readonly AutomationConfigRegistry $registry,
     ) {
@@ -736,16 +735,22 @@ class ZoneReadinessService
         $missing = [];
 
         foreach ($requiredTypes as $type) {
-            $config = $this->pidConfigs->getConfig((int) $zone->id, $type);
-            $payload = is_array($config?->config) ? $config->config : [];
+            $namespace = $this->registry->pidNamespace($type);
+            $document = $this->documents->getDocument(
+                $namespace,
+                AutomationConfigRegistry::SCOPE_ZONE,
+                (int) $zone->id,
+                false
+            );
+            $payload = is_array($document?->payload) ? $document->payload : [];
 
-            if ($payload === [] || array_is_list($payload)) {
+            if ($document?->source === 'bootstrap' || $payload === [] || array_is_list($payload)) {
                 $missing[] = $type;
                 continue;
             }
 
             try {
-                $this->pidConfigs->validateConfig($payload, $type);
+                $this->registry->validate($namespace, $payload);
             } catch (\InvalidArgumentException $exception) {
                 Log::warning('Zone PID config failed readiness semantic validation', [
                     'zone_id' => $zone->id,

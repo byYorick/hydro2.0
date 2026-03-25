@@ -12,7 +12,6 @@ export interface PidZoneCoeffs {
  * Хранится в authority zone PID document payload.
  */
 export interface PidConfig {
-  target: number
   dead_zone: number
   close_zone: number
   far_zone: number
@@ -20,8 +19,6 @@ export interface PidConfig {
     close: PidZoneCoeffs
     far: PidZoneCoeffs
   }
-  max_output: number
-  min_interval_ms: number
   max_integral: number
   autotune_meta?: PidAutotuneMeta
 }

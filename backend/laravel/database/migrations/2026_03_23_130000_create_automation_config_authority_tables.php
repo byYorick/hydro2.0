@@ -180,8 +180,6 @@ return new class extends Migration
             'automation_defaults' => AutomationConfigRegistry::NAMESPACE_SYSTEM_AUTOMATION_DEFAULTS,
             'automation_command_templates' => AutomationConfigRegistry::NAMESPACE_SYSTEM_COMMAND_TEMPLATES,
             'process_calibration_defaults' => AutomationConfigRegistry::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS,
-            'pid_defaults_ph' => AutomationConfigRegistry::NAMESPACE_SYSTEM_PID_DEFAULTS_PH,
-            'pid_defaults_ec' => AutomationConfigRegistry::NAMESPACE_SYSTEM_PID_DEFAULTS_EC,
             'pump_calibration' => AutomationConfigRegistry::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY,
             'sensor_calibration' => AutomationConfigRegistry::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY,
         ];

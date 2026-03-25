@@ -52,12 +52,11 @@ describe('PidLogsTable.vue', () => {
           pid_type: 'ph',
           updated_by: 7,
           old_config: {
-            target: 6,
+            dead_zone: 0.08,
           },
           new_config: {
-            target: 5.8,
-            max_output: 20,
-            min_interval_ms: 90000,
+            dead_zone: 0.05,
+            close_zone: 0.3,
             max_integral: 20,
           },
           created_at: '2026-03-17T12:00:00Z',
@@ -87,9 +86,9 @@ describe('PidLogsTable.vue', () => {
     })
     expect(wrapper.text()).toContain('Config PH')
     expect(wrapper.text()).toContain('updated_by #7')
-    expect(wrapper.text()).toContain('target 6.00 → 5.80')
-    expect(wrapper.text()).toContain('max dose 20.0 мл')
-    expect(wrapper.text()).toContain('interval 90 сек')
+    expect(wrapper.text()).toContain('dead zone 0.05')
+    expect(wrapper.text()).toContain('close zone 0.30')
+    expect(wrapper.text()).toContain('max integral 20.0')
 
     wrapper.unmount()
   })

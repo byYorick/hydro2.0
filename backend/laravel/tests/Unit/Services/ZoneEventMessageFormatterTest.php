@@ -263,6 +263,23 @@ class ZoneEventMessageFormatterTest extends TestCase
         $this->assertSame('Коррекция: нет наблюдаемого эффекта (EC, эффект 0.0200 < 0.1000, лимит 3)', $message);
     }
 
+    public function test_format_correction_observation_evaluated_contains_effect_metrics(): void
+    {
+        $message = $this->formatter->format('CORRECTION_OBSERVATION_EVALUATED', [
+            'pid_type' => 'ph',
+            'actual_effect' => 0.141,
+            'expected_effect' => 1.176,
+            'threshold_effect' => 0.294,
+            'is_no_effect' => true,
+            'no_effect_count_next' => 2,
+        ]);
+
+        $this->assertSame(
+            'Коррекция: оценка отклика (PH, эффект 0.1410 / ожидалось 1.1760, порог 0.2940, no_effect=yes, счётчик 2)',
+            $message
+        );
+    }
+
     public function test_format_ec_dosing_with_full_payload(): void
     {
         $message = $this->formatter->format('EC_DOSING', [

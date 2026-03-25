@@ -22,6 +22,8 @@ _SQL_UPSERT = """
         feedforward_bias,
         no_effect_count,
         last_correction_kind,
+        stats,
+        current_zone,
         created_at,
         updated_at
     )
@@ -40,7 +42,9 @@ _SQL_UPSERT = """
         COALESCE($12, 0),
         $13,
         $14,
-        $14
+        $15,
+        $16,
+        $17
     )
     ON CONFLICT (zone_id, pid_type)
     DO UPDATE SET
@@ -55,6 +59,8 @@ _SQL_UPSERT = """
         feedforward_bias = COALESCE(EXCLUDED.feedforward_bias, pid_state.feedforward_bias),
         no_effect_count = COALESCE(EXCLUDED.no_effect_count, pid_state.no_effect_count),
         last_correction_kind = COALESCE(EXCLUDED.last_correction_kind, pid_state.last_correction_kind),
+        stats = COALESCE(EXCLUDED.stats, pid_state.stats),
+        current_zone = COALESCE(EXCLUDED.current_zone, pid_state.current_zone),
         updated_at = EXCLUDED.updated_at
 """
 
@@ -83,6 +89,8 @@ class PgPidStateRepository:
         feedforward_bias: Optional[float] = None,
         no_effect_count: Optional[int] = None,
         last_correction_kind: Optional[str] = None,
+        stats: Optional[Mapping[str, Any]] = None,
+        current_zone: Optional[str] = None,
     ) -> tuple:
         return (
             zone_id,
@@ -98,6 +106,9 @@ class PgPidStateRepository:
             feedforward_bias,
             no_effect_count,
             last_correction_kind,
+            dict(stats) if isinstance(stats, Mapping) else None,
+            str(current_zone).strip().lower() if current_zone is not None else None,
+            self._normalize_timestamp(now),
             self._normalize_timestamp(now),
         )
 
@@ -118,6 +129,8 @@ class PgPidStateRepository:
         feedforward_bias: Optional[float] = None,
         no_effect_count: Optional[int] = None,
         last_correction_kind: Optional[str] = None,
+        stats: Optional[Mapping[str, Any]] = None,
+        current_zone: Optional[str] = None,
     ) -> None:
         params = self._normalize_params(
             zone_id=zone_id, pid_type=pid_type, now=now,
@@ -126,6 +139,7 @@ class PgPidStateRepository:
             hold_until=hold_until, last_measurement_at=last_measurement_at,
             last_measured_value=last_measured_value, feedforward_bias=feedforward_bias,
             no_effect_count=no_effect_count, last_correction_kind=last_correction_kind,
+            stats=stats, current_zone=current_zone,
         )
         pool = await get_pool()
         async with pool.acquire() as conn:

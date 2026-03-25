@@ -12,6 +12,14 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 #: Maximum correction attempts during prepare_recirculation before escalating.
 _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
 _MAX_CORRECTION_ATTEMPTS: int = 500
+_REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
+    "clean_fill_start": ("valve_clean_fill",),
+    "clean_fill_stop": ("valve_clean_fill",),
+    "solution_fill_start": ("valve_clean_supply", "valve_solution_fill", "pump_main"),
+    "solution_fill_stop": ("pump_main", "valve_solution_fill", "valve_clean_supply"),
+    "prepare_recirculation_start": ("valve_solution_supply", "valve_solution_fill", "pump_main"),
+    "prepare_recirculation_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply"),
+}
 
 
 def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
@@ -235,6 +243,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             default_plan=default_two_tank_command_plan(plan_name),
             default_node_types=runtime["required_node_types"],
         )
+        _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
     return runtime
 
 
@@ -590,6 +599,23 @@ def _normalize_command_plan(
             }
         )
     return normalized
+
+
+def _assert_required_command_contract(*, plan_name: str, normalized_plan: Sequence[Mapping[str, Any]]) -> None:
+    required_channels = _REQUIRED_TWO_TANK_PLAN_CHANNELS.get(plan_name)
+    if not required_channels:
+        return
+
+    present_channels = {
+        str(entry.get("channel") or "").strip().lower()
+        for entry in normalized_plan
+        if isinstance(entry, Mapping)
+    }
+    missing_channels = [channel for channel in required_channels if channel not in present_channels]
+    if missing_channels:
+        raise PlannerConfigurationError(
+            f"two_tank command plan {plan_name} is missing required channels: {', '.join(missing_channels)}"
+        )
 
 
 def _normalize_controllers(raw_value: Any) -> dict[str, Any]:

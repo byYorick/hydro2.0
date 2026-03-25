@@ -384,7 +384,7 @@ Transient-overlap правило для `pump_main`:
 `solution_fill`:
 
 - `level_solution_min=1` через 10s
-- `level_solution_max=1` через 60s (latch)
+- `level_solution_max=1` через 180s (latch)
 
 События:
 

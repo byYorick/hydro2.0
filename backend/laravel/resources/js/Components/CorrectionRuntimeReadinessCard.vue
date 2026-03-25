@@ -392,7 +392,7 @@ const pidConfigStatuses = computed<PidConfigStatusItem[]>(() => {
       ready,
       message: ready
         ? 'Зонный PID-конфиг сохранён в authority-документе и будет использован automation-engine.'
-        : 'Зонный PID-конфиг ещё не сохранён. Откройте PID-форму и сохраните конфиг с target из текущей recipe phase.',
+        : 'Зонный PID tuning ещё не сохранён. Откройте PID-форму и сохраните dead/close/far tuning; target runtime возьмёт только из текущей recipe phase.',
     }
   })
 })

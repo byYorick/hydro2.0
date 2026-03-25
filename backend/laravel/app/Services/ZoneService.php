@@ -129,7 +129,6 @@ class ZoneService
             return;
         }
         app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
-        app(ZoneCorrectionConfigurationService::class)->ensureDefaultForZone($zoneId);
     }
 
     private function ensureLogicProfileBootstrap(Zone $zone): void

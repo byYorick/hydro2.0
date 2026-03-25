@@ -29,11 +29,20 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ### 1.2. Источник конфигурации
 
-Параметры PID (kp, ki, kd и др.) читаются из authority-документов
+Параметры zoned PID tuning (dead/close/far zones, `zone_coeffs`, `max_integral`)
+читаются из authority-документов
 `zone.pid.ph` и `zone.pid.ec`, а в AE3 runtime попадают через compiled
 bundle `automation_effective_bundles.config.zone.pid.*`. Класс
 `AutomationSettings` в `config/settings.py` **не является** источником
 PID-параметров — те поля были удалены как dead code.
+
+Каноническое разделение source of truth:
+- `zone.pid.*` хранит только tuning PID-контура;
+- target берётся только из текущей recipe phase;
+- лимиты доз и интервалы между дозами живут только в `zone.correction.resolved_config.controllers.*`.
+
+Legacy-поля `target`, `max_output`, `min_interval_ms` в `zone.pid.*` и
+`system.pid_defaults.*` удалены и не поддерживаются.
 
 ### 1.3. Расчёт дозы (упрощённо)
 
@@ -58,7 +67,7 @@ duration_ms = dose_ml / ml_per_sec * 1000
 ## 2. Структура correction bundle
 
 Correction runtime-контракт хранится в authority-документе `zone.correction`
-и materialized в `payload.resolved_config`, а PID-настройки хранятся отдельно
+и materialized в `payload.resolved_config`, а PID tuning хранится отдельно
 в `zone.pid.ph` и `zone.pid.ec`.
 
 ```json
@@ -321,6 +330,8 @@ Observation-driven runtime требует явные process gain:
 | `feedforward_bias` | float | Смещение pH после EC-дозы |
 | `no_effect_count` | int | Счётчик доз без эффекта (equipment anomaly guard) |
 | `hold_until` | timestamp | До этого времени pH-плановый bias активен |
+| `stats` | jsonb | Persisted runtime-learning: learned gain, timing, wave/retention EMA |
+| `current_zone` | str (`dead/close/far`) | Активная PID-зона, выбранная planner-ом |
 
 ### 6.2. Сброс состояния при возврате в норму
 
@@ -348,6 +359,16 @@ Observation-driven runtime требует явные process gain:
 - При перезапуске процесса состояние восстанавливается из БД.
 - `NULL` значение `last_measurement_at` при первом вызове → dt не
   вычисляется, integral остаётся 0.
+- В `stats.adaptive` сохраняются learned runtime-метрики по отработанным
+  окнам коррекции:
+  - `gains.{ec_gain_per_ml|ph_up_gain_per_ml|ph_down_gain_per_ml}.ema`
+  - `retention_ema`
+  - `wave_score_ema`
+  - `effectiveness_ema`
+  - `timing.transport_delay_sec_ema`
+  - `timing.settle_sec_ema`
+- Эти данные не являются authority-конфигом и не редактируются из UI,
+  но используются runtime после рестарта automation-engine.
 
 ---
 

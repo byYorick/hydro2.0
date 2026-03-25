@@ -2,17 +2,69 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\Alert;
+use App\Models\AutomationEffectiveBundle;
 use App\Models\AutomationConfigPreset;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneCorrectionConfigCatalog;
+use App\Support\Automation\ZoneProcessCalibrationDefaults;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class AutomationConfigDocumentServiceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_ensure_zone_defaults_bootstraps_zone_correction_and_resolves_missing_alert(): void
+    {
+        $documents = app(AutomationConfigDocumentService::class);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'automation-engine',
+            'code' => 'biz_zone_correction_config_missing',
+            'type' => 'biz',
+            'details' => [],
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'critical',
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $documents->ensureZoneDefaults($zone->id);
+
+        $payload = $documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id
+        );
+
+        $this->assertSame('irrig', data_get($payload, 'base_config.runtime.required_node_type'));
+        $this->assertSame(50, data_get($payload, 'resolved_config.pump_calibration.min_dose_ms'));
+        $this->assertDatabaseHas('automation_config_documents', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
+            'source' => 'bootstrap',
+        ]);
+        $this->assertDatabaseHas('automation_config_versions', [
+            'namespace' => AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            'scope_type' => AutomationConfigRegistry::SCOPE_ZONE,
+            'scope_id' => $zone->id,
+            'source' => 'bootstrap',
+        ]);
+        $this->assertDatabaseHas('alerts', [
+            'zone_id' => $zone->id,
+            'code' => 'biz_zone_correction_config_missing',
+            'status' => 'RESOLVED',
+        ]);
+    }
 
     public function test_zone_correction_normalizer_uses_current_system_pump_calibration_policy(): void
     {
@@ -103,5 +155,74 @@ class AutomationConfigDocumentServiceTest extends TestCase
         $this->assertSame($preset->id, data_get($payload, 'resolved_config.meta.preset_id'));
         $this->assertSame('correction-preset', data_get($payload, 'resolved_config.meta.preset_slug'));
         $this->assertSame('Correction preset', data_get($payload, 'resolved_config.meta.preset_name'));
+    }
+
+    public function test_zone_correction_bundle_uses_current_document_revision_in_meta_version(): void
+    {
+        $documents = app(AutomationConfigDocumentService::class);
+        $zone = Zone::factory()->create();
+
+        $documents->ensureZoneDefaults($zone->id);
+
+        /** @var AutomationEffectiveBundle $bundle */
+        $bundle = AutomationEffectiveBundle::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zone->id)
+            ->firstOrFail();
+
+        $this->assertSame(1, data_get($bundle->config, 'zone.correction.resolved_config.meta.version'));
+
+        $current = $documents->getPayload(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id
+        );
+        $nextBaseConfig = is_array($current['base_config'] ?? null)
+            ? $current['base_config']
+            : ZoneCorrectionConfigCatalog::defaults();
+        data_set($nextBaseConfig, 'timing.stabilization_sec', 75);
+
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            $zone->id,
+            [
+                'base_config' => $nextBaseConfig,
+                'phase_overrides' => [],
+            ]
+        );
+
+        $bundle = AutomationEffectiveBundle::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $zone->id)
+            ->firstOrFail();
+
+        $this->assertSame(2, data_get($bundle->config, 'zone.correction.resolved_config.meta.version'));
+    }
+
+    public function test_ensure_zone_defaults_bootstraps_phase_specific_process_calibration_defaults(): void
+    {
+        $documents = app(AutomationConfigDocumentService::class);
+        $zone = Zone::factory()->create();
+
+        $documents->ensureZoneDefaults($zone->id);
+
+        foreach ([
+            'generic' => AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC,
+            'solution_fill' => AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_SOLUTION_FILL,
+            'tank_recirc' => AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC,
+            'irrigation' => AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_IRRIGATION,
+        ] as $mode => $namespace) {
+            $payload = $documents->getPayload($namespace, AutomationConfigRegistry::SCOPE_ZONE, $zone->id);
+            $expected = ZoneProcessCalibrationDefaults::forMode($mode);
+
+            $this->assertSame($mode, $payload['mode']);
+            $this->assertSame('system_default', $payload['source']);
+            $this->assertSame($expected['ec_gain_per_ml'], $payload['ec_gain_per_ml']);
+            $this->assertSame($expected['ph_up_gain_per_ml'], $payload['ph_up_gain_per_ml']);
+            $this->assertSame($expected['ph_down_gain_per_ml'], $payload['ph_down_gain_per_ml']);
+            $this->assertSame($expected['transport_delay_sec'], $payload['transport_delay_sec']);
+            $this->assertSame($expected['settle_sec'], $payload['settle_sec']);
+        }
     }
 }

@@ -10,9 +10,10 @@ use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneLogicProfileCatalog;
 use App\Services\ZoneLogicProfileService;
-use App\Services\ZonePidConfigurationService;
+use App\Support\Automation\ZonePidDefaults;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -92,35 +93,24 @@ class SingleZoneServiceSeeder extends Seeder
     private function seedPidConfigs(int $zoneId): void
     {
         $adminId = User::query()->where('role', 'admin')->value('id') ?? User::query()->value('id');
-        $service = app(ZonePidConfigurationService::class);
+        $documents = app(AutomationConfigDocumentService::class);
 
-        $common = [
-            'dead_zone' => 0.1,
-            'close_zone' => 0.2,
-            'far_zone' => 0.5,
-            'zone_coeffs' => [
-                'close' => ['kp' => 0.30, 'ki' => 0.04, 'kd' => 0.02],
-                'far' => ['kp' => 0.45, 'ki' => 0.06, 'kd' => 0.03],
-            ],
-            'max_output' => 100.0,
-            'min_interval_ms' => 60000,
-            'max_integral' => 20.0,
-            'enable_autotune' => false,
-            'adaptation_rate' => 0.02,
-        ];
-
-        $service->createOrUpdate(
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+            AutomationConfigRegistry::SCOPE_ZONE,
             $zoneId,
-            'ph',
-            array_merge($common, ['target' => 6.0]),
+            ZonePidDefaults::forType('ph'),
             $adminId ? (int) $adminId : null,
+            'single_zone_service_seed'
         );
 
-        $service->createOrUpdate(
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            AutomationConfigRegistry::SCOPE_ZONE,
             $zoneId,
-            'ec',
-            array_merge($common, ['target' => 1.5]),
+            ZonePidDefaults::forType('ec'),
             $adminId ? (int) $adminId : null,
+            'single_zone_service_seed'
         );
     }
 

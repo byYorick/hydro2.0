@@ -659,6 +659,9 @@ Runtime-семантика AE3-Lite:
 - `hold_until` блокирует раннее повторное решение до окончания process observation window;
 - `feedforward_bias` используется для cross-coupled correction после `EC`-дозы;
 - `no_effect_count` хранит consecutive no-effect attempts по конкретному `pid_type`;
+- `current_zone` хранит выбранную planner-ом PID-зону (`dead`, `close`, `far`);
+- `stats.adaptive` хранит persisted runtime-learning:
+  learned process gain EMA, retention/wave EMA и learned timing window (`transport_delay_sec_ema`, `settle_sec_ema`);
 - ordinary attempt limits и `no_effect_count` — разные safety-механизмы.
 
 Индексы:
@@ -1371,8 +1374,6 @@ INDEX(scope_type, scope_id)
 - `system.automation_defaults`
 - `system.command_templates`
 - `system.process_calibration_defaults`
-- `system.pid_defaults.ph`
-- `system.pid_defaults.ec`
 - `system.pump_calibration_policy`
 - `system.sensor_calibration_policy`
 - `greenhouse.logic_profile`
@@ -1387,6 +1388,13 @@ INDEX(scope_type, scope_id)
 - `cycle.start_snapshot`
 - `cycle.phase_overrides`
 - `cycle.manual_overrides`
+
+Примечание по PID authority:
+- `zone.pid.ph|ec` содержат только zoned PID tuning
+  (`dead_zone`, `close_zone`, `far_zone`, `zone_coeffs`, `max_integral`);
+- `system.pid_defaults.*` удалены из canonical authority model и не поддерживаются;
+- target хранится только в актуальной recipe phase;
+- дозовые лимиты и интервалы хранятся только в `zone.correction.resolved_config.controllers.*`.
 
 ## 8.8. automation_config_versions
 
@@ -1876,8 +1884,6 @@ Automation settings, PID defaults, correction runtime config и process calibrat
 - `system.automation_defaults`
 - `system.command_templates`
 - `system.process_calibration_defaults`
-- `system.pid_defaults.ph`
-- `system.pid_defaults.ec`
 - `system.pump_calibration_policy`
 - `system.sensor_calibration_policy`
 

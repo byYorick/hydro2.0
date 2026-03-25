@@ -128,11 +128,6 @@
                 <td class="py-2 px-3 text-[color:var(--text-primary)]">
                   <span v-if="typeof log.target === 'number'">{{ log.target.toFixed(2) }}</span>
                   <span
-                    v-else-if="typeof log.new_config?.target === 'number'"
-                  >
-                    {{ log.new_config.target.toFixed(2) }}
-                  </span>
-                  <span
                     v-else
                     class="text-[color:var(--text-dim)]"
                   >-</span>
@@ -257,18 +252,12 @@ function configSummary(log: PidLog): string {
   }
 
   const parts: string[] = []
-  if (typeof log.old_config?.target === 'number' && typeof log.new_config?.target === 'number') {
-    parts.push(`target ${log.old_config.target.toFixed(2)} → ${log.new_config.target.toFixed(2)}`)
-  } else if (typeof log.new_config?.target === 'number') {
-    parts.push(`target ${log.new_config.target.toFixed(2)}`)
+  if (typeof log.new_config?.dead_zone === 'number') {
+    parts.push(`dead zone ${log.new_config.dead_zone.toFixed(2)}`)
   }
 
-  if (typeof log.new_config?.max_output === 'number') {
-    parts.push(`max dose ${log.new_config.max_output.toFixed(1)} мл`)
-  }
-
-  if (typeof log.new_config?.min_interval_ms === 'number') {
-    parts.push(`interval ${(log.new_config.min_interval_ms / 1000).toFixed(0)} сек`)
+  if (typeof log.new_config?.close_zone === 'number') {
+    parts.push(`close zone ${log.new_config.close_zone.toFixed(2)}`)
   }
 
   if (typeof log.new_config?.max_integral === 'number') {

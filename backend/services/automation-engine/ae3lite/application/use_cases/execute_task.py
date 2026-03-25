@@ -96,14 +96,28 @@ class ExecuteTaskUseCase:
             topology = running_task.topology
             if topology in ("two_tank", "two_tank_drip_substrate_trays"):
                 final_task = await self._workflow_router.run(task=running_task, plan=plan, now=now)
-                if final_task is not None and not bool(getattr(final_task, "is_active", False)):
-                    return final_task
                 await self._mark_correction_config_applied_if_needed(
                     task=final_task,
                     snapshot=snapshot,
                     plan=plan,
                     now=now,
                 )
+                if final_task is not None and not bool(getattr(final_task, "is_active", False)):
+                    if str(getattr(final_task, "status", "")).strip().lower() == "completed":
+                        try:
+                            await create_zone_event(final_task.zone_id, "AE_TASK_COMPLETED", {
+                                "task_id": final_task.id,
+                                "topology": str(getattr(final_task, "topology", "") or ""),
+                                "stage": str(getattr(final_task, "current_stage", "") or ""),
+                            })
+                        except Exception:
+                            logger.warning(
+                                "AE3 failed to log AE_TASK_COMPLETED event zone_id=%s task_id=%s",
+                                final_task.zone_id,
+                                final_task.id,
+                                exc_info=True,
+                            )
+                    return final_task
                 if str(getattr(final_task, "status", "")).strip().lower() == "completed":
                     try:
                         await create_zone_event(final_task.zone_id, "AE_TASK_COMPLETED", {
@@ -509,5 +523,7 @@ class ExecuteTaskUseCase:
             else:
                 task = fallback_task
         if task is None or bool(getattr(task, "is_active", False)):
-            return None
+            if fallback_task is None or bool(getattr(fallback_task, "is_active", False)):
+                return None
+            return fallback_task
         return task

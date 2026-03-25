@@ -487,7 +487,6 @@ class GrowCycleService
     protected function upsertGrowCycleStartIntent(int $zoneId, int $cycleId, string $idempotencyKey): void
     {
         $this->documents->ensureZoneDefaults($zoneId);
-        app(ZoneCorrectionConfigurationService::class)->ensureDefaultForZone($zoneId);
 
         $now = Carbon::now('UTC')->setMicroseconds(0);
         $intentPayload = [

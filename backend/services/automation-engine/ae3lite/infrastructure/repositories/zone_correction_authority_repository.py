@@ -33,9 +33,9 @@ _SQL_MARK_APPLIED = """
 class PgZoneCorrectionAuthorityRepository:
     """Stores the last correction authority version actually accepted by AE."""
 
-    def _normalize_applied_at(self, value: datetime) -> str:
+    def _normalize_applied_at(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc) if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-        return normalized.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return normalized.replace(microsecond=0)
 
     def _normalize_updated_at(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value

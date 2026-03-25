@@ -177,6 +177,20 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   correction sub-machine всегда ограничен parent stage deadline, а для `prepare_recirculation`
   ещё и `prepare_recirculation_max_attempts` на уровне окон;
 - `EC` и `pH` имеют отдельные `no_effect_count`, отдельные process gains и отдельные observation thresholds.
+- каждый ready `observe` шаг обязан писать zone-event с `baseline_value`, `observed_value`,
+  `actual_effect`, `expected_effect`, `threshold_effect` и итогом `is_no_effect`, чтобы
+  exhaustion/no-effect диагностика была читаема без ручного анализа telemetry SQL.
+- runtime PID-тюнинг использует zoned PID-профили из `zone.pid.{ph|ec}`:
+  `dead_zone` задаёт deadband, а `zone_coeffs.close|far` выбираются по величине текущего gap
+  (`<= close_zone` -> close, `> close_zone` -> far), чтобы далеко от target дозы были грубее,
+  а при приближении к target — мягче.
+- `zone.pid.*` не содержит target, `max_output` или `min_interval_ms`:
+  target берётся только из recipe phase, а дозовые лимиты/интервалы — только из
+  `zone.correction.resolved_config.controllers.*`.
+- `no-effect` определяется по факту наблюдаемой реакции на дозу (`peak_effect` в observe-window),
+  а не только по tail-median; это нужно для проточных систем, где отклик может быть волнообразным.
+- learned runtime metrics (`gain_ema`, `retention_ema`, `wave_score_ema`, learned timing) сохраняются
+  в `pid_state.stats` и переживают рестарт automation-engine.
 
 ### 3.1. Режим 1: TANK_FILLING (Набор бака)
 

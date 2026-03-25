@@ -20,6 +20,7 @@ import logging
 import math
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from statistics import median
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
@@ -148,8 +149,18 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=max(1.0, (corr_wait_until - normalized_now).total_seconds()),
             )
 
-        ph_cfg = self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg)
-        ec_cfg = self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg)
+        ph_cfg = self._observation_config(
+            kind="ph",
+            correction_cfg=correction_cfg,
+            process_cfg=process_cfg,
+            pid_entry=pid_state.get("ph") if isinstance(pid_state.get("ph"), Mapping) else None,
+        )
+        ec_cfg = self._observation_config(
+            kind="ec",
+            correction_cfg=correction_cfg,
+            process_cfg=process_cfg,
+            pid_entry=pid_state.get("ec") if isinstance(pid_state.get("ec"), Mapping) else None,
+        )
         try:
             ph = await self._read_decision_metric(
                 zone_id=task.zone_id,
@@ -319,6 +330,7 @@ class CorrectionHandler(BaseStageHandler):
             process_calibrations=runtime.get("process_calibrations"),
             ec_component_policy=correction_cfg.get("ec_component_policy"),
             pid_state=pid_state,
+            pid_configs=runtime.get("pid_configs"),
             now=now,
             ph_min=self._coerce_float(runtime.get("target_ph_min")),
             ph_max=self._coerce_float(runtime.get("target_ph_max")),
@@ -479,7 +491,12 @@ class CorrectionHandler(BaseStageHandler):
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         correction_cfg = self._correction_config(plan=plan, task=task)
-        observe_cfg = self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg)
+        observe_cfg = self._observation_config(
+            kind="ec",
+            correction_cfg=correction_cfg,
+            process_cfg=process_cfg,
+            pid_entry=runtime.get("pid_state", {}).get("ec") if isinstance(runtime.get("pid_state"), Mapping) else None,
+        )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
         await self._persist_pid_state_updates(
             zone_id=task.zone_id,
@@ -583,7 +600,12 @@ class CorrectionHandler(BaseStageHandler):
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         correction_cfg = self._correction_config(plan=plan, task=task)
-        observe_cfg = self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg)
+        observe_cfg = self._observation_config(
+            kind="ph",
+            correction_cfg=correction_cfg,
+            process_cfg=process_cfg,
+            pid_entry=runtime.get("pid_state", {}).get("ph") if isinstance(runtime.get("pid_state"), Mapping) else None,
+        )
         wait_until = now + timedelta(seconds=int(observe_cfg["hold_window_sec"]))
         await self._persist_pid_state_updates(
             zone_id=task.zone_id,
@@ -825,9 +847,14 @@ class CorrectionHandler(BaseStageHandler):
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         correction_cfg = self._correction_config(plan=plan, task=task)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
-        observe_cfg = self._observation_config(kind=pid_type, correction_cfg=correction_cfg, process_cfg=process_cfg)
         pid_state = runtime.get("pid_state") if isinstance(runtime.get("pid_state"), Mapping) else {}
         pid_entry = pid_state.get(pid_type) if isinstance(pid_state.get(pid_type), Mapping) else {}
+        observe_cfg = self._observation_config(
+            kind=pid_type,
+            correction_cfg=correction_cfg,
+            process_cfg=process_cfg,
+            pid_entry=pid_entry,
+        )
         last_dose_at = pid_entry.get("last_dose_at")
         baseline_value = pid_entry.get("last_measured_value")
         if not isinstance(last_dose_at, datetime) or baseline_value is None:
@@ -905,19 +932,59 @@ class CorrectionHandler(BaseStageHandler):
             )
 
         observed_value = float(summary["value"])
+        dose_amount_ml = corr.ec_amount_ml if pid_type == "ec" else corr.ph_amount_ml
         expected_effect = self._expected_effect(
             pid_type=pid_type,
             corr=corr,
             process_cfg=process_cfg,
         )
-        directional_effect = self._directional_effect(
+        threshold_effect = expected_effect * float(observe_cfg["min_effect_fraction"])
+        response_metrics = self._analyze_observation_window(
+            samples=window["samples"],
             pid_type=pid_type,
             corr=corr,
             baseline_value=float(baseline_value),
             observed_value=observed_value,
+            last_dose_at=last_dose_at,
+            dose_amount_ml=float(dose_amount_ml or 0.0),
+            threshold_effect=threshold_effect,
+            window_min_samples=int(observe_cfg["window_min_samples"]),
         )
-        is_no_effect = directional_effect < (expected_effect * float(observe_cfg["min_effect_fraction"]))
+        directional_effect = float(response_metrics["tail_effect"])
+        peak_effect = float(response_metrics["peak_effect"])
+        learning_effect = float(response_metrics["learning_effect"])
+        is_no_effect = peak_effect < threshold_effect
         next_no_effect_count = int(pid_entry.get("no_effect_count") or 0) + 1 if is_no_effect else 0
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_OBSERVATION_EVALUATED",
+            task=task,
+            corr=corr,
+            payload={
+                "pid_type": pid_type,
+                "sensor_type": sensor_type,
+                "dose_amount_ml": dose_amount_ml,
+                "baseline_value": float(baseline_value),
+                "observed_value": observed_value,
+                "expected_effect": expected_effect,
+                "actual_effect": directional_effect,
+                "peak_effect": peak_effect,
+                "peak_observed_value": response_metrics["peak_value"],
+                "retention_ratio": response_metrics["retention_ratio"],
+                "wave_score": response_metrics["wave_score"],
+                "wave_detected": response_metrics["wave_detected"],
+                "reaction_detected": peak_effect >= threshold_effect,
+                "learning_effect": learning_effect,
+                "first_reaction_sec": response_metrics["first_reaction_sec"],
+                "threshold_effect": threshold_effect,
+                "min_effect_fraction": float(observe_cfg["min_effect_fraction"]),
+                "transport_delay_sec": int(observe_cfg["transport_delay_sec"]),
+                "settle_sec": int(observe_cfg["settle_sec"]),
+                "window_min_samples": int(observe_cfg["window_min_samples"]),
+                "no_effect_count_next": next_no_effect_count,
+                "is_no_effect": is_no_effect,
+            },
+        )
         await self._persist_pid_state_updates(
             zone_id=task.zone_id,
             now=now,
@@ -926,6 +993,18 @@ class CorrectionHandler(BaseStageHandler):
                     "last_measurement_at": now,
                     "last_measured_value": observed_value,
                     "no_effect_count": next_no_effect_count,
+                    "stats": self._merge_adaptive_stats(
+                        pid_entry=pid_entry,
+                        pid_type=pid_type,
+                        corr=corr,
+                        dose_amount_ml=float(dose_amount_ml or 0.0),
+                        learning_effect=learning_effect,
+                        expected_effect=expected_effect,
+                        first_reaction_sec=response_metrics["first_reaction_sec"],
+                        settle_sec=response_metrics["settle_sec"],
+                        wave_score=response_metrics["wave_score"],
+                        retention_ratio=response_metrics["retention_ratio"],
+                    ),
                 },
             },
         )
@@ -941,7 +1020,7 @@ class CorrectionHandler(BaseStageHandler):
                 baseline_value=float(baseline_value),
                 observed_value=observed_value,
                 expected_effect=expected_effect,
-                actual_effect=directional_effect,
+                actual_effect=peak_effect,
                 no_effect_limit=int(observe_cfg["no_effect_limit"]),
             )
 
@@ -1016,6 +1095,173 @@ class CorrectionHandler(BaseStageHandler):
         if corr.needs_ph_up:
             return max(0.0, observed_value - baseline_value)
         return max(0.0, baseline_value - observed_value)
+
+    def _analyze_observation_window(
+        self,
+        *,
+        samples: Any,
+        pid_type: str,
+        corr: CorrectionState,
+        baseline_value: float,
+        observed_value: float,
+        last_dose_at: datetime,
+        dose_amount_ml: float,
+        threshold_effect: float,
+        window_min_samples: int,
+    ) -> dict[str, Any]:
+        sample_list = [item for item in (list(samples) if isinstance(samples, (list, tuple)) else []) if item.get("value") is not None]
+        if not sample_list:
+            tail_effect = self._directional_effect(
+                pid_type=pid_type,
+                corr=corr,
+                baseline_value=baseline_value,
+                observed_value=observed_value,
+            )
+            return {
+                "tail_effect": tail_effect,
+                "peak_effect": tail_effect,
+                "peak_value": observed_value,
+                "retention_ratio": 1.0 if tail_effect > 0 else 0.0,
+                "wave_score": 0.0,
+                "wave_detected": False,
+                "learning_effect": tail_effect,
+                "first_reaction_sec": None,
+                "settle_sec": None,
+            }
+
+        tail_size = min(len(sample_list), max(window_min_samples, math.ceil(len(sample_list) / 2)))
+        tail_values = [float(item["value"]) for item in sample_list[-tail_size:]]
+        tail_value = float(median(tail_values))
+        directional_effects = [
+            self._directional_effect(
+                pid_type=pid_type,
+                corr=corr,
+                baseline_value=baseline_value,
+                observed_value=float(item["value"]),
+            )
+            for item in sample_list
+        ]
+        peak_index = max(range(len(directional_effects)), key=directional_effects.__getitem__)
+        peak_effect = float(directional_effects[peak_index])
+        peak_value = float(sample_list[peak_index]["value"])
+        tail_effect = self._directional_effect(
+            pid_type=pid_type,
+            corr=corr,
+            baseline_value=baseline_value,
+            observed_value=tail_value,
+        )
+        retention_ratio = 0.0 if peak_effect <= 0 else max(0.0, min(1.0, tail_effect / peak_effect))
+        wave_score = 0.0 if peak_effect <= 0 else max(0.0, min(1.0, 1.0 - retention_ratio))
+        wave_detected = peak_effect >= threshold_effect and wave_score >= 0.35
+        learning_effect = tail_effect if not wave_detected else (tail_effect + ((peak_effect - tail_effect) * 0.35))
+
+        trigger_effect = max(threshold_effect * 0.5, 1e-6)
+        first_reaction_sec: float | None = None
+        settle_sec: float | None = None
+        first_reaction_ts: datetime | None = None
+        for sample, effect in zip(sample_list, directional_effects):
+            ts = sample.get("ts")
+            if effect >= trigger_effect and isinstance(ts, datetime):
+                first_reaction_ts = ts
+                break
+        last_sample_ts = sample_list[-1].get("ts")
+        if isinstance(first_reaction_ts, datetime):
+            first_reaction_sec = max(0.0, (first_reaction_ts - last_dose_at).total_seconds())
+            if isinstance(last_sample_ts, datetime):
+                settle_sec = max(0.0, (last_sample_ts - first_reaction_ts).total_seconds())
+
+        if dose_amount_ml <= 0:
+            learning_effect = 0.0
+
+        return {
+            "tail_effect": float(tail_effect),
+            "peak_effect": peak_effect,
+            "peak_value": peak_value,
+            "retention_ratio": retention_ratio,
+            "wave_score": wave_score,
+            "wave_detected": wave_detected,
+            "learning_effect": float(max(0.0, learning_effect)),
+            "first_reaction_sec": first_reaction_sec,
+            "settle_sec": settle_sec,
+        }
+
+    def _merge_adaptive_stats(
+        self,
+        *,
+        pid_entry: Mapping[str, Any],
+        pid_type: str,
+        corr: CorrectionState,
+        dose_amount_ml: float,
+        learning_effect: float,
+        expected_effect: float,
+        first_reaction_sec: float | None,
+        settle_sec: float | None,
+        wave_score: float,
+        retention_ratio: float,
+    ) -> Mapping[str, Any]:
+        stats = dict(pid_entry.get("stats")) if isinstance(pid_entry.get("stats"), Mapping) else {}
+        adaptive = dict(stats.get("adaptive")) if isinstance(stats.get("adaptive"), Mapping) else {}
+        gains = dict(adaptive.get("gains")) if isinstance(adaptive.get("gains"), Mapping) else {}
+        timing = dict(adaptive.get("timing")) if isinstance(adaptive.get("timing"), Mapping) else {}
+
+        gain_key = "ec_gain_per_ml" if pid_type == "ec" else ("ph_up_gain_per_ml" if corr.needs_ph_up else "ph_down_gain_per_ml")
+        gain_entry = dict(gains.get(gain_key)) if isinstance(gains.get(gain_key), Mapping) else {}
+        gain_observations = int(gain_entry.get("observations") or 0)
+        if dose_amount_ml > 0 and learning_effect > 0:
+            learned_gain = learning_effect / dose_amount_ml
+            gain_entry["ema"] = self._ema(gain_entry.get("ema"), learned_gain, gain_observations)
+            gain_entry["observations"] = gain_observations + 1
+            gains[gain_key] = gain_entry
+
+        adaptive["gains"] = gains
+        adaptive["effectiveness_ema"] = self._ema_ratio(
+            adaptive.get("effectiveness_ema"),
+            0.0 if expected_effect <= 0 else learning_effect / expected_effect,
+            int(adaptive.get("observations") or 0),
+        )
+        adaptive["retention_ema"] = self._ema_ratio(
+            adaptive.get("retention_ema"),
+            retention_ratio,
+            int(adaptive.get("observations") or 0),
+        )
+        adaptive["wave_score_ema"] = self._ema_ratio(
+            adaptive.get("wave_score_ema"),
+            wave_score,
+            int(adaptive.get("observations") or 0),
+        )
+        adaptive["observations"] = int(adaptive.get("observations") or 0) + 1
+
+        timing_observations = int(timing.get("observations") or 0)
+        if first_reaction_sec is not None:
+            timing["transport_delay_sec_ema"] = self._ema(
+                timing.get("transport_delay_sec_ema"),
+                first_reaction_sec,
+                timing_observations,
+            )
+            timing_observations += 1
+        if settle_sec is not None:
+            timing["settle_sec_ema"] = self._ema(
+                timing.get("settle_sec_ema"),
+                settle_sec,
+                max(0, timing_observations - 1),
+            )
+        timing["observations"] = max(timing_observations, int(timing.get("observations") or 0), 1)
+        adaptive["timing"] = timing
+
+        stats["adaptive"] = adaptive
+        return stats
+
+    def _ema(self, previous: Any, current: float, observations: int, alpha: float = 0.2) -> float:
+        try:
+            prev_value = float(previous)
+        except (TypeError, ValueError):
+            prev_value = current
+        if observations <= 0:
+            return round(current, 6)
+        return round((prev_value * (1.0 - alpha)) + (current * alpha), 6)
+
+    def _ema_ratio(self, previous: Any, current: float, observations: int) -> float:
+        return max(0.0, min(1.0, self._ema(previous, current, observations)))
 
     def _expected_cross_coupling_ph(self, *, corr: CorrectionState, process_cfg: Mapping[str, Any]) -> float:
         gain = self._coerce_float(process_cfg.get("ph_per_ec_ml"))

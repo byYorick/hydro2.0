@@ -48,7 +48,6 @@ refresh:
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) up -d --force-recreate --renew-anon-volumes
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate --force
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan db:seed --class=$(REFRESH_SEEDER_CLASS) --force
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan tinker --execute="DB::table('system_automation_settings')->delete();"
 
 .PHONY: migrate
 migrate: up

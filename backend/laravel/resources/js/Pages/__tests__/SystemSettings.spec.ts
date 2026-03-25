@@ -111,8 +111,6 @@ describe('SystemSettings.vue', () => {
     expect(namespaces).toEqual([
       'system.automation_defaults',
       'system.command_templates',
-      'system.pid_defaults.ec',
-      'system.pid_defaults.ph',
       'system.process_calibration_defaults',
       'system.pump_calibration_policy',
       'system.sensor_calibration_policy',
