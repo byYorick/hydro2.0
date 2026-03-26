@@ -7,6 +7,30 @@ import type { useApi } from '../useApi'
 const getDocumentMock = vi.hoisted(() => vi.fn())
 const updateDocumentMock = vi.hoisted(() => vi.fn())
 
+function buildRecipeRevisionResponse(phases: Array<Record<string, unknown>> = [
+  {
+    id: 30,
+    phase_index: 0,
+    name: 'Первая фаза',
+    ph_target: 5.8,
+    ph_min: 5.6,
+    ph_max: 6.0,
+    ec_target: 1.5,
+    ec_min: 1.3,
+    ec_max: 1.7,
+  },
+]) {
+  return {
+    data: {
+      status: 'ok',
+      data: {
+        id: 3,
+        phases,
+      },
+    },
+  }
+}
+
 vi.mock('@/composables/useAutomationConfig', () => ({
   useAutomationConfig: () => ({
     getDocument: getDocumentMock,
@@ -178,6 +202,10 @@ function mountWizardHarness(options?: {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
       }
 
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve(buildRecipeRevisionResponse())
+      }
+
       return Promise.resolve({ data: { status: 'ok', data: [] } })
     }),
     post: vi.fn(),
@@ -313,6 +341,126 @@ describe('useGrowthCycleWizard', () => {
     expect(wizard.nextStepBlockedReason.value).toBe('')
   })
 
+  it('подтягивает pH/EC из первой фазы рецепта по phase_index', async () => {
+    installAuthorityMocks()
+    const { wizard, api } = mountWizardHarness()
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              id: 3,
+              phases: [
+                {
+                  id: 31,
+                  phase_index: 1,
+                  name: 'Вторая фаза',
+                  ph_target: 6.6,
+                  ph_min: 6.4,
+                  ph_max: 6.8,
+                  ec_target: 1.9,
+                  ec_min: 1.7,
+                  ec_max: 2.1,
+                },
+                {
+                  id: 30,
+                  phase_index: 0,
+                  name: 'Первая фаза',
+                  ph_target: 5.8,
+                  ph_min: 5.6,
+                  ph_max: 6.0,
+                  ec_target: 1.5,
+                  ec_min: 1.3,
+                  ec_max: 1.7,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    wizard.selectedRevisionId.value = 3
+    await flushPromises()
+
+    expect(wizard.waterForm.value.targetPh).toBe(5.8)
+    expect(wizard.waterForm.value.targetEc).toBe(1.5)
+  })
+
+  it('блокирует запуск, если target pH выходит за окно рецепта', async () => {
+    installAuthorityMocks()
+    const { wizard, api, showToast } = mountWizardHarness()
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              id: 3,
+              phases: [
+                {
+                  id: 30,
+                  phase_index: 0,
+                  name: 'Первая фаза',
+                  ph_target: 5.8,
+                  ph_min: 5.6,
+                  ph_max: 6.0,
+                  ec_target: 1.5,
+                  ec_min: 1.3,
+                  ec_max: 1.7,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    wizard.form.value.zoneId = 7
+    wizard.form.value.startedAt = '2099-01-01T10:00'
+    wizard.selectedPlantId.value = 2
+    wizard.selectedRevisionId.value = 3
+
+    await flushPromises()
+
+    wizard.waterForm.value.targetPh = 6.4
+    wizard.waterForm.value.targetEc = 1.5
+    wizard.currentStep.value = 6
+
+    await wizard.onSubmit()
+
+    expect(api.post).not.toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.anything())
+    expect(wizard.error.value).toContain('pH: target=6.4 должен быть в диапазоне min=5.6..max=6')
+    expect(showToast).toHaveBeenCalledWith(
+      expect.stringContaining('pH: target=6.4 должен быть в диапазоне min=5.6..max=6'),
+      'error',
+      expect.any(Number),
+    )
+  })
+
   it('не восстанавливает draft сразу на submit-шаг', async () => {
     installAuthorityMocks()
     localStorage.setItem('growthCycleWizardDraft:zone-1', JSON.stringify({
@@ -348,6 +496,7 @@ describe('useGrowthCycleWizard', () => {
     wizard.form.value.startedAt = '2026-03-14T10:00'
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
+    await flushPromises()
 
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/plants') {
@@ -356,6 +505,10 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve(buildRecipeRevisionResponse())
       }
 
       if (url === '/api/zones/7/health') {
@@ -396,6 +549,7 @@ describe('useGrowthCycleWizard', () => {
     wizard.form.value.startedAt = '2026-03-14T10:00'
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
+    await flushPromises()
 
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/plants') {
@@ -453,6 +607,10 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve(buildRecipeRevisionResponse())
       }
 
       if (url === '/api/zones/7/health') {
@@ -532,6 +690,10 @@ describe('useGrowthCycleWizard', () => {
 
       if (url === '/recipes') {
         return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve(buildRecipeRevisionResponse())
       }
 
       if (url === '/api/zones/7/health') {

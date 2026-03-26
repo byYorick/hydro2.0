@@ -224,6 +224,10 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   }
 
   async function saveRecipe(options: SaveRecipeOptions = {}): Promise<Recipe | null> {
+    if (processing.value) {
+      return null
+    }
+
     if (!validate()) {
       return null
     }

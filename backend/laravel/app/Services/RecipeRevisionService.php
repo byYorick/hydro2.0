@@ -21,22 +21,29 @@ class RecipeRevisionService
         int $userId
     ): RecipeRevision {
         return DB::transaction(function () use ($recipe, $cloneFromRevisionId, $description, $userId) {
-            // Определяем номер новой ревизии
-            $lastRevision = $recipe->revisions()
-                ->orderBy('revision_number', 'desc')
+            $lockedRecipe = Recipe::query()
+                ->whereKey($recipe->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // Определяем номер новой ревизии под блокировкой рецепта, чтобы
+            // параллельные сохранения не получили один и тот же revision_number.
+            $lastRevision = RecipeRevision::query()
+                ->where('recipe_id', $lockedRecipe->id)
+                ->orderByDesc('revision_number')
                 ->first();
-            
+
             $newRevisionNumber = $lastRevision 
                 ? $lastRevision->revision_number + 1 
                 : 1;
 
             // Если указана ревизия для клонирования, клонируем её
             if ($cloneFromRevisionId) {
-                return $this->cloneRevision($recipe, $cloneFromRevisionId, $newRevisionNumber, $description, $userId);
+                return $this->cloneRevision($lockedRecipe, $cloneFromRevisionId, $newRevisionNumber, $description, $userId);
             } else {
                 // Создаем пустую ревизию
                 return RecipeRevision::create([
-                    'recipe_id' => $recipe->id,
+                    'recipe_id' => $lockedRecipe->id,
                     'revision_number' => $newRevisionNumber,
                     'status' => 'DRAFT',
                     'description' => $description ?? "New revision {$newRevisionNumber}",

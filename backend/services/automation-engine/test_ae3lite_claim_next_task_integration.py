@@ -181,7 +181,7 @@ async def test_claim_next_task_reverts_claim_when_zone_lease_is_busy() -> None:
         assert result is None
         rows = await fetch(
             """
-            SELECT status, claimed_by, claimed_at
+            SELECT status, claimed_by, claimed_at, corr_limit_policy_logged
             FROM ae_tasks
             WHERE id = $1
             """,
@@ -190,6 +190,7 @@ async def test_claim_next_task_reverts_claim_when_zone_lease_is_busy() -> None:
         assert str(rows[0]["status"]).lower() == "pending"
         assert rows[0]["claimed_by"] is None
         assert rows[0]["claimed_at"] is None
+        assert rows[0]["corr_limit_policy_logged"] is False
     finally:
         await _cleanup(prefix)
 

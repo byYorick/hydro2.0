@@ -815,7 +815,7 @@
       </div>
 
       <div
-        v-if="error"
+        v-if="error && validationErrors.length === 0"
         class="mt-4 p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
       >
         <div class="text-sm text-[color:var(--badge-danger-text)]">

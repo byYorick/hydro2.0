@@ -32,6 +32,10 @@ interface WizardStep {
 }
 
 interface WizardRecipePhase {
+  phase_index?: number | null;
+  name?: string | null;
+  duration_hours?: number | null;
+  duration_days?: number | null;
   ph_target?: number | null;
   ph_min?: number | null;
   ph_max?: number | null;
@@ -362,6 +366,24 @@ export function useGrowthCycleWizard({
       : null;
   });
 
+  const selectedLaunchPhase = computed<WizardRecipePhase | null>(() => {
+    const phases = selectedRevision.value?.phases;
+    if (!Array.isArray(phases) || phases.length === 0) {
+      return null;
+    }
+
+    const sortedPhases = phases
+      .filter((phase): phase is WizardRecipePhase => Boolean(phase) && typeof phase === "object")
+      .slice()
+      .sort((left, right) => {
+        const leftIndex = toFiniteNumber(left.phase_index) ?? 0;
+        const rightIndex = toFiniteNumber(right.phase_index) ?? 0;
+        return leftIndex - rightIndex;
+      });
+
+    return sortedPhases[0] ?? null;
+  });
+
   const steps: WizardStep[] = [
     { key: "zone", label: "Зона" },
     { key: "plant", label: "Растение" },
@@ -510,6 +532,72 @@ export function useGrowthCycleWizard({
     } catch {
       return dateString;
     }
+  }
+
+  function getPhaseLabel(phase: WizardRecipePhase): string {
+    const name = typeof phase.name === "string" ? phase.name.trim() : "";
+    if (name) {
+      return name;
+    }
+
+    const phaseIndex = toFiniteNumber(phase.phase_index);
+    if (phaseIndex !== null) {
+      return `Фаза ${Math.max(1, Math.round(phaseIndex) + 1)}`;
+    }
+
+    return "Первая фаза";
+  }
+
+  function validateWindowedTarget(
+    label: string,
+    target: number | null,
+    min: number | null,
+    max: number | null,
+  ): string | null {
+    if (target === null || min === null || max === null) {
+      return `${label}: target/min/max должны быть числовыми значениями.`;
+    }
+
+    if (min > max) {
+      return `${label}: min не может быть больше max.`;
+    }
+
+    if (target < min || target > max) {
+      return `${label}: target=${target} должен быть в диапазоне min=${min}..max=${max}.`;
+    }
+
+    return null;
+  }
+
+  function validateSelectedRecipeTargets(): string | null {
+    const phase = selectedLaunchPhase.value;
+    if (!phase) {
+      return "Рецепт должен содержать хотя бы одну фазу.";
+    }
+
+    const phaseLabel = getPhaseLabel(phase);
+
+    const phError = validateWindowedTarget(
+      "pH",
+      toFiniteNumber(waterForm.value.targetPh),
+      toFiniteNumber(phase.ph_min),
+      toFiniteNumber(phase.ph_max),
+    );
+    if (phError) {
+      return `${phError} (${phaseLabel})`;
+    }
+
+    const ecError = validateWindowedTarget(
+      "EC",
+      toFiniteNumber(waterForm.value.targetEc),
+      toFiniteNumber(phase.ec_min),
+      toFiniteNumber(phase.ec_max),
+    );
+    if (ecError) {
+      return `${ecError} (${phaseLabel})`;
+    }
+
+    return null;
   }
 
   function syncFormsFromRecipePhase(phase: WizardRecipePhase): void {
@@ -846,6 +934,12 @@ export function useGrowthCycleWizard({
           validationErrors.value.push(automationValidationError);
           return false;
         }
+
+        const recipeTargetValidationError = validateSelectedRecipeTargets();
+        if (recipeTargetValidationError) {
+          validationErrors.value.push(recipeTargetValidationError);
+          return false;
+        }
         break;
       }
       case 5:
@@ -1079,6 +1173,15 @@ export function useGrowthCycleWizard({
       return;
     }
 
+    const recipeTargetValidationError = validateSelectedRecipeTargets();
+    if (recipeTargetValidationError) {
+      validationErrors.value = [recipeTargetValidationError];
+      error.value = recipeTargetValidationError;
+      errorDetails.value = [recipeTargetValidationError];
+      showToast(recipeTargetValidationError, "error", TOAST_TIMEOUT.NORMAL);
+      return;
+    }
+
     const zoneId = form.value.zoneId;
     loading.value = true;
     error.value = null;
@@ -1279,7 +1382,7 @@ export function useGrowthCycleWizard({
       return;
     }
 
-    const firstPhase = (revision?.phases?.[0] || null) as WizardRecipePhase | null;
+    const firstPhase = selectedLaunchPhase.value;
     if (firstPhase) {
       syncFormsFromRecipePhase(firstPhase);
     }

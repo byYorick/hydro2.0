@@ -148,6 +148,25 @@ class RecipeRevisionControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_assigns_next_revision_number_for_a_new_draft()
+    {
+        RecipeRevision::factory()->create([
+            'recipe_id' => $this->recipe->id,
+            'revision_number' => 1,
+            'status' => 'PUBLISHED',
+        ]);
+
+        $response = $this->actingAs($this->agronomist)
+            ->postJson("/api/recipes/{$this->recipe->id}/revisions", [
+                'description' => 'Draft from editor',
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.revision_number', 2)
+            ->assertJsonPath('data.status', 'DRAFT');
+    }
+
+    #[Test]
     public function it_updates_draft_revision()
     {
         $revision = RecipeRevision::factory()->create([

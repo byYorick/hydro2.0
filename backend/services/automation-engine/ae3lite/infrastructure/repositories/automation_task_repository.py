@@ -470,7 +470,7 @@ class PgAutomationTaskRepository:
                 correction.ec_component if correction else None,
                 correction.ec_amount_ml if correction else None,
                 correction.ph_amount_ml if correction else None,
-                correction.limit_policy_logged if correction else None,
+                bool(correction.limit_policy_logged) if correction is not None else False,
                 normalized_due_at,
                 normalized_now,
             )
