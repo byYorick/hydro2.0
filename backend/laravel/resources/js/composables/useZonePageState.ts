@@ -8,6 +8,7 @@ import { logger } from '@/utils/logger'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { calculateProgressBetween } from '@/utils/growCycleProgress'
 import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
+import { resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets'
 import { parseZoneUpdatePayload } from '@/ws/zoneUpdatePayload'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, GrowCycle, RecipePhase } from '@/types'
@@ -152,8 +153,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     active_grow_cycle: activeGrowCycleProp,
   } = usePageProps<PageProps>(['targets', 'devices', 'alerts', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle'])
 
-  const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
-  const currentPhase = computed((): RecipePhase | null => currentPhaseProp.value ?? null)
+  const effectiveTargets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
 
   const activeCycle = computed((): GrowCycle | null => {
     const zoneExt = zone.value as ZoneExtended | undefined
@@ -163,6 +163,37 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   const rawActiveGrowCycle = computed((): GrowCycle | null => {
     const zoneExt = zone.value as ZoneExtended | undefined
     return zone.value?.activeGrowCycle ?? zoneExt?.active_grow_cycle ?? activeCycle.value ?? activeGrowCycleProp.value ?? null
+  })
+
+  const currentPhase = computed((): RecipePhase | null => {
+    const phaseFromProps = currentPhaseProp.value ?? null
+    const rawCycle = rawActiveGrowCycle.value as (GrowCycle & { current_phase?: unknown }) | null
+    const phaseFromCycle = rawCycle?.currentPhase ?? rawCycle?.current_phase ?? null
+
+    if (!phaseFromProps && !phaseFromCycle) {
+      return null
+    }
+
+    const mergedPhase = {
+      ...(phaseFromProps && typeof phaseFromProps === 'object' ? phaseFromProps : {}),
+      ...(phaseFromCycle && typeof phaseFromCycle === 'object' ? phaseFromCycle as Record<string, unknown> : {}),
+    } as Record<string, unknown>
+
+    const recipeTargets = resolveRecipePhaseTargets(phaseFromCycle ?? phaseFromProps)
+    if (recipeTargets) {
+      mergedPhase.targets = recipeTargets
+    }
+
+    return mergedPhase as unknown as RecipePhase
+  })
+
+  const targets = computed(() => {
+    const recipeTargets = currentPhase.value?.targets
+    if (recipeTargets && typeof recipeTargets === 'object' && Object.keys(recipeTargets).length > 0) {
+      return recipeTargets as ZoneTargetsType
+    }
+
+    return effectiveTargets.value
   })
 
   const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.value))

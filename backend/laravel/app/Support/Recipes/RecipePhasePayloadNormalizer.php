@@ -20,16 +20,6 @@ class RecipePhasePayloadNormalizer
             $data['duration_hours'] = (int) round(((float) $data['duration_days']) * 24);
         }
 
-        if (! array_key_exists('ph_target', $data) && array_key_exists('ph_min', $data) && array_key_exists('ph_max', $data)
-            && is_numeric($data['ph_min']) && is_numeric($data['ph_max'])) {
-            $data['ph_target'] = round((((float) $data['ph_min']) + ((float) $data['ph_max'])) / 2, 2);
-        }
-
-        if (! array_key_exists('ec_target', $data) && array_key_exists('ec_min', $data) && array_key_exists('ec_max', $data)
-            && is_numeric($data['ec_min']) && is_numeric($data['ec_max'])) {
-            $data['ec_target'] = round((((float) $data['ec_min']) + ((float) $data['ec_max'])) / 2, 2);
-        }
-
         if (array_key_exists('extensions', $data) && is_array($data['extensions'])) {
             $data['extensions'] = $this->normalizeExtensions($data['extensions']);
         }

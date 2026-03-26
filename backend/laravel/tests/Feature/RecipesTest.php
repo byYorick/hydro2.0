@@ -96,11 +96,11 @@ class RecipesTest extends TestCase
             ->assertJsonPath('data.id', $recipe->id)
             ->assertJsonPath('data.name', $recipe->name)
             ->assertJsonCount(2, 'data.phases')
-            ->assertJsonPath('data.phases.0.targets.temp_air', 23.0)
-            ->assertJsonPath('data.phases.0.targets.humidity_air', 62.0)
+            ->assertJsonPath('data.phases.0.targets.temp_air', 23)
+            ->assertJsonPath('data.phases.0.targets.humidity_air', 62)
             ->assertJsonPath('data.phases.0.targets.irrigation.mode', 'SUBSTRATE')
             ->assertJsonPath('data.phases.0.targets.irrigation.system_type', 'drip')
-            ->assertJsonPath('data.phases.0.extensions.day_night.temperature.day', 23.0);
+            ->assertJsonPath('data.phases.0.extensions.day_night.temperature.day', 23);
     }
 
     public function test_update_recipe(): void
@@ -163,8 +163,10 @@ class RecipesTest extends TestCase
                 'phase_index' => 0,
                 'name' => 'Phase 1',
                 'duration_hours' => 24,
+                'ph_target' => 5.8,
                 'ph_min' => 5.6,
                 'ph_max' => 6.0,
+                'ec_target' => 1.4,
                 'ec_min' => 1.2,
                 'ec_max' => 1.6,
                 'lighting_start_time' => '06:00:00',
@@ -190,8 +192,10 @@ class RecipesTest extends TestCase
 
         $resp->assertCreated()
             ->assertJsonPath('data.name', 'Phase 1')
-            ->assertJsonPath('data.extensions.day_night.temperature.day', 24.0)
-            ->assertJsonPath('data.extensions.day_night.humidity.night', 70.0)
+            ->assertJsonPath('data.targets.ph.target', 5.8)
+            ->assertJsonPath('data.targets.ec.target', 1.4)
+            ->assertJsonPath('data.extensions.day_night.temperature.day', 24)
+            ->assertJsonPath('data.extensions.day_night.humidity.night', 70)
             ->assertJsonPath('data.extensions.subsystems.irrigation.targets.system_type', 'drip');
         $this->assertDatabaseHas('recipe_revision_phases', [
             'recipe_revision_id' => $revision->id,
@@ -227,6 +231,12 @@ class RecipesTest extends TestCase
                 'phase_index' => 0,
                 'name' => 'Phase with invalid ratio',
                 'duration_hours' => 24,
+                'ph_target' => 5.8,
+                'ph_min' => 5.6,
+                'ph_max' => 6.0,
+                'ec_target' => 1.4,
+                'ec_min' => 1.2,
+                'ec_max' => 1.6,
                 'nutrient_npk_ratio_pct' => 40,
                 'nutrient_calcium_ratio_pct' => 40,
                 'nutrient_magnesium_ratio_pct' => 5,
@@ -251,6 +261,12 @@ class RecipesTest extends TestCase
                 'phase_index' => 0,
                 'name' => 'Phase with missing magnesium ratio',
                 'duration_hours' => 24,
+                'ph_target' => 5.8,
+                'ph_min' => 5.6,
+                'ph_max' => 6.0,
+                'ec_target' => 1.4,
+                'ec_min' => 1.2,
+                'ec_max' => 1.6,
                 'nutrient_npk_ratio_pct' => 50,
                 'nutrient_calcium_ratio_pct' => 35,
                 'nutrient_micro_ratio_pct' => 15,
@@ -274,7 +290,12 @@ class RecipesTest extends TestCase
                 'phase_index' => 0,
                 'name' => 'Phase full nutrition',
                 'duration_hours' => 24,
+                'ph_target' => 5.8,
+                'ph_min' => 5.6,
+                'ph_max' => 6.0,
                 'ec_target' => 1.8,
+                'ec_min' => 1.6,
+                'ec_max' => 2.0,
                 'nutrient_mode' => 'delta_ec_by_k',
                 'nutrient_solution_volume_l' => 100,
                 'nutrient_npk_ratio_pct' => 44,
@@ -294,12 +315,85 @@ class RecipesTest extends TestCase
         $this->assertDatabaseHas('recipe_revision_phases', [
             'recipe_revision_id' => $revision->id,
             'name' => 'Phase full nutrition',
+            'ph_target' => 5.8,
+            'ec_target' => 1.8,
             'nutrient_mode' => 'delta_ec_by_k',
             'nutrient_npk_ratio_pct' => 44,
             'nutrient_calcium_ratio_pct' => 36,
             'nutrient_magnesium_ratio_pct' => 17,
             'nutrient_micro_ratio_pct' => 3,
         ]);
+    }
+
+    public function test_add_phase_requires_explicit_targets_and_bounds(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'DRAFT',
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/recipe-revisions/{$revision->id}/phases", [
+                'phase_index' => 0,
+                'name' => 'Phase without targets',
+                'duration_hours' => 24,
+                'ph_min' => 5.6,
+                'ph_max' => 6.0,
+                'ec_min' => 1.2,
+                'ec_max' => 1.6,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonValidationErrors(['ph_target', 'ec_target']);
+    }
+
+    public function test_add_phase_rejects_target_outside_bounds(): void
+    {
+        $token = $this->token();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'DRAFT',
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/recipe-revisions/{$revision->id}/phases", [
+                'phase_index' => 0,
+                'name' => 'Phase with invalid pH target',
+                'duration_hours' => 24,
+                'ph_target' => 6.4,
+                'ph_min' => 5.6,
+                'ph_max' => 6.0,
+                'ec_target' => 1.4,
+                'ec_min' => 1.2,
+                'ec_max' => 1.6,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonValidationErrors(['ph_target']);
+    }
+
+    public function test_update_phase_rejects_target_outside_merged_bounds(): void
+    {
+        $token = $this->token();
+        $phase = RecipeRevisionPhase::factory()->create([
+            'ph_target' => 5.8,
+            'ph_min' => 5.6,
+            'ph_max' => 6.0,
+            'ec_target' => 1.4,
+            'ec_min' => 1.2,
+            'ec_max' => 1.6,
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/recipe-revision-phases/{$phase->id}", [
+                'ph_target' => 6.2,
+            ]);
+
+        $resp->assertStatus(422)
+            ->assertJsonValidationErrors(['ph_target']);
     }
 
     public function test_update_phase_rejects_partial_ratio_update_when_sum_not_100(): void

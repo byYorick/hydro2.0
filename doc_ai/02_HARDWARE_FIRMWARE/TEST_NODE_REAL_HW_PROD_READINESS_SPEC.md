@@ -209,7 +209,7 @@ Pipeline:
 
 - `level_clean_min_override`, `level_clean_max_override`
 - `level_solution_min_override`, `level_solution_max_override`
-- `ph_value` -> принудительное текущее значение `ph_sensor` в диапазоне `4.8..7.2`
+- `ph_value` -> принудительное текущее значение `ph_sensor` в диапазоне `4.0..8.0`
 - `ec_value` -> принудительное текущее значение `ec_sensor` в диапазоне `0.4..3.2`
 
 При изменении `*_override`, `ph_value` или `ec_value` test-node публикует immediate telemetry snapshot, чтобы real-hardware E2E не зависели от следующего periodic telemetry tick.
@@ -270,7 +270,7 @@ Pipeline:
 
 Стартовые значения после `reset_state`:
 
-- `pH = 6.90` (границы clamp: `4.8..7.2`)
+- `pH = 6.90` (границы clamp: `4.0..8.0`)
 - `EC = 0.60` (границы clamp: `0.4..3.2`)
 
 Пассивный drift на тик телеметрии:
@@ -299,9 +299,14 @@ Phase factor:
 Scale:
 
 - при `params.ml > 0`: `scale = ml / nominal_ml`;
-- иначе при `params.duration_ms > 0`: `scale = (duration_ms/1000) / nominal_ml`;
 - далее `scale` ограничивается диапазоном `0.5..5.0`;
 - nominal: `pH=8 ml`, `EC=12 ml`.
+
+Канонический correction contract:
+
+- для `pump_acid/pump_base/pump_a..pump_d` test-node принимает только `cmd="dose"` с `params.ml > 0`;
+- `run_pump` на correction-каналах считается неканоничным и должен завершаться `INVALID` с `error_code=unsupported_correction_command`;
+- `duration_ms` может использоваться только для time-based transient каналов (`pump_main`, fill/drain и т.п.), но не как источник истины для pH/EC correction effect.
 
 Наблюдаемость для backend/e2e:
 

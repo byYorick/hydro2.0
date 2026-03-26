@@ -870,6 +870,7 @@ void handle_system_command(const char* cmd, cJSON* params) {
 {
   "node_uid": "ec-node-uid",
   "channel": "ec_npk_pump",
+  "amount_ml": 2.5,
   "duration_ms": 2500,
   "current_ec": 1.2,
   "target_ec": 1.5,
@@ -885,6 +886,7 @@ void handle_system_command(const char* cmd, cJSON* params) {
 {
   "node_uid": "ph-node-uid",
   "channel": "ph_base_pump",
+  "amount_ml": 1.2,
   "duration_ms": 1200,
   "direction": "up",
   "current_ph": 5.8,

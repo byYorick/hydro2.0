@@ -177,6 +177,12 @@ const sampleZone = {
       id: 11,
       phase_index: 0,
       name: 'Phase 1',
+      ph_target: 5.9,
+      ph_min: 5.7,
+      ph_max: 6.1,
+      ec_target: 1.7,
+      ec_min: 1.5,
+      ec_max: 1.9,
     },
     phases: [
       { id: 11, phase_index: 0, name: 'Phase 1', duration_hours: 24 },
@@ -591,7 +597,10 @@ describe('Zones/Show.vue', () => {
     const zoneTargets = wrapper.findComponent({ name: 'ZoneTargets' })
     expect(zoneTargets.exists()).toBe(true)
     expect(zoneTargets.props('telemetry')).toEqual(sampleTelemetry)
-    expect(zoneTargets.props('targets')).toEqual(sampleTargets)
+    expect(zoneTargets.props('targets')).toEqual({
+      ph: { target: 5.9, min: 5.7, max: 6.1 },
+      ec: { target: 1.7, min: 1.5, max: 1.9 },
+    })
   })
 
   it('отображает графики с данными', async () => {

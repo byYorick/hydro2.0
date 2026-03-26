@@ -5,10 +5,12 @@ import type { Zone } from './Zone'
  */
 export interface RecipePhaseTargets {
   ph?: {
+    target?: number | null
     min: number
     max: number
   }
   ec?: {
+    target?: number | null
     min: number
     max: number
   }
@@ -76,8 +78,10 @@ export interface RecipePhase {
   phase_ends_at?: string | null
   targets?: RecipePhaseTargets
   // Flat API fields (alternative to nested targets)
+  ph_target?: number | null
   ph_min?: number | null
   ph_max?: number | null
+  ec_target?: number | null
   ec_min?: number | null
   ec_max?: number | null
   temp_air_target?: number | null

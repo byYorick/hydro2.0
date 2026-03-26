@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Services\RecipeRevisionPhaseService;
+use App\Support\Recipes\RecipePhasePresenter;
 use App\Support\Recipes\RecipePhasePayloadNormalizer;
 use App\Support\Recipes\RecipePhaseRules;
+use App\Support\Recipes\RecipePhaseTargetValidator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +19,9 @@ class RecipeRevisionPhaseController extends Controller
 {
     public function __construct(
         private RecipeRevisionPhaseService $phaseService,
+        private RecipePhasePresenter $phasePresenter,
         private RecipePhasePayloadNormalizer $payloadNormalizer,
+        private RecipePhaseTargetValidator $targetValidator,
     ) {
     }
 
@@ -37,6 +41,7 @@ class RecipeRevisionPhaseController extends Controller
 
         $data = $request->validate(RecipePhaseRules::store());
         $data = $this->payloadNormalizer->normalizeForWrite($data);
+        $this->targetValidator->validateForStore($data);
         $this->validateNutritionRatioSum($data);
 
         try {
@@ -44,7 +49,7 @@ class RecipeRevisionPhaseController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $phase->load('stageTemplate'),
+                'data' => $this->phasePresenter->present($phase->load('stageTemplate')),
             ], Response::HTTP_CREATED);
         } catch (\DomainException $e) {
             return response()->json([
@@ -80,6 +85,7 @@ class RecipeRevisionPhaseController extends Controller
 
         $data = $request->validate(RecipePhaseRules::update());
         $data = $this->payloadNormalizer->normalizeForWrite($data);
+        $this->targetValidator->validateForUpdate($data, $recipeRevisionPhase);
         $this->validateNutritionRatioSum($data, $recipeRevisionPhase);
 
         try {
@@ -87,7 +93,7 @@ class RecipeRevisionPhaseController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $phase,
+                'data' => $this->phasePresenter->present($phase),
             ]);
         } catch (\DomainException $e) {
             return response()->json([

@@ -72,10 +72,12 @@ class RecipePhasePresenter
             'extensions' => $extensions,
             'targets' => [
                 'ph' => [
+                    'target' => $phase->ph_target !== null ? (float) $phase->ph_target : null,
                     'min' => $phase->ph_min !== null ? (float) $phase->ph_min : ($phase->ph_target !== null ? (float) $phase->ph_target : null),
                     'max' => $phase->ph_max !== null ? (float) $phase->ph_max : ($phase->ph_target !== null ? (float) $phase->ph_target : null),
                 ],
                 'ec' => [
+                    'target' => $phase->ec_target !== null ? (float) $phase->ec_target : null,
                     'min' => $phase->ec_min !== null ? (float) $phase->ec_min : ($phase->ec_target !== null ? (float) $phase->ec_target : null),
                     'max' => $phase->ec_max !== null ? (float) $phase->ec_max : ($phase->ec_target !== null ? (float) $phase->ec_target : null),
                 ],

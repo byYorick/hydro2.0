@@ -172,6 +172,7 @@ class RecipeRevisionPhase extends Model
         $phMax = $this->ph_max ?? $this->ph_target;
         if ($phMin !== null || $phMax !== null) {
             $targets['ph'] = [
+                'target' => $this->ph_target,
                 'min' => $phMin,
                 'max' => $phMax,
             ];
@@ -181,6 +182,7 @@ class RecipeRevisionPhase extends Model
         $ecMax = $this->ec_max ?? $this->ec_target;
         if ($ecMin !== null || $ecMax !== null) {
             $targets['ec'] = [
+                'target' => $this->ec_target,
                 'min' => $ecMin,
                 'max' => $ecMax,
             ];

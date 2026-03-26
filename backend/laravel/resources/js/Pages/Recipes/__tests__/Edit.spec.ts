@@ -72,8 +72,10 @@ const sampleRecipe = {
       phase_index: 0,
       name: 'Seedling',
       duration_hours: 168,
+      ph_target: 5.8,
       ph_min: 5.6,
       ph_max: 6.0,
+      ec_target: 1.4,
       ec_min: 1.2,
       ec_max: 1.6,
       temp_air_target: 23,
@@ -189,6 +191,8 @@ describe('Recipes/Edit.vue', () => {
     expect(apiPatchMock).toHaveBeenCalledWith('/recipe-revision-phases/101', expect.objectContaining({
       phase_index: 0,
       name: 'Seedling',
+      ph_target: 5.8,
+      ec_target: 1.4,
       extensions: expect.objectContaining({
         day_night: expect.any(Object),
         subsystems: expect.objectContaining({

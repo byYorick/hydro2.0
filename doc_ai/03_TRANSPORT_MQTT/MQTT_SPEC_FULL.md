@@ -283,6 +283,10 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 }
 ```
 
+Правило для orchestration/runtime:
+- `run_pump` остаётся time-based командой с `duration_ms`;
+- `dose` является канонической командой для pH/EC dosing и использует только `params.ml` как source of truth для объёма.
+
 ### 3) Включение реле
 ```json
 {

@@ -68,7 +68,10 @@ static const char *CMD_TAG = "test_node_cmd";
 #define EC_REACTION_BASE_DELTA 0.055f
 #define PH_REACTION_NOMINAL_ML 8.0f
 #define EC_REACTION_NOMINAL_ML 12.0f
-#define CORRECTION_DURATION_TO_ML_PER_SEC 1.0f
+#define PH_VALUE_MIN 4.0f
+#define PH_VALUE_MAX 8.0f
+#define EC_VALUE_MIN 0.4f
+#define EC_VALUE_MAX 3.2f
 #define CORRECTION_FILL_PHASE_FACTOR 0.50f
 #define CORRECTION_RECIRC_PH_PHASE_FACTOR 2.50f
 #define CORRECTION_RECIRC_EC_PHASE_FACTOR 3.20f
@@ -803,6 +806,14 @@ static float clamp_float(float value, float min_value, float max_value) {
     return value;
 }
 
+static float clamp_ph_value(float value) {
+    return clamp_float(value, PH_VALUE_MIN, PH_VALUE_MAX);
+}
+
+static float clamp_ec_value(float value) {
+    return clamp_float(value, EC_VALUE_MIN, EC_VALUE_MAX);
+}
+
 static float resolve_correction_reaction_scale(const pending_command_t *job, float nominal_ml) {
     float commanded_ml = nominal_ml;
     float scale;
@@ -813,9 +824,6 @@ static float resolve_correction_reaction_scale(const pending_command_t *job, flo
 
     if (job->amount_present && job->amount_value > 0.0f) {
         commanded_ml = job->amount_value;
-    } else if (job->duration_ms_present && job->duration_ms > 0) {
-        /* E2E correction scenarios configure calibration at 1 ml/s (duration_ms ~= target ml * 1000). */
-        commanded_ml = (((float)job->duration_ms) / 1000.0f) * CORRECTION_DURATION_TO_ML_PER_SEC;
     }
 
     scale = commanded_ml / nominal_ml;
@@ -943,8 +951,8 @@ static void apply_scheduled_correction_responses(void) {
         &s_virtual_state.pending_ph_delay_ticks,
         &s_virtual_state.ph_decay_remaining,
         &s_virtual_state.ph_decay_ticks_remaining,
-        4.8f,
-        7.2f
+        PH_VALUE_MIN,
+        PH_VALUE_MAX
     );
     apply_scheduled_metric_response(
         &s_virtual_state.ec_value,
@@ -952,8 +960,8 @@ static void apply_scheduled_correction_responses(void) {
         &s_virtual_state.pending_ec_delay_ticks,
         &s_virtual_state.ec_decay_remaining,
         &s_virtual_state.ec_decay_ticks_remaining,
-        0.4f,
-        3.2f
+        EC_VALUE_MIN,
+        EC_VALUE_MAX
     );
 }
 
@@ -1201,6 +1209,10 @@ static bool is_ec_correction_channel(const char *channel) {
             strcmp(channel, "pump_c") == 0 ||
             strcmp(channel, "pump_d") == 0
         );
+}
+
+static bool is_correction_dosing_channel(const char *channel) {
+    return is_ph_correction_channel(channel) || is_ec_correction_channel(channel);
 }
 
 static bool is_main_pump_interlock_satisfied(void) {
@@ -2724,6 +2736,23 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         return;
     }
 
+    if (is_correction_dosing_channel(job->channel)) {
+        if (strcmp(job->cmd, "dose") != 0) {
+            cJSON_AddStringToObject(details, "error", "unsupported_correction_command");
+            cJSON_AddStringToObject(details, "error_code", "unsupported_correction_command");
+            cJSON_AddStringToObject(details, "error_message", "correction pumps accept only cmd=dose");
+            *status_out = "INVALID";
+            return;
+        }
+        if (!job->amount_present || job->amount_value <= 0.0f) {
+            cJSON_AddStringToObject(details, "error", "missing_dose_ml");
+            cJSON_AddStringToObject(details, "error_code", "missing_dose_ml");
+            cJSON_AddStringToObject(details, "error_message", "dose command requires params.ml > 0");
+            *status_out = "INVALID";
+            return;
+        }
+    }
+
     if (strcmp(job->channel, "pump_irrigation") == 0) {
         if (strcmp(job->cmd, "set_relay") == 0) {
             s_virtual_state.irrigation_on = job->relay_state;
@@ -2813,10 +2842,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
         float phase_factor = resolve_correction_phase_factor(false);
         float delta = PH_REACTION_BASE_DELTA * scale * phase_factor;
-        float projected_peak = clamp_float(
-            s_virtual_state.ph_value + s_virtual_state.pending_ph_delta - delta,
-            4.8f,
-            7.2f
+        float projected_peak = clamp_ph_value(
+            s_virtual_state.ph_value + s_virtual_state.pending_ph_delta - delta
         );
         schedule_correction_response(false, -delta);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
@@ -2829,10 +2856,8 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         float scale = resolve_correction_reaction_scale(job, PH_REACTION_NOMINAL_ML);
         float phase_factor = resolve_correction_phase_factor(false);
         float delta = PH_REACTION_BASE_DELTA * scale * phase_factor;
-        float projected_peak = clamp_float(
-            s_virtual_state.ph_value + s_virtual_state.pending_ph_delta + delta,
-            4.8f,
-            7.2f
+        float projected_peak = clamp_ph_value(
+            s_virtual_state.ph_value + s_virtual_state.pending_ph_delta + delta
         );
         schedule_correction_response(false, delta);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
@@ -2941,12 +2966,12 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             }
             if (job->ph_value_present) {
                 clear_correction_response_state();
-                s_virtual_state.ph_value = clamp_float(job->ph_value, 4.8f, 7.2f);
+                s_virtual_state.ph_value = clamp_ph_value(job->ph_value);
                 publish_ph = true;
             }
             if (job->ec_value_present) {
                 clear_correction_response_state();
-                s_virtual_state.ec_value = clamp_float(job->ec_value, 0.4f, 3.2f);
+                s_virtual_state.ec_value = clamp_ec_value(job->ec_value);
                 publish_ec = true;
             }
             if (s_virtual_state.level_clean_max_override > 0 && s_virtual_state.clean_fill_stage_active) {
@@ -3694,8 +3719,8 @@ static void apply_passive_drift(void) {
         ec_drift += EC_DRIFT_BIAS_PER_TICK;
     }
 
-    s_virtual_state.ph_value = clamp_float(s_virtual_state.ph_value + ph_drift, 4.8f, 7.2f);
-    s_virtual_state.ec_value = clamp_float(s_virtual_state.ec_value + ec_drift, 0.4f, 3.2f);
+    s_virtual_state.ph_value = clamp_ph_value(s_virtual_state.ph_value + ph_drift);
+    s_virtual_state.ec_value = clamp_ec_value(s_virtual_state.ec_value + ec_drift);
 
     if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {

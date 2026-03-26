@@ -130,6 +130,15 @@
           </div>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">pH target</label>
+              <input
+                v-model.number="phase.ph_target"
+                type="number"
+                step="0.1"
+                class="input-field"
+              />
+            </div>
+            <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">pH min</label>
               <input
                 v-model.number="phase.ph_min"
@@ -142,6 +151,15 @@
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">pH max</label>
               <input
                 v-model.number="phase.ph_max"
+                type="number"
+                step="0.1"
+                class="input-field"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">EC target</label>
+              <input
+                v-model.number="phase.ec_target"
                 type="number"
                 step="0.1"
                 class="input-field"

@@ -4,6 +4,9 @@ PROJECT_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BACKEND_COMPOSE_FILE := backend/docker-compose.dev.yml
 MIGRATE_SEEDER_CLASS ?= DevBootstrapSeeder
 REFRESH_SEEDER_CLASS ?= StartUsersSeeder
+RESET_DB_SEEDER_CLASS ?= $(REFRESH_SEEDER_CLASS)
+RESET_DB_APP_ENV ?= local
+RESET_DB_DATABASE ?= hydro_dev
 
 DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then echo docker-compose; else echo "docker compose"; fi)
 
@@ -13,9 +16,9 @@ help:
 	@echo "  up             - start dev stack (backend/docker-compose.dev.yml)"
 	@echo "  down           - stop dev stack"
 	@echo "  migrate        - run Laravel migrations and dev bootstrap seeders"
-	@echo "  refresh        - full clean dev refresh with only admin/agronomist accounts in DB"
+	@echo "  refresh        - full clean dev refresh with only base users in DB"
 	@echo "  seed           - run Laravel seeders"
-	@echo "  reset-db       - reset DB (migrate:fresh --seed)"
+	@echo "  reset-db       - reset dev DB and seed only base users"
 	@echo "  test           - run PHP (phpunit) and Python (pytest) tests"
 	@echo "  lint           - run PHP lint (Pint)"
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
@@ -60,7 +63,10 @@ seed: up
 
 .PHONY: reset-db
 reset-db: up
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan migrate:fresh --seed
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e APP_ENV=$(RESET_DB_APP_ENV) \
+		-e DB_DATABASE=$(RESET_DB_DATABASE) \
+		laravel php artisan migrate:fresh --seed --seeder=$(RESET_DB_SEEDER_CLASS)
 
 .PHONY: test
 test: up

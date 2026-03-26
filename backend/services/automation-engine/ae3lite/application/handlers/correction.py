@@ -595,17 +595,27 @@ class CorrectionHandler(BaseStageHandler):
     async def _run_dose_ec(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
-        if not corr.ec_node_uid or not corr.ec_channel or not corr.ec_duration_ms:
+        if (
+            not corr.ec_node_uid
+            or not corr.ec_channel
+            or not corr.ec_duration_ms
+            or corr.ec_amount_ml is None
+            or corr.ec_amount_ml <= 0.0
+        ):
             raise TaskExecutionError(
                 "corr_dose_ec_missing_plan",
-                f"EC dose plan missing (node={corr.ec_node_uid}, ch={corr.ec_channel}, ms={corr.ec_duration_ms})",
+                (
+                    "EC dose plan missing "
+                    f"(node={corr.ec_node_uid}, ch={corr.ec_channel}, ms={corr.ec_duration_ms}, "
+                    f"ml={corr.ec_amount_ml})"
+                ),
             )
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step="corr_dose_ec").inc()
         cmd = PlannedCommand(
             step_no=1,
             node_uid=corr.ec_node_uid,
             channel=corr.ec_channel,
-            payload={"cmd": "run_pump", "params": {"duration_ms": corr.ec_duration_ms}},
+            payload={"cmd": "dose", "params": {"ml": corr.ec_amount_ml}},
         )
         result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
         if not result["success"]:
@@ -702,10 +712,20 @@ class CorrectionHandler(BaseStageHandler):
     async def _run_dose_ph(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
-        if not corr.ph_node_uid or not corr.ph_channel or not corr.ph_duration_ms:
+        if (
+            not corr.ph_node_uid
+            or not corr.ph_channel
+            or not corr.ph_duration_ms
+            or corr.ph_amount_ml is None
+            or corr.ph_amount_ml <= 0.0
+        ):
             raise TaskExecutionError(
                 "corr_dose_ph_missing_plan",
-                f"PH dose plan missing (node={corr.ph_node_uid}, ch={corr.ph_channel}, ms={corr.ph_duration_ms})",
+                (
+                    "PH dose plan missing "
+                    f"(node={corr.ph_node_uid}, ch={corr.ph_channel}, ms={corr.ph_duration_ms}, "
+                    f"ml={corr.ph_amount_ml})"
+                ),
             )
         ph_step = "corr_dose_ph_up" if corr.needs_ph_up else "corr_dose_ph_down"
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step=ph_step).inc()
@@ -713,7 +733,7 @@ class CorrectionHandler(BaseStageHandler):
             step_no=1,
             node_uid=corr.ph_node_uid,
             channel=corr.ph_channel,
-            payload={"cmd": "run_pump", "params": {"duration_ms": corr.ph_duration_ms}},
+            payload={"cmd": "dose", "params": {"ml": corr.ph_amount_ml}},
         )
         result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
         if not result["success"]:

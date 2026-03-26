@@ -18,8 +18,10 @@ export interface RecipePhaseFormState {
   phase_index: number
   name: string
   duration_hours: number
+  ph_target: number
   ph_min: number
   ph_max: number
+  ec_target: number
   ec_min: number
   ec_max: number
   temp_air_target: number | null
@@ -139,8 +141,10 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
     phase_index: phaseIndex,
     name: `Фаза ${phaseIndex + 1}`,
     duration_hours: 72,
+    ph_target: 5.8,
     ph_min: 5.6,
     ph_max: 6.0,
+    ec_target: 1.4,
     ec_min: 1.2,
     ec_max: 1.6,
     temp_air_target: 23,
@@ -191,6 +195,14 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
   const phMax = toNullableNumber(phase?.ph_max ?? phase?.targets?.ph?.max, base.ph_max) ?? base.ph_max
   const ecMin = toNullableNumber(phase?.ec_min ?? phase?.targets?.ec?.min, base.ec_min) ?? base.ec_min
   const ecMax = toNullableNumber(phase?.ec_max ?? phase?.targets?.ec?.max, base.ec_max) ?? base.ec_max
+  const phTarget = toNullableNumber(
+    phase?.ph_target ?? phase?.targets?.ph?.target,
+    roundRatio((phMin + phMax) / 2),
+  ) ?? base.ph_target
+  const ecTarget = toNullableNumber(
+    phase?.ec_target ?? phase?.targets?.ec?.target,
+    roundRatio((ecMin + ecMax) / 2),
+  ) ?? base.ec_target
   const tempAir = toNullableNumber(phase?.temp_air_target ?? phase?.targets?.temp_air, base.temp_air_target)
   const humidityAir = toNullableNumber(phase?.humidity_target ?? phase?.targets?.humidity_air, base.humidity_target)
   const lightHours = toNullableNumber(phase?.lighting_photoperiod_hours ?? phase?.targets?.light_hours, base.lighting_photoperiod_hours)
@@ -203,8 +215,10 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
     phase_index: Number(phase?.phase_index ?? base.phase_index),
     name: String(phase?.name ?? base.name),
     duration_hours: toNullableInt(phase?.duration_hours, base.duration_hours) ?? base.duration_hours,
+    ph_target: phTarget,
     ph_min: phMin,
     ph_max: phMax,
+    ec_target: ecTarget,
     ec_min: ecMin,
     ec_max: ecMax,
     temp_air_target: tempAir,
@@ -239,10 +253,10 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
     day_night: emptyDayNight(lightHours, lightingStartTime),
   }
 
-  result.day_night.ph.day = toNullableNumber(asRecord(dayNight?.ph)?.day, result.ph_min)
-  result.day_night.ph.night = toNullableNumber(asRecord(dayNight?.ph)?.night, result.ph_min)
-  result.day_night.ec.day = toNullableNumber(asRecord(dayNight?.ec)?.day, result.ec_min)
-  result.day_night.ec.night = toNullableNumber(asRecord(dayNight?.ec)?.night, result.ec_min)
+  result.day_night.ph.day = toNullableNumber(asRecord(dayNight?.ph)?.day, result.ph_target)
+  result.day_night.ph.night = toNullableNumber(asRecord(dayNight?.ph)?.night, result.ph_target)
+  result.day_night.ec.day = toNullableNumber(asRecord(dayNight?.ec)?.day, result.ec_target)
+  result.day_night.ec.night = toNullableNumber(asRecord(dayNight?.ec)?.night, result.ec_target)
   result.day_night.temperature.day = toNullableNumber(asRecord(dayNight?.temperature)?.day, result.temp_air_target)
   result.day_night.temperature.night = toNullableNumber(asRecord(dayNight?.temperature)?.night, result.temp_air_target)
   result.day_night.humidity.day = toNullableNumber(asRecord(dayNight?.humidity)?.day, result.humidity_target)
@@ -325,10 +339,10 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
     name: phase.name.trim() || `Фаза ${phase.phase_index + 1}`,
     duration_hours: toNullableInt(phase.duration_hours, 0),
     duration_days: toNullableInt(Math.round((phase.duration_hours / 24) * 100) / 100),
-    ph_target: roundRatio((phase.ph_min + phase.ph_max) / 2),
+    ph_target: toNullableNumber(phase.ph_target),
     ph_min: toNullableNumber(phase.ph_min),
     ph_max: toNullableNumber(phase.ph_max),
-    ec_target: roundRatio((phase.ec_min + phase.ec_max) / 2),
+    ec_target: toNullableNumber(phase.ec_target),
     ec_min: toNullableNumber(phase.ec_min),
     ec_max: toNullableNumber(phase.ec_max),
     temp_air_target: toNullableNumber(phase.temp_air_target),
@@ -406,8 +420,10 @@ export function mapSimpleRecipePhaseToForm(phase: {
   const form = createDefaultRecipePhase(phase.phase_index)
   form.name = phase.name
   form.duration_hours = phase.duration_hours
+  form.ph_target = phase.targets.ph
   form.ph_min = phase.targets.ph
   form.ph_max = phase.targets.ph
+  form.ec_target = phase.targets.ec
   form.ec_min = phase.targets.ec
   form.ec_max = phase.targets.ec
   form.temp_air_target = phase.targets.temp_air
@@ -425,6 +441,41 @@ export function mapSimpleRecipePhaseToForm(phase: {
   form.day_night.humidity.night = phase.targets.humidity_air
   form.day_night.lighting.day_hours = phase.targets.light_hours
   return form
+}
+
+function validateBoundedTarget(
+  label: string,
+  target: number | null,
+  min: number | null,
+  max: number | null,
+): string | null {
+  if (target === null || min === null || max === null) {
+    return `${label}: заполните target, min и max`
+  }
+
+  if (min > max) {
+    return `${label}: min не может быть больше max`
+  }
+
+  if (target < min || target > max) {
+    return `${label}: target должен быть в диапазоне min..max`
+  }
+
+  return null
+}
+
+export function getRecipePhaseTargetValidationError(phase: RecipePhaseFormState): string | null {
+  return validateBoundedTarget(
+    'pH',
+    toNullableNumber(phase.ph_target),
+    toNullableNumber(phase.ph_min),
+    toNullableNumber(phase.ph_max),
+  ) ?? validateBoundedTarget(
+    'EC',
+    toNullableNumber(phase.ec_target),
+    toNullableNumber(phase.ec_min),
+    toNullableNumber(phase.ec_max),
+  )
 }
 
 export function filterProductsByComponent(products: NutrientProduct[], component: NutrientProduct['component']): NutrientProduct[] {

@@ -28,17 +28,26 @@ class RecipePhaseRules
         $nameRules = $partial
             ? ['sometimes', 'required', 'string', 'max:255']
             : ['required', 'string', 'max:255'];
+        $targetRules = $partial
+            ? ['sometimes', 'nullable', 'numeric']
+            : ['required', 'numeric'];
+        $phBoundRules = $partial
+            ? ['sometimes', 'nullable', 'numeric', 'min:0', 'max:14']
+            : ['required', 'numeric', 'min:0', 'max:14'];
+        $ecBoundRules = $partial
+            ? ['sometimes', 'nullable', 'numeric', 'min:0']
+            : ['required', 'numeric', 'min:0'];
 
         return [
             $prefix.'stage_template_id' => ['nullable', 'integer', 'exists:grow_stage_templates,id'],
             $prefix.'phase_index' => ['nullable', 'integer', 'min:0'],
             $prefix.'name' => $nameRules,
-            $prefix.'ph_target' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            $prefix.'ph_min' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            $prefix.'ph_max' => ['nullable', 'numeric', 'min:0', 'max:14'],
-            $prefix.'ec_target' => ['nullable', 'numeric', 'min:0'],
-            $prefix.'ec_min' => ['nullable', 'numeric', 'min:0'],
-            $prefix.'ec_max' => ['nullable', 'numeric', 'min:0'],
+            $prefix.'ph_target' => [...$targetRules, 'min:0', 'max:14'],
+            $prefix.'ph_min' => $phBoundRules,
+            $prefix.'ph_max' => $phBoundRules,
+            $prefix.'ec_target' => [...$targetRules, 'min:0'],
+            $prefix.'ec_min' => $ecBoundRules,
+            $prefix.'ec_max' => $ecBoundRules,
             $prefix.'nutrient_program_code' => ['nullable', 'string', 'max:64'],
             $prefix.'nutrient_mode' => ['nullable', 'string', 'in:ratio_ec_pid,delta_ec_by_k,dose_ml_l_only'],
             $prefix.'nutrient_npk_ratio_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],

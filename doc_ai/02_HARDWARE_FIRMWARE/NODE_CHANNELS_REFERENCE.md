@@ -205,7 +205,19 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Тип: `ACTUATOR`.
 
-Базовая команда для real-node:
+Каноническая orchestration-команда для correction dosing:
+
+```json
+{
+  "cmd_id": "cmd-19292",
+  "cmd": "dose",
+  "params": {
+    "ml": 0.8
+  }
+}
+```
+
+Низкоуровневый time-based вариант firmware edge:
 
 ```json
 {
@@ -216,8 +228,6 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
   }
 }
 ```
-
-Примечание: `dose` может использоваться как orchestration alias и требует adapter/firmware support.
 
 Сервисные команды (если поддерживаются конкретной нодой):
 
@@ -242,7 +252,19 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Тип: `ACTUATOR`.
 
-Базовая команда для real-node:
+Каноническая orchestration-команда для correction dosing:
+
+```json
+{
+  "cmd_id": "cmd-20101",
+  "cmd": "dose",
+  "params": {
+    "ml": 1.5
+  }
+}
+```
+
+Низкоуровневый time-based вариант firmware edge:
 
 ```json
 {
@@ -253,8 +275,6 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
   }
 }
 ```
-
-Alias-команды (`dose` и т.д.) допускаются только при явной поддержке в прошивке/adapter.
 
 Для релейных/клапанных каналов используется:
 

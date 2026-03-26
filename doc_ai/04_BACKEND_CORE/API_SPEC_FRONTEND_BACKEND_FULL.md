@@ -982,6 +982,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 Канонический phase contract для create/update:
 
 - запись идёт в flat поля `recipe_revision_phases`;
+- для `pH` и `EC` клиент обязан передавать явные `ph_target/ph_min/ph_max` и `ec_target/ec_min/ec_max`;
+- `target` должен лежать внутри своего окна `min..max`, implicit midpoint больше не вычисляется на backend;
 - `extensions.day_night` хранит advanced day/night настройки;
 - `extensions.subsystems.irrigation.targets.system_type` хранит канонический irrigation system type;
 - `targets` в read-shape используется только как compatibility/view helper.

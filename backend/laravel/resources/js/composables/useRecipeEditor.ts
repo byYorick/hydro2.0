@@ -9,6 +9,7 @@ import {
   createDefaultRecipePhase,
   createRecipeEditorFormState,
   filterProductsByComponent,
+  getRecipePhaseTargetValidationError,
   isNutrientRatioValid,
   normalizePhaseRatios,
   nutrientRatioSum,
@@ -155,6 +156,13 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     for (const phase of form.phases) {
       if (!phase.name.trim()) {
         showToast('У каждой фазы должно быть название', 'error', TOAST_TIMEOUT.NORMAL)
+        return false
+      }
+
+      const phaseTargetError = getRecipePhaseTargetValidationError(phase)
+      if (phaseTargetError) {
+        const label = phase.name.trim() || `Фаза ${phase.phase_index + 1}`
+        showToast(`${phaseTargetError} (${label})`, 'error', TOAST_TIMEOUT.NORMAL)
         return false
       }
 

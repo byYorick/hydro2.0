@@ -22,7 +22,6 @@ services:
     build:
       context: ./services/db
       dockerfile: Dockerfile
-    image: hydro-dev-db
     command:
       - postgres
       - -c

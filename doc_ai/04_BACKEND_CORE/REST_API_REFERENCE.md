@@ -153,6 +153,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 Канонический write-contract для phase payload в этом и обычных recipe endpoints:
 
 - flat поля `recipe_revision_phases`;
+- явные `ph_target/ph_min/ph_max` и `ec_target/ec_min/ec_max` обязательны для create phase;
+- `target` валидируется относительно своего окна и должен лежать внутри `min..max`;
 - `extensions.day_night`;
 - `extensions.subsystems.irrigation.targets.system_type`.
 

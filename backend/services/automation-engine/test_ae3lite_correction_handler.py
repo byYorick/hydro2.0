@@ -548,10 +548,12 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
         needs_ec=True,
         ec_node_uid="ec-node",
         ec_channel="ec_pump",
+        ec_amount_ml=2.0,
         ec_duration_ms=2000,
     )
     task = _make_task(corr=corr)
-    handler = _make_handler()
+    gateway = _MockGateway()
+    handler = _make_handler(gateway=gateway)
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
     assert outcome.kind == "enter_correction"
@@ -559,6 +561,42 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert outcome.correction.ec_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
+    assert len(gateway.calls) == 1
+    commands = gateway.calls[0]["commands"]
+    assert len(commands) == 1
+    assert commands[0].payload == {
+        "cmd": "dose",
+        "params": {"ml": 2.0},
+    }
+
+
+async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
+    corr = _base_corr(
+        corr_step="corr_dose_ph",
+        needs_ph_up=True,
+        ph_node_uid="ph-node",
+        ph_channel="ph_up_pump",
+        ph_amount_ml=1.5,
+        ph_duration_ms=1500,
+    )
+    task = _make_task(corr=corr)
+    gateway = _MockGateway()
+    handler = _make_handler(gateway=gateway)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_wait_ph"
+    assert outcome.correction.ph_attempt == 1
+    assert outcome.due_delay_sec == 10
+    assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
+    assert len(gateway.calls) == 1
+    commands = gateway.calls[0]["commands"]
+    assert len(commands) == 1
+    assert commands[0].payload == {
+        "cmd": "dose",
+        "params": {"ml": 1.5},
+    }
 
 
 async def test_corr_wait_ec_observes_response_and_returns_to_check():

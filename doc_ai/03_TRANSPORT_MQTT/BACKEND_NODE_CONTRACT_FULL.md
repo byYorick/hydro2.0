@@ -304,6 +304,24 @@ Backend → Node
 }
 ```
 
+Для volume-based correction dosing канонический payload:
+```json
+{
+ "cmd_id": "cmd-9124",
+ "cmd": "dose",
+ "params": {
+   "ml": 2.5
+ },
+ "ts": 1737355113,
+ "sig": "b2c3d4e5f6a1..."
+}
+```
+
+Правило:
+- `run_pump + duration_ms` используется для time-based actuator channels;
+- `dose + params.ml` используется для volume-based dosing channels;
+- для pH/EC correction effect source of truth — только `params.ml`.
+
 **Тест сенсора канала:**
 - `cmd`: `test_sensor`
 - `params`: `{}` (канал определяется из MQTT топика)
