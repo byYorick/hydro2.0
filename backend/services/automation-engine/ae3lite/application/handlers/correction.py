@@ -223,6 +223,7 @@ class CorrectionHandler(BaseStageHandler):
                     "policy": "fill_continuous_until_no_effect_or_timeout",
                 },
             )
+            corr = replace(corr, limit_policy_logged=True)
 
         corr_wait_until = self._normalize_timestamp(corr.wait_until)
         normalized_now = self._normalize_timestamp(now)
@@ -1023,7 +1024,13 @@ class CorrectionHandler(BaseStageHandler):
     def _should_log_limit_policy(self, *, task: Any, corr: CorrectionState) -> bool:
         if self._enforce_attempt_caps(task=task):
             return False
-        return corr.attempt == 0 and corr.ec_attempt == 0 and corr.ph_attempt == 0 and corr.corr_step == "corr_check"
+        return (
+            not bool(getattr(corr, "limit_policy_logged", False))
+            and corr.attempt == 0
+            and corr.ec_attempt == 0
+            and corr.ph_attempt == 0
+            and corr.corr_step == "corr_check"
+        )
 
     async def _log_attempt_cap_ignored(
         self,

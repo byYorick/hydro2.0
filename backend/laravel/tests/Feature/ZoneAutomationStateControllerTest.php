@@ -28,7 +28,10 @@ class ZoneAutomationStateControllerTest extends TestCase
 
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
-        $zone = Zone::factory()->create();
+        $zone = Zone::factory()->create([
+            'status' => 'PAUSED',
+            'water_state' => 'WATER_CHANGE_FILL',
+        ]);
 
         Http::fake([
             "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
@@ -75,6 +78,12 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('active_processes.pump_in', true)
             ->assertJsonPath('state_meta.source', 'live')
             ->assertJsonPath('state_meta.is_stale', false);
+
+        $this->assertDatabaseHas('zones', [
+            'id' => $zone->id,
+            'status' => 'PAUSED',
+            'water_state' => 'WATER_CHANGE_FILL',
+        ]);
     }
 
     public function test_automation_state_returns_upstream_unavailable_on_request_exception(): void
@@ -206,5 +215,46 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('compatibility.source', 'ae3_control_mode_fallback')
             ->assertJsonPath('state_meta.source', 'live')
             ->assertJsonPath('state_meta.is_stale', false);
+    }
+
+    public function test_automation_state_does_not_mutate_zone_aggregate_on_read(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create([
+            'status' => 'NEW',
+            'water_state' => 'WATER_CHANGE_STABILIZE',
+        ]);
+
+        \App\Models\GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'greenhouse_id' => $zone->greenhouse_id,
+            'status' => \App\Enums\GrowCycleStatus::PLANNED,
+        ]);
+
+        Http::fake([
+            "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'IDLE',
+                'state_label' => 'Ожидание',
+                'state_details' => [],
+                'workflow_phase' => 'idle',
+                'current_stage' => 'startup',
+            ], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state")
+            ->assertOk()
+            ->assertJsonPath('state', 'IDLE');
+
+        $this->assertDatabaseHas('zones', [
+            'id' => $zone->id,
+            'status' => 'NEW',
+            'water_state' => 'WATER_CHANGE_STABILIZE',
+        ]);
     }
 }

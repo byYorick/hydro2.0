@@ -113,6 +113,7 @@ class AutomationTask:
                 ec_component=str(row["corr_ec_component"]) if row.get("corr_ec_component") is not None else None,
                 ec_amount_ml=float(row["corr_ec_amount_ml"]) if row.get("corr_ec_amount_ml") is not None else None,
                 ph_amount_ml=float(row["corr_ph_amount_ml"]) if row.get("corr_ph_amount_ml") is not None else None,
+                limit_policy_logged=bool(row.get("corr_limit_policy_logged")),
             )
 
         intent_meta = row.get("intent_meta")

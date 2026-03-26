@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use DomainException;
 
 class GrowCycleService
 {
@@ -80,13 +81,18 @@ class GrowCycleService
         if (! $firstPhase) {
             throw new \DomainException('Revision has no phases');
         }
+        $phaseOverrides = $this->extractPhaseOverrides($data);
+        $validatedPhaseOverrides = $this->validatePhaseOverrides(
+            templatePhase: $firstPhase,
+            phaseOverrides: $phaseOverrides,
+        );
 
         $plantingAt = isset($data['planting_at']) && $data['planting_at']
             ? Carbon::parse($data['planting_at'])
             : now();
         $startImmediately = (bool) ($data['start_immediately'] ?? false);
 
-        $createdCycle = DB::transaction(function () use ($zone, $revision, $firstPhase, $plantId, $data, $userId, $plantingAt) {
+        $createdCycle = DB::transaction(function () use ($zone, $revision, $firstPhase, $plantId, $data, $userId, $plantingAt, $validatedPhaseOverrides) {
             $settings = is_array($data['settings'] ?? null) ? $data['settings'] : [];
 
             $irrigation = is_array($data['irrigation'] ?? null) ? $data['irrigation'] : [];
@@ -121,7 +127,12 @@ class GrowCycleService
             ]);
 
             // Теперь создаем снапшот первой фазы с ID цикла
-            $firstPhaseSnapshot = $this->createPhaseSnapshot($cycle, $firstPhase, null);
+            $firstPhaseSnapshot = $this->createPhaseSnapshot(
+                $cycle,
+                $firstPhase,
+                null,
+                $validatedPhaseOverrides,
+            );
 
             // Обновляем цикл с ID снапшота фазы
             $cycle->update(['current_phase_id' => $firstPhaseSnapshot->id]);
@@ -222,20 +233,15 @@ class GrowCycleService
      */
     public function syncCycleConfigDocuments(GrowCycle $cycle, array $data = [], ?int $userId = null): void
     {
-        $phaseOverrides = is_array($data['phase_overrides'] ?? null) && ! array_is_list($data['phase_overrides'])
-            ? $data['phase_overrides']
-            : [];
-
         $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
-        if ($firstPhase && $phaseOverrides !== []) {
-            $overrides = array_filter(
-                $phaseOverrides,
-                static fn ($value): bool => $value !== null
-            );
-            if ($overrides !== []) {
-                $firstPhase->update($overrides);
-                $firstPhase->refresh();
+        $phaseOverrides = $this->extractPhaseOverrides($data);
+        if ($phaseOverrides !== []) {
+            $templatePhase = $firstPhase?->recipeRevisionPhase;
+            if (! $templatePhase instanceof RecipeRevisionPhase) {
+                throw new DomainException('Unable to validate cycle phase overrides without the source recipe phase.');
             }
+
+            $phaseOverrides = $this->validatePhaseOverrides($templatePhase, $phaseOverrides);
         }
 
         $phasePayload = $firstPhase ? [
@@ -1377,10 +1383,16 @@ class GrowCycleService
      * @param  GrowCycle|null  $cycle  Цикл (может быть null при создании цикла)
      * @param  RecipeRevisionPhase  $templatePhase  Шаблонная фаза
      * @param  Carbon|null  $startedAt  Время начала фазы
+     * @param  array<string, mixed>  $overrides
      */
-    private function createPhaseSnapshot(?GrowCycle $cycle, RecipeRevisionPhase $templatePhase, ?Carbon $startedAt = null): GrowCyclePhase
+    private function createPhaseSnapshot(
+        ?GrowCycle $cycle,
+        RecipeRevisionPhase $templatePhase,
+        ?Carbon $startedAt = null,
+        array $overrides = [],
+    ): GrowCyclePhase
     {
-        return GrowCyclePhase::create([
+        $attributes = [
             'grow_cycle_id' => $cycle?->id,
             'recipe_revision_phase_id' => $templatePhase->id,
             'phase_index' => $templatePhase->phase_index,
@@ -1427,6 +1439,118 @@ class GrowCycleService
             'dli_target' => $templatePhase->dli_target,
             'extensions' => $templatePhase->extensions,
             'started_at' => $startedAt,
-        ]);
+        ];
+
+        return GrowCyclePhase::create(array_replace($attributes, $overrides));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function extractPhaseOverrides(array $data): array
+    {
+        $phaseOverrides = is_array($data['phase_overrides'] ?? null) && ! array_is_list($data['phase_overrides'])
+            ? $data['phase_overrides']
+            : [];
+
+        if ($phaseOverrides === []) {
+            return [];
+        }
+
+        $allowedFields = [
+            'ph_target',
+            'ph_min',
+            'ph_max',
+            'ec_target',
+            'ec_min',
+            'ec_max',
+        ];
+
+        $filtered = array_intersect_key($phaseOverrides, array_flip($allowedFields));
+
+        return array_filter(
+            $filtered,
+            static fn ($value): bool => $value !== null
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $phaseOverrides
+     * @return array<string, mixed>
+     */
+    private function validatePhaseOverrides(RecipeRevisionPhase $templatePhase, array $phaseOverrides): array
+    {
+        if ($phaseOverrides === []) {
+            return [];
+        }
+
+        $this->assertMetricOverrideInWindow(
+            label: 'pH',
+            targetField: 'ph_target',
+            minField: 'ph_min',
+            maxField: 'ph_max',
+            phaseOverrides: $phaseOverrides,
+            templatePhase: $templatePhase,
+        );
+        $this->assertMetricOverrideInWindow(
+            label: 'EC',
+            targetField: 'ec_target',
+            minField: 'ec_min',
+            maxField: 'ec_max',
+            phaseOverrides: $phaseOverrides,
+            templatePhase: $templatePhase,
+        );
+
+        return $phaseOverrides;
+    }
+
+    /**
+     * @param  array<string, mixed>  $phaseOverrides
+     */
+    private function assertMetricOverrideInWindow(
+        string $label,
+        string $targetField,
+        string $minField,
+        string $maxField,
+        array $phaseOverrides,
+        RecipeRevisionPhase $templatePhase,
+    ): void {
+        $hasRelevantOverride = array_key_exists($targetField, $phaseOverrides)
+            || array_key_exists($minField, $phaseOverrides)
+            || array_key_exists($maxField, $phaseOverrides);
+
+        if (! $hasRelevantOverride) {
+            return;
+        }
+
+        $target = $this->resolveOverrideNumeric($phaseOverrides[$targetField] ?? null, $templatePhase->{$targetField});
+        $min = $this->resolveOverrideNumeric($phaseOverrides[$minField] ?? null, $templatePhase->{$minField});
+        $max = $this->resolveOverrideNumeric($phaseOverrides[$maxField] ?? null, $templatePhase->{$maxField});
+
+        if ($target === null || $min === null || $max === null) {
+            throw new DomainException("{$label}: target/min/max должны быть числовыми значениями.");
+        }
+
+        if ($min > $max) {
+            throw new DomainException("{$label}: min не может быть больше max.");
+        }
+
+        if ($target < $min || $target > $max) {
+            throw new DomainException("{$label}: target должен быть в диапазоне min..max.");
+        }
+    }
+
+    private function resolveOverrideNumeric(mixed $override, mixed $fallback): ?float
+    {
+        if ($override !== null && $override !== '') {
+            return is_numeric($override) ? (float) $override : null;
+        }
+
+        if ($fallback === null || $fallback === '') {
+            return null;
+        }
+
+        return is_numeric($fallback) ? (float) $fallback : null;
     }
 }

@@ -164,6 +164,7 @@ def _make_task(
         "corr_ec_component": corr.ec_component,
         "corr_ec_amount_ml": corr.ec_amount_ml,
         "corr_ph_amount_ml": corr.ph_amount_ml,
+        "corr_limit_policy_logged": corr.limit_policy_logged,
     })
 
 
@@ -191,6 +192,7 @@ def _base_corr(**kwargs) -> CorrectionState:
         ph_channel=None,
         ph_duration_ms=None,
         wait_until=None,
+        limit_policy_logged=False,
     )
     defaults.update(kwargs)
     return CorrectionState(**defaults)
@@ -448,9 +450,32 @@ async def test_corr_check_logs_fill_limit_policy_on_first_tick():
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
-        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+        outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert any(call.args[1] == "CORRECTION_LIMIT_POLICY_APPLIED" for call in create_event.await_args_list)
+    assert outcome.correction.limit_policy_logged is True
+
+
+async def test_corr_check_does_not_repeat_limit_policy_event_when_already_logged(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_check",
+        attempt=0,
+        ec_attempt=0,
+        ph_attempt=0,
+        limit_policy_logged=True,
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="solution_fill_check",
+        workflow_phase="tank_filling",
+    )
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.0, ec=2.0))
+
+    await handler.run(task=task, plan=_MockPlan(runtime=deepcopy(RUNTIME)), stage_def=None, now=NOW)
+
+    assert not any(call.args[1] == "CORRECTION_LIMIT_POLICY_APPLIED" for call in create_event.await_args_list)
 
 
 async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_recirc(monkeypatch: pytest.MonkeyPatch):

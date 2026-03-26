@@ -205,33 +205,10 @@ class PythonBridgeServiceTest extends TestCase
         ]);
     }
 
-    public function test_send_growth_cycle_config_uses_real_zone_node_with_case_insensitive_online_status(): void
+    public function test_send_growth_cycle_config_is_completed_locally_without_http_publish(): void
     {
+        Http::fake();
         $zone = Zone::factory()->create();
-
-        $offlineNode = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-offline-1',
-            'status' => 'OFFLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $offlineNode->id,
-            'channel' => 'default',
-            'type' => 'SERVICE',
-            'metric' => null,
-        ]);
-
-        $onlineNode = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-online-1',
-            'status' => 'ONLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $onlineNode->id,
-            'channel' => 'default',
-            'type' => 'SERVICE',
-            'metric' => null,
-        ]);
 
         $cmdId = $this->service->sendZoneCommand($zone, [
             'type' => 'GROWTH_CYCLE_CONFIG',
@@ -242,43 +219,32 @@ class PythonBridgeServiceTest extends TestCase
         ]);
 
         $this->assertNotEmpty($cmdId);
-
-        Http::assertSent(function ($request) use ($zone, $onlineNode) {
-            $data = $request->data();
-            $url = $request->url();
-
-            return str_contains($url, "zones/{$zone->id}/commands")
-                && ($data['node_uid'] ?? null) === $onlineNode->uid
-                && ($data['channel'] ?? null) === 'default';
+        $command = Command::query()->where('cmd_id', $cmdId)->firstOrFail();
+        $this->assertSame(Command::STATUS_DONE, $command->status);
+        $this->assertNull($command->node_id);
+        $this->assertNull($command->channel);
+        $this->assertNotNull($command->sent_at);
+        $this->assertNotNull($command->ack_at);
+        Http::assertNotSent(function ($request) use ($zone) {
+            return str_contains($request->url(), "zones/{$zone->id}/commands");
         });
     }
 
-    public function test_send_growth_cycle_config_prefers_system_channel_and_persists_resolved_target(): void
+    public function test_send_growth_cycle_config_does_not_require_system_or_default_channel(): void
     {
+        Http::fake();
         $zone = Zone::factory()->create();
 
-        $sensorOnlyNode = DeviceNode::factory()->create([
+        $node = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'uid' => 'nd-sensor-1',
             'status' => 'ONLINE',
         ]);
         NodeChannel::create([
-            'node_id' => $sensorOnlyNode->id,
+            'node_id' => $node->id,
             'channel' => 'ph_sensor',
             'type' => 'sensor',
             'metric' => 'PH',
-        ]);
-
-        $systemNode = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-system-1',
-            'status' => 'ONLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $systemNode->id,
-            'channel' => 'system',
-            'type' => 'SERVICE',
-            'metric' => null,
         ]);
 
         $cmdId = $this->service->sendZoneCommand($zone, [
@@ -289,93 +255,50 @@ class PythonBridgeServiceTest extends TestCase
         $this->assertNotEmpty($cmdId);
 
         $command = Command::query()->where('cmd_id', $cmdId)->firstOrFail();
-        $this->assertSame($systemNode->id, $command->node_id);
-        $this->assertSame('system', $command->channel);
-
-        Http::assertSent(function ($request) use ($zone, $systemNode) {
-            $data = $request->data();
-
-            return str_contains($request->url(), "zones/{$zone->id}/commands")
-                && ($data['node_uid'] ?? null) === $systemNode->uid
-                && ($data['channel'] ?? null) === 'system';
+        $this->assertSame(Command::STATUS_DONE, $command->status);
+        $this->assertNull($command->node_id);
+        $this->assertNull($command->channel);
+        Http::assertNotSent(function ($request) use ($zone) {
+            return str_contains($request->url(), "zones/{$zone->id}/commands");
         });
     }
 
-    public function test_send_growth_cycle_config_accepts_actuator_system_channel(): void
+    public function test_send_growth_cycle_config_start_is_also_completed_locally(): void
     {
+        Http::fake();
         $zone = Zone::factory()->create();
 
-        // Nodes with system channels (ACTUATOR type — как репортят реальные ноды)
-        $nodeWithActuatorSystem = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-ph-1',
-            'status' => 'ONLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $nodeWithActuatorSystem->id,
-            'channel' => 'system',
-            'type' => 'ACTUATOR',
-            'metric' => null,
+        $cmdId = $this->service->sendZoneCommand($zone, [
+            'type' => 'GROWTH_CYCLE_CONFIG',
+            'params' => [
+                'mode' => 'start',
+            ],
         ]);
 
-        $nodeWithDefaultChannel = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-service-1',
-            'status' => 'ONLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $nodeWithDefaultChannel->id,
-            'channel' => 'default',
-            'type' => 'SERVICE',
-            'metric' => null,
-        ]);
+        $this->assertNotEmpty($cmdId);
+        $command = Command::query()->where('cmd_id', $cmdId)->firstOrFail();
+        $this->assertSame(Command::STATUS_DONE, $command->status);
+        Http::assertNotSent(function ($request) use ($zone) {
+            return str_contains($request->url(), "zones/{$zone->id}/commands");
+        });
+    }
+
+    public function test_send_growth_cycle_config_preserves_payload_params_on_local_completion(): void
+    {
+        $zone = Zone::factory()->create();
 
         $cmdId = $this->service->sendZoneCommand($zone, [
             'type' => 'GROWTH_CYCLE_CONFIG',
             'params' => [
                 'mode' => 'adjust',
                 'profile_mode' => 'setup',
+                'subsystems' => ['ph' => ['enabled' => true]],
             ],
         ]);
 
-        $this->assertNotEmpty($cmdId);
-
-        // nd-ph-1 (lower id) has system channel → selected first (system ordered before default)
-        Http::assertSent(function ($request) use ($zone, $nodeWithActuatorSystem) {
-            $data = $request->data();
-
-            return str_contains($request->url(), "zones/{$zone->id}/commands")
-                && ($data['node_uid'] ?? null) === $nodeWithActuatorSystem->uid
-                && ($data['channel'] ?? null) === 'system';
-        });
-    }
-
-    public function test_send_growth_cycle_config_throws_exception_when_zone_has_no_system_or_default_channel(): void
-    {
-        $zone = Zone::factory()->create();
-
-        // Нода с каналами без 'system' или 'default'
-        $nodeWithoutSystemChannel = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'uid' => 'nd-ph-1',
-            'status' => 'ONLINE',
-        ]);
-        NodeChannel::create([
-            'node_id' => $nodeWithoutSystemChannel->id,
-            'channel' => 'pump_acid',
-            'type' => 'ACTUATOR',
-            'metric' => null,
-        ]);
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches("/No node with a 'system' or 'default' channel is assigned to zone/");
-
-        $this->service->sendZoneCommand($zone, [
-            'type' => 'GROWTH_CYCLE_CONFIG',
-            'params' => [
-                'mode' => 'adjust',
-                'profile_mode' => 'setup',
-            ],
-        ]);
+        $command = Command::query()->where('cmd_id', $cmdId)->firstOrFail();
+        $this->assertSame('adjust', $command->params['mode'] ?? null);
+        $this->assertSame('setup', $command->params['profile_mode'] ?? null);
+        $this->assertSame(['enabled' => true], $command->params['subsystems']['ph'] ?? null);
     }
 }

@@ -208,4 +208,5 @@ class SolutionFillCheckHandler(BaseStageHandler):
             ph_channel=None,
             ph_duration_ms=None,
             wait_until=None,
+            limit_policy_logged=False,
         )

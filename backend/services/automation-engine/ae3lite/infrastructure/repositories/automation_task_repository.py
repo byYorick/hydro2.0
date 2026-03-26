@@ -426,8 +426,9 @@ class PgAutomationTaskRepository:
                     corr_ec_component         = $33,
                     corr_ec_amount_ml         = $34,
                     corr_ph_amount_ml         = $35,
-                    due_at     = $36,
-                    updated_at = $37
+                    corr_limit_policy_logged  = $36,
+                    due_at     = $37,
+                    updated_at = $38
                 WHERE id = $1
                   AND claimed_by = $2
                   AND status IN ('claimed', 'running')
@@ -469,6 +470,7 @@ class PgAutomationTaskRepository:
                 correction.ec_component if correction else None,
                 correction.ec_amount_ml if correction else None,
                 correction.ph_amount_ml if correction else None,
+                correction.limit_policy_logged if correction else None,
                 normalized_due_at,
                 normalized_now,
             )

@@ -339,6 +339,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - `params.mode` = `adjust|start`
 - `params.profile_mode` = `setup|working`
 - `params.subsystems` в команде не передаётся (инжектится сервером из `zone.logic_profile`)
+- `GROWTH_CYCLE_CONFIG` — control-plane команда уровня зоны: backend завершает её локально в `commands.status=DONE` и не публикует в `history-logger` / MQTT.
 
 Команда ручного override (операторский режим, `2 бака`):
 - endpoint: `POST /api/zones/{zone}/commands`

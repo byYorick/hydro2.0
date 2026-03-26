@@ -55,3 +55,4 @@ class CorrectionState:
     ec_component: Optional[str] = None
     ec_amount_ml: Optional[float] = None
     ph_amount_ml: Optional[float] = None
+    limit_policy_logged: bool = False

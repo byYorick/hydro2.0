@@ -62,6 +62,72 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_materializes_first_phase_targets_from_revision_without_hidden_mutation(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'ph_target' => 5.00,
+            'ph_min' => 4.90,
+            'ph_max' => 5.10,
+            'ec_target' => 1.80,
+            'ec_min' => 1.70,
+            'ec_max' => 1.90,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+
+        $firstPhase = $cycle->phases()->orderBy('phase_index')->firstOrFail();
+
+        $this->assertSame((float) $phase->ph_target, (float) $firstPhase->ph_target);
+        $this->assertSame((float) $phase->ph_min, (float) $firstPhase->ph_min);
+        $this->assertSame((float) $phase->ph_max, (float) $firstPhase->ph_max);
+        $this->assertSame((float) $phase->ec_target, (float) $firstPhase->ec_target);
+        $this->assertSame((float) $phase->ec_min, (float) $firstPhase->ec_min);
+        $this->assertSame((float) $phase->ec_max, (float) $firstPhase->ec_max);
+    }
+
+    #[Test]
+    public function it_rejects_invalid_phase_overrides_when_syncing_cycle_documents(): void
+    {
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'ph_target' => 5.00,
+            'ph_min' => 4.90,
+            'ph_max' => 5.10,
+            'ec_target' => 1.80,
+            'ec_min' => 1.70,
+            'ec_max' => 1.90,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('pH: target должен быть в диапазоне min..max.');
+
+        $this->service->syncCycleConfigDocuments($cycle, [
+            'phase_overrides' => [
+                'ph_target' => 5.80,
+            ],
+        ]);
+    }
+
+    #[Test]
     public function it_starts_a_cycle(): void
     {
         $zone = Zone::factory()->create();

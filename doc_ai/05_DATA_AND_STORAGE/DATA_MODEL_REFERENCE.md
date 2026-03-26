@@ -956,6 +956,7 @@ corr_wait_until TIMESTAMPTZ NULL
 corr_ec_component VARCHAR(100) NULL
 corr_ec_amount_ml NUMERIC(12,3) NULL
 corr_ph_amount_ml NUMERIC(12,3) NULL
+corr_limit_policy_logged BOOLEAN NOT NULL DEFAULT FALSE
 corr_ec_attempt SMALLINT NULL
 corr_ec_max_attempts SMALLINT NULL
 corr_ph_attempt SMALLINT NULL
@@ -978,6 +979,7 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 - не более одной active task на зону;
 - `idempotency_key` уникален только в рамках `zone_id`;
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
+- `corr_limit_policy_logged=true` означает, что `CORRECTION_LIMIT_POLICY_APPLIED` уже был записан для текущего correction-window и повторно эмитироваться не должен;
 - `task_type='cycle_start'` фиксируется DB check constraint.
 - canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из legacy `payload`.
 

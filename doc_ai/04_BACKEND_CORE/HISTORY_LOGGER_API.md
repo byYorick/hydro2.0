@@ -488,6 +488,7 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
 **Strict policy (актуально):**
 1. Для `POST /commands` поле `cmd` обязательно.
 2. Legacy поле `type` отклоняется с `400`.
+3. `GROWTH_CYCLE_CONFIG` не является device-командой и не должен отправляться в `history-logger /commands`; эта команда завершается локально на backend как zone-level control-plane update.
 
 **Аутентификация (фактическая модель):**
 1. Если `HISTORY_LOGGER_API_TOKEN`/`PY_INGEST_TOKEN` задан, запрос должен содержать `Authorization: Bearer <token>`.
