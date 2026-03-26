@@ -23,6 +23,10 @@ function hasKeys(value: Record<string, unknown>): boolean {
   return Object.keys(value).length > 0
 }
 
+function getCurrentPhaseRecord(cycle: Record<string, unknown>): Record<string, unknown> | null {
+  return asRecord(cycle.currentPhase ?? cycle.current_phase)
+}
+
 export function resolveRecipePhaseTargets(phase: unknown): Record<string, unknown> | null {
   const phaseRecord = asRecord(phase)
   if (!phaseRecord) {
@@ -120,4 +124,39 @@ export function resolveRecipePhaseTargets(phase: unknown): Record<string, unknow
   }
 
   return hasKeys(targets) ? targets : null
+}
+
+export function resolveCurrentRecipePhase(cycle: unknown): Record<string, unknown> | null {
+  const cycleRecord = asRecord(cycle)
+  if (!cycleRecord) {
+    return null
+  }
+
+  const currentPhase = getCurrentPhaseRecord(cycleRecord)
+  const recipeRevision = asRecord(cycleRecord.recipeRevision ?? cycleRecord.recipe_revision)
+  const phases = Array.isArray(recipeRevision?.phases) ? recipeRevision.phases : []
+
+  if (!currentPhase || phases.length === 0) {
+    return null
+  }
+
+  const recipeRevisionPhaseId = toFiniteNumber(currentPhase.recipe_revision_phase_id)
+  if (recipeRevisionPhaseId !== null) {
+    const byId = phases.find((phase) => toFiniteNumber(asRecord(phase)?.id) === recipeRevisionPhaseId)
+    const phaseRecord = asRecord(byId)
+    if (phaseRecord) {
+      return phaseRecord
+    }
+  }
+
+  const phaseIndex = toFiniteNumber(currentPhase.phase_index)
+  if (phaseIndex !== null) {
+    const byIndex = phases.find((phase) => toFiniteNumber(asRecord(phase)?.phase_index) === phaseIndex)
+    const phaseRecord = asRecord(byIndex)
+    if (phaseRecord) {
+      return phaseRecord
+    }
+  }
+
+  return null
 }

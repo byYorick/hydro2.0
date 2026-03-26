@@ -172,11 +172,25 @@ const sampleZone = {
     recipeRevision: {
       recipe_id: 1,
       recipe: { id: 1, name: 'Test Recipe' },
+      phases: [
+        {
+          id: 201,
+          phase_index: 0,
+          name: 'Recipe Phase 1',
+          ph_target: 5.0,
+          ph_min: 4.9,
+          ph_max: 5.1,
+          ec_target: 1.8,
+          ec_min: 1.7,
+          ec_max: 1.9,
+        },
+      ],
     },
     currentPhase: {
       id: 11,
       phase_index: 0,
       name: 'Phase 1',
+      recipe_revision_phase_id: 201,
       ph_target: 5.9,
       ph_min: 5.7,
       ph_max: 6.1,
@@ -598,8 +612,8 @@ describe('Zones/Show.vue', () => {
     expect(zoneTargets.exists()).toBe(true)
     expect(zoneTargets.props('telemetry')).toEqual(sampleTelemetry)
     expect(zoneTargets.props('targets')).toEqual({
-      ph: { target: 5.9, min: 5.7, max: 6.1 },
-      ec: { target: 1.7, min: 1.5, max: 1.9 },
+      ph: { target: 5.0, min: 4.9, max: 5.1 },
+      ec: { target: 1.8, min: 1.7, max: 1.9 },
     })
   })
 

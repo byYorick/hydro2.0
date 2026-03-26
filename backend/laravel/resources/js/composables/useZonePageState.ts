@@ -8,7 +8,7 @@ import { logger } from '@/utils/logger'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { calculateProgressBetween } from '@/utils/growCycleProgress'
 import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
-import { resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets'
+import { resolveCurrentRecipePhase, resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets'
 import { parseZoneUpdatePayload } from '@/ws/zoneUpdatePayload'
 import type { BadgeVariant } from '@/Components/Badge.vue'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, GrowCycle, RecipePhase } from '@/types'
@@ -165,23 +165,35 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     return zone.value?.activeGrowCycle ?? zoneExt?.active_grow_cycle ?? activeCycle.value ?? activeGrowCycleProp.value ?? null
   })
 
+  const recipePhase = computed(() => resolveCurrentRecipePhase(rawActiveGrowCycle.value))
+
   const currentPhase = computed((): RecipePhase | null => {
     const phaseFromProps = currentPhaseProp.value ?? null
     const rawCycle = rawActiveGrowCycle.value as (GrowCycle & { current_phase?: unknown }) | null
     const phaseFromCycle = rawCycle?.currentPhase ?? rawCycle?.current_phase ?? null
 
-    if (!phaseFromProps && !phaseFromCycle) {
+    if (!phaseFromProps && !phaseFromCycle && !recipePhase.value) {
       return null
     }
 
     const mergedPhase = {
-      ...(phaseFromProps && typeof phaseFromProps === 'object' ? phaseFromProps : {}),
+      ...(recipePhase.value ?? {}),
       ...(phaseFromCycle && typeof phaseFromCycle === 'object' ? phaseFromCycle as Record<string, unknown> : {}),
+      ...(phaseFromProps && typeof phaseFromProps === 'object' ? phaseFromProps : {}),
     } as Record<string, unknown>
 
-    const recipeTargets = resolveRecipePhaseTargets(phaseFromCycle ?? phaseFromProps)
+    const recipeTargets = resolveRecipePhaseTargets(recipePhase.value ?? phaseFromCycle ?? phaseFromProps)
     if (recipeTargets) {
       mergedPhase.targets = recipeTargets
+    }
+
+    const recipePhaseRecord = recipePhase.value
+    if (recipePhaseRecord) {
+      for (const key of ['ph_target', 'ph_min', 'ph_max', 'ec_target', 'ec_min', 'ec_max', 'temp_air_target', 'humidity_target', 'irrigation_mode', 'irrigation_interval_sec', 'irrigation_duration_sec', 'lighting_photoperiod_hours', 'lighting_start_time']) {
+        if (key in recipePhaseRecord) {
+          mergedPhase[key] = recipePhaseRecord[key]
+        }
+      }
     }
 
     return mergedPhase as unknown as RecipePhase

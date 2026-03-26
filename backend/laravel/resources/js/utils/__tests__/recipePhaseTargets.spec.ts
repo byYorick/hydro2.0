@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveRecipePhaseTargets } from '../recipePhaseTargets'
+import { resolveCurrentRecipePhase, resolveRecipePhaseTargets } from '../recipePhaseTargets'
 
 describe('resolveRecipePhaseTargets', () => {
   it('returns nested targets as-is when phase already has normalized targets', () => {
@@ -48,5 +48,22 @@ describe('resolveRecipePhaseTargets', () => {
   it('returns null when phase has no target data', () => {
     expect(resolveRecipePhaseTargets({ id: 1, name: 'Empty phase' })).toBeNull()
     expect(resolveRecipePhaseTargets(null)).toBeNull()
+  })
+
+  it('resolves current recipe phase from recipe revision phases', () => {
+    expect(resolveCurrentRecipePhase({
+      currentPhase: {
+        id: 100,
+        phase_index: 0,
+        recipe_revision_phase_id: 10,
+        ph_target: 5.8,
+      },
+      recipeRevision: {
+        phases: [
+          { id: 10, phase_index: 0, ph_target: 5.0, ph_min: 4.9, ph_max: 5.1 },
+          { id: 11, phase_index: 1, ph_target: 5.5, ph_min: 5.4, ph_max: 5.6 },
+        ],
+      },
+    })).toEqual({ id: 10, phase_index: 0, ph_target: 5.0, ph_min: 4.9, ph_max: 5.1 })
   })
 })
