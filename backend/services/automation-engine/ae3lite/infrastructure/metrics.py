@@ -173,3 +173,9 @@ CORRECTION_EXHAUSTED = Counter(
     "Total correction cycles that exhausted all dose attempts",
     ["topology", "stage"],
 )
+
+CORRECTION_CAP_IGNORED = Counter(
+    "ae3_correction_cap_ignored_total",
+    "Total times attempt-based correction caps were intentionally ignored by stage policy",
+    ["topology", "stage", "cap_type"],
+)

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 
 import math
 import pytest
+from prometheus_client import REGISTRY
 
 from ae3lite.application.handlers.correction import CorrectionHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -355,6 +356,10 @@ async def test_corr_check_ignores_attempt_caps_during_solution_fill():
     task = _make_task(corr=corr)
     monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)  # off target
     handler = _make_handler(monitor=monitor)
+    create_event = AsyncMock(return_value=None)
+    monkeypatch_target = "ae3lite.application.handlers.correction.create_zone_event"
+    metric_labels = {"topology": "two_tank", "stage": "solution_fill_check", "cap_type": "overall"}
+    before_metric = REGISTRY.get_sample_value("ae3_correction_cap_ignored_total", metric_labels) or 0.0
     runtime = deepcopy(RUNTIME)
     runtime["correction"]["controllers"]["ec"].update(
         {
@@ -396,11 +401,56 @@ async def test_corr_check_ignores_attempt_caps_during_solution_fill():
         "ml_per_sec_min": 0.01,
         "ml_per_sec_max": 100.0,
     }
-    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(monkeypatch_target, create_event)
+        outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction is not None
     assert outcome.correction.corr_step == "corr_dose_ec"
+    assert any(call.args[1] == "CORRECTION_ATTEMPT_CAP_IGNORED" for call in create_event.await_args_list)
+    assert (REGISTRY.get_sample_value("ae3_correction_cap_ignored_total", metric_labels) or 0.0) == (
+        before_metric + 1.0
+    )
+
+
+async def test_corr_check_logs_fill_limit_policy_on_first_tick():
+    corr = _base_corr(corr_step="corr_check", attempt=0, max_attempts=5, ec_attempt=0, ph_attempt=0)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
+    handler = _make_handler(monitor=monitor)
+    create_event = AsyncMock(return_value=None)
+    runtime = deepcopy(RUNTIME)
+    runtime["correction"]["controllers"]["ec"].update(
+        {"kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.05, "max_dose_ml": 10.0, "min_interval_sec": 0, "max_integral": 20.0}
+    )
+    runtime["correction"]["controllers"]["ph"].update(
+        {"kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.05, "max_dose_ml": 10.0, "min_interval_sec": 0, "max_integral": 20.0}
+    )
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+        await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert any(call.args[1] == "CORRECTION_LIMIT_POLICY_APPLIED" for call in create_event.await_args_list)
 
 
 async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_recirc(monkeypatch: pytest.MonkeyPatch):
@@ -422,7 +472,7 @@ async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_rec
     assert send_alert.await_args.kwargs["message"] == "Correction cycle exhausted all configured attempts."
 
 
-async def test_corr_check_logs_deferred_action_without_persisting_ph_pid_update(monkeypatch: pytest.MonkeyPatch):
+async def test_corr_check_keeps_ec_and_ph_in_same_correction_window(monkeypatch: pytest.MonkeyPatch):
     class _PlannerStub:
         def is_within_tolerance(self, **kwargs):
             return False
@@ -434,10 +484,16 @@ async def test_corr_check_logs_deferred_action_without_persisting_ph_pid_update(
                 ec_channel="ec_pump",
                 ec_amount_ml=2.0,
                 ec_duration_ms=2000,
-                deferred_action="ph_down",
-                deferred_reason="ec_priority_single_action",
-                deferred_details={"ec_gap": 0.3, "ph_down_gap": 1.2},
+                needs_ph_down=True,
+                ph_node_uid="ph-node",
+                ph_channel="ph_down_pump",
+                ph_amount_ml=1.5,
+                ph_duration_ms=1500,
                 pid_state_updates={
+                    "ph": {
+                        "last_measurement_at": NOW,
+                        "last_measured_value": 6.2,
+                    },
                     "ec": {
                         "last_measurement_at": NOW,
                         "last_measured_value": 1.7,
@@ -460,10 +516,18 @@ async def test_corr_check_logs_deferred_action_without_persisting_ph_pid_update(
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_dose_ec"
+    assert outcome.correction.needs_ec is True
+    assert outcome.correction.needs_ph_down is True
+    assert outcome.correction.ph_channel == "ph_down_pump"
     assert pid_repo.upsert_calls == [
         {
             "zone_id": 60,
             "updates": [
+                {
+                    "pid_type": "ph",
+                    "last_measurement_at": NOW,
+                    "last_measured_value": 6.2,
+                },
                 {
                     "pid_type": "ec",
                     "last_measurement_at": NOW,
@@ -472,12 +536,7 @@ async def test_corr_check_logs_deferred_action_without_persisting_ph_pid_update(
             ],
         }
     ]
-    assert any(
-        call.args[1] == "CORRECTION_ACTION_DEFERRED"
-        and call.args[2]["deferred_action"] == "ph_down"
-        and call.args[2]["selected_action"] == "ec"
-        for call in create_event.await_args_list
-    )
+    assert not any(call.args[1] == "CORRECTION_ACTION_DEFERRED" for call in create_event.await_args_list)
 
 
 
@@ -1408,6 +1467,96 @@ async def test_corr_check_uses_decision_window_grace_for_late_sample_and_reaches
     assert outcome.correction.needs_ec is True
     assert outcome.correction.ec_duration_ms is not None
     assert outcome.correction.ec_duration_ms > 0
+
+
+async def test_corr_check_prepare_recirc_keeps_ec_and_ph_in_same_correction_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
+    runtime = deepcopy(RUNTIME)
+    runtime["target_ph_min"] = 5.9
+    runtime["target_ph_max"] = 6.1
+    runtime["target_ec_min"] = 1.9
+    runtime["target_ec_max"] = 2.1
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.01,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+        },
+        "ph": {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.01,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+        },
+    }
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": None,
+        "ph_down": {
+            "node_uid": "ph-node",
+            "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+    runtime["correction_by_phase"] = dict(runtime.get("correction_by_phase") or {})
+    runtime["correction_by_phase"]["tank_recirc"] = dict(runtime["correction"])
+    monitor = _MockRuntimeMonitor(
+        ph=6.4,
+        ec=1.6,
+        ph_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 6.4},
+            {"ts": NOW - timedelta(seconds=5), "value": 6.4},
+            {"ts": NOW - timedelta(seconds=3), "value": 6.4},
+        ],
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 1.6},
+            {"ts": NOW - timedelta(seconds=5), "value": 1.6},
+            {"ts": NOW - timedelta(seconds=3), "value": 1.6},
+        ],
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_dose_ec"
+    assert outcome.correction.needs_ec is True
+    assert outcome.correction.needs_ph_down is True
+    assert outcome.correction.ph_channel == "ph_down_pump"
+    assert outcome.correction.ph_duration_ms is not None
+    assert outcome.correction.ph_duration_ms > 0
 
 
 async def test_corr_check_unready_decision_window_retries_on_telemetry_period_when_missing_one_sample() -> None:

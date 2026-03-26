@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
+from common.service_logs import send_service_log
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import (
     PlannerConfigurationError,
@@ -84,27 +85,19 @@ class ExecuteTaskUseCase:
         if running_task is None:
             raise TaskExecutionError("ae3_task_running_transition_failed", f"Unable to mark task {task.id} running")
 
-        if first_run:
-            try:
-                await create_zone_event(running_task.zone_id, "AE_TASK_STARTED", {
-                    "task_id": running_task.id,
-                    "topology": str(getattr(running_task, "topology", "") or ""),
-                    "stage": str(getattr(running_task, "current_stage", "") or ""),
-                    "intent_trigger": str(getattr(running_task, "intent_trigger", "") or "") or None,
-                })
-            except Exception:
-                logger.warning(
-                    "AE3 failed to log AE_TASK_STARTED event zone_id=%s task_id=%s",
-                    running_task.zone_id,
-                    running_task.id,
-                    exc_info=True,
-                )
-
         snapshot = None
         plan = None
+        start_observability_emitted = False
         try:
             snapshot = await self._zone_snapshot_read_model.load(zone_id=running_task.zone_id)
             plan = self._planner.build(task=running_task, snapshot=snapshot)
+            if first_run:
+                await self._emit_start_readiness_confirmed(
+                    task=running_task,
+                    snapshot=snapshot,
+                    plan=plan,
+                )
+                start_observability_emitted = True
 
             # v2: all two_tank tasks go through WorkflowRouter
             topology = running_task.topology
@@ -203,6 +196,13 @@ class ExecuteTaskUseCase:
                 now=timeout_now,
             )
         except SnapshotBuildError as exc:
+            if first_run and not start_observability_emitted:
+                self._emit_start_readiness_failed(
+                    task=running_task,
+                    snapshot=snapshot,
+                    error_code="ae3_task_execution_failed",
+                    error=exc,
+                )
             terminal_task = await self._load_terminal_task_or_none(
                 task_id=int(getattr(running_task, "id", 0) or 0),
                 fallback_task=running_task,
@@ -249,6 +249,13 @@ class ExecuteTaskUseCase:
                 now=now,
             )
         except (PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
+            if first_run and not start_observability_emitted and isinstance(exc, PlannerConfigurationError):
+                self._emit_start_readiness_failed(
+                    task=running_task,
+                    snapshot=snapshot,
+                    error_code=str(getattr(exc, "code", "ae3_task_execution_failed") or "ae3_task_execution_failed"),
+                    error=exc,
+                )
             terminal_task = await self._load_terminal_task_or_none(
                 task_id=int(getattr(running_task, "id", 0) or 0),
                 fallback_task=running_task,
@@ -474,6 +481,136 @@ class ExecuteTaskUseCase:
                 alert_code,
                 exc_info=True,
             )
+
+    async def _emit_start_readiness_confirmed(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        plan: Any,
+    ) -> None:
+        details = self._build_start_readiness_details(task=task, snapshot=snapshot, plan=plan)
+        try:
+            await create_zone_event(
+                int(getattr(task, "zone_id", 0) or 0),
+                "AE_TASK_STARTED",
+                details,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 failed to log AE_TASK_STARTED readiness event zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+        send_service_log(
+            service="automation-engine",
+            level="info",
+            message="AE3 task start readiness confirmed",
+            context=details,
+        )
+
+    def _emit_start_readiness_failed(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        error_code: str,
+        error: Exception,
+    ) -> None:
+        details = self._build_start_failure_details(
+            task=task,
+            snapshot=snapshot,
+            error_code=error_code,
+            error=error,
+        )
+        send_service_log(
+            service="automation-engine",
+            level="error",
+            message="AE3 task start readiness failed",
+            context=details,
+        )
+
+    def _build_start_readiness_details(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        plan: Any,
+    ) -> dict[str, Any]:
+        correction_config = getattr(snapshot, "correction_config", None)
+        correction_meta = correction_config.get("meta") if isinstance(correction_config, Mapping) else None
+        command_plans = getattr(snapshot, "command_plans", None)
+        phase_targets = getattr(snapshot, "phase_targets", None)
+        details: dict[str, Any] = {
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "zone_id": int(getattr(task, "zone_id", 0) or 0),
+            "topology": str(getattr(plan, "topology", "") or getattr(task, "topology", "") or ""),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
+            "intent_trigger": str(getattr(task, "intent_trigger", "") or "") or None,
+            "automation_runtime": str(getattr(snapshot, "automation_runtime", "") or ""),
+            "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
+            "current_phase_id": int(getattr(snapshot, "current_phase_id", 0) or 0) or None,
+            "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
+            "actuator_count": len(getattr(snapshot, "actuators", ()) or ()),
+            "pid_config_count": len(getattr(snapshot, "pid_configs", {}) or {}),
+            "process_calibration_count": len(getattr(snapshot, "process_calibrations", {}) or {}),
+            "command_plan_schema_version": (
+                str(command_plans.get("schema_version") or "").strip()
+                if isinstance(command_plans, Mapping)
+                else None
+            ),
+            "plan_steps_count": len(getattr(plan, "steps", ()) or ()),
+            "target_ph": self._extract_phase_target(phase_targets=phase_targets, key="ph"),
+            "target_ec": self._extract_phase_target(phase_targets=phase_targets, key="ec"),
+            "correction_config_version": (
+                int(correction_meta.get("version", 0) or 0) or None
+                if isinstance(correction_meta, Mapping)
+                else None
+            ),
+        }
+        return {key: value for key, value in details.items() if value is not None}
+
+    def _build_start_failure_details(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        error_code: str,
+        error: Exception,
+    ) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "zone_id": int(getattr(task, "zone_id", 0) or 0),
+            "topology": str(getattr(task, "topology", "") or ""),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
+            "intent_trigger": str(getattr(task, "intent_trigger", "") or "") or None,
+            "error_code": str(error_code or "ae3_task_execution_failed"),
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "snapshot_loaded": snapshot is not None,
+        }
+        if snapshot is not None:
+            details.update({
+                "automation_runtime": str(getattr(snapshot, "automation_runtime", "") or "") or None,
+                "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
+                "current_phase_id": int(getattr(snapshot, "current_phase_id", 0) or 0) or None,
+                "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
+            })
+        return {key: value for key, value in details.items() if value is not None}
+
+    def _extract_phase_target(self, *, phase_targets: Any, key: str) -> float | None:
+        if not isinstance(phase_targets, Mapping):
+            return None
+        candidate = phase_targets.get(key)
+        if candidate is None:
+            candidate = phase_targets.get(f"{key}_target")
+        try:
+            return float(candidate)
+        except (TypeError, ValueError):
+            return None
 
     async def _fail_closed(
         self,

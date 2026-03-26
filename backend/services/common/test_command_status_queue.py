@@ -12,6 +12,7 @@ from common.command_status_queue import (
     _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS,
     _PENDING_STATUS_UPDATES_REQUIRED_COLUMNS,
     _decode_details_payload,
+    _sanitize_status_details,
     normalize_status,
     retry_worker,
     send_status_to_laravel,
@@ -93,6 +94,22 @@ def test_normalize_status_accepts_timeout_and_send_failed():
     assert normalize_status("send_failed") == CommandStatus.SEND_FAILED
 
 
+def test_sanitize_status_details_strips_simulation_only_keys():
+    sanitized = _sanitize_status_details({
+        "virtual": True,
+        "delta_ph": -0.5,
+        "phase_factor": 2.0,
+        "ph_after": 5.9,
+        "zone_id": 7,
+        "snapshot": {"pump_main": True},
+    })
+
+    assert sanitized == {
+        "zone_id": 7,
+        "snapshot": {"pump_main": True},
+    }
+
+
 @pytest.mark.asyncio
 async def test_send_status_to_laravel_success_does_not_enqueue():
     settings = SimpleNamespace(
@@ -109,6 +126,39 @@ async def test_send_status_to_laravel_success_does_not_enqueue():
 
     assert ok is True
     queue.enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_status_to_laravel_strips_simulation_fields_before_delivery():
+    settings = SimpleNamespace(
+        laravel_api_url="http://laravel",
+        history_logger_api_token="token",
+        ingest_token="token",
+    )
+    queue = AsyncMock()
+
+    with patch("common.command_status_queue.get_settings", return_value=settings), \
+         patch("common.command_status_queue.make_request", new=AsyncMock(return_value=_ResponseStub(200, "ok"))) as mock_request, \
+         patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)):
+        ok = await send_status_to_laravel(
+            "cmd-sim-details",
+            CommandStatus.DONE,
+            {
+                "virtual": True,
+                "delta_ec": 0.4,
+                "ec_after": 1.3,
+                "zone_id": 1,
+                "node_uid": "nd-test-ec-1",
+            },
+        )
+
+    assert ok is True
+    queue.enqueue.assert_not_called()
+    payload = mock_request.await_args.kwargs["json"]
+    assert payload["details"] == {
+        "zone_id": 1,
+        "node_uid": "nd-test-ec-1",
+    }
 
 
 @pytest.mark.asyncio

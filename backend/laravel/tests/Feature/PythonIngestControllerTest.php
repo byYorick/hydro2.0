@@ -12,6 +12,7 @@ use App\Models\Alert;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class PythonIngestControllerTest extends TestCase
@@ -383,6 +384,45 @@ class PythonIngestControllerTest extends TestCase
 
         $command->refresh();
         $this->assertEquals(Command::STATUS_DONE, $command->status);
+    }
+
+    public function test_command_ack_endpoint_logs_late_sent_after_ack_as_info_not_warning(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Log::spy();
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-late-sent-001',
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-late-sent-001',
+                'status' => 'SENT',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'status' => 'ok',
+                'message' => 'Status rollback prevented',
+            ]);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_ACK, $command->status);
+
+        Log::shouldHaveReceived('info')
+            ->once()
+            ->withArgs(function (string $message, array $context): bool {
+                return $message === 'commandAck: Late SENT ignored after ACK'
+                    && $context['cmd_id'] === 'cmd-late-sent-001'
+                    && $context['current_status'] === Command::STATUS_ACK
+                    && $context['attempted_status'] === Command::STATUS_SENT;
+            });
+        Log::shouldNotHaveReceived('warning', [
+            'commandAck: Status rollback prevented by state machine guard',
+            \Mockery::any(),
+        ]);
     }
 
     public function test_command_ack_endpoint_requires_auth(): void

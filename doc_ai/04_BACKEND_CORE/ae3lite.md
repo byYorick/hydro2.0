@@ -183,12 +183,13 @@ Correction runtime invariants:
 1. для `EC` и `pH` используется только observation-driven модель `dose -> hold -> observe -> decide`;
 2. correction decision не опирается на один `telemetry_last` sample;
 3. observation window читается из `telemetry_samples`;
-4. в одном decision tick допускается не более одного химического воздействия;
-5. legacy piggyback `EC -> PH` без повторного observe-step запрещён;
+4. planner может одновременно держать в одном correction window потребность и в `EC`, и в `pH`;
+5. исполнение химических шагов остаётся последовательным: между `EC` и `pH` обязателен повторный `observe-step`, но повторный вход parent-stage не требуется;
 6. `3` consecutive `no-effect` для одного `pid_type` дают alert и fail-closed ветку текущего correction window;
 7. ordinary correction attempts и `no-effect` attempts считаются раздельно.
 8. legacy timing wait-поля и секция adaptive timing отсутствуют в authority/runtime contract; базовое окно наблюдения определяется через `zone_process_calibrations.transport_delay_sec + settle_sec` и controller observe config, но AE3 может только удлинять его на основе persisted runtime-learning в `pid_state.stats.adaptive.timing`.
 9. correction retry caps принимают только явные конечные значения внутри контрактных верхних границ; magic sentinel values не поддерживаются ни runtime, ни API.
+10. для `solution_fill_check` attempt caps не закрывают correction window: stage живёт под общим `solution_fill_timeout_sec` и останавливает коррекцию только по `no-effect` fail-closed или по stage timeout.
 
 #### `PlannedCommand`
 

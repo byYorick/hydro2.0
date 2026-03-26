@@ -29,7 +29,7 @@ from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
-from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_EXHAUSTED
+from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 from common.water_flow import check_water_level
@@ -208,6 +208,21 @@ class CorrectionHandler(BaseStageHandler):
         correction_cfg = self._correction_config(plan=plan, task=task)
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
         pid_state = runtime.get("pid_state") if isinstance(runtime.get("pid_state"), Mapping) else {}
+        enforce_attempt_caps = self._enforce_attempt_caps(task=task)
+
+        if self._should_log_limit_policy(task=task, corr=corr):
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_LIMIT_POLICY_APPLIED",
+                task=task,
+                corr=corr,
+                payload={
+                    "attempt_caps_enforced": False,
+                    "stop_conditions": ["no_effect", "stage_timeout"],
+                    "stage_timeout_sec": runtime.get("solution_fill_timeout_sec"),
+                    "policy": "fill_continuous_until_no_effect_or_timeout",
+                },
+            )
 
         corr_wait_until = self._normalize_timestamp(corr.wait_until)
         normalized_now = self._normalize_timestamp(now)
@@ -403,9 +418,16 @@ class CorrectionHandler(BaseStageHandler):
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
-        enforce_attempt_caps = self._enforce_attempt_caps(task=task)
         if enforce_attempt_caps and corr.attempt >= corr.max_attempts:
             return await self._correction_exhausted(task=task, plan=plan, corr=corr)
+        if not enforce_attempt_caps and corr.attempt >= corr.max_attempts:
+            await self._log_attempt_cap_ignored(
+                task=task,
+                corr=corr,
+                cap_type="overall",
+                current_value=corr.attempt,
+                limit_value=corr.max_attempts,
+            )
 
         # Build dose plan
         actuators = self._resolve_actuators(runtime=runtime, task=task, plan=plan)
@@ -526,6 +548,23 @@ class CorrectionHandler(BaseStageHandler):
                 return await self._correction_exhausted(task=task, plan=plan, corr=corr)
             if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
                 return await self._correction_exhausted(task=task, plan=plan, corr=corr)
+        else:
+            if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
+                await self._log_attempt_cap_ignored(
+                    task=task,
+                    corr=corr,
+                    cap_type="ec",
+                    current_value=corr.ec_attempt,
+                    limit_value=corr.ec_max_attempts,
+                )
+            if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
+                await self._log_attempt_cap_ignored(
+                    task=task,
+                    corr=corr,
+                    cap_type="ph",
+                    current_value=corr.ph_attempt,
+                    limit_value=corr.ph_max_attempts,
+                )
 
         # Save dose plan into correction state
         next_corr = replace(
@@ -960,6 +999,47 @@ class CorrectionHandler(BaseStageHandler):
         # whole fill stage. Attempt-based exhaustion stays enabled for
         # recirculation windows; fill stops only by no-effect or stage timeout.
         return current_stage != "solution_fill_check"
+
+    def _should_log_limit_policy(self, *, task: Any, corr: CorrectionState) -> bool:
+        if self._enforce_attempt_caps(task=task):
+            return False
+        return corr.attempt == 0 and corr.ec_attempt == 0 and corr.ph_attempt == 0 and corr.corr_step == "corr_check"
+
+    async def _log_attempt_cap_ignored(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState,
+        cap_type: str,
+        current_value: int,
+        limit_value: int,
+    ) -> None:
+        topology = str(getattr(task, "topology", "") or "")
+        stage = str(getattr(task, "current_stage", "") or "")
+        CORRECTION_CAP_IGNORED.labels(
+            topology=topology,
+            stage=stage,
+            cap_type=cap_type,
+        ).inc()
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_ATTEMPT_CAP_IGNORED",
+            task=task,
+            corr=corr,
+            payload={
+                "cap_type": cap_type,
+                "current_value": current_value,
+                "limit_value": limit_value,
+                "policy": "fill_continuous_until_no_effect_or_timeout",
+            },
+        )
+        _logger.info(
+            "zone %s: ignoring %s attempt cap in solution_fill (%s/%s); correction remains active until no-effect or stage timeout",
+            task.zone_id,
+            cap_type,
+            current_value,
+            limit_value,
+        )
 
     async def _read_decision_metric(
         self,

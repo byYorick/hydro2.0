@@ -886,7 +886,7 @@ def test_build_dose_plan_allows_ph_when_ec_is_in_retry_window() -> None:
     assert dose_plan.retry_after_sec == 60
 
 
-def test_build_dose_plan_does_not_refresh_ph_pid_state_when_ph_is_deferred_by_ec_priority() -> None:
+def test_build_dose_plan_keeps_ph_and_ec_in_same_correction_window() -> None:
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 8, 12, 10, 0)
 
@@ -957,10 +957,11 @@ def test_build_dose_plan_does_not_refresh_ph_pid_state_when_ph_is_deferred_by_ec
     )
 
     assert dose_plan.needs_ec is True
-    assert dose_plan.needs_ph_down is False
-    assert dose_plan.deferred_action == "ph_down"
-    assert dose_plan.deferred_reason == "ec_priority_single_action"
-    assert "ph" not in dose_plan.pid_state_updates
+    assert dose_plan.needs_ph_down is True
+    assert dose_plan.ph_channel == "ph_down_pump"
+    assert dose_plan.deferred_action == ""
+    assert dose_plan.deferred_reason == ""
+    assert "ph" in dose_plan.pid_state_updates
     assert "ec" in dose_plan.pid_state_updates
 
 

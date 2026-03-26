@@ -320,28 +320,6 @@ class CorrectionPlanner:
                 ph_needs_up = False
                 ph_needs_down = False
 
-        if ec_needs:
-            # In a delayed in-flow process we must re-observe after every dose.
-            # Returning EC and pH in the same tick would recreate the legacy
-            # piggyback behaviour and compound transport-delay error.
-            if ph_needs_up or ph_needs_down:
-                deferred_action = "ph_up" if ph_needs_up else "ph_down"
-                deferred_reason = "ec_priority_single_action"
-                deferred_details = {
-                    "ec_gap": round(ec_gap, 6),
-                    "ph_up_gap": round(ph_up_gap, 6),
-                    "ph_down_gap": round(ph_down_gap, 6),
-                    "phase": phase_key,
-                }
-                pid_updates.pop("ph", None)
-            ph_needs_up = False
-            ph_needs_down = False
-            ph_node_uid = ""
-            ph_channel = ""
-            ph_amount_ml = 0.0
-            ph_duration_ms = 0
-            ph_retry_after = None
-
         retry_after = _min_positive(ec_retry_after, ph_retry_after)
         dead_zone_details = {
             "ec_gap": round(ec_gap, 6),

@@ -5,7 +5,7 @@ import logging
 import threading
 import weakref
 from datetime import datetime, timezone
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Mapping
 
 import asyncpg
 
@@ -307,6 +307,8 @@ async def upsert_unassigned_node_error(
 
 async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None):
     """Create a zone event according to DATA_MODEL_REFERENCE.md section 8.1."""
+    if await _should_skip_duplicate_ae_task_started(zone_id=zone_id, event_type=event_type, details=details):
+        return
     await execute(
         """
         INSERT INTO zone_events (zone_id, type, payload_json, details, created_at)
@@ -314,6 +316,51 @@ async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dic
         """,
         zone_id, event_type, details
     )
+
+
+async def _should_skip_duplicate_ae_task_started(
+    *,
+    zone_id: int,
+    event_type: str,
+    details: Optional[Mapping[str, Any]],
+) -> bool:
+    if str(event_type or "").strip().upper() != "AE_TASK_STARTED":
+        return False
+    if not isinstance(details, Mapping):
+        return False
+
+    task_id = details.get("task_id")
+    stage = str(details.get("stage") or "").strip()
+    if task_id is None or not stage:
+        return False
+
+    try:
+        task_id_value = int(task_id)
+    except (TypeError, ValueError):
+        return False
+
+    rows = await fetch(
+        """
+        SELECT COALESCE(details, payload_json) AS payload
+        FROM zone_events
+        WHERE zone_id = $1
+          AND type = 'AE_TASK_STARTED'
+          AND COALESCE(details->>'task_id', payload_json->>'task_id') = $2
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        zone_id,
+        str(task_id_value),
+    )
+    if not rows:
+        return False
+
+    payload = rows[0].get("payload")
+    if not isinstance(payload, Mapping):
+        return False
+
+    previous_stage = str(payload.get("stage") or "").strip()
+    return previous_stage == stage
 
 
 async def create_ai_log(zone_id: Optional[int], action: str, details: Optional[Dict[str, Any]] = None):

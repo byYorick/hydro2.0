@@ -115,6 +115,16 @@ class _SnapshotReadModelNoOnlineActuators:
 
 class _SnapshotWithCorrectionConfig:
     zone_id = 99
+    automation_runtime = "ae3"
+    grow_cycle_id = 99
+    current_phase_id = 99
+    phase_name = "vegetation"
+    workflow_phase = "idle"
+    command_plans = {"schema_version": "1.0"}
+    phase_targets = {"ph": 5.8, "ec": 1.7}
+    pid_configs = {"ph": {"kp": 1}, "ec": {"kp": 1}}
+    process_calibrations = {"transport_delay_sec": 12}
+    actuators = ()
     correction_config = {"meta": {"version": 7}}
 
 
@@ -540,6 +550,63 @@ async def test_execute_task_fallback_non_two_tank_happy_path() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_task_first_run_emits_start_readiness_event_and_service_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_service_logs: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    def _record_service_log(*, service, level, message, context=None, async_mode=True) -> None:
+        recorded_service_logs.append({
+            "service": service,
+            "level": level,
+            "message": message,
+            "context": context or {},
+            "async_mode": async_mode,
+        })
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_service_log",
+        _record_service_log,
+    )
+
+    claimed_task = replace(_make_task(stage="startup", topology="generic_cycle_start"), status="claimed")
+    running_task = replace(claimed_task, status="running")
+    finalize = _FinalizeTaskUseCase()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=running_task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerOk(),
+        command_gateway=_GatewayOk(),
+        workflow_router=object(),
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=claimed_task, now=NOW)
+
+    assert result.status == "completed"
+    assert [event_type for _, event_type, _ in recorded_events] == ["AE_TASK_STARTED"]
+    start_payload = recorded_events[0][2]
+    assert start_payload["task_id"] == 99
+    assert start_payload["zone_id"] == 99
+    assert start_payload["grow_cycle_id"] == 99
+    assert start_payload["current_phase_id"] == 99
+    assert start_payload["plan_steps_count"] == 1
+    assert len(recorded_service_logs) == 1
+    assert recorded_service_logs[0]["level"] == "info"
+    assert recorded_service_logs[0]["message"] == "AE3 task start readiness confirmed"
+    assert recorded_service_logs[0]["context"]["task_id"] == 99
+    assert recorded_service_logs[0]["context"]["plan_steps_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_execute_task_fallback_non_two_tank_empty_steps_fails() -> None:
     """Non-two-tank topology with empty plan steps → fail_closed with unsupported_command_plan_steps."""
     task = _make_task(stage="startup", topology="generic_cycle_start")
@@ -556,6 +623,59 @@ async def test_execute_task_fallback_non_two_tank_empty_steps_fails() -> None:
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["error_code"] == "unsupported_command_plan_steps"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_first_run_config_failure_emits_error_service_log_without_started_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_service_logs: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    def _record_service_log(*, service, level, message, context=None, async_mode=True) -> None:
+        recorded_service_logs.append({
+            "service": service,
+            "level": level,
+            "message": message,
+            "context": context or {},
+            "async_mode": async_mode,
+        })
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_service_log",
+        _record_service_log,
+    )
+
+    claimed_task = replace(_make_task(stage="startup", topology="two_tank"), status="claimed")
+    running_task = replace(claimed_task, status="running")
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=running_task),
+        zone_snapshot_read_model=_SnapshotReadModelOk(),
+        planner=_PlannerMissingRecipePhaseTargetsCritical(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=claimed_task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == "zone_recipe_phase_targets_missing_critical"
+    assert [event_type for _, event_type, _ in recorded_events] == ["AE_TASK_FAILED"]
+    assert len(recorded_service_logs) == 1
+    assert recorded_service_logs[0]["level"] == "error"
+    assert recorded_service_logs[0]["message"] == "AE3 task start readiness failed"
+    assert recorded_service_logs[0]["context"]["error_code"] == "zone_recipe_phase_targets_missing_critical"
+    assert recorded_service_logs[0]["context"]["snapshot_loaded"] is True
 
 
 @pytest.mark.asyncio

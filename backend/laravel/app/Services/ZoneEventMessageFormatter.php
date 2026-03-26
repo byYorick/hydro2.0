@@ -58,6 +58,8 @@ class ZoneEventMessageFormatter
             'CORRECTION_STATE_TRANSITION' => $this->formatCorrectionStateTransition($payload),
             'CORRECTION_COMPLETE' => $this->formatCorrectionComplete($payload),
             'CORRECTION_EXHAUSTED' => $this->formatCorrectionExhausted($payload),
+            'CORRECTION_LIMIT_POLICY_APPLIED' => $this->formatCorrectionLimitPolicyApplied($payload),
+            'CORRECTION_ATTEMPT_CAP_IGNORED' => $this->formatCorrectionAttemptCapIgnored($payload),
             'CORRECTION_SKIPPED_DEAD_ZONE' => $this->formatCorrectionSkippedDeadZone($payload),
             'CORRECTION_SKIPPED_COOLDOWN' => $this->formatCorrectionSkippedCooldown($payload),
             'CORRECTION_SKIPPED_DOSE_DISCARDED' => $this->formatCorrectionSkippedDoseDiscarded($payload),
@@ -761,6 +763,31 @@ class ZoneEventMessageFormatter
         }
 
         return $stage !== null ? "Коррекция: все попытки исчерпаны [{$stage}]" : 'Коррекция: все попытки исчерпаны';
+    }
+
+    private function formatCorrectionLimitPolicyApplied(array $details): string
+    {
+        $stageTimeoutSec = $this->toFloatOrNull($details['stage_timeout_sec'] ?? null);
+        $parts = ['fill-stage без attempt caps'];
+        if ($stageTimeoutSec !== null) {
+            $parts[] = sprintf('таймаут %d с', (int) $stageTimeoutSec);
+        }
+        $parts[] = 'стоп только по no-effect/timeout';
+
+        return 'Коррекция: применена политика лимитов'.' ('.implode(', ', $parts).')';
+    }
+
+    private function formatCorrectionAttemptCapIgnored(array $details): string
+    {
+        $capType = $this->toStringOrNull($details['cap_type'] ?? null) ?? 'unknown';
+        $currentValue = isset($details['current_value']) && is_numeric($details['current_value']) ? (int) $details['current_value'] : null;
+        $limitValue = isset($details['limit_value']) && is_numeric($details['limit_value']) ? (int) $details['limit_value'] : null;
+
+        if ($currentValue !== null && $limitValue !== null) {
+            return "Коррекция: лимит попыток {$capType} проигнорирован ({$currentValue}/{$limitValue}) в fill-stage";
+        }
+
+        return "Коррекция: лимит попыток {$capType} проигнорирован в fill-stage";
     }
 
     private function formatCorrectionSkippedDeadZone(array $details): string

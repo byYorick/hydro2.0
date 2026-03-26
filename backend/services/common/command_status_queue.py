@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Optional, Dict, Any, Union, List
+from typing import Optional, Dict, Any, Union, List, Mapping
 from datetime import datetime, timedelta
 import time
 from .utils.time import utcnow
@@ -52,6 +52,14 @@ _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS = {
     "original_id",
     "created_at",
 }
+_SIMULATION_ONLY_STATUS_DETAIL_KEYS = frozenset({
+    "virtual",
+    "phase_factor",
+    "delta_ph",
+    "ph_after",
+    "delta_ec",
+    "ec_after",
+})
 
 
 class _SchemaValidationError(RuntimeError):
@@ -83,6 +91,20 @@ def _decode_laravel_error_payload(resp: Any) -> Dict[str, Any]:
     except Exception:
         pass
     return {}
+
+
+def _sanitize_status_details(details: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
+    if details is None:
+        return None
+    if not isinstance(details, Mapping):
+        return {"raw_details": details}
+
+    sanitized = {
+        str(key): value
+        for key, value in details.items()
+        if str(key) not in _SIMULATION_ONLY_STATUS_DETAIL_KEYS
+    }
+    return sanitized or None
 
 
 def _is_command_not_found_response(resp: Any, payload: Dict[str, Any]) -> bool:
@@ -704,7 +726,11 @@ async def send_status_to_laravel(
     Returns:
         True если успешно отправлено, False если сохранено в очередь
     """
-    logger.info(f"[STATUS_DELIVERY] STEP 1: Starting send_status_to_laravel for cmd_id={cmd_id}, status={status}, details={details}")
+    sanitized_details = _sanitize_status_details(details)
+    logger.info(
+        f"[STATUS_DELIVERY] STEP 1: Starting send_status_to_laravel for cmd_id={cmd_id}, "
+        f"status={status}, details={sanitized_details}"
+    )
     
     s = get_settings()
     laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
@@ -715,7 +741,7 @@ async def send_status_to_laravel(
         if enqueue_on_failure:
             # Сохраняем в очередь для ретрая после настройки
             queue = await get_status_queue()
-            await queue.enqueue(cmd_id, status, details)
+            await queue.enqueue(cmd_id, status, sanitized_details)
             logger.info(f"[STATUS_DELIVERY] STEP 2.2: Status saved to retry queue for cmd_id={cmd_id}")
         return False
     
@@ -743,10 +769,12 @@ async def send_status_to_laravel(
     payload = {
         "cmd_id": cmd_id,
         "status": status_value,
-        "details": details or None,
+        "details": sanitized_details,
     }
     
-    logger.info(f"[STATUS_DELIVERY] STEP 4: Prepared payload: cmd_id={cmd_id}, status={status_value}, details={details}")
+    logger.info(
+        f"[STATUS_DELIVERY] STEP 4: Prepared payload: cmd_id={cmd_id}, status={status_value}, details={sanitized_details}"
+    )
     logger.info(f"[STATUS_DELIVERY] STEP 5: Sending POST request to {laravel_url}/api/python/commands/ack")
     
     try:
@@ -783,7 +811,7 @@ async def send_status_to_laravel(
                     await _emit_command_ack_not_found_alert(
                         cmd_id=cmd_id,
                         status_value=status_value,
-                        details=details,
+                        details=sanitized_details,
                         http_status=resp.status_code,
                     )
                 except Exception as alert_error:
@@ -800,7 +828,7 @@ async def send_status_to_laravel(
             if enqueue_on_failure:
                 # Сохраняем в очередь для ретрая
                 queue = await get_status_queue()
-                await queue.enqueue(cmd_id, status, details)
+                await queue.enqueue(cmd_id, status, sanitized_details)
                 logger.info(f"[STATUS_DELIVERY] STEP 6.3: Status saved to retry queue for cmd_id={cmd_id}")
             return False
             
@@ -812,7 +840,7 @@ async def send_status_to_laravel(
         if enqueue_on_failure:
             # Сохраняем в очередь для ретрая
             queue = await get_status_queue()
-            await queue.enqueue(cmd_id, status, details)
+            await queue.enqueue(cmd_id, status, sanitized_details)
         return False
 
 

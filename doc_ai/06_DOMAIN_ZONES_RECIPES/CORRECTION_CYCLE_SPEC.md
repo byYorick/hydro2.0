@@ -21,8 +21,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - correction decision больше не строится по одному `telemetry_last` sample;
 - для `EC` и `pH` используется модель `dose -> hold -> observe -> decide`;
 - окно наблюдения собирается из `telemetry_samples`, а не из одного текущего значения;
-- в одном decision tick допускается не более одного химического воздействия;
-- последовательность `EC -> PH` без повторного observe-step запрещена;
+- на входе в correction-window planner может одновременно определить потребность и в `EC`, и в `pH`;
+- выполнение доз остаётся последовательным: между `EC` и `pH` обязателен повторный `observe-step`;
+- если planner видит одновременно `EC` и `pH`, обе потребности остаются в одном correction-window и не требуют повторного входа parent-stage;
 - `3` consecutive `no-effect` для одного `pid_type` дают alert и fail-closed ветку correction window;
 - обычные correction attempts и `no-effect` attempts — независимые лимиты.
 
@@ -177,6 +178,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   correction sub-machine всегда ограничен parent stage deadline, а для `prepare_recirculation`
   ещё и `prepare_recirculation_max_attempts` на уровне окон;
 - `EC` и `pH` имеют отдельные `no_effect_count`, отдельные process gains и отдельные observation thresholds.
+- если planner одновременно вернул `needs_ec=true` и `needs_ph_{up|down}=true`, runtime обязан сохранить оба действия
+  в `CorrectionState`; первым исполняется ближайший шаг sub-machine, а второй остаётся в том же correction-window
+  до следующего `corr_check` после обязательного `observe-step`.
 - каждый ready `observe` шаг обязан писать zone-event с `baseline_value`, `observed_value`,
   `actual_effect`, `expected_effect`, `threshold_effect` и итогом `is_no_effect`, чтобы
   exhaustion/no-effect диагностика была читаема без ручного анализа telemetry SQL.
@@ -206,9 +210,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 5. После стабилизации: stable: true
 6. Пока `solution_max` ещё не сработал, Automation-engine:
    - читает observation window для EC/pH;
-   - принимает не более одного correction action за тик;
-   - при необходимости дозирует NPK **или** pH+/pH-;
-   - после correction sub-cycle возвращается в тот же `solution_fill_check`.
+   - в рамках одного correction-window может одновременно держать план и по `EC`, и по `pH`;
+   - исполняет дозы последовательно: сначала ближайший шаг correction sub-machine, затем `observe`, затем следующий химический шаг;
+   - parent-stage не создаёт новое correction-window на каждом таком шаге: весь fill-stage работает в одном окне коррекции.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
    - действует исходный `solution_fill_timeout_sec` для всего stage целиком.
    - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
@@ -234,6 +238,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 2. Automation-engine → MQTT: start circulation_pump (рециркуляция)
 3. Ожидание стабилизации (30 сек, короче чем при filling)
 4. Повторение шагов 6-7 из TANK_FILLING
+   - внутри одного `prepare_recirculation` correction-window planner так же может одновременно держать потребность
+     и в `EC`, и в `pH`;
+   - runtime не разводит их по разным recirculation windows: химические шаги идут последовательно
+     (`EC -> observe -> pH` или `pH -> observe -> EC`) в рамках того же окна, пока не сработает
+     success / no-effect fail-closed / deadline текущего recirculation window
 5. Если targets достигнуты после N timeout-window:
    - → Состояние READY
    - Automation-engine → MQTT: stop circulation_pump
@@ -846,6 +855,8 @@ void handle_system_command(const char* cmd, cJSON* params) {
 | `CORRECTION_COMPLETE`            | `corr_check`        | Когда `pH/EC` вошли в целевое окно                                   |
 | `CORRECTION_SKIPPED_COOLDOWN`    | `corr_check`        | Когда PID-контур ещё в `min_interval_sec` и доза откладывается       |
 | `CORRECTION_SKIPPED_DEAD_ZONE`   | `corr_check`        | Когда planner не видит допустимой дозы вне deadband                  |
+| `CORRECTION_LIMIT_POLICY_APPLIED` | `corr_check` / fill-start | Когда `solution_fill` запускает continuous correction без attempt caps |
+| `CORRECTION_ATTEMPT_CAP_IGNORED` | `corr_check` / fill | Когда `solution_fill` сознательно игнорирует достигнутый attempt cap |
 | `CORRECTION_SKIPPED_WATER_LEVEL` | `corr_check`        | Когда correction пропущен из-за низкого уровня воды                  |
 | `CORRECTION_SKIPPED_FRESHNESS`   | `corr_check`/observe| Когда decision/observe window не может использовать свежую телеметрию |
 | `CORRECTION_SKIPPED_WINDOW_NOT_READY` | `corr_check`/observe | Когда окно наблюдения ещё не прошло `window_min_samples/stability` |
@@ -896,6 +907,32 @@ void handle_system_command(const char* cmd, cJSON* params) {
   "reason": "EC telemetry stale/unavailable during observation window",
   "retry_after_sec": 30.0,
   "attempt": 2
+}
+```
+
+**CORRECTION_LIMIT_POLICY_APPLIED:**
+```json
+{
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "corr_step": "corr_check",
+  "attempt_caps_enforced": false,
+  "stop_conditions": ["no_effect", "stage_timeout"],
+  "stage_timeout_sec": 900,
+  "policy": "fill_continuous_until_no_effect_or_timeout"
+}
+```
+
+**CORRECTION_ATTEMPT_CAP_IGNORED:**
+```json
+{
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "corr_step": "corr_check",
+  "cap_type": "overall",
+  "current_value": 6,
+  "limit_value": 5,
+  "policy": "fill_continuous_until_no_effect_or_timeout"
 }
 ```
 

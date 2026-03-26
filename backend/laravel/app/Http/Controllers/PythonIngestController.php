@@ -280,11 +280,16 @@ class PythonIngestController extends Controller
             $currentOrder = $statusOrder[$currentStatus] ?? 0;
             $newOrder = $statusOrder[$newStatus] ?? 0;
             if ($newOrder < $currentOrder) {
-                Log::warning('commandAck: Status rollback prevented by state machine guard', [
+                $context = [
                     'cmd_id' => $data['cmd_id'],
                     'current_status' => $currentStatus,
                     'attempted_status' => $newStatus,
-                ]);
+                ];
+                if ($this->isBenignLateSentAck(currentStatus: $currentStatus, newStatus: $newStatus)) {
+                    Log::info('commandAck: Late SENT ignored after ACK', $context);
+                } else {
+                    Log::warning('commandAck: Status rollback prevented by state machine guard', $context);
+                }
                 $skipMessage = 'Status rollback prevented';
                 return;
             }
@@ -391,6 +396,11 @@ class PythonIngestController extends Controller
             ));
         }
         return Response::json(['status' => 'ok']);
+    }
+
+    private function isBenignLateSentAck(string $currentStatus, string $newStatus): bool
+    {
+        return $currentStatus === Command::STATUS_ACK && $newStatus === Command::STATUS_SENT;
     }
 
     /**
