@@ -1,4 +1,5 @@
-FROM timescale/timescaledb:latest-pg16
+# Keep TimescaleDB pinned to the extension version already stored in the dev volume.
+FROM timescale/timescaledb:2.26.0-pg16
 
 RUN apk add --no-cache build-base git postgresql16-dev clang19 llvm19
 

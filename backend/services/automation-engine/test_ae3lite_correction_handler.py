@@ -13,6 +13,7 @@ Steps:
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
@@ -348,23 +349,67 @@ async def test_corr_check_within_tolerance_exits_success():
     assert outcome.correction.outcome_success is True
 
 
-async def test_corr_check_max_attempts_exceeded_solution_fill_requeues_without_new_correction_cycle():
-    """solution_fill exhaustion must not restart correction with fresh attempt counters."""
+async def test_corr_check_ignores_attempt_caps_during_solution_fill():
+    """solution_fill must remain in one correction window until no-effect or stage timeout."""
     corr = _base_corr(corr_step="corr_check", attempt=6, max_attempts=5)
     task = _make_task(corr=corr)
     monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)  # off target
     handler = _make_handler(monitor=monitor)
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    runtime = deepcopy(RUNTIME)
+    runtime["correction"]["controllers"]["ec"].update(
+        {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.05,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+        }
+    )
+    runtime["correction"]["controllers"]["ph"].update(
+        {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.05,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+        }
+    )
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "solution_fill_check"
-    assert outcome.stage_retry_count == 1
-    assert outcome.due_delay_sec == 10
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_dose_ec"
 
 
-async def test_corr_check_max_attempts_exceeded_sends_alert_with_message(monkeypatch: pytest.MonkeyPatch):
+async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_recirc(monkeypatch: pytest.MonkeyPatch):
     corr = _base_corr(corr_step="corr_check", attempt=6, max_attempts=5)
-    task = _make_task(corr=corr)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
     monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
     handler = _make_handler(monitor=monitor)
     send_alert = AsyncMock(return_value=True)

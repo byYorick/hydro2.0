@@ -10,6 +10,11 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthenticateWithApiToken
 {
+    private function shouldSkipMissingTokenWarning(Request $request): bool
+    {
+        return $request->path() === 'api/system/health';
+    }
+
     /**
      * Attempt to authenticate the incoming request using a Sanctum personal access token.
      * Falls back to the default session guard so the existing 'auth' middleware can pass.
@@ -93,7 +98,7 @@ class AuthenticateWithApiToken
                     }
                 }
             } else {
-                if (! app()->environment('testing')) {
+                if (! app()->environment('testing') && ! $this->shouldSkipMissingTokenWarning($request)) {
                     Log::warning('AuthenticateWithApiToken: no bearer token found on request', [
                         'path' => $request->path(),
                         'method' => $request->method(),

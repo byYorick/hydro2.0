@@ -403,7 +403,8 @@ class CorrectionHandler(BaseStageHandler):
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
-        if corr.attempt >= corr.max_attempts:
+        enforce_attempt_caps = self._enforce_attempt_caps(task=task)
+        if enforce_attempt_caps and corr.attempt >= corr.max_attempts:
             return await self._correction_exhausted(task=task, plan=plan, corr=corr)
 
         # Build dose plan
@@ -520,10 +521,11 @@ class CorrectionHandler(BaseStageHandler):
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
-        if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
-            return await self._correction_exhausted(task=task, plan=plan, corr=corr)
-        if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
-            return await self._correction_exhausted(task=task, plan=plan, corr=corr)
+        if enforce_attempt_caps:
+            if dose_plan.needs_ec and corr.ec_attempt >= corr.ec_max_attempts:
+                return await self._correction_exhausted(task=task, plan=plan, corr=corr)
+            if (dose_plan.needs_ph_up or dose_plan.needs_ph_down) and corr.ph_attempt >= corr.ph_max_attempts:
+                return await self._correction_exhausted(task=task, plan=plan, corr=corr)
 
         # Save dose plan into correction state
         next_corr = replace(
@@ -951,6 +953,13 @@ class CorrectionHandler(BaseStageHandler):
                 next_stage="solution_fill_timeout_stop",
             )
         return None
+
+    def _enforce_attempt_caps(self, *, task: Any) -> bool:
+        current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+        # During solution_fill we keep a single correction window alive for the
+        # whole fill stage. Attempt-based exhaustion stays enabled for
+        # recirculation windows; fill stops only by no-effect or stage timeout.
+        return current_stage != "solution_fill_check"
 
     async def _read_decision_metric(
         self,

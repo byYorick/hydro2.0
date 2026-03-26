@@ -211,6 +211,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
    - после correction sub-cycle возвращается в тот же `solution_fill_check`.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
    - действует исходный `solution_fill_timeout_sec` для всего stage целиком.
+   - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
+     stage остаётся в одном correction window до `solution_fill_timeout_sec` либо до fail-closed по `no-effect`.
 8. Когда `solution_max` сработал:
    - если targets достигнуты → `READY`, stop fill, deactivate sensors;
    - если targets НЕ достигнуты → stop fill и переход в `TANK_RECIRC`.
