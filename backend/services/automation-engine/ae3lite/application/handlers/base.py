@@ -10,6 +10,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.domain.errors import TaskExecutionError
+from common.db import create_zone_event
 
 
 def _naive_dt(dt: datetime) -> datetime:
@@ -77,16 +78,37 @@ class BaseStageHandler:
             expected_cmd_id=probe_cmd_id,
         )
         if not state["has_snapshot"]:
+            await self._log_probe_failure_event(
+                task=task,
+                expected=expected,
+                expected_cmd_id=probe_cmd_id,
+                state=state,
+                reason="unavailable",
+            )
             raise TaskExecutionError(
                 "irr_state_unavailable", "IRR state snapshot unavailable",
             )
         if state["is_stale"]:
+            await self._log_probe_failure_event(
+                task=task,
+                expected=expected,
+                expected_cmd_id=probe_cmd_id,
+                state=state,
+                reason="stale",
+            )
             raise TaskExecutionError(
                 "irr_state_stale", "IRR state snapshot stale",
             )
         snapshot = state["snapshot"] if isinstance(state["snapshot"], Mapping) else {}
         for key, value in expected.items():
             if bool(snapshot.get(key)) != bool(value):
+                await self._log_probe_failure_event(
+                    task=task,
+                    expected=expected,
+                    expected_cmd_id=probe_cmd_id,
+                    state=state,
+                    reason="mismatch",
+                )
                 raise TaskExecutionError(
                     "irr_state_mismatch",
                     f"IRR state mismatch for {key}: expected={value}, got={snapshot.get(key)}",
@@ -164,6 +186,35 @@ class BaseStageHandler:
             if probe_cmd_id:
                 return probe_cmd_id
         return None
+
+    async def _log_probe_failure_event(
+        self,
+        *,
+        task: Any,
+        expected: Mapping[str, bool],
+        expected_cmd_id: str | None,
+        state: Mapping[str, Any],
+        reason: str,
+    ) -> None:
+        snapshot = state.get("snapshot") if isinstance(state.get("snapshot"), Mapping) else {}
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "IRR_STATE_PROBE_FAILED",
+                {
+                    "stage": str(getattr(task, "current_stage", "") or ""),
+                    "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
+                    "reason": str(reason or ""),
+                    "expected": dict(expected),
+                    "expected_cmd_id": expected_cmd_id,
+                    "has_snapshot": bool(state.get("has_snapshot")),
+                    "is_stale": bool(state.get("is_stale")),
+                    "cmd_id": state.get("cmd_id"),
+                    "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else {},
+                },
+            )
+        except Exception:
+            return
 
     # ── Level switch reading ────────────────────────────────────────
 

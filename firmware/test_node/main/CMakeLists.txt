@@ -21,3 +21,8 @@ idf_component_register(
         esp_lcd_ili9341
         lvgl
 )
+
+# LVGL 9.2.0 emits -Wtype-limits when circle cache is explicitly disabled
+# with CONFIG_LV_DRAW_SW_CIRCLE_CACHE_SIZE=0. Suppress it only for vendor code.
+idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
+target_compile_options(${lvgl_lib} PRIVATE -Wno-type-limits)

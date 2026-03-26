@@ -70,6 +70,15 @@ class CorrectionHandler(BaseStageHandler):
                 f"Task {task.id} in correction stage but correction state is None",
             )
 
+        solution_fill_completion_outcome = await self._interrupt_for_solution_fill_completion(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+        )
+        if solution_fill_completion_outcome is not None:
+            return solution_fill_completion_outcome
+
         deadline_outcome = self._interrupt_for_stage_deadline(task=task, corr=corr, now=now)
         if deadline_outcome is not None:
             return deadline_outcome
@@ -125,6 +134,66 @@ class CorrectionHandler(BaseStageHandler):
     def _run_wait_stable(self, *, corr: CorrectionState) -> StageOutcome:
         next_corr = replace(corr, corr_step="corr_check")
         return StageOutcome(kind="enter_correction", correction=next_corr)
+
+    async def _interrupt_for_solution_fill_completion(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+    ) -> StageOutcome | None:
+        if str(task.current_stage).strip().lower() != "solution_fill_check":
+            return None
+
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        try:
+            solution_max = await self._read_level(
+                task=task,
+                zone_id=task.zone_id,
+                labels=runtime["solution_max_sensor_labels"],
+                threshold=runtime["level_switch_on_threshold"],
+                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                unavailable_error="two_tank_solution_level_unavailable",
+                stale_error="two_tank_solution_level_stale",
+            )
+        except TaskExecutionError:
+            return None
+
+        if not bool(solution_max.get("is_triggered")):
+            return None
+
+        try:
+            await self._check_sensor_consistency(
+                task=task,
+                runtime=runtime,
+                min_labels_key="solution_min_sensor_labels",
+                min_unavailable_error="two_tank_solution_min_level_unavailable",
+                min_stale_error="two_tank_solution_min_level_stale",
+            )
+        except TaskExecutionError:
+            return None
+
+        targets_reached = await self._targets_reached(task=task, plan=plan, now=now)
+        next_stage = "solution_fill_stop_to_ready" if targets_reached else "solution_fill_stop_to_prepare"
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
+            task=task,
+            corr=corr,
+            payload={
+                "next_stage": next_stage,
+                "targets_reached": targets_reached,
+                "reason": "solution_tank_full",
+            },
+        )
+        _logger.info(
+            "zone %s: solution fill completed during correction; interrupting corr_step=%s -> %s",
+            task.zone_id,
+            corr.corr_step,
+            next_stage,
+        )
+        return StageOutcome(kind="transition", next_stage=next_stage)
 
     async def _run_check(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
@@ -207,11 +276,21 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=retry_delay_sec,
             )
         if not ph["ready"] or not ec["ready"]:
+            reactivation_outcome = await self._maybe_reactivate_sensor_mode_after_empty_window(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
+                ph=ph,
+                ec=ec,
+            )
+            if reactivation_outcome is not None:
+                return reactivation_outcome
             msg = self._format_decision_window_error(ph=ph, ec=ec)
-            retry_delay_sec = self._correction_retry_delay_sec(
+            retry_delay_sec = self._decision_window_retry_delay_sec(
                 correction_cfg=correction_cfg,
-                key="decision_window_retry_sec",
-                default=30.0,
+                ph=ph,
+                ec=ec,
             )
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -225,9 +304,17 @@ class CorrectionHandler(BaseStageHandler):
                     "ph_reason": ph.get("reason"),
                     "ph_sample_count": ph.get("sample_count"),
                     "ph_slope": ph.get("slope"),
+                    "ph_window_min_samples": ph.get("window_min_samples"),
+                    "ph_telemetry_period_sec": ph.get("telemetry_period_sec"),
+                    "ph_latest_sample_ts": self._serialize_metric_ts(ph.get("latest_sample_ts")),
+                    "ph_since_ts": self._serialize_metric_ts(ph.get("since_ts")),
                     "ec_reason": ec.get("reason"),
                     "ec_sample_count": ec.get("sample_count"),
                     "ec_slope": ec.get("slope"),
+                    "ec_window_min_samples": ec.get("window_min_samples"),
+                    "ec_telemetry_period_sec": ec.get("telemetry_period_sec"),
+                    "ec_latest_sample_ts": self._serialize_metric_ts(ec.get("latest_sample_ts")),
+                    "ec_since_ts": self._serialize_metric_ts(ec.get("since_ts")),
                 },
             )
             _logger.warning("zone %s: %s — retrying in %.1fs", task.zone_id, msg, retry_delay_sec)
@@ -347,6 +434,33 @@ class CorrectionHandler(BaseStageHandler):
         await self._persist_pid_state_updates(
             zone_id=task.zone_id, updates=dose_plan.pid_state_updates, now=now,
         )
+
+        if dose_plan.deferred_action:
+            selected_action = "ec" if dose_plan.needs_ec else ("ph_up" if dose_plan.needs_ph_up else "ph_down")
+            await self._log_correction_event(
+                zone_id=task.zone_id,
+                event_type="CORRECTION_ACTION_DEFERRED",
+                task=task,
+                corr=corr,
+                payload={
+                    "selected_action": selected_action,
+                    "deferred_action": dose_plan.deferred_action,
+                    "reason": dose_plan.deferred_reason,
+                    "current_ph": current_ph,
+                    "current_ec": current_ec,
+                    "target_ph": target_ph,
+                    "target_ec": target_ec,
+                    "target_ph_min": runtime.get("target_ph_min"),
+                    "target_ph_max": runtime.get("target_ph_max"),
+                    "target_ec_min": runtime.get("target_ec_min"),
+                    "target_ec_max": runtime.get("target_ec_max"),
+                    **(
+                        dict(dose_plan.deferred_details)
+                        if isinstance(dose_plan.deferred_details, Mapping)
+                        else {}
+                    ),
+                },
+            )
 
         if not dose_plan.needs_any and dose_plan.retry_after_sec:
             await self._log_correction_event(
@@ -663,6 +777,81 @@ class CorrectionHandler(BaseStageHandler):
 
     # ── Helpers ─────────────────────────────────────────────────────
 
+    async def _maybe_reactivate_sensor_mode_after_empty_window(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+        ph: Mapping[str, Any],
+        ec: Mapping[str, Any],
+    ) -> StageOutcome | None:
+        if corr.activated_here:
+            return None
+        if not (
+            self._window_empty_for_sensor_reactivation(metric=ph)
+            or self._window_empty_for_sensor_reactivation(metric=ec)
+        ):
+            return None
+
+        sensor_cmds = self._build_sensor_mode_commands(
+            plan=plan,
+            cmd="activate_sensor_mode",
+            params={"stabilization_time_sec": corr.stabilization_sec},
+        )
+        if not sensor_cmds:
+            return None
+
+        result = await self._command_gateway.run_batch(
+            task=task,
+            commands=sensor_cmds,
+            now=now,
+        )
+        if not result["success"]:
+            raise TaskExecutionError(
+                str(result["error_code"]),
+                str(result["error_message"]),
+            )
+
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_SENSOR_MODE_REACTIVATED",
+            task=task,
+            corr=corr,
+            payload={
+                "ph_reason": ph.get("reason"),
+                "ph_sample_count": ph.get("sample_count"),
+                "ec_reason": ec.get("reason"),
+                "ec_sample_count": ec.get("sample_count"),
+                "stabilization_sec": corr.stabilization_sec,
+            },
+        )
+        _logger.warning(
+            "zone %s: decision window is empty, re-activating sensor mode and waiting %ss",
+            task.zone_id,
+            corr.stabilization_sec,
+        )
+        next_corr = replace(corr, corr_step="corr_wait_stable")
+        return StageOutcome(
+            kind="enter_correction",
+            correction=next_corr,
+            due_delay_sec=corr.stabilization_sec,
+        )
+
+    def _window_empty_for_sensor_reactivation(self, *, metric: Mapping[str, Any]) -> bool:
+        if metric.get("ready"):
+            return False
+        if str(metric.get("reason") or "").strip().lower() != "insufficient_samples":
+            return False
+        sample_count = metric.get("sample_count")
+        if sample_count is None:
+            return True
+        try:
+            return int(sample_count) <= 0
+        except (TypeError, ValueError):
+            return False
+
     def _transition_to_deactivate_or_return(
         self, *, corr: CorrectionState, success: bool,
     ) -> StageOutcome:
@@ -796,6 +985,9 @@ class CorrectionHandler(BaseStageHandler):
                 "sample_count": int(len(window["samples"])),
                 "slope": summary.get("slope"),
                 "latest_sample_ts": window.get("latest_sample_ts"),
+                "since_ts": since_ts,
+                "window_min_samples": int(config["window_min_samples"]),
+                "telemetry_period_sec": int(config["telemetry_period_sec"]),
             }
         return {
             "ready": True,
@@ -824,6 +1016,45 @@ class CorrectionHandler(BaseStageHandler):
             details.append(",".join(parts))
         reason = "; ".join(details) if details else "decision window unavailable"
         return f"Correction decision window not ready: {reason}"
+
+    def _decision_window_retry_delay_sec(
+        self,
+        *,
+        correction_cfg: Mapping[str, Any],
+        ph: Mapping[str, Any],
+        ec: Mapping[str, Any],
+    ) -> float:
+        retry_delay_sec = self._correction_retry_delay_sec(
+            correction_cfg=correction_cfg,
+            key="decision_window_retry_sec",
+            default=30.0,
+        )
+        starvation_delays = [
+            self._decision_window_missing_sample_delay_sec(metric=metric)
+            for metric in (ph, ec)
+        ]
+        starvation_delays = [delay for delay in starvation_delays if delay is not None]
+        if starvation_delays:
+            return min(retry_delay_sec, max(starvation_delays))
+        return retry_delay_sec
+
+    def _decision_window_missing_sample_delay_sec(self, *, metric: Mapping[str, Any]) -> float | None:
+        if str(metric.get("reason") or "").strip().lower() != "insufficient_samples":
+            return None
+        try:
+            sample_count = int(metric.get("sample_count"))
+            window_min_samples = int(metric.get("window_min_samples"))
+            telemetry_period_sec = float(metric.get("telemetry_period_sec") or 1.0)
+        except (TypeError, ValueError):
+            return None
+        missing_samples = max(1, window_min_samples - sample_count)
+        return max(1.0, telemetry_period_sec * missing_samples)
+
+    def _serialize_metric_ts(self, value: Any) -> str | None:
+        if isinstance(value, datetime):
+            normalized = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return normalized.isoformat()
+        return None
 
     async def _run_wait_observe(
         self,

@@ -8,7 +8,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from ae3lite.application.dto import ZoneActuatorRef
-from ae3lite.application.use_cases.execute_task import ExecuteTaskUseCase, TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+from ae3lite.application.use_cases.execute_task import (
+    ExecuteTaskUseCase,
+    SNAPSHOT_RETRY_EXHAUSTED_CODE,
+    SNAPSHOT_TRANSIENT_RETRY_SEC,
+    TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+)
 from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.errors import PlannerConfigurationError, SnapshotBuildError, TaskTerminalStateReached
 
@@ -65,6 +70,34 @@ class _TaskRepoRunning:
         return self._running_task
 
 
+class _TaskRepoRequeue(_TaskRepoRunning):
+    def __init__(self, *, running_task: AutomationTask | None = None):
+        super().__init__(running_task=running_task)
+        self.update_stage_calls: list[dict[str, object]] = []
+
+    async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now):
+        self.update_stage_calls.append(
+            {
+                "task_id": task_id,
+                "owner": owner,
+                "workflow": workflow,
+                "correction": correction,
+                "due_at": due_at,
+                "now": now,
+            }
+        )
+        return replace(
+            self._running_task,
+            status="pending",
+            claimed_by=None,
+            claimed_at=None,
+            due_at=due_at,
+            updated_at=now,
+            workflow=workflow,
+            correction=correction,
+        )
+
+
 class _SnapshotReadModelOk:
     async def load(self, *, zone_id):
         return _SnapshotWithCorrectionConfig()
@@ -73,6 +106,11 @@ class _SnapshotReadModelOk:
 class _SnapshotReadModelFails:
     async def load(self, *, zone_id):
         raise SnapshotBuildError("snapshot_missing")
+
+
+class _SnapshotReadModelNoOnlineActuators:
+    async def load(self, *, zone_id):
+        raise SnapshotBuildError(f"Zone {zone_id} has no online actuator channels")
 
 
 class _SnapshotWithCorrectionConfig:
@@ -366,6 +404,116 @@ async def test_execute_task_expected_domain_errors_do_not_log_traceback(caplog: 
     assert len(domain_logs) == 1
     assert domain_logs[0].exc_info is None
     assert "error_type=SnapshotBuildError" in domain_logs[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_execute_task_transient_snapshot_gap_requeues_and_emits_observability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_infra_alerts: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        recorded_infra_alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    task_repo = _TaskRepoRequeue(running_task=task)
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelNoOnlineActuators(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    result = await use_case.run(task=task, now=NOW)
+
+    assert result.status == "pending"
+    assert finalize.calls == []
+    assert alerts.calls == []
+    assert len(task_repo.update_stage_calls) == 1
+    assert task_repo.update_stage_calls[0]["due_at"] == NOW + timedelta(seconds=SNAPSHOT_TRANSIENT_RETRY_SEC)
+    assert [event_type for _, event_type, _ in recorded_events] == ["AE_SNAPSHOT_RETRY_SCHEDULED"]
+    payload = recorded_events[0][2]
+    assert payload["snapshot_reason"] == "no_online_actuator_channels"
+    assert payload["retry_after_sec"] == SNAPSHOT_TRANSIENT_RETRY_SEC
+    assert len(recorded_infra_alerts) == 1
+    assert recorded_infra_alerts[0]["code"] == "infra_ae3_snapshot_retry_scheduled"
+    assert recorded_infra_alerts[0]["severity"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_transient_snapshot_gap_exhausted_fails_closed_with_specific_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+    recorded_infra_alerts: list[dict[str, object]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    async def _record_infra_alert(**kwargs):
+        recorded_infra_alerts.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.send_infra_alert",
+        _record_infra_alert,
+    )
+
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    task = replace(
+        task,
+        workflow=replace(
+            task.workflow,
+            stage_entered_at=NOW - timedelta(seconds=91),
+        ),
+    )
+    finalize = _FinalizeTaskUseCase()
+    alerts = _AlertRepositoryRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelNoOnlineActuators(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == SNAPSHOT_RETRY_EXHAUSTED_CODE
+    assert len(alerts.calls) == 1
+    assert alerts.calls[0]["code"] == "biz_ae3_task_failed"
+    assert [event_type for _, event_type, _ in recorded_events] == [
+        "AE_SNAPSHOT_RETRY_EXHAUSTED",
+        "AE_TASK_FAILED",
+    ]
+    assert len(recorded_infra_alerts) == 1
+    assert recorded_infra_alerts[0]["code"] == "infra_ae3_snapshot_retry_exhausted"
+    assert recorded_infra_alerts[0]["severity"] == "error"
 
 
 @pytest.mark.asyncio

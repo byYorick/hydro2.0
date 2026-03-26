@@ -17,6 +17,7 @@ from ae3lite.infrastructure.metrics import (
     COMMAND_ROUNDTRIP_DURATION,
     COMMAND_TERMINAL,
 )
+from common.db import create_zone_event
 from common.utils.time import utcnow_naive as _utcnow
 
 _NON_TERMINAL_STATUSES = frozenset({"PENDING", "QUEUED", "SENT", "ACK", "ACCEPTED", "RUNNING"})
@@ -186,17 +187,24 @@ class SequentialCommandGateway:
         roundtrip_started_at = time.monotonic()
         poll_interval_sec = self._poll_interval_sec
         poll_iterations = 0
+        poll_deadline_event_emitted = False
         while True:
             await asyncio.sleep(poll_interval_sec)
             reconcile_now = _utcnow().replace(microsecond=0)
-            if _poll_deadline is not None and reconcile_now > _poll_deadline:
-                raise TaskExecutionError(
-                    "ae3_command_poll_deadline_exceeded",
-                    f"Command polling exceeded stage deadline for task {task.id}",
-                )
             result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
             poll_iterations += 1
             if result["state"] == "waiting_command":
+                if _poll_deadline is not None and reconcile_now > _poll_deadline and not poll_deadline_event_emitted:
+                    await self._emit_poll_deadline_exceeded_event(
+                        task=task,
+                        command=planned,
+                        cmd_id=str(result.get("cmd_id") or status_entry.get("legacy_cmd_id") or ""),
+                        external_id=str(result.get("external_id") or status_entry.get("external_id") or ""),
+                        checked_at=reconcile_now,
+                        deadline=_poll_deadline,
+                        poll_iterations=poll_iterations,
+                    )
+                    poll_deadline_event_emitted = True
                 poll_interval_sec = min(self._poll_max_interval_sec, poll_interval_sec * self._poll_backoff_factor)
                 continue
             self._observe_roundtrip_metrics(
@@ -231,6 +239,39 @@ class SequentialCommandGateway:
                 "error_code": result["error_code"],
                 "error_message": result["error_message"],
             }
+
+    async def _emit_poll_deadline_exceeded_event(
+        self,
+        *,
+        task: Any,
+        command: PlannedCommand,
+        cmd_id: str,
+        external_id: str,
+        checked_at: datetime,
+        deadline: datetime,
+        poll_iterations: int,
+    ) -> None:
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "AE_COMMAND_POLL_DEADLINE_EXCEEDED",
+                {
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "stage": str(getattr(task, "current_stage", "") or ""),
+                    "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
+                    "corr_step": str(getattr(task.workflow, "corr_step", "") or ""),
+                    "channel": str(command.channel or ""),
+                    "node_uid": str(command.node_uid or ""),
+                    "cmd": str(command.payload.get("cmd") or ""),
+                    "cmd_id": cmd_id or None,
+                    "external_id": external_id or None,
+                    "poll_iterations": int(poll_iterations),
+                    "checked_at": checked_at.isoformat(),
+                    "stage_deadline_at": deadline.isoformat(),
+                },
+            )
+        except Exception:
+            return
 
     def _observe_roundtrip_metrics(
         self,

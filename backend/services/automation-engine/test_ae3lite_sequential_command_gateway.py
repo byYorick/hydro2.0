@@ -41,6 +41,7 @@ _DONE_ROW = {
 }
 _ERROR_ROW = {**_DONE_ROW, "status": "ERROR", "error_message": "hw_error", "ack_at": None, "failed_at": NOW}
 _PENDING_ROW = {**_DONE_ROW, "status": "PENDING"}
+_MISSING = object()
 
 
 def _planned(*, channel="pump_main", step_no=1):
@@ -53,9 +54,13 @@ def _planned(*, channel="pump_main", step_no=1):
 
 
 class _FakeCommandRepo:
-    def __init__(self, *, legacy_row=_DONE_ROW, ae_command_row=None):
+    def __init__(self, *, legacy_row=_DONE_ROW, ae_command_row=_MISSING):
         self._legacy_row = legacy_row
-        self._ae_command_row = ae_command_row or {"id": 9, "external_id": None, "payload": {"cmd_id": "ae3-t1-z1-s1"}}
+        self._ae_command_row = (
+            {"id": 9, "external_id": None, "payload": {"cmd_id": "ae3-t1-z1-s1"}}
+            if ae_command_row is _MISSING
+            else ae_command_row
+        )
         self.step_no = 0
         self.created_ids: list[int] = []
         self.updated: list[dict] = []
@@ -127,9 +132,17 @@ def _mock_task(task_id=1, **kwargs):
 
 
 class _FakeTaskRepo:
-    def __init__(self, *, resumed_task=None, failed_task=None, current_task=None):
-        self._resumed = resumed_task or _mock_task(error_code=None, error_message=None)
-        self._failed = failed_task or _mock_task(error_code="command_error", error_message="hw_error")
+    def __init__(self, *, resumed_task=_MISSING, failed_task=_MISSING, current_task=None):
+        self._resumed = (
+            _mock_task(error_code=None, error_message=None)
+            if resumed_task is _MISSING
+            else resumed_task
+        )
+        self._failed = (
+            _mock_task(error_code="command_error", error_message="hw_error")
+            if failed_task is _MISSING
+            else failed_task
+        )
         self._current = current_task
 
     async def mark_waiting_command(self, *, task_id, owner, now):
@@ -274,7 +287,10 @@ async def test_recover_waiting_command_no_ae_command_raises():
         return None
 
     cmd_repo.get_latest_for_task = _none
-    gw = _make_gw(command_repo=cmd_repo)
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        task_repo=_FakeTaskRepo(current_task=_mock_task(status="running")),
+    )
     with pytest.raises(TaskExecutionError) as exc_info:
         await gw.recover_waiting_command(task=_make_task(), now=NOW)
     assert exc_info.value.code == "ae3_missing_ae_command"
@@ -429,6 +445,96 @@ async def test_run_batch_records_roundtrip_latency_and_poll_iterations():
     )
     assert (REGISTRY.get_sample_value("ae3_command_roundtrip_duration_seconds_sum", labels) or 0.0) > before_roundtrip_sum
     assert COMMAND_POLL_ITERATIONS.labels(**labels)._value.get() == before_poll_iterations + 2.0
+
+
+@pytest.mark.asyncio
+async def test_run_batch_reconciles_terminal_status_before_stage_deadline_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    current_times = iter([
+        NOW,
+        NOW.replace(second=NOW.second + 2),
+    ])
+
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        sequential_command_gateway_module,
+        "_utcnow",
+        lambda: next(current_times),
+    )
+
+    command_repo = _SequencedLegacyCommandRepo(
+        legacy_rows=[
+            _PENDING_ROW,
+            _DONE_ROW,
+        ]
+    )
+    task = _make_task()
+    task.workflow.stage_deadline_at = NOW.replace(second=NOW.second + 1)
+    gw = _make_gw(command_repo=command_repo, poll_interval=0.1)
+
+    result = await gw.run_batch(task=task, commands=[_planned(channel="pump_acid")], now=NOW)
+
+    assert result["success"] is True
+    assert sleep_calls == pytest.approx([0.1, 0.15])
+
+
+@pytest.mark.asyncio
+async def test_run_batch_emits_event_when_waiting_command_exceeds_stage_deadline_and_continues_polling(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    captured_events: list[dict[str, object]] = []
+
+    async def fake_create_zone_event(zone_id: int, event_type: str, details: dict[str, object]) -> None:
+        captured_events.append({"zone_id": zone_id, "event_type": event_type, "details": details})
+
+    current_times = iter([
+        NOW.replace(second=NOW.second + 2),
+        NOW.replace(second=NOW.second + 4),
+        NOW.replace(second=NOW.second + 6),
+    ])
+
+    monkeypatch.setattr(sequential_command_gateway_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        sequential_command_gateway_module,
+        "_utcnow",
+        lambda: next(current_times),
+    )
+    monkeypatch.setattr(sequential_command_gateway_module, "create_zone_event", fake_create_zone_event)
+
+    command_repo = _SequencedLegacyCommandRepo(
+        legacy_rows=[
+            _PENDING_ROW,
+            _PENDING_ROW,
+            _DONE_ROW,
+        ]
+    )
+    task = _make_task()
+    task.current_stage = "prepare_recirculation_check"
+    task.workflow.workflow_phase = "tank_recirc"
+    task.workflow.corr_step = "corr_dose_ph"
+    task.workflow.stage_deadline_at = NOW.replace(second=NOW.second + 1)
+    gw = _make_gw(command_repo=command_repo, poll_interval=0.1)
+
+    result = await gw.run_batch(task=task, commands=[_planned(channel="pump_acid")], now=NOW)
+
+    assert result["success"] is True
+    assert len(captured_events) == 1
+    assert captured_events[0]["zone_id"] == 1
+    assert captured_events[0]["event_type"] == "AE_COMMAND_POLL_DEADLINE_EXCEEDED"
+    details = captured_events[0]["details"]
+    assert details["stage"] == "prepare_recirculation_check"
+    assert details["workflow_phase"] == "tank_recirc"
+    assert details["corr_step"] == "corr_dose_ph"
+    assert details["channel"] == "pump_acid"
 
 
 @pytest.mark.asyncio

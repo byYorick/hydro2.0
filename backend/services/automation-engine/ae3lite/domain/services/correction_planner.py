@@ -54,6 +54,9 @@ class DosePlan:
     retry_after_sec: Optional[int] = None
     dose_discarded_reason: str = ""
     dose_discarded_details: Mapping[str, Any] = field(default_factory=dict)
+    deferred_action: str = ""
+    deferred_reason: str = ""
+    deferred_details: Mapping[str, Any] = field(default_factory=dict)
     dead_zone_details: Mapping[str, Any] = field(default_factory=dict)
     pid_state_updates: Mapping[str, Any] = field(default_factory=dict)
     ec_pid_zone: str = ""
@@ -217,6 +220,9 @@ class CorrectionPlanner:
         ph_duration_ms = 0
         ph_discarded_reason = ""
         ph_discarded_details: Mapping[str, Any] = {}
+        deferred_action = ""
+        deferred_reason = ""
+        deferred_details: Mapping[str, Any] = {}
 
         if ec_needs:
             ec_retry_after = _retry_after(
@@ -318,6 +324,16 @@ class CorrectionPlanner:
             # In a delayed in-flow process we must re-observe after every dose.
             # Returning EC and pH in the same tick would recreate the legacy
             # piggyback behaviour and compound transport-delay error.
+            if ph_needs_up or ph_needs_down:
+                deferred_action = "ph_up" if ph_needs_up else "ph_down"
+                deferred_reason = "ec_priority_single_action"
+                deferred_details = {
+                    "ec_gap": round(ec_gap, 6),
+                    "ph_up_gap": round(ph_up_gap, 6),
+                    "ph_down_gap": round(ph_down_gap, 6),
+                    "phase": phase_key,
+                }
+                pid_updates.pop("ph", None)
             ph_needs_up = False
             ph_needs_down = False
             ph_node_uid = ""
@@ -356,6 +372,9 @@ class CorrectionPlanner:
             retry_after_sec=retry_after,
             dose_discarded_reason=ec_discarded_reason or ph_discarded_reason,
             dose_discarded_details=ec_discarded_details or ph_discarded_details,
+            deferred_action=deferred_action,
+            deferred_reason=deferred_reason,
+            deferred_details=deferred_details,
             dead_zone_details=dead_zone_details,
             pid_state_updates=pid_updates,
             ec_pid_zone=ec_pid_zone,

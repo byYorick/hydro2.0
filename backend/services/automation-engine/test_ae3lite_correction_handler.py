@@ -25,12 +25,16 @@ from ae3lite.domain.entities.automation_task import AutomationTask
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.domain.services.correction_planner import DosePlan
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
 
 RUNTIME = {
     "telemetry_max_age_sec": 10,
+    "solution_max_sensor_labels": ["level_solution_max"],
+    "solution_min_sensor_labels": ["level_solution_min"],
+    "level_switch_on_threshold": 0.5,
     "target_ph": 6.0,
     "target_ec": 2.0,
     "prepare_tolerance": {"ph_pct": 15.0, "ec_pct": 25.0},
@@ -212,11 +216,19 @@ class _MockRuntimeMonitor:
         ec_samples=None,
         ph_stale: bool = False,
         ec_stale: bool = False,
+        solution_max_triggered: bool = False,
+        solution_min_triggered: bool = False,
+        has_level: bool = True,
+        level_stale: bool = False,
     ):
         self._ph = ph
         self._ec = ec
         self._ph_stale = ph_stale
         self._ec_stale = ec_stale
+        self._solution_max_triggered = solution_max_triggered
+        self._solution_min_triggered = solution_min_triggered
+        self._has_level = has_level
+        self._level_stale = level_stale
         self._ph_samples = list(ph_samples) if ph_samples is not None else [
             {"ts": NOW - timedelta(seconds=4), "value": ph},
             {"ts": NOW - timedelta(seconds=2), "value": ph},
@@ -248,12 +260,27 @@ class _MockRuntimeMonitor:
             "sample_age_sec": 0.0,
         }
 
+    async def read_level_switch(self, *, zone_id, sensor_labels, threshold, telemetry_max_age_sec):
+        labels = [str(label) for label in sensor_labels]
+        is_max = "level_solution_max" in labels
+        return {
+            "has_level": self._has_level,
+            "is_stale": self._level_stale,
+            "is_triggered": self._solution_max_triggered if is_max else self._solution_min_triggered,
+        }
+
 
 class _MockGateway:
     def __init__(self, *, success: bool = True):
         self._success = success
+        self.calls: list[dict] = []
 
     async def run_batch(self, *, task, commands, now):
+        self.calls.append({
+            "task": task,
+            "commands": tuple(commands),
+            "now": now,
+        })
         return {
             "success": self._success,
             "error_code": "hw_error" if not self._success else None,
@@ -273,10 +300,11 @@ class _MockPidStateRepository:
         self.feedforward_cleared.append(zone_id)
 
 
-def _make_handler(*, monitor=None, gateway=None, pid_repo=None) -> CorrectionHandler:
+def _make_handler(*, monitor=None, gateway=None, pid_repo=None, planner=None) -> CorrectionHandler:
     return CorrectionHandler(
         runtime_monitor=monitor or _MockRuntimeMonitor(),
         command_gateway=gateway or _MockGateway(),
+        planner=planner,
         pid_state_repository=pid_repo,
     )
 
@@ -349,6 +377,64 @@ async def test_corr_check_max_attempts_exceeded_sends_alert_with_message(monkeyp
     assert send_alert.await_args.kwargs["message"] == "Correction cycle exhausted all configured attempts."
 
 
+async def test_corr_check_logs_deferred_action_without_persisting_ph_pid_update(monkeypatch: pytest.MonkeyPatch):
+    class _PlannerStub:
+        def is_within_tolerance(self, **kwargs):
+            return False
+
+        def build_dose_plan(self, **kwargs):
+            return DosePlan(
+                needs_ec=True,
+                ec_node_uid="ec-node",
+                ec_channel="ec_pump",
+                ec_amount_ml=2.0,
+                ec_duration_ms=2000,
+                deferred_action="ph_down",
+                deferred_reason="ec_priority_single_action",
+                deferred_details={"ec_gap": 0.3, "ph_down_gap": 1.2},
+                pid_state_updates={
+                    "ec": {
+                        "last_measurement_at": NOW,
+                        "last_measured_value": 1.7,
+                    }
+                },
+            )
+
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    corr = _base_corr(corr_step="corr_check", attempt=1)
+    task = _make_task(corr=corr, current_stage="prepare_recirculation_check", workflow_phase="tank_recirc")
+    pid_repo = _MockPidStateRepository()
+    handler = _make_handler(
+        monitor=_MockRuntimeMonitor(ph=6.2, ec=1.7),
+        pid_repo=pid_repo,
+        planner=_PlannerStub(),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=dict(RUNTIME)), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_dose_ec"
+    assert pid_repo.upsert_calls == [
+        {
+            "zone_id": 60,
+            "updates": [
+                {
+                    "pid_type": "ec",
+                    "last_measurement_at": NOW,
+                    "last_measured_value": 1.7,
+                }
+            ],
+        }
+    ]
+    assert any(
+        call.args[1] == "CORRECTION_ACTION_DEFERRED"
+        and call.args[2]["deferred_action"] == "ph_down"
+        and call.args[2]["selected_action"] == "ec"
+        for call in create_event.await_args_list
+    )
+
+
 
 
 async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
@@ -408,6 +494,74 @@ async def test_corr_wait_ec_observes_response_and_returns_to_check():
     assert outcome.correction.ec_attempt == 0
     assert outcome.correction.needs_ec is False
     assert pid_repo.feedforward_cleared == [60]
+
+
+async def test_corr_wait_ec_interrupts_to_prepare_when_solution_fill_completed(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=2,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    monitor = _MockRuntimeMonitor(
+        ph=6.8,
+        ec=0.7,
+        solution_max_triggered=True,
+        solution_min_triggered=True,
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=RUNTIME), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
+    assert create_event.await_args.args[1] == "CORRECTION_INTERRUPTED_STAGE_COMPLETE"
+    payload = create_event.await_args.args[2]
+    assert payload["next_stage"] == "solution_fill_stop_to_prepare"
+    assert payload["reason"] == "solution_tank_full"
+    assert payload["targets_reached"] is False
+
+
+async def test_corr_wait_ec_interrupts_to_ready_when_solution_fill_completed_and_targets_reached(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=2,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=2.0,
+        solution_max_triggered=True,
+        solution_min_triggered=True,
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=RUNTIME), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+    payload = create_event.await_args.args[2]
+    assert payload["next_stage"] == "solution_fill_stop_to_ready"
+    assert payload["targets_reached"] is True
 
 
 async def test_corr_wait_ec_stale_telemetry_retries_in_30s():
@@ -485,15 +639,49 @@ async def test_corr_check_window_not_ready_logs_event(monkeypatch: pytest.Monkey
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_check"
-    assert outcome.due_delay_sec == 30.0
+    assert outcome.due_delay_sec == 2.0
     create_event.assert_awaited_once()
     assert create_event.await_args.args[1] == "CORRECTION_SKIPPED_WINDOW_NOT_READY"
     payload = create_event.await_args.args[2]
     assert payload["sensor_scope"] == "decision_window"
     assert payload["ph_reason"] == "insufficient_samples"
     assert payload["ph_sample_count"] == 2
+    assert payload["ph_window_min_samples"] == 3
+    assert payload["ph_telemetry_period_sec"] == 2
+    assert payload["ph_since_ts"] is not None
+    assert payload["ph_latest_sample_ts"] is not None
     assert payload["ec_reason"] is None
-    assert payload["retry_after_sec"] == 30.0
+    assert payload["ec_window_min_samples"] is None
+    assert payload["ec_telemetry_period_sec"] is None
+    assert payload["ec_since_ts"] is None
+    assert payload["ec_latest_sample_ts"] is None
+    assert payload["retry_after_sec"] == 2.0
+
+
+async def test_corr_check_zero_sample_window_reactivates_stage_owned_sensor_mode() -> None:
+    corr = _base_corr(corr_step="corr_check", attempt=1, activated_here=False, stabilization_sec=45)
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ph_samples=[], ec_samples=[])
+    gateway = _MockGateway()
+    handler = _make_handler(monitor=monitor, gateway=gateway, pid_repo=_MockPidStateRepository())
+
+    create_event = AsyncMock(return_value=None)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    try:
+        outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_wait_stable"
+    assert outcome.correction.activated_here is False
+    assert outcome.due_delay_sec == 45
+    assert len(gateway.calls) == 1
+    commands = gateway.calls[0]["commands"]
+    assert len(commands) == 1
+    assert commands[0].payload["cmd"] == "activate_sensor_mode"
+    assert create_event.await_args.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
 
 
 async def test_corr_check_low_water_logs_skip_event(monkeypatch: pytest.MonkeyPatch):
@@ -1177,7 +1365,7 @@ async def test_corr_check_uses_decision_window_grace_for_late_sample_and_reaches
     assert outcome.correction.ec_duration_ms > 0
 
 
-async def test_corr_check_unready_decision_window_retries_with_delay() -> None:
+async def test_corr_check_unready_decision_window_retries_on_telemetry_period_when_missing_one_sample() -> None:
     corr = _base_corr(corr_step="corr_check")
     task = _make_task(corr=corr)
     runtime = dict(RUNTIME)
@@ -1223,9 +1411,9 @@ async def test_corr_check_unready_decision_window_retries_with_delay() -> None:
 
     outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
-    # Нестабильное окно решения — ретрай, не фейл
+    # При нехватке ровно одного sample correction не должна зависать на coarse 30s retry.
     assert outcome.kind == "enter_correction"
-    assert outcome.due_delay_sec is not None and outcome.due_delay_sec >= 30.0
+    assert outcome.due_delay_sec == 2.0
     assert outcome.correction is not None
     assert outcome.correction.corr_step == "corr_check"
 

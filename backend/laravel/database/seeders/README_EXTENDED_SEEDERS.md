@@ -80,6 +80,7 @@ HYDRO_SEED_PROFILE=lite php artisan db:seed
 - `agronomist@example.com` / `password` (`agronomist`)
 - `operator@example.com` / `password` (`operator`)
 - `viewer@example.com` / `password` (`viewer`)
+- `engineer@example.com` / `password` (`engineer`)
 
 ## Важно
 

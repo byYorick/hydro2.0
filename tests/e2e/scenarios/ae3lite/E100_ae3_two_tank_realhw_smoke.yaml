@@ -388,6 +388,14 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: cleanup_zone_pid_state
+    type: database_execute
+    query: |
+      DELETE FROM pid_state
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
   - step: cleanup_blocking_ae_alerts
     type: database_execute
     query: |

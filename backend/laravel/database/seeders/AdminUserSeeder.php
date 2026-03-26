@@ -10,44 +10,49 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
-        // Детерминированные dev-учетки: повторный сидинг исправляет уже существующие записи.
-        User::query()->updateOrCreate(
-            ['email' => 'admin@example.com'],
+        foreach ($this->baseUsers() as $user) {
+            User::query()->updateOrCreate(
+                ['email' => $user['email']],
+                [
+                    'name' => $user['name'],
+                    'password' => Hash::make('password'),
+                    'role' => $user['role'],
+                ]
+            );
+        }
+    }
+
+    /**
+     * @return array<int, array{name: string, email: string, role: string}>
+     */
+    private function baseUsers(): array
+    {
+        return [
             [
                 'name' => 'Admin',
-                'password' => Hash::make('password'),
+                'email' => 'admin@example.com',
                 'role' => 'admin',
-            ]
-        );
-
-        // Agronomist user (основной профиль для агронома)
-        User::query()->updateOrCreate(
-            ['email' => 'agronomist@example.com'],
+            ],
             [
                 'name' => 'Agronomist',
-                'password' => Hash::make('password'),
+                'email' => 'agronomist@example.com',
                 'role' => 'agronomist',
-            ]
-        );
-
-        // Operator user
-        User::query()->updateOrCreate(
-            ['email' => 'operator@example.com'],
+            ],
             [
                 'name' => 'Operator',
-                'password' => Hash::make('password'),
+                'email' => 'operator@example.com',
                 'role' => 'operator',
-            ]
-        );
-
-        // Viewer user
-        User::query()->updateOrCreate(
-            ['email' => 'viewer@example.com'],
+            ],
             [
                 'name' => 'Viewer',
-                'password' => Hash::make('password'),
+                'email' => 'viewer@example.com',
                 'role' => 'viewer',
-            ]
-        );
+            ],
+            [
+                'name' => 'Engineer',
+                'email' => 'engineer@example.com',
+                'role' => 'engineer',
+            ],
+        ];
     }
 }

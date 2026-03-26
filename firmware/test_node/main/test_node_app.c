@@ -1166,21 +1166,6 @@ static bool is_main_pump_channel(const char *channel) {
 static bool is_fill_channel(const char *channel);
 static bool is_drain_channel(const char *channel);
 
-static bool is_water_contour_channel(const char *channel) {
-    if (!channel) {
-        return false;
-    }
-    return strcmp(channel, "pump_irrigation") == 0
-        || is_main_pump_channel(channel)
-        || strcmp(channel, "valve_clean_fill") == 0
-        || strcmp(channel, "valve_clean_supply") == 0
-        || strcmp(channel, "valve_solution_fill") == 0
-        || strcmp(channel, "valve_solution_supply") == 0
-        || strcmp(channel, "valve_irrigation") == 0
-        || is_fill_channel(channel)
-        || is_drain_channel(channel);
-}
-
 static bool is_fill_channel(const char *channel) {
     return channel
         && (

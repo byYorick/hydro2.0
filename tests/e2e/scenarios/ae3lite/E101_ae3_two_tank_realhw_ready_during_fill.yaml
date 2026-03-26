@@ -2,8 +2,8 @@
 # DoD:
 # - real test_node проходит staged setup до `solution_fill_check`
 # - correction публикует реальные run_pump команды на EC/pH ноды
-# - canonical task завершается completed без входа в prepare_recirculation
-# - zone_workflow_state переходит в ready ещё на fill-path
+# - canonical task завершается completed и выходит в ready без дополнительной recirculation dosing
+# - краткий handoff через prepare_recirculation допустим только если он cleanly закрывается в ready
 
 name: E101_ae3_two_tank_realhw_ready_during_fill
 description: |
@@ -12,7 +12,8 @@ description: |
   command pipeline и затем проводит staged setup до готовности по fill-path:
   startup -> clean fill -> solution fill + correction -> ready.
   Проверяются реальные публикации correction-команд на EC/pH ноды, отсутствие
-  перехода в `prepare_recirculation` и финальный выход системы в `ready`.
+  дополнительной correction dosing после `solution_full` и финальный выход
+  системы в `ready` без зависания в `prepare_recirculation`.
 
 actions:
   - step: set_test_context
@@ -197,6 +198,14 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: cleanup_zone_pid_state
+    type: database_execute
+    query: |
+      DELETE FROM pid_state
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
   - step: complete_existing_cycles
     type: database_execute
     query: |
@@ -230,11 +239,12 @@ actions:
 
   - step: apply_test_node_correction_preset
     type: api_put
-    endpoint: /api/zones/${zone_id}/correction-config
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
     payload:
-      preset_id: ${test_node_correction_preset_row.0.id}
-      base_config: {}
-      phase_overrides: {}
+      payload:
+        preset_id: ${test_node_correction_preset_row.0.id}
+        base_config: {}
+        phase_overrides: {}
     save: correction_config_update_response
 
   - step: upsert_irrig_channels
@@ -428,296 +438,187 @@ actions:
       ph_up_channel_id: ${ph_up_channel_id}
       ph_down_channel_id: ${ph_down_channel_id}
 
-  - step: cleanup_existing_process_calibrations
-    type: database_execute
-    query: |
-      DELETE FROM zone_process_calibrations
-      WHERE zone_id = :zone_id
-        AND source = 'e2e_realhw_process_observe'
-    params:
-      zone_id: ${zone_id}
+  - step: apply_solution_fill_process_calibration
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.solution_fill
+    payload:
+      payload:
+        mode: solution_fill
+        ec_gain_per_ml: 0.0025
+        ph_up_gain_per_ml: 0.0100
+        ph_down_gain_per_ml: 0.0100
+        ph_per_ec_ml: -0.0015
+        ec_per_ph_ml: 0.0000
+        transport_delay_sec: 4
+        settle_sec: 4
+        confidence: 0.90
+        source: e2e_realhw_process_observe
+        is_active: true
+        meta:
+          observe:
+            telemetry_period_sec: 2
+            window_min_samples: 3
+            decision_window_sec: 6
+            observe_poll_sec: 2
+            min_effect_fraction: 0.20
+            stability_max_slope: 0.08
+            no_effect_consecutive_limit: 3
 
-  - step: insert_process_calibrations
-    type: database_execute
-    query: |
-      INSERT INTO zone_process_calibrations (
-        zone_id,
-        mode,
-        ec_gain_per_ml,
-        ph_up_gain_per_ml,
-        ph_down_gain_per_ml,
-        ph_per_ec_ml,
-        ec_per_ph_ml,
-        transport_delay_sec,
-        settle_sec,
-        confidence,
-        source,
-        valid_from,
-        is_active,
-        meta,
-        created_at,
-        updated_at
-      )
-      VALUES
-        (
-          :zone_id,
-          'solution_fill',
-          0.0025,
-          0.0100,
-          0.0100,
-          -0.0015,
-          0.0000,
-          4,
-          4,
-          0.90,
-          'e2e_realhw_process_observe',
-          NOW() - INTERVAL '1 minute',
-          TRUE,
-          jsonb_build_object(
-            'observe', jsonb_build_object(
-              'telemetry_period_sec', 2,
-              'window_min_samples', 3,
-              'decision_window_sec', 6,
-              'observe_poll_sec', 2,
-              'min_effect_fraction', 0.20,
-              'stability_max_slope', 0.08,
-              'no_effect_consecutive_limit', 3
-            )
-          ),
-          NOW(),
-          NOW()
-        ),
-        (
-          :zone_id,
-          'tank_recirc',
-          0.0080,
-          0.0180,
-          0.0180,
-          -0.0025,
-          0.0000,
-          4,
-          4,
-          0.95,
-          'e2e_realhw_process_observe',
-          NOW() - INTERVAL '1 minute',
-          TRUE,
-          jsonb_build_object(
-            'observe', jsonb_build_object(
-              'telemetry_period_sec', 2,
-              'window_min_samples', 3,
-              'decision_window_sec', 6,
-              'observe_poll_sec', 2,
-              'min_effect_fraction', 0.20,
-              'stability_max_slope', 0.08,
-              'no_effect_consecutive_limit', 3
-            )
-          ),
-          NOW(),
-          NOW()
-        ),
-        (
-          :zone_id,
-          'irrigation',
-          0.0060,
-          0.0140,
-          0.0140,
-          -0.0020,
-          0.0000,
-          6,
-          4,
-          0.85,
-          'e2e_realhw_process_observe',
-          NOW() - INTERVAL '1 minute',
-          TRUE,
-          jsonb_build_object(
-            'observe', jsonb_build_object(
-              'telemetry_period_sec', 2,
-              'window_min_samples', 3,
-              'decision_window_sec', 6,
-              'observe_poll_sec', 2,
-              'min_effect_fraction', 0.20,
-              'stability_max_slope', 0.08,
-              'no_effect_consecutive_limit', 3
-            )
-          ),
-          NOW(),
-          NOW()
-        )
-    params:
-      zone_id: ${zone_id}
+  - step: apply_tank_recirc_process_calibration
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.tank_recirc
+    payload:
+      payload:
+        mode: tank_recirc
+        ec_gain_per_ml: 0.0080
+        ph_up_gain_per_ml: 0.0180
+        ph_down_gain_per_ml: 0.0180
+        ph_per_ec_ml: -0.0025
+        ec_per_ph_ml: 0.0000
+        transport_delay_sec: 4
+        settle_sec: 4
+        confidence: 0.95
+        source: e2e_realhw_process_observe
+        is_active: true
+        meta:
+          observe:
+            telemetry_period_sec: 2
+            window_min_samples: 3
+            decision_window_sec: 6
+            observe_poll_sec: 2
+            min_effect_fraction: 0.20
+            stability_max_slope: 0.08
+            no_effect_consecutive_limit: 3
 
-  - step: deactivate_active_profiles
-    type: database_execute
-    query: |
-      UPDATE zone_automation_logic_profiles
-      SET is_active = FALSE,
-          updated_at = NOW()
-      WHERE zone_id = :zone_id
-        AND is_active = TRUE
-    params:
-      zone_id: ${zone_id}
+  - step: apply_irrigation_process_calibration
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.irrigation
+    payload:
+      payload:
+        mode: irrigation
+        ec_gain_per_ml: 0.0060
+        ph_up_gain_per_ml: 0.0140
+        ph_down_gain_per_ml: 0.0140
+        ph_per_ec_ml: -0.0020
+        ec_per_ph_ml: 0.0000
+        transport_delay_sec: 6
+        settle_sec: 4
+        confidence: 0.85
+        source: e2e_realhw_process_observe
+        is_active: true
+        meta:
+          observe:
+            telemetry_period_sec: 2
+            window_min_samples: 3
+            decision_window_sec: 6
+            observe_poll_sec: 2
+            min_effect_fraction: 0.20
+            stability_max_slope: 0.08
+            no_effect_consecutive_limit: 3
 
-  - step: insert_ae3_profile
-    type: database_execute
-    query: |
-      INSERT INTO zone_automation_logic_profiles (
-        zone_id,
-        mode,
-        subsystems,
-        command_plans,
-        is_active,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        :zone_id,
-        'working',
-        jsonb_build_object(
-          'diagnostics', jsonb_build_object(
-            'execution', jsonb_build_object(
-              'workflow', 'cycle_start',
-              'topology', 'two_tank_drip_substrate_trays',
-              'required_node_types', jsonb_build_array('irrig'),
-              'startup', jsonb_build_object(
-                'level_poll_interval_sec', 5,
-                'clean_fill_timeout_sec', 120,
-                'solution_fill_timeout_sec', 240,
-                'prepare_recirculation_timeout_sec', 240,
-                'telemetry_max_age_sec', 10,
-                'irr_state_max_age_sec', 30,
-                'sensor_mode_stabilization_time_sec', 0
-              ),
-              'target_ph', 6.9,
-              'target_ec', 0.65,
-              'prepare_tolerance', jsonb_build_object(
-                'ph_pct', 2,
-                'ec_pct', 2
-              ),
-              'correction', jsonb_build_object(
-                'dose_ec_channel', 'dose_ec_a',
-                'dose_ph_up_channel', 'dose_ph_up',
-                'dose_ph_down_channel', 'dose_ph_down',                'max_ec_dose_ml', 20.0,
-                'max_ph_dose_ml', 13.333333,
-                'stabilization_sec', 0,
-                'max_ec_correction_attempts', 8,
-                'max_ph_correction_attempts', 8,
-                'solution_volume_l', 20.0
-              ),
-              'two_tank_commands', jsonb_build_object(
-                'clean_fill_start', jsonb_build_array(
-                  jsonb_build_object(
-                    'channel', 'valve_clean_fill',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  )
-                ),
-                'clean_fill_stop', jsonb_build_array(
-                  jsonb_build_object(
-                    'channel', 'valve_clean_fill',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  )
-                ),
-                'solution_fill_start', jsonb_build_array(
-                  jsonb_build_object(
-                    'channel', 'valve_clean_supply',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'valve_solution_fill',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'pump_main',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  )
-                ),
-                'solution_fill_stop', jsonb_build_array(
-                  jsonb_build_object(
-                    'channel', 'pump_main',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'valve_solution_fill',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'valve_clean_supply',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  )
-                ),
-                'prepare_recirculation_start', jsonb_build_array(
-                  jsonb_build_object(
-                    'channel', 'valve_solution_supply',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'valve_solution_fill',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'pump_main',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', true)
-                  )
-                ),
-                'prepare_recirculation_stop', jsonb_build_array(
-                  jsonb_build_object(
-                    'channel', 'pump_main',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'valve_solution_fill',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  ),
-                  jsonb_build_object(
-                    'channel', 'valve_solution_supply',
-                    'cmd', 'set_relay',
-                    'params', jsonb_build_object('state', false)
-                  )
-                )
-              )
-            )
-          )
-        ),
-        jsonb_build_object(
-          'schema_version', 1,
-          'plan_version', 1,
-          'plans', jsonb_build_object(
-            'diagnostics', jsonb_build_object(
-              'steps', jsonb_build_array(
-                jsonb_build_object(
-                  'name', 'pump_start',
-                  'channel', 'irrigation_pump',
-                  'cmd', 'set_relay',
-                  'params', jsonb_build_object('state', true),
-                  'timeout_sec', 20
-                )
-              )
-            )
-          )
-        ),
-        TRUE,
-        NOW(),
-        NOW()
-      )
-      ON CONFLICT (zone_id, mode) DO UPDATE
-      SET subsystems = EXCLUDED.subsystems,
-          command_plans = EXCLUDED.command_plans,
-          is_active = TRUE,
-          updated_at = NOW()
-    params:
-      zone_id: ${zone_id}
+  - step: apply_ae3_logic_profile
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+    payload:
+      payload:
+        active_mode: working
+        profiles:
+          working:
+            mode: working
+            is_active: true
+            subsystems:
+              diagnostics:
+                execution:
+                  workflow: cycle_start
+                  topology: two_tank_drip_substrate_trays
+                  required_node_types:
+                    - irrig
+                  startup:
+                    level_poll_interval_sec: 5
+                    clean_fill_timeout_sec: 120
+                    solution_fill_timeout_sec: 240
+                    prepare_recirculation_timeout_sec: 240
+                    telemetry_max_age_sec: 10
+                    irr_state_max_age_sec: 30
+                    sensor_mode_stabilization_time_sec: 0
+                  target_ph: 6.9
+                  target_ec: 0.65
+                  prepare_tolerance:
+                    ph_pct: 2
+                    ec_pct: 2
+                  correction:
+                    dose_ec_channel: dose_ec_a
+                    dose_ph_up_channel: dose_ph_up
+                    dose_ph_down_channel: dose_ph_down
+                    max_ec_dose_ml: 20.0
+                    max_ph_dose_ml: 13.333333
+                    stabilization_sec: 0
+                    max_ec_correction_attempts: 8
+                    max_ph_correction_attempts: 8
+                    solution_volume_l: 20.0
+                  two_tank_commands:
+                    clean_fill_start:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                    clean_fill_stop:
+                      - channel: valve_clean_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                    solution_fill_start:
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    solution_fill_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_clean_supply
+                        cmd: set_relay
+                        params:
+                          state: false
+                    prepare_recirculation_start:
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: true
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: true
+                    prepare_recirculation_stop:
+                      - channel: pump_main
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_fill
+                        cmd: set_relay
+                        params:
+                          state: false
+                      - channel: valve_solution_supply
+                        cmd: set_relay
+                        params:
+                          state: false
 
   - step: create_recipe
     type: database_execute
@@ -865,6 +766,35 @@ actions:
     params:
       phase_id: ${phase_id}
       grow_cycle_id: ${grow_cycle_id}
+
+  - step: apply_cycle_start_snapshot
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.start_snapshot
+    payload:
+      payload:
+        cycle_id: ${grow_cycle_id}
+        zone_id: ${zone_id}
+
+  - step: apply_cycle_phase_overrides
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+    payload:
+      payload: {}
+
+  - step: wait_grow_cycle_bundle_ready
+    type: db.wait
+    query: |
+      SELECT scope_type, scope_id, status, bundle_revision
+      FROM automation_effective_bundles
+      WHERE scope_type = 'grow_cycle'
+        AND scope_id = CAST(:grow_cycle_id AS bigint)
+        AND status = 'valid'
+      LIMIT 1
+    params:
+      grow_cycle_id: ${grow_cycle_id}
+    timeout: 20.0
+    expected_rows: 1
+    save: grow_cycle_bundle_row
 
   - step: reset_test_node_state
     type: ae_test_hook
@@ -1220,7 +1150,7 @@ actions:
   - step: wait_stabilize_ph_ec_done
     type: db.wait
     query: |
-      SELECT id, cmd_id, status
+      SELECT id, cmd_id, status, created_at
       FROM commands
       WHERE cmd_id = :cmd_id
         AND status = 'DONE'
@@ -1230,6 +1160,7 @@ actions:
       cmd_id: ${stabilize_ph_ec_response.data.cmd_id}
     timeout: 20.0
     expected_rows: 1
+    save: stabilize_ph_ec_done_row
 
   - step: wait_stabilized_ph_ec_telemetry
     type: db.wait
@@ -1251,6 +1182,66 @@ actions:
     expected_rows: 1
     save: stabilized_ph_ec_row
 
+  - step: wait_stabilized_ph_ec_window
+    type: db.wait
+    query: |
+      WITH ph_window AS (
+        SELECT tsamp.ts, tsamp.value
+        FROM telemetry_samples tsamp
+        JOIN sensors s ON s.id = tsamp.sensor_id
+        WHERE s.node_id = CAST(:ph_node_id AS bigint)
+          AND s.type = 'PH'
+          AND s.label = 'ph_sensor'
+          AND tsamp.ts >= CAST(:after_stabilize_at AS timestamptz)
+        ORDER BY tsamp.ts DESC
+        LIMIT 3
+      ),
+      ec_window AS (
+        SELECT tsamp.ts, tsamp.value
+        FROM telemetry_samples tsamp
+        JOIN sensors s ON s.id = tsamp.sensor_id
+        WHERE s.node_id = CAST(:ec_node_id AS bigint)
+          AND s.type = 'EC'
+          AND s.label = 'ec_sensor'
+          AND tsamp.ts >= CAST(:after_stabilize_at AS timestamptz)
+        ORDER BY tsamp.ts DESC
+        LIMIT 3
+      )
+      SELECT
+        ph.cnt AS ph_cnt,
+        ph.min_value AS ph_min_value,
+        ph.max_value AS ph_max_value,
+        ec.cnt AS ec_cnt,
+        ec.min_value AS ec_min_value,
+        ec.max_value AS ec_max_value
+      FROM (
+        SELECT
+          COUNT(*)::int AS cnt,
+          MIN(value) AS min_value,
+          MAX(value) AS max_value
+        FROM ph_window
+      ) ph
+      CROSS JOIN (
+        SELECT
+          COUNT(*)::int AS cnt,
+          MIN(value) AS min_value,
+          MAX(value) AS max_value
+        FROM ec_window
+      ) ec
+      WHERE ph.cnt = 3
+        AND ph.min_value BETWEEN 6.88 AND 6.92
+        AND ph.max_value BETWEEN 6.88 AND 6.92
+        AND ec.cnt = 3
+        AND ec.min_value BETWEEN 0.64 AND 0.66
+        AND ec.max_value BETWEEN 0.64 AND 0.66
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+      after_stabilize_at: ${stabilize_ph_ec_done_row.0.created_at}
+    timeout: 40.0
+    expected_rows: 1
+    save: stabilized_ph_ec_window_row
+
   - step: force_solution_tank_full
     type: ae_test_hook
     zone_id: ${zone_id}
@@ -1270,7 +1261,7 @@ actions:
   - step: wait_force_solution_tank_full_done
     type: db.wait
     query: |
-      SELECT id, cmd_id, status
+      SELECT id, cmd_id, status, created_at
       FROM commands
       WHERE cmd_id = :cmd_id
         AND status = 'DONE'
@@ -1280,6 +1271,7 @@ actions:
       cmd_id: ${force_solution_tank_full_response.data.cmd_id}
     timeout: 20.0
     expected_rows: 1
+    save: force_solution_tank_full_done_row
 
   - step: wait_solution_tank_full_telemetry
     type: db.wait
@@ -1386,6 +1378,38 @@ actions:
     expected_rows: 1
     save: expected_ae_command_counts_row
 
+  - step: load_post_fill_activity
+    type: database_query
+    query: |
+      SELECT
+        COUNT(*) FILTER (
+          WHERE publish_status = 'accepted'
+            AND channel = 'valve_solution_supply'
+            AND payload->>'cmd' = 'set_relay'
+            AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+            AND created_at >= CAST(:after_tank_full_at AS timestamptz)
+        )::int AS prepare_recirculation_start_cnt_after_full,
+        COUNT(*) FILTER (
+          WHERE publish_status = 'accepted'
+            AND channel = 'valve_solution_supply'
+            AND payload->>'cmd' = 'set_relay'
+            AND COALESCE(payload->'params'->>'state', 'false') = 'false'
+            AND created_at >= CAST(:after_tank_full_at AS timestamptz)
+        )::int AS prepare_recirculation_stop_cnt_after_full,
+        COUNT(*) FILTER (
+          WHERE publish_status = 'accepted'
+            AND channel IN ('pump_a', 'pump_acid', 'pump_base')
+            AND payload->>'cmd' = 'run_pump'
+            AND created_at >= CAST(:after_tank_full_at AS timestamptz)
+        )::int AS correction_cmd_cnt_after_full
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+      after_tank_full_at: ${force_solution_tank_full_done_row.0.created_at}
+    expected_rows: 1
+    save: post_fill_activity_row
+
   - step: count_task_commands
     type: database_query
     query: |
@@ -1476,9 +1500,9 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('solution_fill_start_cnt', 0)) >= 1"
 
-  - name: prepare_recirculation_not_started
+  - name: post_fill_handoff_closed_without_extra_correction
     type: custom_assert
-    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('prepare_recirculation_start_cnt', 0)) == 0"
+    condition: "int(context.get('post_fill_activity_row', [{}])[0].get('correction_cmd_cnt_after_full', 0)) == 0 and int(context.get('post_fill_activity_row', [{}])[0].get('prepare_recirculation_start_cnt_after_full', 0)) <= 1 and int(context.get('post_fill_activity_row', [{}])[0].get('prepare_recirculation_stop_cnt_after_full', 0)) >= int(context.get('post_fill_activity_row', [{}])[0].get('prepare_recirculation_start_cnt_after_full', 0))"
 
   - name: fill_correction_optional
     type: custom_assert

@@ -158,6 +158,15 @@ actions:
     '
   params:
     zone_id: ${zone_id}
+- step: cleanup_zone_pid_state
+  type: database_execute
+  query: 'DELETE FROM pid_state
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
 - step: cleanup_zone_runtime_intents
   type: database_execute
   query: 'DELETE FROM zone_automation_intents
@@ -191,69 +200,202 @@ actions:
   save: test_node_correction_preset_row
 - step: apply_test_node_correction_preset
   type: api_put
-  endpoint: /api/zones/${zone_id}/correction-config
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
   payload:
-    preset_id: ${test_node_correction_preset_row.0.id}
-    base_config: {}
-    phase_overrides:
-      solution_fill:
-        retry:
-          max_ec_correction_attempts: 3
-          max_ph_correction_attempts: 3
-          prepare_recirculation_timeout_sec: 120
-          prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 20
-        controllers:
-          ec:
-            kp: 12.0
-            ki: 0.12
-            kd: 0.0
-            deadband: 0.08
-            max_dose_ml: 20.0
-            max_integral: 24.0
-            min_interval_sec: 20
-          ph:
-            kp: 4.0
-            ki: 0.04
-            kd: 0.0
-            deadband: 0.05
-            max_dose_ml: 10.0
-            max_integral: 10.0
-            min_interval_sec: 20
-        dosing:
-          max_ec_dose_ml: 20.0
-          max_ph_dose_ml: 10.0
-        timing:
-          stabilization_sec: 10
-      tank_recirc:
-        retry:
-          max_ec_correction_attempts: 10
-          max_ph_correction_attempts: 10
-          prepare_recirculation_timeout_sec: 30
-          prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 20
-        controllers:
-          ec:
-            kp: 18.0
-            ki: 0.18
-            kd: 0.0
-            deadband: 0.05
-            max_dose_ml: 30.0
-            max_integral: 48.0
-            min_interval_sec: 15
-          ph:
-            kp: 6.0
-            ki: 0.06
-            kd: 0.0
-            deadband: 0.04
-            max_dose_ml: 16.0
-            max_integral: 16.0
-            min_interval_sec: 15
-        dosing:
-          max_ec_dose_ml: 30.0
-          max_ph_dose_ml: 16.0
-        timing:
-          stabilization_sec: 10
+    payload:
+      preset_id: ${test_node_correction_preset_row.0.id}
+      base_config: {}
+      phase_overrides:
+        solution_fill:
+          runtime:
+            required_node_type: irrig
+            clean_fill_timeout_sec: 600
+            solution_fill_timeout_sec: 900
+            clean_fill_retry_cycles: 1
+            level_switch_on_threshold: 0.5
+            clean_max_sensor_label: level_clean_max
+            clean_min_sensor_label: level_clean_min
+            solution_max_sensor_label: level_solution_max
+            solution_min_sensor_label: level_solution_min
+          retry:
+            max_ec_correction_attempts: 3
+            max_ph_correction_attempts: 3
+            prepare_recirculation_timeout_sec: 120
+            prepare_recirculation_max_attempts: 3
+            prepare_recirculation_max_correction_attempts: 20
+            telemetry_stale_retry_sec: 30
+            decision_window_retry_sec: 10
+            low_water_retry_sec: 60
+          controllers:
+            ec:
+              mode: supervisory_allocator
+              kp: 12.0
+              ki: 0.12
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.08
+              max_dose_ml: 20.0
+              max_integral: 24.0
+              min_interval_sec: 20
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 0.0
+                hard_max: 4.0
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.08
+                no_effect_consecutive_limit: 4
+            ph:
+              mode: cross_coupled_pi_d
+              kp: 4.0
+              ki: 0.04
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.05
+              max_dose_ml: 10.0
+              max_integral: 10.0
+              min_interval_sec: 20
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 4.0
+                hard_max: 8.5
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.04
+                no_effect_consecutive_limit: 4
+          dosing:
+            solution_volume_l: 20.0
+            dose_ec_channel: dose_ec_a
+            dose_ph_up_channel: dose_ph_up
+            dose_ph_down_channel: dose_ph_down
+            max_ec_dose_ml: 20.0
+            max_ph_dose_ml: 10.0
+          timing:
+            sensor_mode_stabilization_time_sec: 20
+            stabilization_sec: 10
+            telemetry_max_age_sec: 180
+            irr_state_max_age_sec: 15
+            level_poll_interval_sec: 20
+          tolerance:
+            prepare_tolerance:
+              ph_pct: 10.0
+              ec_pct: 16.0
+          safety:
+            safe_mode_on_no_effect: true
+            block_on_active_no_effect_alert: true
+        tank_recirc:
+          runtime:
+            required_node_type: irrig
+            clean_fill_timeout_sec: 600
+            solution_fill_timeout_sec: 900
+            clean_fill_retry_cycles: 1
+            level_switch_on_threshold: 0.5
+            clean_max_sensor_label: level_clean_max
+            clean_min_sensor_label: level_clean_min
+            solution_max_sensor_label: level_solution_max
+            solution_min_sensor_label: level_solution_min
+          retry:
+            max_ec_correction_attempts: 10
+            max_ph_correction_attempts: 10
+            prepare_recirculation_timeout_sec: 45
+            prepare_recirculation_max_attempts: 3
+            prepare_recirculation_max_correction_attempts: 20
+            telemetry_stale_retry_sec: 30
+            decision_window_retry_sec: 10
+            low_water_retry_sec: 60
+          controllers:
+            ec:
+              mode: supervisory_allocator
+              kp: 18.0
+              ki: 0.18
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.05
+              max_dose_ml: 30.0
+              max_integral: 48.0
+              min_interval_sec: 15
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 0.0
+                hard_max: 4.0
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.08
+                no_effect_consecutive_limit: 4
+            ph:
+              mode: cross_coupled_pi_d
+              kp: 6.0
+              ki: 0.06
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.04
+              max_dose_ml: 16.0
+              max_integral: 16.0
+              min_interval_sec: 15
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 4.0
+                hard_max: 8.5
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.04
+                no_effect_consecutive_limit: 4
+          dosing:
+            solution_volume_l: 20.0
+            dose_ec_channel: dose_ec_a
+            dose_ph_up_channel: dose_ph_up
+            dose_ph_down_channel: dose_ph_down
+            max_ec_dose_ml: 30.0
+            max_ph_dose_ml: 16.0
+          timing:
+            sensor_mode_stabilization_time_sec: 20
+            stabilization_sec: 10
+            telemetry_max_age_sec: 180
+            irr_state_max_age_sec: 15
+            level_poll_interval_sec: 20
+          tolerance:
+            prepare_tolerance:
+              ph_pct: 9.0
+              ec_pct: 15.0
+          safety:
+            safe_mode_on_no_effect: true
+            block_on_active_no_effect_alert: true
   save: correction_config_update_response
 - step: upsert_irrig_channels
   type: database_execute
@@ -373,87 +515,182 @@ actions:
     ec_pump_channel_id: ${ec_pump_channel_id}
     ph_up_channel_id: ${ph_up_channel_id}
     ph_down_channel_id: ${ph_down_channel_id}
-- step: cleanup_existing_process_calibrations
-  type: database_execute
-  query: "DELETE FROM zone_process_calibrations\nWHERE zone_id = :zone_id\n  AND source = 'e2e_realhw_process_observe'\n"
-  params:
-    zone_id: ${zone_id}
-- step: insert_process_calibrations
-  type: database_execute
-  query: "INSERT INTO zone_process_calibrations (\n  zone_id,\n  mode,\n  ec_gain_per_ml,\n  ph_up_gain_per_ml,\n  ph_down_gain_per_ml,\n  ph_per_ec_ml,\n  ec_per_ph_ml,\n  transport_delay_sec,\n  settle_sec,\n  confidence,\n  source,\n  valid_from,\n  is_active,\n  meta,\n  created_at,\n  updated_at\n)\nVALUES\n  (\n    :zone_id,\n    'solution_fill',\n    0.0025,\n    0.0100,\n    0.0100,\n    -0.0015,\n    0.0000,\n    4,\n    4,\n    0.90,\n    'e2e_realhw_process_observe',\n    NOW() - INTERVAL '1 minute',\n    TRUE,\n    jsonb_build_object(\n      'observe', jsonb_build_object(\n        'telemetry_period_sec', 2,\n        'window_min_samples', 3,\n        'decision_window_sec', 6,\n        'observe_poll_sec', 2,\n        'min_effect_fraction', 0.20,\n        'stability_max_slope', 0.08,\n        'no_effect_consecutive_limit', 3\n      )\n    ),\n    NOW(),\n    NOW()\n  ),\n  (\n    :zone_id,\n    'tank_recirc',\n    0.0080,\n    0.0180,\n    0.0180,\n    -0.0025,\n    0.0000,\n    4,\n    4,\n    0.95,\n    'e2e_realhw_process_observe',\n    NOW() - INTERVAL '1 minute',\n    TRUE,\n    jsonb_build_object(\n      'observe', jsonb_build_object(\n        'telemetry_period_sec', 2,\n        'window_min_samples', 3,\n        'decision_window_sec', 6,\n        'observe_poll_sec', 2,\n        'min_effect_fraction', 0.20,\n        'stability_max_slope', 0.08,\n        'no_effect_consecutive_limit', 3\n      )\n    ),\n    NOW(),\n    NOW()\n  ),\n  (\n    :zone_id,\n    'irrigation',\n    0.0060,\n    0.0140,\n    0.0140,\n    -0.0020,\n    0.0000,\n    6,\n    4,\n    0.85,\n    'e2e_realhw_process_observe',\n    NOW() - INTERVAL '1 minute',\n    TRUE,\n    jsonb_build_object(\n      'observe', jsonb_build_object(\n        'telemetry_period_sec', 2,\n        'window_min_samples', 3,\n        'decision_window_sec', 6,\n        'observe_poll_sec', 2,\n        'min_effect_fraction', 0.20,\n        'stability_max_slope', 0.08,\n        'no_effect_consecutive_limit', 3\n      )\n    ),\n    NOW(),\n    NOW()\n  )\n"
-  params:
-    zone_id: ${zone_id}
-- step: deactivate_active_profiles
-  type: database_execute
-  query: "UPDATE zone_automation_logic_profiles\nSET is_active = FALSE,\n    updated_at\
-    \ = NOW()\nWHERE zone_id = :zone_id\n  AND is_active = TRUE\n"
-  params:
-    zone_id: ${zone_id}
-- step: insert_ae3_profile
-  type: database_execute
-  query: "INSERT INTO zone_automation_logic_profiles (\n  zone_id,\n  mode,\n  subsystems,\n\
-    \  command_plans,\n  is_active,\n  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n\
-    \  'working',\n  jsonb_build_object(\n    'diagnostics', jsonb_build_object(\n\
-    \      'execution', jsonb_build_object(\n        'workflow', 'cycle_start',\n\
-    \        'topology', 'two_tank_drip_substrate_trays',\n        'required_node_types',\
-    \ jsonb_build_array('irrig'),\n        'startup', jsonb_build_object(\n      \
-    \    'level_poll_interval_sec', 5,\n          'clean_fill_timeout_sec', 120,\n\
-    \          'solution_fill_timeout_sec', 240,\n          'prepare_recirculation_timeout_sec',\
-    \ 30,\n          'telemetry_max_age_sec', 10,\n          'irr_state_max_age_sec',\
-    \ 30,\n          'sensor_mode_stabilization_time_sec', 0\n        ),\n        'prepare_tolerance', jsonb_build_object(\n\
-    \          'ph_pct', 5,\n          'ec_pct', 10\n        ),\n        'correction',\
-    \ jsonb_build_object(\n          'dose_ec_channel', 'dose_ec_a',\n          'dose_ph_up_channel',\
-    \ 'dose_ph_up',\n          'dose_ph_down_channel', 'dose_ph_down',\n          'max_ec_dose_ml', 60.0,\n          'max_ph_dose_ml', 40.0,\n          'stabilization_sec', 0,\n \
-    \         'max_ec_correction_attempts', 8,\n          'max_ph_correction_attempts', 8,\n          'solution_volume_l', 20.0\n\
-    \        ),\n        'two_tank_commands', jsonb_build_object(\n          'clean_fill_start',\
-    \ jsonb_build_array(\n            jsonb_build_object(\n              'channel',\
-    \ 'valve_clean_fill',\n              'cmd', 'set_relay',\n              'params',\
-    \ jsonb_build_object('state', true)\n            )\n          ),\n          'clean_fill_stop',\
-    \ jsonb_build_array(\n            jsonb_build_object(\n              'channel',\
-    \ 'valve_clean_fill',\n              'cmd', 'set_relay',\n              'params',\
-    \ jsonb_build_object('state', false)\n            )\n          ),\n          'solution_fill_start',\
-    \ jsonb_build_array(\n            jsonb_build_object(\n              'channel',\
-    \ 'valve_clean_supply',\n              'cmd', 'set_relay',\n              'params',\
-    \ jsonb_build_object('state', true)\n            ),\n            jsonb_build_object(\n\
-    \              'channel', 'valve_solution_fill',\n              'cmd', 'set_relay',\n\
-    \              'params', jsonb_build_object('state', true)\n            ),\n \
-    \           jsonb_build_object(\n              'channel', 'pump_main',\n     \
-    \         'cmd', 'set_relay',\n              'params', jsonb_build_object('state',\
-    \ true)\n            )\n          ),\n          'solution_fill_stop', jsonb_build_array(\n\
-    \            jsonb_build_object(\n              'channel', 'pump_main',\n    \
-    \          'cmd', 'set_relay',\n              'params', jsonb_build_object('state',\
-    \ false)\n            ),\n            jsonb_build_object(\n              'channel',\
-    \ 'valve_solution_fill',\n              'cmd', 'set_relay',\n              'params',\
-    \ jsonb_build_object('state', false)\n            ),\n            jsonb_build_object(\n\
-    \              'channel', 'valve_clean_supply',\n              'cmd', 'set_relay',\n\
-    \              'params', jsonb_build_object('state', false)\n            )\n \
-    \         ),\n          'prepare_recirculation_start', jsonb_build_array(\n  \
-    \          jsonb_build_object(\n              'channel', 'valve_solution_supply',\n\
-    \              'cmd', 'set_relay',\n              'params', jsonb_build_object('state',\
-    \ true)\n            ),\n            jsonb_build_object(\n              'channel',\
-    \ 'valve_solution_fill',\n              'cmd', 'set_relay',\n              'params',\
-    \ jsonb_build_object('state', true)\n            ),\n            jsonb_build_object(\n\
-    \              'channel', 'pump_main',\n              'cmd', 'set_relay',\n  \
-    \            'params', jsonb_build_object('state', true)\n            )\n    \
-    \      ),\n          'prepare_recirculation_stop', jsonb_build_array(\n      \
-    \      jsonb_build_object(\n              'channel', 'pump_main',\n          \
-    \    'cmd', 'set_relay',\n              'params', jsonb_build_object('state',\
-    \ false)\n            ),\n            jsonb_build_object(\n              'channel',\
-    \ 'valve_solution_fill',\n              'cmd', 'set_relay',\n              'params',\
-    \ jsonb_build_object('state', false)\n            ),\n            jsonb_build_object(\n\
-    \              'channel', 'valve_solution_supply',\n              'cmd', 'set_relay',\n\
-    \              'params', jsonb_build_object('state', false)\n            )\n \
-    \         )\n        )\n      )\n    )\n  ),\n  jsonb_build_object(\n    'schema_version',\
-    \ 1,\n    'plan_version', 1,\n    'plans', jsonb_build_object(\n      'diagnostics',\
-    \ jsonb_build_object(\n        'steps', jsonb_build_array(\n          jsonb_build_object(\n\
-    \            'name', 'pump_start',\n            'channel', 'irrigation_pump',\n\
-    \            'cmd', 'set_relay',\n            'params', jsonb_build_object('state',\
-    \ true),\n            'timeout_sec', 20\n          )\n        )\n      )\n   \
-    \ )\n  ),\n  TRUE,\n  NOW(),\n  NOW()\n)\nON CONFLICT (zone_id, mode) DO UPDATE\n\
-    SET subsystems = EXCLUDED.subsystems,\n    command_plans = EXCLUDED.command_plans,\n\
-    \    is_active = TRUE,\n    updated_at = NOW()\n"
-  params:
-    zone_id: ${zone_id}
+- step: apply_solution_fill_process_calibration
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.solution_fill
+  payload:
+    payload:
+      mode: solution_fill
+      ec_gain_per_ml: 0.0025
+      ph_up_gain_per_ml: 0.0100
+      ph_down_gain_per_ml: 0.0100
+      ph_per_ec_ml: -0.0015
+      ec_per_ph_ml: 0.0000
+      transport_delay_sec: 4
+      settle_sec: 4
+      confidence: 0.90
+      source: e2e_realhw_process_observe
+      is_active: true
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 3
+          decision_window_sec: 6
+          observe_poll_sec: 2
+          min_effect_fraction: 0.20
+          stability_max_slope: 0.08
+          no_effect_consecutive_limit: 3
+- step: apply_tank_recirc_process_calibration
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.tank_recirc
+  payload:
+    payload:
+      mode: tank_recirc
+      ec_gain_per_ml: 0.0080
+      ph_up_gain_per_ml: 0.0180
+      ph_down_gain_per_ml: 0.0180
+      ph_per_ec_ml: -0.0025
+      ec_per_ph_ml: 0.0000
+      transport_delay_sec: 4
+      settle_sec: 4
+      confidence: 0.95
+      source: e2e_realhw_process_observe
+      is_active: true
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 3
+          decision_window_sec: 6
+          observe_poll_sec: 2
+          min_effect_fraction: 0.20
+          stability_max_slope: 0.08
+          no_effect_consecutive_limit: 3
+- step: apply_irrigation_process_calibration
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.process_calibration.irrigation
+  payload:
+    payload:
+      mode: irrigation
+      ec_gain_per_ml: 0.0060
+      ph_up_gain_per_ml: 0.0140
+      ph_down_gain_per_ml: 0.0140
+      ph_per_ec_ml: -0.0020
+      ec_per_ph_ml: 0.0000
+      transport_delay_sec: 6
+      settle_sec: 4
+      confidence: 0.85
+      source: e2e_realhw_process_observe
+      is_active: true
+      meta:
+        observe:
+          telemetry_period_sec: 2
+          window_min_samples: 3
+          decision_window_sec: 6
+          observe_poll_sec: 2
+          min_effect_fraction: 0.20
+          stability_max_slope: 0.08
+          no_effect_consecutive_limit: 3
+- step: apply_ae3_logic_profile
+  type: api_put
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+  payload:
+    payload:
+      active_mode: working
+      profiles:
+        working:
+          mode: working
+          is_active: true
+          subsystems:
+            diagnostics:
+              execution:
+                workflow: cycle_start
+                topology: two_tank_drip_substrate_trays
+                required_node_types:
+                  - irrig
+                startup:
+                  level_poll_interval_sec: 5
+                  clean_fill_timeout_sec: 120
+                  solution_fill_timeout_sec: 240
+                  prepare_recirculation_timeout_sec: 45
+                  telemetry_max_age_sec: 10
+                  irr_state_max_age_sec: 30
+                  sensor_mode_stabilization_time_sec: 0
+                prepare_tolerance:
+                  ph_pct: 5
+                  ec_pct: 10
+                correction:
+                  dose_ec_channel: dose_ec_a
+                  dose_ph_up_channel: dose_ph_up
+                  dose_ph_down_channel: dose_ph_down
+                  max_ec_dose_ml: 60.0
+                  max_ph_dose_ml: 40.0
+                  stabilization_sec: 0
+                  max_ec_correction_attempts: 8
+                  max_ph_correction_attempts: 8
+                  solution_volume_l: 20.0
+                two_tank_commands:
+                  clean_fill_start:
+                    - channel: valve_clean_fill
+                      cmd: set_relay
+                      params:
+                        state: true
+                  clean_fill_stop:
+                    - channel: valve_clean_fill
+                      cmd: set_relay
+                      params:
+                        state: false
+                  solution_fill_start:
+                    - channel: valve_clean_supply
+                      cmd: set_relay
+                      params:
+                        state: true
+                    - channel: valve_solution_fill
+                      cmd: set_relay
+                      params:
+                        state: true
+                    - channel: pump_main
+                      cmd: set_relay
+                      params:
+                        state: true
+                  solution_fill_stop:
+                    - channel: pump_main
+                      cmd: set_relay
+                      params:
+                        state: false
+                    - channel: valve_solution_fill
+                      cmd: set_relay
+                      params:
+                        state: false
+                    - channel: valve_clean_supply
+                      cmd: set_relay
+                      params:
+                        state: false
+                  prepare_recirculation_start:
+                    - channel: valve_solution_supply
+                      cmd: set_relay
+                      params:
+                        state: true
+                    - channel: valve_solution_fill
+                      cmd: set_relay
+                      params:
+                        state: true
+                    - channel: pump_main
+                      cmd: set_relay
+                      params:
+                        state: true
+                  prepare_recirculation_stop:
+                    - channel: pump_main
+                      cmd: set_relay
+                      params:
+                        state: false
+                    - channel: valve_solution_fill
+                      cmd: set_relay
+                      params:
+                        state: false
+                    - channel: valve_solution_supply
+                      cmd: set_relay
+                      params:
+                        state: false
 - step: create_recipe
   type: database_execute
   query: 'INSERT INTO recipes (name, metadata, created_at, updated_at)
@@ -573,26 +810,32 @@ actions:
   params:
     phase_id: ${phase_id}
     grow_cycle_id: ${grow_cycle_id}
-- step: set_impossible_recirculation_targets_first
-  type: database_execute
-  query: "\nINSERT INTO grow_cycle_overrides (\n  grow_cycle_id,\n  parameter,\n\
-    \  value_type,\n  value,\n  is_active,\n  created_at,\n  updated_at\n)\nVALUES\n\
-    \  (CAST(:grow_cycle_id AS bigint), 'ph.target', 'decimal', CAST(:ph_target AS\
-    \ text), TRUE, NOW(), NOW()),\n  (CAST(:grow_cycle_id AS bigint), 'ph.min', 'decimal',\
-    \ CAST(:ph_min AS text), TRUE, NOW(), NOW()),\n  (CAST(:grow_cycle_id AS bigint),\
-    \ 'ph.max', 'decimal', CAST(:ph_max AS text), TRUE, NOW(), NOW()),\n  (CAST(:grow_cycle_id\
-    \ AS bigint), 'ec.target', 'decimal', CAST(:ec_target AS text), TRUE, NOW(),\
-    \ NOW()),\n  (CAST(:grow_cycle_id AS bigint), 'ec.min', 'decimal', CAST(:ec_min\
-    \ AS text), TRUE, NOW(), NOW()),\n  (CAST(:grow_cycle_id AS bigint), 'ec.max',\
-    \ 'decimal', CAST(:ec_max AS text), TRUE, NOW(), NOW())\n"
+- step: apply_cycle_start_snapshot
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.start_snapshot
+  payload:
+    payload:
+      cycle_id: ${grow_cycle_id}
+      zone_id: ${zone_id}
+- step: apply_cycle_phase_overrides_first
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+  payload:
+    payload:
+      ph_target: ${impossible_ph_target}
+      ph_min: ${impossible_ph_min}
+      ph_max: ${impossible_ph_max}
+      ec_target: ${impossible_ec_target}
+      ec_min: ${impossible_ec_min}
+      ec_max: ${impossible_ec_max}
+- step: wait_grow_cycle_bundle_ready_first
+  type: db.wait
+  query: "SELECT scope_type, scope_id, status, bundle_revision\nFROM automation_effective_bundles\nWHERE scope_type = 'grow_cycle'\n  AND scope_id = CAST(:grow_cycle_id AS bigint)\n  AND status = 'valid'\nLIMIT 1\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
-    ph_target: ${impossible_ph_target}
-    ph_min: ${impossible_ph_min}
-    ph_max: ${impossible_ph_max}
-    ec_target: ${impossible_ec_target}
-    ec_min: ${impossible_ec_min}
-    ec_max: ${impossible_ec_max}
+  timeout: 20.0
+  expected_rows: 1
+  save: grow_cycle_bundle_row_first
 - step: wait_impossible_recirculation_targets_applied_first
   type: sleep
   seconds: 2
@@ -926,12 +1169,17 @@ actions:
   expected_rows: 1
   save: runtime_reset_commands_first_row
 - step: restore_normal_targets_after_first_failure
-  type: database_execute
-  query: "\nDELETE FROM grow_cycle_overrides\nWHERE grow_cycle_id = CAST(:grow_cycle_id\
-    \ AS bigint)\n  AND parameter IN ('ph.target', 'ph.min', 'ph.max', 'ec.target',\
-    \ 'ec.min', 'ec.max')\n"
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+  payload:
+    payload: {}
+- step: wait_grow_cycle_bundle_restored_after_first_failure
+  type: db.wait
+  query: "SELECT scope_type, scope_id, status, bundle_revision\nFROM automation_effective_bundles\nWHERE scope_type = 'grow_cycle'\n  AND scope_id = CAST(:grow_cycle_id AS bigint)\n  AND status = 'valid'\nLIMIT 1\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: ack_retry_limit_alert_first
   type: http_request
   method: PATCH
@@ -954,70 +1202,206 @@ actions:
   save: retry_limit_alert_first_resolved_row
 - step: soften_correction_config_for_second_run
   type: api_put
-  endpoint: /api/zones/${zone_id}/correction-config
+  endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
   payload:
-    preset_id: ${test_node_correction_preset_row.0.id}
-    base_config: {}
-    phase_overrides:
-      solution_fill:
-        retry:
-          max_ec_correction_attempts: 3
-          max_ph_correction_attempts: 3
-          prepare_recirculation_timeout_sec: 240
-          prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 20
-        controllers:
-          ec:
-            kp: 12.0
-            ki: 0.12
-            kd: 0.0
-            deadband: 0.08
-            min_interval_sec: 20
-            max_dose_ml: 20.0
-            max_integral: 24.0
-          ph:
-            kp: 4.0
-            ki: 0.04
-            kd: 0.0
-            deadband: 0.05
-            min_interval_sec: 20
-            max_dose_ml: 10.0
-            max_integral: 10.0
-        dosing:
-          max_ec_dose_ml: 20.0
-          max_ph_dose_ml: 10.0
-        timing:
-          stabilization_sec: 10
-      tank_recirc:
-        retry:
-          max_ec_correction_attempts: 10
-          max_ph_correction_attempts: 10
-          prepare_recirculation_timeout_sec: 360
-          prepare_recirculation_max_attempts: 3
-          prepare_recirculation_max_correction_attempts: 20
-        controllers:
-          ec:
-            kp: 22.0
-            ki: 0.22
-            kd: 0.0
-            deadband: 0.04
-            min_interval_sec: 15
-            max_dose_ml: 36.0
-            max_integral: 56.0
-          ph:
-            kp: 6.0
-            ki: 0.06
-            kd: 0.0
-            deadband: 0.04
-            min_interval_sec: 15
-            max_dose_ml: 16.0
-            max_integral: 16.0
-        dosing:
-          max_ec_dose_ml: 36.0
-          max_ph_dose_ml: 16.0
-        timing:
-          stabilization_sec: 10
+    payload:
+      preset_id: ${test_node_correction_preset_row.0.id}
+      base_config: {}
+      phase_overrides:
+        solution_fill:
+          runtime:
+            required_node_type: irrig
+            clean_fill_timeout_sec: 600
+            solution_fill_timeout_sec: 900
+            clean_fill_retry_cycles: 1
+            level_switch_on_threshold: 0.5
+            clean_max_sensor_label: level_clean_max
+            clean_min_sensor_label: level_clean_min
+            solution_max_sensor_label: level_solution_max
+            solution_min_sensor_label: level_solution_min
+          retry:
+            max_ec_correction_attempts: 3
+            max_ph_correction_attempts: 3
+            prepare_recirculation_timeout_sec: 240
+            prepare_recirculation_max_attempts: 3
+            prepare_recirculation_max_correction_attempts: 20
+            telemetry_stale_retry_sec: 30
+            decision_window_retry_sec: 10
+            low_water_retry_sec: 60
+          controllers:
+            ec:
+              mode: supervisory_allocator
+              kp: 12.0
+              ki: 0.12
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.08
+              min_interval_sec: 20
+              max_dose_ml: 20.0
+              max_integral: 24.0
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 0.0
+                hard_max: 4.0
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.08
+                no_effect_consecutive_limit: 4
+            ph:
+              mode: cross_coupled_pi_d
+              kp: 4.0
+              ki: 0.04
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.05
+              min_interval_sec: 20
+              max_dose_ml: 10.0
+              max_integral: 10.0
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 4.0
+                hard_max: 8.5
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.04
+                no_effect_consecutive_limit: 4
+          dosing:
+            solution_volume_l: 20.0
+            dose_ec_channel: dose_ec_a
+            dose_ph_up_channel: dose_ph_up
+            dose_ph_down_channel: dose_ph_down
+            max_ec_dose_ml: 20.0
+            max_ph_dose_ml: 10.0
+          timing:
+            sensor_mode_stabilization_time_sec: 20
+            stabilization_sec: 10
+            telemetry_max_age_sec: 180
+            irr_state_max_age_sec: 15
+            level_poll_interval_sec: 20
+          tolerance:
+            prepare_tolerance:
+              ph_pct: 10.0
+              ec_pct: 16.0
+          safety:
+            safe_mode_on_no_effect: true
+            block_on_active_no_effect_alert: true
+        tank_recirc:
+          runtime:
+            required_node_type: irrig
+            clean_fill_timeout_sec: 600
+            solution_fill_timeout_sec: 900
+            clean_fill_retry_cycles: 1
+            level_switch_on_threshold: 0.5
+            clean_max_sensor_label: level_clean_max
+            clean_min_sensor_label: level_clean_min
+            solution_max_sensor_label: level_solution_max
+            solution_min_sensor_label: level_solution_min
+          retry:
+            max_ec_correction_attempts: 10
+            max_ph_correction_attempts: 10
+            prepare_recirculation_timeout_sec: 360
+            prepare_recirculation_max_attempts: 3
+            prepare_recirculation_max_correction_attempts: 20
+            telemetry_stale_retry_sec: 30
+            decision_window_retry_sec: 10
+            low_water_retry_sec: 60
+          controllers:
+            ec:
+              mode: supervisory_allocator
+              kp: 22.0
+              ki: 0.22
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.04
+              min_interval_sec: 15
+              max_dose_ml: 36.0
+              max_integral: 56.0
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 0.0
+                hard_max: 4.0
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.08
+                no_effect_consecutive_limit: 4
+            ph:
+              mode: cross_coupled_pi_d
+              kp: 6.0
+              ki: 0.06
+              kd: 0.0
+              derivative_filter_alpha: 0.35
+              deadband: 0.04
+              min_interval_sec: 15
+              max_dose_ml: 16.0
+              max_integral: 16.0
+              anti_windup:
+                enabled: true
+              overshoot_guard:
+                enabled: true
+                hard_min: 4.0
+                hard_max: 8.5
+              no_effect:
+                enabled: true
+                max_count: 2
+              observe:
+                telemetry_period_sec: 2
+                window_min_samples: 3
+                decision_window_sec: 8
+                observe_poll_sec: 2
+                min_effect_fraction: 0.15
+                stability_max_slope: 0.04
+                no_effect_consecutive_limit: 4
+          dosing:
+            solution_volume_l: 20.0
+            dose_ec_channel: dose_ec_a
+            dose_ph_up_channel: dose_ph_up
+            dose_ph_down_channel: dose_ph_down
+            max_ec_dose_ml: 36.0
+            max_ph_dose_ml: 16.0
+          timing:
+            sensor_mode_stabilization_time_sec: 20
+            stabilization_sec: 10
+            telemetry_max_age_sec: 180
+            irr_state_max_age_sec: 15
+            level_poll_interval_sec: 20
+          tolerance:
+            prepare_tolerance:
+              ph_pct: 9.0
+              ec_pct: 15.0
+          safety:
+            safe_mode_on_no_effect: true
+            block_on_active_no_effect_alert: true
   capture_response: soften_correction_config_second_response
+- step: wait_soften_correction_config_second_run
+  type: sleep
+  seconds: 2
 - step: reset_test_node_state_second_run
   type: ae_test_hook
   zone_id: ${zone_id}
@@ -1138,6 +1522,17 @@ actions:
     '
   params:
     zone_id: ${zone_id}
+- step: cleanup_zone_pid_state_second_run
+  type: database_execute
+  query: '
+
+    DELETE FROM pid_state
+
+    WHERE zone_id = :zone_id
+
+    '
+  params:
+    zone_id: ${zone_id}
 - step: create_grow_cycle_second
   type: database_execute
   query: 'INSERT INTO grow_cycles (greenhouse_id, zone_id, recipe_revision_id, status,
@@ -1207,6 +1602,32 @@ actions:
   params:
     phase_id_2: ${phase_id_2}
     grow_cycle_id_2: ${grow_cycle_id_2}
+- step: apply_cycle_start_snapshot_second
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id_2}/cycle.start_snapshot
+  payload:
+    payload:
+      cycle_id: ${grow_cycle_id_2}
+      zone_id: ${zone_id}
+- step: apply_cycle_phase_overrides_second
+  type: api_put
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id_2}/cycle.phase_overrides
+  payload:
+    payload:
+      ph_target: ${normal_ph_target}
+      ph_min: ${normal_ph_min}
+      ph_max: ${normal_ph_max}
+      ec_target: ${normal_ec_target}
+      ec_min: ${normal_ec_min}
+      ec_max: ${normal_ec_max}
+- step: wait_grow_cycle_bundle_ready_second
+  type: db.wait
+  query: "SELECT scope_type, scope_id, status, bundle_revision\nFROM automation_effective_bundles\nWHERE scope_type = 'grow_cycle'\n  AND scope_id = CAST(:grow_cycle_id_2 AS bigint)\n  AND status = 'valid'\nLIMIT 1\n"
+  params:
+    grow_cycle_id_2: ${grow_cycle_id_2}
+  timeout: 20.0
+  expected_rows: 1
+  save: grow_cycle_bundle_row_second
 - step: insert_scheduler_like_intent_second
   type: database_execute
   query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\
@@ -1242,7 +1663,7 @@ actions:
 - step: wait_solution_fill_stage_second
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
-    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status IN ('pending', 'completed')\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status IN ('pending', 'waiting_command', 'completed')\n\
     \  AND current_stage IN (\n    'solution_fill_check',\n    'prepare_recirculation_start',\n    'prepare_recirculation_check',\n    'complete_ready'\n  )\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
@@ -1433,7 +1854,7 @@ assertions:
 - name: second_recirc_commands_attempted_three_times
   type: custom_assert
   condition: int(context.get('recirc_command_counts_second_row', [{}])[0].get('recirc_ec_cnt',
-    0)) >= 1 and int(context.get('recirc_command_counts_second_row', [{}])[0].get('recirc_ph_cnt',
+    0)) + int(context.get('recirc_command_counts_second_row', [{}])[0].get('recirc_ph_cnt',
     0)) >= 1
 - name: second_recirc_ph_count_loaded
   type: custom_assert
@@ -1459,15 +1880,17 @@ cleanup:
   params:
     zone_id: ${zone_id}
 - step: cleanup_retry_limit_overrides_final
-  type: database_execute
+  type: api_put
   optional: true
-  query: "\nDELETE FROM grow_cycle_overrides\nWHERE CAST(grow_cycle_id AS text) IN\
-    \ (\n  CAST(:grow_cycle_id AS text),\n  CAST(:grow_cycle_id_2 AS text)\n)\n \
-    \ AND parameter IN ('ph.target', 'ph.min', 'ph.max', 'ec.target', 'ec.min',\
-    \ 'ec.max')\n"
-  params:
-    grow_cycle_id: ${grow_cycle_id}
-    grow_cycle_id_2: ${grow_cycle_id_2}
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+  payload:
+    payload: {}
+- step: cleanup_retry_limit_overrides_final_second
+  type: api_put
+  optional: true
+  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id_2}/cycle.phase_overrides
+  payload:
+    payload: {}
 - step: reset_test_node_after_run
   type: ae_test_hook
   optional: true

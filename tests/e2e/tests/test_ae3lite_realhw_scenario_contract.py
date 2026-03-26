@@ -15,6 +15,9 @@ if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
 
 SCENARIO_PATH = E2E_ROOT / "scenarios" / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"
+READY_DURING_FILL_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E101_ae3_two_tank_realhw_ready_during_fill.yaml"
+)
 SETUP_READY_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E101_ae3_two_tank_realhw_setup_ready.yaml"
 )
@@ -154,15 +157,83 @@ class TestAe3LiteRetryLimitRealHwScenarioContract(unittest.TestCase):
 
     def test_retry_limit_scenario_applies_fast_tank_recirc_overrides(self) -> None:
         step = self._find_step("actions", "apply_test_node_correction_preset")
-        payload = step.get("payload") or {}
+        payload = (step.get("payload") or {}).get("payload") or {}
         phase_overrides = payload.get("phase_overrides") or {}
         tank_recirc = phase_overrides.get("tank_recirc") or {}
         retry_cfg = tank_recirc.get("retry") or {}
         timing_cfg = tank_recirc.get("timing") or {}
 
-        self.assertEqual(retry_cfg.get("prepare_recirculation_timeout_sec"), 30)
+        self.assertEqual(retry_cfg.get("prepare_recirculation_timeout_sec"), 45)
         self.assertEqual(retry_cfg.get("prepare_recirculation_max_attempts"), 3)
         self.assertEqual(timing_cfg.get("stabilization_sec"), 10)
+
+    def test_retry_limit_scenario_restores_targets_via_authority_api(self) -> None:
+        restore_step = self._find_step("actions", "restore_normal_targets_after_first_failure")
+        wait_step = self._find_step("actions", "wait_grow_cycle_bundle_restored_after_first_failure")
+
+        self.assertEqual(restore_step.get("type"), "api_put")
+        self.assertEqual(
+            restore_step.get("endpoint"),
+            "/api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides",
+        )
+        self.assertEqual((restore_step.get("payload") or {}).get("payload"), {})
+
+        self.assertEqual(wait_step.get("type"), "db.wait")
+        self.assertIn("automation_effective_bundles", str(wait_step.get("query") or ""))
+
+
+class TestAe3LiteReadyDuringFillRealHwScenarioContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        with READY_DURING_FILL_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
+            cls.scenario = yaml.safe_load(fh)
+
+    def _find_step(self, section: str, step_name: str) -> dict:
+        for item in self.scenario.get(section, []):
+            if item.get("step") == step_name:
+                return item
+        self.fail(f"Step '{step_name}' is missing in section '{section}'")
+
+    def test_post_fill_handoff_has_no_extra_correction_and_closes_cleanly(self) -> None:
+        wait_force_step = self._find_step("actions", "wait_force_solution_tank_full_done")
+        post_fill_step = self._find_step("actions", "load_post_fill_activity")
+        stabilize_wait_step = self._find_step("actions", "wait_stabilize_ph_ec_done")
+        stabilize_window_step = self._find_step("actions", "wait_stabilized_ph_ec_window")
+        assertion = next(
+            item
+            for item in self.scenario.get("assertions", [])
+            if item.get("name") == "post_fill_handoff_closed_without_extra_correction"
+        )
+
+        wait_force_query = str(wait_force_step.get("query") or "")
+        self.assertIn("created_at", wait_force_query)
+        self.assertEqual(wait_force_step.get("save"), "force_solution_tank_full_done_row")
+
+        stabilize_wait_query = str(stabilize_wait_step.get("query") or "")
+        stabilize_window_query = str(stabilize_window_step.get("query") or "")
+        self.assertIn("created_at", stabilize_wait_query)
+        self.assertEqual(stabilize_wait_step.get("save"), "stabilize_ph_ec_done_row")
+        self.assertIn("tsamp.ts >= CAST(:after_stabilize_at AS timestamptz)", stabilize_window_query)
+        self.assertEqual(
+            stabilize_window_step.get("params", {}).get("after_stabilize_at"),
+            "${stabilize_ph_ec_done_row.0.created_at}",
+        )
+
+        self.assertEqual(post_fill_step.get("type"), "database_query")
+        post_fill_query = str(post_fill_step.get("query") or "")
+        self.assertIn("prepare_recirculation_start_cnt_after_full", post_fill_query)
+        self.assertIn("prepare_recirculation_stop_cnt_after_full", post_fill_query)
+        self.assertIn("correction_cmd_cnt_after_full", post_fill_query)
+        self.assertIn("created_at >= CAST(:after_tank_full_at AS timestamptz)", post_fill_query)
+        self.assertEqual(
+            post_fill_step.get("params", {}).get("after_tank_full_at"),
+            "${force_solution_tank_full_done_row.0.created_at}",
+        )
+
+        condition = str(assertion.get("condition") or "")
+        self.assertIn("correction_cmd_cnt_after_full", condition)
+        self.assertIn("prepare_recirculation_start_cnt_after_full", condition)
+        self.assertIn("prepare_recirculation_stop_cnt_after_full", condition)
 
 
 class TestAe3LiteRetryLimitResolveReadyRealHwScenarioContract(unittest.TestCase):
@@ -217,6 +288,52 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
             if item.get("step") == step_name:
                 return item
         self.fail(f"Step '{step_name}' is missing in section '{section}'")
+
+    def test_fill_ph_command_is_optional_but_recirc_ph_command_is_still_required(self) -> None:
+        fill_step = self._find_step("actions", "load_fill_ph_correction_commands_if_any")
+        recirc_stage_step = self._find_step("actions", "wait_prepare_recirculation_stage")
+        recirc_ph_step = self._find_step("actions", "wait_recirculation_ph_correction_command")
+        assertion = next(
+            item
+            for item in self.scenario.get("assertions", [])
+            if item.get("name") == "ph_down_correction_logged"
+        )
+
+        self.assertEqual(fill_step.get("type"), "database_query")
+        fill_query = str(fill_step.get("query") or "")
+        self.assertIn("channel IN ('pump_acid', 'pump_base')", fill_query)
+        self.assertNotIn("expected_rows", fill_step)
+
+        recirc_stage_query = str(recirc_stage_step.get("query") or "")
+        self.assertIn("updated_at AS stage_started_at", recirc_stage_query)
+
+        recirc_ph_query = str(recirc_ph_step.get("query") or "")
+        self.assertIn("created_at >= CAST(:after_stage_started_at AS timestamptz)", recirc_ph_query)
+        self.assertEqual(
+            recirc_ph_step.get("params", {}).get("after_command_id"),
+            "${recirc_ec_correction_row.0.id}",
+        )
+
+        condition = str(assertion.get("condition") or "")
+        self.assertIn("ph_down_correction_cnt", condition)
+        self.assertIn(">= 1", condition)
+
+    def test_process_observe_windows_match_default_real_hardware_contract(self) -> None:
+        for step_name in [
+            "apply_solution_fill_process_calibration",
+            "apply_tank_recirc_process_calibration",
+            "apply_irrigation_process_calibration",
+        ]:
+            step = self._find_step("actions", step_name)
+            observe = (
+                (step.get("payload") or {})
+                .get("payload", {})
+                .get("meta", {})
+                .get("observe", {})
+            )
+            self.assertEqual(observe.get("telemetry_period_sec"), 2)
+            self.assertEqual(observe.get("window_min_samples"), 3)
+            self.assertEqual(observe.get("decision_window_sec"), 6)
 
     def test_ready_targets_wait_uses_phase_windows(self) -> None:
         step = self._find_step("actions", "wait_targets_reached_on_node")
@@ -278,7 +395,7 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
         condition = str(assertion.get("condition") or "")
         self.assertIn("len(context.get('targets_reached_after_hot_reload_row', [])) == 1", condition)
 
-        payload = hot_reload_step.get("payload") or {}
+        payload = (hot_reload_step.get("payload") or {}).get("payload") or {}
         phase_overrides = payload.get("phase_overrides") or {}
         solution_fill = phase_overrides.get("solution_fill") or {}
         tank_recirc = phase_overrides.get("tank_recirc") or {}
@@ -296,6 +413,25 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
         clamp_condition = str(clamp_assertion.get("condition") or "")
         self.assertIn("<= 30.0", clamp_condition)
         self.assertIn("<= 16.0", clamp_condition)
+
+    def test_hot_reload_ack_uses_authority_document_and_current_api(self) -> None:
+        wait_step = self._find_step("actions", "wait_hot_reload_apply_ack")
+        get_step = self._find_step("actions", "get_zone_correction_config_after_hot_reload")
+
+        self.assertEqual(wait_step.get("type"), "db.wait")
+        wait_query = str(wait_step.get("query") or "")
+        self.assertIn("FROM automation_config_documents acd", wait_query)
+        self.assertIn("acd.namespace = 'zone.correction'", wait_query)
+        self.assertIn("acd.scope_type = 'zone'", wait_query)
+        self.assertIn("acd.payload->>'last_applied_version'", wait_query)
+        self.assertIn("acd.payload->>'last_applied_at'", wait_query)
+        self.assertNotIn("zone_correction_configs", wait_query)
+
+        self.assertEqual(get_step.get("type"), "api_get")
+        self.assertEqual(
+            get_step.get("endpoint"),
+            "/api/automation-configs/zone/${zone_id}/zone.correction",
+        )
 
 
 class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):

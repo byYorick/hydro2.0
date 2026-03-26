@@ -230,69 +230,70 @@ actions:
 
   - step: apply_test_node_correction_preset
     type: api_put
-    endpoint: /api/zones/${zone_id}/correction-config
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
     payload:
-      preset_id: ${test_node_correction_preset_row.0.id}
-      base_config: {}
-      phase_overrides:
-        solution_fill:
-          retry:
-            max_ec_correction_attempts: 3
-            max_ph_correction_attempts: 3
-            prepare_recirculation_timeout_sec: 240
-            prepare_recirculation_max_attempts: 3
-            prepare_recirculation_max_correction_attempts: 20
-          controllers:
-            ec:
-              kp: 12.0
-              ki: 0.12
-              kd: 0.0
-              deadband: 0.08
-              max_dose_ml: 20.0
-              max_integral: 24.0
-              min_interval_sec: 20
-            ph:
-              kp: 4.0
-              ki: 0.04
-              kd: 0.0
-              deadband: 0.05
-              max_dose_ml: 10.0
-              max_integral: 10.0
-              min_interval_sec: 20
-          dosing:
-            max_ec_dose_ml: 20.0
-            max_ph_dose_ml: 10.0
-          timing:
-            stabilization_sec: 10
-        tank_recirc:
-          retry:
-            max_ec_correction_attempts: 10
-            max_ph_correction_attempts: 10
-            prepare_recirculation_timeout_sec: 300
-            prepare_recirculation_max_attempts: 3
-            prepare_recirculation_max_correction_attempts: 20
-          controllers:
-            ec:
-              kp: 18.0
-              ki: 0.18
-              kd: 0.0
-              deadband: 0.05
-              max_dose_ml: 30.0
-              max_integral: 48.0
-              min_interval_sec: 15
-            ph:
-              kp: 6.0
-              ki: 0.06
-              kd: 0.0
-              deadband: 0.04
-              max_dose_ml: 16.0
-              max_integral: 16.0
-              min_interval_sec: 15
-          dosing:
-            max_ec_dose_ml: 30.0
-            max_ph_dose_ml: 16.0
-          timing:
-            stabilization_sec: 10
+      payload:
+        preset_id: ${test_node_correction_preset_row.0.id}
+        base_config: {}
+        phase_overrides:
+          solution_fill:
+            retry:
+              max_ec_correction_attempts: 3
+              max_ph_correction_attempts: 3
+              prepare_recirculation_timeout_sec: 240
+              prepare_recirculation_max_attempts: 3
+              prepare_recirculation_max_correction_attempts: 20
+            controllers:
+              ec:
+                kp: 12.0
+                ki: 0.12
+                kd: 0.0
+                deadband: 0.08
+                max_dose_ml: 20.0
+                max_integral: 24.0
+                min_interval_sec: 20
+              ph:
+                kp: 4.0
+                ki: 0.04
+                kd: 0.0
+                deadband: 0.05
+                max_dose_ml: 10.0
+                max_integral: 10.0
+                min_interval_sec: 20
+            dosing:
+              max_ec_dose_ml: 20.0
+              max_ph_dose_ml: 10.0
+            timing:
+              stabilization_sec: 10
+          tank_recirc:
+            retry:
+              max_ec_correction_attempts: 10
+              max_ph_correction_attempts: 10
+              prepare_recirculation_timeout_sec: 300
+              prepare_recirculation_max_attempts: 3
+              prepare_recirculation_max_correction_attempts: 20
+            controllers:
+              ec:
+                kp: 18.0
+                ki: 0.18
+                kd: 0.0
+                deadband: 0.05
+                max_dose_ml: 30.0
+                max_integral: 48.0
+                min_interval_sec: 15
+              ph:
+                kp: 6.0
+                ki: 0.06
+                kd: 0.0
+                deadband: 0.04
+                max_dose_ml: 16.0
+                max_integral: 16.0
+                min_interval_sec: 15
+            dosing:
+              max_ec_dose_ml: 30.0
+              max_ph_dose_ml: 16.0
+            timing:
+              stabilization_sec: 10
     save: correction_config_update_response
 
   - step: upsert_irrig_channels

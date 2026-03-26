@@ -7,10 +7,12 @@ import logging
 import os
 from datetime import timezone
 from datetime import datetime
+from datetime import timedelta
 from typing import Any, Mapping
 
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
 from common.db import create_zone_event
+from common.infra_alerts import send_infra_alert
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import (
     PlannerConfigurationError,
@@ -25,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 TASK_EXECUTION_TIMEOUT_CANCEL_MSG = "ae3_task_execution_timeout"
 NODE_STALE_ONLINE_THRESHOLD_SEC = max(1, int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120")))
+SNAPSHOT_TRANSIENT_RETRY_SEC = max(1, int(os.getenv("AE3_SNAPSHOT_TRANSIENT_RETRY_SEC", "10")))
+SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
+    SNAPSHOT_TRANSIENT_RETRY_SEC,
+    int(os.getenv("AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC", "90")),
+)
+SNAPSHOT_NO_ONLINE_ACTUATORS_TOKEN = "has no online actuator channels"
+SNAPSHOT_RETRY_SCHEDULED_CODE = "infra_ae3_snapshot_retry_scheduled"
+SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
 
 
 class ExecuteTaskUseCase:
@@ -192,7 +202,53 @@ class ExecuteTaskUseCase:
                 error_message="Task execution exceeded runtime timeout",
                 now=timeout_now,
             )
-        except (SnapshotBuildError, PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
+        except SnapshotBuildError as exc:
+            terminal_task = await self._load_terminal_task_or_none(
+                task_id=int(getattr(running_task, "id", 0) or 0),
+                fallback_task=running_task,
+            )
+            if terminal_task is not None:
+                logger.info(
+                    "AE3 task execution stopped after external terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
+                    getattr(terminal_task, "zone_id", None),
+                    getattr(terminal_task, "id", None),
+                    getattr(terminal_task, "status", None),
+                    type(exc).__name__,
+                )
+                return terminal_task
+
+            retried_task = await self._retry_transient_snapshot_gap(
+                task=running_task,
+                owner=owner,
+                error=exc,
+                now=now,
+            )
+            if retried_task is not None:
+                return retried_task
+
+            logger.error(
+                "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
+                running_task.zone_id,
+                running_task.id,
+                getattr(running_task, "current_stage", None),
+                type(exc).__name__,
+                "ae3_task_execution_failed",
+                exc,
+            )
+            await self._attempt_fail_safe_shutdown(
+                task=running_task,
+                snapshot=snapshot,
+                plan=plan,
+                now=now,
+            )
+            return await self._fail_closed(
+                task=running_task,
+                owner=owner,
+                error_code="ae3_task_execution_failed",
+                error_message=str(exc),
+                now=now,
+            )
+        except (PlannerConfigurationError, TaskExecutionError, TaskFinalizeError) as exc:
             terminal_task = await self._load_terminal_task_or_none(
                 task_id=int(getattr(running_task, "id", 0) or 0),
                 fallback_task=running_task,
@@ -252,6 +308,171 @@ class ExecuteTaskUseCase:
                 error_code="ae3_task_execution_unhandled_exception",
                 error_message=message,
                 now=now,
+            )
+
+    async def _retry_transient_snapshot_gap(
+        self,
+        *,
+        task: Any,
+        owner: str,
+        error: SnapshotBuildError,
+        now: datetime,
+    ) -> Any | None:
+        error_message = str(error).strip()
+        if not self._is_transient_snapshot_gap(task=task, error_message=error_message):
+            return None
+
+        stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
+        stage_age_sec = self._stage_age_sec(stage_entered_at=stage_entered_at, now=now)
+        details = {
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
+            "topology": str(getattr(task, "topology", "") or ""),
+            "error_code": SNAPSHOT_RETRY_EXHAUSTED_CODE,
+            "snapshot_error": error_message,
+            "snapshot_reason": "no_online_actuator_channels",
+            "stage_age_sec": stage_age_sec,
+            "max_stage_age_sec": SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC,
+        }
+
+        if stage_age_sec >= SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC:
+            final_message = (
+                f"{error_message} (transient snapshot retry budget exhausted after {stage_age_sec}s "
+                f"in stage {getattr(task, 'current_stage', '')})"
+            )
+            logger.error(
+                "AE3 transient snapshot gap exhausted retry budget: zone_id=%s task_id=%s stage=%s stage_age_sec=%s error=%s",
+                getattr(task, "zone_id", None),
+                getattr(task, "id", None),
+                getattr(task, "current_stage", None),
+                stage_age_sec,
+                error_message,
+            )
+            await self._emit_snapshot_retry_observability(
+                task=task,
+                now=now,
+                event_type="AE_SNAPSHOT_RETRY_EXHAUSTED",
+                alert_code="infra_ae3_snapshot_retry_exhausted",
+                alert_message=final_message,
+                severity="error",
+                details=details,
+            )
+            return await self._fail_closed(
+                task=task,
+                owner=owner,
+                error_code=SNAPSHOT_RETRY_EXHAUSTED_CODE,
+                error_message=final_message,
+                now=now,
+            )
+
+        update_stage = getattr(self._task_repository, "update_stage", None)
+        if not callable(update_stage):
+            raise TaskExecutionError(
+                "ae3_snapshot_retry_persist_failed",
+                f"Task repository does not support update_stage for transient snapshot retry task_id={task.id}",
+            )
+
+        due_at = now + timedelta(seconds=SNAPSHOT_TRANSIENT_RETRY_SEC)
+        updated_task = await update_stage(
+            task_id=int(getattr(task, "id", 0) or 0),
+            owner=owner,
+            workflow=getattr(task, "workflow"),
+            correction=getattr(task, "correction", None),
+            due_at=due_at,
+            now=now,
+        )
+        if updated_task is None:
+            raise TaskExecutionError(
+                "ae3_snapshot_retry_persist_failed",
+                f"Unable to persist transient snapshot retry for task {task.id}",
+            )
+
+        logger.warning(
+            "AE3 transient snapshot gap detected: zone_id=%s task_id=%s stage=%s retry_in=%ss stage_age_sec=%s error=%s",
+            getattr(task, "zone_id", None),
+            getattr(task, "id", None),
+            getattr(task, "current_stage", None),
+            SNAPSHOT_TRANSIENT_RETRY_SEC,
+            stage_age_sec,
+            error_message,
+        )
+        await self._emit_snapshot_retry_observability(
+            task=task,
+            now=now,
+            event_type="AE_SNAPSHOT_RETRY_SCHEDULED",
+            alert_code=SNAPSHOT_RETRY_SCHEDULED_CODE,
+            alert_message=error_message,
+            severity="warning",
+            details={
+                **details,
+                "retry_after_sec": SNAPSHOT_TRANSIENT_RETRY_SEC,
+                "next_due_at": due_at.astimezone(timezone.utc).isoformat()
+                if due_at.tzinfo is not None
+                else due_at.replace(tzinfo=timezone.utc).isoformat(),
+            },
+        )
+        return updated_task
+
+    def _is_transient_snapshot_gap(self, *, task: Any, error_message: str) -> bool:
+        topology = str(getattr(task, "topology", "") or "").strip().lower()
+        return (
+            topology in {"two_tank", "two_tank_drip_substrate_trays"}
+            and SNAPSHOT_NO_ONLINE_ACTUATORS_TOKEN in error_message.lower()
+        )
+
+    def _stage_age_sec(self, *, stage_entered_at: datetime | None, now: datetime) -> int:
+        if not isinstance(stage_entered_at, datetime):
+            return 0
+        normalized_now = now.astimezone(timezone.utc) if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+        normalized_stage_entered_at = (
+            stage_entered_at.astimezone(timezone.utc)
+            if stage_entered_at.tzinfo is not None
+            else stage_entered_at.replace(tzinfo=timezone.utc)
+        )
+        return max(0, int((normalized_now - normalized_stage_entered_at).total_seconds()))
+
+    async def _emit_snapshot_retry_observability(
+        self,
+        *,
+        task: Any,
+        now: datetime,
+        event_type: str,
+        alert_code: str,
+        alert_message: str,
+        severity: str,
+        details: Mapping[str, Any],
+    ) -> None:
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        try:
+            await create_zone_event(zone_id, event_type, dict(details))
+        except Exception:
+            logger.warning(
+                "AE3 failed to log snapshot retry observability event zone_id=%s task_id=%s event_type=%s",
+                zone_id,
+                int(getattr(task, "id", 0) or 0),
+                event_type,
+                exc_info=True,
+            )
+
+        try:
+            await send_infra_alert(
+                code=alert_code,
+                message=alert_message,
+                zone_id=zone_id,
+                severity=severity,
+                service="automation-engine",
+                component="execute_task",
+                error_type="SnapshotBuildError",
+                details=dict(details),
+            )
+        except Exception:
+            logger.warning(
+                "AE3 failed to publish snapshot retry infra alert zone_id=%s task_id=%s code=%s",
+                zone_id,
+                int(getattr(task, "id", 0) or 0),
+                alert_code,
+                exc_info=True,
             )
 
     async def _fail_closed(

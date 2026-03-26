@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+from unittest.mock import AsyncMock
 
 from ae3lite.application.handlers.startup import StartupHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -189,6 +190,22 @@ async def test_irr_state_stale_raises() -> None:
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
     assert exc_info.value.code == "irr_state_stale"
+
+
+@pytest.mark.asyncio
+async def test_irr_state_stale_emits_probe_failure_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    m = _Monitor(irr_states=[{"has_snapshot": True, "is_stale": True, "snapshot": None}])
+    create_event = AsyncMock(return_value=None)
+    monkeypatch.setattr("ae3lite.application.handlers.base.create_zone_event", create_event)
+
+    with pytest.raises(TaskExecutionError):
+        await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=None, now=NOW)
+
+    create_event.assert_awaited_once()
+    assert create_event.await_args.args[1] == "IRR_STATE_PROBE_FAILED"
+    payload = create_event.await_args.args[2]
+    assert payload["reason"] == "stale"
+    assert payload["stage"] == "startup"
 
 
 # ── 4. IRR mismatch (pump_main on) → safety stop → re-check → proceed ────────

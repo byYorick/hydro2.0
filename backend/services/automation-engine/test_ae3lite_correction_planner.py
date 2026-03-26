@@ -886,6 +886,84 @@ def test_build_dose_plan_allows_ph_when_ec_is_in_retry_window() -> None:
     assert dose_plan.retry_after_sec == 60
 
 
+def test_build_dose_plan_does_not_refresh_ph_pid_state_when_ph_is_deferred_by_ec_priority() -> None:
+    planner = CorrectionPlanner()
+    now = datetime(2026, 3, 8, 12, 10, 0)
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.4,
+        current_ec=1.6,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_min=5.9,
+        ph_max=6.1,
+        ec_min=1.9,
+        ec_max=2.1,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=_correction_config(
+            ph_overrides={
+                "kp": 1.0,
+                "ki": 0.1,
+                "kd": 0.0,
+                "deadband": 0.01,
+                "max_dose_ml": 10.0,
+                "min_interval_sec": 0,
+            },
+            ec_overrides={
+                "kp": 1.0,
+                "ki": 0.1,
+                "kd": 0.0,
+                "deadband": 0.01,
+                "max_dose_ml": 10.0,
+                "min_interval_sec": 0,
+            },
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={
+            "tank_recirc": {
+                "ph_down_gain_per_ml": 0.2,
+                "ec_gain_per_ml": 0.2,
+            }
+        },
+        ec_component_policy={"tank_recirc": {"npk": 1.0}},
+        pid_state={
+            "ph": {
+                "last_dose_at": now - timedelta(seconds=300),
+                "last_measurement_at": now - timedelta(seconds=10),
+                "last_measured_value": 6.4,
+            },
+            "ec": {
+                "last_dose_at": now - timedelta(seconds=300),
+                "last_measurement_at": now - timedelta(seconds=10),
+                "last_measured_value": 1.6,
+            },
+        },
+        now=now,
+        ec_actuator=None,
+        ec_actuators={
+            "ec_npk": {
+                "node_uid": "ec-node",
+                "channel": "ec_npk_pump",
+                "calibration": {"ml_per_sec": 8.0},
+            },
+        },
+        ph_up_actuator=None,
+        ph_down_actuator={
+            "node_uid": "ph-node",
+            "channel": "ph_down_pump",
+            "calibration": {"ml_per_sec": 8.0},
+        },
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.needs_ph_down is False
+    assert dose_plan.deferred_action == "ph_down"
+    assert dose_plan.deferred_reason == "ec_priority_single_action"
+    assert "ph" not in dose_plan.pid_state_updates
+    assert "ec" in dose_plan.pid_state_updates
+
+
 def test_build_dose_plan_resets_pid_state_when_value_is_back_inside_window() -> None:
     planner = CorrectionPlanner()
 
