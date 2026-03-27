@@ -727,19 +727,13 @@ export function useAutomationPanel(
 
       wsStateListenerCleanup = onWsStateChange((state) => {
         if (state === 'connected') {
-          const resubscribed = subscribeRealtimeChannels()
-          if (resubscribed) {
-            stopFallbackPolling()
-            scheduleRealtimeRefresh()
-          } else {
-            startFallbackPolling()
-          }
+          stopFallbackPolling()
+          scheduleRealtimeRefresh()
           return
         }
 
         if (state === 'disconnected' || state === 'unavailable' || state === 'failed') {
           clearWsRefreshTimer()
-          cleanupRealtimeChannels()
           startFallbackPolling()
         }
       })

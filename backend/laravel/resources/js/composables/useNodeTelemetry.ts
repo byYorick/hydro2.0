@@ -25,6 +25,8 @@ export function useNodeTelemetry(
   const isSubscribed = ref(false)
   let activeHandler: TelemetryHandler | null = null
   let stopTelemetrySubscription: (() => void) | null = null
+  let lastAcceptedServerTs: number | null = null
+  const lastAcceptedTelemetryTsBySeries = new Map<string, number>()
 
   const resolveRefNumber = (value: Ref<number | null> | number | null): number | null => {
     return isRef(value) ? value.value : value
@@ -32,6 +34,30 @@ export function useNodeTelemetry(
 
   const resolveCurrentNodeId = (): number | null => {
     return resolveRefNumber(nodeId)
+  }
+
+  const toOptionalNumber = (value: unknown): number | undefined => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+
+    return undefined
+  }
+
+  const getTelemetrySeriesKey = (data: NodeTelemetryData): string => {
+    return `${data.node_id}:${data.channel ?? 'null'}:${data.metric_type}`
+  }
+
+  const resetMonotonicGuards = (): void => {
+    lastAcceptedServerTs = null
+    lastAcceptedTelemetryTsBySeries.clear()
   }
 
   const detachChannel = (): void => {
@@ -82,11 +108,41 @@ export function useNodeTelemetry(
               expectedNodeId: resolveCurrentNodeId(),
             })
 
+            const eventServerTs = toOptionalNumber(payload.server_ts)
+            if (
+              typeof eventServerTs === 'number' &&
+              typeof lastAcceptedServerTs === 'number' &&
+              eventServerTs < lastAcceptedServerTs
+            ) {
+              logger.debug('[useNodeTelemetry] Ignoring stale telemetry batch by server_ts', {
+                eventServerTs,
+                lastAcceptedServerTs,
+              })
+              return
+            }
+
             const updates = parseNodeTelemetryBatch(payload)
             const currentNodeId = resolveCurrentNodeId()
+            let acceptedBatch = false
 
             updates.forEach((data) => {
               if (currentNodeId && data.node_id === currentNodeId) {
+                const seriesKey = getTelemetrySeriesKey(data)
+                const lastAcceptedSeriesTs = lastAcceptedTelemetryTsBySeries.get(seriesKey)
+                if (
+                  typeof lastAcceptedSeriesTs === 'number' &&
+                  data.ts <= lastAcceptedSeriesTs
+                ) {
+                  logger.debug('[useNodeTelemetry] Ignoring stale telemetry point by sample ts', {
+                    nodeId: currentNodeId,
+                    channel: data.channel,
+                    metric: data.metric_type,
+                    sampleTs: data.ts,
+                    lastAcceptedSeriesTs,
+                  })
+                  return
+                }
+
                 logger.debug('[useNodeTelemetry] Processing telemetry for node', {
                   nodeId: currentNodeId,
                   channel: data.channel,
@@ -95,6 +151,8 @@ export function useNodeTelemetry(
                 })
                 try {
                   telemetryHandler(data)
+                  acceptedBatch = true
+                  lastAcceptedTelemetryTsBySeries.set(seriesKey, data.ts)
                 } catch (err) {
                   logger.error('[useNodeTelemetry] Handler error', {
                     error: err instanceof Error ? err.message : String(err),
@@ -108,6 +166,14 @@ export function useNodeTelemetry(
                 })
               }
             })
+
+            if (
+              acceptedBatch &&
+              typeof eventServerTs === 'number' &&
+              (lastAcceptedServerTs === null || eventServerTs > lastAcceptedServerTs)
+            ) {
+              lastAcceptedServerTs = eventServerTs
+            }
           },
         },
       })
@@ -135,6 +201,7 @@ export function useNodeTelemetry(
   const subscribe = (handler: TelemetryHandler): (() => void) => {
     activeHandler = handler
     detachChannel()
+    resetMonotonicGuards()
     attachChannel()
 
     return () => {
@@ -145,6 +212,7 @@ export function useNodeTelemetry(
   const unsubscribe = (): void => {
     activeHandler = null
     detachChannel()
+    resetMonotonicGuards()
   }
 
   onUnmounted(() => {

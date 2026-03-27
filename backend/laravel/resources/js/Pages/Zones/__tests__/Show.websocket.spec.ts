@@ -1,18 +1,20 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { nextTick, reactive } from 'vue'
+import { __resetManagedChannelEventsForTests } from '@/ws/managedChannelEvents'
 
-let wsStateListener: ((state: string) => void) | null = null
+const wsStateListeners: Array<(state: string) => void> = []
 const mockEchoPrivate = vi.fn()
 const mockEchoLeave = vi.fn()
 
 vi.mock('@/utils/echoClient', () => ({
   getEchoInstance: vi.fn(() => (globalThis.window as any)?.Echo ?? null),
   onWsStateChange: vi.fn((listener: (state: string) => void) => {
-    wsStateListener = listener
+    wsStateListeners.push(listener)
     return vi.fn(() => {
-      if (wsStateListener === listener) {
-        wsStateListener = null
+      const index = wsStateListeners.indexOf(listener)
+      if (index >= 0) {
+        wsStateListeners.splice(index, 1)
       }
     })
   }),
@@ -198,8 +200,9 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
   }, 30000)
 
   beforeEach(() => {
+    __resetManagedChannelEventsForTests()
     vi.clearAllMocks()
-    wsStateListener = null
+    wsStateListeners.splice(0, wsStateListeners.length)
     mockEchoPrivate.mockReset()
     mockEchoLeave.mockReset()
 
@@ -215,6 +218,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
   })
 
   afterEach(() => {
+    __resetManagedChannelEventsForTests()
     vi.clearAllMocks()
     delete (globalThis.window as any).Echo
   })
@@ -364,7 +368,8 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       expect.any(Function)
     )
 
-    wsStateListener?.('connected')
+    wsStateListeners.forEach(listener => listener('disconnected'))
+    wsStateListeners.forEach(listener => listener('connected'))
 
     expect(secondZoneChannel.listen).toHaveBeenCalledWith(
       '.App\\Events\\GrowCycleUpdated',
@@ -447,12 +452,13 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 80))
 
       expect(stopListeningMock).toHaveBeenCalledWith('.App\\Events\\GrowCycleUpdated', expect.any(Function))
-      expect(leaveMock).not.toHaveBeenCalled()
+      expect(leaveMock).toHaveBeenCalledWith('hydro.zones.1')
       expect(privateMock).toHaveBeenCalledWith('hydro.zones.2')
 
       wrapper.unmount()
       await nextTick()
       expect(stopListeningMock).toHaveBeenCalledTimes(2)
+      expect(leaveMock).toHaveBeenCalledWith('hydro.zones.2')
     } finally {
       const win = window as any
       if (previousEcho === undefined) {

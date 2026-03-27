@@ -130,8 +130,8 @@ describe('useWebSocket - Resubscribe Logic', () => {
     // Вызываем resubscribe
     resubscribeAllChannels()
 
-    // Проверяем, что канал был создан
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+    // Проверяем, что listeners были восстановлены без лишнего re-auth
+    expect(mockEcho.private).not.toHaveBeenCalled()
     expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
@@ -153,7 +153,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
     
     resubscribeAllChannels()
 
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+    expect(mockEcho.private).not.toHaveBeenCalled()
     expect(mockGlobalChannel.listen).toHaveBeenCalled()
   })
 
@@ -198,11 +198,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
     subscribeToZoneCommands(2, mockHandler2)
     
     mockEcho.private.mockClear()
+    mockZoneChannel.listen.mockClear()
     
     resubscribeAllChannels()
 
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.2')
+    expect(mockEcho.private).not.toHaveBeenCalled()
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
   it('should handle errors during resubscription gracefully', async () => {
@@ -252,12 +253,15 @@ describe('useWebSocket - Resubscribe Logic', () => {
     }
     
     mockEcho.private.mockClear()
+    mockZoneChannel.listen.mockClear()
+    mockGlobalChannel.listen.mockClear()
     
     resubscribeAllChannels()
 
-    // Проверяем, что все подписки восстановлены
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+    // Проверяем, что все listeners восстановлены без лишнего пересоздания каналов
+    expect(mockEcho.private).not.toHaveBeenCalled()
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
+    expect(mockGlobalChannel.listen).toHaveBeenCalled()
   })
 
   it('should validate subscriptions before resubscribe', async () => {
@@ -275,11 +279,13 @@ describe('useWebSocket - Resubscribe Logic', () => {
     subscribeToZoneCommands(1, mockHandler)
     
     mockEcho.private.mockClear()
+    mockZoneChannel.listen.mockClear()
     
     resubscribeAllChannels()
     
-    // Валидация должна отфильтровать невалидные подписки
-    expect(mockEcho.private).toHaveBeenCalled()
+    // Валидация должна оставить живые listeners и не форсировать re-auth
+    expect(mockEcho.private).not.toHaveBeenCalled()
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
   it('should handle dead channels during resubscribe', async () => {
@@ -303,11 +309,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
     }
     
     mockEcho.private.mockClear()
+    mockZoneChannel.listen.mockClear()
     
     resubscribeAllChannels()
     
-    // Канал должен быть пересоздан
-    expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
+    // Для dead channel listeners должны быть восстановлены
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
   it('should sync subscriptions.value after resubscribe', async () => {
@@ -356,7 +363,6 @@ describe('useWebSocket - Resubscribe Logic', () => {
     
     // Система должна корректно обработать размонтированные компоненты
     // После unsubscribeAll канал может быть удален, но это нормально
-    expect(mockEcho.private).toHaveBeenCalled()
+    expect(() => resubscribeAllChannels()).not.toThrow()
   })
 })
-

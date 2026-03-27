@@ -329,6 +329,11 @@ Canonical rule:
 - normalized domain events -> `useWebSocket()`
 - raw channel/event listeners with reconnect/resubscribe -> `subscribeManagedChannelEvents()`
 
+`subscribeManagedChannelEvents()` invariants:
+- performs `leave(channel)` on cleanup by default;
+- rebinds listeners after reconnect via `onWsStateChange`;
+- ignores stale raw events when payload includes `server_ts` and zone can be resolved.
+
 `ws/subscriptions.ts` removed. Direct `Echo.private(...)` / `Echo.channel(...)` in pages and composables is not allowed.
 
 ### Channel name constants (frontend)

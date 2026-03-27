@@ -76,19 +76,14 @@ class AlertService
         $prepared = $this->prepareAlertPayload($data);
         $zoneId = $prepared['zone_id'];
         $code = $prepared['code'];
+        $dedupeKey = $this->normalizeString($prepared['details']['dedupe_key'] ?? null);
 
         if ($code === '' || $code === 'unknown_alert') {
             throw new \InvalidArgumentException('code is required for deduplication');
         }
 
-        return DB::transaction(function () use ($prepared, $zoneId, $code) {
-            $existing = Alert::where('zone_id', $zoneId)
-                ->where('code', $code)
-                ->where(function ($query) {
-                    $query->where('status', 'ACTIVE')->orWhere('status', 'active');
-                })
-                ->lockForUpdate()
-                ->first();
+        return DB::transaction(function () use ($prepared, $zoneId, $code, $dedupeKey) {
+            $existing = $this->findActiveAlertForDeduplication($zoneId, $code, $dedupeKey);
 
             if (! $existing && $this->shouldRateLimit($code, $zoneId)) {
                 Log::warning('Alert creation rate limited', [
@@ -231,21 +226,10 @@ class AlertService
     public function resolveByCode(?int $zoneId, string $code, array $context = []): array
     {
         $normalizedCode = $this->alertCatalog->normalizeCode($code);
+        $dedupeKey = $this->normalizeString(($context['details']['dedupe_key'] ?? null));
 
-        return DB::transaction(function () use ($zoneId, $normalizedCode, $context) {
-            $query = Alert::query()
-                ->where('code', $normalizedCode)
-                ->where(function ($statusQuery) {
-                    $statusQuery->where('status', 'ACTIVE')->orWhere('status', 'active');
-                });
-
-            if ($zoneId === null) {
-                $query->whereNull('zone_id');
-            } else {
-                $query->where('zone_id', $zoneId);
-            }
-
-            $alert = $query->lockForUpdate()->first();
+        return DB::transaction(function () use ($zoneId, $normalizedCode, $context, $dedupeKey) {
+            $alert = $this->findActiveAlertForDeduplication($zoneId, $normalizedCode, $dedupeKey);
             if (! $alert) {
                 return [
                     'resolved' => false,
@@ -643,6 +627,30 @@ class AlertService
         $normalized = trim($value);
 
         return $normalized === '' ? null : $normalized;
+    }
+
+    private function findActiveAlertForDeduplication(?int $zoneId, string $code, ?string $dedupeKey): ?Alert
+    {
+        $query = Alert::query()
+            ->where('code', $code)
+            ->where(function ($statusQuery) {
+                $statusQuery->where('status', 'ACTIVE')->orWhere('status', 'active');
+            });
+
+        if ($zoneId === null) {
+            $query->whereNull('zone_id');
+        } else {
+            $query->where('zone_id', $zoneId);
+        }
+
+        if ($dedupeKey !== null) {
+            return (clone $query)
+                ->whereRaw("details->>'dedupe_key' = ?", [$dedupeKey])
+                ->lockForUpdate()
+                ->first();
+        }
+
+        return $query->lockForUpdate()->first();
     }
 
     /**

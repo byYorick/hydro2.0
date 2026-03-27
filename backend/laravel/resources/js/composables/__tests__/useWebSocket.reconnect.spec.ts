@@ -144,10 +144,12 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Симулируем reconnect - вызываем resubscribeAllChannels
       mockConnection.state = 'connected'
+      mockZoneChannel.listen.mockClear()
       resubscribeAllChannels()
       
-      // После resubscribe канал должен быть восстановлен
-      expect(mockEcho.private).toHaveBeenCalledTimes(2) // Первая подписка + resubscribe
+      // Idempotent reconnect sync: не должно быть лишнего re-auth и forced rebind на живом канале
+      expect(mockZoneChannel.listen).not.toHaveBeenCalled()
+      expect(mockEcho.private).toHaveBeenCalledTimes(1)
     })
 
     it('should restore multiple subscriptions after reconnect', () => {
@@ -166,11 +168,14 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Симулируем reconnect
       mockConnection.state = 'connected'
+      mockZoneChannel.listen.mockClear()
+      mockGlobalChannel.listen.mockClear()
       resubscribeAllChannels()
       
-      // Все подписки должны быть восстановлены (3 первоначально + 3 при resubscribe)
-      expect(mockEcho.private.mock.calls.length).toBeGreaterThanOrEqual(6)
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+      // Shared channels уже живы, поэтому resubscribe остаётся идемпотентным
+      expect(mockZoneChannel.listen).not.toHaveBeenCalled()
+      expect(mockGlobalChannel.listen).not.toHaveBeenCalled()
+      expect(mockEcho.private).toHaveBeenCalledTimes(3)
     })
   })
 
@@ -329,4 +334,3 @@ describe('useWebSocket - Reconnect Logic', () => {
     })
   })
 })
-

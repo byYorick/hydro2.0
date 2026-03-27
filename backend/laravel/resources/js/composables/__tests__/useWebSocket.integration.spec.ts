@@ -25,6 +25,7 @@ const mockOnWsStateChange = vi.fn((listener: () => void) => {
 
 vi.mock('@/utils/echoClient', () => ({
   onWsStateChange: mockOnWsStateChange,
+  getEchoInstance: vi.fn(() => (global.window as any)?.Echo ?? null),
   getEcho: vi.fn(() => null),
   getReconnectAttempts: vi.fn(() => 0),
   getLastError: vi.fn(() => null),
@@ -207,9 +208,8 @@ describe('useWebSocket - Integration Tests', () => {
       // Simulate reconnection - resubscribe all
       resubscribeAllChannels()
 
-      // Should recreate channels
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.commands.1')
-      expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+      // Shared channel registry не должен делать лишний re-auth
+      expect(mockEcho.private).not.toHaveBeenCalled()
 
       // Should reattach listeners
       expect(mockZoneChannel.listen).toHaveBeenCalled()

@@ -2,11 +2,16 @@ import { logger } from '@/utils/logger'
 import type {
   ChannelControl,
   ChannelKind,
-  EchoLike,
   GlobalChannelRegistry,
   PusherChannelSnapshot,
   WsEventPayload,
 } from '@/ws/subscriptionTypes'
+import {
+  detachSharedEchoChannel,
+  ensureOwnedSharedEchoChannel,
+  releaseOwnedSharedEchoChannel,
+} from '@/ws/sharedEchoChannels'
+import type { EchoLike } from '@/ws/subscriptionTypes'
 
 const COMMAND_STATUS_EVENT = '.App\\Events\\CommandStatusUpdated'
 const COMMAND_FAILED_EVENT = '.App\\Events\\CommandFailed'
@@ -27,6 +32,8 @@ interface ChannelControlManagerDeps {
 }
 
 export function createChannelControlManager(deps: ChannelControlManagerDeps) {
+  const getControlOwnerId = (channelName: string): string => `useWebSocket:${channelName}`
+
   const getPusherChannel = (channelName: string) => {
     if (!deps.isBrowser()) {
       return null
@@ -139,13 +146,12 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
 
   const detachChannel = (control: ChannelControl, removeControl = false): void => {
     removeChannelListeners(control)
-    if (deps.isBrowser()) {
-      try {
-        deps.getEcho()?.leave?.(control.channelName)
-      } catch {
-        // ignore leave errors
-      }
-    }
+    releaseOwnedSharedEchoChannel(
+      control.channelName,
+      control.channelType,
+      getControlOwnerId(control.channelName),
+      true
+    )
     control.echoChannel = null
     if (removeControl) {
       deps.channelControls.delete(control.channelName)
@@ -195,8 +201,7 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
       deps.channelControls.set(channelName, control)
     }
 
-    const echo = deps.getEcho()
-    if (!echo) {
+    if (!deps.getEcho()) {
       if (control.echoChannel) {
         control.echoChannel = null
       }
@@ -209,10 +214,15 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
       logger.debug('[useWebSocket] Channel not found in current Echo instance, marking as dead', {
         channel: channelName,
       })
+      detachSharedEchoChannel(channelName, channelType, false)
       control.echoChannel = null
     }
 
     if (shouldRecreate || !control.echoChannel) {
+      if (shouldRecreate) {
+        detachSharedEchoChannel(channelName, channelType, false)
+      }
+
       if (deps.isGlobalChannel(channelName)) {
         const registry = deps.globalChannelRegistry.get(channelName)
         if (
@@ -230,8 +240,11 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
         }
       }
 
-      control.echoChannel =
-        channelType === 'private' ? echo.private(channelName) : echo.channel(channelName)
+      control.echoChannel = ensureOwnedSharedEchoChannel(
+        channelName,
+        channelType,
+        getControlOwnerId(channelName)
+      )
 
       if (deps.isGlobalChannel(channelName)) {
         if (!deps.globalChannelRegistry.has(channelName)) {
@@ -283,22 +296,15 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
     deps.channelControls.forEach(control => {
       try {
         removeChannelListeners(control)
-
-        if (control.echoChannel) {
-          try {
-            if (deps.isBrowser() && deps.getEcho()) {
-              deps.getEcho()?.leave?.(control.channelName)
-            }
-          } catch {
-            // ignore leave errors
-          }
+        if (control.echoChannel && deps.isChannelDead(control.channelName)) {
+          detachSharedEchoChannel(control.channelName, control.channelType, false)
           control.echoChannel = null
         }
-
-        control.echoChannel =
-          control.channelType === 'private'
-            ? echo.private(control.channelName)
-            : echo.channel(control.channelName)
+        control.echoChannel = ensureOwnedSharedEchoChannel(
+          control.channelName,
+          control.channelType,
+          getControlOwnerId(control.channelName)
+        )
 
         attachChannelListeners(control)
         logger.debug('[useWebSocket] Resubscribed channel', { channel: control.channelName })

@@ -110,4 +110,89 @@ class AlertServiceTest extends TestCase
         $this->assertNull($result['alert']);
         $this->assertNull($result['event_id']);
     }
+
+    public function test_create_or_update_active_uses_dedupe_key_for_same_code(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+
+        $first = $this->service->createOrUpdateActive([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => 'infra_telemetry_node_unassigned',
+            'type' => 'Telemetry Anomaly',
+            'node_uid' => 'nd-test-light-1',
+            'details' => [
+                'message' => 'Light node is unassigned',
+                'dedupe_key' => 'infra_telemetry_node_unassigned|1|history-logger|telemetry_processing|nd-test-light-1|light_level|unknown_cmd|unknown_error_type',
+                'sample_channel' => 'light_level',
+            ],
+        ]);
+
+        $second = $this->service->createOrUpdateActive([
+            'zone_id' => $zone->id,
+            'source' => 'infra',
+            'code' => 'infra_telemetry_node_unassigned',
+            'type' => 'Telemetry Anomaly',
+            'node_uid' => 'nd-test-climate-1',
+            'details' => [
+                'message' => 'Climate node is unassigned',
+                'dedupe_key' => 'infra_telemetry_node_unassigned|1|history-logger|telemetry_processing|nd-test-climate-1|air_temp_c|unknown_cmd|unknown_error_type',
+                'sample_channel' => 'air_temp_c',
+            ],
+        ]);
+
+        $this->assertTrue($first['created']);
+        $this->assertTrue($second['created']);
+        $this->assertNotSame($first['alert']?->id, $second['alert']?->id);
+        $this->assertDatabaseCount('alerts', 2);
+    }
+
+    public function test_resolve_by_code_prefers_matching_dedupe_key(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        $lightDedupeKey = 'infra_telemetry_node_unassigned|1|history-logger|telemetry_processing|nd-test-light-1|light_level|unknown_cmd|unknown_error_type';
+        $climateDedupeKey = 'infra_telemetry_node_unassigned|1|history-logger|telemetry_processing|nd-test-climate-1|air_temp_c|unknown_cmd|unknown_error_type';
+
+        $lightAlert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'infra_telemetry_node_unassigned',
+            'status' => 'ACTIVE',
+            'node_uid' => 'nd-test-light-1',
+            'details' => [
+                'message' => 'Light node is unassigned',
+                'dedupe_key' => $lightDedupeKey,
+                'sample_channel' => 'light_level',
+            ],
+        ]);
+
+        $climateAlert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'infra_telemetry_node_unassigned',
+            'status' => 'ACTIVE',
+            'node_uid' => 'nd-test-climate-1',
+            'details' => [
+                'message' => 'Climate node is unassigned',
+                'dedupe_key' => $climateDedupeKey,
+                'sample_channel' => 'air_temp_c',
+            ],
+        ]);
+
+        $result = $this->service->resolveByCode($zone->id, 'infra_telemetry_node_unassigned', [
+            'details' => [
+                'dedupe_key' => $lightDedupeKey,
+                'sample_channel' => 'light_level',
+            ],
+            'resolved_by' => 'python_ingest',
+            'resolved_via' => 'auto',
+            'resolved_source' => 'infra',
+        ]);
+
+        $this->assertTrue($result['resolved']);
+
+        $lightAlert->refresh();
+        $climateAlert->refresh();
+
+        $this->assertSame('RESOLVED', $lightAlert->status);
+        $this->assertSame('ACTIVE', $climateAlert->status);
+    }
 }

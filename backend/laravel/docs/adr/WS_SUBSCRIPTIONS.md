@@ -41,9 +41,10 @@ ws/managedChannelEvents.ts
 ### Ключевые принципы
 
 1. **Единый путь resubscribe**: Все подписки используют `onWsStateChange` из `echoClient.ts`
-2. **Автоматическая очистка**: Функции unsubscribe правильно очищают listeners и resubscribe state
+2. **Автоматическая очистка**: Функции unsubscribe правильно очищают listeners, выполняют `leave(channel)` и сбрасывают resubscribe state
 3. **Минимальный bootstrap.js**: Содержит только инициализацию Echo и обработку reconciliation
 4. **Запрет на page-level Echo API**: страницы и composables не обращаются к `Echo.private(...)` напрямую
+5. **Reconciliation для raw events**: если payload несёт `server_ts` и zone resolution возможен, stale события отбрасываются в managed-layer
 
 ## Последствия
 

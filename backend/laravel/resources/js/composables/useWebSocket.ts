@@ -28,6 +28,7 @@ import {
   removeSnapshotHandler,
   setZoneSnapshot,
 } from '@/ws/snapshotRegistry'
+import { __resetSharedEchoChannelsForTests } from '@/ws/sharedEchoChannels'
 import { createPendingSubscriptionsManager } from '@/ws/pendingSubscriptions'
 import { createPendingSubscriptionMonitor } from '@/ws/pendingSubscriptionMonitor'
 import { createResubscribeManager } from '@/ws/resubscribeManager'
@@ -192,14 +193,7 @@ export function cleanupWebSocketChannels(): void {
   // Очищаем все каналы
   channelControls.forEach(control => {
     try {
-      channelControlManager.removeChannelListeners(control)
-      if (isBrowser() && window.Echo) {
-        try {
-          window.Echo.leave?.(control.channelName)
-        } catch {
-          // ignore leave errors
-        }
-      }
+      channelControlManager.detachChannel(control, false)
     } catch (error) {
       logger.warn('[useWebSocket] Error cleaning up channel', {
         channel: control.channelName,
@@ -575,6 +569,7 @@ export const __testExports = {
     globalChannelRegistry.clear()
     pendingSubscriptions.clear()
     clearSnapshotRegistry()
+    __resetSharedEchoChannelsForTests()
     componentChannelCounts.clear()
     instanceSubscriptionSets.clear()
     subscriptionCounter = 0
