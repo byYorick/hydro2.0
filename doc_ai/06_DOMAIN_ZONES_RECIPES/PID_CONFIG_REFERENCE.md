@@ -286,6 +286,12 @@ Observation-driven runtime требует явные process gain:
 Если для фазы отсутствует нужный gain или не заданы
 `transport_delay_sec` / `settle_sec`, planner/handler работают fail-closed.
 
+Для `tank_recirc` runtime дополнительно использует conservative floor:
+learned `pid_state.stats.adaptive.gains.ec_gain_per_ml.ema` может
+повысить оценку gain, но не может опустить её ниже authoritative
+`process_calibrations.tank_recirc.ec_gain_per_ml`. Это защищает рециркуляцию
+от раздувания EC-дозы из-за переобучения на слишком “мягких” окнах.
+
 ### Observe-параметры
 
 `meta.observe` у phase calibration задаёт поведение окна наблюдения:

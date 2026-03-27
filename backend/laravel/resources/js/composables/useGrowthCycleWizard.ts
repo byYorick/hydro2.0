@@ -636,6 +636,18 @@ export function useGrowthCycleWizard({
     lightingForm.value.enabled = true;
   }
 
+  function syncRecipeLaunchTargetsFromPhase(phase: WizardRecipePhase): void {
+    const phTarget = toFiniteNumber(phase.ph_target);
+    const ecTarget = toFiniteNumber(phase.ec_target);
+
+    if (phTarget !== null) {
+      waterForm.value.targetPh = Number(phTarget.toFixed(2));
+    }
+    if (ecTarget !== null) {
+      waterForm.value.targetEc = Number(ecTarget.toFixed(2));
+    }
+  }
+
   async function loadZones(): Promise<void> {
     try {
       const zones = await fetchZones(true);
@@ -688,14 +700,12 @@ export function useGrowthCycleWizard({
         },
       );
 
-      const diagnosticsExecution = asRecord(asRecord(subsystems.diagnostics)?.execution);
-      const targetPh = toFiniteNumber(diagnosticsExecution?.target_ph);
-      const targetEc = toFiniteNumber(diagnosticsExecution?.target_ec);
-      if (targetPh !== null) {
-        waterForm.value.targetPh = Number(targetPh.toFixed(2));
-      }
-      if (targetEc !== null) {
-        waterForm.value.targetEc = Number(targetEc.toFixed(2));
+      const launchPhase = selectedLaunchPhase.value;
+      // Для запуска цикла рецепт является единственным источником истины.
+      // Зонный automation profile может заполнять соседние поля, но launch-targets
+      // сразу возвращаем к значениям ревизии рецепта.
+      if (launchPhase) {
+        syncFormsFromRecipePhase(launchPhase);
       }
 
       automationProfileLoadedZoneId.value = zoneId;
@@ -1377,13 +1387,14 @@ export function useGrowthCycleWizard({
   });
 
   watch(selectedRevision, (revision) => {
-    if (draftWasLoaded.value) {
-      draftWasLoaded.value = false;
-      return;
-    }
-
     const firstPhase = selectedLaunchPhase.value;
     if (firstPhase) {
+      if (draftWasLoaded.value) {
+        syncRecipeLaunchTargetsFromPhase(firstPhase);
+        draftWasLoaded.value = false;
+        return;
+      }
+
       syncFormsFromRecipePhase(firstPhase);
     }
   });

@@ -178,6 +178,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   correction sub-machine всегда ограничен parent stage deadline, а для `prepare_recirculation`
   ещё и `prepare_recirculation_max_attempts` на уровне окон;
 - `EC` и `pH` имеют отдельные `no_effect_count`, отдельные process gains и отдельные observation thresholds.
+- В `prepare_recirculation` EC-планирование консервативно: learned `pid_state`
+  может улучшать оценку, но не может опускать `EC gain` ниже authoritative
+  `process_calibrations.tank_recirc.ec_gain_per_ml` floor.
 - если planner одновременно вернул `needs_ec=true` и `needs_ph_{up|down}=true`, runtime обязан сохранить оба действия
   в `CorrectionState`; первым исполняется ближайший шаг sub-machine, а второй остаётся в том же correction-window
   до следующего `corr_check` после обязательного `observe-step`.

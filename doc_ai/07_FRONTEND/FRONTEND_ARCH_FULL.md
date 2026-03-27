@@ -275,7 +275,21 @@ Tabs:
 
 ---
 
-## 3.3.7. Events (лог зоны)
+## 3.3.7. Scheduler (планировщик зоны)
+
+`Pages/Zones/Tabs/ZoneSchedulerTab.vue`
+
+Отдельная вкладка для проверки синхронизации зоны с Laravel scheduler-dispatch:
+
+- runtime control-mode и доступные manual-step;
+- список scheduler-задач зоны;
+- detail-view по `task_id`;
+- cache/live status последней синхронизации.
+- текущая реализация оформлена в dashboard-стиле: hero summary, timeline detail card, recent tasks list, quick controls, weekly load preview и свёрнутые dev diagnostics.
+
+---
+
+## 3.3.8. Events (лог зоны)
 
 Каждое событие:
 - timestamp 

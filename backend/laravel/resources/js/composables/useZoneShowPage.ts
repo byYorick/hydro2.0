@@ -40,6 +40,7 @@ const zoneTabs = [
   { id: 'telemetry', label: 'Телеметрия' },
   { id: 'cycle', label: 'Цикл' },
   { id: 'automation', label: 'Автоматизация' },
+  { id: 'scheduler', label: 'Планировщик' },
   { id: 'events', label: 'События' },
   { id: 'alerts', label: 'Алерты' },
   { id: 'devices', label: 'Устройства' },

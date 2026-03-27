@@ -69,6 +69,16 @@
         :pump-calibration-run-seq="pumpCalibrationRunSeq"
         @open-pump-calibration="openPumpCalibrationModal"
       />
+      <ZoneSchedulerTab
+        v-else-if="activeTab === 'scheduler'"
+        :zone-id="zoneId"
+        :targets="targets"
+        :telemetry="telemetry"
+        :active-grow-cycle="activeGrowCycle"
+        :current-recipe-phase="activeGrowCycle?.currentPhase ?? null"
+        :pump-calibration-save-seq="pumpCalibrationSaveSeq"
+        :pump-calibration-run-seq="pumpCalibrationRunSeq"
+      />
       <ZoneEventsTab
         v-else-if="activeTab === 'events'"
         :events="events"
@@ -144,6 +154,7 @@ import ZoneCycleTab from "@/Pages/Zones/Tabs/ZoneCycleTab.vue";
 import ZoneDevicesTab from "@/Pages/Zones/Tabs/ZoneDevicesTab.vue";
 import ZoneEventsTab from "@/Pages/Zones/Tabs/ZoneEventsTab.vue";
 import ZoneOverviewTab from "@/Pages/Zones/Tabs/ZoneOverviewTab.vue";
+import ZoneSchedulerTab from "@/Pages/Zones/Tabs/ZoneSchedulerTab.vue";
 import ZoneTelemetryTab from "@/Pages/Zones/Tabs/ZoneTelemetryTab.vue";
 import ZoneDetailModals from "@/Pages/Zones/ZoneDetailModals.vue";
 import { useZoneShowPage } from "@/composables/useZoneShowPage";

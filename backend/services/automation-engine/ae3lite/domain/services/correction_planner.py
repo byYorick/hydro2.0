@@ -254,6 +254,7 @@ class CorrectionPlanner:
                     controller_cfg=ec_controller_cfg,
                     correction_config=correction_config,
                     process_cfg=process_cfg,
+                    phase_key=phase_key,
                     calibration=calibration,
                     solution_volume_l=solution_volume_l,
                     pid_entry=_pid_entry(pid_state, "ec"),
@@ -302,6 +303,7 @@ class CorrectionPlanner:
                     controller_cfg=ph_controller_cfg,
                     correction_config=correction_config,
                     process_cfg=process_cfg,
+                    phase_key=phase_key,
                     calibration=calibration,
                     solution_volume_l=solution_volume_l,
                     pid_entry=_pid_entry(pid_state, "ph"),
@@ -528,12 +530,13 @@ def _compute_amount_ml(
     controller_cfg: Mapping[str, Any],
     correction_config: Mapping[str, Any],
     process_cfg: Mapping[str, Any],
+    phase_key: str,
     calibration: Mapping[str, Any],
     solution_volume_l: float,
     pid_entry: Mapping[str, Any],
     now: datetime,
 ) -> tuple[float, Mapping[str, Any]]:
-    gain = _process_gain(kind=kind, process_cfg=process_cfg, pid_entry=pid_entry)
+    gain = _process_gain(kind=kind, process_cfg=process_cfg, pid_entry=pid_entry, phase_key=phase_key)
     pid_update = _next_pid_state(
         kind=kind,
         gap=gap,
@@ -583,6 +586,7 @@ def _process_gain(
     kind: str,
     process_cfg: Mapping[str, Any],
     pid_entry: Mapping[str, Any],
+    phase_key: str,
 ) -> float | None:
     key = {
         "ec": "ec_gain_per_ml",
@@ -625,6 +629,11 @@ def _process_gain(
     if wave_score_ema is not None:
         weight *= max(0.35, 1.0 - min(0.65, wave_score_ema))
     effective = value * (1.0 - weight) + learned_gain * weight
+    if phase_key == "tank_recirc" and kind == "ec":
+        # Recirculation must stay conservative: learned EC gain may only
+        # increase confidence, but it must not reduce the authoritative
+        # process-calibration gain and inflate the next pulse.
+        effective = max(value, effective)
     return max(value * 0.25, min(value * 4.0, effective))
 
 

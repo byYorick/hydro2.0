@@ -287,4 +287,98 @@ test.describe('Zone Detail', () => {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }
   });
+
+  test('should render scheduler sync page on scheduler tab', async ({ page, apiHelper, testGreenhouse }) => {
+    const zone = await apiHelper.createTestZone(testGreenhouse.id);
+    const taskId = 'st-zone-sync';
+    const nowIso = new Date().toISOString();
+
+    try {
+      await page.route(new RegExp(`/api/zones/${zone.id}/control-mode(?:\\?.*)?$`), async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            data: {
+              control_mode: 'semi',
+              allowed_manual_steps: ['clean_fill_start', 'solution_fill_stop'],
+            },
+          }),
+        });
+      });
+
+      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks(?:\\?.*)?$`), async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'ok',
+            data: [
+              {
+                task_id: taskId,
+                zone_id: zone.id,
+                task_type: 'diagnostics',
+                status: 'running',
+                created_at: nowIso,
+                updated_at: nowIso,
+                scheduled_for: nowIso,
+                due_at: nowIso,
+                expires_at: nowIso,
+                correlation_id: `sch:z${zone.id}:diagnostics:e2e-sync`,
+                lifecycle: [],
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks/${taskId}(?:\\?.*)?$`), async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'ok',
+            data: {
+              task_id: taskId,
+              zone_id: zone.id,
+              task_type: 'diagnostics',
+              status: 'running',
+              created_at: nowIso,
+              updated_at: nowIso,
+              scheduled_for: nowIso,
+              due_at: nowIso,
+              expires_at: nowIso,
+              correlation_id: `sch:z${zone.id}:diagnostics:e2e-sync`,
+              action_required: true,
+              decision: 'run',
+              reason_code: 'cycle_start_initiated',
+              lifecycle: [
+                { status: 'accepted', at: nowIso },
+              ],
+              timeline: [
+                {
+                  event_id: 'evt-sync-1',
+                  event_seq: 1,
+                  event_type: 'TASK_RECEIVED',
+                  at: nowIso,
+                },
+              ],
+            },
+          }),
+        });
+      });
+
+      await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
+      await page.getByRole('tab', { name: 'Планировщик' }).click();
+
+      await expect(page.getByText('Планировщик зоны')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Live sync')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('semi')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Активная задача')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Задачи автоматики')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText(taskId)).toBeVisible({ timeout: 15000 });
+    } finally {
+      await apiHelper.deleteZone(zone.id).catch(() => {});
+    }
+  });
 });

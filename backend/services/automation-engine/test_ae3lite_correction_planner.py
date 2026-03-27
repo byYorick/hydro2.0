@@ -143,6 +143,62 @@ def test_build_dose_plan_uses_process_calibration_and_min_effective_ml() -> None
     assert dose_plan.ph_duration_ms == 187
 
 
+def test_build_dose_plan_keeps_tank_recirc_ec_gain_floor_at_authoritative_calibration() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.0,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_tolerance_pct=5.0,
+        ec_tolerance_pct=0.0,
+        correction_config=_correction_config(
+            ec_overrides={
+                "kp": 1.0,
+                "ki": 0.0,
+                "kd": 0.0,
+                "deadband": 0.0,
+                "min_interval_sec": 0,
+                "max_dose_ml": 500.0,
+            },
+            dosing_overrides={
+                "max_ec_dose_ml": 500.0,
+            },
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ec_gain_per_ml": 0.01}},
+        pid_state={
+            "ec": {
+                "stats": {
+                    "adaptive": {
+                        "gains": {
+                            "ec_gain_per_ml": {"ema": 0.002, "observations": 12},
+                        },
+                        "retention_ema": 1.0,
+                        "wave_score_ema": 0.0,
+                    }
+                }
+            }
+        },
+        ec_component_policy={},
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 1.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    # Without the recirculation safety floor the learned gain would reduce the
+    # denominator and inflate the dose above the authoritative 100 ml.
+    assert dose_plan.needs_ec is True
+    assert dose_plan.ec_amount_ml == pytest.approx(100.0)
+    assert dose_plan.ec_duration_ms == 100000
+
+
 def test_build_dose_plan_uses_close_zone_pid_coefficients_for_small_gap() -> None:
     planner = CorrectionPlanner()
 

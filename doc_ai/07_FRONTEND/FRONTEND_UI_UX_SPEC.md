@@ -48,6 +48,7 @@ resources/js/Pages/
    - ViewerDashboard.vue
  Zones/Index.vue
  Zones/Show.vue
+   - Zones/Tabs/ZoneSchedulerTab.vue
  Zones/ZoneCard.vue
  Zones/ZoneTelemetryChart.vue
  Devices/Index.vue
@@ -224,6 +225,17 @@ resources/js/Pages/
 Фильтры оператора:
 - пресеты: `all`, `failed`, `deadline`, `done_confirmed`, `done_unconfirmed`;
 - поиск по `task_id`, `status`, `reason_code`, `error_code`.
+
+## 6.7. Scheduler Tab: Laravel scheduler sync
+
+`Pages/Zones/Tabs/ZoneSchedulerTab.vue`
+
+Назначение:
+- отдельная вкладка зоны для синхронизации с Laravel scheduler-dispatch;
+- показывает runtime control-mode, количество загруженных задач, manual-step hints и `scheduler-tasks` lifecycle;
+- использует тот же canonical backend-контракт `GET /api/zones/{id}/scheduler-tasks` и detail lookup `GET /api/zones/{id}/scheduler-tasks/{taskId}`.
+- визуально оформлена как dashboard: hero-summary, timeline detail-view, recent task list, quick controls, недельный preview и collapsed dev diagnostics;
+- основной фокус экрана: синхронизация, активная задача, состояние очереди и быстрый доступ к последней записи.
 
 ---
 

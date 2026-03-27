@@ -51,7 +51,7 @@ function authorityDocument(namespace: string, payload: Record<string, unknown>, 
   }
 }
 
-function installAuthorityMocks() {
+function installAuthorityMocks(zoneLogicProfilePayload?: Record<string, unknown>) {
   getDocumentMock.mockImplementation((scopeType: string, scopeId: number, namespace: string) => {
     if (namespace === 'system.automation_defaults') {
       return Promise.resolve(authorityDocument(namespace, {
@@ -157,7 +157,7 @@ function installAuthorityMocks() {
     }
 
     if (namespace === 'zone.logic_profile') {
-      return Promise.resolve(authorityDocument(namespace, {
+      return Promise.resolve(authorityDocument(namespace, zoneLogicProfilePayload ?? {
         active_mode: 'setup',
         profiles: {
           setup: {
@@ -351,7 +351,20 @@ describe('useGrowthCycleWizard', () => {
       }
 
       if (url === '/recipes') {
-        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              data: [
+                {
+                  id: 1,
+                  name: 'Recipe A',
+                  latest_published_revision_id: 3,
+                },
+              ],
+            },
+          },
+        })
       }
 
       if (url === '/recipe-revisions/3') {
@@ -399,6 +412,212 @@ describe('useGrowthCycleWizard', () => {
     expect(wizard.waterForm.value.targetEc).toBe(1.5)
   })
 
+  it('не перетирает target pH/EC рецепта значениями zone automation profile', async () => {
+    installAuthorityMocks({
+      active_mode: 'setup',
+      profiles: {
+        setup: {
+          mode: 'setup',
+          is_active: true,
+          subsystems: {
+            diagnostics: {
+              execution: {
+                target_ph: 5.8,
+                target_ec: 1.6,
+              },
+            },
+          },
+          command_plans: {
+            schema_version: 1,
+            plans: {},
+          },
+          updated_at: '2026-03-24T10:00:00Z',
+        },
+      },
+    })
+    const { wizard, api } = mountWizardHarness({
+      show: true,
+      initialData: {
+        plantId: 2,
+        recipeId: 1,
+        recipeRevisionId: 3,
+        startedAt: '2026-03-24T10:00',
+      },
+    })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              data: [
+                {
+                  id: 1,
+                  name: 'Recipe A',
+                  latest_published_revision_id: 3,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              id: 3,
+              phases: [
+                {
+                  id: 30,
+                  phase_index: 0,
+                  name: 'Первая фаза',
+                  ph_target: 5.0,
+                  ph_min: 4.95,
+                  ph_max: 5.05,
+                  ec_target: 1.5,
+                  ec_min: 1.3,
+                  ec_max: 1.7,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    await flushPromises()
+
+    expect(wizard.waterForm.value.targetPh).toBe(5.0)
+    expect(wizard.waterForm.value.targetEc).toBe(1.5)
+
+    wizard.form.value.zoneId = 7
+    await flushPromises()
+
+    expect(wizard.waterForm.value.targetPh).toBe(5.0)
+    expect(wizard.waterForm.value.targetEc).toBe(1.5)
+  })
+
+  it('не перетирает target pH/EC рецепта draft-данными после загрузки zone automation profile', async () => {
+    installAuthorityMocks({
+      active_mode: 'setup',
+      profiles: {
+        setup: {
+          mode: 'setup',
+          is_active: true,
+          subsystems: {
+            diagnostics: {
+              execution: {
+                target_ph: 5.8,
+                target_ec: 1.6,
+              },
+            },
+          },
+          command_plans: {
+            schema_version: 1,
+            plans: {},
+          },
+          updated_at: '2026-03-24T10:00:00Z',
+        },
+      },
+    })
+
+    localStorage.setItem('growthCycleWizardDraft:zone-7', JSON.stringify({
+      zoneId: 7,
+      plantId: 2,
+      recipeId: 1,
+      recipeRevisionId: 3,
+      startedAt: '2026-03-24T10:00',
+      climateForm: { enabled: true },
+      waterForm: {
+        targetPh: 5.8,
+        targetEc: 1.6,
+      },
+      lightingForm: { enabled: false },
+      currentStep: 6,
+    }))
+
+    const { wrapper, wizard, api } = mountWizardHarness({
+      show: false,
+      zoneId: 7,
+      initialData: {
+        plantId: 2,
+        recipeId: 1,
+        recipeRevisionId: 3,
+        startedAt: '2026-03-24T10:00',
+      },
+    })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              data: [
+                {
+                  id: 1,
+                  name: 'Recipe A',
+                  latest_published_revision_id: 3,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              id: 3,
+              phases: [
+                {
+                  id: 30,
+                  phase_index: 0,
+                  name: 'Первая фаза',
+                  ph_target: 5.0,
+                  ph_min: 4.95,
+                  ph_max: 5.05,
+                  ec_target: 1.5,
+                  ec_min: 1.3,
+                  ec_max: 1.7,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wizard.waterForm.value.targetPh).toBe(5.0)
+    expect(wizard.waterForm.value.targetEc).toBe(1.5)
+
+    wizard.form.value.zoneId = 7
+    await flushPromises()
+
+    expect(wizard.waterForm.value.targetPh).toBe(5.0)
+    expect(wizard.waterForm.value.targetEc).toBe(1.5)
+  })
+
   it('блокирует запуск, если target pH выходит за окно рецепта', async () => {
     installAuthorityMocks()
     const { wizard, api, showToast } = mountWizardHarness()
@@ -409,7 +628,20 @@ describe('useGrowthCycleWizard', () => {
       }
 
       if (url === '/recipes') {
-        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              data: [
+                {
+                  id: 1,
+                  name: 'Recipe A',
+                  latest_published_revision_id: 3,
+                },
+              ],
+            },
+          },
+        })
       }
 
       if (url === '/recipe-revisions/3') {
