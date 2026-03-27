@@ -211,9 +211,9 @@ describe('useWebSocket - Integration Tests', () => {
       // Shared channel registry не должен делать лишний re-auth
       expect(mockEcho.private).not.toHaveBeenCalled()
 
-      // Should reattach listeners
-      expect(mockZoneChannel.listen).toHaveBeenCalled()
-      expect(mockGlobalChannel.listen).toHaveBeenCalled()
+      // Idempotent sync на живом shared channel не должен делать forced rebind
+      expect(mockZoneChannel.listen).not.toHaveBeenCalled()
+      expect(mockGlobalChannel.listen).not.toHaveBeenCalled()
     })
 
     it('should handle component unmount and cleanup', () => {
