@@ -11,6 +11,7 @@ use App\Services\AutomationScheduler\SchedulerMetricsStore;
 use App\Services\AutomationScheduler\SchedulerRuntimeHelper;
 use App\Services\AutomationScheduler\ScheduleDispatcher;
 use App\Services\AutomationScheduler\ScheduleLoader;
+use App\Services\AutomationScheduler\ZoneScheduleItemBuilder;
 use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\EffectiveTargetsService;
 use Carbon\CarbonImmutable;
@@ -45,7 +46,9 @@ class DispatchesAutomationSchedulesTest extends TestCase
                 zoneCursorStore: $zoneCursorStore,
                 activeTaskStore: $activeTaskStore,
             ),
-            lightingScheduleParser: new LightingScheduleParser,
+            zoneScheduleItemBuilder: new ZoneScheduleItemBuilder(
+                lightingScheduleParser: new LightingScheduleParser,
+            ),
             activeTaskPoller: $activeTaskPoller,
             activeTaskStore: $activeTaskStore,
             schedulerMetricsStore: new SchedulerMetricsStore,

@@ -59,16 +59,16 @@ export function useAutomationConfig(showToast?: ToastHandler) {
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
 
-  async function getDocument<TDocument extends AutomationDocument = AutomationDocument>(
+  async function getDocument<TPayload = Record<string, unknown>, TMeta = Record<string, unknown>>(
     scopeType: AutomationScopeType,
     scopeId: number,
     namespace: string,
-  ): Promise<TDocument> {
+  ): Promise<AutomationDocument<TPayload, TMeta>> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: TDocument }>(
+      const response = await api.get<{ status: string; data: AutomationDocument<TPayload, TMeta> }>(
         `/automation-configs/${scopeType}/${scopeId}/${namespace}`
       )
       return response.data.data
@@ -81,17 +81,21 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     }
   }
 
-  async function updateDocument<TPayload = Record<string, unknown>, TDocument extends AutomationDocument<TPayload> = AutomationDocument<TPayload>>(
+  async function updateDocument<
+    TRequestPayload = Record<string, unknown>,
+    TResponsePayload = TRequestPayload,
+    TMeta = Record<string, unknown>,
+  >(
     scopeType: AutomationScopeType,
     scopeId: number,
     namespace: string,
-    payload: TPayload,
-  ): Promise<TDocument> {
+    payload: TRequestPayload,
+  ): Promise<AutomationDocument<TResponsePayload, TMeta>> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.put<{ status: string; data: TDocument }>(
+      const response = await api.put<{ status: string; data: AutomationDocument<TResponsePayload, TMeta> }>(
         `/automation-configs/${scopeType}/${scopeId}/${namespace}`,
         { payload }
       )
@@ -260,16 +264,16 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     }
   }
 
-  async function resetDocument<TDocument extends AutomationDocument = AutomationDocument>(
+  async function resetDocument<TPayload = Record<string, unknown>, TMeta = Record<string, unknown>>(
     scopeType: AutomationScopeType,
     scopeId: number,
     namespace: string,
-  ): Promise<TDocument> {
+  ): Promise<AutomationDocument<TPayload, TMeta>> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.delete<{ status: string; data: TDocument }>(
+      const response = await api.delete<{ status: string; data: AutomationDocument<TPayload, TMeta> }>(
         `/automation-configs/${scopeType}/${scopeId}/${namespace}`
       )
       return response.data.data

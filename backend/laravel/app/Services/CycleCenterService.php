@@ -5,15 +5,14 @@ namespace App\Services;
 use App\Enums\GrowCycleStatus;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Alert;
-use App\Models\TelemetryLast;
 use App\Models\Zone;
-use App\Services\GrowCyclePresenter;
 use Illuminate\Database\Eloquent\Collection;
 
 class CycleCenterService
 {
     public function __construct(
-        private GrowCyclePresenter $growCyclePresenter
+        private GrowCyclePresenter $growCyclePresenter,
+        private ZoneFrontendTelemetryService $zoneFrontendTelemetry
     ) {}
 
     /**
@@ -80,59 +79,7 @@ class CycleCenterService
      */
     private function getTelemetryByZone(array $zoneIds): array
     {
-        if (empty($zoneIds)) {
-            return [];
-        }
-
-        $telemetryAll = TelemetryLast::query()
-            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-            ->whereIn('sensors.zone_id', $zoneIds)
-            ->whereNotNull('sensors.zone_id')
-            ->select([
-                'sensors.zone_id',
-                'sensors.type as metric_type',
-                'telemetry_last.last_value as value',
-                'telemetry_last.updated_at'
-            ])
-            ->get();
-
-        $telemetryByZone = [];
-        foreach ($telemetryAll as $metric) {
-            $zoneId = $metric->zone_id;
-            $key = strtolower((string) ($metric->metric_type ?? ''));
-
-            if (!isset($telemetryByZone[$zoneId])) {
-                $telemetryByZone[$zoneId] = [
-                    'ph' => null,
-                    'ec' => null,
-                    'temperature' => null,
-                    'humidity' => null,
-                    'co2' => null,
-                    'updated_at' => null,
-                ];
-            }
-
-            if ($key === 'ph') {
-                $telemetryByZone[$zoneId]['ph'] = (float) $metric->value;
-            } elseif ($key === 'ec') {
-                $telemetryByZone[$zoneId]['ec'] = (float) $metric->value;
-            } elseif ($key === 'temperature') {
-                $telemetryByZone[$zoneId]['temperature'] = (float) $metric->value;
-            } elseif ($key === 'humidity') {
-                $telemetryByZone[$zoneId]['humidity'] = (float) $metric->value;
-            } elseif ($key === 'co2') {
-                $telemetryByZone[$zoneId]['co2'] = (float) $metric->value;
-            }
-
-            if ($metric->updated_at) {
-                $lastUpdated = $telemetryByZone[$zoneId]['updated_at'];
-                if (!$lastUpdated || $metric->updated_at->gt($lastUpdated)) {
-                    $telemetryByZone[$zoneId]['updated_at'] = $metric->updated_at->toIso8601String();
-                }
-            }
-        }
-
-        return $telemetryByZone;
+        return $this->zoneFrontendTelemetry->getZoneSnapshots($zoneIds, true);
     }
 
     /**

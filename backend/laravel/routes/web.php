@@ -707,41 +707,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
         $zoneIds = $zones->pluck('id')->toArray();
 
-        $telemetryByZone = [];
-        if (! empty($zoneIds)) {
-            $telemetryAll = TelemetryLast::query()
-                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-                ->whereIn('sensors.zone_id', $zoneIds)
-                ->whereNotNull('sensors.zone_id')
-                ->select([
-                    'sensors.zone_id',
-                    'sensors.type as metric_type',
-                    'telemetry_last.last_value as value',
-                ])
-                ->get();
-
-            foreach ($telemetryAll as $metric) {
-                $key = strtolower($metric->metric_type ?? '');
-                if (! isset($telemetryByZone[$metric->zone_id])) {
-                    $telemetryByZone[$metric->zone_id] = [
-                        'ph' => null,
-                        'ec' => null,
-                        'temperature' => null,
-                        'humidity' => null,
-                    ];
-                }
-
-                if ($key === 'ph') {
-                    $telemetryByZone[$metric->zone_id]['ph'] = (float) $metric->value;
-                } elseif ($key === 'ec') {
-                    $telemetryByZone[$metric->zone_id]['ec'] = (float) $metric->value;
-                } elseif ($key === 'temperature') {
-                    $telemetryByZone[$metric->zone_id]['temperature'] = (float) $metric->value;
-                } elseif ($key === 'humidity') {
-                    $telemetryByZone[$metric->zone_id]['humidity'] = (float) $metric->value;
-                }
-            }
-        }
+        $telemetryByZone = app(\App\Services\ZoneFrontendTelemetryService::class)
+            ->getZoneSnapshots($zoneIds, true);
 
         $zones->each(function (Zone $zone) use ($telemetryByZone) {
             $zone->telemetry = $telemetryByZone[$zone->id] ?? null;
@@ -813,38 +780,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             });
 
             $zoneIds = $zones->pluck('id')->toArray();
-            $telemetryByZone = [];
-
-            if (! empty($zoneIds)) {
-                $telemetryAll = \App\Models\TelemetryLast::query()
-                    ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-                    ->whereIn('sensors.zone_id', $zoneIds)
-                    ->whereNotNull('sensors.zone_id')
-                    ->select([
-                        'sensors.zone_id',
-                        'sensors.type as metric_type',
-                        'telemetry_last.last_value as value',
-                    ])
-                    ->get();
-
-                $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
-                    $result = ['ph' => null, 'ec' => null, 'temperature' => null, 'humidity' => null];
-                    foreach ($metrics as $metric) {
-                        $key = strtolower($metric->metric_type ?? '');
-                        if ($key === 'ph') {
-                            $result['ph'] = $metric->value;
-                        } elseif ($key === 'ec') {
-                            $result['ec'] = $metric->value;
-                        } elseif ($key === 'temperature') {
-                            $result['temperature'] = $metric->value;
-                        } elseif ($key === 'humidity') {
-                            $result['humidity'] = $metric->value;
-                        }
-                    }
-
-                    return $result;
-                })->toArray();
-            }
+            $telemetryByZone = app(\App\Services\ZoneFrontendTelemetryService::class)
+                ->getZoneSnapshots($zoneIds, true);
 
             $zonesWithTelemetry = $zones->map(function ($zone) use ($telemetryByZone) {
                 $zone->telemetry = $telemetryByZone[$zone->id] ?? null;
@@ -883,33 +820,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'activeGrowCycle.plant',
             ]);
 
-            $telemetryLast = \App\Models\TelemetryLast::query()
-                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-                ->where('sensors.zone_id', $zoneIdInt)
-                ->whereNotNull('sensors.zone_id')
-                ->select([
-                    'sensors.type as metric_type',
-                    'telemetry_last.last_value as value',
-                ])
-                ->get()
-                ->mapWithKeys(function ($item) {
-                    $key = strtolower($item->metric_type ?? '');
-                    if ($key === 'ph') {
-                        return ['ph' => $item->value];
-                    }
-                    if ($key === 'ec') {
-                        return ['ec' => $item->value];
-                    }
-                    if ($key === 'temperature') {
-                        return ['temperature' => $item->value];
-                    }
-                    if ($key === 'humidity') {
-                        return ['humidity' => $item->value];
-                    }
-
-                    return [];
-                })
-                ->toArray();
+            $telemetryLast = app(\App\Services\ZoneFrontendTelemetryService::class)
+                ->getZoneSnapshot($zoneIdInt, true);
 
             $activeSimulation = ZoneSimulation::query()
                 ->where(function ($query) use ($zoneIdInt): void {
@@ -967,33 +879,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'recipe_name' => $zone->activeGrowCycle?->recipeRevision?->recipe?->name,
             ]);
 
-            $telemetryLast = \App\Models\TelemetryLast::query()
-                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-                ->where('sensors.zone_id', $zoneIdInt)
-                ->whereNotNull('sensors.zone_id')
-                ->select([
-                    'sensors.type as metric_type',
-                    'telemetry_last.last_value as value',
-                ])
-                ->get()
-                ->mapWithKeys(function ($item) {
-                    $key = strtolower($item->metric_type ?? '');
-                    if ($key === 'ph') {
-                        return ['ph' => $item->value];
-                    }
-                    if ($key === 'ec') {
-                        return ['ec' => $item->value];
-                    }
-                    if ($key === 'temperature') {
-                        return ['temperature' => $item->value];
-                    }
-                    if ($key === 'humidity') {
-                        return ['humidity' => $item->value];
-                    }
-
-                    return [];
-                })
-                ->toArray();
+            $telemetryLast = app(\App\Services\ZoneFrontendTelemetryService::class)
+                ->getZoneSnapshot($zoneIdInt, true);
 
             $targets = [];
             $activeGrowCycle = $zone->activeGrowCycle;

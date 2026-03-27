@@ -402,6 +402,20 @@ describe('useGrowthCycleWizard', () => {
         })
       }
 
+      if (url === '/api/zones/7/health') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              readiness: {
+                ready: true,
+                errors: [],
+              },
+            },
+          },
+        })
+      }
+
       return Promise.resolve({ data: { status: 'ok', data: [] } })
     })
 
@@ -618,81 +632,6 @@ describe('useGrowthCycleWizard', () => {
     expect(wizard.waterForm.value.targetEc).toBe(1.5)
   })
 
-  it('блокирует запуск, если target pH выходит за окно рецепта', async () => {
-    installAuthorityMocks()
-    const { wizard, api, showToast } = mountWizardHarness()
-
-    vi.mocked(api.get).mockImplementation((url: string) => {
-      if (url === '/plants') {
-        return Promise.resolve({ data: { status: 'ok', data: [] } })
-      }
-
-      if (url === '/recipes') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: {
-              data: [
-                {
-                  id: 1,
-                  name: 'Recipe A',
-                  latest_published_revision_id: 3,
-                },
-              ],
-            },
-          },
-        })
-      }
-
-      if (url === '/recipe-revisions/3') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: {
-              id: 3,
-              phases: [
-                {
-                  id: 30,
-                  phase_index: 0,
-                  name: 'Первая фаза',
-                  ph_target: 5.8,
-                  ph_min: 5.6,
-                  ph_max: 6.0,
-                  ec_target: 1.5,
-                  ec_min: 1.3,
-                  ec_max: 1.7,
-                },
-              ],
-            },
-          },
-        })
-      }
-
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-
-    wizard.form.value.zoneId = 7
-    wizard.form.value.startedAt = '2099-01-01T10:00'
-    wizard.selectedPlantId.value = 2
-    wizard.selectedRevisionId.value = 3
-
-    await flushPromises()
-
-    wizard.waterForm.value.targetPh = 6.4
-    wizard.waterForm.value.targetEc = 1.5
-    wizard.currentStep.value = 6
-
-    await wizard.onSubmit()
-
-    expect(api.post).not.toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.anything())
-    expect(wizard.error.value).toContain('pH: target=6.4 должен быть в диапазоне min=5.6..max=6')
-    expect(showToast).toHaveBeenCalledWith(
-      expect.stringContaining('pH: target=6.4 должен быть в диапазоне min=5.6..max=6'),
-      'error',
-      expect.any(Number),
-    )
-  })
-
   it('не восстанавливает draft сразу на submit-шаг', async () => {
     installAuthorityMocks()
     localStorage.setItem('growthCycleWizardDraft:zone-1', JSON.stringify({
@@ -877,6 +816,8 @@ describe('useGrowthCycleWizard', () => {
     })
 
     wizard.currentStep.value = 6
+    wizard.waterForm.value.targetPh = 6.4
+    wizard.waterForm.value.targetEc = 1.5
     await flushPromises()
 
     await wizard.onSubmit()
@@ -898,6 +839,8 @@ describe('useGrowthCycleWizard', () => {
       recipe_revision_id: 3,
       plant_id: 2,
     }))
+    const growCyclePayload = vi.mocked(api.post).mock.calls.find(([url]) => url === '/api/zones/7/grow-cycles')?.[1] as Record<string, unknown> | undefined
+    expect(growCyclePayload?.phase_overrides).toBeUndefined()
     expect(showToast).toHaveBeenCalledWith(
       'Цикл выращивания успешно запущен',
       'success',

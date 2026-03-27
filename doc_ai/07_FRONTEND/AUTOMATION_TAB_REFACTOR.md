@@ -1,6 +1,6 @@
 # Рефакторинг вкладки Автоматика (ZoneAutomationTab)
 
-> Статус: PLANNED
+> Статус: PARTIALLY IMPLEMENTED / SUPERSEDED BY SCHEDULE WORKSPACE
 > Ветка: ae3
 > Связано с: аудит зоны 447, исправления #2/#3/#7/#8
 
@@ -30,11 +30,15 @@
 
 ## 2. Что НЕ меняется
 
-- Маршруты Laravel API (`/api/zones/{zone}/state`, `/control-mode`, `/manual-step`, `/scheduler-tasks`)
+- Маршруты Laravel API для automation runtime (`/api/zones/{zone}/state`, `/control-mode`, `/manual-step`)
 - Контракт `AutomationState` — AE отдаёт те же поля
 - WebSocket каналы и имена событий (`Echo`, `Reverb`)
 - `AutomationProcessDiagram.vue` — оставить как есть (SVG-диаграмма 2-баков)
 - `PidConfigForm`, `RelayAutotuneTrigger`, `PumpCalibrationsPanel` — не трогать
+
+Отдельное уточнение после zero-legacy cutover:
+- scheduler/execution operator UI вынесен в `ZoneSchedulerTab.vue`;
+- публичный контракт `/api/zones/{zone}/scheduler-tasks*` удалён и заменён на `schedule-workspace` + `executions/{executionId}`.
 
 ---
 
@@ -214,23 +218,14 @@ function deriveWorkflowStages(state: AutomationStateType): WorkflowStageView[] {
 
 ---
 
-### 4.6 `AutomationSchedulerDevCard.vue` — убрать из основного потока
+### 4.6 Scheduler lifecycle — вынести из Automation Tab
 
-Секция "Scheduler / Intent Lifecycle" — developer tool. Свернуть по умолчанию:
+Итоговое направление после cutover:
+- секция `Scheduler / Intent Lifecycle` не должна жить внутри `ZoneAutomationTab.vue`;
+- operator flow `Plan + Execution` вынесен в отдельную вкладку `ZoneSchedulerTab.vue`;
+- automation tab остаётся runtime-ориентированной и не содержит detail-view по execution run.
 
-```vue
-<details class="surface-card ... group">
-  <summary class="cursor-pointer px-4 py-3 ...">
-    <span class="text-sm font-medium">Scheduler / Intent Lifecycle</span>
-    <Badge variant="outline" class="text-xs ml-2">dev</Badge>
-  </summary>
-  <div class="p-4">
-    <!-- текущее содержимое без изменений -->
-  </div>
-</details>
-```
-
-**Файлы:** `Components/AutomationSchedulerDevCard.vue` [NEW]
+**Файлы:** `Pages/Zones/Tabs/ZoneSchedulerTab.vue`, `composables/useZoneScheduleWorkspace.ts`
 
 ---
 
@@ -242,9 +237,12 @@ function deriveWorkflowStages(state: AutomationStateType): WorkflowStageView[] {
 
 ```
 ZoneAutomationTab.vue
-  ├── useZoneAutomationState()    → climateForm, waterForm, lightingForm
-  ├── useZoneAutomationApi()      → applyAutomationProfile, runManualXxx
-  └── useZoneAutomationScheduler() → scheduler lookup, tasks list
+  ├── useZoneAutomationState()      → climateForm, waterForm, lightingForm
+  ├── useZoneAutomationApi()        → applyAutomationProfile, runManualXxx
+  └── useZoneAutomationScheduler()  → control-mode snapshot, manual-step sync
+
+ZoneSchedulerTab.vue
+  └── useZoneScheduleWorkspace()    → schedule workspace, recent runs, execution detail
 
 AutomationControlModeCard.vue
   └── useAutomationPanel() → automationState, automationControlMode, setAutomationControlMode, runManualStep
@@ -253,7 +251,7 @@ AutomationWorkflowCard.vue
   └── useAutomationPanel() → automationState, stale, irrNodeState, workflowStages
 ```
 
-**Файлы:** `composables/useZoneAutomationTab.ts` (упростить), `composables/useZoneAutomationState.ts`, `composables/useZoneAutomationApi.ts`, `composables/useZoneAutomationScheduler.ts`
+**Файлы:** `composables/useZoneAutomationTab.ts` (упростить), `composables/useZoneAutomationState.ts`, `composables/useZoneAutomationApi.ts`, `composables/useZoneAutomationScheduler.ts`, `composables/useZoneScheduleWorkspace.ts`
 
 ---
 

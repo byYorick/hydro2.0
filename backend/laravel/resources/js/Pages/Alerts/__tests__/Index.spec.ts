@@ -79,12 +79,6 @@ vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
 }))
 
-const subscribeAlertsMock = vi.hoisted(() => vi.fn(() => vi.fn()))
-
-vi.mock('@/ws/subscriptions', () => ({
-  subscribeAlerts: subscribeAlertsMock,
-}))
-
 import AlertsIndex from '../Index.vue'
 import { config } from '@vue/test-utils'
 
@@ -114,7 +108,6 @@ describe('Alerts/Index.vue', () => {
     axiosGetMock.mockReset()
     axiosPatchMock.mockClear()
     routerReloadMock.mockClear()
-    subscribeAlertsMock.mockClear()
     axiosGetMock.mockResolvedValue({ data: { data: itemsDataValue } })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
@@ -157,4 +150,3 @@ describe('Alerts/Index.vue', () => {
     expect(axiosPatchMock).toHaveBeenCalled()
   })
 })
-

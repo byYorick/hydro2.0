@@ -95,7 +95,7 @@ class GrowCycleServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_invalid_phase_overrides_when_syncing_cycle_documents(): void
+    public function it_syncs_empty_phase_override_document(): void
     {
         $zone = Zone::factory()->create();
         $plant = Plant::factory()->create();
@@ -117,14 +117,20 @@ class GrowCycleServiceTest extends TestCase
 
         $cycle = $this->service->createCycle($zone, $revision, $plant->id);
 
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('pH: target должен быть в диапазоне min..max.');
-
         $this->service->syncCycleConfigDocuments($cycle, [
             'phase_overrides' => [
                 'ph_target' => 5.80,
             ],
         ]);
+
+        $document = AutomationConfigDocument::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_GROW_CYCLE)
+            ->where('scope_id', $cycle->id)
+            ->where('namespace', AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES)
+            ->first();
+
+        $this->assertNotNull($document);
+        $this->assertSame([], $document->payload);
     }
 
     #[Test]

@@ -1,8 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
 const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
 const apiGetMock = vi.hoisted(() => vi.fn())
 const apiPostMock = vi.hoisted(() => vi.fn())
+
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
@@ -14,6 +16,7 @@ vi.mock('@inertiajs/vue3', () => ({
     },
   }),
 }))
+
 vi.mock('@/composables/useSensorCalibrationSettings', () => ({
   useSensorCalibrationSettings: () => ({
     value: {
@@ -30,12 +33,15 @@ vi.mock('@/composables/useSensorCalibrationSettings', () => ({
     },
   }),
 }))
+
 vi.mock('@/Components/AIPredictionsSection.vue', () => ({
   default: { name: 'AIPredictionsSection', template: '<div />' },
 }))
+
 vi.mock('@/Components/PidConfigForm.vue', () => ({
   default: { name: 'PidConfigForm', template: '<div />' },
 }))
+
 vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
   default: {
     name: 'CorrectionRuntimeReadinessCard',
@@ -43,12 +49,15 @@ vi.mock('@/Components/CorrectionRuntimeReadinessCard.vue', () => ({
     template: '<div><button data-testid="mock-open-pump" @click="$emit(\'open-pump-calibration\')" /></div>',
   },
 }))
+
 vi.mock('@/Components/ProcessCalibrationPanel.vue', () => ({
   default: { name: 'ProcessCalibrationPanel', template: '<div />' },
 }))
+
 vi.mock('@/Components/RelayAutotuneTrigger.vue', () => ({
   default: { name: 'RelayAutotuneTrigger', template: '<div />' },
 }))
+
 vi.mock('@/Components/ZoneAutomationAccordionSection.vue', () => ({
   default: {
     name: 'ZoneAutomationAccordionSection',
@@ -61,6 +70,7 @@ vi.mock('@/Components/ZoneAutomationAccordionSection.vue', () => ({
     `,
   },
 }))
+
 vi.mock('@/Components/PumpCalibrationsPanel.vue', () => ({
   default: {
     name: 'PumpCalibrationsPanel',
@@ -75,12 +85,15 @@ vi.mock('@/Components/PumpCalibrationsPanel.vue', () => ({
     `,
   },
 }))
+
 vi.mock('@/Components/SensorCalibrationStatus.vue', () => ({
   default: { name: 'SensorCalibrationStatus', template: '<div />' },
 }))
+
 vi.mock('@/Components/ZonePumpCalibrationSettingsCard.vue', () => ({
   default: { name: 'ZonePumpCalibrationSettingsCard', template: '<div />' },
 }))
+
 vi.mock('@/Components/Badge.vue', () => ({
   default: {
     name: 'Badge',
@@ -88,6 +101,7 @@ vi.mock('@/Components/Badge.vue', () => ({
     template: '<span><slot /></span>',
   },
 }))
+
 vi.mock('@/Components/Button.vue', () => ({
   default: {
     name: 'Button',
@@ -95,29 +109,84 @@ vi.mock('@/Components/Button.vue', () => ({
     template: '<button :disabled="disabled"><slot /></button>',
   },
 }))
+
 vi.mock('@/composables/useToast', () => ({
   useToast: () => ({
     showToast: vi.fn(),
   }),
 }))
+
 vi.mock('@/composables/useCommands', () => ({
   useCommands: () => ({
     sendZoneCommand: vi.fn().mockResolvedValue({ status: 'ok' }),
   }),
 }))
+
 vi.mock('@/composables/useApi', () => ({
   useApi: () => ({
     get: apiGetMock,
     post: apiPostMock,
   }),
 }))
+
 vi.mock('@/utils/logger', () => ({
   logger: {
     warn: vi.fn(),
     error: vi.fn(),
   },
 }))
+
 import ZoneAutomationTab from '../ZoneAutomationTab.vue'
+
+function defaultStateResponse(zoneId = 42) {
+  return {
+    data: {
+      zone_id: zoneId,
+      state: 'TANK_FILLING',
+      state_label: 'Набор бака с раствором',
+      state_details: {
+        started_at: '2026-02-10T08:00:00Z',
+        elapsed_sec: 45,
+        progress_percent: 30,
+        failed: false,
+      },
+      system_config: {
+        tanks_count: 2,
+        system_type: 'drip',
+        clean_tank_capacity_l: 300,
+        nutrient_tank_capacity_l: 280,
+      },
+      current_levels: {
+        clean_tank_level_percent: 95,
+        nutrient_tank_level_percent: 25,
+        ph: 5.8,
+        ec: 1.6,
+      },
+      active_processes: {
+        pump_in: true,
+        circulation_pump: false,
+        ph_correction: false,
+        ec_correction: false,
+      },
+      timeline: [],
+      next_state: 'TANK_RECIRC',
+      estimated_completion_sec: 120,
+      control_mode: 'auto',
+      allowed_manual_steps: [
+        'clean_fill_start',
+        'clean_fill_stop',
+        'solution_fill_start',
+        'solution_fill_stop',
+      ],
+      state_meta: {
+        source: 'live',
+        is_stale: false,
+        served_at: '2026-02-10T08:00:30Z',
+      },
+    },
+  }
+}
+
 describe('ZoneAutomationTab.vue', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -159,213 +228,24 @@ describe('ZoneAutomationTab.vue', () => {
           },
         })
       }
+
       if (url.includes('/state')) {
         const zoneId = Number(url.match(/\/api\/zones\/(\d+)\/state/)?.[1] ?? 42)
-        return Promise.resolve({
-          data: {
-            zone_id: zoneId,
-            state: 'TANK_FILLING',
-            state_label: 'Набор бака с раствором',
-            state_details: {
-              started_at: '2026-02-10T08:00:00Z',
-              elapsed_sec: 45,
-              progress_percent: 30,
-              failed: false,
-            },
-            system_config: {
-              tanks_count: 2,
-              system_type: 'drip',
-              clean_tank_capacity_l: 300,
-              nutrient_tank_capacity_l: 280,
-            },
-            current_levels: {
-              clean_tank_level_percent: 95,
-              nutrient_tank_level_percent: 25,
-              ph: 5.8,
-              ec: 1.6,
-            },
-            active_processes: {
-              pump_in: true,
-              circulation_pump: false,
-              ph_correction: false,
-              ec_correction: false,
-            },
-            timeline: [],
-            next_state: 'TANK_RECIRC',
-            estimated_completion_sec: 120,
-            control_mode: 'auto',
-            allowed_manual_steps: [
-              'clean_fill_start',
-              'clean_fill_stop',
-              'solution_fill_start',
-              'solution_fill_stop',
-            ],
-            state_meta: {
-              source: 'live',
-              is_stale: false,
-              served_at: '2026-02-10T08:00:30Z',
-            },
-          },
-        })
+        return Promise.resolve(defaultStateResponse(zoneId))
       }
-      if (url.includes('/scheduler-tasks/')) {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: {
-              task_id: 'st-test',
-              zone_id: 42,
-              task_type: 'irrigation',
-              status: 'completed',
-              created_at: '2026-02-10T08:00:00Z',
-              updated_at: '2026-02-10T08:01:00Z',
-              scheduled_for: '2026-02-10T08:00:00Z',
-              due_at: '2026-02-10T08:02:00Z',
-              expires_at: '2026-02-10T08:05:00Z',
-              correlation_id: null,
-              decision: 'run',
-              reason_code: 'tank_refill_started',
-              error_code: null,
-              command_submitted: true,
-              command_effect_confirmed: true,
-              commands_total: 1,
-              commands_effect_confirmed: 1,
-              commands_failed: 0,
-              lifecycle: [
-                { status: 'accepted', at: '2026-02-10T08:00:00Z' },
-                { status: 'completed', at: '2026-02-10T08:01:00Z' },
-              ],
-              result: {
-                command_submitted: true,
-                command_effect_confirmed: true,
-                commands_total: 1,
-                commands_effect_confirmed: 1,
-                commands_failed: 0,
-              },
-              process_state: {
-                status: 'running',
-                status_label: 'Выполняется',
-                phase: 'clean_fill',
-                phase_label: 'Набор бака с чистой водой',
-                is_setup_completed: false,
-                is_work_mode: false,
-                current_action: {
-                  event_type: 'TASK_STARTED',
-                  reason_code: 'clean_fill_started',
-                  at: '2026-02-10T08:00:40Z',
-                },
-              },
-              process_steps: [
-                {
-                  phase: 'clean_fill',
-                  label: 'Набор бака с чистой водой',
-                  status: 'running',
-                  status_label: 'Выполняется',
-                  updated_at: '2026-02-10T08:00:40Z',
-                },
-                {
-                  phase: 'solution_fill',
-                  label: 'Набор бака с раствором',
-                  status: 'pending',
-                  status_label: 'Ожидание',
-                },
-                {
-                  phase: 'parallel_correction',
-                  label: 'Параллельная коррекция pH/EC',
-                  status: 'pending',
-                  status_label: 'Ожидание',
-                },
-                {
-                  phase: 'setup_transition',
-                  label: 'Завершение setup и переход в рабочий режим',
-                  status: 'pending',
-                  status_label: 'Ожидание',
-                },
-              ],
-              timeline: [
-                {
-                  event_id: 'evt-1',
-                  event_type: 'CYCLE_START_INITIATED',
-                  at: '2026-02-10T08:00:00Z',
-                },
-                {
-                  event_id: 'evt-2',
-                  event_type: 'TANK_LEVEL_CHECKED',
-                  reason_code: 'tank_level_checked',
-                  at: '2026-02-10T08:00:30Z',
-                },
-                {
-                  event_id: 'evt-3',
-                  event_type: 'TASK_STARTED',
-                  reason_code: 'clean_fill_started',
-                  at: '2026-02-10T08:00:40Z',
-                },
-                {
-                  event_id: 'evt-4',
-                  event_type: 'TASK_FINISHED',
-                  reason_code: 'prepare_targets_reached',
-                  run_mode: 'working',
-                  at: '2026-02-10T08:01:00Z',
-                },
-              ],
-            },
-          },
-        })
-      }
+
       return Promise.resolve({
         data: {
           status: 'ok',
-          data: [
-            {
-              task_id: 'st-recent',
-              zone_id: 42,
-              task_type: 'lighting',
-              status: 'running',
-              created_at: '2026-02-10T07:59:00Z',
-              updated_at: '2026-02-10T08:00:00Z',
-              scheduled_for: null,
-              correlation_id: null,
-              lifecycle: [],
-            },
-            {
-              task_id: 'st-failed',
-              zone_id: 42,
-              task_type: 'diagnostics',
-              status: 'failed',
-              updated_at: '2026-02-10T08:00:10Z',
-              error_code: 'cycle_start_refill_timeout',
-              reason_code: 'cycle_start_refill_timeout',
-              lifecycle: [],
-            },
-            {
-              task_id: 'st-done-unconfirmed',
-              zone_id: 42,
-              task_type: 'irrigation',
-              status: 'completed',
-              updated_at: '2026-02-10T08:00:20Z',
-              action_required: true,
-              command_submitted: true,
-              command_effect_confirmed: false,
-              commands_total: 1,
-              commands_effect_confirmed: 0,
-              lifecycle: [],
-            },
-            {
-              task_id: 'st-no-commands',
-              zone_id: 42,
-              task_type: 'diagnostics',
-              status: 'completed',
-              updated_at: '2026-02-10T08:00:30Z',
-              action_required: true,
-              commands_total: 0,
-              commands_effect_confirmed: 0,
-              lifecycle: [],
-            },
-          ],
+          data: {
+            control_mode: 'auto',
+            allowed_manual_steps: ['clean_fill_start', 'solution_fill_start'],
+          },
         },
       })
     })
   })
+
   it('подтягивает параметры автоматики из активного рецепта', async () => {
     const wrapper = mount(ZoneAutomationTab, {
       props: {
@@ -405,7 +285,9 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
+
     const vm = wrapper.vm as any
     expect(vm.waterForm.targetPh).toBeCloseTo(5.9, 2)
     expect(vm.waterForm.targetEc).toBeCloseTo(1.7, 2)
@@ -427,7 +309,9 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.lightingForm.scheduleStart).toBe('05:30')
     expect(vm.lightingForm.scheduleEnd).toBe('20:30')
     expect(wrapper.text()).toContain('Допуск pH ±0.29 (5%)')
+    expect(wrapper.text()).not.toContain('Задачи автоматики')
   })
+
   it('пересинхронизируется при обновлении targets', async () => {
     const wrapper = mount(ZoneAutomationTab, {
       props: {
@@ -438,6 +322,7 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
     await wrapper.setProps({
       targets: {
@@ -447,12 +332,14 @@ describe('ZoneAutomationTab.vue', () => {
       } as any,
     })
     await flushPromises()
+
     const vm = wrapper.vm as any
     expect(vm.waterForm.targetPh).toBeCloseTo(6.2, 2)
     expect(vm.waterForm.targetEc).toBeCloseTo(2.1, 2)
     expect(vm.waterForm.intervalMinutes).toBe(60)
     expect(vm.waterForm.durationSeconds).toBe(150)
   })
+
   it('безопасно форматирует телеметрию из строковых значений', async () => {
     const wrapper = mount(ZoneAutomationTab, {
       props: {
@@ -464,10 +351,12 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
-    const vm = wrapper.vm as any
-    expect(vm.telemetryLabel).toBe('24.4°C / 58%')
+
+    expect((wrapper.vm as any).telemetryLabel).toBe('24.4°C / 58%')
   })
+
   it('блокирует изменение system_type при активном цикле', async () => {
     const wrapper = mount(ZoneAutomationTab, {
       props: {
@@ -479,122 +368,13 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
-    const vm = wrapper.vm as any
-    expect(vm.isSystemTypeLocked).toBe(true)
+
+    expect((wrapper.vm as any).isSystemTypeLocked).toBe(true)
     expect(wrapper.text()).toContain('Тип системы зафиксирован для активного цикла.')
   })
-  it('показывает lifecycle scheduler-task и открывает задачу из списка', async () => {
-    const wrapper = mount(ZoneAutomationTab, {
-      props: {
-        zoneId: 42,
-        targets: {
-          ph: { target: 5.8 },
-          ec: { target: 1.5 },
-        } as any,
-      },
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Задачи автоматики')
-    expect(wrapper.text()).toContain('st-recent')
-    expect(wrapper.text()).toContain('Освещение')
-    expect(wrapper.text()).toContain('Выполняется')
-    const openButton = wrapper.findAll('button').find((btn) => btn.text() === 'Открыть')
-    expect(openButton).toBeTruthy()
-    await openButton!.trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-test')
-    expect(wrapper.text()).toContain('Решение автоматики')
-    expect(wrapper.text()).toContain('Выполнить')
-    expect(wrapper.text()).toContain('Автополив')
-    expect(wrapper.text()).toContain('SLA-контроль')
-    expect(wrapper.text()).toContain('SLA выполнен')
-    expect(wrapper.text()).toContain('Запуск цикла инициирован')
-    expect(wrapper.text()).toContain('Проверка уровня бака выполнена')
-    expect(wrapper.text()).toContain('набор бака с чистой водой')
-    expect(wrapper.text()).toContain('завершение setup и переход в рабочий режим')
-    expect(wrapper.text()).toContain('Текущий этап автоматики')
-    expect(wrapper.text()).toContain('Набор бака с чистой водой')
-    expect(wrapper.text()).toContain('Набор бака с раствором')
-    expect(wrapper.text()).toContain('Параллельная коррекция pH/EC')
-    expect(wrapper.text()).toContain('Проверка уровня бака выполнена')
-    expect(wrapper.text()).toContain('DONE подтвержден')
-    const vm = wrapper.vm as any
-    expect(vm.schedulerTaskStatusLabel('expired')).toBe('Просрочена')
-    expect(vm.schedulerTaskTypeLabel('irrigation')).toBe('Автополив')
-    expect(vm.schedulerTaskTypeLabel('diagnostics')).toBe('Диагностика / setup')
-    expect(vm.schedulerTaskTypeLabel('manual_recovery')).toBe('Ручной recovery')
-    expect(vm.schedulerTaskEventLabel('AE_CURRENT_STAGE')).toContain('обновление текущего этапа')
-    expect(vm.schedulerTaskReasonLabel('solution_fill_check')).toContain('Наполнение раствором')
-    expect(vm.schedulerTaskReasonLabel('prepare_recirculation_check')).toContain('Подготовка рециркуляции')
-    expect(
-      vm.schedulerTaskTimelineStageLabel({
-        event_type: 'TASK_STARTED',
-        reason_code: 'solution_fill_started',
-      })
-    ).toContain('набор бака с раствором')
-    expect(
-      vm.schedulerTaskTimelineStageLabel({
-        event_type: 'AE_CURRENT_STAGE',
-        reason_code: 'solution_fill_check',
-      })
-    ).toContain('набор бака с раствором')
-    expect(
-      vm.schedulerTaskTimelineStepLabel({
-        event_type: 'TASK_FINISHED',
-        reason_code: 'prepare_targets_reached',
-        run_mode: 'working',
-      })
-    ).toContain('завершение setup и переход в рабочий режим')
-    expect(vm.schedulerTaskReasonLabel('task_expired')).toContain('expires_at')
-    expect(vm.schedulerTaskReasonLabel('online_correction_failed')).toContain('Online-коррекция')
-    expect(vm.schedulerTaskReasonLabel('tank_to_tank_correction_started')).toContain('баковая коррекция')
-    expect(vm.schedulerTaskReasonLabel('irrigation_recovery_started')).toContain('recovery-контур')
-    expect(vm.schedulerTaskErrorLabel('task_due_deadline_exceeded')).toContain('due_at')
-    expect(vm.schedulerTaskErrorLabel('prepare_npk_ph_target_not_reached')).toContain('NPK + pH')
-    expect(vm.schedulerTaskErrorLabel('two_tank_pump_safety_blocked')).toContain('safety-политикой')
-    expect(vm.schedulerTaskErrorLabel('two_tank_pump_safety_blocked')).not.toContain('offline')
-    expect(vm.schedulerTaskErrorLabel('two_tank_pump_safety_blocked', 'Water level too low: 0.0 < 0.15')).toContain('Water level too low: 0.0 < 0.15')
-    expect(vm.schedulerTaskErrorLabel('irrigation_recovery_attempts_exceeded')).toContain('Превышено число попыток')
-    expect(vm.formatDateTime('2026-02-10T08:00:00')).toBe(vm.formatDateTime('2026-02-10T08:00:00Z'))
-    const dedupedTimeline = vm.schedulerTaskTimelineItems({
-      task_id: 'st-timeline',
-      timeline: [
-        { event_id: 'a', event_type: 'COMMAND_DISPATCHED', at: '2026-02-10T08:00:33Z' },
-        { event_id: 'b', event_type: 'TASK_FINISHED', at: '2026-02-10T08:00:34Z' },
-        { event_id: 'c', event_type: 'SCHEDULE_TASK_EXECUTION_FINISHED', at: '2026-02-10T08:00:34Z' },
-        { event_id: 'd', event_type: 'SCHEDULE_TASK_COMPLETED', at: '2026-02-10T08:01:33Z' },
-      ],
-    })
-    expect(dedupedTimeline.map((step: any) => step.event_type)).toEqual(['COMMAND_DISPATCHED', 'SCHEDULE_TASK_COMPLETED'])
-    const dedupedAccepted = vm.schedulerTaskTimelineItems({
-      task_id: 'st-timeline-accepted',
-      timeline: [
-        {
-          event_id: 'a1',
-          event_type: 'SCHEDULE_TASK_ACCEPTED',
-          task_id: 'st-timeline-accepted',
-          at: '2026-02-10T08:00:00Z',
-        },
-        {
-          event_id: 'a2',
-          event_type: 'SCHEDULE_TASK_ACCEPTED',
-          task_id: 'st-timeline-accepted',
-          at: '2026-02-10T08:00:00Z',
-        },
-      ],
-    })
-    expect(dedupedAccepted).toHaveLength(1)
-    expect(vm.schedulerTaskErrorLabel('command_invalid')).toBe('Нода отклонила команду')
-    const noCommandsMeta = vm.schedulerTaskDoneMeta({
-      status: 'completed',
-      action_required: true,
-      commands_total: 0,
-      commands_effect_confirmed: 0,
-      result: {},
-    })
-    expect(noCommandsMeta.label).toContain('Команды не отправлялись')
-  })
+
   it('не применяет изменения мастера до сохранения', async () => {
     const wrapper = mount(ZoneAutomationTab, {
       props: {
@@ -605,30 +385,39 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
+
     const vm = wrapper.vm as any
     expect(vm.climateForm.dayTemp).toBe(23)
+
     const editButton = wrapper.findAll('button').find((btn) => btn.text() === 'Редактировать')
     expect(editButton).toBeTruthy()
     await editButton!.trigger('click')
     await flushPromises()
+
     const dayTempInput = wrapper.find('input[type="number"]')
     expect(dayTempInput.exists()).toBe(true)
     await dayTempInput.setValue('30')
     await flushPromises()
     expect(vm.climateForm.dayTemp).toBe(23)
+
     const wizard = wrapper.findComponent({ name: 'ZoneAutomationEditWizard' })
     wizard.vm.$emit('close')
     await flushPromises()
     expect(vm.climateForm.dayTemp).toBe(23)
+
     wizard.vm.$emit('apply', {
       climateForm: { ...vm.climateForm, dayTemp: 30 },
       waterForm: { ...vm.waterForm },
       lightingForm: { ...vm.lightingForm },
+      zoneClimateForm: { ...vm.zoneClimateForm },
     })
     await flushPromises()
+
     expect(vm.climateForm.dayTemp).toBe(30)
   })
+
   it('санитизирует поврежденный профиль из localStorage', async () => {
     window.localStorage.setItem(
       'zone:42:automation-profile:v3',
@@ -639,13 +428,16 @@ describe('ZoneAutomationTab.vue', () => {
         lastAppliedAt: 'not-a-date',
       })
     )
+
     const wrapper = mount(ZoneAutomationTab, {
       props: {
         zoneId: 42,
         targets: {} as any,
       },
     })
+
     await flushPromises()
+
     const vm = wrapper.vm as any
     expect(typeof vm.waterForm.targetPh).toBe('number')
     expect(typeof vm.waterForm.targetEc).toBe('number')
@@ -655,129 +447,7 @@ describe('ZoneAutomationTab.vue', () => {
     expect(vm.lightingForm.scheduleStart).toBe('06:00')
     expect(vm.lastAppliedAt).toBe(null)
   })
-  it('показывает сообщение при отсутствии timeline event-contract', async () => {
-    apiGetMock.mockImplementation((url: string) => {
-      if (url.includes('/scheduler-tasks/')) {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: {
-              task_id: 'st-test',
-              zone_id: 42,
-              task_type: 'irrigation',
-              status: 'completed',
-              created_at: '2026-02-10T08:00:00Z',
-              updated_at: '2026-02-10T08:01:00Z',
-              scheduled_for: '2026-02-10T08:00:00Z',
-              due_at: '2026-02-10T08:02:00Z',
-              expires_at: '2026-02-10T08:05:00Z',
-              correlation_id: null,
-              lifecycle: [
-                { status: 'accepted', at: '2026-02-10T08:00:00Z' },
-                { status: 'completed', at: '2026-02-10T08:01:00Z' },
-              ],
-              result: {
-                command_submitted: true,
-                command_effect_confirmed: true,
-                commands_total: 1,
-                commands_effect_confirmed: 1,
-                commands_failed: 0,
-              },
-            },
-          },
-        })
-      }
-      return Promise.resolve({
-        data: {
-          status: 'ok',
-          data: [
-            {
-              task_id: 'st-recent',
-              zone_id: 42,
-              task_type: 'lighting',
-              status: 'running',
-              updated_at: '2026-02-10T08:00:00Z',
-              lifecycle: [],
-            },
-          ],
-        },
-      })
-    })
-    const wrapper = mount(ZoneAutomationTab, {
-      props: {
-        zoneId: 42,
-        targets: { ph: { target: 5.8 }, ec: { target: 1.5 } } as any,
-      },
-    })
-    await flushPromises()
-    const openButton = wrapper.findAll('button').find((btn) => btn.text() === 'Открыть')
-    expect(openButton).toBeTruthy()
-    await openButton!.trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('История событий пока недоступна')
-  })
-  it('игнорирует устаревший ответ scheduler-задач после смены зоны', async () => {
-    const deferred = <T>() => {
-      let resolve!: (value: T) => void
-      const promise = new Promise<T>((res) => {
-        resolve = res
-      })
-      return { promise, resolve }
-    }
-    const zone1Response = deferred<any>()
-    const zone2Response = deferred<any>()
-    apiGetMock.mockImplementation((url: string) => {
-      if (url.includes('/api/zones/1/scheduler-tasks')) {
-        return zone1Response.promise
-      }
-      if (url.includes('/api/zones/2/scheduler-tasks')) {
-        return zone2Response.promise
-      }
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-    const wrapper = mount(ZoneAutomationTab, {
-      props: {
-        zoneId: 1,
-        targets: { ph: { target: 5.8 }, ec: { target: 1.5 } } as any,
-      },
-    })
-    await wrapper.setProps({ zoneId: 2 })
-    zone2Response.resolve({
-      data: {
-        status: 'ok',
-        data: [
-          {
-            task_id: 'st-zone-2',
-            zone_id: 2,
-            task_type: 'irrigation',
-            status: 'running',
-            updated_at: '2026-02-10T08:01:00Z',
-            lifecycle: [],
-          },
-        ],
-      },
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-zone-2')
-    zone1Response.resolve({
-      data: {
-        status: 'ok',
-        data: [
-          {
-            task_id: 'st-zone-1',
-            zone_id: 1,
-            task_type: 'irrigation',
-            status: 'running',
-            updated_at: '2026-02-10T08:00:00Z',
-            lifecycle: [],
-          },
-        ],
-      },
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-zone-2')
-    expect(wrapper.text()).not.toContain('st-zone-1')
-  })
+
   it('перезагружает persisted-профиль при смене zoneId', async () => {
     window.localStorage.setItem(
       'zone:1:automation-profile:v3',
@@ -791,22 +461,28 @@ describe('ZoneAutomationTab.vue', () => {
         climate: { dayTemp: 31 },
       })
     )
+
     const wrapper = mount(ZoneAutomationTab, {
       props: {
         zoneId: 1,
         targets: {} as any,
       },
     })
+
     await flushPromises()
+
     const vm = wrapper.vm as any
     expect(vm.climateForm.dayTemp).toBe(24)
+
     await wrapper.setProps({
       zoneId: 2,
       targets: {} as any,
     })
     await flushPromises()
+
     expect(vm.climateForm.dayTemp).toBe(31)
   })
+
   it('не применяет targets предыдущей зоны при смене zoneId до обновления props', async () => {
     window.localStorage.setItem(
       'zone:2:automation-profile:v3',
@@ -814,6 +490,7 @@ describe('ZoneAutomationTab.vue', () => {
         climate: { dayTemp: 19 },
       })
     )
+
     const wrapper = mount(ZoneAutomationTab, {
       props: {
         zoneId: 1,
@@ -830,107 +507,21 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
+
     const vm = wrapper.vm as any
     expect(vm.climateForm.dayTemp).toBe(30)
+
     await wrapper.setProps({ zoneId: 2 })
     await flushPromises()
+
     expect(vm.climateForm.dayTemp).toBe(19)
   })
-  it('очищает список scheduler-задач сразу при смене зоны', async () => {
-    const deferred = <T>() => {
-      let resolve!: (value: T) => void
-      const promise = new Promise<T>((res) => {
-        resolve = res
-      })
-      return { promise, resolve }
-    }
-    const zone1Response = deferred<any>()
-    const zone2Response = deferred<any>()
-    apiGetMock.mockImplementation((url: string) => {
-      if (url.includes('/api/zones/1/scheduler-tasks')) {
-        return zone1Response.promise
-      }
-      if (url.includes('/api/zones/2/scheduler-tasks')) {
-        return zone2Response.promise
-      }
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-    const wrapper = mount(ZoneAutomationTab, {
-      props: {
-        zoneId: 1,
-        targets: {} as any,
-      },
-    })
-    zone1Response.resolve({
-      data: {
-        status: 'ok',
-        data: [
-          {
-            task_id: 'st-zone-1',
-            zone_id: 1,
-            task_type: 'irrigation',
-            status: 'running',
-            updated_at: '2026-02-10T08:00:00Z',
-            lifecycle: [],
-          },
-        ],
-      },
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-zone-1')
-    await wrapper.setProps({ zoneId: 2 })
-    await flushPromises()
-    expect(wrapper.text()).not.toContain('st-zone-1')
-    zone2Response.resolve({
-      data: {
-        status: 'ok',
-        data: [
-          {
-            task_id: 'st-zone-2',
-            zone_id: 2,
-            task_type: 'irrigation',
-            status: 'running',
-            updated_at: '2026-02-10T08:00:30Z',
-            lifecycle: [],
-          },
-        ],
-      },
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-zone-2')
-  })
-  it('фильтрует список scheduler-задач по пресетам и поиску', async () => {
-    const wrapper = mount(ZoneAutomationTab, {
-      props: {
-        zoneId: 42,
-        targets: {
-          ph: { target: 5.8 },
-          ec: { target: 1.5 },
-        } as any,
-      },
-    })
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-recent')
-    expect(wrapper.text()).toContain('st-failed')
-    expect(wrapper.text()).toContain('st-done-unconfirmed')
-    const vm = wrapper.vm as any
-    vm.schedulerTaskPreset = 'failed'
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-failed')
-    expect(wrapper.text()).not.toContain('st-recent')
-    vm.schedulerTaskPreset = 'done_unconfirmed'
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-done-unconfirmed')
-    expect(wrapper.text()).not.toContain('st-no-commands')
-    vm.schedulerTaskSearch = 'st-failed'
-    vm.schedulerTaskPreset = 'all'
-    await flushPromises()
-    expect(wrapper.text()).toContain('st-failed')
-    expect(wrapper.text()).not.toContain('st-recent')
-  })
+
   it('разрешает операционные команды для роли engineer', async () => {
     roleState.role = 'engineer'
+
     const wrapper = mount(ZoneAutomationTab, {
       props: {
         zoneId: 42,
@@ -940,15 +531,20 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
+
     const manualIrrigationButton = wrapper.findAll('button').find((btn) => btn.text() === 'Запустить полив')
     expect(manualIrrigationButton).toBeTruthy()
     expect(manualIrrigationButton!.attributes('disabled')).toBeUndefined()
+
     const editButton = wrapper.findAll('button').find((btn) => btn.text() === 'Редактировать')
     expect(editButton).toBeUndefined()
   })
+
   it('блокирует ручное управление двухбаковой схемой для не-operator роли', async () => {
     roleState.role = 'engineer'
+
     const wrapper = mount(ZoneAutomationTab, {
       props: {
         zoneId: 42,
@@ -958,10 +554,13 @@ describe('ZoneAutomationTab.vue', () => {
         } as any,
       },
     })
+
     await flushPromises()
+
     const modeSelect = wrapper.find('select.input-select')
     expect(modeSelect.exists()).toBe(true)
     expect(modeSelect.attributes('disabled')).toBeDefined()
+
     const manualStepButton = wrapper.findAll('button').find((btn) => btn.text() === 'Набрать чистую воду')
     expect(manualStepButton).toBeTruthy()
     expect(manualStepButton!.attributes('disabled')).toBeDefined()

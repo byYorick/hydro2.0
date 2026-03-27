@@ -109,6 +109,7 @@ type SystemAuthorityDocument = AutomationDocument<Record<string, unknown>, {
     fields: SystemSettingsField[]
   }>
 }>
+type SystemAuthorityMeta = SystemAuthorityDocument['meta']
 
 const automationConfig = useAutomationConfig()
 const { showToast } = useToast()
@@ -174,7 +175,7 @@ function normalizeDraft(): Record<string, unknown> {
 async function load(): Promise<void> {
   const entries = await Promise.all(
     Object.entries(SYSTEM_NAMESPACE_MAP).map(async ([legacyNamespace, authorityNamespace]) => {
-      const document = await automationConfig.getDocument<SystemAuthorityDocument>('system', 0, authorityNamespace)
+      const document = await automationConfig.getDocument<Record<string, unknown>, NonNullable<SystemAuthorityMeta>>('system', 0, authorityNamespace)
       return [legacyNamespace, documentToPayload(legacyNamespace, document)] as const
     })
   )
@@ -187,7 +188,7 @@ async function save(): Promise<void> {
   loading.value = true
   try {
     const authorityNamespace = SYSTEM_NAMESPACE_MAP[activeNamespace.value] ?? activeNamespace.value
-    const document = await automationConfig.updateDocument<Record<string, unknown>, SystemAuthorityDocument>(
+    const document = await automationConfig.updateDocument<Record<string, unknown>, NonNullable<SystemAuthorityMeta>>(
       'system',
       0,
       authorityNamespace,
@@ -207,7 +208,7 @@ async function reset(): Promise<void> {
   loading.value = true
   try {
     const authorityNamespace = SYSTEM_NAMESPACE_MAP[activeNamespace.value] ?? activeNamespace.value
-    const document = await automationConfig.resetDocument<SystemAuthorityDocument>('system', 0, authorityNamespace)
+    const document = await automationConfig.resetDocument<Record<string, unknown>, NonNullable<SystemAuthorityMeta>>('system', 0, authorityNamespace)
     payloads.value[activeNamespace.value] = documentToPayload(activeNamespace.value, document)
     syncDraft()
     showToast('Настройки сброшены', 'success')

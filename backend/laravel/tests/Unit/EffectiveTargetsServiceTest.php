@@ -142,7 +142,7 @@ class EffectiveTargetsServiceTest extends TestCase
 
         $cycle->update(['current_phase_id' => $snapshotPhase->id]);
 
-        // Создаем override для pH (используем точечную нотацию для вложенных параметров)
+        // Manual overrides больше не имеют права менять канонический pH target фазы рецепта.
         $this->storeManualOverrides($cycle->id, [[
             'parameter' => 'ph.target',
             'value' => '6.5',
@@ -154,9 +154,7 @@ class EffectiveTargetsServiceTest extends TestCase
 
         $result = $this->service->getEffectiveTargets($cycle->id);
 
-        // Проверяем, что override применен
-        $this->assertEquals(6.5, $result['targets']['ph']['target']);
-        // min и max остаются из фазы
+        $this->assertEquals(6.0, $result['targets']['ph']['target']);
         $this->assertEquals(5.8, $result['targets']['ph']['min']);
         $this->assertEquals(6.2, $result['targets']['ph']['max']);
     }

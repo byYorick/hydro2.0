@@ -105,9 +105,10 @@ CREATE TABLE recipe_revision_phases (
 
 1. **Получение runtime targets** через SQL read-model (AE3):
    - чтение `grow_cycles/grow_cycle_phases` и `automation_effective_bundles`;
-   - runtime precedence: `phase snapshot -> cycle.phase_overrides -> cycle.manual_overrides -> zone.logic_profile(active_mode)`.
+   - для `pH/EC target|min|max` канон жёсткий: только `phase snapshot`;
+   - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile(active_mode)` могут влиять только на execution/runtime config, но не на chemical setpoints.
 
-2. **Ответ содержит** цели из текущей фазы с учётом overrides:
+2. **Ответ содержит** цели из текущей фазы; execution/runtime настройки могут быть дополнены overrides:
    ```json
    {
      "1": {
@@ -148,6 +149,7 @@ CREATE TABLE recipe_revision_phases (
 - Агроном может временно перекрыть параметры цикла
 - Хранятся в authority-документах `cycle.phase_overrides` и `cycle.manual_overrides`
 - Включаются в effective targets через compiled bundle, без legacy-table merge path
+- Для `pH/EC target|min|max` overrides запрещены: эти поля всегда берутся только из phase snapshot / recipe phase
 
 ---
 

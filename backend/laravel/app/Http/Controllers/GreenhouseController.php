@@ -258,45 +258,8 @@ class GreenhouseController extends Controller
         $zoneIds = $zones->pluck('id')->toArray();
 
         // Получаем телеметрию для всех зон
-        $telemetryByZone = [];
-        if (!empty($zoneIds)) {
-            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
-            $telemetryAll = \App\Models\TelemetryLast::query()
-                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-                ->whereIn('sensors.zone_id', $zoneIds)
-                ->whereNotNull('sensors.zone_id')
-                ->select([
-                    'sensors.zone_id',
-                    'sensors.type as metric_type',
-                    'telemetry_last.last_value as value'
-                ])
-                ->get();
-
-            foreach ($telemetryAll as $metric) {
-                $key = strtolower($metric->metric_type ?? '');
-                if (!isset($telemetryByZone[$metric->zone_id])) {
-                    $telemetryByZone[$metric->zone_id] = [
-                        'ph' => null,
-                        'ec' => null,
-                        'temperature' => null,
-                        'humidity' => null,
-                        'co2' => null,
-                    ];
-                }
-
-                if ($key === 'ph') {
-                    $telemetryByZone[$metric->zone_id]['ph'] = (float) $metric->value;
-                } elseif ($key === 'ec') {
-                    $telemetryByZone[$metric->zone_id]['ec'] = (float) $metric->value;
-                } elseif ($key === 'temperature') {
-                    $telemetryByZone[$metric->zone_id]['temperature'] = (float) $metric->value;
-                } elseif ($key === 'humidity') {
-                    $telemetryByZone[$metric->zone_id]['humidity'] = (float) $metric->value;
-                } elseif ($key === 'co2') {
-                    $telemetryByZone[$metric->zone_id]['co2'] = (float) $metric->value;
-                }
-            }
-        }
+        $telemetryByZone = app(\App\Services\ZoneFrontendTelemetryService::class)
+            ->getZoneSnapshots($zoneIds, true);
 
         // Получаем топ-2 активных алерта для каждой зоны
         $alertsByZone = [];

@@ -23,6 +23,7 @@ vi.mock('@/composables/useApi', () => ({
 
 vi.mock('@/utils/echoClient', () => ({
   getEchoInstance: () => echoHolder.current,
+  getConnectionState: () => ({ state: 'connected' }),
   onWsStateChange: () => () => {},
 }))
 

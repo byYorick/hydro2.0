@@ -286,7 +286,7 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
-    public function it_applies_phase_overrides_to_first_phase_snapshot(): void
+    public function it_rejects_phase_overrides_for_recipe_phase_targets(): void
     {
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
@@ -295,74 +295,12 @@ class GrowCycleControllerTest extends TestCase
                 'start_immediately' => false,
                 'phase_overrides' => [
                     'ph_target' => 6.0,
-                    'ph_min' => 5.8,
-                    'ph_max' => 6.2,
-                    'ec_target' => 1.05,
-                    'ec_min' => 0.95,
-                    'ec_max' => 1.15,
-                ],
-            ]);
-
-        $response->assertStatus(201);
-
-        $cycle = GrowCycle::query()
-            ->where('zone_id', $this->zone->id)
-            ->latest('id')
-            ->first();
-
-        $this->assertNotNull($cycle);
-
-        $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
-        $this->assertNotNull($firstPhase);
-        $this->assertEquals(6.0, (float) $firstPhase->ph_target);
-        $this->assertEquals(5.8, (float) $firstPhase->ph_min);
-        $this->assertEquals(6.2, (float) $firstPhase->ph_max);
-        $this->assertEquals(1.05, (float) $firstPhase->ec_target);
-        $this->assertEquals(0.95, (float) $firstPhase->ec_min);
-        $this->assertEquals(1.15, (float) $firstPhase->ec_max);
-
-        $phaseOverridesDocument = AutomationConfigDocument::query()
-            ->where('scope_type', AutomationConfigRegistry::SCOPE_GROW_CYCLE)
-            ->where('scope_id', $cycle->id)
-            ->where('namespace', AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES)
-            ->first();
-
-        $this->assertNotNull($phaseOverridesDocument);
-        $this->assertSame(6.0, (float) data_get($phaseOverridesDocument->payload, 'ph_target'));
-        $this->assertSame(5.8, (float) data_get($phaseOverridesDocument->payload, 'ph_min'));
-        $this->assertSame(6.2, (float) data_get($phaseOverridesDocument->payload, 'ph_max'));
-        $this->assertSame(1.05, (float) data_get($phaseOverridesDocument->payload, 'ec_target'));
-        $this->assertSame(0.95, (float) data_get($phaseOverridesDocument->payload, 'ec_min'));
-        $this->assertSame(1.15, (float) data_get($phaseOverridesDocument->payload, 'ec_max'));
-    }
-
-    #[Test]
-    public function it_rejects_phase_override_target_outside_recipe_window(): void
-    {
-        RecipeRevisionPhase::query()
-            ->where('recipe_revision_id', $this->revision->id)
-            ->update([
-                'ph_target' => 5.00,
-                'ph_min' => 4.90,
-                'ph_max' => 5.10,
-                'ec_target' => 1.80,
-                'ec_min' => 1.70,
-                'ec_max' => 1.90,
-            ]);
-
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
-                'recipe_revision_id' => $this->revision->id,
-                'plant_id' => $this->plant->id,
-                'start_immediately' => false,
-                'phase_overrides' => [
-                    'ph_target' => 5.80,
                 ],
             ]);
 
         $response->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'pH: target должен быть в диапазоне min..max.');
+            ->assertJsonValidationErrors(['phase_overrides']);
     }
 
     #[Test]

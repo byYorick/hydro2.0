@@ -12,9 +12,10 @@ import type {
 } from '@/types/Automation'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
 import { readBooleanEnv } from '@/utils/env'
-import { getEchoInstance, onWsStateChange } from '@/utils/echoClient'
+import { getConnectionState, onWsStateChange } from '@/utils/echoClient'
 import { logger } from '@/utils/logger'
-import type { EchoChannelLike, WsEventPayload } from '@/ws/subscriptionTypes'
+import type { WsEventPayload } from '@/ws/subscriptionTypes'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { useApi } from '@/composables/useApi'
 import {
   normalizeAutomationControlMode,
@@ -299,17 +300,10 @@ export function useAutomationPanel(
   let fallbackPollingTimer: ReturnType<typeof setInterval> | null = null
   let wsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let wsStateListenerCleanup: (() => void) | null = null
-  let zoneChannel: EchoChannelLike | null = null
-  let commandsChannel: EchoChannelLike | null = null
-  let eventsChannel: EchoChannelLike | null = null
-  let zoneChannelName: string | null = null
-  let commandsChannelName: string | null = null
-  let eventsChannelName: string | null = null
+  let stopZoneRealtimeSubscription: (() => void) | null = null
+  let stopCommandsRealtimeSubscription: (() => void) | null = null
+  let stopEventsRealtimeSubscription: (() => void) | null = null
   let lastRealtimeRefreshAt = 0
-
-  const zoneEventHandlers = new Map<string, (payload: WsEventPayload) => void>()
-  const commandEventHandlers = new Map<string, (payload: WsEventPayload) => void>()
-  const globalEventHandlers = new Map<string, (payload: WsEventPayload) => void>()
 
   // ─── Normalize ────────────────────────────────────────────────────────────
 
@@ -456,83 +450,71 @@ export function useAutomationPanel(
   }
 
   function cleanupRealtimeChannels(): void {
-    const echo = getEchoInstance()
-
-    if (zoneChannel) {
-      zoneEventHandlers.forEach((handler, eventName) => {
-        zoneChannel?.stopListening(eventName, handler)
-      })
-      zoneEventHandlers.clear()
+    if (stopZoneRealtimeSubscription) {
+      stopZoneRealtimeSubscription()
+      stopZoneRealtimeSubscription = null
     }
 
-    if (commandsChannel) {
-      commandEventHandlers.forEach((handler, eventName) => {
-        commandsChannel?.stopListening(eventName, handler)
-      })
-      commandEventHandlers.clear()
+    if (stopCommandsRealtimeSubscription) {
+      stopCommandsRealtimeSubscription()
+      stopCommandsRealtimeSubscription = null
     }
 
-    if (eventsChannel) {
-      globalEventHandlers.forEach((handler, eventName) => {
-        eventsChannel?.stopListening(eventName, handler)
-      })
-      globalEventHandlers.clear()
+    if (stopEventsRealtimeSubscription) {
+      stopEventsRealtimeSubscription()
+      stopEventsRealtimeSubscription = null
     }
-
-    if (echo && zoneChannelName) echo.leave?.(zoneChannelName)
-    if (echo && commandsChannelName) echo.leave?.(commandsChannelName)
-    if (echo && eventsChannelName) echo.leave?.(eventsChannelName)
-
-    zoneChannel = null
-    commandsChannel = null
-    eventsChannel = null
-    zoneChannelName = null
-    commandsChannelName = null
-    eventsChannelName = null
   }
 
   function subscribeRealtimeChannels(): boolean {
     if (!wsEnabled || !props.zoneId) return false
 
-    const echo = getEchoInstance()
-    if (!echo) return false
-
     cleanupRealtimeChannels()
 
     try {
-      zoneChannelName = `hydro.zones.${props.zoneId}`
-      zoneChannel = echo.private(zoneChannelName)
+      const zoneChannelName = `hydro.zones.${props.zoneId}`
+      const commandsChannelName = `hydro.commands.${props.zoneId}`
+      const eventsChannelName = 'hydro.events.global'
 
-      WS_ZONE_EVENT_NAMES.forEach((eventName) => {
-        const handler = () => { scheduleRealtimeRefresh() }
-        zoneEventHandlers.set(eventName, handler)
-        zoneChannel?.listen(eventName, handler)
+      stopZoneRealtimeSubscription = subscribeManagedChannelEvents({
+        channelName: zoneChannelName,
+        componentTag: `AutomationProcessPanel:zone:${props.zoneId}`,
+        eventHandlers: Object.fromEntries(
+          WS_ZONE_EVENT_NAMES.map((eventName) => [
+            eventName,
+            () => { scheduleRealtimeRefresh() },
+          ])
+        ) as Record<string, (payload: WsEventPayload) => void>,
       })
 
-      commandsChannelName = `hydro.commands.${props.zoneId}`
-      commandsChannel = echo.private(commandsChannelName)
-
-      WS_COMMAND_EVENT_NAMES.forEach((eventName) => {
-        const handler = () => { scheduleRealtimeRefresh() }
-        commandEventHandlers.set(eventName, handler)
-        commandsChannel?.listen(eventName, handler)
+      stopCommandsRealtimeSubscription = subscribeManagedChannelEvents({
+        channelName: commandsChannelName,
+        componentTag: `AutomationProcessPanel:commands:${props.zoneId}`,
+        eventHandlers: Object.fromEntries(
+          WS_COMMAND_EVENT_NAMES.map((eventName) => [
+            eventName,
+            () => { scheduleRealtimeRefresh() },
+          ])
+        ) as Record<string, (payload: WsEventPayload) => void>,
       })
 
-      eventsChannelName = 'hydro.events.global'
-      eventsChannel = echo.private(eventsChannelName)
+      stopEventsRealtimeSubscription = subscribeManagedChannelEvents({
+        channelName: eventsChannelName,
+        componentTag: `AutomationProcessPanel:events:${props.zoneId}`,
+        eventHandlers: Object.fromEntries(
+          WS_GLOBAL_EVENT_NAMES.map((eventName) => [
+            eventName,
+            (payload: WsEventPayload) => {
+              const zoneValue = payload.zoneId ?? payload.zone_id
+              const zoneId = Number(zoneValue)
+              if (!Number.isFinite(zoneId) || zoneId !== props.zoneId) {
+                return
+              }
 
-      WS_GLOBAL_EVENT_NAMES.forEach((eventName) => {
-        const handler = (payload: WsEventPayload) => {
-          const zoneValue = payload.zoneId ?? payload.zone_id
-          const zoneId = Number(zoneValue)
-          if (!Number.isFinite(zoneId) || zoneId !== props.zoneId) {
-            return
-          }
-
-          scheduleRealtimeRefresh()
-        }
-        globalEventHandlers.set(eventName, handler)
-        eventsChannel?.listen(eventName, handler)
+              scheduleRealtimeRefresh()
+            },
+          ])
+        ) as Record<string, (payload: WsEventPayload) => void>,
       })
 
       logger.debug('[AutomationProcessPanel] Realtime subscriptions started', {
@@ -719,7 +701,8 @@ export function useAutomationPanel(
 
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
-      if (subscribed) {
+      if (subscribed && getConnectionState().state === 'connected') {
+        stopFallbackPolling()
         scheduleRealtimeRefresh()
         return
       }
@@ -735,7 +718,8 @@ export function useAutomationPanel(
 
     if (wsEnabled) {
       const subscribed = subscribeRealtimeChannels()
-      if (subscribed) {
+      if (subscribed && getConnectionState().state === 'connected') {
+        stopFallbackPolling()
         scheduleRealtimeRefresh()
       } else {
         startFallbackPolling()

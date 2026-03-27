@@ -2,6 +2,22 @@ import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { nextTick, reactive } from 'vue'
 
+let wsStateListener: ((state: string) => void) | null = null
+const mockEchoPrivate = vi.fn()
+const mockEchoLeave = vi.fn()
+
+vi.mock('@/utils/echoClient', () => ({
+  getEchoInstance: vi.fn(() => (globalThis.window as any)?.Echo ?? null),
+  onWsStateChange: vi.fn((listener: (state: string) => void) => {
+    wsStateListener = listener
+    return vi.fn(() => {
+      if (wsStateListener === listener) {
+        wsStateListener = null
+      }
+    })
+  }),
+}))
+
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
 }))
@@ -183,10 +199,24 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    wsStateListener = null
+    mockEchoPrivate.mockReset()
+    mockEchoLeave.mockReset()
+
+    mockEchoPrivate.mockImplementation(() => ({
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+    }))
+
+    ;(globalThis.window as any).Echo = {
+      private: mockEchoPrivate,
+      leave: mockEchoLeave,
+    }
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+    delete (globalThis.window as any).Echo
   })
 
   it('should subscribe to zone commands WebSocket channel on mount', async () => {
@@ -294,7 +324,57 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     expect(unsubscribeZone2).toHaveBeenCalledTimes(1)
   })
 
-  it('should leave previous grow-cycle Echo channel when zoneId changes', async () => {
+  it('should restore GrowCycleUpdated listener after websocket reconnect', async () => {
+    const firstZoneChannel = {
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+    }
+    const secondZoneChannel = {
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+    }
+
+    mockEchoPrivate
+      .mockReturnValueOnce(firstZoneChannel)
+      .mockReturnValueOnce(secondZoneChannel)
+
+    const wrapper = mount(ShowComponent, {
+      global: {
+        stubs: {
+          AppLayout: true,
+          Card: true,
+          Button: true,
+          Badge: true,
+          ZoneTargets: true,
+          ZoneTelemetryChart: true,
+          MultiSeriesTelemetryChart: true,
+          PhaseProgress: true,
+          ZoneDevicesVisualization: true,
+          PidConfigForm: true,
+        },
+      },
+    })
+
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 100))
+    await nextTick()
+
+    expect(firstZoneChannel.listen).toHaveBeenCalledWith(
+      '.App\\Events\\GrowCycleUpdated',
+      expect.any(Function)
+    )
+
+    wsStateListener?.('connected')
+
+    expect(secondZoneChannel.listen).toHaveBeenCalledWith(
+      '.App\\Events\\GrowCycleUpdated',
+      expect.any(Function)
+    )
+
+    wrapper.unmount()
+  })
+
+  it('should stop previous GrowCycleUpdated listener when zoneId changes', async () => {
     const reactivePageProps = reactive({
       zoneId: 1,
       zone: {
@@ -366,13 +446,13 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
       await nextTick()
       await new Promise(resolve => setTimeout(resolve, 80))
 
-      expect(stopListeningMock).toHaveBeenCalledWith('.App\\Events\\GrowCycleUpdated')
-      expect(leaveMock).toHaveBeenCalledWith('hydro.zones.1')
+      expect(stopListeningMock).toHaveBeenCalledWith('.App\\Events\\GrowCycleUpdated', expect.any(Function))
+      expect(leaveMock).not.toHaveBeenCalled()
       expect(privateMock).toHaveBeenCalledWith('hydro.zones.2')
 
       wrapper.unmount()
       await nextTick()
-      expect(leaveMock).toHaveBeenCalledWith('hydro.zones.2')
+      expect(stopListeningMock).toHaveBeenCalledTimes(2)
     } finally {
       const win = window as any
       if (previousEcho === undefined) {

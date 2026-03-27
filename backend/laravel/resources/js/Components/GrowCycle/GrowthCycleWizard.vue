@@ -346,7 +346,7 @@
               </select>
             </label>
             <label class="text-xs text-[color:var(--text-muted)]">
-              target pH
+              target pH (из рецепта)
               <input
                 v-model.number="waterForm.targetPh"
                 type="number"
@@ -354,10 +354,11 @@
                 max="9"
                 step="0.1"
                 class="input-field mt-1 w-full"
+                disabled
               />
             </label>
             <label class="text-xs text-[color:var(--text-muted)]">
-              target EC
+              target EC (из рецепта)
               <input
                 v-model.number="waterForm.targetEc"
                 type="number"
@@ -365,6 +366,7 @@
                 max="10"
                 step="0.1"
                 class="input-field mt-1 w-full"
+                disabled
               />
             </label>
             <label class="text-xs text-[color:var(--text-muted)]">

@@ -8,6 +8,7 @@ use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -155,6 +156,100 @@ class TelemetryTest extends TestCase
             ->assertJsonPath('data.temperature', 23.1);
     }
 
+    public function test_zone_telemetry_last_prefers_air_temperature_and_humidity_channels(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        $solutionTempSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'TEMPERATURE',
+            'label' => 'solution_temp_c',
+            'unit' => '°C',
+            'specs' => null,
+            'is_active' => true,
+        ]);
+
+        $airTempSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'TEMPERATURE',
+            'label' => 'air_temp_c',
+            'unit' => '°C',
+            'specs' => null,
+            'is_active' => true,
+        ]);
+
+        $fallbackHumiditySensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'HUMIDITY',
+            'label' => 'humidity_tank',
+            'unit' => '%',
+            'specs' => null,
+            'is_active' => true,
+        ]);
+
+        $airHumiditySensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'HUMIDITY',
+            'label' => 'air_rh',
+            'unit' => '%',
+            'specs' => null,
+            'is_active' => true,
+        ]);
+
+        TelemetryLast::query()->create([
+            'sensor_id' => $solutionTempSensor->id,
+            'last_value' => 19.4,
+            'last_ts' => now()->subMinute(),
+            'last_quality' => 'GOOD',
+        ]);
+
+        TelemetryLast::query()->create([
+            'sensor_id' => $airTempSensor->id,
+            'last_value' => 24.8,
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
+        ]);
+
+        TelemetryLast::query()->create([
+            'sensor_id' => $fallbackHumiditySensor->id,
+            'last_value' => 74.0,
+            'last_ts' => now()->subMinute(),
+            'last_quality' => 'GOOD',
+        ]);
+
+        TelemetryLast::query()->create([
+            'sensor_id' => $airHumiditySensor->id,
+            'last_value' => 61.0,
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/telemetry/last");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.temperature', 24.8)
+            ->assertJsonPath('data.humidity', 61.0);
+    }
+
     public function test_node_telemetry_history_returns_samples(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
@@ -219,5 +314,81 @@ class TelemetryTest extends TestCase
         // (так как ZoneAccessHelper пока разрешает доступ ко всем зонам)
         $response->assertOk()
             ->assertJsonStructure(['status', 'data']);
+    }
+
+    public function test_telemetry_aggregates_prefer_air_temperature_channel_over_solution_temperature(): void
+    {
+        $user = User::factory()->create(['role' => 'viewer']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+
+        Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'TEMPERATURE',
+            'label' => 'solution_temp_c',
+            'unit' => '°C',
+            'specs' => null,
+            'is_active' => true,
+        ]);
+
+        Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'TEMPERATURE',
+            'label' => 'air_temp_c',
+            'unit' => '°C',
+            'specs' => null,
+            'is_active' => true,
+        ]);
+
+        $timestamp = now()->startOfHour();
+
+        DB::table('telemetry_agg_1h')->insert([
+            [
+                'zone_id' => $zone->id,
+                'node_id' => $node->id,
+                'channel' => 'solution_temp_c',
+                'metric_type' => 'TEMPERATURE',
+                'value_avg' => 18.0,
+                'value_min' => 17.5,
+                'value_max' => 18.5,
+                'value_median' => 18.0,
+                'sample_count' => 3,
+                'ts' => $timestamp,
+                'created_at' => now(),
+            ],
+            [
+                'zone_id' => $zone->id,
+                'node_id' => $node->id,
+                'channel' => 'air_temp_c',
+                'metric_type' => 'TEMPERATURE',
+                'value_avg' => 24.0,
+                'value_min' => 23.0,
+                'value_max' => 25.0,
+                'value_median' => 24.0,
+                'sample_count' => 3,
+                'ts' => $timestamp,
+                'created_at' => now(),
+            ],
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/telemetry/aggregates?zone_id={$zone->id}&metric=temperature&period=24h");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.avg', 24.0)
+            ->assertJsonPath('data.0.min', 23.0)
+            ->assertJsonPath('data.0.max', 25.0)
+            ->assertJsonPath('data.0.median', 24.0);
     }
 }

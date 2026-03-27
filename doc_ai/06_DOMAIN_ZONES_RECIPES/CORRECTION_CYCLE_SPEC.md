@@ -194,6 +194,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `zone.pid.*` не содержит target, `max_output` или `min_interval_ms`:
   target берётся только из recipe phase, а дозовые лимиты/интервалы — только из
   `zone.correction.resolved_config.controllers.*`.
+- `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не могут менять
+  canonical `target_ph/target_ec` и их windows; runtime допускает из них только execution/config
+  параметры, не chemical setpoints.
 - `no-effect` определяется по факту наблюдаемой реакции на дозу (`peak_effect` в observe-window),
   а не только по tail-median; это нужно для проточных систем, где отклик может быть волнообразным.
 - learned runtime metrics (`gain_ema`, `retention_ema`, `wave_score_ema`, learned timing) сохраняются

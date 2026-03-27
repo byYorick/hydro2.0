@@ -299,12 +299,6 @@ class PgZoneSnapshotReadModel:
         phase_overrides = cycle_bundle.get("phase_overrides")
         if isinstance(phase_overrides, Mapping):
             phase_map = {
-                "ph_target": ("ph.target", "decimal"),
-                "ph_min": ("ph.min", "decimal"),
-                "ph_max": ("ph.max", "decimal"),
-                "ec_target": ("ec.target", "decimal"),
-                "ec_min": ("ec.min", "decimal"),
-                "ec_max": ("ec.max", "decimal"),
                 "irrigation_mode": ("irrigation.mode", "string"),
                 "irrigation_interval_sec": ("irrigation.interval_sec", "integer"),
                 "irrigation_duration_sec": ("irrigation.duration_sec", "integer"),
@@ -581,6 +575,8 @@ class PgZoneSnapshotReadModel:
             parameter = str(row.get("parameter") or "").strip()
             if not parameter:
                 continue
+            if self._is_recipe_phase_chemical_target_parameter(parameter):
+                continue
             normalized.append(
                 {
                     "parameter": parameter,
@@ -589,6 +585,17 @@ class PgZoneSnapshotReadModel:
                 }
             )
         return normalized
+
+    @staticmethod
+    def _is_recipe_phase_chemical_target_parameter(parameter: str) -> bool:
+        return parameter in {
+            "ph.target",
+            "ph.min",
+            "ph.max",
+            "ec.target",
+            "ec.min",
+            "ec.max",
+        }
 
     def _build_telemetry_last(self, rows: List[Mapping[str, Any]]) -> Dict[str, Any]:
         result: Dict[str, Any] = {}

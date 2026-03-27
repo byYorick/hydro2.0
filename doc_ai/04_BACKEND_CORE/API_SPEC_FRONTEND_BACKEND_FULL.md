@@ -11,6 +11,7 @@
 - ✅ Для AE3/automation-engine закреплен единый wake-up endpoint: `POST /zones/{id}/start-cycle`
 - ✅ Версионирование рецептов: `/api/recipe-revisions/*`
 - ✅ Unified authority API: `/api/automation-configs/*`, `/api/automation-bundles/*`, `/api/automation-presets/*`
+- ✅ Scheduler workspace operator API: `/api/zones/{id}/schedule-workspace`, `/api/zones/{id}/executions/{executionId}`
 
 Задача документа:
 - зафиксировать **контракты**;
@@ -418,35 +419,107 @@ authority-документ `zone.logic_profile` через API `/api/automation-
  - привязанные узлы и каналы;
  - последние значения ключевых метрик.
 
-### 3.5.1. GET /api/zones/{id}/scheduler-tasks (LEGACY / TO BE REMOVED)
+### 3.5.1. GET /api/zones/{id}/schedule-workspace
 
 - **Аутентификация:** Требуется `auth:sanctum`
-- **Описание:** Исторический endpoint. В новой модели заменяется чтением lifecycle intents.
+- **Описание:** Канонический operator endpoint для вкладки scheduler workspace. Объединяет `Plan + Execution` для выбранной зоны.
 - **Параметры запроса:**
-  - `limit` (1..100, default=20)
-  - `include_timeline` (bool, default=false) — при `true` добавляет `timeline[]` из `zone_events` для каждого task.
-- **Поля ответа:** `task_id`, `status`, `result`, `error`, `error_code`, `action_required`, `decision`, `reason_code`, `reason`, `executed_steps`, `safety_flags`, `next_due_at`, `measurements_before_after`, `run_mode`, `retry_attempt`, `retry_max_attempts`, `retry_backoff_sec`, `source`, `lifecycle[]`, `timeline[]`.
-- **Lifecycle:** снимки статусов из `scheduler_logs` (типично `accepted/running/completed/failed`).
-- **Timeline:** task-события из `zone_events` (`TASK_STARTED`, `DECISION_MADE`, `COMMAND_DISPATCHED`, `COMMAND_FAILED`, `TASK_FINISHED`, ...),
-  фильтрация по `task_id` и/или `correlation_id`.
-- **Сортировка timeline:** строго по времени события по возрастанию (`created_at ASC`, затем `id ASC`).
-- **Статус:** использовать только для исторических данных до полного cleanup.
+  - `horizon`: `24h | 7d` (default `24h`; любые другие значения нормализуются в `24h`)
+- **Источник данных:**
+  - `plan.*` строится из authority/runtime planner path (`automation_effective_bundles` -> `ScheduleItem`);
+  - `execution.*` строится из canonical AE3 read-model (`ae_tasks`, `zone_automation_intents`, `zone_events`);
+  - operator current-state summary на фронте дополняется `GET /api/zones/{id}/state`;
+  - `scheduler_logs` в operator-contract не участвуют.
+- **Ответ (`data`):**
+  - `control`:
+    - `automation_runtime`
+    - `control_mode`
+    - `allowed_manual_steps[]`
+    - `bundle_revision`
+    - `generated_at`
+    - `timezone`
+  - `capabilities`:
+    - `executable_task_types[]`
+    - `planned_task_types[]`
+    - `diagnostics_available`
+  - `plan`:
+    - `horizon`
+    - `lanes[]`: `task_type`, `label`, `mode`, `enabled`, `available`, `executable`
+    - `windows[]`: `plan_window_id`, `zone_id`, `task_type`, `schedule_task_type`, `label`, `schedule_key`, `trigger_at`, `origin`, `state`, `mode`
+    - `summary`: `planned_total`, `suppressed_total`, `missed_total`
+  - `execution`:
+    - `active_run | null`
+    - `recent_runs[]`
+    - `counters.active`
+    - `counters.completed_24h`
+    - `counters.failed_24h`
+    - `latest_failure | null`: `source`, `task_id`, `intent_id`, `task_type`, `status`, `error_code`, `error_message`, `at`
+- **Инварианты:**
+  - `plan_window_id = "{zone_id}:{schedule_key}:{trigger_at_iso}"`;
+  - `windows[]` сортируются по `trigger_at ASC`;
+  - `execution.active_run` и `recent_runs[]` читаются из `ae_tasks`, а не из task snapshots;
+  - `execution.counters.failed_24h` и `latest_failure` учитывают terminal failures из `zone_automation_intents`, у которых не было `ae_task`;
+  - в `ae3` текущий canonical executable lane v1 — `irrigation`; остальные lane могут присутствовать как `config-only`.
 
-### 3.5.2. GET /api/zones/{id}/scheduler-tasks/{taskId} (HISTORICAL / DIAGNOSTICS ONLY)
+### 3.5.2. GET /api/zones/{id}/executions/{executionId}
 
 - **Аутентификация:** Требуется `auth:sanctum`
-- **Описание:** Исторический endpoint статуса scheduler-task.
-- **Поведение:** в AE3 runtime path не используется.
-- **Допустимые `taskId`:** historical `st-*` и canonical numeric AE3 task id. Legacy `intent-*` больше не поддерживается.
-- **Источник:** в `data.source` возвращается только `automation_engine`.
-- **Дополнительно:** ответ всегда содержит:
-  - `lifecycle[]` (снимки `scheduler_logs`);
-  - `timeline[]` (детальные task-события из `zone_events`);
-  - нормализованные outcome-поля: `action_required`, `decision`, `reason_code`, `reason`, `error_code`, `executed_steps`, `safety_flags`, `next_due_at`, `measurements_before_after`, `run_mode`, `retry_attempt`, `retry_max_attempts`, `retry_backoff_sec`.
-- Для 2-бакового recovery перехода (`irrigation -> tank-to-tank`) в `result.*` используются:
-  - `source_reason_code=online_correction_failed`
-  - `transition_reason_code=tank_to_tank_correction_started`
-  - `online_correction_error_code` (код исходной неуспешной online-коррекции).
+- **Описание:** Канонический detail endpoint для одного execution run внутри scheduler workspace.
+- **Параметры пути:**
+  - `executionId`: только numeric `ae_tasks.id`
+- **Ошибки:**
+  - `422 VALIDATION_ERROR`, если `executionId` не numeric;
+  - `404 NOT_FOUND`, если execution не найден в рамках зоны.
+- **Ответ (`data`):**
+  - summary-поля run:
+    - `execution_id`, `task_id`, `zone_id`
+    - `task_type`, `schedule_task_type`
+    - `status`, `runtime_status`, `intent_status`, `intent_type`
+    - `correlation_id`, `schedule_key`
+    - `control_mode_snapshot`, `current_stage`, `workflow_phase`
+    - `created_at`, `updated_at`, `scheduled_for`, `accepted_at`, `due_at`, `expires_at`, `completed_at`
+    - `error_code`, `error_message`, `is_active`
+  - `lifecycle[]`:
+    - нормализованные transitions `accepted/running/completed/failed/cancelled`
+    - источник `ae_tasks`
+  - `timeline[]`:
+    - события из `zone_events`, привязанные по `task_id` и/или `correlation_id`
+    - поля `event_id`, `event_seq`, `event_type`, `type`, `at`, `task_id`, `correlation_id`, `task_type`, `stage`, `status`, `terminal_status`, `decision`, `reason_code`, `reason`, `error_code`, `node_uid`, `channel`, `cmd`, `command_submitted`, `command_effect_confirmed`, `details`, `source`
+  - `timeline_preview[]`: первые 5 элементов `timeline[]`
+  - `latest_event | null`: последний элемент `timeline[]`
+- **Инварианты:**
+  - `timeline[]` сортируется строго по `created_at ASC`, затем `id ASC`;
+  - операторский detail view не читает `scheduler_logs`;
+  - historical `st-*` и legacy `intent-*` идентификаторы больше не поддерживаются.
+
+### 3.5.2.1. GET /api/zones/{id}/scheduler-diagnostics
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `admin` или `engineer`
+- **Описание:** Отдельный инженерный diagnostics endpoint. Не является частью operator-contract и не используется для построения `plan`/`execution`.
+- **Источник данных:**
+  - dispatcher state: `laravel_scheduler_active_tasks`
+  - historical diagnostics: `scheduler_logs`
+- **Ответ (`data`):**
+  - `zone_id`
+  - `generated_at`
+  - `sources.dispatcher_tasks`
+  - `sources.scheduler_logs`
+  - `summary`:
+    - `tracked_tasks_total`
+    - `active_tasks_total`
+    - `overdue_tasks_total`
+    - `stale_tasks_total`
+    - `recent_logs_total`
+    - `last_log_at`
+  - `dispatcher_tasks[]`:
+    - `task_id`, `task_type`, `schedule_key`, `correlation_id`, `status`
+    - `accepted_at`, `due_at`, `expires_at`, `last_polled_at`, `terminal_at`, `updated_at`
+    - `details`
+  - `recent_logs[]`:
+    - `log_id`, `task_name`, `status`, `created_at`, `details`
+- **Инварианты:**
+  - endpoint допускает чтение `scheduler_logs`, но этот источник не протекает в `schedule-workspace` и `executions/{executionId}`;
+  - diagnostics UI должен быть изолирован от operator UX и доступен только `admin|engineer`.
 
 ### 3.5.3. GET /api/automation-configs/zone/{id}/zone.logic_profile
 
@@ -611,9 +684,9 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   `data.task_id`; отсутствие или legacy/non-numeric `task_id` трактуется Laravel dispatcher как failed/retryable submit.
 - **Ограничение:** при активном intent зоны (другой `idempotency_key`) endpoint возвращает
   `409 start_cycle_zone_busy` с `active_intent_id`.
-- **Ограничение:** при активной scheduler-задаче зоны (`accepted|running`) endpoint возвращает
+- **Ограничение:** при активном execution run зоны (`accepted|running` в canonical `ae_tasks`) endpoint возвращает
   `409 start_cycle_zone_busy` с `active_task_id` и `active_task_status`.
-- **Recovery policy:** при блокирующей `workflow_phase` без активной scheduler-задачи runtime делает auto-heal/reset
+- **Recovery policy:** при блокирующей `workflow_phase` без активного execution run runtime делает auto-heal/reset
   в `idle`, если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (default 600 сек).
 - **Тело запроса:**
 ```json

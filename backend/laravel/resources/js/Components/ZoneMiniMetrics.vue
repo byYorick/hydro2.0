@@ -31,8 +31,8 @@ type ClimateTargets = {
 }
 
 interface PhaseTargets {
-  ph?: { min: number; max: number } | null
-  ec?: { min: number; max: number } | null
+  ph?: { target?: number; min?: number; max?: number } | null
+  ec?: { target?: number; min?: number; max?: number } | null
   climate?: ClimateTargets | null
 }
 
@@ -127,7 +127,11 @@ const allMetrics = computed((): MetricData[] => {
   if (isTelemetryObject && telemetryObj.ph !== null && telemetryObj.ph !== undefined) {
     let target: number | null = null
     const phTargets = phaseTargets?.ph && typeof phaseTargets.ph === 'object' ? phaseTargets.ph : null
-    if (phTargets?.min !== undefined && phTargets?.max !== undefined) {
+    if (phTargets?.target !== undefined) {
+      target = phTargets.target
+    } else if (legacyTargets?.ph_target !== undefined) {
+      target = legacyTargets.ph_target
+    } else if (phTargets?.min !== undefined && phTargets?.max !== undefined) {
       target = (phTargets.min + phTargets.max) / 2
     } else if (legacyTargets?.ph_min !== undefined && legacyTargets?.ph_max !== undefined) {
       target = (legacyTargets.ph_min + legacyTargets.ph_max) / 2
@@ -146,7 +150,11 @@ const allMetrics = computed((): MetricData[] => {
   if (isTelemetryObject && telemetryObj.ec !== null && telemetryObj.ec !== undefined) {
     let target: number | null = null
     const ecTargets = phaseTargets?.ec && typeof phaseTargets.ec === 'object' ? phaseTargets.ec : null
-    if (ecTargets?.min !== undefined && ecTargets?.max !== undefined) {
+    if (ecTargets?.target !== undefined) {
+      target = ecTargets.target
+    } else if (legacyTargets?.ec_target !== undefined) {
+      target = legacyTargets.ec_target
+    } else if (ecTargets?.min !== undefined && ecTargets?.max !== undefined) {
       target = (ecTargets.min + ecTargets.max) / 2
     } else if (legacyTargets?.ec_min !== undefined && legacyTargets?.ec_max !== undefined) {
       target = (legacyTargets.ec_min + legacyTargets.ec_max) / 2

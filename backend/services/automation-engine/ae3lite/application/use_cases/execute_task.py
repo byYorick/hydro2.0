@@ -605,6 +605,8 @@ class ExecuteTaskUseCase:
         if not isinstance(phase_targets, Mapping):
             return None
         candidate = phase_targets.get(key)
+        if isinstance(candidate, Mapping):
+            candidate = candidate.get("target")
         if candidate is None:
             candidate = phase_targets.get(f"{key}_target")
         try:

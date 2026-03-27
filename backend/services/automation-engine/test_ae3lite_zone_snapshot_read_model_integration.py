@@ -741,7 +741,8 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         assert snapshot.grow_cycle_id == grow_cycle_id
         assert snapshot.workflow_phase == "waiting_command"
         assert snapshot.workflow_version == 7
-        assert snapshot.targets["ph"]["target"] == 5.9
+        assert snapshot.targets["ph"]["target"] == 5.8
+        assert snapshot.phase_targets["ph"]["target"] == 5.8
         assert snapshot.targets["diagnostics"]["execution"]["startup"]["level_poll_interval_sec"] == 11
         assert snapshot.diagnostics_execution["workflow"] == "cycle_start"
         assert snapshot.diagnostics_execution["startup"]["level_poll_interval_sec"] == 11

@@ -579,7 +579,7 @@ export function useGrowthCycleWizard({
 
     const phError = validateWindowedTarget(
       "pH",
-      toFiniteNumber(waterForm.value.targetPh),
+      toFiniteNumber(phase.ph_target),
       toFiniteNumber(phase.ph_min),
       toFiniteNumber(phase.ph_max),
     );
@@ -589,7 +589,7 @@ export function useGrowthCycleWizard({
 
     const ecError = validateWindowedTarget(
       "EC",
-      toFiniteNumber(waterForm.value.targetEc),
+      toFiniteNumber(phase.ec_target),
       toFiniteNumber(phase.ec_min),
       toFiniteNumber(phase.ec_max),
     );
@@ -1139,7 +1139,10 @@ export function useGrowthCycleWizard({
     try {
       const response = await api.get(`/api/zones/${zoneId}/health`);
       const payload = (response.data?.data || null) as ZoneHealthPayload | ZoneLaunchReadiness | null;
-      zoneReadiness.value = payload?.readiness ?? (payload as ZoneLaunchReadiness | null);
+      const readinessPayload = payload && typeof payload === "object" && "readiness" in payload
+        ? (payload as ZoneHealthPayload).readiness ?? null
+        : (payload as ZoneLaunchReadiness | null);
+      zoneReadiness.value = readinessPayload;
     } catch (err) {
       logger.warn("[GrowthCycleWizard] Failed to load zone readiness", { zoneId, err });
       zoneReadiness.value = null;
@@ -1223,10 +1226,6 @@ export function useGrowthCycleWizard({
           clean_tank_fill_l: tanksCount.value === 2 ? waterForm.value.cleanTankFillL : undefined,
           nutrient_tank_target_l: tanksCount.value === 2 ? waterForm.value.nutrientTankTargetL : undefined,
           irrigation_batch_l: tanksCount.value === 2 ? waterForm.value.irrigationBatchL : undefined,
-        },
-        phase_overrides: {
-          ph_target: waterForm.value.targetPh,
-          ec_target: waterForm.value.targetEc,
         },
         settings: {
           expected_harvest_at: form.value.expectedHarvestAt || undefined,

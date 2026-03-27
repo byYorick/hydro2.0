@@ -210,32 +210,30 @@ resources/js/Pages/
 - цветовая кодировка типов событий
 - пагинация
 
-## 6.6. Automation Tab: Scheduler Task Lifecycle
+## 6.6. Automation Tab: Runtime Operations
 
 `Pages/Zones/Tabs/ZoneAutomationTab.vue`
 
 Обязательные UX-инварианты:
-- показывать lifecycle только в целевых статусах: `accepted`, `running`, `completed`, `failed`, `rejected`, `expired`;
-- отдельный блок SLA по `scheduled_for/due_at/expires_at`;
-- отдельный блок подтверждения исполнения команды по terminal статусу ноды `DONE`;
-- в результате задачи отображать поля `command_submitted`, `command_effect_confirmed`,
-  `commands_total`, `commands_effect_confirmed`, `commands_failed`;
-- timeline рендерится только из event-contract (`event_id/event_seq/event_type/...`) без legacy fallback событий.
+- вкладка показывает только runtime/operations слой зоны: текущий workflow, control-mode, quick actions, профиль, коррекцию/калибровки и low-level AE settings;
+- не смешивает operator flow с scheduler/execution detail-view;
+- manual-step controls рендерятся из `allowed_manual_steps`, а не из зашитого списка кнопок;
+- workflow/timeline в automation-панели строятся из canonical automation state и `zone_events`, без legacy scheduler-task snapshots;
+- оператор должен получать быстрый доступ к управлению зоной, не переключаясь в developer diagnostics.
 
-Фильтры оператора:
-- пресеты: `all`, `failed`, `deadline`, `done_confirmed`, `done_unconfirmed`;
-- поиск по `task_id`, `status`, `reason_code`, `error_code`.
-
-## 6.7. Scheduler Tab: Laravel scheduler sync
+## 6.7. Scheduler Tab: Schedule Workspace
 
 `Pages/Zones/Tabs/ZoneSchedulerTab.vue`
 
 Назначение:
-- отдельная вкладка зоны для синхронизации с Laravel scheduler-dispatch;
-- показывает runtime control-mode, количество загруженных задач, manual-step hints и `scheduler-tasks` lifecycle;
-- использует тот же canonical backend-контракт `GET /api/zones/{id}/scheduler-tasks` и detail lookup `GET /api/zones/{id}/scheduler-tasks/{taskId}`.
-- визуально оформлена как dashboard: hero-summary, timeline detail-view, recent task list, quick controls, недельный preview и collapsed dev diagnostics;
-- основной фокус экрана: синхронизация, активная задача, состояние очереди и быстрый доступ к последней записи.
+- отдельная вкладка зоны для scheduler workspace `Plan + Execution`;
+- использует canonical backend-контракт `GET /api/zones/{id}/schedule-workspace?horizon=24h|7d`, detail lookup `GET /api/zones/{id}/executions/{executionId}` и snapshot `GET /api/zones/{id}/state` для фактического operator summary;
+- по умолчанию показывает операторскую сводку: `что происходит сейчас`, `требует внимания`, `ближайшие исполнимые окна`;
+- не рендерит сотни raw `plan windows`; показывает только ближайшие окна из `capabilities.executable_task_types[]`, а `config-only` lane сводит в компактный summary;
+- execution detail рендерит `lifecycle` и сжатый timeline из canonical `ae_tasks` + `zone_events`, группируя повторяющиеся `AE_TASK_STARTED`;
+- отдельный diagnostics block допускается только для `admin|engineer` и читает `GET /api/zones/{id}/scheduler-diagnostics`;
+- `scheduler_logs` и legacy `scheduler-tasks` не являются частью operator UX;
+- основной фокус экрана: понять текущее состояние зоны, операционные проблемы и ближайшие исполнимые действия без инженерного шума.
 
 ---
 

@@ -8,6 +8,7 @@ use App\Services\AutomationScheduler\ScheduleLoader;
 use App\Services\AutomationScheduler\SchedulerCycleFinalizer;
 use App\Services\AutomationScheduler\ZoneCursorStore;
 use App\Services\EffectiveTargetsService;
+use App\Models\Zone;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Mockery;
@@ -40,32 +41,56 @@ class ShouldRunIntervalTaskTest extends TestCase
 
     public function test_interval_tasks_use_single_batch_query_for_last_terminal_runs(): void
     {
-        DB::table('scheduler_logs')->insert([
+        $firstZone = Zone::factory()->create();
+        $secondZone = Zone::factory()->create();
+
+        DB::table('laravel_scheduler_active_tasks')->insert([
             [
-                'task_name' => 'laravel_scheduler_task_irrigation_zone_1',
+                'task_id' => '1',
+                'zone_id' => $firstZone->id,
+                'task_type' => 'irrigation',
+                'schedule_key' => sprintf('zone:%d|type:irrigation|time=None|start=None|end=None|interval=60', $firstZone->id),
+                'correlation_id' => sprintf('sch:z%d:irrigation:a', $firstZone->id),
                 'status' => 'completed',
-                'details' => json_encode(['task_id' => 'a'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                'created_at' => '2026-03-03 12:00:00',
+                'accepted_at' => '2026-03-03 11:59:00',
+                'terminal_at' => '2026-03-03 12:00:00',
+                'details' => json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at' => '2026-03-03 11:59:00',
+                'updated_at' => '2026-03-03 12:00:00',
             ],
             [
-                'task_name' => 'laravel_scheduler_task_lighting_zone_1',
+                'task_id' => '2',
+                'zone_id' => $firstZone->id,
+                'task_type' => 'lighting',
+                'schedule_key' => sprintf('zone:%d|type:lighting|time=None|start=None|end=None|interval=60', $firstZone->id),
+                'correlation_id' => sprintf('sch:z%d:lighting:b', $firstZone->id),
                 'status' => 'failed',
-                'details' => json_encode(['task_id' => 'b'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                'created_at' => '2026-03-03 11:58:00',
+                'accepted_at' => '2026-03-03 11:57:00',
+                'terminal_at' => '2026-03-03 11:58:00',
+                'details' => json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at' => '2026-03-03 11:57:00',
+                'updated_at' => '2026-03-03 11:58:00',
             ],
             [
-                'task_name' => 'laravel_scheduler_task_lighting_zone_1',
+                'task_id' => '3',
+                'zone_id' => $firstZone->id,
+                'task_type' => 'lighting',
+                'schedule_key' => sprintf('zone:%d|type:lighting|time=None|start=None|end=None|interval=60', $firstZone->id),
+                'correlation_id' => sprintf('sch:z%d:lighting:c', $firstZone->id),
                 'status' => 'running',
-                'details' => json_encode(['task_id' => 'c'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'accepted_at' => '2026-03-03 12:05:00',
+                'terminal_at' => null,
+                'details' => json_encode([], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 'created_at' => '2026-03-03 12:05:00',
+                'updated_at' => '2026-03-03 12:05:00',
             ],
         ]);
 
         $schedules = [
-            new ScheduleItem(zoneId: 1, taskType: 'irrigation', intervalSec: 60),
-            new ScheduleItem(zoneId: 1, taskType: 'lighting', intervalSec: 60),
-            new ScheduleItem(zoneId: 1, taskType: 'mist', intervalSec: 60),
-            new ScheduleItem(zoneId: 2, taskType: 'mist', intervalSec: 60),
+            new ScheduleItem(zoneId: $firstZone->id, taskType: 'irrigation', intervalSec: 60),
+            new ScheduleItem(zoneId: $firstZone->id, taskType: 'lighting', intervalSec: 60),
+            new ScheduleItem(zoneId: $firstZone->id, taskType: 'mist', intervalSec: 60),
+            new ScheduleItem(zoneId: $secondZone->id, taskType: 'mist', intervalSec: 60),
         ];
 
         $taskNames = $this->scheduleLoader->collectIntervalTaskNames($schedules);
@@ -80,19 +105,19 @@ class ShouldRunIntervalTaskTest extends TestCase
 
         $now = CarbonImmutable::parse('2026-03-03 12:00:30', 'UTC');
         $this->assertFalse($this->finalizer->shouldRunIntervalTask(
-            'laravel_scheduler_task_irrigation_zone_1',
+            'laravel_scheduler_task_irrigation_zone_'.$firstZone->id,
             60,
             $now,
             $lastRunByTaskName,
         ));
         $this->assertTrue($this->finalizer->shouldRunIntervalTask(
-            'laravel_scheduler_task_lighting_zone_1',
+            'laravel_scheduler_task_lighting_zone_'.$firstZone->id,
             60,
             $now,
             $lastRunByTaskName,
         ));
         $this->assertTrue($this->finalizer->shouldRunIntervalTask(
-            'laravel_scheduler_task_mist_zone_1',
+            'laravel_scheduler_task_mist_zone_'.$firstZone->id,
             60,
             $now,
             $lastRunByTaskName,

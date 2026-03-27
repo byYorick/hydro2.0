@@ -223,8 +223,8 @@ import { useUrlState } from '@/composables/useUrlState'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
-import { onWsStateChange } from '@/utils/echoClient'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 
 const page = usePage<{ devices?: Device[] }>()
 const { showToast } = useToast()
@@ -235,8 +235,8 @@ const canConfigureDevices = computed(() => {
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
 const deviceUpdateEventName = '.device.updated'
-const zoneChannels = new Map<number, any>()
-let unassignedChannel: any = null
+const zoneChannels = new Map<number, () => void>()
+let stopUnassignedChannel: (() => void) | null = null
 
 const zoneIds = computed(() => {
   const ids = new Set<number>()
@@ -267,16 +267,19 @@ const subscribeZoneChannel = (zoneId: number): void => {
     return
   }
 
-  if (!window.Echo) {
-    logger.debug('[Devices/Index] Echo not available, will retry on connection', { zoneId })
-    return
-  }
-
   const channelName = `hydro.zones.${zoneId}`
   try {
-    const channel = window.Echo.private(channelName)
-    channel.listen(deviceUpdateEventName, handleDeviceUpdate)
-    zoneChannels.set(zoneId, channel)
+    const stopSubscription = subscribeManagedChannelEvents({
+      channelName,
+      componentTag: `Devices/Index:${zoneId}`,
+      leaveOnCleanup: true,
+      eventHandlers: {
+        [deviceUpdateEventName]: (payload) => {
+          handleDeviceUpdate(payload)
+        },
+      },
+    })
+    zoneChannels.set(zoneId, stopSubscription)
     logger.debug('[Devices/Index] Subscribed to zone device channel', { channel: channelName })
   } catch (err) {
     logger.error('[Devices/Index] Failed to subscribe to zone device channel', { zoneId, err })
@@ -285,17 +288,13 @@ const subscribeZoneChannel = (zoneId: number): void => {
 }
 
 const unsubscribeZoneChannel = (zoneId: number): void => {
-  const channel = zoneChannels.get(zoneId)
-  if (!channel) {
+  const stopSubscription = zoneChannels.get(zoneId)
+  if (!stopSubscription) {
     return
   }
 
-  const channelName = `hydro.zones.${zoneId}`
   try {
-    channel.stopListening(deviceUpdateEventName)
-    if (typeof window.Echo?.leave === 'function') {
-      window.Echo.leave(channelName)
-    }
+    stopSubscription()
   } catch (error) {
     logger.warn('[Devices/Index] Failed to cleanup zone channel', { zoneId, error })
   }
@@ -304,41 +303,41 @@ const unsubscribeZoneChannel = (zoneId: number): void => {
 }
 
 const subscribeUnassignedChannel = (): void => {
-  if (unassignedChannel) {
-    return
-  }
-
-  if (!window.Echo) {
-    logger.debug('[Devices/Index] Echo not available for unassigned channel', {})
+  if (stopUnassignedChannel) {
     return
   }
 
   try {
-    unassignedChannel = window.Echo.private('hydro.devices')
-    unassignedChannel.listen(deviceUpdateEventName, handleDeviceUpdate)
+    stopUnassignedChannel = subscribeManagedChannelEvents({
+      channelName: 'hydro.devices',
+      componentTag: 'Devices/Index:unassigned',
+      leaveOnCleanup: true,
+      eventHandlers: {
+        [deviceUpdateEventName]: (payload) => {
+          handleDeviceUpdate(payload)
+        },
+      },
+    })
     logger.debug('[Devices/Index] Subscribed to unassigned devices channel')
   } catch (err) {
     logger.error('[Devices/Index] Failed to subscribe to unassigned devices channel', err)
     showToast('Ошибка подписки на канал неназначенных устройств', 'error', TOAST_TIMEOUT.NORMAL)
-    unassignedChannel = null
+    stopUnassignedChannel = null
   }
 }
 
 const unsubscribeUnassignedChannel = (): void => {
-  if (!unassignedChannel) {
+  if (!stopUnassignedChannel) {
     return
   }
 
   try {
-    unassignedChannel.stopListening(deviceUpdateEventName)
-    if (typeof window.Echo?.leave === 'function') {
-      window.Echo.leave('hydro.devices')
-    }
+    stopUnassignedChannel()
   } catch (error) {
     logger.warn('[Devices/Index] Failed to cleanup unassigned channel', { error })
   }
 
-  unassignedChannel = null
+  stopUnassignedChannel = null
 }
 
 const syncDeviceChannels = (): void => {
@@ -384,26 +383,13 @@ onMounted(() => {
     devicesStore.invalidateCache()
     logger.debug('[Devices/Index] Device lifecycle transitioned, cache invalidated', { deviceId, fromState, toState })
   })
-  
+
   const stopChannelWatcher = watch(zoneIds, () => {
     syncDeviceChannels()
   }, { immediate: true })
 
-  const unsubscribeWsState = onWsStateChange((state) => {
-    if (state === 'connected') {
-      logger.debug('[Devices/Index] WebSocket connected, resubscribing device channels')
-      setTimeout(() => {
-        resetDeviceChannels()
-        syncDeviceChannels()
-      }, 100)
-    } else if (state === 'disconnected') {
-      resetDeviceChannels()
-    }
-  })
-
   onUnmounted(() => {
     stopChannelWatcher()
-    unsubscribeWsState()
     resetDeviceChannels()
     logger.debug('[Devices/Index] Cleaned up device channels on unmount')
   })

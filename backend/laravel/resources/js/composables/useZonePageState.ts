@@ -5,6 +5,7 @@ import { useZonesStore } from '@/stores/zones'
 import { useTelemetryBatch } from '@/composables/useOptimizedUpdates'
 import { usePageProps } from '@/composables/usePageProps'
 import { logger } from '@/utils/logger'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { calculateProgressBetween } from '@/utils/growCycleProgress'
 import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
@@ -182,7 +183,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       ...(phaseFromProps && typeof phaseFromProps === 'object' ? phaseFromProps : {}),
     } as Record<string, unknown>
 
-    const recipeTargets = resolveRecipePhaseTargets(recipePhase.value ?? phaseFromCycle ?? phaseFromProps)
+    const recipeTargets = resolveRecipePhaseTargets(phaseFromProps ?? phaseFromCycle ?? recipePhase.value)
     if (recipeTargets) {
       mergedPhase.targets = recipeTargets
     }
@@ -190,7 +191,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     const recipePhaseRecord = recipePhase.value
     if (recipePhaseRecord) {
       for (const key of ['ph_target', 'ph_min', 'ph_max', 'ec_target', 'ec_min', 'ec_max', 'temp_air_target', 'humidity_target', 'irrigation_mode', 'irrigation_interval_sec', 'irrigation_duration_sec', 'lighting_photoperiod_hours', 'lighting_start_time']) {
-        if (key in recipePhaseRecord) {
+        if ((mergedPhase[key] === null || mergedPhase[key] === undefined) && key in recipePhaseRecord) {
           mergedPhase[key] = recipePhaseRecord[key]
         }
       }
@@ -200,12 +201,17 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   })
 
   const targets = computed(() => {
+    const resolvedTargets = effectiveTargets.value
+    if (resolvedTargets && typeof resolvedTargets === 'object' && Object.keys(resolvedTargets).length > 0) {
+      return resolvedTargets
+    }
+
     const recipeTargets = currentPhase.value?.targets
     if (recipeTargets && typeof recipeTargets === 'object' && Object.keys(recipeTargets).length > 0) {
       return recipeTargets as ZoneTargetsType
     }
 
-    return effectiveTargets.value
+    return {} as ZoneTargetsType
   })
 
   const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.value))
@@ -326,7 +332,6 @@ export function useZonePageState(deps: ZonePageStateDeps) {
 
   let unsubscribeZoneCommands: (() => void) | null = null
   let stopGrowCycleUpdatedChannel: (() => void) | null = null
-  let growCycleUpdatedChannelName: string | null = null
   let propsReloadTimer: ReturnType<typeof setTimeout> | null = null
 
   const reloadZonePageProps = (only: string[] = defaultZoneReloadProps): void => {
@@ -338,13 +343,31 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     }, RELOAD_PROPS_DEBOUNCE_MS)
   }
 
+  const cleanupGrowCycleRealtimeSubscription = (): void => {
+    if (stopGrowCycleUpdatedChannel) {
+      stopGrowCycleUpdatedChannel()
+      stopGrowCycleUpdatedChannel = null
+    }
+  }
+
   const cleanupZoneRealtimeSubscriptions = (): void => {
     if (unsubscribeZoneCommands) { unsubscribeZoneCommands(); unsubscribeZoneCommands = null }
-    if (stopGrowCycleUpdatedChannel) { stopGrowCycleUpdatedChannel(); stopGrowCycleUpdatedChannel = null }
-    if (growCycleUpdatedChannelName && typeof window !== 'undefined' && window.Echo?.leave) {
-      window.Echo.leave(growCycleUpdatedChannelName)
-      growCycleUpdatedChannelName = null
-    }
+    cleanupGrowCycleRealtimeSubscription()
+  }
+
+  const subscribeGrowCycleRealtime = (targetZoneId: number): void => {
+    cleanupGrowCycleRealtimeSubscription()
+    stopGrowCycleUpdatedChannel = subscribeManagedChannelEvents({
+      channelName: `hydro.zones.${targetZoneId}`,
+      componentTag: 'Zones/Show.grow-cycle',
+      eventHandlers: {
+        '.App\\Events\\GrowCycleUpdated': (event) => {
+          logger.info('[Zones/Show] GrowCycleUpdated event received', event)
+          reloadZone(targetZoneId, ['zone', 'active_grow_cycle', 'active_cycle'])
+          reloadZonePageProps()
+        },
+      },
+    })
   }
 
   const subscribeZoneRealtime = (targetZoneId: number): void => {
@@ -359,18 +382,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       }
     })
 
-    const echo = typeof window !== 'undefined' ? window.Echo : null
-    if (!echo) return
-
-    const channelName = `hydro.zones.${targetZoneId}`
-    const channel = echo.private(channelName)
-    growCycleUpdatedChannelName = channelName
-    channel.listen('.App\\Events\\GrowCycleUpdated', (event: unknown) => {
-      logger.info('[Zones/Show] GrowCycleUpdated event received', event)
-      reloadZone(targetZoneId, ['zone', 'active_grow_cycle', 'active_cycle'])
-      reloadZonePageProps()
-    })
-    stopGrowCycleUpdatedChannel = () => { channel.stopListening('.App\\Events\\GrowCycleUpdated') }
+    subscribeGrowCycleRealtime(targetZoneId)
   }
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────

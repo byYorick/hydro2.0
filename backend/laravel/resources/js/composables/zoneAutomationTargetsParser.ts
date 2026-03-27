@@ -128,14 +128,6 @@ function asIrrigationSystem(value: unknown): IrrigationSystem | null {
   return null
 }
 
-function midpoint(minValue: number | null, maxValue: number | null): number | null {
-  if (minValue !== null && maxValue !== null) {
-    return (minValue + maxValue) / 2
-  }
-
-  return minValue ?? maxValue
-}
-
 export function syncSystemToTankLayout(
   waterForm: WaterFormState,
   systemType: IrrigationSystem
@@ -180,17 +172,13 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const solutionBehavior = solutionExecution ?? solutionTargets
 
   const phTarget = asRecord(targets.ph)
-  const phMin = readNumber(phTarget?.min)
-  const phMax = readNumber(phTarget?.max)
-  const phValue = readNumber(phTarget?.target, midpoint(phMin, phMax))
+  const phValue = readNumber(phTarget?.target)
   if (phValue !== null) {
     waterForm.targetPh = clamp(phValue, 4, 9)
   }
 
   const ecTarget = asRecord(targets.ec)
-  const ecMin = readNumber(ecTarget?.min)
-  const ecMax = readNumber(ecTarget?.max)
-  const ecValue = readNumber(ecTarget?.target, midpoint(ecMin, ecMax))
+  const ecValue = readNumber(ecTarget?.target)
   if (ecValue !== null) {
     waterForm.targetEc = clamp(ecValue, 0.1, 10)
   }
@@ -266,8 +254,6 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
 
   const correctionNode = asRecord(irrigationBehavior?.correction_node) ?? asRecord(irrigationTargets?.correction_node)
-  const correctionPh = readNumber(correctionNode?.target_ph)
-  const correctionEc = readNumber(correctionNode?.target_ec)
   const correctionTolerance = asRecord(correctionNode?.target_tolerance)
   const correctionPhPct = readNumber(
     correctionTolerance?.ph_pct,
@@ -281,12 +267,6 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     irrigationBehavior?.ec_pct,
     irrigationTargets?.ec_pct
   )
-  if (correctionPh !== null) {
-    waterForm.targetPh = clamp(correctionPh, 4, 9)
-  }
-  if (correctionEc !== null) {
-    waterForm.targetEc = clamp(correctionEc, 0.1, 10)
-  }
   if (correctionPhPct !== null) {
     waterForm.phPct = clamp(correctionPhPct, 1, 50)
   }

@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useCommands } from '@/composables/useCommands'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -21,22 +21,8 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
 
   onMounted(() => {
     void api.hydrateAutomationProfileFromCurrentZone({ includeTargets: true })
-    void scheduler.fetchRecentSchedulerTasks()
-    if (import.meta.env.MODE !== 'test') {
-      void scheduler.pollSchedulerTasksCycle()
-      if (typeof document !== 'undefined') {
-        document.addEventListener('visibilitychange', scheduler.handleVisibilityChange)
-      }
-    }
+    void scheduler.fetchAutomationControlMode()
   })
-
-  onUnmounted(() => {
-    scheduler.clearSchedulerTasksPollTimer()
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', scheduler.handleVisibilityChange)
-    }
-  })
-
   // ─── Zone change coordination ──────────────────────────────────────────────
 
   watch(
@@ -45,8 +31,7 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
       state.pendingTargetsSyncForZoneChange.value = true
       scheduler.resetForZoneChange()
       void api.hydrateAutomationProfileFromCurrentZone({ includeTargets: false })
-      void scheduler.fetchRecentSchedulerTasks()
-      scheduler.scheduleSchedulerTasksPoll()
+      void scheduler.fetchAutomationControlMode()
     }
   )
 
@@ -78,41 +63,14 @@ export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
     // Api
     applyAutomationProfile: api.applyAutomationProfile,
     // Scheduler
-    schedulerTaskIdInput: scheduler.schedulerTaskIdInput,
-    schedulerTaskLookupLoading: scheduler.schedulerTaskLookupLoading,
-    schedulerTaskListLoading: scheduler.schedulerTaskListLoading,
-    schedulerTaskError: scheduler.schedulerTaskError,
-    schedulerTaskStatus: scheduler.schedulerTaskStatus,
     automationControlMode: scheduler.automationControlMode,
     allowedManualSteps: scheduler.allowedManualSteps,
     automationControlModeLoading: scheduler.automationControlModeLoading,
     automationControlModeSaving: scheduler.automationControlModeSaving,
     manualStepLoading: scheduler.manualStepLoading,
-    recentSchedulerTasks: scheduler.recentSchedulerTasks,
-    filteredRecentSchedulerTasks: scheduler.filteredRecentSchedulerTasks,
-    schedulerTaskSearch: scheduler.schedulerTaskSearch,
-    schedulerTaskPreset: scheduler.schedulerTaskPreset,
-    schedulerTaskPresetOptions: scheduler.schedulerTaskPresetOptions,
-    schedulerTasksUpdatedAt: scheduler.schedulerTasksUpdatedAt,
-    fetchRecentSchedulerTasks: scheduler.fetchRecentSchedulerTasks,
-    lookupSchedulerTask: scheduler.lookupSchedulerTask,
     setAutomationControlMode: scheduler.setAutomationControlMode,
     syncControlModeFromAutomationState: scheduler.syncControlModeFromAutomationState,
     runManualStep: scheduler.runManualStep,
-    schedulerTaskStatusVariant: scheduler.schedulerTaskStatusVariant,
-    schedulerTaskStatusLabel: scheduler.schedulerTaskStatusLabel,
-    schedulerTaskTypeLabel: scheduler.schedulerTaskTypeLabel,
-    schedulerTaskProcessStatusVariant: scheduler.schedulerTaskProcessStatusVariant,
-    schedulerTaskProcessStatusLabel: scheduler.schedulerTaskProcessStatusLabel,
-    schedulerTaskEventLabel: scheduler.schedulerTaskEventLabel,
-    schedulerTaskTimelineStageLabel: scheduler.schedulerTaskTimelineStageLabel,
-    schedulerTaskTimelineStepLabel: scheduler.schedulerTaskTimelineStepLabel,
-    schedulerTaskTimelineItems: scheduler.schedulerTaskTimelineItems,
-    schedulerTaskDecisionLabel: scheduler.schedulerTaskDecisionLabel,
-    schedulerTaskReasonLabel: scheduler.schedulerTaskReasonLabel,
-    schedulerTaskErrorLabel: scheduler.schedulerTaskErrorLabel,
-    schedulerTaskSlaMeta: scheduler.schedulerTaskSlaMeta,
-    schedulerTaskDoneMeta: scheduler.schedulerTaskDoneMeta,
     formatDateTime: scheduler.formatDateTime,
   }
 }

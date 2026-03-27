@@ -5,12 +5,18 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
+use App\Services\ZoneFrontendTelemetryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TelemetryController extends Controller
 {
+    public function __construct(
+        private readonly ZoneFrontendTelemetryService $zoneFrontendTelemetry
+    ) {}
+
     public function zoneLast(int $zoneId)
     {
         // Проверяем авторизацию
@@ -36,39 +42,7 @@ class TelemetryController extends Controller
             ], 403);
         }
 
-        $metricMap = [
-            'PH' => 'ph',
-            'EC' => 'ec',
-            'TEMPERATURE' => 'temperature',
-            'HUMIDITY' => 'humidity',
-        ];
-
-        $rows = TelemetryLast::query()
-            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
-            ->where('sensors.zone_id', $zoneId)
-            ->whereNotNull('sensors.zone_id')
-            ->where('sensors.is_active', true)
-            ->select([
-                'sensors.type as metric_type',
-                'telemetry_last.last_value as value',
-                'telemetry_last.last_ts',
-                'telemetry_last.updated_at',
-                'telemetry_last.sensor_id',
-            ])
-            ->orderByRaw('telemetry_last.last_ts DESC NULLS LAST')
-            ->orderByRaw('telemetry_last.updated_at DESC NULLS LAST')
-            ->orderByDesc('telemetry_last.sensor_id')
-            ->get();
-
-        $data = [];
-        foreach ($rows as $row) {
-            $metricType = strtoupper((string) $row->metric_type);
-            $key = $metricMap[$metricType] ?? null;
-            if ($key === null || array_key_exists($key, $data)) {
-                continue;
-            }
-            $data[$key] = $row->value !== null ? (float) $row->value : null;
-        }
+        $data = $this->zoneFrontendTelemetry->getZoneSnapshot($zoneId, true);
 
         return response()->json([
             'status' => 'ok',
@@ -317,30 +291,32 @@ class TelemetryController extends Controller
             default => 'telemetry_agg_1h',
         };
 
-        try {
-            // Используем raw SQL для работы с агрегированными данными
-            $query = "
-                SELECT 
-                    ts,
-                    AVG(value_avg) as avg_value,
-                    MIN(value_min) as min_value,
-                    MAX(value_max) as max_value,
-                    AVG(value_median) as median_value
-                FROM {$table}
-                WHERE zone_id = ?
-                    AND metric_type = ?
-                    AND ts >= ?
-                    AND ts <= ?
-                GROUP BY ts
-                ORDER BY ts ASC
-            ";
+        $metricAliases = $this->zoneFrontendTelemetry->metricAliases($metric);
+        if ($metricAliases === []) {
+            $metricAliases = [$metric];
+        }
+        $preferredChannels = $this->zoneFrontendTelemetry->getPreferredChannels($zoneId, $metric, true);
 
-            $rows = \Illuminate\Support\Facades\DB::select($query, [
+        try {
+            $rows = $this->selectAggregateRows(
+                $table,
                 $zoneId,
-                $metric,
+                $metricAliases,
+                $preferredChannels,
                 $from->toDateTimeString(),
-                $now->toDateTimeString(),
-            ]);
+                $now->toDateTimeString()
+            );
+
+            if ($rows === [] && $preferredChannels !== []) {
+                $rows = $this->selectAggregateRows(
+                    $table,
+                    $zoneId,
+                    $metricAliases,
+                    [],
+                    $from->toDateTimeString(),
+                    $now->toDateTimeString()
+                );
+            }
 
             // Преобразуем результаты в массив
             $data = array_map(function ($row) {
@@ -366,28 +342,23 @@ class TelemetryController extends Controller
             ]);
 
             // Fallback: используем raw samples с date_trunc
-            $query = "
-                SELECT 
-                    date_trunc('hour', telemetry_samples.ts) as ts,
-                    AVG(telemetry_samples.value) as avg_value,
-                    MIN(telemetry_samples.value) as min_value,
-                    MAX(telemetry_samples.value) as max_value
-                FROM telemetry_samples
-                JOIN sensors ON telemetry_samples.sensor_id = sensors.id
-                WHERE sensors.zone_id = ?
-                    AND sensors.type = ?
-                    AND telemetry_samples.ts >= ?
-                    AND telemetry_samples.ts <= ?
-                GROUP BY date_trunc('hour', telemetry_samples.ts)
-                ORDER BY ts ASC
-            ";
-
-            $rows = \Illuminate\Support\Facades\DB::select($query, [
+            $rows = $this->selectRawAggregateRows(
                 $zoneId,
-                $metric,
+                $metricAliases,
+                $preferredChannels,
                 $from->toDateTimeString(),
-                $now->toDateTimeString(),
-            ]);
+                $now->toDateTimeString()
+            );
+
+            if ($rows === [] && $preferredChannels !== []) {
+                $rows = $this->selectRawAggregateRows(
+                    $zoneId,
+                    $metricAliases,
+                    [],
+                    $from->toDateTimeString(),
+                    $now->toDateTimeString()
+                );
+            }
 
             $data = array_map(function ($row) {
                 return [
@@ -404,5 +375,87 @@ class TelemetryController extends Controller
                 'data' => $data,
             ]);
         }
+    }
+
+    private function selectAggregateRows(
+        string $table,
+        int $zoneId,
+        array $metricAliases,
+        array $preferredChannels,
+        string $from,
+        string $to
+    ): array {
+        $metricPlaceholders = implode(', ', array_fill(0, count($metricAliases), '?'));
+        $query = "
+            SELECT 
+                ts,
+                AVG(value_avg) as avg_value,
+                MIN(value_min) as min_value,
+                MAX(value_max) as max_value,
+                AVG(value_median) as median_value
+            FROM {$table}
+            WHERE zone_id = ?
+                AND metric_type IN ({$metricPlaceholders})
+        ";
+
+        $bindings = array_merge([$zoneId], $metricAliases);
+
+        if ($preferredChannels !== []) {
+            $channelPlaceholders = implode(', ', array_fill(0, count($preferredChannels), '?'));
+            $query .= "
+                AND channel IN ({$channelPlaceholders})
+            ";
+            $bindings = array_merge($bindings, $preferredChannels);
+        }
+
+        $query .= "
+                AND ts >= ?
+                AND ts <= ?
+            GROUP BY ts
+            ORDER BY ts ASC
+        ";
+
+        return DB::select($query, array_merge($bindings, [$from, $to]));
+    }
+
+    private function selectRawAggregateRows(
+        int $zoneId,
+        array $metricAliases,
+        array $preferredChannels,
+        string $from,
+        string $to
+    ): array {
+        $metricPlaceholders = implode(', ', array_fill(0, count($metricAliases), '?'));
+        $query = "
+            SELECT 
+                date_trunc('hour', telemetry_samples.ts) as ts,
+                AVG(telemetry_samples.value) as avg_value,
+                MIN(telemetry_samples.value) as min_value,
+                MAX(telemetry_samples.value) as max_value
+            FROM telemetry_samples
+            JOIN sensors ON telemetry_samples.sensor_id = sensors.id
+            WHERE sensors.zone_id = ?
+                AND sensors.is_active = true
+                AND sensors.type IN ({$metricPlaceholders})
+        ";
+
+        $bindings = array_merge([$zoneId], $metricAliases);
+
+        if ($preferredChannels !== []) {
+            $channelPlaceholders = implode(', ', array_fill(0, count($preferredChannels), '?'));
+            $query .= "
+                AND sensors.label IN ({$channelPlaceholders})
+            ";
+            $bindings = array_merge($bindings, $preferredChannels);
+        }
+
+        $query .= "
+                AND telemetry_samples.ts >= ?
+                AND telemetry_samples.ts <= ?
+            GROUP BY date_trunc('hour', telemetry_samples.ts)
+            ORDER BY ts ASC
+        ";
+
+        return DB::select($query, array_merge($bindings, [$from, $to]));
     }
 }

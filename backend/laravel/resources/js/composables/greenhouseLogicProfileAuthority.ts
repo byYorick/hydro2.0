@@ -48,12 +48,34 @@ export function payloadFromGreenhouseLogicDocument(document: { payload?: unknown
 
   const payload = asRecord(document.payload ?? null)
   const root = asRecord(document)
+  const normalizeProfiles = (value: unknown): Record<string, GreenhouseAutomationLogicProfileEntry> => {
+    const source = asRecord(value)
+    if (!source) {
+      return {}
+    }
+
+    return Object.entries(source).reduce<Record<string, GreenhouseAutomationLogicProfileEntry>>((acc, [key, candidate]) => {
+      const profile = asRecord(candidate)
+      if (!profile) {
+        return acc
+      }
+
+      acc[key] = {
+        mode: typeof profile.mode === 'string' ? profile.mode : key,
+        is_active: typeof profile.is_active === 'boolean' ? profile.is_active : false,
+        subsystems: asRecord(profile.subsystems ?? null) ?? undefined,
+        updated_at: typeof profile.updated_at === 'string' ? profile.updated_at : null,
+      }
+
+      return acc
+    }, {})
+  }
 
   return {
     active_mode: typeof root?.active_mode === 'string'
       ? root.active_mode
       : (typeof payload?.active_mode === 'string' ? payload.active_mode : null),
-    profiles: asRecord(root?.profiles ?? null) ?? asRecord(payload?.profiles ?? null) ?? {},
+    profiles: normalizeProfiles(root?.profiles ?? payload?.profiles ?? null),
     bindings: asRecord(root?.bindings ?? null) as Partial<GreenhouseClimateBindingsState> | undefined,
     storage_ready: Boolean(root?.storage_ready ?? true),
   }

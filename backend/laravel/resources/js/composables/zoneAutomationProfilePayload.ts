@@ -120,8 +120,6 @@ export function buildGrowthCycleConfigPayload(
   const includeClimateSubsystem = options?.includeClimateSubsystem ?? true
   const automationDefaults = options?.automationDefaults ?? FALLBACK_AUTOMATION_DEFAULTS
   const automationCommandTemplates = options?.automationCommandTemplates ?? FALLBACK_AUTOMATION_COMMAND_TEMPLATES
-  const phTarget = clamp(normalizeNumber(waterForm.targetPh, 5.8), 4, 9)
-  const ecTarget = clamp(normalizeNumber(waterForm.targetEc, 1.6), 0.1, 10)
 
   const irrigationIntervalMinutes = clamp(Math.round(waterForm.intervalMinutes), 5, 1440)
   const irrigationDurationSeconds = clamp(Math.round(waterForm.durationSeconds), 1, 3600)
@@ -320,8 +318,6 @@ export function buildGrowthCycleConfigPayload(
       clean_max_sensor_labels: [automationDefaults.water_startup_clean_max_sensor_label],
       solution_max_sensor_labels: [automationDefaults.water_startup_solution_max_sensor_label],
     }
-    diagnosticsExecution.target_ph = round(phTarget, 2)
-    diagnosticsExecution.target_ec = round(ecTarget, 2)
     diagnosticsExecution.prepare_tolerance = {
       ec_pct: prepareToleranceEcPct,
       ph_pct: prepareTolerancePhPct,
@@ -407,8 +403,6 @@ export function buildGrowthCycleConfigPayload(
             },
           ],
           correction_node: {
-            target_ph: round(phTarget, 2),
-            target_ec: round(ecTarget, 2),
             sensors_location: 'correction_node',
           },
           drain_control: {

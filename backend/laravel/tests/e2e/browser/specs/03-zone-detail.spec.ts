@@ -53,76 +53,120 @@ test.describe('Zone Detail', () => {
     await expect(eventsList.first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should render scheduler task SLA and timeline on automation tab', async ({ page, apiHelper, testGreenhouse }) => {
+  test('should render scheduler workspace and execution details on scheduler tab', async ({ page, apiHelper, testGreenhouse }) => {
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
-    const taskId = 'st-e2e-expired';
+    const executionId = '501';
     const now = Date.now();
     const scheduledFor = new Date(now - 2 * 60 * 1000).toISOString();
     const dueAt = new Date(now - 60 * 1000).toISOString();
     const expiresAt = new Date(now - 5 * 1000).toISOString();
 
     try {
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks(?:\\?.*)?$`), async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: [
-              {
-                task_id: taskId,
-                zone_id: zone.id,
-                task_type: 'diagnostics',
-                status: 'expired',
-                created_at: scheduledFor,
-                updated_at: expiresAt,
-                scheduled_for: scheduledFor,
-                due_at: dueAt,
-                expires_at: expiresAt,
-                correlation_id: `sch:z${zone.id}:diagnostics:e2e-expired`,
-                lifecycle: [],
-              },
-            ],
-          }),
-        });
-      });
-
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks/${taskId}(?:\\?.*)?$`), async (route) => {
+      await page.route(new RegExp(`/api/zones/${zone.id}/schedule-workspace(?:\\?.*)?$`), async (route) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
             status: 'ok',
             data: {
-              task_id: taskId,
+              control: {
+                automation_runtime: 'ae3',
+                control_mode: 'semi',
+                allowed_manual_steps: ['clean_fill_start', 'solution_fill_stop'],
+                generated_at: new Date().toISOString(),
+                timezone: 'Europe/Simferopol',
+              },
+              capabilities: {
+                executable_task_types: ['irrigation'],
+                planned_task_types: ['irrigation', 'lighting'],
+                diagnostics_available: false,
+              },
+              plan: {
+                horizon: '24h',
+                lanes: [
+                  { task_type: 'irrigation', label: 'Полив', mode: 'interval', executable: true },
+                  { task_type: 'lighting', label: 'Свет', mode: 'config', executable: false },
+                ],
+                windows: [
+                  {
+                    plan_window_id: 'pw-e2e-1',
+                    zone_id: zone.id,
+                    task_type: 'irrigation',
+                    schedule_key: 'irrigation:interval',
+                    trigger_at: scheduledFor,
+                    origin: 'schedule-loader',
+                    state: 'planned',
+                    mode: 'interval',
+                    label: 'Irrigation window',
+                  },
+                ],
+                summary: {
+                  planned_total: 1,
+                  suppressed_total: 0,
+                  missed_total: 0,
+                },
+              },
+              execution: {
+                active_run: {
+                  execution_id: executionId,
+                  task_id: 'ae-task-501',
+                  zone_id: zone.id,
+                  task_type: 'irrigation',
+                  status: 'running',
+                  current_stage: 'clean_fill',
+                  created_at: scheduledFor,
+                  updated_at: expiresAt,
+                  scheduled_for: scheduledFor,
+                  due_at: dueAt,
+                  expires_at: expiresAt,
+                },
+                recent_runs: [
+                  {
+                    execution_id: executionId,
+                    task_id: 'ae-task-501',
+                    zone_id: zone.id,
+                    task_type: 'irrigation',
+                    status: 'running',
+                    current_stage: 'clean_fill',
+                    created_at: scheduledFor,
+                    updated_at: expiresAt,
+                    scheduled_for: scheduledFor,
+                    due_at: dueAt,
+                    expires_at: expiresAt,
+                  },
+                ],
+                counters: {
+                  active: 1,
+                  completed_24h: 2,
+                  failed_24h: 0,
+                },
+              },
+            },
+          }),
+        });
+      });
+
+      await page.route(new RegExp(`/api/zones/${zone.id}/executions/${executionId}(?:\\?.*)?$`), async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'ok',
+            data: {
+              execution_id: executionId,
+              task_id: 'ae-task-501',
               zone_id: zone.id,
-              task_type: 'diagnostics',
-              status: 'expired',
+              task_type: 'irrigation',
+              status: 'running',
               created_at: scheduledFor,
               updated_at: expiresAt,
               scheduled_for: scheduledFor,
               due_at: dueAt,
               expires_at: expiresAt,
-              correlation_id: `sch:z${zone.id}:diagnostics:e2e-expired`,
-              action_required: false,
-              decision: 'skip',
-              reason_code: 'task_expired',
-              reason: 'Задача получена после expires_at и не может быть исполнена',
-              error: 'task_expired',
-              error_code: 'task_expired',
-              result: {
-                success: false,
-                mode: 'deadline_rejected',
-                action_required: false,
-                decision: 'skip',
-                reason_code: 'task_expired',
-                reason: 'Задача получена после expires_at и не может быть исполнена',
-                error: 'task_expired',
-                error_code: 'task_expired',
-              },
+              current_stage: 'clean_fill',
               lifecycle: [
-                { status: 'accepted', at: scheduledFor },
-                { status: 'expired', at: expiresAt },
+                { status: 'accepted', at: scheduledFor, source: 'intent' },
+                { status: 'running', at: dueAt, source: 'ae_task' },
               ],
               timeline: [
                 {
@@ -130,22 +174,21 @@ test.describe('Zone Detail', () => {
                   event_seq: 1,
                   event_type: 'TASK_RECEIVED',
                   at: scheduledFor,
-                  reason_code: 'task_expired',
+                  reason_code: 'cycle_start_initiated',
                 },
                 {
                   event_id: 'evt-e2e-2',
                   event_seq: 2,
-                  event_type: 'SCHEDULE_TASK_EXECUTION_STARTED',
-                  at: scheduledFor,
+                  event_type: 'AE_CURRENT_STAGE',
+                  at: dueAt,
+                  reason_code: 'clean_fill',
                 },
                 {
                   event_id: 'evt-e2e-3',
                   event_seq: 3,
-                  event_type: 'TASK_FINISHED',
+                  event_type: 'COMMAND_DISPATCHED',
                   at: expiresAt,
-                  decision: 'skip',
-                  reason_code: 'task_expired',
-                  error_code: 'task_expired',
+                  reason_code: 'pump_start',
                 },
               ],
             },
@@ -154,85 +197,119 @@ test.describe('Zone Detail', () => {
       });
 
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
-      await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler / Intent Lifecycle')).toBeVisible({ timeout: 15000 });
+      await page.getByRole('tab', { name: 'Планировщик' }).click();
+      await expect(page.getByText('План и исполнение')).toBeVisible({ timeout: 15000 });
 
-      await expect(page.getByText(taskId)).toBeVisible({ timeout: 15000 });
-      await page.getByRole('button', { name: 'Открыть' }).first().click();
+      await expect(page.getByText('Live sync')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Плановых окон 1')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Активно 1')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Полив')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('config-only')).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: /#501/ }).click();
 
-      await expect(page.getByText('Просрочена')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('SLA-контроль')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('SLA нарушен: expires_at')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Задача получена')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Automation-engine: запуск выполнения')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Превышен срок expires_at (task_expired)').first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Детали исполнения')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Lifecycle')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Timeline')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('TASK_RECEIVED')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('AE_CURRENT_STAGE')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('COMMAND_DISPATCHED')).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }
   });
 
-  test('should display DONE confirmation and scheduler task presets', async ({ page, apiHelper, testGreenhouse }) => {
+  test('should switch scheduler horizon and render recent runs', async ({ page, apiHelper, testGreenhouse }) => {
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
-    const doneTaskId = 'st-e2e-done-confirmed';
+    const nowIso = new Date().toISOString();
 
     try {
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks(?:\\?.*)?$`), async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: [
-              {
-                task_id: doneTaskId,
-                zone_id: zone.id,
-                task_type: 'irrigation',
-                status: 'completed',
-                action_required: true,
-                command_submitted: true,
-                command_effect_confirmed: true,
-                commands_total: 1,
-                commands_effect_confirmed: 1,
-                updated_at: new Date().toISOString(),
-                lifecycle: [],
-              },
-              {
-                task_id: 'st-e2e-done-unconfirmed',
-                zone_id: zone.id,
-                task_type: 'irrigation',
-                status: 'completed',
-                action_required: true,
-                command_submitted: true,
-                command_effect_confirmed: false,
-                commands_total: 1,
-                commands_effect_confirmed: 0,
-                updated_at: new Date().toISOString(),
-                lifecycle: [],
-              },
-              {
-                task_id: 'st-e2e-failed',
-                zone_id: zone.id,
-                task_type: 'diagnostics',
-                status: 'failed',
-                error_code: 'cycle_start_refill_timeout',
-                reason_code: 'cycle_start_refill_timeout',
-                updated_at: new Date().toISOString(),
-                lifecycle: [],
-              },
-            ],
-          }),
-        });
-      });
-
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks/${doneTaskId}(?:\\?.*)?$`), async (route) => {
-        const nowIso = new Date().toISOString();
+      await page.route(new RegExp(`/api/zones/${zone.id}/schedule-workspace(?:\\?.*)?$`), async (route) => {
+        const url = new URL(route.request().url());
+        const horizon = url.searchParams.get('horizon') ?? '24h';
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
             status: 'ok',
             data: {
-              task_id: doneTaskId,
+              control: {
+                automation_runtime: 'ae3',
+                control_mode: 'auto',
+                allowed_manual_steps: [],
+                generated_at: nowIso,
+                timezone: 'Europe/Simferopol',
+              },
+              capabilities: {
+                executable_task_types: ['irrigation'],
+                planned_task_types: ['irrigation'],
+                diagnostics_available: false,
+              },
+              plan: {
+                horizon,
+                lanes: [
+                  { task_type: 'irrigation', label: 'Полив', mode: horizon === '7d' ? 'calendar' : 'interval', executable: true },
+                ],
+                windows: [
+                  {
+                    plan_window_id: `pw-${horizon}`,
+                    zone_id: zone.id,
+                    task_type: 'irrigation',
+                    schedule_key: `irrigation:${horizon}`,
+                    trigger_at: nowIso,
+                    origin: 'schedule-loader',
+                    state: 'planned',
+                    mode: horizon === '7d' ? 'calendar' : 'interval',
+                    label: 'Irrigation window',
+                  },
+                ],
+                summary: {
+                  planned_total: 1,
+                  suppressed_total: 0,
+                  missed_total: 0,
+                },
+              },
+              execution: {
+                active_run: null,
+                recent_runs: [
+                  {
+                    execution_id: '701',
+                    task_id: 'ae-task-701',
+                    zone_id: zone.id,
+                    task_type: 'irrigation',
+                    status: 'completed',
+                    current_stage: 'finished',
+                    updated_at: nowIso,
+                  },
+                  {
+                    execution_id: '702',
+                    task_id: 'ae-task-702',
+                    zone_id: zone.id,
+                    task_type: 'irrigation',
+                    status: 'failed',
+                    current_stage: 'timeout',
+                    updated_at: nowIso,
+                  },
+                ],
+                counters: {
+                  active: 0,
+                  completed_24h: 1,
+                  failed_24h: 1,
+                },
+              },
+            },
+          }),
+        });
+      });
+
+      await page.route(new RegExp(`/api/zones/${zone.id}/executions/701(?:\\?.*)?$`), async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'ok',
+            data: {
+              execution_id: '701',
+              task_id: 'ae-task-701',
               zone_id: zone.id,
               task_type: 'irrigation',
               status: 'completed',
@@ -241,48 +318,27 @@ test.describe('Zone Detail', () => {
               scheduled_for: nowIso,
               due_at: nowIso,
               expires_at: nowIso,
-              action_required: true,
-              decision: 'run',
-              reason_code: 'irrigation_required',
-              command_submitted: true,
-              command_effect_confirmed: true,
-              commands_total: 1,
-              commands_effect_confirmed: 1,
-              commands_failed: 0,
-              lifecycle: [],
-              timeline: [],
-              result: {
-                command_submitted: true,
-                command_effect_confirmed: true,
-                commands_total: 1,
-                commands_effect_confirmed: 1,
-                commands_failed: 0,
-              },
+              current_stage: 'finished',
+              lifecycle: [{ status: 'completed', at: nowIso, source: 'ae_task' }],
+              timeline: [{ event_id: 'evt-701', event_type: 'TASK_FINISHED', at: nowIso, reason_code: 'done' }],
             },
           }),
         });
       });
 
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
-      await page.getByRole('tab', { name: 'Автоматизация' }).click();
-      await expect(page.getByText('Scheduler / Intent Lifecycle')).toBeVisible({ timeout: 15000 });
+      await page.getByRole('tab', { name: 'Планировщик' }).click();
+      await expect(page.getByText('24H')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Недавние run')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('button', { name: '7d' })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('button', { name: /#701/ })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('button', { name: /#702/ })).toBeVisible({ timeout: 15000 });
 
-      const schedulerPresetSelect = page
-        .locator('select')
-        .filter({ has: page.locator('option[value="done_unconfirmed"]') })
-        .first();
-      await expect(schedulerPresetSelect).toBeVisible({ timeout: 15000 });
-      await schedulerPresetSelect.selectOption('done_unconfirmed');
-      await expect(page.getByText('st-e2e-done-unconfirmed')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText(doneTaskId)).not.toBeVisible();
+      await page.getByRole('button', { name: '7d' }).click();
+      await expect(page.getByText('7D')).toBeVisible({ timeout: 15000 });
 
-      await schedulerPresetSelect.selectOption('all');
-      await page.getByPlaceholder('Поиск: task_id/status/error_code/reason_code').fill('st-e2e-failed');
-      await expect(page.getByText('st-e2e-failed')).toBeVisible({ timeout: 15000 });
-
-      await page.getByPlaceholder('Поиск: task_id/status/error_code/reason_code').fill('');
-      await page.getByRole('button', { name: 'Открыть' }).first().click();
-      await expect(page.locator('span.badge', { hasText: 'DONE подтвержден' }).first()).toBeVisible({ timeout: 15000 });
+      await page.getByRole('button', { name: /#701/ }).click();
+      await expect(page.getByText('TASK_FINISHED')).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }
@@ -290,70 +346,96 @@ test.describe('Zone Detail', () => {
 
   test('should render scheduler sync page on scheduler tab', async ({ page, apiHelper, testGreenhouse }) => {
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
-    const taskId = 'st-zone-sync';
+    const executionId = '880';
     const nowIso = new Date().toISOString();
 
     try {
-      await page.route(new RegExp(`/api/zones/${zone.id}/control-mode(?:\\?.*)?$`), async (route) => {
+      await page.route(new RegExp(`/api/zones/${zone.id}/schedule-workspace(?:\\?.*)?$`), async (route) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
+            status: 'ok',
             data: {
-              control_mode: 'semi',
-              allowed_manual_steps: ['clean_fill_start', 'solution_fill_stop'],
+              control: {
+                automation_runtime: 'ae3',
+                control_mode: 'semi',
+                allowed_manual_steps: ['clean_fill_start', 'solution_fill_stop'],
+                generated_at: nowIso,
+                timezone: 'Europe/Simferopol',
+              },
+              capabilities: {
+                executable_task_types: ['irrigation'],
+                planned_task_types: ['irrigation', 'lighting'],
+                diagnostics_available: false,
+              },
+              plan: {
+                horizon: '24h',
+                lanes: [
+                  { task_type: 'irrigation', label: 'Полив', mode: 'interval', executable: true },
+                ],
+                windows: [],
+                summary: {
+                  planned_total: 0,
+                  suppressed_total: 0,
+                  missed_total: 0,
+                },
+              },
+              execution: {
+                active_run: {
+                  execution_id: executionId,
+                  task_id: 'ae-task-880',
+                  zone_id: zone.id,
+                  task_type: 'irrigation',
+                  status: 'running',
+                  current_stage: 'clean_fill',
+                  created_at: nowIso,
+                  updated_at: nowIso,
+                  scheduled_for: nowIso,
+                },
+                recent_runs: [
+                  {
+                    execution_id: executionId,
+                    task_id: 'ae-task-880',
+                    zone_id: zone.id,
+                    task_type: 'irrigation',
+                    status: 'running',
+                    current_stage: 'clean_fill',
+                    created_at: nowIso,
+                    updated_at: nowIso,
+                  },
+                ],
+                counters: {
+                  active: 1,
+                  completed_24h: 0,
+                  failed_24h: 0,
+                },
+              },
             },
           }),
         });
       });
 
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks(?:\\?.*)?$`), async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            status: 'ok',
-            data: [
-              {
-                task_id: taskId,
-                zone_id: zone.id,
-                task_type: 'diagnostics',
-                status: 'running',
-                created_at: nowIso,
-                updated_at: nowIso,
-                scheduled_for: nowIso,
-                due_at: nowIso,
-                expires_at: nowIso,
-                correlation_id: `sch:z${zone.id}:diagnostics:e2e-sync`,
-                lifecycle: [],
-              },
-            ],
-          }),
-        });
-      });
-
-      await page.route(new RegExp(`/api/zones/${zone.id}/scheduler-tasks/${taskId}(?:\\?.*)?$`), async (route) => {
+      await page.route(new RegExp(`/api/zones/${zone.id}/executions/${executionId}(?:\\?.*)?$`), async (route) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
             status: 'ok',
             data: {
-              task_id: taskId,
+              execution_id: executionId,
+              task_id: 'ae-task-880',
               zone_id: zone.id,
-              task_type: 'diagnostics',
+              task_type: 'irrigation',
               status: 'running',
               created_at: nowIso,
               updated_at: nowIso,
               scheduled_for: nowIso,
               due_at: nowIso,
               expires_at: nowIso,
-              correlation_id: `sch:z${zone.id}:diagnostics:e2e-sync`,
-              action_required: true,
-              decision: 'run',
-              reason_code: 'cycle_start_initiated',
+              current_stage: 'clean_fill',
               lifecycle: [
-                { status: 'accepted', at: nowIso },
+                { status: 'accepted', at: nowIso, source: 'intent' },
               ],
               timeline: [
                 {
@@ -361,6 +443,7 @@ test.describe('Zone Detail', () => {
                   event_seq: 1,
                   event_type: 'TASK_RECEIVED',
                   at: nowIso,
+                  reason_code: 'cycle_start_initiated',
                 },
               ],
             },
@@ -371,12 +454,12 @@ test.describe('Zone Detail', () => {
       await page.goto(`/zones/${zone.id}`, { waitUntil: 'networkidle' });
       await page.getByRole('tab', { name: 'Планировщик' }).click();
 
-      await expect(page.getByText('Планировщик зоны')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('План и исполнение')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('Live sync')).toBeVisible({ timeout: 15000 });
       await expect(page.getByText('semi')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Активная задача')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText('Задачи автоматики')).toBeVisible({ timeout: 15000 });
-      await expect(page.getByText(taskId)).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Активно 1')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText('Активного run нет')).not.toBeVisible();
+      await expect(page.getByText(`#${executionId}`)).toBeVisible({ timeout: 15000 });
     } finally {
       await apiHelper.deleteZone(zone.id).catch(() => {});
     }

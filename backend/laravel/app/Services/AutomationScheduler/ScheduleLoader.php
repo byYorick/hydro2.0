@@ -3,7 +3,6 @@
 namespace App\Services\AutomationScheduler;
 
 use App\Models\GrowCycle;
-use App\Models\SchedulerLog;
 use App\Services\EffectiveTargetsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -96,16 +95,45 @@ class ScheduleLoader
             return [];
         }
 
-        $rows = SchedulerLog::query()
-            ->selectRaw('task_name, MAX(created_at) AS last_at')
-            ->whereIn('task_name', $taskNames)
-            ->whereIn('status', ['completed', 'failed'])
-            ->groupBy('task_name')
+        $resolvedPairs = [];
+        foreach ($taskNames as $taskName) {
+            $pair = $this->parseSchedulerTaskName((string) $taskName);
+            if ($pair === null) {
+                continue;
+            }
+
+            $resolvedPairs[] = $pair;
+        }
+
+        if ($resolvedPairs === []) {
+            return [];
+        }
+
+        $rows = DB::table('laravel_scheduler_active_tasks')
+            ->selectRaw('zone_id, task_type, MAX(COALESCE(terminal_at, updated_at, accepted_at, created_at)) AS last_at')
+            ->where(function ($query) use ($resolvedPairs): void {
+                foreach ($resolvedPairs as $index => $pair) {
+                    $method = $index === 0 ? 'where' : 'orWhere';
+                    $query->{$method}(function ($pairQuery) use ($pair): void {
+                        $pairQuery
+                            ->where('zone_id', $pair['zone_id'])
+                            ->where('task_type', $pair['task_type']);
+                    });
+                }
+            })
+            ->whereIn('status', ['completed', 'failed', 'timeout', 'cancelled', 'expired'])
+            ->groupBy('zone_id', 'task_type')
             ->get();
 
         $result = [];
         foreach ($rows as $row) {
-            $taskName = trim((string) ($row->task_name ?? ''));
+            $zoneId = (int) ($row->zone_id ?? 0);
+            $taskType = strtolower(trim((string) ($row->task_type ?? '')));
+            if ($zoneId <= 0 || $taskType === '') {
+                continue;
+            }
+
+            $taskName = SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType);
             if ($taskName === '') {
                 continue;
             }
@@ -123,6 +151,27 @@ class ScheduleLoader
         }
 
         return $result;
+    }
+
+    /**
+     * @return array{zone_id:int, task_type:string}|null
+     */
+    private function parseSchedulerTaskName(string $taskName): ?array
+    {
+        if (preg_match('/^laravel_scheduler_task_([a-z0-9_]+)_zone_(\d+)$/', trim($taskName), $matches) !== 1) {
+            return null;
+        }
+
+        $taskType = strtolower(trim((string) ($matches[1] ?? '')));
+        $zoneId = (int) ($matches[2] ?? 0);
+        if ($zoneId <= 0 || $taskType === '') {
+            return null;
+        }
+
+        return [
+            'zone_id' => $zoneId,
+            'task_type' => $taskType,
+        ];
     }
 
     /**

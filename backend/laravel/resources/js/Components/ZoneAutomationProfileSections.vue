@@ -736,7 +736,7 @@
                 class="text-xs text-[color:var(--text-muted)]"
                 :title="fieldHelp('water.targetPh')"
               >
-                Целевой pH
+                Целевой pH (из рецепта)
                 <input
                   v-model.number="waterForm.targetPh"
                   type="number"
@@ -744,14 +744,14 @@
                   max="9"
                   step="0.1"
                   class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
+                  disabled
                 />
               </label>
               <label
                 class="text-xs text-[color:var(--text-muted)]"
                 :title="fieldHelp('water.targetEc')"
               >
-                Целевой EC
+                Целевой EC (из рецепта)
                 <input
                   v-model.number="waterForm.targetEc"
                   type="number"
@@ -759,7 +759,7 @@
                   max="10"
                   step="0.1"
                   class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
+                  disabled
                 />
               </label>
               <label
@@ -1371,7 +1371,7 @@
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.targetPh')"
             >
-              Целевой pH
+              Целевой pH (из рецепта)
               <input
                 v-model.number="waterForm.targetPh"
                 type="number"
@@ -1379,14 +1379,14 @@
                 max="9"
                 step="0.1"
                 class="input-field mt-1 w-full"
-                :disabled="!canConfigure"
+                disabled
               />
             </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.targetEc')"
             >
-              Целевой EC
+              Целевой EC (из рецепта)
               <input
                 v-model.number="waterForm.targetEc"
                 type="number"
@@ -1394,7 +1394,7 @@
                 max="10"
                 step="0.1"
                 class="input-field mt-1 w-full"
-                :disabled="!canConfigure"
+                disabled
               />
             </label>
             <label
@@ -2175,8 +2175,8 @@ const FIELD_HELP: Record<string, string> = {
   'water.solutionChangeEnabled': 'Включает плановую замену раствора по расписанию, отдельную от обычного поливочного цикла.',
   'water.solutionChangeIntervalMinutes': 'Интервал между плановыми заменами раствора, если этот режим включён.',
   'water.solutionChangeDurationSeconds': 'Сколько длится одно окно плановой смены раствора.',
-  'water.targetPh': 'Основной target pH для готового раствора. Используется при merge effective targets и correction runtime.',
-  'water.targetEc': 'Основной target EC для готового раствора. Используется planner-ом для nutrient correction.',
+  'water.targetPh': 'Readonly поле. Канонический target pH берётся только из активной фазы рецепта и не сохраняется в zone logic profile.',
+  'water.targetEc': 'Readonly поле. Канонический target EC берётся только из активной фазы рецепта и не сохраняется в zone logic profile.',
   'water.correctionDuringIrrigation': 'Разрешает correction runtime работать прямо во время irrigation path, а не только до него.',
   'water.prepareToleranceEcPct': 'Допустимое отклонение EC при подготовке раствора перед тем, как runtime признает target достигнутым.',
   'water.prepareTolerancePhPct': 'Допустимое отклонение pH при подготовке раствора перед завершением correction step.',

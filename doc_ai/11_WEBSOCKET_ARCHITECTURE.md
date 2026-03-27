@@ -301,7 +301,7 @@ This prevents stale events from overwriting fresh REST state after a reconnect.
 
 ## Frontend Subscriptions
 
-All WebSocket subscriptions should use the `useWebSocket()` composable:
+All WebSocket subscriptions should use one of two canonical frontend entry points:
 
 ```typescript
 const {
@@ -312,8 +312,24 @@ const {
 } = useWebSocket()
 ```
 
-> **Deprecated:** `subscribeZone()` and `subscribeAlerts()` from `ws/subscriptions.ts`.
-> Use `subscribeToZoneUpdates()` and `subscribeToAlerts()` from `useWebSocket()` instead.
+For raw named events that are not normalized by `useWebSocket()` yet
+(`GrowCycleUpdated`, `telemetry.batch.updated`, `device.updated`, etc.),
+frontend code must use:
+
+```typescript
+subscribeManagedChannelEvents({
+  channelName: 'hydro.zones.12',
+  eventHandlers: {
+    '.App\\Events\\GrowCycleUpdated': (payload) => { /* ... */ },
+  },
+})
+```
+
+Canonical rule:
+- normalized domain events -> `useWebSocket()`
+- raw channel/event listeners with reconnect/resubscribe -> `subscribeManagedChannelEvents()`
+
+`ws/subscriptions.ts` removed. Direct `Echo.private(...)` / `Echo.channel(...)` in pages and composables is not allowed.
 
 ### Channel name constants (frontend)
 
@@ -357,5 +373,5 @@ Checklist:
 4. Define `broadcastAs()` with a clear event name
 5. Include `event_id` and `server_ts` from `EventSequenceService::generateEventId()`
 6. If zone-specific: use `RecordsZoneEvent` trait in `broadcasted()` for audit trail
-7. Add frontend subscription in `useWebSocket.ts`
+7. Add frontend subscription in `useWebSocket.ts` for normalized domain events, or in `ws/managedChannelEvents.ts` consumer-side if the event remains raw
 8. Update this documentation

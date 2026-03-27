@@ -8,6 +8,11 @@
 - automation-engine в runtime использует direct SQL read-model и не зависит от runtime вызовов `/api/internal/effective-targets/*`;
 - структура effective-targets используется как эталон семантики для SQL parity.
 
+Актуализация канона pH/EC targets (2026-03-27):
+- `targets.ph.target|min|max` и `targets.ec.target|min|max` берутся только из активной recipe phase / phase snapshot grow cycle;
+- `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не имеют права переопределять canonical `pH/EC target|min|max`;
+- zone automation UI показывает эти значения как readonly derived fields, а не как редактируемые runtime-настройки.
+
 **Связанные документы:**
 - `RECIPE_ENGINE_FULL.md` — engine рецептов и фаз
 - `ZONE_CONTROLLER_FULL.md` — контроллеры зон
@@ -39,6 +44,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 2. Laravel и интеграции могут получать targets через REST API
 3. Контроллеры AE3 используют эквивалентную семантику через SQL read-model и compiled bundles, а не через runtime HTTP к effective-targets API
+
+Для `pH/EC` действует отдельное жёсткое правило:
+- canonical source of truth для `target|min|max` — только active recipe phase;
+- runtime merge допускается только для operational/execution-настроек подсистем, но не для chemical setpoints;
+- отсутствие `ph/ec target` во phase snapshot считается конфигурационной ошибкой и должно fail-closed в correction runtime.
 
 ---
 

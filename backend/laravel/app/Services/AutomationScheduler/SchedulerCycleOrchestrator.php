@@ -19,7 +19,7 @@ class SchedulerCycleOrchestrator
         private readonly ScheduleLoader $scheduleLoader,
         private readonly ScheduleDispatcher $scheduleDispatcher,
         private readonly SchedulerCycleFinalizer $finalizer,
-        private readonly LightingScheduleParser $lightingScheduleParser,
+        private readonly ZoneScheduleItemBuilder $zoneScheduleItemBuilder,
         private readonly ActiveTaskPoller $activeTaskPoller,
         private readonly ActiveTaskStore $activeTaskStore,
         private readonly SchedulerMetricsStore $schedulerMetricsStore,
@@ -89,6 +89,7 @@ class SchedulerCycleOrchestrator
             $effectiveTargetsByZone = $this->scheduleLoader->loadEffectiveTargetsByZone($zoneIds);
             $schedules = [];
             $zonesWithTargets = 0;
+            $realNow = SchedulerRuntimeHelper::nowUtc();
 
             foreach ($zoneIds as $zoneId) {
                 $zonePayload = $effectiveTargetsByZone[$zoneId] ?? null;
@@ -101,7 +102,7 @@ class SchedulerCycleOrchestrator
                 }
 
                 $zonesWithTargets++;
-                foreach ($this->buildSchedulesForZone($zoneId, $targets) as $schedule) {
+                foreach ($this->zoneScheduleItemBuilder->buildSchedulesForZone($zoneId, $targets, $realNow) as $schedule) {
                     $schedules[] = $schedule;
                 }
             }
@@ -124,8 +125,6 @@ class SchedulerCycleOrchestrator
             $zonesWithPendingTimeDispatch = [];
             /** @var array<int, bool> $zonesWithSuccessfulTimeDispatch */
             $zonesWithSuccessfulTimeDispatch = [];
-
-            $realNow = SchedulerRuntimeHelper::nowUtc();
 
             // Batch-prefetch busy status for schedule_keys not yet covered by
             // reconcilePendingActiveTasks() (limited to 500 rows). Without this,
@@ -347,138 +346,6 @@ class SchedulerCycleOrchestrator
         } finally {
             $this->flushSchedulerLogsBuffer();
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $targets
-     * @return array<int, ScheduleItem>
-     */
-    private function buildSchedulesForZone(int $zoneId, array $targets): array
-    {
-        $schedules = [];
-
-        $irrigation = is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : [];
-        $irrigationSchedule = $targets['irrigation_schedule'] ?? ($irrigation['schedule'] ?? null);
-        if ($this->isTaskScheduleEnabled('irrigation', $targets, $irrigation)) {
-            foreach ($this->buildGenericTaskSchedules($zoneId, 'irrigation', $irrigation, $irrigationSchedule) as $schedule) {
-                $schedules[] = $schedule;
-            }
-        }
-
-        $lighting = is_array($targets['lighting'] ?? null) ? $targets['lighting'] : [];
-        if ($this->isTaskScheduleEnabled('lighting', $targets, $lighting)) {
-            $lightingSchedule = $targets['lighting_schedule'] ?? null;
-            foreach ($this->lightingScheduleParser->parse($zoneId, $lighting, $lightingSchedule, SchedulerRuntimeHelper::nowUtc()) as $schedule) {
-                $schedules[] = $schedule;
-            }
-        }
-
-        $genericConfigs = [
-            ['ventilation', is_array($targets['ventilation'] ?? null) ? $targets['ventilation'] : [], $targets['ventilation_schedule'] ?? null],
-            ['solution_change', is_array($targets['solution_change'] ?? null) ? $targets['solution_change'] : [], $targets['solution_change_schedule'] ?? null],
-            ['mist', is_array($targets['mist'] ?? null) ? $targets['mist'] : [], $targets['mist_schedule'] ?? null],
-            ['diagnostics', is_array($targets['diagnostics'] ?? null) ? $targets['diagnostics'] : [], $targets['diagnostics_schedule'] ?? null],
-        ];
-
-        foreach ($genericConfigs as [$taskType, $config, $scheduleSpec]) {
-            if (! $this->isTaskScheduleEnabled((string) $taskType, $targets, (array) $config)) {
-                continue;
-            }
-            $source = $scheduleSpec ?? $config;
-            foreach ($this->buildGenericTaskSchedules($zoneId, (string) $taskType, (array) $config, $source) as $schedule) {
-                $schedules[] = $schedule;
-            }
-        }
-
-        return $schedules;
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     * @return array<int, ScheduleItem>
-     */
-    private function buildGenericTaskSchedules(
-        int $zoneId,
-        string $taskType,
-        array $config,
-        mixed $scheduleSpec,
-    ): array {
-        $schedules = [];
-
-        foreach (ScheduleSpecHelper::extractTimeSpecs($scheduleSpec) as $timeSpec) {
-            $schedules[] = new ScheduleItem(
-                zoneId: $zoneId,
-                taskType: $taskType,
-                time: $timeSpec,
-            );
-        }
-
-        $intervalSec = ScheduleSpecHelper::safePositiveInt(
-            $config['interval_sec'] ?? ($config['every_sec'] ?? ($config['interval'] ?? null))
-        );
-        if ($intervalSec > 0) {
-            $schedules[] = new ScheduleItem(
-                zoneId: $zoneId,
-                taskType: $taskType,
-                intervalSec: $intervalSec,
-            );
-        }
-
-        return $schedules;
-    }
-
-    /**
-     * @param  array<string, mixed>  $targets
-     * @param  array<string, mixed>  $config
-     */
-    private function isTaskScheduleEnabled(string $taskType, array $targets, array $config): bool
-    {
-        $taskToSubsystem = [
-            'irrigation' => 'irrigation',
-            'lighting' => 'lighting',
-            'ventilation' => 'climate',
-            'diagnostics' => 'diagnostics',
-            'solution_change' => 'solution_change',
-        ];
-        $subsystemKey = $taskToSubsystem[$taskType] ?? null;
-        if (is_string($subsystemKey)) {
-            $enabled = $this->subsystemEnabledFromTargets($targets, $subsystemKey);
-            if ($enabled === false) {
-                return false;
-            }
-        }
-
-        $execution = is_array($config['execution'] ?? null) ? $config['execution'] : [];
-        if (($execution['force_skip'] ?? false) === true) {
-            return false;
-        }
-        if (($config['force_skip'] ?? false) === true) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * @param  array<string, mixed>  $targets
-     */
-    private function subsystemEnabledFromTargets(array $targets, string $subsystemKey): ?bool
-    {
-        $extensions = $targets['extensions'] ?? null;
-        if (! is_array($extensions)) {
-            return null;
-        }
-        $subsystems = $extensions['subsystems'] ?? null;
-        if (! is_array($subsystems)) {
-            return null;
-        }
-        $subsystem = $subsystems[$subsystemKey] ?? null;
-        if (! is_array($subsystem)) {
-            return null;
-        }
-        $enabled = $subsystem['enabled'] ?? null;
-
-        return is_bool($enabled) ? $enabled : null;
     }
 
     /**

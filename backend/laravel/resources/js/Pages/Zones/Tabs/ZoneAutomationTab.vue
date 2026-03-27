@@ -198,39 +198,6 @@
           class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-primary)] overflow-auto max-h-[520px]"
         >{{ automationEngineRuntimePayloadPretty }}</pre>
 
-        <AutomationSchedulerDevCard
-          :scheduler-task-id-input="schedulerTaskIdInput"
-          :scheduler-task-lookup-loading="schedulerTaskLookupLoading"
-          :scheduler-task-list-loading="schedulerTaskListLoading"
-          :scheduler-task-error="schedulerTaskError"
-          :scheduler-task-status="schedulerTaskStatus"
-          :scheduler-task-sla="schedulerTaskSla"
-          :scheduler-task-done="schedulerTaskDone"
-          :scheduler-task-timeline="schedulerTaskTimeline"
-          :format-date-time="formatDateTime"
-          :scheduler-task-status-variant="schedulerTaskStatusVariant"
-          :scheduler-task-status-label="schedulerTaskStatusLabel"
-          :scheduler-task-type-label="schedulerTaskTypeLabel"
-          :scheduler-task-decision-label="schedulerTaskDecisionLabel"
-          :scheduler-task-reason-label="schedulerTaskReasonLabel"
-          :scheduler-task-error-label="schedulerTaskErrorLabel"
-          :scheduler-task-process-status-variant="schedulerTaskProcessStatusVariant"
-          :scheduler-task-process-status-label="schedulerTaskProcessStatusLabel"
-          :scheduler-task-event-label="schedulerTaskEventLabel"
-          :scheduler-task-timeline-step-label="schedulerTaskTimelineStepLabel"
-          :scheduler-task-timeline-stage-label="schedulerTaskTimelineStageLabel"
-          :filtered-recent-scheduler-tasks="filteredRecentSchedulerTasks"
-          :scheduler-task-search="schedulerTaskSearch"
-          :scheduler-task-preset="schedulerTaskPreset"
-          :scheduler-task-preset-options="schedulerTaskPresetOptions"
-          :scheduler-tasks-updated-at="schedulerTasksUpdatedAt"
-          @lookup-task="lookupSchedulerTask"
-          @refresh-list="fetchRecentSchedulerTasks"
-          @update:scheduler-task-id-input="onSchedulerTaskIdInputUpdate"
-          @update:scheduler-task-search="onSchedulerTaskSearchUpdate"
-          @update:scheduler-task-preset="onSchedulerTaskPresetUpdate"
-        />
-
         <AIPredictionsSection
           :zone-id="zoneId"
           :targets="predictionTargets"
@@ -259,7 +226,6 @@
 import { computed, ref, toRef } from 'vue'
 import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import AutomationProfileCard from '@/Components/AutomationProfileCard.vue'
-import AutomationSchedulerDevCard from '@/Components/AutomationSchedulerDevCard.vue'
 import AutomationWorkflowCard from '@/Components/AutomationWorkflowCard.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationAccordionSection from '@/Components/ZoneAutomationAccordionSection.vue'
@@ -275,7 +241,6 @@ import { buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormL
 import type {
   ClimateFormState,
   LightingFormState,
-  SchedulerTaskPreset,
   WaterFormState,
   ZoneAutomationTabProps,
 } from '@/composables/zoneAutomationTypes'
@@ -514,40 +479,14 @@ const {
   runManualLighting,
   runManualPh,
   runManualEc,
-  schedulerTaskIdInput,
-  schedulerTaskLookupLoading,
-  schedulerTaskListLoading,
-  schedulerTaskError,
-  schedulerTaskStatus,
   automationControlMode,
   allowedManualSteps,
   automationControlModeLoading,
   automationControlModeSaving,
   manualStepLoading,
-  filteredRecentSchedulerTasks,
-  schedulerTaskSearch,
-  schedulerTaskPreset,
-  schedulerTaskPresetOptions,
-  schedulerTasksUpdatedAt,
-  fetchRecentSchedulerTasks,
   setAutomationControlMode,
   syncControlModeFromAutomationState,
-  lookupSchedulerTask,
   runManualStep,
-  schedulerTaskStatusVariant,
-  schedulerTaskStatusLabel,
-  schedulerTaskTypeLabel,
-  schedulerTaskProcessStatusVariant,
-  schedulerTaskProcessStatusLabel,
-  schedulerTaskTimelineStageLabel,
-  schedulerTaskTimelineStepLabel,
-  schedulerTaskTimelineItems,
-  schedulerTaskEventLabel,
-  schedulerTaskDecisionLabel,
-  schedulerTaskReasonLabel,
-  schedulerTaskErrorLabel,
-  schedulerTaskSlaMeta,
-  schedulerTaskDoneMeta,
   formatDateTime,
 } = useZoneAutomationTab(props)
 
@@ -556,10 +495,6 @@ const showEditWizard = ref(false)
 const showRuntimePayload = ref(false)
 const lastAutomationSnapshot = ref<AutomationState | null>(null)
 const pendingControlModeValue = ref<'auto' | 'semi' | 'manual' | null>(null)
-
-const schedulerTaskSla = computed(() => schedulerTaskSlaMeta(schedulerTaskStatus.value))
-const schedulerTaskDone = computed(() => schedulerTaskDoneMeta(schedulerTaskStatus.value))
-const schedulerTaskTimeline = computed(() => schedulerTaskTimelineItems(schedulerTaskStatus.value))
 const automationEngineRuntimePayload = computed(() => {
   return buildGrowthCycleConfigPayload(
     {
@@ -638,17 +573,5 @@ async function onControlModeSelect(mode: 'auto' | 'semi' | 'manual'): Promise<vo
   } finally {
     pendingControlModeValue.value = null
   }
-}
-
-function onSchedulerTaskIdInputUpdate(value: string): void {
-  schedulerTaskIdInput.value = value
-}
-
-function onSchedulerTaskSearchUpdate(value: string): void {
-  schedulerTaskSearch.value = value
-}
-
-function onSchedulerTaskPresetUpdate(value: SchedulerTaskPreset): void {
-  schedulerTaskPreset.value = value
 }
 </script>

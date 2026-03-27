@@ -366,6 +366,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
+import type { AutomationPreset } from '@/composables/useAutomationConfig'
 import type {
   CorrectionCatalogField,
   CorrectionCatalogSection,
@@ -664,8 +665,10 @@ function normalizeCorrectionPreset(preset: Partial<CorrectionPreset> & Record<st
   }
 }
 
-function normalizeCorrectionPresets(presetsList: Array<Record<string, unknown>>): CorrectionPreset[] {
-  return presetsList.map((preset) => normalizeCorrectionPreset(preset))
+function normalizeCorrectionPresets(presetsList: Array<Record<string, unknown> | AutomationPreset>): CorrectionPreset[] {
+  return presetsList.map((preset) => normalizeCorrectionPreset(
+    preset as unknown as Partial<CorrectionPreset> & Record<string, unknown>
+  ))
 }
 
 function applyPayload(payload: ZoneCorrectionConfigPayload): void {
@@ -696,7 +699,7 @@ async function reload(): Promise<void> {
       automationConfig.getDocument<ZoneCorrectionConfigPayload>('zone', props.zoneId, CORRECTION_NAMESPACE),
       automationConfig.getHistory<ZoneCorrectionConfigHistoryItem>('zone', props.zoneId, CORRECTION_NAMESPACE),
     ])
-    applyPayload(payload)
+    applyPayload(payload.payload)
     history.value = historyItems
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to load correction config', error)
@@ -738,7 +741,7 @@ async function save(): Promise<void> {
       base_config: clone(baseForm.value),
       phase_overrides: clone(phaseForms.value),
     })
-    applyPayload(payload)
+    applyPayload(payload.payload)
     history.value = await automationConfig.getHistory<ZoneCorrectionConfigHistoryItem>('zone', props.zoneId, CORRECTION_NAMESPACE)
     emit('saved')
   } catch (error) {
@@ -756,9 +759,7 @@ async function saveAsPreset(): Promise<void> {
         phases: clone(phaseForms.value),
       },
     })
-    presets.value = normalizeCorrectionPresets(
-      await automationConfig.listPresets(CORRECTION_NAMESPACE) as Array<Record<string, unknown>>
-    )
+    presets.value = normalizeCorrectionPresets(await automationConfig.listPresets(CORRECTION_NAMESPACE))
     selectedPresetId.value = createdPreset.id
     newPresetName.value = ''
     newPresetDescription.value = ''
@@ -779,9 +780,7 @@ async function updateSelectedPreset(): Promise<void> {
         phases: clone(phaseForms.value),
       },
     })
-    presets.value = normalizeCorrectionPresets(
-      await automationConfig.listPresets(CORRECTION_NAMESPACE) as Array<Record<string, unknown>>
-    )
+    presets.value = normalizeCorrectionPresets(await automationConfig.listPresets(CORRECTION_NAMESPACE))
     selectedPresetId.value = updatedPreset.id
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to update custom preset', error)
@@ -795,9 +794,7 @@ async function deleteSelectedPreset(): Promise<void> {
 
   try {
     await automationConfig.deletePreset(selectedPreset.value.id)
-    presets.value = normalizeCorrectionPresets(
-      await automationConfig.listPresets(CORRECTION_NAMESPACE) as Array<Record<string, unknown>>
-    )
+    presets.value = normalizeCorrectionPresets(await automationConfig.listPresets(CORRECTION_NAMESPACE))
     selectedPresetId.value = null
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to delete custom preset', error)

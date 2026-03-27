@@ -26,7 +26,9 @@ use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RecipeRevisionController;
 use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\SchedulerTaskController;
+use App\Http\Controllers\ScheduleExecutionController;
+use App\Http\Controllers\ScheduleDiagnosticsController;
+use App\Http\Controllers\ScheduleWorkspaceController;
 use App\Http\Controllers\SchedulerMetricsController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SetupWizardController;
@@ -339,8 +341,10 @@ Route::middleware([
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/manual-step', [ZoneAutomationManualStepController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
-    Route::get('zones/{zone}/scheduler-tasks', [SchedulerTaskController::class, 'index']);
-    Route::get('zones/{zone}/scheduler-tasks/{taskId}', [SchedulerTaskController::class, 'show']);
+    Route::get('zones/{zone}/schedule-workspace', [ScheduleWorkspaceController::class, 'show']);
+    Route::get('zones/{zone}/executions/{executionId}', [ScheduleExecutionController::class, 'show']);
+    Route::get('zones/{zone}/scheduler-diagnostics', [ScheduleDiagnosticsController::class, 'show'])
+        ->middleware('role:admin,engineer');
 
     // Alerts (viewer+)
     Route::get('alerts/catalog', [AlertController::class, 'catalog']);

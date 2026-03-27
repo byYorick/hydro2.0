@@ -82,7 +82,10 @@ function pickPrimaryPhase(recipe: Recipe | null): RecipePhase | null {
 }
 
 export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecipeAutomationFlowsOptions) {
-  const automationConfig = useAutomationConfig(options.showToast)
+  const automationConfig = useAutomationConfig((message, variant, timeout) => {
+    options.showToast(message, variant ?? 'info', timeout)
+    return 0
+  })
   const automationDefaults = useAutomationDefaults()
   const automationCommandTemplates = useAutomationCommandTemplates()
   const {

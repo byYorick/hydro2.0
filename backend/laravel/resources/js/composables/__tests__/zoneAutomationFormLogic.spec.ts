@@ -111,7 +111,7 @@ describe('zoneAutomationFormLogic', () => {
   it('applyAutomationFromRecipe применяет targets из recipe payload', () => {
     const forms = createForms()
     const payload = {
-      ph: { min: 5.5, max: 6.1 },
+      ph: { target: 5.7, min: 5.5, max: 6.1 },
       ec: { target: 2.2 },
       climate_request: {
         temp_air_target: 24,
@@ -245,8 +245,8 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.durationSeconds).toBe(75)
     expect(forms.waterForm.fillWindowStart).toBe('06:15')
     expect(forms.waterForm.fillWindowEnd).toBe('08:20')
-    expect(forms.waterForm.targetPh).toBe(6.3)
-    expect(forms.waterForm.targetEc).toBe(2.4)
+    expect(forms.waterForm.targetPh).toBe(5.7)
+    expect(forms.waterForm.targetEc).toBe(2.2)
     expect(forms.waterForm.enableDrainControl).toBe(true)
     expect(forms.waterForm.drainTargetPercent).toBe(35)
 
@@ -332,10 +332,14 @@ describe('zoneAutomationFormLogic', () => {
 
     expect(payload.subsystems.ph.targets).toBeUndefined()
     expect(payload.subsystems.ec.targets).toBeUndefined()
+    expect(payload.subsystems.diagnostics.execution.target_ph).toBeUndefined()
+    expect(payload.subsystems.diagnostics.execution.target_ec).toBeUndefined()
     expect(targets.interval_minutes).toBe(5)
     expect(targets.interval_sec).toBe(300)
     expect(targets.duration_seconds).toBe(3600)
     expect(targets.duration_sec).toBe(3600)
+    expect(targets.correction_node.target_ph).toBeUndefined()
+    expect(targets.correction_node.target_ec).toBeUndefined()
     expect(targets.drain_control.enabled).toBe(false)
     expect(targets.drain_control.target_percent).toBeNull()
     expect(payload.subsystems.climate.execution.vent_control.min_open_percent).toBe(0)

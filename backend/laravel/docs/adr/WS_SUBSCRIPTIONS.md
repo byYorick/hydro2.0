@@ -19,25 +19,31 @@
 
 ## Решение
 
-Создан единый модуль `ws/subscriptions.ts`, который:
-- Использует единую инфраструктуру `onWsStateChange` из `echoClient.ts` для resubscribe
-- Предоставляет простой API для подписок на зоны и алерты
-- Гарантирует правильную очистку при unmount компонентов
-- Интегрируется с существующей инфраструктурой `useWebSocket.ts` для команд
+Канонический frontend WebSocket layer теперь состоит из двух entry point-ов:
+- `useWebSocket.ts` для нормализованных доменных подписок (`commands`, `alerts`, `global events`, `zone updates`)
+- `ws/managedChannelEvents.ts` для raw event listeners на приватных/публичных каналах с тем же reconnect/resubscribe lifecycle
+
+`ws/subscriptions.ts` удалён как промежуточный legacy-layer.
 
 ### Структура
 
 ```
-ws/subscriptions.ts
-├── subscribeZone(zoneId, handler) → unsubscribe function
-└── subscribeAlerts(handler) → unsubscribe function
+useWebSocket.ts
+├── subscribeToZoneCommands(zoneId, handler)
+├── subscribeToGlobalEvents(handler)
+├── subscribeToZoneUpdates(zoneId, handler)
+└── subscribeToAlerts(handler)
+
+ws/managedChannelEvents.ts
+└── subscribeManagedChannelEvents({ channelName, eventHandlers, ... }) → unsubscribe function
 ```
 
 ### Ключевые принципы
 
 1. **Единый путь resubscribe**: Все подписки используют `onWsStateChange` из `echoClient.ts`
-2. **Автоматическая очистка**: Функции unsubscribe правильно очищают каналы и слушатели
+2. **Автоматическая очистка**: Функции unsubscribe правильно очищают listeners и resubscribe state
 3. **Минимальный bootstrap.js**: Содержит только инициализацию Echo и обработку reconciliation
+4. **Запрет на page-level Echo API**: страницы и composables не обращаются к `Echo.private(...)` напрямую
 
 ## Последствия
 
@@ -51,25 +57,18 @@ ws/subscriptions.ts
 
 ### Ограничения
 
-- Подписки на зоны и алерты используют прямой доступ к Echo (не через useWebSocket)
-- Это допустимо, так как эти каналы не требуют сложной логики реестров/очередей
+- Raw listeners по-прежнему требуют явного описания event names в consumer code
+- Но lifecycle/resubscribe для них централизован в `managedChannelEvents`
 
 ## Миграция
 
-Компоненты, использующие старый API:
+Компоненты, использующие raw события:
 ```typescript
-// Старый способ (bootstrap.js)
-import { subscribeAlerts } from '@/bootstrap'
-
-// Новый способ
-import { subscribeAlerts } from '@/ws/subscriptions'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 ```
-
-API остался совместимым, изменился только путь импорта.
 
 ## Связанные изменения
 
 - `bootstrap.js`: Удалены функции `subscribeZone` и `subscribeAlerts`
-- `ws/subscriptions.ts`: Новый модуль для подписок
-- `Pages/Alerts/Index.vue`: Обновлен импорт
-
+- `ws/managedChannelEvents.ts`: Канонический managed-layer для raw событий
+- `useWebSocket.ts`: Канонический managed-layer для нормализованных событий

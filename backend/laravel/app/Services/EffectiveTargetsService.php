@@ -125,8 +125,8 @@ class EffectiveTargetsService
         if ($phase->ph_target !== null) {
             $targets['ph'] = [
                 'target' => (float) $phase->ph_target,
-                'min' => $phase->ph_min ? (float) $phase->ph_min : null,
-                'max' => $phase->ph_max ? (float) $phase->ph_max : null,
+                'min' => $phase->ph_min !== null ? (float) $phase->ph_min : null,
+                'max' => $phase->ph_max !== null ? (float) $phase->ph_max : null,
             ];
         }
 
@@ -134,8 +134,8 @@ class EffectiveTargetsService
         if ($phase->ec_target !== null) {
             $targets['ec'] = [
                 'target' => (float) $phase->ec_target,
-                'min' => $phase->ec_min ? (float) $phase->ec_min : null,
-                'max' => $phase->ec_max ? (float) $phase->ec_max : null,
+                'min' => $phase->ec_min !== null ? (float) $phase->ec_min : null,
+                'max' => $phase->ec_max !== null ? (float) $phase->ec_max : null,
             ];
         }
 
@@ -292,6 +292,9 @@ class EffectiveTargetsService
             if ($parameter === '') {
                 continue;
             }
+            if ($this->isRecipePhaseChemicalTargetParameter($parameter)) {
+                continue;
+            }
             $value = $this->castOverrideValue($override['value'] ?? null, (string) ($override['value_type'] ?? 'string'));
 
             // Поддержка вложенных параметров (например, ph.target, irrigation.interval_sec)
@@ -347,6 +350,18 @@ class EffectiveTargetsService
         };
     }
 
+    protected function isRecipePhaseChemicalTargetParameter(string $parameter): bool
+    {
+        return in_array($parameter, [
+            'ph.target',
+            'ph.min',
+            'ph.max',
+            'ec.target',
+            'ec.min',
+            'ec.max',
+        ], true);
+    }
+
     protected function resolveRuntimeProfileForCycle(GrowCycle $cycle): ?array
     {
         $profile = $this->automationLogicProfiles->resolveActiveProfileForZone($cycle->zone_id);
@@ -395,66 +410,6 @@ class EffectiveTargetsService
             'updated_at' => $runtimeProfile['updated_at'] ?? null,
         ];
         $targets['extensions'] = $extensions;
-
-        return $targets;
-    }
-
-    protected function mergePhSubsystem(array $targets, array $subsystems): array
-    {
-        $enabled = $this->extractSubsystemEnabled($subsystems, 'ph');
-        $phTargets = $this->extractSubsystemTargets($subsystems, 'ph');
-        if ($enabled !== true || !is_array($phTargets)) {
-            return $targets;
-        }
-
-        $ph = is_array($targets['ph'] ?? null) ? $targets['ph'] : [];
-        $targetValue = $this->toFloat($phTargets['target'] ?? null);
-        $minValue = $this->toFloat($phTargets['min'] ?? null);
-        $maxValue = $this->toFloat($phTargets['max'] ?? null);
-
-        if ($targetValue !== null) {
-            $ph['target'] = $targetValue;
-        }
-        if ($minValue !== null) {
-            $ph['min'] = $minValue;
-        }
-        if ($maxValue !== null) {
-            $ph['max'] = $maxValue;
-        }
-
-        if (!empty($ph)) {
-            $targets['ph'] = $ph;
-        }
-
-        return $targets;
-    }
-
-    protected function mergeEcSubsystem(array $targets, array $subsystems): array
-    {
-        $enabled = $this->extractSubsystemEnabled($subsystems, 'ec');
-        $ecTargets = $this->extractSubsystemTargets($subsystems, 'ec');
-        if ($enabled !== true || !is_array($ecTargets)) {
-            return $targets;
-        }
-
-        $ec = is_array($targets['ec'] ?? null) ? $targets['ec'] : [];
-        $targetValue = $this->toFloat($ecTargets['target'] ?? null);
-        $minValue = $this->toFloat($ecTargets['min'] ?? null);
-        $maxValue = $this->toFloat($ecTargets['max'] ?? null);
-
-        if ($targetValue !== null) {
-            $ec['target'] = $targetValue;
-        }
-        if ($minValue !== null) {
-            $ec['min'] = $minValue;
-        }
-        if ($maxValue !== null) {
-            $ec['max'] = $maxValue;
-        }
-
-        if (!empty($ec)) {
-            $targets['ec'] = $ec;
-        }
 
         return $targets;
     }

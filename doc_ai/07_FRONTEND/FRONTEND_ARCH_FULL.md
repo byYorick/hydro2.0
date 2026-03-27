@@ -9,7 +9,8 @@
 - ✅ Центр циклов (`Cycles/Center.vue`) с управлением GrowCycle
 - ✅ Версионирование рецептов в UI
 - ✅ Удалены legacy компоненты (AttachRecipeModal, etc.)
-- ✅ Новые API endpoints для циклов и ревизий 
+- ✅ Новые API endpoints для циклов и ревизий
+- ✅ Scheduler workspace cutover: `ZoneSchedulerTab.vue` работает через `schedule-workspace` / `executions`
 Здесь собраны принципы UI/UX, структура интерфейса, экраны, реалтайм-механики, компоненты, state‑management, интеграция с backend и ИИ.
 
 
@@ -279,13 +280,15 @@ Tabs:
 
 `Pages/Zones/Tabs/ZoneSchedulerTab.vue`
 
-Отдельная вкладка для проверки синхронизации зоны с Laravel scheduler-dispatch:
+Отдельная вкладка для scheduler workspace зоны:
 
-- runtime control-mode и доступные manual-step;
-- список scheduler-задач зоны;
-- detail-view по `task_id`;
-- cache/live status последней синхронизации.
-- текущая реализация оформлена в dashboard-стиле: hero summary, timeline detail card, recent tasks list, quick controls, weekly load preview и свёрнутые dev diagnostics.
+- runtime control-mode, factual zone state и операторская attention-сводка;
+- ближайшие executable `plan windows` по горизонту `24h/7d` без рендера всех raw planner rows;
+- `active_run`, `recent_runs` и detail-view по `execution_id`;
+- operator UI использует `GET /api/zones/{id}/schedule-workspace`, `GET /api/zones/{id}/executions/{executionId}` и `GET /api/zones/{id}/state`;
+- engineer/admin получают отдельный diagnostics block через `GET /api/zones/{id}/scheduler-diagnostics`;
+- `scheduler_logs` не используются в публичном UI path;
+- текущая реализация оформлена как operator-first dashboard: current-state summary, attention block, next executable windows, recent runs и компактный detail card исполнения.
 
 ---
 

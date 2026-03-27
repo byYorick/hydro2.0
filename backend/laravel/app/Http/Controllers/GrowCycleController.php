@@ -398,13 +398,7 @@ class GrowCycleController extends Controller
             'irrigation.clean_tank_fill_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
             'irrigation.nutrient_tank_target_l' => ['nullable', 'integer', 'min:10', 'max:5000'],
             'irrigation.irrigation_batch_l' => ['nullable', 'numeric', 'min:0.1', 'max:100'],
-            'phase_overrides' => ['nullable', 'array'],
-            'phase_overrides.ph_target' => ['nullable', 'numeric', 'between:0,14'],
-            'phase_overrides.ph_min' => ['nullable', 'numeric', 'between:0,14'],
-            'phase_overrides.ph_max' => ['nullable', 'numeric', 'between:0,14'],
-            'phase_overrides.ec_target' => ['nullable', 'numeric', 'between:0,30'],
-            'phase_overrides.ec_min' => ['nullable', 'numeric', 'between:0,30'],
-            'phase_overrides.ec_max' => ['nullable', 'numeric', 'between:0,30'],
+            'phase_overrides' => ['prohibited'],
         ]);
 
         $startImmediately = (bool) ($data['start_immediately'] ?? false);

@@ -1,28 +1,25 @@
 import { expect, test } from '@playwright/test'
 
-type SchedulerTaskStatus = {
+type ExecutionRun = {
+  execution_id: string
   task_id: string
   zone_id: number
   task_type: string
   status: string
-  created_at: string
-  updated_at: string
-  scheduled_for: string | null
-  correlation_id: string | null
-  action_required?: boolean | null
-  decision?: string | null
-  reason_code?: string | null
-  reason?: string | null
-  error?: string | null
-  error_code?: string | null
-  lifecycle: Array<{ status: string; at: string }>
-  timeline: Array<{
+  current_stage?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  scheduled_for?: string | null
+  due_at?: string | null
+  expires_at?: string | null
+  lifecycle?: Array<{ status: string; at: string; source?: string | null }>
+  timeline?: Array<{
     event_id: string
     event_type: string
     at: string
     reason_code?: string | null
-    reason?: string | null
     error_code?: string | null
+    reason?: string | null
   }>
 }
 
@@ -69,168 +66,195 @@ async function resolveFirstZoneId(page: import('@playwright/test').Page): Promis
   })
 }
 
-const listItems: SchedulerTaskStatus[] = [
+const baseRuns: ExecutionRun[] = [
   {
-    task_id: 'st-skip',
+    execution_id: '601',
+    task_id: 'ae-task-601',
     zone_id: 1,
     task_type: 'irrigation',
     status: 'completed',
+    current_stage: 'finished',
     created_at: '2026-02-10T08:00:00Z',
     updated_at: '2026-02-10T08:01:00Z',
     scheduled_for: '2026-02-10T08:00:00Z',
-    correlation_id: 'sch:z1:irrigation:skip',
-    lifecycle: [
-      { status: 'accepted', at: '2026-02-10T08:00:00Z' },
-      { status: 'completed', at: '2026-02-10T08:01:00Z' },
-    ],
-    timeline: [],
+    due_at: '2026-02-10T08:00:30Z',
+    expires_at: '2026-02-10T08:05:00Z',
   },
   {
-    task_id: 'st-refill',
+    execution_id: '602',
+    task_id: 'ae-task-602',
     zone_id: 1,
-    task_type: 'diagnostics',
-    status: 'completed',
+    task_type: 'irrigation',
+    status: 'running',
+    current_stage: 'clean_fill',
     created_at: '2026-02-10T08:10:00Z',
-    updated_at: '2026-02-10T08:11:00Z',
+    updated_at: '2026-02-10T08:10:20Z',
     scheduled_for: '2026-02-10T08:10:00Z',
-    correlation_id: 'sch:z1:diagnostics:refill',
-    lifecycle: [
-      { status: 'accepted', at: '2026-02-10T08:10:00Z' },
-      { status: 'completed', at: '2026-02-10T08:11:00Z' },
-    ],
-    timeline: [],
+    due_at: '2026-02-10T08:10:30Z',
+    expires_at: '2026-02-10T08:15:00Z',
   },
   {
-    task_id: 'st-timeout',
+    execution_id: '603',
+    task_id: 'ae-task-603',
     zone_id: 1,
-    task_type: 'diagnostics',
+    task_type: 'irrigation',
     status: 'failed',
+    current_stage: 'timeout',
     created_at: '2026-02-10T08:20:00Z',
     updated_at: '2026-02-10T08:22:30Z',
     scheduled_for: '2026-02-10T08:20:00Z',
-    correlation_id: 'sch:z1:diagnostics:timeout',
-    lifecycle: [
-      { status: 'accepted', at: '2026-02-10T08:20:00Z' },
-      { status: 'running', at: '2026-02-10T08:20:01Z' },
-      { status: 'failed', at: '2026-02-10T08:22:30Z' },
-    ],
-    timeline: [],
+    due_at: '2026-02-10T08:20:30Z',
+    expires_at: '2026-02-10T08:25:00Z',
   },
 ]
 
-const detailsByTaskId: Record<string, SchedulerTaskStatus> = {
-  'st-skip': {
-    ...listItems[0],
-    action_required: false,
-    decision: 'skip',
-    reason_code: 'irrigation_not_required',
-    reason: 'Влажность субстрата в целевом диапазоне',
-    error: null,
-    error_code: null,
+const detailsByExecutionId: Record<string, ExecutionRun> = {
+  '601': {
+    ...baseRuns[0],
+    lifecycle: [
+      { status: 'accepted', at: '2026-02-10T08:00:00Z', source: 'intent' },
+      { status: 'completed', at: '2026-02-10T08:01:00Z', source: 'ae_task' },
+    ],
     timeline: [
       {
-        event_id: 'evt-skip-1',
-        event_type: 'TASK_STARTED',
+        event_id: 'evt-601-1',
+        event_type: 'TASK_RECEIVED',
         at: '2026-02-10T08:00:00Z',
+        reason_code: 'cycle_start_initiated',
       },
       {
-        event_id: 'evt-skip-2',
-        event_type: 'DECISION_MADE',
-        reason_code: 'irrigation_not_required',
-        at: '2026-02-10T08:00:10Z',
-      },
-      {
-        event_id: 'evt-skip-3',
+        event_id: 'evt-601-2',
         event_type: 'TASK_FINISHED',
         at: '2026-02-10T08:01:00Z',
+        reason_code: 'done',
       },
     ],
   },
-  'st-refill': {
-    ...listItems[1],
-    action_required: true,
-    decision: 'run',
-    reason_code: 'tank_refill_started',
-    reason: 'Запущено наполнение бака и запланирована отложенная проверка',
-    error: null,
-    error_code: null,
+  '602': {
+    ...baseRuns[1],
+    lifecycle: [
+      { status: 'accepted', at: '2026-02-10T08:10:00Z', source: 'intent' },
+      { status: 'running', at: '2026-02-10T08:10:05Z', source: 'ae_task' },
+    ],
     timeline: [
       {
-        event_id: 'evt-refill-1',
-        event_type: 'CYCLE_START_INITIATED',
+        event_id: 'evt-602-1',
+        event_type: 'TASK_RECEIVED',
         at: '2026-02-10T08:10:00Z',
+        reason_code: 'cycle_start_initiated',
       },
       {
-        event_id: 'evt-refill-2',
-        event_type: 'TANK_REFILL_STARTED',
-        reason_code: 'tank_refill_started',
+        event_id: 'evt-602-2',
+        event_type: 'AE_CURRENT_STAGE',
+        at: '2026-02-10T08:10:10Z',
+        reason_code: 'clean_fill',
+      },
+      {
+        event_id: 'evt-602-3',
+        event_type: 'COMMAND_DISPATCHED',
         at: '2026-02-10T08:10:20Z',
-      },
-      {
-        event_id: 'evt-refill-3',
-        event_type: 'SELF_TASK_ENQUEUED',
-        reason_code: 'tank_refill_in_progress',
-        at: '2026-02-10T08:10:21Z',
+        reason_code: 'pump_start',
       },
     ],
   },
-  'st-timeout': {
-    ...listItems[2],
-    action_required: true,
-    decision: 'fail',
-    reason_code: 'cycle_start_refill_timeout',
-    reason: 'Бак чистой воды не заполнился до таймаута',
-    error: 'cycle_start_refill_timeout',
-    error_code: 'cycle_start_refill_timeout',
+  '603': {
+    ...baseRuns[2],
+    lifecycle: [
+      { status: 'accepted', at: '2026-02-10T08:20:00Z', source: 'intent' },
+      { status: 'failed', at: '2026-02-10T08:22:30Z', source: 'ae_task' },
+    ],
     timeline: [
       {
-        event_id: 'evt-timeout-1',
-        event_type: 'CYCLE_START_INITIATED',
+        event_id: 'evt-603-1',
+        event_type: 'TASK_RECEIVED',
         at: '2026-02-10T08:20:00Z',
+        reason_code: 'cycle_start_initiated',
       },
       {
-        event_id: 'evt-timeout-2',
-        event_type: 'TANK_REFILL_TIMEOUT',
-        reason_code: 'cycle_start_refill_timeout',
-        error_code: 'cycle_start_refill_timeout',
-        at: '2026-02-10T08:22:30Z',
-      },
-      {
-        event_id: 'evt-timeout-3',
+        event_id: 'evt-603-2',
         event_type: 'TASK_FINISHED',
         at: '2026-02-10T08:22:30Z',
+        reason_code: 'cycle_start_refill_timeout',
+        error_code: 'cycle_start_refill_timeout',
+        reason: 'Бак чистой воды не заполнился до таймаута',
       },
     ],
   },
 }
 
-test.describe('Scheduler lifecycle в вкладке Автоматизация', () => {
+test.describe('Scheduler workspace lifecycle на вкладке Планировщик', () => {
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page)
     const zoneId = await resolveFirstZoneId(page)
-    test.skip(zoneId === null, 'Нет зон в тестовой БД для проверки lifecycle UI')
+    test.skip(zoneId === null, 'Нет зон в тестовой БД для проверки scheduler workspace UI')
 
-    await page.route(`**/api/zones/${zoneId}/scheduler-tasks**`, async (route) => {
-      const url = new URL(route.request().url())
-      const pathname = url.pathname
+    await page.route(`**/api/zones/${zoneId}/schedule-workspace**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: {
+            control: {
+              automation_runtime: 'ae3',
+              control_mode: 'auto',
+              allowed_manual_steps: [],
+              generated_at: '2026-02-10T08:22:30Z',
+              timezone: 'Europe/Simferopol',
+            },
+            capabilities: {
+              executable_task_types: ['irrigation'],
+              planned_task_types: ['irrigation', 'lighting'],
+              diagnostics_available: false,
+            },
+            plan: {
+              horizon: '24h',
+              lanes: [
+                { task_type: 'irrigation', label: 'Полив', mode: 'interval', executable: true },
+                { task_type: 'lighting', label: 'Свет', mode: 'config', executable: false },
+              ],
+              windows: [
+                {
+                  plan_window_id: 'pw-1',
+                  zone_id: zoneId,
+                  task_type: 'irrigation',
+                  label: 'Irrigation window',
+                  schedule_key: 'irrigation:interval',
+                  trigger_at: '2026-02-10T08:25:00Z',
+                  origin: 'schedule-loader',
+                  state: 'planned',
+                  mode: 'interval',
+                },
+              ],
+              summary: {
+                planned_total: 1,
+                suppressed_total: 0,
+                missed_total: 0,
+              },
+            },
+            execution: {
+              active_run: { ...baseRuns[1], zone_id: zoneId },
+              recent_runs: baseRuns.map((run) => ({ ...run, zone_id: zoneId })),
+              counters: {
+                active: 1,
+                completed_24h: 1,
+                failed_24h: 1,
+              },
+            },
+          },
+        }),
+      })
+    })
 
-      if (pathname === `/api/zones/${zoneId}/scheduler-tasks`) {
-        const responseItems = listItems.map((item) => ({ ...item, zone_id: zoneId }))
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ status: 'ok', data: responseItems }),
-        })
-        return
-      }
+    await page.route(`**/api/zones/${zoneId}/executions/*`, async (route) => {
+      const executionId = route.request().url().split('/').pop() ?? ''
+      const details = detailsByExecutionId[executionId]
 
-      const taskId = pathname.split('/').pop() ?? ''
-      const details = detailsByTaskId[taskId]
       if (!details) {
         await route.fulfill({
           status: 404,
           contentType: 'application/json',
-          body: JSON.stringify({ status: 'error', message: 'Task not found' }),
+          body: JSON.stringify({ status: 'error', message: 'Execution not found' }),
         })
         return
       }
@@ -243,38 +267,36 @@ test.describe('Scheduler lifecycle в вкладке Автоматизация'
     })
 
     await page.goto(`/zones/${zoneId}`, { waitUntil: 'load' })
-    await page.getByRole('tab', { name: 'Автоматизация' }).click()
-    await expect(page.getByRole('heading', { name: 'Scheduler / Intent Lifecycle' })).toBeVisible()
-    await expect(page.locator('li', { hasText: 'st-skip' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Планировщик' }).click()
+    await expect(page.getByText('План и исполнение')).toBeVisible()
+    await expect(page.getByRole('button', { name: /#601/ })).toBeVisible()
   })
 
-  test('показывает сценарий completed+skip (действие не требуется)', async ({ page }) => {
-    await page.locator('li', { hasText: 'st-skip' }).getByRole('button', { name: 'Открыть' }).click()
+  test('показывает completed run с lifecycle и timeline', async ({ page }) => {
+    await page.getByRole('button', { name: /#601/ }).click()
 
-    await expect(page.getByText('task_id:')).toBeVisible()
-    await expect(page.getByText('st-skip').first()).toBeVisible()
-    await expect(page.getByText('Пропустить')).toBeVisible()
-    await expect(page.getByText('Действие не требуется (irrigation_not_required)').first()).toBeVisible()
-    await expect(page.getByText('Решение принято')).toBeVisible()
+    await expect(page.getByText('Детали исполнения')).toBeVisible()
+    await expect(page.getByText('Lifecycle')).toBeVisible()
+    await expect(page.getByText('Timeline')).toBeVisible()
+    await expect(page.getByText('TASK_RECEIVED')).toBeVisible()
+    await expect(page.getByText('TASK_FINISHED')).toBeVisible()
+    await expect(page.getByText('done')).toBeVisible()
   })
 
-  test('показывает сценарий refill in progress с self-task', async ({ page }) => {
-    await page.locator('li', { hasText: 'st-refill' }).getByRole('button', { name: 'Открыть' }).click()
+  test('показывает running run с текущим stage', async ({ page }) => {
+    await page.getByRole('button', { name: /#602/ }).click()
 
-    await expect(page.getByText('st-refill').first()).toBeVisible()
-    await expect(page.getByText('Выполнить')).toBeVisible()
-    await expect(page.getByText('Наполнение бака запущено (tank_refill_started)').first()).toBeVisible()
-    await expect(page.getByText('Запуск цикла инициирован')).toBeVisible()
-    await expect(page.getByText('Запущено наполнение бака')).toBeVisible()
-    await expect(page.getByText('Запланирована отложенная проверка')).toBeVisible()
+    await expect(page.getByText('Полив · clean_fill')).toBeVisible()
+    await expect(page.getByText('AE_CURRENT_STAGE')).toBeVisible()
+    await expect(page.getByText('COMMAND_DISPATCHED')).toBeVisible()
+    await expect(page.getByText('pump_start')).toBeVisible()
   })
 
-  test('показывает сценарий timeout с reason/error кодами', async ({ page }) => {
-    await page.locator('li', { hasText: 'st-timeout' }).getByRole('button', { name: 'Открыть' }).click()
+  test('показывает failed run с reason и error code', async ({ page }) => {
+    await page.getByRole('button', { name: /#603/ }).click()
 
-    await expect(page.getByText('st-timeout').first()).toBeVisible()
-    await expect(page.getByText('Ошибка').first()).toBeVisible()
-    await expect(page.locator('dd', { hasText: 'Таймаут наполнения бака (cycle_start_refill_timeout)' }).first()).toBeVisible()
-    await expect(page.getByText('Таймаут наполнения бака').first()).toBeVisible()
+    await expect(page.getByText('failed')).toBeVisible()
+    await expect(page.getByText('cycle_start_refill_timeout')).toBeVisible()
+    await expect(page.getByText('Бак чистой воды не заполнился до таймаута')).toBeVisible()
   })
 })

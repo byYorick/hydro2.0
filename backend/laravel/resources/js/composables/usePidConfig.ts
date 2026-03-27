@@ -44,8 +44,6 @@ export function usePidConfig(showToast?: ToastHandler) {
       }
 
       return {
-        id: null,
-        zone_id: zoneId,
         type,
         config: response.data.data.payload,
         updated_by: null,
@@ -102,8 +100,6 @@ export function usePidConfig(showToast?: ToastHandler) {
       )
 
       return {
-        id: null,
-        zone_id: zoneId,
         type,
         config: response.data.data.payload,
         updated_by: null,

@@ -11,6 +11,11 @@
 - legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
 - runtime path automation-engine использует direct SQL read-model.
 
+Актуализация scheduler workspace (2026-03-27):
+- public operator-contract `scheduler-tasks` удалён;
+- вкладка зоны использует `GET /api/zones/{id}/schedule-workspace` и `GET /api/zones/{id}/executions/{executionId}`;
+- `scheduler_logs` остаются diagnostics-only и не участвуют в operator UI / runtime decisions.
+
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
@@ -68,6 +73,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
 | POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
 | POST | /api/zones/{id}/manual-step | auth:sanctum (operator) | Запустить ручной этап 2-бакового workflow (`manual`: из active/idle, `semi`: только active workflow-фаза) |
+| GET | /api/zones/{id}/schedule-workspace | auth:sanctum | Scheduler workspace зоны: `control + capabilities + plan + execution`, query `horizon=24h|7d` |
+| GET | /api/zones/{id}/executions/{executionId} | auth:sanctum | Детали одного execution run по canonical `ae_tasks.id` |
+| GET | /api/zones/{id}/scheduler-diagnostics | auth:sanctum (admin/engineer) | Инженерный diagnostics path: dispatcher state + historical `scheduler_logs`, вне operator flow |
 | GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
 | GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 
@@ -94,6 +102,27 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.
 - поле `solution_tank_guard` (если присутствует) отражает последний non-blocking startup guard по solution tank: `checked`, `reset`, `reason`, `sensor_label`, `sample_ts`.
 - если `zone_workflow_state` ссылается на уже terminal `ae_task` или отстаёт от `ae_tasks.updated_at`, endpoint обязан считать такой workflow snapshot stale и возвращать состояние по последней terminal task, а не показывать ложную active phase.
+
+Контракт `GET /api/zones/{id}/schedule-workspace`:
+- используется только operator UI вкладки scheduler;
+- `plan.windows[]` строятся planner-ом из runtime authority path, а не из history snapshots;
+- `execution.active_run` / `recent_runs[]` строятся из `ae_tasks` и могут дополняться `zone_events`;
+- `execution.counters.failed_24h` и `execution.latest_failure` учитывают failed/cancelled `zone_automation_intents`, если для них не было `ae_task`;
+- `horizon` принимает только `24h` и `7d`, остальные значения приводятся к `24h`;
+- `capabilities.executable_task_types` честно отражает runtime-ready lanes; в canonical v1 это `irrigation`.
+
+Контракт `GET /api/zones/{id}/executions/{executionId}`:
+- `executionId` принимает только numeric `ae_tasks.id`;
+- `lifecycle[]` нормализуется из canonical runtime state;
+- `timeline[]` строится из `zone_events` по `task_id` и/или `correlation_id`;
+- `timeline[].stage` передаётся для AE stage-hop событий, чтобы UI не терял смысл `AE_TASK_STARTED`;
+- `scheduler_logs` в ответах не участвуют.
+
+Контракт `GET /api/zones/{id}/scheduler-diagnostics`:
+- доступен только `admin|engineer`;
+- может читать `laravel_scheduler_active_tasks` и `scheduler_logs`;
+- используется только для инженерного блока/вкладки и не влияет на operator decision path;
+- возвращает отдельные секции `summary`, `dispatcher_tasks[]`, `recent_logs[]`.
 
 ---
 
@@ -391,9 +420,9 @@ Preset rules:
 - фактические действия определяются pending intent-ами в БД;
 - повторный вызов с тем же `idempotency_key` не должен создавать дублирующее выполнение;
 - при активном intent этой же зоны (другой `idempotency_key`) endpoint возвращает `409 start_cycle_zone_busy`;
-- при активной scheduler-задаче зоны (`accepted|running`) endpoint возвращает `409 start_cycle_zone_busy`
+- при активном execution run зоны (`accepted|running` в canonical `ae_tasks`) endpoint возвращает `409 start_cycle_zone_busy`
   с `active_task_id` и `active_task_status`;
-- при блокирующей `workflow_phase` без активной scheduler-задачи endpoint выполняет auto-heal/reset в `idle`,
+- при блокирующей `workflow_phase` без активного execution run endpoint выполняет auto-heal/reset в `idle`,
   если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (по умолчанию 600 сек);
 - если зона была в `ready`, но сработал `solution_min` датчик бака раствора, AE3 перед
   обработкой wake-up сбрасывает `zone_workflow_state` в `idle` с
@@ -508,9 +537,9 @@ Lifecycle intents:
 - `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
 - при повторном `idempotency_key` для active intent endpoint возвращает
   `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;
-- если после claim обнаружена активная scheduler-задача зоны, intent переводится обратно в `pending`,
+- если после claim обнаружен активный execution run зоны, intent переводится обратно в `pending`,
   а endpoint возвращает `409 start_cycle_zone_busy`;
-- если обнаружена orphan/stuck `workflow_phase` без активной scheduler-задачи и возраст фазы выше
+- если обнаружена orphan/stuck `workflow_phase` без активного execution run и возраст фазы выше
   `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC`, runtime сбрасывает `zone_workflow_state.workflow_phase` в `idle`
   и продолжает старт цикла;
 - при повторном `idempotency_key` для terminal intent endpoint возвращает

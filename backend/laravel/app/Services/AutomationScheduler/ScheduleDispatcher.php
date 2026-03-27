@@ -332,6 +332,7 @@ class ScheduleDispatcher
 
             $intentPayload = [
                 'source' => 'laravel_scheduler',
+                'task_type' => $taskType,
                 'workflow' => 'cycle_start',
             ];
             $intentType = $this->mapTaskTypeToIntentType($taskType);
