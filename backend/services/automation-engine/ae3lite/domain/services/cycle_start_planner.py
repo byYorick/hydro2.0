@@ -208,7 +208,11 @@ class CycleStartPlanner:
             step_no=step_no,
             node_uid=actuator.node_uid,
             channel=actuator.channel,
-            payload={"cmd": str(raw_step["cmd"]), "params": dict(raw_step["params"])},
+            payload={
+                "cmd": str(raw_step["cmd"]),
+                "params": dict(raw_step["params"]),
+                "complete_on_ack": bool(raw_step.get("complete_on_ack")),
+            },
         )
 
     def _resolve_service_commands(

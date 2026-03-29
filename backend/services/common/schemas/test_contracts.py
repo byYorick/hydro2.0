@@ -342,6 +342,18 @@ class TestErrorAlertContracts:
         with pytest.raises(AssertionError):
             validate_against_schema(invalid, error_alert_schema)
 
+    def test_error_rejects_unknown_top_level_field(self, error_alert_schema):
+        """Схема должна отклонять неизвестные top-level поля."""
+        invalid = {
+            "level": "ERROR",
+            "component": "sensor",
+            "error_code": "ERR",
+            "message": "m",
+            "unexpected_field": True,
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(invalid, error_alert_schema)
+
 
 class TestZoneEventsContracts:
     """Контрактные тесты для zone_events payload."""

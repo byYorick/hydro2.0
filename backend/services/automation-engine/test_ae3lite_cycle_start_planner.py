@@ -349,6 +349,50 @@ def test_cycle_start_planner_rejects_incomplete_solution_fill_start_contract() -
     assert "pump_main" in str(exc.value)
 
 
+def test_cycle_start_planner_injects_stage_timeout_guard_into_pump_main_start() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+            },
+            "command_plans": {
+                "schema_version": 1,
+                "plan_version": 1,
+                "plans": {"diagnostics": {"steps": []}},
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+
+    plan = planner.build(task=_task(now), snapshot=snapshot)
+
+    solution_fill = plan.named_plans["solution_fill_start"]
+    guarded = next(cmd for cmd in solution_fill if cmd.channel == "pump_main")
+    assert guarded.payload["params"]["timeout_ms"] == 1800 * 1000
+    assert guarded.payload["params"]["stage"] == "solution_fill"
+    assert guarded.payload["complete_on_ack"] is True
+
+    recirc = plan.named_plans["prepare_recirculation_start"]
+    guarded_recirc = next(cmd for cmd in recirc if cmd.channel == "pump_main")
+    assert guarded_recirc.payload["params"]["timeout_ms"] == 1200 * 1000
+    assert guarded_recirc.payload["params"]["stage"] == "prepare_recirculation"
+    assert guarded_recirc.payload["complete_on_ack"] is True
+
+
 def test_cycle_start_planner_ignores_empty_generic_steps_for_native_two_tank_topology() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()

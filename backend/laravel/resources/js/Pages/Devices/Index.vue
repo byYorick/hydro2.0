@@ -232,6 +232,10 @@ const canConfigureDevices = computed(() => {
   const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
   return role === 'agronomist' || role === 'admin'
 })
+const canSubscribeUnassignedDevices = computed(() => {
+  const role = (page.props as any)?.auth?.user?.role ?? 'viewer'
+  return role === 'agronomist' || role === 'admin'
+})
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
 const deviceUpdateEventName = '.device.updated'
@@ -354,7 +358,12 @@ const syncDeviceChannels = (): void => {
       subscribeZoneChannel(zoneId)
     }
   })
-  subscribeUnassignedChannel()
+
+  if (canSubscribeUnassignedDevices.value) {
+    subscribeUnassignedChannel()
+  } else {
+    unsubscribeUnassignedChannel()
+  }
 }
 
 const resetDeviceChannels = (): void => {

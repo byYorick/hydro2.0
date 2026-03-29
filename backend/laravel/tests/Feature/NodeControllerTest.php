@@ -7,15 +7,27 @@ use App\Models\ChannelBinding;
 use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\User;
+use App\Models\Greenhouse;
 use App\Models\Zone;
 use App\Jobs\PublishNodeConfigJob;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    private function grantZoneAccess(User $user, Zone $zone): void
+    {
+        DB::table('user_zones')->insert([
+            'user_id' => $user->id,
+            'zone_id' => $zone->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
 
     public function test_nodes_index_requires_authentication(): void
     {
@@ -58,6 +70,7 @@ class NodeControllerTest extends TestCase
             'zone_id' => $zone->id,
             'config' => ['wifi' => ['ssid' => 'test', 'password' => 'secret']],
         ]);
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->getJson('/api/nodes');
 
@@ -74,6 +87,7 @@ class NodeControllerTest extends TestCase
             'zone_id' => $zone->id,
             'config' => ['wifi' => ['ssid' => 'test', 'password' => 'secret']],
         ]);
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->getJson("/api/nodes/{$node->id}");
 
@@ -87,6 +101,7 @@ class NodeControllerTest extends TestCase
         $user = User::factory()->create();
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $channel = NodeChannel::query()->create([
             'node_id' => $node->id,
@@ -126,6 +141,7 @@ class NodeControllerTest extends TestCase
         $user = User::factory()->create();
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $channel = NodeChannel::query()->create([
             'node_id' => $node->id,
@@ -168,6 +184,7 @@ class NodeControllerTest extends TestCase
             'zone_id' => $zone->id,
             'name' => 'Test Node',
         ]);
+        $this->grantZoneAccess($user, $zone);
 
         // Попытка SQL injection через поиск
         $response = $this->actingAs($user)->getJson('/api/nodes?search=%_');
@@ -237,6 +254,7 @@ class NodeControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->putJson("/api/nodes/{$node->id}", [
             'name' => 'Updated Name',
@@ -251,6 +269,7 @@ class NodeControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'operator']);
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->putJson("/api/nodes/{$node->id}", [
             'name' => 'Updated Name',
@@ -267,6 +286,7 @@ class NodeControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'operator']);
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson("/api/nodes/{$node->id}/config/publish", [
             'config' => [
@@ -280,5 +300,43 @@ class NodeControllerTest extends TestCase
         Queue::assertPushed(PublishNodeConfigJob::class, function (PublishNodeConfigJob $job) use ($node) {
             return $job->nodeId === $node->id;
         });
+    }
+
+    public function test_agronomist_can_list_unassigned_nodes(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $node = DeviceNode::factory()->create(['zone_id' => null, 'status' => 'online']);
+
+        $response = $this->actingAs($user)->getJson('/api/nodes?unassigned=true');
+
+        $response->assertOk()
+            ->assertJsonPath('data.data.0.id', $node->id)
+            ->assertJsonPath('data.data.0.uid', $node->uid);
+    }
+
+    public function test_agronomist_can_filter_greenhouse_nodes_with_unassigned_without_explicit_greenhouse_acl(): void
+    {
+        $user = User::factory()->create(['role' => 'agronomist']);
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
+        $this->grantZoneAccess($user, $zone);
+
+        $assignedNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $unassignedNode = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'status' => 'online',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->getJson("/api/nodes?greenhouse_id={$greenhouse->id}&include_unassigned=true");
+
+        $ids = array_column($response->json('data.data') ?? [], 'id');
+
+        $response->assertOk();
+        $this->assertContains($assignedNode->id, $ids);
+        $this->assertContains($unassignedNode->id, $ids);
     }
 }

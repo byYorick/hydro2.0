@@ -5,12 +5,23 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\DeviceNode;
 use App\Models\Zone;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodesTest extends TestCase
 {
     use RefreshDatabase;
+
+    private function grantZoneAccess(User $user, Zone $zone): void
+    {
+        DB::table('user_zones')->insert([
+            'user_id' => $user->id,
+            'zone_id' => $zone->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
 
     private function token(string $role = 'operator'): string
     {
@@ -51,8 +62,12 @@ class NodesTest extends TestCase
 
     public function test_get_node_details(): void
     {
-        $token = $this->token();
-        $node = DeviceNode::factory()->create();
+        $user = User::factory()->create(['role' => 'operator']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/nodes/{$node->id}");
@@ -64,8 +79,12 @@ class NodesTest extends TestCase
 
     public function test_update_node(): void
     {
-        $token = $this->token();
-        $node = DeviceNode::factory()->create(['name' => 'Old Name']);
+        $user = User::factory()->create(['role' => 'operator']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['name' => 'Old Name', 'zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/nodes/{$node->id}", ['name' => 'New Name']);
@@ -76,7 +95,7 @@ class NodesTest extends TestCase
 
     public function test_delete_node_without_dependencies(): void
     {
-        $token = $this->token();
+        $token = $this->token('agronomist');
         $node = DeviceNode::factory()->create(['zone_id' => null]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
@@ -88,9 +107,12 @@ class NodesTest extends TestCase
 
     public function test_delete_node_attached_to_zone_returns_error(): void
     {
-        $token = $this->token();
+        $user = User::factory()->create(['role' => 'operator']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->deleteJson("/api/nodes/{$node->id}");
@@ -102,11 +124,14 @@ class NodesTest extends TestCase
 
     public function test_filter_nodes_by_zone(): void
     {
-        $token = $this->token();
+        $user = User::factory()->create(['role' => 'operator']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
         $zone1 = Zone::factory()->create();
         $zone2 = Zone::factory()->create();
         DeviceNode::factory()->create(['zone_id' => $zone1->id]);
         DeviceNode::factory()->create(['zone_id' => $zone2->id]);
+        $this->grantZoneAccess($user, $zone1);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/nodes?zone_id={$zone1->id}");
@@ -211,4 +236,3 @@ class NodesTest extends TestCase
         ]);
     }
 }
-

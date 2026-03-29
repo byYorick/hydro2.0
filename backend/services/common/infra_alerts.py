@@ -13,13 +13,14 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from .alert_queue import send_alert_to_laravel
+from .alert_publisher import AlertPublisher
 from .trace_context import get_trace_id
 from .utils.time import utcnow
 
 logger = logging.getLogger(__name__)
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
+_publisher = AlertPublisher(default_source="infra")
 
 
 def infra_alerts_enabled() -> bool:
@@ -137,13 +138,14 @@ async def send_infra_alert(
     payload_details = {k: v for k, v in payload_details.items() if v is not None}
 
     try:
-        return await send_alert_to_laravel(
+        return await _publisher.raise_active(
             zone_id=zone_id,
             source="infra",
             code=code,
-            type=alert_type,
-            status="ACTIVE",
+            alert_type=alert_type,
             details=payload_details,
+            dedupe_key=payload_details.get("dedupe_key"),
+            scoped=True,
             node_uid=node_uid,
             hardware_id=hardware_id,
             severity=normalized_severity,
@@ -263,13 +265,14 @@ async def send_infra_resolved_alert(
     payload_details = {k: v for k, v in payload_details.items() if v is not None}
 
     try:
-        return await send_alert_to_laravel(
+        return await _publisher.resolve(
             zone_id=zone_id,
             source="infra",
             code=code,
-            type=alert_type,
-            status="RESOLVED",
+            alert_type=alert_type,
             details=payload_details,
+            dedupe_key=payload_details.get("dedupe_key"),
+            scoped=True,
             node_uid=node_uid,
             hardware_id=hardware_id,
             severity="info",

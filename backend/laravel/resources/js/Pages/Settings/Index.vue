@@ -340,6 +340,74 @@
       </div>
     </Card>
 
+    <Card
+      v-if="canEditAutomationEngineSettings"
+      class="mt-4"
+      data-testid="settings-alert-policies-card"
+    >
+      <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <h2 class="text-md font-semibold text-[color:var(--text-primary)]">
+          AE3 Alert Policies
+        </h2>
+        <div class="text-xs text-[color:var(--text-muted)]">
+          Режим: {{ alertPolicyModeLabel }}
+        </div>
+      </div>
+      <p class="mt-1 text-xs text-[color:var(--text-dim)]">
+        Управляет auto-resolve только для AE3 business alert code с формализованным recovery contract.
+      </p>
+      <div class="mt-4 max-w-xl space-y-3">
+        <div>
+          <label class="text-sm text-[color:var(--text-muted)]">
+            Политика закрытия AE3 operational alerts
+          </label>
+          <select
+            v-model="alertPolicyDraft.ae3_operational_resolution_mode"
+            data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"
+            class="input-select mt-1 w-full"
+          >
+            <option value="manual_ack">
+              Только ручное подтверждение
+            </option>
+            <option value="auto_resolve_on_recovery">
+              Автозакрытие после recovery
+            </option>
+          </select>
+        </div>
+        <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
+          Даже в режиме автозакрытия manual-only alerts остаются активными, пока для них нет формализованного recovery contract.
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            data-testid="settings-alert-policy-save"
+            :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+            @click="saveAlertPolicies"
+          >
+            {{ alertPoliciesSaving ? 'Сохраняем...' : 'Сохранить policy' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="settings-alert-policy-refresh"
+            :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+            @click="loadAlertPolicies"
+          >
+            {{ alertPoliciesLoading ? 'Обновляем...' : 'Обновить' }}
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
+            data-testid="settings-alert-policy-reset"
+            :disabled="alertPoliciesLoading || alertPoliciesSaving || alertPoliciesResetting"
+            @click="resetAlertPolicies"
+          >
+            {{ alertPoliciesResetting ? 'Сбрасываем...' : 'Сбросить override' }}
+          </Button>
+        </div>
+      </div>
+    </Card>
+
     <!-- Create/Edit User Modal -->
     <Modal
       :open="showCreateModal || editingUser !== null"
@@ -501,6 +569,22 @@ const editableAutomationSettingsItems = computed(() => {
     .flatMap((section) => (Array.isArray(section.items) ? section.items : []))
     .filter((item) => item && item.editable === true && typeof item.key === 'string')
 })
+const alertPoliciesState = ref(null)
+const alertPolicyDraft = reactive({
+  ae3_operational_resolution_mode: 'manual_ack',
+})
+const alertPolicyMode = computed(() => {
+  const mode = alertPoliciesState.value?.payload?.ae3_operational_resolution_mode
+  if (typeof mode === 'string' && mode.trim() !== '') {
+    return mode
+  }
+  return 'manual_ack'
+})
+const alertPolicyModeLabel = computed(() => {
+  return alertPolicyMode.value === 'auto_resolve_on_recovery'
+    ? 'Автозакрытие после recovery'
+    : 'Только ручное подтверждение'
+})
 
 const { showToast } = useToast()
 const automationConfig = useAutomationConfig(showToast)
@@ -518,6 +602,9 @@ const preferencesSaving = ref(false)
 const automationSettingsLoading = ref(false)
 const automationSettingsSaving = ref(false)
 const automationSettingsResetting = ref(false)
+const alertPoliciesLoading = ref(false)
+const alertPoliciesSaving = ref(false)
+const alertPoliciesResetting = ref(false)
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
@@ -575,6 +662,15 @@ const hydrateAutomationSettingsDraft = () => {
 const applyAutomationSettingsSnapshot = (snapshot) => {
   automationEngineSettingsState.value = snapshot || null
   hydrateAutomationSettingsDraft()
+}
+
+const applyAlertPoliciesSnapshot = (document) => {
+  alertPoliciesState.value = document || null
+  const mode = document?.payload?.ae3_operational_resolution_mode
+  alertPolicyDraft.ae3_operational_resolution_mode =
+    typeof mode === 'string' && mode.trim() !== ''
+      ? mode
+      : 'manual_ack'
 }
 
 const normalizeAutomationSettingDraftValue = (item, value) => {
@@ -666,6 +762,72 @@ const resetAutomationEngineSettings = async () => {
     )
   } finally {
     automationSettingsResetting.value = false
+  }
+}
+
+const loadAlertPolicies = async (options = {}) => {
+  const silent = options.silent === true
+  alertPoliciesLoading.value = true
+  try {
+    const document = await automationConfig.getDocument('system', 0, 'system.alert_policies')
+    applyAlertPoliciesSnapshot(document || null)
+    if (!silent) {
+      showToast('Политики алертов обновлены', 'success', TOAST_TIMEOUT.NORMAL)
+    }
+  } catch (err) {
+    logger.error('Failed to load alert policies:', err)
+    if (!silent) {
+      showToast(
+        `Ошибка загрузки alert policy: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
+        'error',
+        TOAST_TIMEOUT.LONG
+      )
+    }
+  } finally {
+    alertPoliciesLoading.value = false
+  }
+}
+
+const saveAlertPolicies = async () => {
+  alertPoliciesSaving.value = true
+  try {
+    const document = await automationConfig.updateDocument(
+      'system',
+      0,
+      'system.alert_policies',
+      {
+        ae3_operational_resolution_mode: alertPolicyDraft.ae3_operational_resolution_mode,
+      }
+    )
+    applyAlertPoliciesSnapshot(document || null)
+    showToast('Политика закрытия AE3 alerts сохранена', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (err) {
+    logger.error('Failed to save alert policies:', err)
+    showToast(
+      `Ошибка сохранения alert policy: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
+      'error',
+      TOAST_TIMEOUT.LONG
+    )
+  } finally {
+    alertPoliciesSaving.value = false
+  }
+}
+
+const resetAlertPolicies = async () => {
+  alertPoliciesResetting.value = true
+  try {
+    const document = await automationConfig.resetDocument('system', 0, 'system.alert_policies')
+    applyAlertPoliciesSnapshot(document || null)
+    showToast('Политика закрытия AE3 alerts сброшена к default', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (err) {
+    logger.error('Failed to reset alert policies:', err)
+    showToast(
+      `Ошибка сброса alert policy: ${extractApiError(err, ERROR_MESSAGES.UNKNOWN)}`,
+      'error',
+      TOAST_TIMEOUT.LONG
+    )
+  } finally {
+    alertPoliciesResetting.value = false
   }
 }
 
@@ -852,6 +1014,7 @@ onMounted(() => {
   loadPreferences()
   if (canEditAutomationEngineSettings.value) {
     void loadAutomationEngineSettings({ silent: true })
+    void loadAlertPolicies({ silent: true })
   }
 })
 

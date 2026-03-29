@@ -125,6 +125,27 @@ class EventBroadcastingTest extends TestCase
         });
     }
 
+    public function test_zone_alert_created_broadcasts_to_zone_channel(): void
+    {
+        Event::fake();
+
+        $alert = [
+            'id' => 43,
+            'type' => 'ALERT',
+            'zone_id' => 7,
+            'message' => 'Зональный алерт',
+        ];
+
+        $event = new AlertCreated($alert);
+
+        event($event);
+
+        Event::assertDispatched(AlertCreated::class, function ($e) use ($alert) {
+            return $e->alert['id'] === $alert['id']
+                && $e->broadcastOn()->name === 'private-hydro.zones.7';
+        });
+    }
+
     /**
      * Тест broadcasting события обновления конфигурации узла
      */
@@ -209,6 +230,25 @@ class EventBroadcastingTest extends TestCase
         Event::assertDispatched(EventCreated::class, function ($e) {
             return $e->id === 1001
                 && $e->broadcastOn()->name === 'private-hydro.events.global';
+        });
+    }
+
+    public function test_zone_event_created_broadcasts_to_zone_channel(): void
+    {
+        Event::fake();
+
+        $event = new EventCreated(
+            id: 1002,
+            kind: 'COMMAND_DISPATCHED',
+            message: 'Событие зоны',
+            zoneId: 9
+        );
+
+        event($event);
+
+        Event::assertDispatched(EventCreated::class, function ($e) {
+            return $e->zoneId === 9
+                && $e->broadcastOn()->name === 'private-hydro.zones.9';
         });
     }
 

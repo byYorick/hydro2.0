@@ -6,37 +6,29 @@ use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
  * Helper для проверки доступа пользователя к зонам, теплицам и нодам.
  *
- * Режимы работы задаются через ACCESS_CONTROL_MODE:
- * - legacy: историческое поведение (non-admin видят все зоны/теплицы).
- * - shadow: возвращает legacy-решение и логирует расхождения со strict.
- * - enforce: strict-доступ через user_zones/user_greenhouses.
- *
- * При отсутствии pivot-таблиц helper безопасно падает обратно в legacy.
+ * Доступ определяется только через strict ACL на базе user_zones/user_greenhouses.
+ * При отсутствии pivot-таблиц helper работает fail-closed.
  */
 class ZoneAccessHelper
 {
-    private const MODE_LEGACY = 'legacy';
-
-    private const MODE_SHADOW = 'shadow';
-
-    private const MODE_ENFORCE = 'enforce';
-
-    private const SHADOW_LOG_LIMIT = 25;
-
-    private static int $shadowMismatchLogs = 0;
-
     private static bool $schemaWarningLogged = false;
 
-    private static bool $enforceFallbackLogged = false;
+    private static bool $strictDataUnavailableLogged = false;
 
-    private static bool $shadowLoggerFallbackLogged = false;
+    /**
+     * Агроном и админ могут видеть узлы без привязки к зоне,
+     * чтобы завершать provisioning/attach flow в UI.
+     */
+    public static function canViewUnassignedNodes(User $user): bool
+    {
+        return $user->isAdmin() || $user->role === 'agronomist';
+    }
 
     /**
      * Проверяет, имеет ли пользователь доступ к зоне.
@@ -56,14 +48,12 @@ class ZoneAccessHelper
             return false;
         }
 
-        $legacyAllowed = true;
         $strictAllowed = self::canAccessZoneStrict($user, $zoneModel);
 
         return self::resolveBooleanDecision(
             resource: 'zone',
             userId: (int) $user->id,
             resourceId: (int) $zoneModel->id,
-            legacyAllowed: $legacyAllowed,
             strictAllowed: $strictAllowed
         );
     }
@@ -91,9 +81,7 @@ class ZoneAccessHelper
             return self::canAccessZone($user, $nodeModel->zone_id);
         }
 
-        // Нода без зоны - пока разрешаем доступ всем авторизованным
-        // В будущем можно добавить отдельную проверку
-        return true;
+        return self::canViewUnassignedNodes($user);
     }
 
     /**
@@ -114,16 +102,47 @@ class ZoneAccessHelper
             return false;
         }
 
-        $legacyAllowed = true;
         $strictAllowed = self::canAccessGreenhouseStrict($user, $greenhouseModel);
 
         return self::resolveBooleanDecision(
             resource: 'greenhouse',
             userId: (int) $user->id,
             resourceId: (int) $greenhouseModel->id,
-            legacyAllowed: $legacyAllowed,
             strictAllowed: $strictAllowed
         );
+    }
+
+    /**
+     * Доступ к greenhouse-scoped setup/automation flows:
+     * - admin/agronomist могут работать с теплицей на этапе provisioning;
+     * - остальные роли должны иметь либо direct greenhouse ACL, либо доступ хотя бы к одной зоне внутри теплицы.
+     *
+     * @param  int|Greenhouse  $greenhouse  Greenhouse ID или Greenhouse модель
+     */
+    public static function canAccessGreenhouseScope(User $user, int|Greenhouse $greenhouse): bool
+    {
+        if ($user->isAdmin() || $user->role === 'agronomist') {
+            return true;
+        }
+
+        $greenhouseModel = $greenhouse instanceof Greenhouse ? $greenhouse : Greenhouse::find($greenhouse);
+        if (! $greenhouseModel) {
+            return false;
+        }
+
+        if (self::canAccessGreenhouse($user, $greenhouseModel)) {
+            return true;
+        }
+
+        $accessibleZoneIds = self::getAccessibleZoneIds($user);
+        if ($accessibleZoneIds === []) {
+            return false;
+        }
+
+        return Zone::query()
+            ->where('greenhouse_id', $greenhouseModel->id)
+            ->whereIn('id', $accessibleZoneIds)
+            ->exists();
     }
 
     /**
@@ -138,10 +157,25 @@ class ZoneAccessHelper
             return Zone::pluck('id')->toArray();
         }
 
-        $legacyZoneIds = Zone::pluck('id')->toArray();
         $strictZoneIds = self::getAccessibleZoneIdsStrict($user);
 
-        return self::resolveZoneIdsDecision((int) $user->id, $legacyZoneIds, $strictZoneIds);
+        return self::resolveZoneIdsDecision((int) $user->id, $strictZoneIds);
+    }
+
+    /**
+     * Получает список ID теплиц, к которым пользователь имеет прямой strict ACL доступ.
+     *
+     * @return array<int>
+     */
+    public static function getAccessibleGreenhouseIds(User $user): array
+    {
+        if ($user->isAdmin()) {
+            return Greenhouse::pluck('id')->toArray();
+        }
+
+        $strictGreenhouseIds = self::getAccessibleGreenhouseIdsStrict($user);
+
+        return self::resolveGreenhouseIdsDecision((int) $user->id, $strictGreenhouseIds);
     }
 
     /**
@@ -156,21 +190,28 @@ class ZoneAccessHelper
             return DeviceNode::pluck('id')->toArray();
         }
 
-        // Получаем доступные зоны
         $zoneIds = self::getAccessibleZoneIds($user);
+        $canViewUnassignedNodes = self::canViewUnassignedNodes($user);
+
+        if ($zoneIds === [] && ! $canViewUnassignedNodes) {
+            return [];
+        }
 
         $query = DeviceNode::query();
 
-        if ($zoneIds !== []) {
-            $query->whereIn('zone_id', $zoneIds);
-        } else {
-            $query->whereRaw('1 = 0');
-        }
+        $query->where(function ($nodeQuery) use ($zoneIds, $canViewUnassignedNodes) {
+            if ($zoneIds !== []) {
+                $nodeQuery->whereIn('zone_id', $zoneIds);
+            }
 
-        // В legacy/shadow оставляем историческое поведение для нод без зоны.
-        if (self::shouldExposeUnassignedNodes()) {
-            $query->orWhereNull('zone_id');
-        }
+            if ($canViewUnassignedNodes) {
+                if ($zoneIds !== []) {
+                    $nodeQuery->orWhereNull('zone_id');
+                } else {
+                    $nodeQuery->whereNull('zone_id');
+                }
+            }
+        });
 
         return $query->pluck('id')->toArray();
     }
@@ -239,78 +280,51 @@ class ZoneAccessHelper
         return $zoneIds;
     }
 
+    private static function getAccessibleGreenhouseIdsStrict(User $user): ?array
+    {
+        if (! self::hasTable('user_greenhouses')) {
+            return null;
+        }
+
+        $greenhouseIds = $user->greenhouses()->pluck('greenhouses.id')->toArray();
+        $greenhouseIds = array_values(array_unique(array_map('intval', $greenhouseIds)));
+        sort($greenhouseIds);
+
+        return $greenhouseIds;
+    }
+
     private static function resolveBooleanDecision(
         string $resource,
         int $userId,
         int $resourceId,
-        bool $legacyAllowed,
         ?bool $strictAllowed
     ): bool {
-        $mode = self::accessMode();
-        if ($mode === self::MODE_LEGACY) {
-            return $legacyAllowed;
-        }
-
         if ($strictAllowed === null) {
-            self::logEnforceFallbackIfNeeded($mode, $resource, $userId, $resourceId);
-
-            return $legacyAllowed;
-        }
-
-        if ($mode === self::MODE_SHADOW) {
-            self::logShadowMismatchIfNeeded($resource, $userId, $resourceId, $legacyAllowed, $strictAllowed);
-
-            return $legacyAllowed;
+            self::logStrictDataUnavailableIfNeeded($resource, $userId, $resourceId);
+            return false;
         }
 
         return $strictAllowed;
     }
 
-    private static function resolveZoneIdsDecision(int $userId, array $legacyZoneIds, ?array $strictZoneIds): array
+    private static function resolveZoneIdsDecision(int $userId, ?array $strictZoneIds): array
     {
-        sort($legacyZoneIds);
-        $mode = self::accessMode();
-
-        if ($mode === self::MODE_LEGACY) {
-            return $legacyZoneIds;
-        }
-
         if ($strictZoneIds === null) {
-            self::logEnforceFallbackIfNeeded($mode, 'zone_list', $userId, null);
-
-            return $legacyZoneIds;
-        }
-
-        if ($mode === self::MODE_SHADOW) {
-            if ($legacyZoneIds !== $strictZoneIds) {
-                self::logShadowMismatchIfNeeded(
-                    'zone_list',
-                    $userId,
-                    null,
-                    count($legacyZoneIds),
-                    count($strictZoneIds)
-                );
-            }
-
-            return $legacyZoneIds;
+            self::logStrictDataUnavailableIfNeeded('zone_list', $userId, null);
+            return [];
         }
 
         return $strictZoneIds;
     }
 
-    private static function shouldExposeUnassignedNodes(): bool
+    private static function resolveGreenhouseIdsDecision(int $userId, ?array $strictGreenhouseIds): array
     {
-        return self::accessMode() !== self::MODE_ENFORCE;
-    }
-
-    private static function accessMode(): string
-    {
-        $mode = strtolower((string) Config::get('access_control.mode', self::MODE_LEGACY));
-        if (! in_array($mode, [self::MODE_LEGACY, self::MODE_SHADOW, self::MODE_ENFORCE], true)) {
-            return self::MODE_LEGACY;
+        if ($strictGreenhouseIds === null) {
+            self::logStrictDataUnavailableIfNeeded('greenhouse_list', $userId, null);
+            return [];
         }
 
-        return $mode;
+        return $strictGreenhouseIds;
     }
 
     private static function hasTable(string $table): bool
@@ -330,65 +344,20 @@ class ZoneAccessHelper
         }
     }
 
-    private static function logShadowMismatchIfNeeded(
-        string $resource,
-        int $userId,
-        ?int $resourceId,
-        mixed $legacyValue,
-        mixed $strictValue
-    ): void {
-        if (self::$shadowMismatchLogs >= self::SHADOW_LOG_LIMIT) {
-            return;
-        }
-
-        self::$shadowMismatchLogs++;
-
-        self::shadowLogger()->notice('ZoneAccessHelper: shadow mismatch detected', [
-            'resource' => $resource,
-            'user_id' => $userId,
-            'resource_id' => $resourceId,
-            'legacy_value' => $legacyValue,
-            'strict_value' => $strictValue,
-            'mode' => self::MODE_SHADOW,
-            'logged_mismatches' => self::$shadowMismatchLogs,
-        ]);
-    }
-
-    private static function logEnforceFallbackIfNeeded(
-        string $mode,
+    private static function logStrictDataUnavailableIfNeeded(
         string $resource,
         int $userId,
         ?int $resourceId
     ): void {
-        if ($mode !== self::MODE_ENFORCE || self::$enforceFallbackLogged) {
+        if (self::$strictDataUnavailableLogged) {
             return;
         }
 
-        self::$enforceFallbackLogged = true;
-        self::shadowLogger()->warning('ZoneAccessHelper: enforce mode fallback to legacy because assignment tables are unavailable', [
+        self::$strictDataUnavailableLogged = true;
+        Log::warning('ZoneAccessHelper: strict access data unavailable, applying fail-closed decision', [
             'resource' => $resource,
             'user_id' => $userId,
             'resource_id' => $resourceId,
-            'mode' => $mode,
         ]);
-    }
-
-    private static function shadowLogger()
-    {
-        $channel = (string) Config::get('access_control.shadow_log_channel', 'access_shadow');
-
-        try {
-            return Log::channel($channel);
-        } catch (\Throwable $e) {
-            if (! self::$shadowLoggerFallbackLogged) {
-                self::$shadowLoggerFallbackLogged = true;
-                Log::warning('ZoneAccessHelper: unable to use shadow audit channel, fallback to default', [
-                    'channel' => $channel,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            return Log::channel(config('logging.default'));
-        }
     }
 }

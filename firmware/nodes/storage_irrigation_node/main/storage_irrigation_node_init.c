@@ -10,7 +10,7 @@
 
 #include "storage_irrigation_node_init.h"
 #include "storage_irrigation_node_app.h"
-#include "storage_irrigation_node_defaults.h"
+#include "storage_irrigation_node_config.h"
 #include "storage_irrigation_node_init_steps.h"
 #include "storage_irrigation_node_framework_integration.h"
 #include "config_storage.h"
@@ -33,26 +33,35 @@
 
 static const char *TAG = "storage_irrigation_node_init";
 
+static esp_err_t init_i2c_bus_if_needed(void) {
+    if (i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED)...");
+    i2c_bus_config_t i2c0_config = {
+        .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
+        .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
+        .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
+        .pullup_enable = true
+    };
+
+    esp_err_t err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d",
+                 i2c0_config.sda_pin, i2c0_config.scl_pin);
+    } else {
+        ESP_LOGW(TAG, "Failed to initialize I2C bus 0: %s (OLED may not be available)", esp_err_to_name(err));
+    }
+
+    return err;
+}
+
 // Setup mode function
 void storage_irrigation_node_run_setup_mode(void) {
     ESP_LOGI(TAG, "Starting setup mode for STORAGE+IRRIGATION node");
-    
-    // Инициализируем I2C шину для INA209 перед запуском setup mode (если нужно)
-    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGI(TAG, "Initializing I2C bus 0 for INA209 in setup mode...");
-        i2c_bus_config_t i2c0_config = {
-            .sda_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SDA,
-            .scl_pin = STORAGE_IRRIGATION_NODE_I2C_BUS_0_SCL,
-            .clock_speed = STORAGE_IRRIGATION_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = true
-        };
-        esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
-        if (i2c_err == ESP_OK) {
-            ESP_LOGI(TAG, "I2C bus 0 initialized for setup mode");
-        } else {
-            ESP_LOGW(TAG, "Failed to initialize I2C bus 0 for setup mode: %s", esp_err_to_name(i2c_err));
-        }
-    }
+
+    init_i2c_bus_if_needed();
     
     setup_portal_full_config_t config = {
         .node_type_prefix = "IRRIG",
@@ -93,10 +102,12 @@ static void update_oled_connections(void) {
     config_storage_wifi_t wifi_cfg = {0};
     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
         strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
+        model.wifi_ssid[sizeof(model.wifi_ssid) - 1] = '\0';
     }
     config_storage_mqtt_t mqtt_cfg = {0};
     if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
         strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
+        model.mqtt_host[sizeof(model.mqtt_host) - 1] = '\0';
         model.mqtt_port = mqtt_cfg.port;
     }
 
@@ -105,9 +116,11 @@ static void update_oled_connections(void) {
     char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
     if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
         strncpy(model.gh_name, gh_uid, sizeof(model.gh_name) - 1);
+        model.gh_name[sizeof(model.gh_name) - 1] = '\0';
     }
     if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
         strncpy(model.zone_name, zone_uid, sizeof(model.zone_name) - 1);
+        model.zone_name[sizeof(model.zone_name) - 1] = '\0';
     }
     
     oled_ui_update_model(&model);
@@ -128,11 +141,10 @@ static void storage_irrigation_node_publish_hello(void) {
 void storage_irrigation_node_mqtt_connection_cb(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - storage_irrigation_node is online");
-        
-        // Публикуем node_hello только если узел еще не зарегистрирован (временные ID)
-        if (node_utils_should_send_node_hello()) {
-            storage_irrigation_node_publish_hello();
-        }
+
+        // На старте и после reconnect всегда публикуем node_hello, чтобы backend
+        // видел факт присутствия реальной IRR-ноды независимо от namespace.
+        storage_irrigation_node_publish_hello();
         
         // Запрашиваем время у сервера для синхронизации
         node_utils_request_time();

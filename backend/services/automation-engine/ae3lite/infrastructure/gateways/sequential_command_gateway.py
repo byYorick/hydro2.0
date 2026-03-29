@@ -113,6 +113,7 @@ class SequentialCommandGateway:
         step_no = await self._command_repository.get_next_step_no(task_id=task.id)
         planned = replace(command, step_no=step_no)
         cmd_name, params = self._extract_publish_payload(planned)
+        complete_on_ack = self._complete_on_ack(planned)
         cmd_id = f"ae3-t{task.id}-z{task.zone_id}-s{step_no}"
         command_payload = dict(planned.payload)
         command_payload["cmd_id"] = cmd_id
@@ -194,6 +195,23 @@ class SequentialCommandGateway:
             result = await self.recover_waiting_command(task=waiting_task, now=reconcile_now)
             poll_iterations += 1
             if result["state"] == "waiting_command":
+                if complete_on_ack and str(result.get("legacy_status") or "").strip().upper() == "ACK":
+                    resumed_task = await self._task_repository.resume_after_waiting_command(
+                        task_id=task.id,
+                        owner=str(task.claimed_by or ""),
+                        now=reconcile_now,
+                    )
+                    self._observe_roundtrip_metrics(
+                        channel=planned.channel,
+                        terminal_status="ACK",
+                        roundtrip_started_at=roundtrip_started_at,
+                        poll_iterations=poll_iterations,
+                    )
+                    return {
+                        "success": True,
+                        "task": resumed_task or task,
+                        "command_statuses": [{**status_entry, "terminal_status": "ACK"}],
+                    }
                 if _poll_deadline is not None and reconcile_now > _poll_deadline and not poll_deadline_event_emitted:
                     await self._emit_poll_deadline_exceeded_event(
                         task=task,
@@ -392,3 +410,7 @@ class SequentialCommandGateway:
         if not cmd_name or not isinstance(params, Mapping):
             raise TaskExecutionError("ae3_invalid_planned_command", "PlannedCommand payload must contain cmd and params")
         return cmd_name, params
+
+    def _complete_on_ack(self, command: PlannedCommand) -> bool:
+        payload = command.payload if isinstance(command.payload, Mapping) else {}
+        return bool(payload.get("complete_on_ack"))

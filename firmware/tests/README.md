@@ -1,6 +1,7 @@
-# Тесты совместимости с эталоном node-sim
+# Тесты протокола для production IRR node
 
-Набор тестов для проверки совместимости прошивок с эталонным протоколом node-sim.
+Набор `firmware/tests` проверяет MQTT-контракт прошивки `storage_irrigation_node`:
+форматы `telemetry`, `command_response`, `heartbeat`, `status` и базовый command lifecycle.
 
 ## Доступные тесты
 
@@ -24,9 +25,52 @@
 ### 4. test_command_ack_terminal_timing.py
 
 HIL/интеграционный тест таймингов command lifecycle:
-- ✅ Подтверждает, что приходит `ACK`, затем terminal (`DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT`)
-- ✅ Проверяет окно задержки `ACK -> terminal` относительно `sim_delay_ms`
-- ✅ Поддерживает форс terminal-статуса через `sim_status`
+- ✅ Проверяет сценарий `ACK -> terminal`, если нода отвечает асинхронно
+- ✅ Проверяет immediate terminal path, если `ACK` не используется
+- ✅ Валидирует допустимое окно задержки terminal-ответа
+
+### 5. test_storage_state_contract.py
+
+HIL/интеграционный тест контракта `storage_state/state`:
+- ✅ Проверяет `DONE`-ответ на сервисный канал `storage_state`
+- ✅ Проверяет `details.snapshot`, `details.state` и freshness-поля
+- ✅ Проверяет, что в snapshot присутствуют все канонические IRR-ключи
+
+### 6. test_pump_main_interlock.py
+
+HIL/интеграционный тест блокировки `pump_main`:
+- ✅ Отправляет `pump_main/set_relay {state:true}` без открытого flow path
+- ✅ Ожидает terminal `ERROR`
+- ✅ Проверяет `error_code=pump_interlock_blocked`
+
+### 7. test_actuator_cooldown.py
+
+HIL/интеграционный тест enforcement `min_off_ms`:
+- ✅ Выполняет последовательность `ON -> OFF -> ON` на actuator-канале
+- ✅ Проверяет отказ повторного включения до истечения cooldown
+- ✅ Проверяет `error_code=cooldown_active` и `cooldown_remaining_ms`
+
+### 8. test_actuator_max_duration.py
+
+HIL/интеграционный тест latched `set_relay`:
+- ✅ Включает actuator через `set_relay {state:true}`
+- ✅ Держит канал включённым дольше старого `max_duration_ms`
+- ✅ Проверяет через `storage_state/state`, что канал всё ещё включён до явного `OFF`
+
+### 9. test_storage_events.py
+
+HIL/интеграционный тест `storage_state/event`:
+- ✅ Поднимает нужный fill-path для `clean_fill_completed` или `solution_fill_completed`
+- ✅ Ждёт событие на `storage_state/event`
+- ✅ Проверяет `event_code`, `snapshot`, `state` и факт сработавшего `*_max`
+
+### 10. test_stage_timeout_guard.py
+
+HIL/интеграционный тест stage-level timeout guard:
+- ✅ Поднимает flow-path для `solution_fill` или `prepare_recirculation`
+- ✅ Отправляет `pump_main/set_relay {state:true, timeout_ms, stage}`
+- ✅ Проверяет lifecycle `ACK -> ERROR(stage_timeout) -> storage_state/event`
+- ✅ Проверяет через `storage_state/state`, что flow-path локально остановлен нодой
 
 ## Граница ответственности набора firmware/tests
 
@@ -34,8 +78,8 @@ HIL/интеграционный тест таймингов command lifecycle:
 (`telemetry/command_response/heartbeat/status`, а также `ACK -> terminal`), но не валидирует
 бизнес-процессы 2-бакового цикла (`startup/clean_fill/solution_fill/prepare_recirculation`).
 
-Проверка согласованности автоматики и `test_node` выполняется в e2e-наборе
-`tests/e2e/scenarios/automation_engine/` (актуальный AE3 regression subset: `E61`, `E64`, `E65`, `E74`).
+Проверка согласованности автоматики с реальной IRR-нодой остаётся в e2e/HIL-наборах
+верхних слоёв. Этот каталог не подменяет интеграционные сценарии automation-engine.
 
 ## Быстрый старт
 
@@ -47,8 +91,16 @@ HIL/интеграционный тест таймингов command lifecycle:
 MQTT_HOST=192.168.1.100 MQTT_PORT=1883 \
 ./firmware/tests/run_compatibility_tests.sh
 
-# С включённым HIL тайминг-тестом ACK -> terminal
-RUN_HIL_TIMING=1 HIL_SIM_DELAY_MS=1500 HIL_SIM_STATUS=DONE \
+# С включённым HIL тайминг-тестом command lifecycle
+RUN_HIL_TIMING=1 HIL_CHANNEL=valve_clean_fill HIL_PARAMS_JSON='{"state":true}' \
+./firmware/tests/run_compatibility_tests.sh
+
+# С HIL-проверками service state, interlock, cooldown, latched set_relay и storage events
+RUN_HIL_STORAGE_STATE=1 RUN_HIL_INTERLOCK=1 RUN_HIL_COOLDOWN=1 RUN_HIL_MAX_DURATION=1 RUN_HIL_STORAGE_EVENTS=1 \
+./firmware/tests/run_compatibility_tests.sh
+
+# С HIL-проверкой stage timeout guard
+RUN_HIL_STAGE_TIMEOUT=1 HIL_STAGE=solution_fill HIL_STAGE_TIMEOUT_MS=5000 \
 ./firmware/tests/run_compatibility_tests.sh
 
 # Прямой запуск Python скрипта
@@ -57,7 +109,11 @@ python3 firmware/tests/test_node_compatibility.py \
     --mqtt-port 1884 \
     --gh-uid gh-test-1 \
     --zone-uid zn-test-1 \
-    --node-uid nd-test-001
+    --node-uid nd-irrig-1 \
+    --telemetry-channel level_clean_min \
+    --command-channel valve_clean_fill \
+    --command set_relay \
+    --command-params-json '{"state":true}'
 ```
 
 ## Требования
@@ -106,16 +162,95 @@ python3 firmware/tests/test_command_ack_terminal_timing.py \
     --mqtt-port 1884 \
     --gh-uid gh-test-1 \
     --zone-uid zn-test-1 \
-    --node-uid nd-test-001 \
-    --channel ph_sensor \
+    --node-uid nd-irrig-1 \
+    --channel valve_clean_fill \
     --cmd set_relay \
-    --sim-delay-ms 1200 \
-    --sim-status DONE
+    --params-json '{"state":true}' \
+    --expect-ack \
+    --min-terminal-delay-ms 50 \
+    --max-terminal-delay-ms 2000
 ```
 
-Опциональные параметры допуска:
-- `--lower-jitter-ms` (по умолчанию `200`)
-- `--upper-jitter-ms` (по умолчанию `1500`)
+Опциональные параметры:
+- `--ack-timeout-sec`
+- `--terminal-timeout-sec`
+- `--min-terminal-delay-ms`
+- `--max-terminal-delay-ms`
+
+### HIL тест `storage_state/state`
+
+```bash
+python3 firmware/tests/test_storage_state_contract.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-irrig-1
+```
+
+### HIL тест `pump_main` interlock
+
+```bash
+python3 firmware/tests/test_pump_main_interlock.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-irrig-1
+```
+
+### HIL тест cooldown `set_relay`
+
+```bash
+python3 firmware/tests/test_actuator_cooldown.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-irrig-1 \
+    --channel valve_clean_fill
+```
+
+### HIL тест latched `set_relay`
+
+```bash
+python3 firmware/tests/test_actuator_max_duration.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-irrig-1 \
+    --channel valve_solution_supply
+```
+
+### HIL тест `storage_state/event`
+
+```bash
+python3 firmware/tests/test_storage_events.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-irrig-1 \
+    --event-code clean_fill_completed
+```
+
+### HIL тест stage timeout guard
+
+```bash
+python3 firmware/tests/test_stage_timeout_guard.py \
+    --mqtt-host localhost \
+    --mqtt-port 1884 \
+    --gh-uid gh-test-1 \
+    --zone-uid zn-test-1 \
+    --node-uid nd-irrig-1 \
+    --stage solution_fill \
+    --timeout-ms 5000
+```
+
+Примечание:
+- для green-прохода этого теста соответствующий `level_*_max` датчик должен физически сработать во время активного fill-path;
+- если бак не заполнен и датчик не переключился, тест завершится timeout'ом как корректной индикацией отсутствия события.
 
 ### Тест формата телеметрии
 
@@ -143,8 +278,8 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 
 ```json
 {
-  "metric_type": "PH",
-  "value": 6.5,
+  "metric_type": "LEVEL_SWITCH",
+  "value": 1,
   "ts": 1704067200
 }
 ```
@@ -169,9 +304,8 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
   "cmd_id": "cmd-12346",
   "status": "DONE",
   "details": {
-    "virtual": true,
-    "channel": "ph_sensor",
-    "note": "probe_complete"
+    "channel": "valve_clean_fill",
+    "state": true
   },
   "ts": 1704067201123
 }
@@ -200,18 +334,18 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 
 ```
 ============================================================
-ТЕСТИРОВАНИЕ СОВМЕСТИМОСТИ С ЭТАЛОНОМ NODE-SIM
+ТЕСТИРОВАНИЕ PRODUCTION IRR NODE
 ============================================================
 
 ✅ Подключено к MQTT брокеру
-  Подписка: hydro/gh-test-1/zn-test-1/nd-test-001/+/telemetry
+  Подписка: hydro/gh-test-1/zn-test-1/nd-irrig-1/+/telemetry
   ...
 
 📨 Получено: telemetry
-   Топик: hydro/gh-test-1/zn-test-1/nd-test-001/ph_sensor/telemetry
+   Топик: hydro/gh-test-1/zn-test-1/nd-irrig-1/level_clean_min/telemetry
    Payload: {
-     "metric_type": "PH",
-     "value": 6.5,
+     "metric_type": "LEVEL_SWITCH",
+     "value": 1,
      "ts": 1704067200
    }
 
@@ -219,10 +353,10 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ
 ============================================================
 
-✅ status_format: Формат статуса соответствует эталону
-✅ telemetry_format: Формат телеметрии соответствует эталону
-✅ command_response_format: Формат ответа на команду соответствует эталону
-✅ heartbeat_format: Формат heartbeat соответствует эталону
+✅ status_format: Формат статуса корректен
+✅ telemetry_format: Формат телеметрии корректен
+✅ command_response_format: Формат ответа на команду корректен
+✅ heartbeat_format: Формат heartbeat корректен
 
 ============================================================
 Успешно: 4
@@ -234,7 +368,7 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 
 ```yaml
 # Пример для GitHub Actions
-- name: Test firmware compatibility
+- name: Test IRR firmware protocol
   run: |
     # Запуск MQTT брокера
     docker run -d -p 1884:1883 eclipse-mosquitto

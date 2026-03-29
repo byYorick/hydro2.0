@@ -106,8 +106,8 @@
 
 ### Выполнено (S1, итерация 2)
 
-1. Добавлен feature-flag `ACCESS_CONTROL_MODE` (`legacy|shadow|enforce`).
-2. Реализован `shadow`/`enforce` режим в `ZoneAccessHelper` с fallback на `legacy`, если pivot-таблицы отсутствуют.
+1. Добавлен strict ACL на базе `user_greenhouses` / `user_zones`.
+2. `ZoneAccessHelper` переведен на fail-closed strict model без legacy/shadow режимов.
 3. Добавлены связи `User::zones()` и `User::greenhouses()`.
 4. Добавлены миграции:
    - `user_greenhouses`
@@ -119,15 +119,15 @@
 ### Следующая итерация (S1, итерация 3)
 
 1. Добавить feature-тесты для API сценариев `greenhouse/zone` в enforce-режиме.
-2. Вынести shadow mismatch аудит в отдельный лог-канал/метрику.
-3. Подготовить migration-safe rollout-инструкцию для включения `enforce` в staging/prod.
+2. Добавить явные smoke/regression проверки strict ACL для ключевых API и websocket сценариев.
+3. Подготовить migration-safe rollout-инструкцию для strict ACL в staging/prod.
 
 ### Выполнено (S1, итерация 3)
 
 1. Добавлены feature-тесты API для `enforce` доступа:
    - `InfrastructureAccessEnforceModeTest`
 2. Shadow аудит вынесен в отдельный log-channel:
-   - `access_shadow`
+   - strict ACL regression checks
 3. Подготовлена отдельная rollout-инструкция:
    - `ACCESS_CONTROL_ENFORCE_ROLLOUT.md`
 

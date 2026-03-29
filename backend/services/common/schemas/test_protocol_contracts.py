@@ -267,6 +267,20 @@ class TestCommandResponseProtocol:
             assert response.cmd_id is not None
             assert response.status in ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT", "TIMEOUT"]
             assert response.ts > 0
+
+    def test_command_response_allows_top_level_message(self, command_response_schema):
+        """Top-level message допустим как runtime fallback для error_message."""
+        payload = {
+            "cmd_id": "cmd-top-message",
+            "status": "ERROR",
+            "message": "Command failed: invalid channel",
+            "ts": 1737979200008,
+        }
+
+        validate_against_schema(payload, command_response_schema)
+
+        response = CommandResponse(**payload)
+        assert response.message == "Command failed: invalid channel"
     
     @pytest.mark.parametrize("invalid_status", ["INVALID_STATUS", "ACCEPTED", "FAILED"])
     def test_command_response_invalid_status(self, command_response_schema, invalid_status):
@@ -338,6 +352,18 @@ class TestErrorAlertProtocol:
         }
         
         validate_against_schema(payload, error_alert_schema)
+
+    def test_error_rejects_unknown_top_level_field(self, error_alert_schema):
+        payload = {
+            "level": "ERROR",
+            "component": "pump",
+            "error_code": "ESP_ERR_NO_MEM",
+            "message": "Out of memory",
+            "unexpected_field": "must-fail",
+        }
+
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, error_alert_schema)
     
     def test_alert_payload(self, error_alert_schema):
         """Тест payload алерта от backend."""

@@ -7,6 +7,7 @@ import {
   normalizeAutomationManualSteps,
 } from '@/composables/zoneAutomationUtils'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import type { AutomationControlMode, AutomationManualStep, AutomationState } from '@/types/Automation'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 
@@ -18,7 +19,7 @@ export interface ZoneAutomationSchedulerDeps {
 
 export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: ZoneAutomationSchedulerDeps) {
   const { get, post, showToast } = deps
-  const { subscribeToZoneCommands, subscribeToGlobalEvents, unsubscribeAll } = useWebSocket(
+  const { subscribeToZoneCommands, unsubscribeAll } = useWebSocket(
     showToast,
     'zone-automation-runtime'
   )
@@ -40,7 +41,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
 
   let refreshInFlight = false
   let unsubscribeZoneCommands: (() => void) | null = null
-  let unsubscribeGlobalEvents: (() => void) | null = null
+  let unsubscribeZoneEvents: (() => void) | null = null
 
   function extractApiErrorMessage(error: unknown, fallback: string): string {
     const err = error as { response?: { data?: unknown } }
@@ -164,9 +165,9 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       unsubscribeZoneCommands()
       unsubscribeZoneCommands = null
     }
-    if (unsubscribeGlobalEvents) {
-      unsubscribeGlobalEvents()
-      unsubscribeGlobalEvents = null
+    if (unsubscribeZoneEvents) {
+      unsubscribeZoneEvents()
+      unsubscribeZoneEvents = null
     }
   }
 
@@ -179,21 +180,31 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
       void refreshRuntimeState()
     })
 
-    unsubscribeGlobalEvents = subscribeToGlobalEvents((event) => {
-      if (!props.zoneId) return
-      const eventZoneId = typeof event.zoneId === 'number' ? event.zoneId : null
-      if (eventZoneId !== null && eventZoneId !== props.zoneId) {
-        return
-      }
-
-      const kind = String(event.kind ?? '').trim().toUpperCase()
-      if (
-        kind === 'AUTOMATION_CONTROL_MODE_UPDATED'
-        || kind.startsWith('MANUAL_STEP_')
-        || kind.startsWith('COMMAND_')
-      ) {
-        void refreshRuntimeState()
-      }
+    unsubscribeZoneEvents = subscribeManagedChannelEvents({
+      channelName: `hydro.zones.${props.zoneId}`,
+      componentTag: `zone-automation-runtime:events:${props.zoneId}`,
+      eventHandlers: {
+        '.EventCreated': (payload) => {
+          const kind = String(payload.kind ?? '').trim().toUpperCase()
+          if (
+            kind === 'AUTOMATION_CONTROL_MODE_UPDATED'
+            || kind.startsWith('MANUAL_STEP_')
+            || kind.startsWith('COMMAND_')
+          ) {
+            void refreshRuntimeState()
+          }
+        },
+        '.App\\Events\\EventCreated': (payload) => {
+          const kind = String(payload.kind ?? '').trim().toUpperCase()
+          if (
+            kind === 'AUTOMATION_CONTROL_MODE_UPDATED'
+            || kind.startsWith('MANUAL_STEP_')
+            || kind.startsWith('COMMAND_')
+          ) {
+            void refreshRuntimeState()
+          }
+        },
+      },
     })
   }
 

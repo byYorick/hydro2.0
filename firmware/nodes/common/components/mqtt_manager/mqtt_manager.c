@@ -54,8 +54,9 @@ void oled_ui_notify_mqtt_rx(void) __attribute__((weak));
 #endif
 
 static const char *TAG = "mqtt_manager";
-// Конфигурация под burst публикации (например, batch config_report от test_node)
-#define MQTT_MANAGER_BUFFER_SIZE_BYTES 2048
+// Конфигурация под крупные config/config_report payload'ы реальных нод.
+// 2048 байт оказалось недостаточно уже для binding/config сообщения ~2337 байт.
+#define MQTT_MANAGER_BUFFER_SIZE_BYTES 4096
 #define MQTT_MANAGER_OUTBOX_LIMIT_BYTES (32 * 1024)
 // MQTT callback может вызывать тяжёлые обработчики (config/apply/report), поэтому
 // используем увеличенный stack mqtt_task для запаса.
@@ -80,7 +81,7 @@ static void *s_config_user_ctx = NULL;
 static void *s_command_user_ctx = NULL;
 static void *s_connection_user_ctx = NULL;
 static char s_rx_topic_buf[192] = {0};
-static char s_rx_payload_buf[2049] = {0}; // 2048 bytes payload + '\0'
+static char s_rx_payload_buf[MQTT_MANAGER_BUFFER_SIZE_BYTES + 1] = {0};
 static int s_rx_expected_len = 0;
 static int s_rx_received_len = 0;
 static bool s_rx_assembly_active = false;
@@ -529,7 +530,7 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info) {
         s_node_info.node_uid = s_node_uid_static;
     }
 
-    ESP_LOGI(TAG, "Node info updated: gh_uid=%s, zone_uid=%s, node_uid=%s",
+    ESP_LOGD(TAG, "Node info updated: gh_uid=%s, zone_uid=%s, node_uid=%s",
              s_node_info.gh_uid ? s_node_info.gh_uid : "NULL",
              s_node_info.zone_uid ? s_node_info.zone_uid : "NULL",
              s_node_info.node_uid ? s_node_info.node_uid : "NULL");
@@ -706,7 +707,7 @@ esp_err_t mqtt_manager_subscribe_raw(const char *topic, int qos) {
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Subscribed to raw topic: %s (msg_id=%d)", topic, msg_id);
+    ESP_LOGD(TAG, "Subscribed to raw topic: %s (msg_id=%d)", topic, msg_id);
     return ESP_OK;
 }
 
@@ -765,7 +766,7 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
         strcat(log_data, "...");
     }
     
-    ESP_LOGI(TAG, "MQTT PUBLISH: topic='%s', qos=%d, retain=%d, len=%d, data=%s", 
+    ESP_LOGD(TAG, "MQTT PUBLISH: topic='%s', qos=%d, retain=%d, len=%d, data=%s", 
              topic, qos, retain, data_len, log_data);
     
     // Проверяем, что клиент все еще валиден перед публикацией
@@ -789,7 +790,7 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
         return ESP_FAIL;
     }
     
-    ESP_LOGI(TAG, "MQTT PUBLISH SUCCESS: topic='%s', msg_id=%d, len=%d", topic, msg_id, data_len);
+    ESP_LOGD(TAG, "MQTT PUBLISH SUCCESS: topic='%s', msg_id=%d, len=%d", topic, msg_id, data_len);
     
     // Обновление метрик диагностики (успешная публикация)
     #if DIAGNOSTICS_AVAILABLE
@@ -830,14 +831,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             snprintf(status_json, sizeof(status_json), "{\"status\":\"ONLINE\",\"ts\":%lld}", 
                     (long long)node_utils_get_timestamp_seconds());
             mqtt_manager_publish_status(status_json);
-            ESP_LOGI(TAG, "Published status: ONLINE");
+            ESP_LOGD(TAG, "Published status: ONLINE");
 
             // Подписка на config топик
             char config_topic[192];
             if (build_topic(config_topic, sizeof(config_topic), "config", NULL) == ESP_OK) {
                 int sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, config_topic, 1);
                 if (sub_msg_id >= 0) {
-                    ESP_LOGI(TAG, "Subscribed to %s (msg_id=%d)", config_topic, sub_msg_id);
+                    ESP_LOGD(TAG, "Subscribed to %s (msg_id=%d)", config_topic, sub_msg_id);
                 } else {
                     ESP_LOGE(TAG, "Failed to subscribe to %s (msg_id=%d)", config_topic, sub_msg_id);
                 }
@@ -858,7 +859,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 snprintf(temp_config_topic, sizeof(temp_config_topic), "hydro/gh-temp/zn-temp/%s/config", hardware_id);
                 int temp_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_config_topic, 1);
                 if (temp_sub_msg_id >= 0) {
-                    ESP_LOGI(TAG, "Subscribed to temp config topic: %s (msg_id=%d, using hardware_id)", temp_config_topic, temp_sub_msg_id);
+                    ESP_LOGD(TAG, "Subscribed to temp config topic: %s (msg_id=%d, using hardware_id)", temp_config_topic, temp_sub_msg_id);
                 } else {
                     ESP_LOGW(TAG, "Failed to subscribe to temp config topic: %s (msg_id=%d)", temp_config_topic, temp_sub_msg_id);
                 }
@@ -870,7 +871,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     snprintf(temp_config_topic, sizeof(temp_config_topic), "hydro/gh-temp/zn-temp/%s/config", s_node_info.node_uid);
                     int temp_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_config_topic, 1);
                     if (temp_sub_msg_id >= 0) {
-                        ESP_LOGI(TAG, "Subscribed to temp config topic: %s (msg_id=%d, using node_uid fallback)", temp_config_topic, temp_sub_msg_id);
+                        ESP_LOGD(TAG, "Subscribed to temp config topic: %s (msg_id=%d, using node_uid fallback)", temp_config_topic, temp_sub_msg_id);
                     } else {
                         ESP_LOGW(TAG, "Failed to subscribe to temp config topic: %s (msg_id=%d)", temp_config_topic, temp_sub_msg_id);
                     }
@@ -885,7 +886,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     s_node_info.node_uid ? s_node_info.node_uid : "");
             int cmd_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, command_topic, 1);
             if (cmd_sub_msg_id >= 0) {
-                ESP_LOGI(TAG, "Subscribed to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
+                ESP_LOGD(TAG, "Subscribed to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
             } else {
                 ESP_LOGE(TAG, "Failed to subscribe to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
             }
@@ -893,7 +894,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Подписка на time/response для получения синхронизации времени от сервера
             int time_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, "hydro/time/response", 1);
             if (time_sub_msg_id >= 0) {
-                ESP_LOGI(TAG, "Subscribed to hydro/time/response (msg_id=%d)", time_sub_msg_id);
+                ESP_LOGD(TAG, "Subscribed to hydro/time/response (msg_id=%d)", time_sub_msg_id);
             } else {
                 ESP_LOGW(TAG, "Failed to subscribe to hydro/time/response (msg_id=%d)", time_sub_msg_id);
             }
@@ -911,7 +912,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 snprintf(temp_command_topic, sizeof(temp_command_topic), "hydro/gh-temp/zn-temp/%s/+/command", hardware_id_cmd);
                 int temp_cmd_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_command_topic, 1);
                 if (temp_cmd_sub_msg_id >= 0) {
-                    ESP_LOGI(TAG, "Subscribed to temp command topic: %s (msg_id=%d, using hardware_id)", temp_command_topic, temp_cmd_sub_msg_id);
+                    ESP_LOGD(TAG, "Subscribed to temp command topic: %s (msg_id=%d, using hardware_id)", temp_command_topic, temp_cmd_sub_msg_id);
                 } else {
                     ESP_LOGW(TAG, "Failed to subscribe to temp command topic: %s (msg_id=%d)", temp_command_topic, temp_cmd_sub_msg_id);
                 }
@@ -923,7 +924,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     snprintf(temp_command_topic, sizeof(temp_command_topic), "hydro/gh-temp/zn-temp/%s/+/command", s_node_info.node_uid);
                     int temp_cmd_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_command_topic, 1);
                     if (temp_cmd_sub_msg_id >= 0) {
-                        ESP_LOGI(TAG, "Subscribed to temp command topic: %s (msg_id=%d, using node_uid fallback)", temp_command_topic, temp_cmd_sub_msg_id);
+                        ESP_LOGD(TAG, "Subscribed to temp command topic: %s (msg_id=%d, using node_uid fallback)", temp_command_topic, temp_cmd_sub_msg_id);
                     } else {
                         ESP_LOGW(TAG, "Failed to subscribe to temp command topic: %s (msg_id=%d)", temp_command_topic, temp_cmd_sub_msg_id);
                     }
@@ -934,7 +935,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Это обеспечивает единую временную линию между устройствами и бэкендом
             esp_err_t time_req_err = node_utils_request_time();
             if (time_req_err == ESP_OK) {
-                ESP_LOGI(TAG, "Requested time synchronization from server");
+                ESP_LOGD(TAG, "Requested time synchronization from server");
             } else {
                 ESP_LOGW(
                     TAG,
@@ -951,9 +952,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
             // Вызов callback подключения
             if (s_connection_cb) {
-                ESP_LOGI(TAG, "Calling registered connection callback (connected=true)");
+                ESP_LOGD(TAG, "Calling registered connection callback (connected=true)");
                 s_connection_cb(true, s_connection_user_ctx);
-                ESP_LOGI(TAG, "Connection callback completed");
+                ESP_LOGD(TAG, "Connection callback completed");
             } else {
                 ESP_LOGW(TAG, "No connection callback registered");
             }
@@ -970,11 +971,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
 
         case MQTT_EVENT_SUBSCRIBED:
-            ESP_LOGI(TAG, "MQTT subscribed, msg_id=%d", event->msg_id);
+            ESP_LOGD(TAG, "MQTT subscribed, msg_id=%d", event->msg_id);
             break;
 
         case MQTT_EVENT_UNSUBSCRIBED:
-            ESP_LOGI(TAG, "MQTT unsubscribed, msg_id=%d", event->msg_id);
+            ESP_LOGD(TAG, "MQTT unsubscribed, msg_id=%d", event->msg_id);
             break;
 
         case MQTT_EVENT_PUBLISHED:
@@ -1149,7 +1150,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 strcat(log_data, "...");
             }
 
-            ESP_LOGI(TAG, "MQTT RECEIVE: topic='%s', len=%d, data=%s",
+            ESP_LOGD(TAG, "MQTT RECEIVE: topic='%s', len=%d, data=%s",
                      topic, payload_len, log_data);
             
             // Уведомляем OLED UI о MQTT активности (прием)
@@ -1173,7 +1174,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // - Time Response: hydro/time/response (для синхронизации времени)
             if (strcmp(topic, "hydro/time/response") == 0) {
                 // Time response топик - обрабатываем синхронизацию времени
-                ESP_LOGI(TAG, "Time response message received, len=%d", payload_len);
+                ESP_LOGD(TAG, "Time response message received, len=%d", payload_len);
                 
                 // Парсим JSON для получения unix_ts
                 cJSON *json = cJSON_ParseWithLength(data, payload_len);

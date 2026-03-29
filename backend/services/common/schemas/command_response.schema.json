@@ -36,6 +36,11 @@
       "type": "string",
       "description": "Текст ошибки при status=ERROR",
       "maxLength": 512
+    },
+    "message": {
+      "type": "string",
+      "description": "Краткое top-level сообщение; backend может использовать как fallback для error_message",
+      "maxLength": 512
     }
   },
   "additionalProperties": false

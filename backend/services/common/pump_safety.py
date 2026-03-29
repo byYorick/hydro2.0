@@ -8,10 +8,12 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
 from .db import fetch, execute
 from .alerts import create_alert, AlertSource, AlertCode
+from .alert_publisher import AlertPublisher
 from .water_flow import check_water_level, check_flow, MIN_FLOW_THRESHOLD
 from .utils.time import utcnow
 
 logger = logging.getLogger(__name__)
+_alert_publisher = AlertPublisher(default_source=AlertSource.BIZ.value)
 
 # Пороги для безопасности насосов
 MIN_WATER_LEVEL = 0.15  # 15% - минимальный уровень для работы насоса
@@ -413,17 +415,30 @@ async def resolve_active_critical_alerts_by_code(zone_id: int, codes: List[str])
     normalized_codes = [str(code).strip().lower() for code in codes if str(code).strip()]
     if not normalized_codes:
         return
-    await execute(
+    rows = await fetch(
         """
-        UPDATE alerts
-        SET status = 'RESOLVED', resolved_at = NOW()
+        SELECT code, type, details, node_uid, hardware_id
+        FROM alerts
         WHERE zone_id = $1
-          AND code = ANY($2)
+          AND LOWER(code) = ANY($2)
           AND status = 'ACTIVE'
         """,
         zone_id,
         normalized_codes,
     )
+    for row in rows or []:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        await _alert_publisher.resolve(
+            zone_id=zone_id,
+            source=AlertSource.BIZ.value,
+            code=str(row.get("code") or ""),
+            alert_type=str(row.get("type") or "biz"),
+            details=details,
+            dedupe_key=details.get("dedupe_key") if isinstance(details, dict) else None,
+            scoped=isinstance(details, dict) and bool(details.get("dedupe_key")),
+            node_uid=row.get("node_uid"),
+            hardware_id=row.get("hardware_id"),
+        )
 
 
 async def too_many_recent_failures(

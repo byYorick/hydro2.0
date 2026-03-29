@@ -108,6 +108,19 @@ esp_err_t pump_driver_deinit(void);
 esp_err_t pump_driver_run(const char *channel_name, uint32_t duration_ms);
 
 /**
+ * @brief Установить состояние канала без таймера автоостановки
+ *
+ * Используется для latched ON/OFF semantics, когда канал должен оставаться
+ * включенным до явного `pump_driver_set_state(..., false)`/`pump_driver_stop(...)`.
+ * Проверка cooldown и INA209 при включении сохраняется.
+ *
+ * @param channel_name Имя канала
+ * @param state Целевое состояние: true = ON, false = OFF
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t pump_driver_set_state(const char *channel_name, bool state);
+
+/**
  * @brief Запуск насоса с заданной дозой (мл)
  * 
  * @param channel_name Имя канала насоса

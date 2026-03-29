@@ -60,6 +60,20 @@ class EventBroadcastTest extends TestCase
         $this->assertSame($payload, $event->alert);
     }
 
+    public function test_alert_created_uses_zone_channel_when_zone_id_is_present(): void
+    {
+        $payload = [
+            'id' => 43,
+            'type' => 'ALERT',
+            'zone_id' => 17,
+            'message' => 'Зональный алерт',
+        ];
+
+        $event = new AlertCreated($payload);
+
+        $this->assertSame('private-hydro.zones.17', $event->broadcastOn()->name);
+    }
+
     public function test_node_config_updated_contains_device_snapshot(): void
     {
         $zone = $this->makeZone(7);
@@ -199,5 +213,17 @@ class EventBroadcastTest extends TestCase
         $this->assertSame(Carbon::now()->toIso8601String(), $payload['occurredAt']);
 
         Carbon::setTestNow();
+    }
+
+    public function test_event_created_uses_zone_channel_when_zone_id_is_present(): void
+    {
+        $event = new EventCreated(
+            id: 1002,
+            kind: 'COMMAND_DISPATCHED',
+            message: 'Событие зоны',
+            zoneId: 17,
+        );
+
+        $this->assertSame('private-hydro.zones.17', $event->broadcastOn()->name);
     }
 }

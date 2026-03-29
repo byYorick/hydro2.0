@@ -6,9 +6,23 @@ from enum import Enum
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
-from .db import execute, fetch
-from .alert_queue import send_alert_to_laravel
-import json
+from .db import fetch
+from .alert_publisher import AlertPublisher
+
+_publisher = AlertPublisher()
+_DEDUPE_SCOPE_KEYS = (
+    "pump_channel",
+    "channel",
+    "node_uid",
+    "hardware_id",
+    "component",
+    "service",
+    "pid_type",
+    "error_code",
+    "workflow_phase",
+    "stage",
+    "task_id",
+)
 
 
 class AlertSource(str, Enum):
@@ -79,82 +93,74 @@ async def create_alert(
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
     
-    # Ищем существующий активный алерт по ключу идемпотентности
-    existing = await fetch(
+    payload_details = details.copy() if details else {}
+    dedupe_key = _resolve_dedupe_key(zone_id=zone_id, source=source, code=code, details=payload_details)
+    payload_details["last_seen_at"] = now_iso
+    payload_details.setdefault("dedupe_key", dedupe_key)
+
+    if suppression_window_sec is not None:
+        existing = await _fetch_active_alert(zone_id=zone_id, code=code, dedupe_key=dedupe_key)
+        if existing is not None:
+            existing_details = existing.get("details")
+            if isinstance(existing_details, dict):
+                last_seen_at_str = existing_details.get("last_seen_at")
+                if last_seen_at_str:
+                    try:
+                        last_seen_at_str_clean = str(last_seen_at_str).replace('Z', '+00:00')
+                        last_seen_at = datetime.fromisoformat(last_seen_at_str_clean)
+                        if last_seen_at.tzinfo is None:
+                            last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
+                        if (now - last_seen_at).total_seconds() < suppression_window_sec:
+                            return
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+
+    await _publisher.raise_active(
+        zone_id=zone_id,
+        source=source,
+        code=code,
+        alert_type=type,
+        details=payload_details,
+        dedupe_key=dedupe_key,
+        scoped=True,
+    )
+
+
+async def _fetch_active_alert(zone_id: Optional[int], code: str, dedupe_key: str) -> Optional[Dict[str, Any]]:
+    rows = await fetch(
         """
         SELECT id, details
         FROM alerts
-        WHERE zone_id IS NOT DISTINCT FROM $1 
-          AND code = $2 
+        WHERE zone_id IS NOT DISTINCT FROM $1
+          AND code = $2
           AND status = 'ACTIVE'
+          AND COALESCE(details->>'dedupe_key', '') = $3
         LIMIT 1
         """,
-        zone_id, code
+        zone_id,
+        code,
+        dedupe_key,
     )
-    
-    if existing:
-        alert_id = existing[0]["id"]
-        existing_details_raw = existing[0]["details"]
-        
-        # asyncpg автоматически парсит JSONB в dict, но может быть None
-        if isinstance(existing_details_raw, str):
-            existing_details = json.loads(existing_details_raw) if existing_details_raw else {}
-        elif existing_details_raw is None:
-            existing_details = {}
-        else:
-            existing_details = existing_details_raw
-        
-        # Проверяем окно подавления, если указано
-        if suppression_window_sec is not None:
-            last_seen_at_str = existing_details.get("last_seen_at")
-            if last_seen_at_str:
-                try:
-                    # Парсим ISO формат datetime
-                    last_seen_at_str_clean = last_seen_at_str.replace('Z', '+00:00')
-                    last_seen_at = datetime.fromisoformat(last_seen_at_str_clean)
-                    if last_seen_at.tzinfo is None:
-                        last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
-                    
-                    time_diff = (now - last_seen_at).total_seconds()
-                    if time_diff < suppression_window_sec:
-                        # Подавляем алерт - не обновляем
-                        return
-                except (ValueError, TypeError, AttributeError):
-                    # Если не удалось распарсить, продолжаем с обновлением
-                    pass
-        
-        # Обновляем существующий алерт
-        # Объединяем существующие details с новыми, добавляем count и last_seen_at
-        updated_details = existing_details.copy()
-        if details:
-            updated_details.update(details)
-        
-        # Увеличиваем счетчик и обновляем last_seen_at
-        current_count = updated_details.get("count", 0)
-        updated_details["count"] = current_count + 1
-        updated_details["last_seen_at"] = now_iso
-        
-        details_json = json.dumps(updated_details)
-        await execute(
-            """
-            UPDATE alerts
-            SET details = $1
-            WHERE id = $2
-            """,
-            details_json, alert_id
-        )
-    else:
-        # Создаем новый алерт через Laravel API (с автоматической очередью при ошибках)
-        new_details = details.copy() if details else {}
-        new_details["count"] = 1
-        new_details["last_seen_at"] = now_iso
-        
-        await send_alert_to_laravel(
-            zone_id=zone_id,
-            source=source,
-            code=code,
-            type=type,
-            status="ACTIVE",
-            details=new_details
-        )
+    return rows[0] if rows else None
 
+
+def _resolve_dedupe_key(zone_id: Optional[int], source: str, code: str, details: Dict[str, Any]) -> str:
+    explicit = str(details.get("dedupe_key") or "").strip()
+    if explicit:
+        return explicit
+
+    parts = []
+    for key in _DEDUPE_SCOPE_KEYS:
+        value = details.get(key)
+        if value is None:
+            continue
+        normalized = str(value).strip()
+        if normalized == "":
+            continue
+        parts.append(f"{key}:{normalized}")
+
+    return _publisher.build_dedupe_key(
+        code=code,
+        zone_id=zone_id,
+        parts=(source, *parts),
+    )

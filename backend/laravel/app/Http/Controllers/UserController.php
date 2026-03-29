@@ -40,6 +40,7 @@ class UserController extends Controller
         $data['password'] = Hash::make($data['password']);
         $data['role'] = $data['role'] ?? 'operator';
         $user = User::create($data);
+
         return response()->json([
             'status' => 'ok',
             'data' => $user->makeHidden(['password']),

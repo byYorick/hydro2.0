@@ -389,6 +389,9 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание теплицы.
+- Если запрошенный `uid` уже занят, backend создаёт теплицу с автоматически суффиксированным `uid` (`gh-main` -> `gh-main-2`, `gh-main-3`, ...), чтобы setup wizard и формы создания не падали на повторном имени.
+- Пустое значение `greenhouse_type_id` (`null`, `""`, `"null"`) нормализуется в `null` и не считается ошибкой валидации.
+- После создания backend автоматически добавляет новую теплицу в `user_greenhouses` для текущих non-admin пользователей, чтобы strict ACL не ломал immediate follow-up API.
 
 ### 3.3. GET /api/greenhouses/{id}
 
@@ -579,12 +582,14 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`
 - **Описание:** Возвращает authority-документ `greenhouse.logic_profile` и greenhouse climate bindings.
+- **Доступ:** `admin` и `agronomist` могут читать документ в setup/provisioning flow без explicit `user_greenhouses`; `viewer|operator|engineer` читают только при direct greenhouse ACL или доступе хотя бы к одной зоне внутри этой теплицы.
 - **Поддерживаемые subsystems:** только `climate`.
 
 ### 3.5.6. PUT /api/automation-configs/greenhouse/{id}/greenhouse.logic_profile
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - **Описание:** Полностью сохраняет authority-документ `greenhouse.logic_profile`.
+- **Доступ:** `admin` и `agronomist` могут сохранять документ в setup/provisioning flow без explicit `user_greenhouses`; `operator|engineer` требуют direct greenhouse ACL или доступ хотя бы к одной зоне внутри теплицы.
 - **Ограничение v1:** greenhouse runtime-dispatch не использует bundle-path; документ нужен для UI и future runtime.
 
 ### 3.5.7. GET /api/zones/{id}/state
@@ -743,6 +748,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin` или `agronomist` или `engineer`
 - Создание зоны.
+- После создания backend автоматически добавляет новую зону в `user_zones`, а её теплицу в `user_greenhouses` для текущих non-admin пользователей, чтобы zone-scoped API были доступны сразу после `201 Created`.
 
 ### 3.7. PATCH /api/zones/{id}
 
@@ -965,6 +971,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
 - Серверная валидация inline-блока greenhouse climate из шага `1. Теплица`.
+- **Доступ:** `admin|agronomist` могут вызывать endpoint без explicit greenhouse ACL; `operator|engineer` требуют direct greenhouse ACL или доступ хотя бы к одной зоне внутри теплицы.
 - Тело:
   - `greenhouse_id: number`
   - `enabled: bool`
@@ -981,6 +988,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist`, `engineer`
 - Применяет greenhouse-owned bindings через `infrastructure_instances.owner_type='greenhouse'`.
+- **Доступ:** `admin|agronomist` могут вызывать endpoint без explicit greenhouse ACL; `operator|engineer` требуют direct greenhouse ACL или доступ хотя бы к одной зоне внутри теплицы.
 - Канонические роли binding-level:
   - `climate_sensor`
   - `weather_station_sensor`
@@ -1215,6 +1223,11 @@ Legacy `extensions.day_target/night_target` не записывается.
 - **Авторизация:** Проверка прав через `DeviceNodePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Низкоуровневые команды для конкретного узла (диагностика, калибровка).
+- Frontend device-test mapping для production `storage_irrigation_node`:
+  - `pump_main` и `valve_*` (`type=ACTUATOR`) публикуются как `set_relay`;
+  - сервисный `storage_state` публикуется как `state`;
+  - `level_*` switch test публикуется как `state` на канале `storage_state`;
+  - `run_pump` не должен использоваться для actuator-path `pump_main`/`valve_*`, иначе прошивка возвращает `ERROR` с `error_code=unknown_command`.
 
 ### 6.3. Zone correction / calibration API
 
@@ -1248,6 +1261,7 @@ Legacy `extensions.day_target/night_target` не записывается.
   - переводит не-terminal session в `cancelled`
 - `POST /api/zones/{zone}/calibrate-pump`
   - `duration_sec` uses `system.pump_calibration_policy`
+  - `node_channel_id` is accepted when zone ownership resolves via `nodes.zone_id`, `nodes.pending_zone_id` or zone-level `channel_bindings`
   - first-step run response returns `data.run_token`
   - second-step save with `skip_run=true` requires `run_token`, unless caller explicitly sets `manual_override=true`
   - legacy mirror `node_channels.config.pump_calibration` is updated through merge patch, not full overwrite
@@ -1568,7 +1582,7 @@ level (info|warning|error)
 
 - `hydro.zones.{id}` — обновления по зоне (`ZoneUpdated`, `NodeConfigUpdated`, `TelemetryBatchUpdated`);
 - `hydro.alerts` — новые алерты (событие `AlertCreated`);
-- `hydro.devices` — обновления устройств без зоны (fallback для `NodeConfigUpdated`).
+- `hydro.devices` — обновления устройств без зоны (fallback для `NodeConfigUpdated`), канал используется только ролями `admin` и `agronomist`.
 
 **Формат событий:**
 ```json

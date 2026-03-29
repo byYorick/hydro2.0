@@ -37,7 +37,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------|------|-------------------------------|
 | GET | /api/greenhouses | auth:sanctum | Список теплиц |
-| POST | /api/greenhouses | auth:sanctum (operator/admin/agronomist/engineer) | Создать теплицу |
+| POST | /api/greenhouses | auth:sanctum (operator/admin/agronomist/engineer) | Создать теплицу; duplicate `uid` auto-suffix, empty `greenhouse_type_id` -> `null`, new greenhouse auto-assigned in `user_greenhouses` |
 | GET | /api/greenhouses/{id} | auth:sanctum | Детали теплицы |
 | PATCH | /api/greenhouses/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить теплицу |
 | DELETE| /api/greenhouses/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить (если безопасно) |
@@ -49,7 +49,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | Метод | Путь | Auth | Описание |
 |-------|-----------------------|------|------------------------------------------------|
 | GET | /api/zones | auth:sanctum | Список зон (фильтры по теплице, статусу) |
-| POST | /api/zones | auth:sanctum (operator/admin/agronomist/engineer) | Создать зону |
+| POST | /api/zones | auth:sanctum (operator/admin/agronomist/engineer) | Создать зону; new zone auto-assigned in `user_zones`, parent greenhouse backfilled in `user_greenhouses` |
 | GET | /api/zones/{id} | auth:sanctum | Детали зоны + активный рецепт |
 | PATCH | /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Обновить параметры зоны, включая `automation_runtime=ae3` |
 | DELETE| /api/zones/{id} | auth:sanctum (operator/admin/agronomist/engineer) | Удалить зону (если нет активных зависимостей) |
@@ -86,7 +86,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Контракт `POST /api/zones/{id}/calibrate-pump`:
 - не блокируется по `zones.status`;
-- требует, чтобы `node_channel_id` принадлежал выбранной зоне;
+- требует, чтобы `node_channel_id` принадлежал выбранной зоне по одному из допустимых ownership-path:
+  `nodes.zone_id`, `nodes.pending_zone_id` или zone-scoped `channel_bindings`;
 - физический прогон помпы (`skip_run=false`) валидируется по online-статусу конкретной ноды уже в `history-logger/common.water_flow`, а не по coarse-grained статусу зоны.
 - `duration_sec` валидируется по `system.pump_calibration_policy`, а не по hardcoded controller-bound;
 - первый шаг (`skip_run=false`, без `actual_ml`) возвращает `data.run_token` для двухшагового UX `run -> measure -> save`;
@@ -148,6 +149,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/setup-wizard/apply-device-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка zonal roles (`irrigation`, `ph/ec`, `light`, `zone_climate`) к каналам выбранных нод внутри блоков шага `4. Автоматика зоны` |
 | POST | /api/setup-wizard/validate-greenhouse-climate-devices | auth:sanctum (operator/admin/agronomist/engineer) | Валидация greenhouse climate nodes для шага `1. Теплица` |
 | POST | /api/setup-wizard/apply-greenhouse-climate-bindings | auth:sanctum (operator/admin/agronomist/engineer) | Привязка greenhouse roles (`climate_sensor`, `weather_station_sensor`, `vent_actuator`, `fan_actuator`) |
+
+Примечание по доступу к unassigned-ноды:
+- `admin` и `agronomist` видят узлы без `zone_id` в `/api/nodes`, `/api/nodes/{id}`, `/api/nodes/{id}/config`, `/api/nodes/{id}/telemetry/*` и в setup-wizard bind flows;
+- `viewer`, `operator`, `engineer` видят узлы только через доступ к зоне/теплице.
+
+Контракт manual device-test для `POST /api/nodes/{id}/commands`:
+- production `irrig` actuator-каналы (`pump_main`, `valve_*`, `type=ACTUATOR`) должны тестироваться через `cmd=set_relay`, а не `run_pump`;
+- сервисный канал `storage_state` у `irrig`-ноды должен тестироваться через `cmd=state`;
+- `level_*` switch-каналы `irrig`-ноды тоже используют `cmd=state` на канале `storage_state`;
+- `run_pump` остаётся корректным для time-based pump channels, но не для actuator path production `storage_irrigation_node`.
 
 ---
 
@@ -304,6 +315,7 @@ Preset rules:
 
 - `greenhouse.logic_profile` читается и сохраняется через `/api/automation-configs/greenhouse/{id}/greenhouse.logic_profile`
 - bundle endpoint для `greenhouse` не является частью текущего контракта
+- `greenhouse.logic_profile` и greenhouse climate setup flows (`/api/setup-wizard/validate-greenhouse-climate-devices`, `/api/setup-wizard/apply-greenhouse-climate-bindings`) допускают `admin|agronomist` без explicit greenhouse ACL; `viewer|operator|engineer` требуют direct greenhouse ACL или доступ к зоне внутри теплицы
 
 ---
 

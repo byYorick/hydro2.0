@@ -186,10 +186,16 @@ class SystemControllerTest extends TestCase
 
         $response->assertOk();
         
+        $viewer->greenhouses()->attach($greenhouse1->id);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $viewerToken)
+            ->getJson('/api/system/config/full');
+
+        $response->assertOk();
+
         $greenhouses = $response->json('data.greenhouses');
-        // Пока что все зоны доступны (ZoneAccessHelper возвращает все зоны для не-админов)
-        // В будущем, когда будет реализована мульти-тенантность, здесь будет фильтрация
-        $this->assertGreaterThanOrEqual(2, count($greenhouses));
+        $this->assertCount(1, $greenhouses);
+        $this->assertSame($greenhouse1->id, $greenhouses[0]['id']);
     }
 
     public function test_system_config_full_excludes_node_config(): void

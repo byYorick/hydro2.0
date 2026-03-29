@@ -7,20 +7,13 @@ use App\Models\InfrastructureInstance;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
-use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
 class InfrastructureAccessEnforceModeTest extends TestCase
 {
     use DatabaseTransactions;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-        Config::set('access_control.mode', 'enforce');
-    }
-
-    public function test_greenhouse_infrastructure_index_forbidden_without_assignment_in_enforce_mode(): void
+    public function test_greenhouse_infrastructure_index_forbidden_without_assignment(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $greenhouse = Greenhouse::factory()->create();
@@ -40,7 +33,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
         $response->assertJsonPath('message', 'Forbidden: Access denied to this greenhouse');
     }
 
-    public function test_greenhouse_infrastructure_index_allowed_with_greenhouse_assignment_in_enforce_mode(): void
+    public function test_greenhouse_infrastructure_index_allowed_with_greenhouse_assignment(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $greenhouse = Greenhouse::factory()->create();
@@ -61,7 +54,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
         $this->assertIsArray($response->json('data'));
     }
 
-    public function test_zone_infrastructure_index_allowed_via_greenhouse_assignment_in_enforce_mode(): void
+    public function test_zone_infrastructure_index_allowed_via_greenhouse_assignment(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $greenhouse = Greenhouse::factory()->create();
@@ -83,7 +76,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
         $this->assertIsArray($response->json('data'));
     }
 
-    public function test_operator_cannot_create_greenhouse_infrastructure_without_assignment_in_enforce_mode(): void
+    public function test_operator_cannot_create_greenhouse_infrastructure_without_assignment(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
         $greenhouse = Greenhouse::factory()->create();
@@ -102,7 +95,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
         $response->assertJsonPath('message', 'Forbidden: Access denied to this greenhouse');
     }
 
-    public function test_operator_can_create_greenhouse_infrastructure_with_assignment_in_enforce_mode(): void
+    public function test_operator_can_create_greenhouse_infrastructure_with_assignment(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
         $greenhouse = Greenhouse::factory()->create();

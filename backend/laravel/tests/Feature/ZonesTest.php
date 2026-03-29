@@ -150,6 +150,48 @@ class ZonesTest extends TestCase
         ]);
     }
 
+    public function test_create_zone_assigns_acl_and_allows_immediate_zone_access(): void
+    {
+        $creator = User::factory()->create(['role' => 'agronomist']);
+        $viewer = User::factory()->create(['role' => 'viewer']);
+        $greenhouse = Greenhouse::factory()->create();
+
+        $response = $this->actingAs($creator)->postJson('/api/zones', [
+            'name' => 'Zone ACL',
+            'greenhouse_id' => $greenhouse->id,
+        ]);
+
+        $response->assertCreated();
+        $zoneId = (int) $response->json('data.id');
+
+        $this->assertDatabaseHas('user_greenhouses', [
+            'user_id' => $creator->id,
+            'greenhouse_id' => $greenhouse->id,
+        ]);
+        $this->assertDatabaseHas('user_greenhouses', [
+            'user_id' => $viewer->id,
+            'greenhouse_id' => $greenhouse->id,
+        ]);
+        $this->assertDatabaseHas('user_zones', [
+            'user_id' => $creator->id,
+            'zone_id' => $zoneId,
+        ]);
+        $this->assertDatabaseHas('user_zones', [
+            'user_id' => $viewer->id,
+            'zone_id' => $zoneId,
+        ]);
+
+        $this->actingAs($creator)
+            ->getJson("/api/zones/{$zoneId}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $zoneId);
+
+        $this->actingAs($viewer)
+            ->getJson("/api/zones/{$zoneId}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $zoneId);
+    }
+
     public function test_get_zones_list(): void
     {
         $token = $this->token();
@@ -495,6 +537,44 @@ class ZonesTest extends TestCase
             ->assertJsonPath('message', 'Calibrate pump operation queued');
     }
 
+    public function test_calibrate_pump_allows_pending_zone_channel(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_pending',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'status' => 'awaiting_actual_ml', 'run_token' => 'pending-run-1'],
+            ], 200),
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 20,
+                'component' => 'npk',
+            ]);
+
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.run_token', 'pending-run-1');
+    }
+
     public function test_calibrate_pump_uses_system_duration_bounds(): void
     {
         $token = $this->token();
@@ -518,8 +598,8 @@ class ZonesTest extends TestCase
             0,
             [
                 'ml_per_sec_min' => 0.001,
-                'ml_per_sec_max' => 1000,
-                'min_dose_ms' => 1,
+                'ml_per_sec_max' => 200,
+                'min_dose_ms' => 10,
                 'calibration_duration_min_sec' => 1,
                 'calibration_duration_max_sec' => 300,
                 'quality_score_basic' => 0.5,
@@ -570,6 +650,13 @@ class ZonesTest extends TestCase
             'config' => [],
         ]);
 
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'status' => 'saved'],
+            ], 200),
+        ]);
+
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
                 'node_channel_id' => $channel->id,
@@ -603,6 +690,13 @@ class ZonesTest extends TestCase
             'config' => [],
         ]);
 
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'status' => 'awaiting_actual_ml', 'run_token' => 'run-zone-offline'],
+            ], 200),
+        ]);
+
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
                 'node_channel_id' => $channel->id,
@@ -633,6 +727,13 @@ class ZonesTest extends TestCase
             'metric' => 'PUMP',
             'unit' => null,
             'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['success' => true, 'status' => 'awaiting_actual_ml', 'run_token' => 'run-offline-zone'],
+            ], 200),
         ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)

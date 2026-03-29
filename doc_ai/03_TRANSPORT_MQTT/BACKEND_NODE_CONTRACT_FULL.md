@@ -451,27 +451,24 @@ Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
 
 ## 11.4. Подтверждение авто-остановки наполнения (2-бака)
 
-При достижении верхнего уровня бака (`level_clean_max` или `level_solution_max`) нода обязана:
+При достижении верхнего уровня бака нода обязана публиковать событие состояния:
 
-1. Локально закрыть соответствующий клапан наполнения.
-2. Отправить `command_response` для активной команды:
+1. `level_clean_max`:
+   - локально закрыть `valve_clean_fill`;
+   - опубликовать `clean_fill_completed`.
+2. `level_solution_max`:
+   - опубликовать `solution_fill_completed`;
+   - не выключать локально `pump_main/valve_solution_fill/valve_clean_supply`, если path удерживается AE3 для
+     последующего `prepare_recirculation`.
+3. `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживает stage-level timeout guard только для
+   `stage in {"solution_fill", "prepare_recirculation"}`:
+   - immediate ответ ноды: `ACK`;
+   - поздний terminal по тому же `cmd_id`: `DONE`, если stage явно остановлен командой `pump_main OFF`,
+     либо `ERROR` + `error_code=stage_timeout`, если истёк `timeout_ms`.
+4. Остальной `set_relay` для production `storage_irrigation_node` остаётся immediate terminal командой `DONE/ERROR`.
 
-```json
-{
-  "cmd_id": "cmd-701",
-  "status": "DONE",
-  "ts": 1710012930123,
-  "details": {
-    "result": "auto_stopped",
-    "reason_code": "level_max_reached",
-    "tank": "clean"
-  }
-}
-```
+Топик события:
 
-3. Опубликовать событие состояния:
-
-Топик:
 ```text
 hydro/{gh}/{zone}/{node}/storage_state/event
 ```
@@ -496,6 +493,11 @@ Payload:
   }
 }
 ```
+
+Для stage timeout нода публикует одно из событий:
+
+- `solution_fill_timeout`
+- `prepare_recirculation_timeout`
 
 ## 11.5. Ответ `command_response` для `cmd=state` (IRR)
 

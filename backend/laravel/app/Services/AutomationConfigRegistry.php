@@ -19,6 +19,7 @@ class AutomationConfigRegistry
     public const NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS = 'system.process_calibration_defaults';
     public const NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY = 'system.pump_calibration_policy';
     public const NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY = 'system.sensor_calibration_policy';
+    public const NAMESPACE_SYSTEM_ALERT_POLICIES = 'system.alert_policies';
     public const NAMESPACE_GREENHOUSE_LOGIC_PROFILE = 'greenhouse.logic_profile';
     public const NAMESPACE_ZONE_LOGIC_PROFILE = 'zone.logic_profile';
     public const NAMESPACE_ZONE_CORRECTION = 'zone.correction';
@@ -59,6 +60,14 @@ class AutomationConfigRegistry
             self::NAMESPACE_SYSTEM_PROCESS_CALIBRATION_DEFAULTS => $this->systemDefinition('process_calibration_defaults'),
             self::NAMESPACE_SYSTEM_PUMP_CALIBRATION_POLICY => $this->systemDefinition('pump_calibration'),
             self::NAMESPACE_SYSTEM_SENSOR_CALIBRATION_POLICY => $this->systemDefinition('sensor_calibration'),
+            self::NAMESPACE_SYSTEM_ALERT_POLICIES => [
+                'scope_type' => self::SCOPE_SYSTEM,
+                'schema_version' => 1,
+                'default_payload' => [
+                    'ae3_operational_resolution_mode' => AlertPolicyService::MODE_MANUAL_ACK,
+                ],
+                'required' => true,
+            ],
             self::NAMESPACE_GREENHOUSE_LOGIC_PROFILE => [
                 'scope_type' => self::SCOPE_GREENHOUSE,
                 'schema_version' => 1,
@@ -188,6 +197,10 @@ class AutomationConfigRegistry
         switch ($namespace) {
             case self::NAMESPACE_SYSTEM_RUNTIME:
                 $this->validateRuntimePayload($payload);
+                return;
+
+            case self::NAMESPACE_SYSTEM_ALERT_POLICIES:
+                $this->validateAlertPoliciesPayload($payload);
                 return;
 
             case self::NAMESPACE_ZONE_CORRECTION:
@@ -333,6 +346,28 @@ class AutomationConfigRegistry
             if (! is_string($key) || trim($key) === '') {
                 throw new InvalidArgumentException('system.runtime keys must be non-empty strings.');
             }
+        }
+    }
+
+    private function validateAlertPoliciesPayload(array $payload): void
+    {
+        if (array_is_list($payload)) {
+            throw new InvalidArgumentException('system.alert_policies must be an object.');
+        }
+
+        $allowedKeys = ['ae3_operational_resolution_mode'];
+        foreach (array_keys($payload) as $key) {
+            if (! is_string($key) || ! in_array($key, $allowedKeys, true)) {
+                throw new InvalidArgumentException("system.alert_policies.{$key} is not supported.");
+            }
+        }
+
+        $mode = $payload['ae3_operational_resolution_mode'] ?? null;
+        if (! is_string($mode) || ! in_array($mode, AlertPolicyService::MODES, true)) {
+            throw new InvalidArgumentException(
+                'system.alert_policies.ae3_operational_resolution_mode must be one of: '
+                .implode(', ', AlertPolicyService::MODES)
+            );
         }
     }
 

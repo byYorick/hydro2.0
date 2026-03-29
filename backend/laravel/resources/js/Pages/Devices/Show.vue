@@ -6,11 +6,11 @@
           {{ device.uid || device.name || device.id }}
         </div>
         <div class="text-xs text-[color:var(--text-muted)]">
-          <span v-if="device.zone">
+          <span v-if="linkedZoneId">
             <Link
-              :href="`/zones/${device.zone.id}`"
+              :href="`/zones/${linkedZoneId}`"
               class="text-[color:var(--accent-cyan)] hover:underline"
-            >Zone: {{ device.zone.name }}</Link>
+            >Zone: {{ linkedZoneName }}</Link>
           </span>
           <span v-else>Zone: -</span>
           · Type: {{ device.type || '-' }}
@@ -37,7 +37,7 @@
 
     <!-- Визуализация связи с зоной -->
     <Card
-      v-if="device.zone"
+      v-if="hasZoneAssignment"
       class="mb-3"
     >
       <div class="flex items-center justify-between">
@@ -47,24 +47,41 @@
           </div>
           <div>
             <div class="text-sm font-semibold text-[color:var(--text-primary)]">
-              Привязано к зоне
+              {{ zoneAssignmentTitle }}
             </div>
-            <Link
-              :href="`/zones/${device.zone.id}`"
-              class="text-[color:var(--accent-cyan)] hover:underline text-sm"
-            >
-              {{ device.zone.name }}
-            </Link>
+            <template v-if="linkedZoneId">
+              <Link
+                :href="`/zones/${linkedZoneId}`"
+                class="text-[color:var(--accent-cyan)] hover:underline text-sm"
+              >
+                {{ linkedZoneName }}
+              </Link>
+            </template>
             <div
-              v-if="device.zone.status"
+              v-else
+              class="text-sm text-[color:var(--text-muted)]"
+            >
+              Зона ещё не определена
+            </div>
+            <div
+              v-if="device.zone?.status"
               class="text-xs text-[color:var(--text-muted)] mt-1"
             >
               Статус: {{ device.zone.status }}
             </div>
+            <div
+              v-else-if="device.pending_zone_id && !device.zone_id"
+              class="text-xs text-[color:var(--text-muted)] mt-1"
+            >
+              Ожидается подтверждение привязки от ноды
+            </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <Link :href="`/zones/${device.zone.id}`">
+          <Link
+            v-if="linkedZoneId"
+            :href="`/zones/${linkedZoneId}`"
+          >
             <Button
               size="sm"
               variant="outline"
@@ -73,6 +90,7 @@
             </Button>
           </Link>
           <button 
+            v-if="device.zone_id"
             :disabled="detaching"
             class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--accent-red)]/50 h-8 px-3 text-xs bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)] disabled:opacity-50 disabled:cursor-not-allowed"
             @click="detachNode"
@@ -240,6 +258,36 @@ interface PageProps {
 const page = usePage<PageProps>()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
+const linkedZoneId = computed<number | null>(() => {
+  return device.value.zone?.id ?? device.value.zone_id ?? device.value.pending_zone_id ?? null
+})
+const linkedZoneName = computed(() => {
+  if (device.value.zone?.name) {
+    return device.value.zone.name
+  }
+
+  if (device.value.zone_id) {
+    return `Zone #${device.value.zone_id}`
+  }
+
+  if (device.value.pending_zone_id) {
+    return `Zone #${device.value.pending_zone_id}`
+  }
+
+  return '-'
+})
+const hasZoneAssignment = computed(() => linkedZoneId.value !== null)
+const zoneAssignmentTitle = computed(() => {
+  if (device.value.zone_id) {
+    return 'Привязано к зоне'
+  }
+
+  if (device.value.pending_zone_id) {
+    return 'Привязка к зоне в процессе'
+  }
+
+  return 'Устройство не привязано к зоне'
+})
 const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')

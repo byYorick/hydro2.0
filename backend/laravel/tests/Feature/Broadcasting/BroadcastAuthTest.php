@@ -18,6 +18,8 @@ class BroadcastAuthTest extends TestCase
     {
         parent::setUp();
         $this->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+        config(['broadcasting.default' => 'reverb']);
+        require base_path('routes/channels.php');
     }
 
     public function test_rejects_private_channel_authorization_for_guests(): void
@@ -34,9 +36,9 @@ class BroadcastAuthTest extends TestCase
     public function test_authorizes_authenticated_users_for_zone_command_channels(): void
     {
         $user = User::factory()->create(['role' => 'operator']);
-
         $zone = \App\Models\Zone::factory()->create();
-        
+        $user->zones()->attach($zone->id);
+
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
             'channel_name' => "private-hydro.commands.{$zone->id}",
             'socket_id' => '654.321',
@@ -47,4 +49,3 @@ class BroadcastAuthTest extends TestCase
         // We just verify it doesn't error
     }
 }
-

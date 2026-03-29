@@ -1,5 +1,5 @@
 #include "storage_irrigation_node_config_utils.h"
-#include "storage_irrigation_node_channel_map.h"
+#include "storage_irrigation_node_config.h"
 #include "node_config_utils.h"
 #include "config_storage.h"
 #include "cJSON.h"

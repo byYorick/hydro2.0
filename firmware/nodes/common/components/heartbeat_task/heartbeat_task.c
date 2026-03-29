@@ -6,7 +6,6 @@
 #include "heartbeat_task.h"
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
-#include "memory_pool.h"
 #include "node_utils.h"
 #include "oled_ui.h"
 #include "esp_log.h"
@@ -76,32 +75,17 @@ static void task_heartbeat(void *pvParameters) {
                     rssi = ap_info.rssi;
                 }
                 
-                // Формат согласно эталону node-sim: uptime (секунды), free_heap, rssi (опционально)
+                // Канонический heartbeat payload: uptime, free_heap и опциональный rssi.
                 cJSON *heartbeat = cJSON_CreateObject();
                 if (heartbeat) {
-            // uptime - аптайм в секундах согласно эталону node-sim
+            // uptime - аптайм в секундах
             int64_t uptime_seconds = (int64_t)(esp_timer_get_time() / 1000000);  // микросекунды → секунды
             cJSON_AddNumberToObject(heartbeat, "uptime", (double)uptime_seconds);
             // free_heap - свободная память в байтах (обязательное поле)
             cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
-            // rssi - опциональное поле согласно эталону
+            // rssi - опциональное поле
             cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
-            
-            // Добавляем метрики памяти, если доступны
-            if (memory_pool_is_initialized()) {
-                memory_pool_metrics_t mem_metrics;
-                if (memory_pool_get_metrics(&mem_metrics) == ESP_OK) {
-                    cJSON_AddNumberToObject(heartbeat, "min_heap_free", (double)mem_metrics.min_heap_free);
-                    // Добавляем информацию о пуле памяти (опционально)
-                    if (mem_metrics.pool_hits > 0 || mem_metrics.pool_misses > 0) {
-                        uint32_t pool_total = mem_metrics.pool_hits + mem_metrics.pool_misses;
-                        double pool_hit_rate = pool_total > 0 ? 
-                            (100.0 * mem_metrics.pool_hits / pool_total) : 0.0;
-                        cJSON_AddNumberToObject(heartbeat, "memory_pool_hit_rate", pool_hit_rate);
-                    }
-                }
-            }
-            
+
             char *json_str = cJSON_PrintUnformatted(heartbeat);
             if (json_str) {
                 mqtt_manager_publish_heartbeat(json_str);

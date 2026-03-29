@@ -7,9 +7,8 @@
  */
 
 #include "storage_irrigation_node_framework_integration.h"
-#include "storage_irrigation_node_defaults.h"
+#include "storage_irrigation_node_config.h"
 #include "storage_irrigation_node_init.h"
-#include "storage_irrigation_node_channel_map.h"
 #include "storage_irrigation_node_config_utils.h"
 #include "node_framework.h"
 #include "node_state_manager.h"
@@ -21,6 +20,7 @@
 #include "ina209.h"
 #include "mqtt_manager.h"
 #include "oled_ui.h"
+#include "connection_status.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_timer.h"
@@ -39,10 +39,6 @@ static const char *TAG = "storage_irrigation_node_framework";
 // Forward declaration для callback safe_mode
 static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *user_ctx);
 
-#define STORAGE_IRRIGATION_NODE_CMD_QUEUE_MAX 8
-#define STORAGE_IRRIGATION_NODE_DONE_QUEUE_MAX 8
-#define STORAGE_IRRIGATION_NODE_CMD_ID_LEN 64
-#define STORAGE_IRRIGATION_NODE_IRR_STATE_MAX_AGE_SEC 30
 #define STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_US ((int64_t)STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_DEBOUNCE_MS * 1000LL)
 
 typedef struct {
@@ -72,6 +68,15 @@ typedef struct {
 } storage_irrigation_node_done_event_t;
 
 typedef struct {
+    char stage[32];
+    char cmd_id[STORAGE_IRRIGATION_NODE_CMD_ID_LEN];
+    uint32_t timeout_ms;
+    TimerHandle_t timer;
+    bool active;
+    bool timeout_pending;
+} storage_irrigation_node_stage_guard_t;
+
+typedef struct {
     bool initialized;
     bool stable_state;
     bool candidate_state;
@@ -87,11 +92,14 @@ static QueueHandle_t s_cmd_work_queue = NULL;
 static TimerHandle_t s_cmd_retry_timer = NULL;
 
 static storage_irrigation_node_done_entry_t s_done_entries[STORAGE_IRRIGATION_NODE_DONE_QUEUE_MAX] = {0};
+static storage_irrigation_node_stage_guard_t s_stage_guards[3] = {0};
 static QueueHandle_t s_done_queue = NULL;
 static SemaphoreHandle_t s_actuator_mutex = NULL;
 static SemaphoreHandle_t s_level_switch_mutex = NULL;
 static storage_irrigation_node_actuator_runtime_t s_actuator_runtime[PUMP_DRIVER_MAX_CHANNELS] = {0};
 static storage_irrigation_node_level_switch_debounce_t s_level_switch_debounce[GPIO_NUM_MAX] = {0};
+static bool s_sensor_log_initialized[GPIO_NUM_MAX] = {0};
+static bool s_sensor_logged_state[GPIO_NUM_MAX] = {0};
 static size_t s_actuator_runtime_count = 0;
 
 static void storage_irrigation_node_cmd_queue_task(void *pvParameters);
@@ -100,6 +108,7 @@ static void storage_irrigation_node_process_cmd_queue(void);
 static void storage_irrigation_node_signal_cmd_process(void);
 static void storage_irrigation_node_retry_timer_cb(TimerHandle_t timer);
 static void storage_irrigation_node_done_timer_cb(TimerHandle_t timer);
+static void storage_irrigation_node_stage_guard_timer_cb(TimerHandle_t timer);
 static bool storage_irrigation_node_cmd_queue_push(const storage_irrigation_node_cmd_t *cmd);
 static bool storage_irrigation_node_cmd_queue_pop(storage_irrigation_node_cmd_t *cmd);
 static bool storage_irrigation_node_any_pump_running(void);
@@ -110,6 +119,7 @@ static float storage_irrigation_node_read_level_switch(const storage_irrigation_
 static esp_err_t storage_irrigation_node_init_actuator_outputs(void);
 static int storage_irrigation_node_find_actuator_index(const char *channel);
 static bool storage_irrigation_node_parse_relay_state(const cJSON *item, bool *state_out);
+static bool storage_irrigation_node_refresh_actuator_state_locked(size_t index);
 static esp_err_t storage_irrigation_node_set_actuator_state_locked(size_t index, bool state);
 static bool storage_irrigation_node_get_actuator_state_locked(const char *channel, bool *state_out);
 static bool storage_irrigation_node_is_clean_fill_active_locked(void);
@@ -123,7 +133,24 @@ static cJSON *storage_irrigation_node_build_legacy_state_payload(void);
 static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t handle_storage_state(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t storage_irrigation_node_publish_storage_event(const char *event_code, const char *cmd_id);
+static esp_err_t storage_irrigation_node_publish_terminal_response(
+    const char *channel,
+    const char *cmd_id,
+    const char *status,
+    const char *error_code,
+    const char *error_message,
+    cJSON *details
+);
 static void storage_irrigation_node_check_fill_completion_events(void);
+static esp_err_t storage_irrigation_node_publish_level_switch_telemetry_snapshot(void);
+static bool storage_irrigation_node_parse_timeout_ms(const cJSON *item, uint32_t *timeout_ms_out);
+static bool storage_irrigation_node_parse_stage_name(const cJSON *item, char *stage_out, size_t stage_out_size);
+static storage_irrigation_node_stage_guard_t *storage_irrigation_node_get_stage_guard(const char *stage, bool create);
+static esp_err_t storage_irrigation_node_arm_stage_guard_locked(const char *stage, const char *cmd_id, uint32_t timeout_ms);
+static bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char *channel, char *cmd_id_out, size_t cmd_id_out_size);
+static bool storage_irrigation_node_stop_stage_path_locked(const char *stage);
+static const char *storage_irrigation_node_timeout_event_code_for_stage(const char *stage);
+static void storage_irrigation_node_process_stage_timeouts(void);
 
 static bool s_level_switch_inputs_ready = false;
 
@@ -144,87 +171,13 @@ static esp_err_t storage_irrigation_node_init_channel_callback(const char *chann
     return ESP_OK;
 }
 
-/**
- * @brief Обработчик команды run_pump с командным автоматом
- * 
- * Состояния: ACK -> DONE/ERROR
- */
-static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON **response, void *user_ctx) {
-    (void)user_ctx;
-    
-    if (channel == NULL || params == NULL || response == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    // Извлекаем cmd_id из params (он будет добавлен позже в node_command_handler_process)
-    // Но для промежуточного ответа нам нужен cmd_id, поэтому получаем его из params
-    const char *cmd_id = node_command_handler_get_cmd_id(params);
-    
-    cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
-    if (!cJSON_IsNumber(duration_item)) {
-        *response = node_command_handler_create_response(cmd_id, "ERROR", "missing_duration", "duration_ms is required", NULL);
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    int duration_ms = (int)cJSON_GetNumberValue(duration_item);
-    ESP_LOGI(TAG, "Running pump on channel %s for %d ms", channel, duration_ms);
-    
-    storage_irrigation_node_cmd_t queued_cmd = {0};
-    strncpy(queued_cmd.channel_name, channel, sizeof(queued_cmd.channel_name) - 1);
-    if (cmd_id) {
-        strncpy(queued_cmd.cmd_id, cmd_id, sizeof(queued_cmd.cmd_id) - 1);
-    }
-    queued_cmd.duration_ms = (uint32_t)duration_ms;
-
-    if (!storage_irrigation_node_cmd_queue_push(&queued_cmd)) {
-        *response = node_command_handler_create_response(
-            cmd_id,
-            "ERROR",
-            "pump_queue_full",
-            "Pump queue is full",
-            NULL
-        );
-        return ESP_ERR_NO_MEM;
-    }
-
-    bool queued = storage_irrigation_node_any_pump_running();
-    uint32_t cooldown_remaining_ms = 0;
-    bool cooldown_active = (pump_driver_get_cooldown_remaining(channel, &cooldown_remaining_ms) == ESP_OK &&
-                            cooldown_remaining_ms > 0);
-    if (cooldown_active) {
-        queued = true;
-    }
-
-    cJSON *extra = cJSON_CreateObject();
-    if (extra) {
-        cJSON_AddNumberToObject(extra, "duration_ms", duration_ms);
-        cJSON_AddBoolToObject(extra, "queued", queued);
-        if (cooldown_active) {
-            cJSON_AddNumberToObject(extra, "cooldown_ms", cooldown_remaining_ms);
-        }
-    }
-    *response = node_command_handler_create_response(
-        cmd_id,
-        "ACK",
-        NULL,
-        NULL,
-        extra
-    );
-    if (extra) {
-        cJSON_Delete(extra);
-    }
-
-    if (cooldown_active) {
-        storage_irrigation_node_signal_cmd_process();
-    } else {
-        storage_irrigation_node_signal_cmd_process();
-    }
-    return ESP_OK;
-}
-
 static esp_err_t storage_irrigation_node_init_actuator_outputs(void) {
-    uint64_t mask = 0;
     bool used_gpio[GPIO_NUM_MAX] = {0};
+
+    if (!pump_driver_is_initialized()) {
+        ESP_LOGE(TAG, "Pump driver must be initialized before actuator runtime");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     if (STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT > PUMP_DRIVER_MAX_CHANNELS) {
         ESP_LOGE(TAG, "Actuator channels exceed runtime capacity: %u", (unsigned)STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT);
@@ -242,32 +195,14 @@ static esp_err_t storage_irrigation_node_init_actuator_outputs(void) {
             return ESP_ERR_INVALID_ARG;
         }
         used_gpio[cfg->gpio] = true;
-        mask |= (1ULL << (uint32_t)cfg->gpio);
     }
 
-    if (mask == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = mask,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    esp_err_t err = gpio_config(&io_conf);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure actuator GPIOs: %s", esp_err_to_name(err));
-        return err;
-    }
-
+    s_actuator_runtime_count = STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT;
     for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT; i++) {
         s_actuator_runtime[i].cfg = &STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS[i];
         s_actuator_runtime[i].state = false;
-        gpio_set_level((gpio_num_t)s_actuator_runtime[i].cfg->gpio, 0);
+        (void)storage_irrigation_node_refresh_actuator_state_locked(i);
     }
-    s_actuator_runtime_count = STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT;
     return ESP_OK;
 }
 
@@ -299,18 +234,74 @@ static bool storage_irrigation_node_parse_relay_state(const cJSON *item, bool *s
     return false;
 }
 
+static bool storage_irrigation_node_refresh_actuator_state_locked(size_t index) {
+    if (index >= s_actuator_runtime_count || !s_actuator_runtime[index].cfg) {
+        return false;
+    }
+
+    pump_driver_state_t driver_state = PUMP_STATE_OFF;
+    if (pump_driver_get_state(s_actuator_runtime[index].cfg->name, &driver_state) != ESP_OK) {
+        return false;
+    }
+
+    s_actuator_runtime[index].state = (driver_state == PUMP_STATE_ON);
+    return true;
+}
+
+static bool storage_irrigation_node_parse_timeout_ms(const cJSON *item, uint32_t *timeout_ms_out) {
+    if (timeout_ms_out) {
+        *timeout_ms_out = 0;
+    }
+    if (!item || !cJSON_IsNumber(item) || !timeout_ms_out) {
+        return false;
+    }
+    double raw_value = cJSON_GetNumberValue(item);
+    if (raw_value < 1.0 || raw_value > 7200000.0) {
+        return false;
+    }
+    *timeout_ms_out = (uint32_t)raw_value;
+    return true;
+}
+
+static bool storage_irrigation_node_parse_stage_name(const cJSON *item, char *stage_out, size_t stage_out_size) {
+    if (stage_out && stage_out_size > 0) {
+        stage_out[0] = '\0';
+    }
+    if (!item || !cJSON_IsString(item) || !item->valuestring || !stage_out || stage_out_size == 0) {
+        return false;
+    }
+    const char *raw = item->valuestring;
+    if (strcmp(raw, "solution_fill") != 0 && strcmp(raw, "prepare_recirculation") != 0) {
+        return false;
+    }
+    strncpy(stage_out, raw, stage_out_size - 1);
+    stage_out[stage_out_size - 1] = '\0';
+    return true;
+}
+
 static esp_err_t storage_irrigation_node_set_actuator_state_locked(size_t index, bool state) {
     if (index >= s_actuator_runtime_count || !s_actuator_runtime[index].cfg) {
         return ESP_ERR_NOT_FOUND;
     }
+
     const storage_irrigation_node_actuator_channel_t *cfg = s_actuator_runtime[index].cfg;
-    int level = state ? 1 : 0;
-    esp_err_t err = gpio_set_level((gpio_num_t)cfg->gpio, level);
-    if (err != ESP_OK) {
-        return err;
+    esp_err_t err = state
+        ? pump_driver_set_state(cfg->name, true)
+        : pump_driver_stop(cfg->name);
+
+    if (err == ESP_OK) {
+        (void)storage_irrigation_node_refresh_actuator_state_locked(index);
+        return ESP_OK;
     }
-    s_actuator_runtime[index].state = state;
-    return ESP_OK;
+
+    if (!state && err == ESP_ERR_INVALID_STATE) {
+        bool refreshed = storage_irrigation_node_refresh_actuator_state_locked(index);
+        if (refreshed && !s_actuator_runtime[index].state) {
+            return ESP_OK;
+        }
+    }
+
+    return err;
 }
 
 static bool storage_irrigation_node_get_actuator_state_locked(const char *channel, bool *state_out) {
@@ -321,6 +312,7 @@ static bool storage_irrigation_node_get_actuator_state_locked(const char *channe
     if (index < 0) {
         return false;
     }
+    (void)storage_irrigation_node_refresh_actuator_state_locked((size_t)index);
     *state_out = s_actuator_runtime[index].state;
     return true;
 }
@@ -347,6 +339,137 @@ static bool storage_irrigation_node_is_solution_fill_active_locked(void) {
         return false;
     }
     return pump_main && valve_clean_supply && valve_solution_fill;
+}
+
+static storage_irrigation_node_stage_guard_t *storage_irrigation_node_get_stage_guard(const char *stage, bool create) {
+    if (!stage || stage[0] == '\0') {
+        return NULL;
+    }
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        if (s_stage_guards[i].stage[0] != '\0' && strcmp(s_stage_guards[i].stage, stage) == 0) {
+            return &s_stage_guards[i];
+        }
+    }
+    if (!create) {
+        return NULL;
+    }
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        if (s_stage_guards[i].stage[0] != '\0') {
+            continue;
+        }
+        strncpy(s_stage_guards[i].stage, stage, sizeof(s_stage_guards[i].stage) - 1);
+        s_stage_guards[i].timer = xTimerCreate(
+            "irr_stage_guard",
+            pdMS_TO_TICKS(1000),
+            pdFALSE,
+            &s_stage_guards[i],
+            storage_irrigation_node_stage_guard_timer_cb
+        );
+        if (!s_stage_guards[i].timer) {
+            s_stage_guards[i].stage[0] = '\0';
+            return NULL;
+        }
+        return &s_stage_guards[i];
+    }
+    return NULL;
+}
+
+static esp_err_t storage_irrigation_node_arm_stage_guard_locked(const char *stage, const char *cmd_id, uint32_t timeout_ms) {
+    storage_irrigation_node_stage_guard_t *guard = storage_irrigation_node_get_stage_guard(stage, true);
+    if (!guard) {
+        return ESP_ERR_NO_MEM;
+    }
+    guard->active = true;
+    guard->timeout_pending = false;
+    guard->timeout_ms = timeout_ms;
+    if (cmd_id) {
+        strncpy(guard->cmd_id, cmd_id, sizeof(guard->cmd_id) - 1);
+        guard->cmd_id[sizeof(guard->cmd_id) - 1] = '\0';
+    } else {
+        guard->cmd_id[0] = '\0';
+    }
+    if (xTimerChangePeriod(guard->timer, pdMS_TO_TICKS(timeout_ms), 0) != pdPASS) {
+        guard->active = false;
+        guard->cmd_id[0] = '\0';
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xTimerStart(guard->timer, 0) != pdPASS) {
+        guard->active = false;
+        guard->cmd_id[0] = '\0';
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+
+static bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char *channel, char *cmd_id_out, size_t cmd_id_out_size) {
+    if (cmd_id_out && cmd_id_out_size > 0) {
+        cmd_id_out[0] = '\0';
+    }
+    if (!channel || strcmp(channel, "pump_main") != 0) {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        storage_irrigation_node_stage_guard_t *guard = &s_stage_guards[i];
+        if (!guard->active) {
+            continue;
+        }
+        guard->active = false;
+        guard->timeout_pending = false;
+        xTimerStop(guard->timer, 0);
+        if (cmd_id_out && cmd_id_out_size > 0 && guard->cmd_id[0] != '\0') {
+            strncpy(cmd_id_out, guard->cmd_id, cmd_id_out_size - 1);
+            cmd_id_out[cmd_id_out_size - 1] = '\0';
+        }
+        guard->cmd_id[0] = '\0';
+        return true;
+    }
+    return false;
+}
+
+static bool storage_irrigation_node_stop_stage_path_locked(const char *stage) {
+    const char *channels[3] = {0};
+    size_t count = 0;
+    if (strcmp(stage, "solution_fill") == 0) {
+        channels[0] = "pump_main";
+        channels[1] = "valve_solution_fill";
+        channels[2] = "valve_clean_supply";
+        count = 3;
+    } else if (strcmp(stage, "prepare_recirculation") == 0) {
+        channels[0] = "pump_main";
+        channels[1] = "valve_solution_fill";
+        channels[2] = "valve_solution_supply";
+        count = 3;
+    } else {
+        return false;
+    }
+
+    bool all_ok = true;
+    for (size_t i = 0; i < count; i++) {
+        int idx = storage_irrigation_node_find_actuator_index(channels[i]);
+        if (idx < 0) {
+            all_ok = false;
+            continue;
+        }
+        esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)idx, false);
+        if (stop_err != ESP_OK) {
+            all_ok = false;
+            ESP_LOGE(TAG, "Failed to stop %s on stage timeout %s: %s", channels[i], stage, esp_err_to_name(stop_err));
+        }
+    }
+    return all_ok;
+}
+
+static const char *storage_irrigation_node_timeout_event_code_for_stage(const char *stage) {
+    if (!stage) {
+        return NULL;
+    }
+    if (strcmp(stage, "solution_fill") == 0) {
+        return "solution_fill_timeout";
+    }
+    if (strcmp(stage, "prepare_recirculation") == 0) {
+        return "prepare_recirculation_timeout";
+    }
+    return NULL;
 }
 
 static bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void) {
@@ -420,8 +543,15 @@ static void storage_irrigation_node_update_oled_runtime(void) {
     }
 
     oled_ui_model_t model = {0};
+    connection_status_t conn_status = {0};
     size_t channel_index = 0;
     bool state = false;
+
+    if (connection_status_get(&conn_status) == ESP_OK) {
+        model.connections.wifi_connected = conn_status.wifi_connected;
+        model.connections.mqtt_connected = conn_status.mqtt_connected;
+        model.connections.wifi_rssi = conn_status.wifi_rssi;
+    }
 
     model.sensor_status.has_error = false;
     model.sensor_status.i2c_connected = true;
@@ -569,13 +699,40 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
 
     const char *cmd_id = node_command_handler_get_cmd_id(params);
     const cJSON *state_item = cJSON_GetObjectItem((cJSON *)params, "state");
+    const cJSON *timeout_ms_item = cJSON_GetObjectItem((cJSON *)params, "timeout_ms");
+    const cJSON *stage_item = cJSON_GetObjectItem((cJSON *)params, "stage");
     bool target_state = false;
+    uint32_t timeout_ms = 0;
+    char stage_name[32] = {0};
+    bool has_timeout = storage_irrigation_node_parse_timeout_ms(timeout_ms_item, &timeout_ms);
+    bool has_stage = storage_irrigation_node_parse_stage_name(stage_item, stage_name, sizeof(stage_name));
     if (!storage_irrigation_node_parse_relay_state(state_item, &target_state)) {
         *response = node_command_handler_create_response(
             cmd_id,
             "ERROR",
             "invalid_params",
             "Missing or invalid state",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+    bool timeout_stage_pair_mismatch = (timeout_ms_item != NULL) != (stage_item != NULL);
+    if (target_state && (timeout_stage_pair_mismatch || (timeout_ms_item && !has_timeout) || (stage_item && !has_stage))) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "timeout_ms and stage must be provided together and be valid",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (target_state && has_timeout && (!has_stage || strcmp(channel, "pump_main") != 0)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "timeout_ms/stage is supported only for pump_main stage-arm command",
             NULL
         );
         return ESP_ERR_INVALID_ARG;
@@ -605,7 +762,8 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
         return ESP_ERR_NOT_FOUND;
     }
 
-    bool previous_state = s_actuator_runtime[(size_t)actuator_index].state;
+    bool previous_state = false;
+    (void)storage_irrigation_node_get_actuator_state_locked(channel, &previous_state);
     if (strcmp(channel, "pump_main") == 0 && target_state && !storage_irrigation_node_is_main_pump_interlock_satisfied_locked()) {
         xSemaphoreGive(s_actuator_mutex);
         cJSON *extra = cJSON_CreateObject();
@@ -626,18 +784,68 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
     }
 
     esp_err_t set_err = ESP_OK;
+    char completed_stage_cmd_id[STORAGE_IRRIGATION_NODE_CMD_ID_LEN] = {0};
     if (previous_state != target_state) {
         set_err = storage_irrigation_node_set_actuator_state_locked((size_t)actuator_index, target_state);
         if (set_err != ESP_OK) {
             xSemaphoreGive(s_actuator_mutex);
+            cJSON *extra = cJSON_CreateObject();
+            const char *error_code = "actuator_apply_failed";
+            const char *error_message = "Failed to apply actuator state";
+            if (target_state && set_err == ESP_ERR_INVALID_STATE) {
+                uint32_t cooldown_remaining_ms = 0;
+                if (pump_driver_get_cooldown_remaining(channel, &cooldown_remaining_ms) == ESP_OK && cooldown_remaining_ms > 0) {
+                    error_code = "cooldown_active";
+                    error_message = "Actuator is in cooldown";
+                    if (extra) {
+                        cJSON_AddNumberToObject(extra, "cooldown_remaining_ms", (double)cooldown_remaining_ms);
+                    }
+                } else {
+                    error_code = "actuator_busy";
+                    error_message = "Actuator rejected requested state";
+                }
+            }
             *response = node_command_handler_create_response(
                 cmd_id,
                 "ERROR",
-                "gpio_write_failed",
-                "Failed to set actuator state",
+                error_code,
+                error_message,
+                extra
+            );
+            if (extra) {
+                cJSON_Delete(extra);
+            }
+            return set_err;
+        }
+    }
+
+    if (!target_state) {
+        (void)storage_irrigation_node_complete_stage_guard_for_channel_locked(
+            channel,
+            completed_stage_cmd_id,
+            sizeof(completed_stage_cmd_id)
+        );
+    } else if (has_timeout) {
+        esp_err_t guard_err = storage_irrigation_node_arm_stage_guard_locked(stage_name, cmd_id, timeout_ms);
+        if (guard_err != ESP_OK) {
+            bool rollback_ok = storage_irrigation_node_stop_stage_path_locked(stage_name);
+            if (!rollback_ok) {
+                ESP_LOGE(
+                    TAG,
+                    "Failed to fail-close stage path after guard arm error: stage=%s channel=%s",
+                    stage_name,
+                    channel
+                );
+            }
+            xSemaphoreGive(s_actuator_mutex);
+            *response = node_command_handler_create_response(
+                cmd_id,
+                "ERROR",
+                "stage_guard_arm_failed",
+                "Failed to arm stage timeout guard",
                 NULL
             );
-            return set_err;
+            return guard_err;
         }
     }
 
@@ -651,10 +859,21 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
         if (previous_state == target_state) {
             cJSON_AddStringToObject(extra, "note", "already_in_requested_state_treated_as_done");
         }
+        if (has_timeout) {
+            cJSON_AddNumberToObject(extra, "timeout_ms", (double)timeout_ms);
+            cJSON_AddStringToObject(extra, "stage", stage_name);
+        }
     }
-    *response = node_command_handler_create_response(cmd_id, "DONE", NULL, NULL, extra);
+    *response = node_command_handler_create_response(cmd_id, has_timeout ? "ACK" : "DONE", NULL, NULL, extra);
     if (extra) {
         cJSON_Delete(extra);
+    }
+    if (completed_stage_cmd_id[0] != '\0' && (!cmd_id || strcmp(completed_stage_cmd_id, cmd_id) != 0)) {
+        cJSON *done_details = cJSON_CreateObject();
+        if (done_details) {
+            cJSON_AddStringToObject(done_details, "reason_code", "stage_stopped_by_command");
+        }
+        (void)storage_irrigation_node_publish_terminal_response("pump_main", completed_stage_cmd_id, "DONE", NULL, NULL, done_details);
     }
     return ESP_OK;
 }
@@ -714,7 +933,6 @@ static esp_err_t handle_storage_state(const char *channel, const cJSON *params, 
 }
 
 static esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
-    uint64_t mask = 0;
     bool used_gpio[GPIO_NUM_MAX] = {0};
 
     for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
@@ -730,25 +948,28 @@ static esp_err_t storage_irrigation_node_init_level_switch_inputs(void) {
             return ESP_ERR_INVALID_ARG;
         }
         used_gpio[gpio] = true;
-        mask |= (1ULL << (uint32_t)gpio);
     }
 
-    if (mask == 0) {
+    if (STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT == 0) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    gpio_config_t io_conf = {
-        .pin_bit_mask = mask,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
+    for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
+        const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << (uint32_t)sensor->gpio),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = sensor->active_low ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+            .pull_down_en = sensor->active_low ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
 
-    esp_err_t err = gpio_config(&io_conf);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure level-switch GPIOs: %s", esp_err_to_name(err));
-        return err;
+        esp_err_t err = gpio_config(&io_conf);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to configure level-switch GPIO for channel %s: %s",
+                     sensor->name, esp_err_to_name(err));
+            return err;
+        }
     }
 
     if (!s_level_switch_mutex) {
@@ -829,11 +1050,37 @@ static float storage_irrigation_node_read_level_switch(
     return filtered ? 1.0f : 0.0f;
 }
 
+static esp_err_t storage_irrigation_node_publish_level_switch_telemetry_snapshot(void) {
+    if (!s_level_switch_inputs_ready) {
+        esp_err_t init_err = storage_irrigation_node_init_level_switch_inputs();
+        if (init_err != ESP_OK) {
+            return init_err;
+        }
+    }
+
+    for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
+        const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
+        int raw = 0;
+        float value = storage_irrigation_node_read_level_switch(sensor, &raw);
+        bool active = value >= 0.5f;
+
+        if (!s_sensor_log_initialized[sensor->gpio] || s_sensor_logged_state[sensor->gpio] != active) {
+            ESP_LOGI(TAG, "sensor %s: raw=%d active=%d", sensor->name, raw, active ? 1 : 0);
+            s_sensor_log_initialized[sensor->gpio] = true;
+            s_sensor_logged_state[sensor->gpio] = active;
+        }
+
+        node_telemetry_publish_custom(sensor->name, sensor->metric, value, raw, false, true);
+    }
+
+    return ESP_OK;
+}
+
 /**
- * @brief Callback для публикации телеметрии level-switch каналов
+ * @brief Быстрый цикл опроса датчиков уровня и runtime-логики
  */
-esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx) {
-    (void)user_ctx;
+esp_err_t storage_irrigation_node_sensor_cycle(bool publish_telemetry) {
+    (void)publish_telemetry;
 
     if (!s_level_switch_inputs_ready) {
         esp_err_t init_err = storage_irrigation_node_init_level_switch_inputs();
@@ -846,13 +1093,24 @@ esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx) {
         const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
         int raw = 0;
         float value = storage_irrigation_node_read_level_switch(sensor, &raw);
-        node_telemetry_publish_custom(sensor->name, sensor->metric, value, raw, false, true);
+        bool active = value >= 0.5f;
+
+        if (!s_sensor_log_initialized[sensor->gpio] || s_sensor_logged_state[sensor->gpio] != active) {
+            ESP_LOGI(TAG, "sensor %s: raw=%d active=%d", sensor->name, raw, active ? 1 : 0);
+            s_sensor_log_initialized[sensor->gpio] = true;
+            s_sensor_logged_state[sensor->gpio] = active;
+        }
     }
 
     storage_irrigation_node_check_fill_completion_events();
     storage_irrigation_node_update_oled_runtime();
 
     return ESP_OK;
+}
+
+esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx) {
+    (void)user_ctx;
+    return storage_irrigation_node_publish_level_switch_telemetry_snapshot();
 }
 
 static esp_err_t storage_irrigation_node_publish_storage_event(const char *event_code, const char *cmd_id) {
@@ -912,6 +1170,32 @@ static esp_err_t storage_irrigation_node_publish_storage_event(const char *event
     return pub_err;
 }
 
+static esp_err_t storage_irrigation_node_publish_terminal_response(
+    const char *channel,
+    const char *cmd_id,
+    const char *status,
+    const char *error_code,
+    const char *error_message,
+    cJSON *details
+) {
+    cJSON *response = node_command_handler_create_response(cmd_id, status, error_code, error_message, details);
+    if (details) {
+        cJSON_Delete(details);
+    }
+    if (!response) {
+        return ESP_ERR_NO_MEM;
+    }
+    char *json_str = cJSON_PrintUnformatted(response);
+    cJSON_Delete(response);
+    if (!json_str) {
+        return ESP_ERR_NO_MEM;
+    }
+    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+    free(json_str);
+    node_command_handler_cache_final_status(cmd_id, channel, status);
+    return ESP_OK;
+}
+
 static void storage_irrigation_node_check_fill_completion_events(void) {
     bool clean_level_max = false;
     bool solution_level_max = false;
@@ -942,43 +1226,10 @@ static void storage_irrigation_node_check_fill_completion_events(void) {
 
     bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
     if (solution_level_max_ok && solution_level_max && solution_fill_active) {
-        bool shutdown_ok = true;
-        int valve_solution_fill_idx = storage_irrigation_node_find_actuator_index("valve_solution_fill");
-        int valve_clean_supply_idx = storage_irrigation_node_find_actuator_index("valve_clean_supply");
-        int pump_main_idx = storage_irrigation_node_find_actuator_index("pump_main");
-
-        if (valve_solution_fill_idx >= 0) {
-            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_solution_fill_idx, false);
-            if (stop_err != ESP_OK) {
-                shutdown_ok = false;
-                ESP_LOGE(TAG, "Failed to stop valve_solution_fill on level_solution_max: %s", esp_err_to_name(stop_err));
-            }
-        } else {
-            shutdown_ok = false;
-        }
-
-        if (valve_clean_supply_idx >= 0 && s_actuator_runtime[(size_t)valve_clean_supply_idx].state) {
-            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_supply_idx, false);
-            if (stop_err != ESP_OK) {
-                shutdown_ok = false;
-                ESP_LOGE(TAG, "Failed to stop valve_clean_supply on level_solution_max: %s", esp_err_to_name(stop_err));
-            }
-        }
-        if (pump_main_idx >= 0 && s_actuator_runtime[(size_t)pump_main_idx].state) {
-            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)pump_main_idx, false);
-            if (stop_err != ESP_OK) {
-                shutdown_ok = false;
-                ESP_LOGE(TAG, "Failed to stop pump_main on level_solution_max: %s", esp_err_to_name(stop_err));
-            }
-        }
-
-        if (shutdown_ok) {
-            emit_solution_completed = true;
-        }
+        emit_solution_completed = true;
     }
 
     xSemaphoreGive(s_actuator_mutex);
-    storage_irrigation_node_update_oled_runtime();
 
     if (emit_clean_completed) {
         (void)storage_irrigation_node_publish_storage_event("clean_fill_completed", NULL);
@@ -986,6 +1237,15 @@ static void storage_irrigation_node_check_fill_completion_events(void) {
     if (emit_solution_completed) {
         (void)storage_irrigation_node_publish_storage_event("solution_fill_completed", NULL);
     }
+}
+
+static void storage_irrigation_node_stage_guard_timer_cb(TimerHandle_t timer) {
+    storage_irrigation_node_stage_guard_t *guard = (storage_irrigation_node_stage_guard_t *)pvTimerGetTimerID(timer);
+    if (!guard) {
+        return;
+    }
+    guard->timeout_pending = true;
+    storage_irrigation_node_signal_cmd_process();
 }
 
 /**
@@ -1193,6 +1453,7 @@ static void storage_irrigation_node_retry_timer_cb(TimerHandle_t timer) {
 }
 
 static void storage_irrigation_node_process_cmd_queue(void) {
+    storage_irrigation_node_process_stage_timeouts();
     if (storage_irrigation_node_any_pump_running()) {
         return;
     }
@@ -1269,6 +1530,55 @@ static void storage_irrigation_node_process_cmd_queue(void) {
     bool current_valid = (ina209_read(&reading) == ESP_OK && reading.valid);
     float current_ma = current_valid ? reading.bus_current_ma : 0.0f;
     storage_irrigation_node_schedule_done(cmd.channel_name, cmd.cmd_id, cmd.duration_ms, current_ma, current_valid);
+}
+
+static void storage_irrigation_node_process_stage_timeouts(void) {
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        storage_irrigation_node_stage_guard_t *guard = &s_stage_guards[i];
+        if (!guard->active || !guard->timeout_pending) {
+            continue;
+        }
+
+        char stage_name[sizeof(guard->stage)] = {0};
+        char cmd_id[sizeof(guard->cmd_id)] = {0};
+        uint32_t timeout_ms = guard->timeout_ms;
+        strncpy(stage_name, guard->stage, sizeof(stage_name) - 1);
+        strncpy(cmd_id, guard->cmd_id, sizeof(cmd_id) - 1);
+        guard->timeout_pending = false;
+        guard->active = false;
+        xTimerStop(guard->timer, 0);
+        guard->cmd_id[0] = '\0';
+
+        if (s_actuator_mutex && xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            (void)storage_irrigation_node_stop_stage_path_locked(stage_name);
+            xSemaphoreGive(s_actuator_mutex);
+        }
+        storage_irrigation_node_update_oled_runtime();
+
+        const char *event_code = storage_irrigation_node_timeout_event_code_for_stage(stage_name);
+        cJSON *error_details = cJSON_CreateObject();
+        if (error_details) {
+            cJSON_AddStringToObject(error_details, "stage", stage_name);
+            cJSON_AddNumberToObject(error_details, "timeout_ms", (double)timeout_ms);
+            cJSON_AddStringToObject(error_details, "reason_code", "stage_timeout");
+        }
+        if (cmd_id[0] != '\0') {
+            (void)storage_irrigation_node_publish_terminal_response(
+                "pump_main",
+                cmd_id,
+                "ERROR",
+                "stage_timeout",
+                "Stage timeout reached; flow path stopped by node",
+                error_details
+            );
+        } else if (error_details) {
+            cJSON_Delete(error_details);
+        }
+        if (event_code) {
+            (void)storage_irrigation_node_publish_storage_event(event_code, cmd_id);
+        }
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "stage_timeout", ESP_ERR_TIMEOUT, "Stage timeout reached; flow path stopped");
+    }
 }
 
 static void storage_irrigation_node_cmd_queue_task(void *pvParameters) {
@@ -1358,14 +1668,14 @@ esp_err_t storage_irrigation_node_framework_init_integration(void) {
             ESP_LOGW(TAG, "Failed to create pump retry timer");
         }
     }
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        if (!s_stage_guards[i].timer) {
+            continue;
+        }
+        xTimerStop(s_stage_guards[i].timer, 0);
+    }
     
     // Регистрация обработчиков команд
-    err = node_command_handler_register("run_pump", handle_run_pump, NULL);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register run_pump handler: %s", esp_err_to_name(err));
-        return err;
-    }
-
     err = node_command_handler_register("set_relay", handle_set_relay, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register set_relay handler: %s", esp_err_to_name(err));

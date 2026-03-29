@@ -29,6 +29,8 @@ const WS_ZONE_EVENT_NAMES = [
   '.App\\Events\\TelemetryBatchUpdated',
   '.node.telemetry.updated',
   '.App\\Events\\NodeTelemetryUpdated',
+  '.EventCreated',
+  '.App\\Events\\EventCreated',
   '.GrowCycleUpdated',
   '.App\\Events\\GrowCycleUpdated',
   '.ZoneUpdated',
@@ -40,11 +42,6 @@ const WS_COMMAND_EVENT_NAMES = [
   '.App\\Events\\CommandStatusUpdated',
   '.CommandFailed',
   '.App\\Events\\CommandFailed',
-] as const
-
-const WS_GLOBAL_EVENT_NAMES = [
-  '.EventCreated',
-  '.App\\Events\\EventCreated',
 ] as const
 
 const AUTOMATION_EVENT_LABELS: Record<string, string> = {
@@ -302,7 +299,6 @@ export function useAutomationPanel(
   let wsStateListenerCleanup: (() => void) | null = null
   let stopZoneRealtimeSubscription: (() => void) | null = null
   let stopCommandsRealtimeSubscription: (() => void) | null = null
-  let stopEventsRealtimeSubscription: (() => void) | null = null
   let lastRealtimeRefreshAt = 0
 
   // ─── Normalize ────────────────────────────────────────────────────────────
@@ -460,10 +456,6 @@ export function useAutomationPanel(
       stopCommandsRealtimeSubscription = null
     }
 
-    if (stopEventsRealtimeSubscription) {
-      stopEventsRealtimeSubscription()
-      stopEventsRealtimeSubscription = null
-    }
   }
 
   function subscribeRealtimeChannels(): boolean {
@@ -474,7 +466,6 @@ export function useAutomationPanel(
     try {
       const zoneChannelName = `hydro.zones.${props.zoneId}`
       const commandsChannelName = `hydro.commands.${props.zoneId}`
-      const eventsChannelName = 'hydro.events.global'
 
       stopZoneRealtimeSubscription = subscribeManagedChannelEvents({
         channelName: zoneChannelName,
@@ -498,30 +489,10 @@ export function useAutomationPanel(
         ) as Record<string, (payload: WsEventPayload) => void>,
       })
 
-      stopEventsRealtimeSubscription = subscribeManagedChannelEvents({
-        channelName: eventsChannelName,
-        componentTag: `AutomationProcessPanel:events:${props.zoneId}`,
-        eventHandlers: Object.fromEntries(
-          WS_GLOBAL_EVENT_NAMES.map((eventName) => [
-            eventName,
-            (payload: WsEventPayload) => {
-              const zoneValue = payload.zoneId ?? payload.zone_id
-              const zoneId = Number(zoneValue)
-              if (!Number.isFinite(zoneId) || zoneId !== props.zoneId) {
-                return
-              }
-
-              scheduleRealtimeRefresh()
-            },
-          ])
-        ) as Record<string, (payload: WsEventPayload) => void>,
-      })
-
       logger.debug('[AutomationProcessPanel] Realtime subscriptions started', {
         zoneId: props.zoneId,
         zoneChannel: zoneChannelName,
         commandsChannel: commandsChannelName,
-        eventsChannel: eventsChannelName,
       })
 
       return true

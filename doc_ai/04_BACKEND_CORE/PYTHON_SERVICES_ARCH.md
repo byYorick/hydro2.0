@@ -66,6 +66,19 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
   `DONE|ERROR|INVALID|BUSY|NO_EFFECT|TIMEOUT|SEND_FAILED`.
 - `QUEUED|SENT|ACK` считаются non-terminal.
 
+### 3.1.1. Alert lifecycle flow
+
+Канонический alert flow:
+
+`Python/AE3 producer -> Laravel /api/python/alerts -> AlertService -> alerts + zone_events + realtime`
+
+Инварианты:
+
+- Python и AE3 не пишут lifecycle alert-а напрямую в `alerts` или `zone_events`;
+- history-logger владеет transport retry/DLQ (`pending_alerts`, `pending_alerts_dlq`);
+- scoped incident identity хранится в `details.dedupe_key`;
+- `system.alert_policies` задаёт policy auto-resolve только для policy-managed AE3 business alert code.
+
 ### 3.2 Запуск цикла и intents
 
 Единый внешний entrypoint:

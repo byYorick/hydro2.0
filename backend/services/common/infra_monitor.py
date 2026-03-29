@@ -14,8 +14,8 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 from .utils.time import utcnow
-from .alert_queue import send_alert_to_laravel
 from .alerts import AlertCode
+from .infra_alerts import send_infra_alert, send_infra_resolved_alert
 
 logger = logging.getLogger(__name__)
 
@@ -40,23 +40,28 @@ async def check_mqtt_health(connected: bool) -> None:
     
     if connected:
         state['status'] = 'ok'
-        # Если был отправлен алерт о проблеме, можно создать алерт о восстановлении
         if state['alert_sent']:
+            await send_infra_resolved_alert(
+                code=AlertCode.INFRA_MQTT_DOWN.value,
+                message="MQTT connection restored",
+                zone_id=None,
+                alert_type="MQTT Down",
+                service="mqtt-bridge",
+                component="mqtt",
+            )
             logger.info("MQTT connection restored")
             state['alert_sent'] = False
     else:
         state['status'] = 'fail'
-        # Создаем алерт только если еще не отправлен
         if not state['alert_sent']:
-            await send_alert_to_laravel(
-                zone_id=None,
-                source="infra",
+            await send_infra_alert(
                 code=AlertCode.INFRA_MQTT_DOWN.value,
-                type="MQTT Down",
-                status="ACTIVE",
+                message="MQTT connection is down",
+                zone_id=None,
+                alert_type="MQTT Down",
+                service="mqtt-bridge",
+                component="mqtt",
                 details={
-                    "component": "mqtt",
-                    "message": "MQTT connection is down",
                     "detected_at": utcnow().isoformat(),
                 }
             )
@@ -77,20 +82,27 @@ async def check_db_health(connected: bool) -> None:
     if connected:
         state['status'] = 'ok'
         if state['alert_sent']:
+            await send_infra_resolved_alert(
+                code=AlertCode.INFRA_DB_UNREACHABLE.value,
+                message="Database connection restored",
+                zone_id=None,
+                alert_type="Database Unreachable",
+                service="history-logger",
+                component="database",
+            )
             logger.info("Database connection restored")
             state['alert_sent'] = False
     else:
         state['status'] = 'fail'
         if not state['alert_sent']:
-            await send_alert_to_laravel(
-                zone_id=None,
-                source="infra",
+            await send_infra_alert(
                 code=AlertCode.INFRA_DB_UNREACHABLE.value,
-                type="Database Unreachable",
-                status="ACTIVE",
+                message="Database is unreachable",
+                zone_id=None,
+                alert_type="Database Unreachable",
+                service="history-logger",
+                component="database",
                 details={
-                    "component": "database",
-                    "message": "Database is unreachable",
                     "detected_at": utcnow().isoformat(),
                 }
             )
@@ -111,21 +123,27 @@ async def check_laravel_health(available: bool) -> None:
     if available:
         state['status'] = 'ok'
         if state['alert_sent']:
+            await send_infra_resolved_alert(
+                code=AlertCode.INFRA_SERVICE_DOWN.value,
+                message="Laravel API restored",
+                zone_id=None,
+                alert_type="Laravel API Down",
+                service="laravel_api",
+                component="laravel",
+            )
             logger.info("Laravel API restored")
             state['alert_sent'] = False
     else:
         state['status'] = 'fail'
         if not state['alert_sent']:
-            await send_alert_to_laravel(
-                zone_id=None,
-                source="infra",
+            await send_infra_alert(
                 code=AlertCode.INFRA_SERVICE_DOWN.value,
-                type="Laravel API Down",
-                status="ACTIVE",
+                message="Laravel API is down",
+                zone_id=None,
+                alert_type="Laravel API Down",
+                service="laravel_api",
+                component="laravel",
                 details={
-                    "component": "laravel",
-                    "service": "laravel_api",
-                    "message": "Laravel API is down",
                     "detected_at": utcnow().isoformat(),
                 }
             )
@@ -150,21 +168,27 @@ async def check_service_health(service_name: str, available: bool) -> None:
     if available:
         state['status'] = 'ok'
         if state['alert_sent']:
+            await send_infra_resolved_alert(
+                code=AlertCode.INFRA_SERVICE_DOWN.value,
+                message=f"{service_name} service restored",
+                zone_id=None,
+                alert_type=f"{service_name} Down",
+                service=service_name,
+                component=service_name,
+            )
             logger.info(f"{service_name} service restored")
             state['alert_sent'] = False
     else:
         state['status'] = 'fail'
         if not state['alert_sent']:
-            await send_alert_to_laravel(
-                zone_id=None,
-                source="infra",
+            await send_infra_alert(
                 code=AlertCode.INFRA_SERVICE_DOWN.value,
-                type=f"{service_name} Down",
-                status="ACTIVE",
+                message=f"{service_name} service is down",
+                zone_id=None,
+                alert_type=f"{service_name} Down",
+                service=service_name,
+                component=service_name,
                 details={
-                    "component": service_name,
-                    "service": service_name,
-                    "message": f"{service_name} service is down",
                     "detected_at": utcnow().isoformat(),
                 }
             )

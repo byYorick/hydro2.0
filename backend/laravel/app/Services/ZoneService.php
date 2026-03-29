@@ -4,9 +4,9 @@ namespace App\Services;
 
 use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Events\ZoneUpdated;
-use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\ZoneLogicProfileCatalog;
+use App\Support\ZoneNodeChannelScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -610,11 +610,10 @@ class ZoneService
      */
     public function calibratePump(Zone $zone, array $data): array
     {
-        $channelBelongsToZone = NodeChannel::query()
-            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
-            ->where('node_channels.id', (int) ($data['node_channel_id'] ?? 0))
-            ->where('nodes.zone_id', $zone->id)
-            ->exists();
+        $channelBelongsToZone = ZoneNodeChannelScope::belongsToZone(
+            $zone->id,
+            (int) ($data['node_channel_id'] ?? 0)
+        );
         if (! $channelBelongsToZone) {
             $invalidChannelId = (int) ($data['node_channel_id'] ?? 0);
             throw new \DomainException(

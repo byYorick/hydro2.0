@@ -50,6 +50,7 @@ static struct {
     SemaphoreHandle_t mutex;
     TaskHandle_t flush_task;
     bool initialized;
+    bool disconnect_log_emitted;
     uint32_t batch_interval_ms;
     uint32_t batch_size;
 } s_telemetry_engine = {
@@ -144,6 +145,78 @@ static void task_telemetry_flush(void *pvParameters) {
     }
 }
 
+static int find_batch_item_index_by_channel(const char *channel) {
+    if (channel == NULL) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < s_telemetry_engine.batch.count; i++) {
+        if (strcmp(s_telemetry_engine.batch.items[i].channel, channel) == 0) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+static void fill_batch_item(
+    telemetry_item_t *item,
+    const char *channel,
+    const char *metric_type_str,
+    float value,
+    int32_t raw,
+    bool stub,
+    bool stable,
+    const char *unit
+) {
+    strncpy(item->channel, channel, 63);
+    item->channel[63] = '\0';
+    strncpy(item->metric_type, metric_type_str, 31);
+    item->metric_type[31] = '\0';
+    item->value = value;
+    item->raw = raw;
+    item->stub = stub;
+    item->stable = stable;
+    item->ts = node_utils_get_timestamp_seconds();
+
+    if (unit != NULL && strlen(unit) > 0) {
+        strncpy(item->unit, unit, sizeof(item->unit) - 1);
+        item->unit[sizeof(item->unit) - 1] = '\0';
+    } else {
+        item->unit[0] = '\0';
+    }
+}
+
+static void replace_oldest_batch_item(
+    const char *channel,
+    const char *metric_type_str,
+    float value,
+    int32_t raw,
+    bool stub,
+    bool stable,
+    const char *unit
+) {
+    if (s_telemetry_engine.batch.count == 0) {
+        return;
+    }
+
+    memmove(
+        &s_telemetry_engine.batch.items[0],
+        &s_telemetry_engine.batch.items[1],
+        (s_telemetry_engine.batch.count - 1) * sizeof(telemetry_item_t)
+    );
+    fill_batch_item(
+        &s_telemetry_engine.batch.items[s_telemetry_engine.batch.count - 1],
+        channel,
+        metric_type_str,
+        value,
+        raw,
+        stub,
+        stable,
+        unit
+    );
+}
+
 // ВАЖНО: Эта функция должна вызываться ТОЛЬКО под mutex!
 // Она изменяет s_telemetry_engine.batch без защиты
 static esp_err_t flush_batch_internal(void) {
@@ -152,9 +225,14 @@ static esp_err_t flush_batch_internal(void) {
     }
 
     if (!mqtt_manager_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, keeping telemetry batch");
+        if (!s_telemetry_engine.disconnect_log_emitted) {
+            ESP_LOGW(TAG, "MQTT not connected, keeping telemetry batch");
+            s_telemetry_engine.disconnect_log_emitted = true;
+        }
         return ESP_ERR_INVALID_STATE;
     }
+
+    s_telemetry_engine.disconnect_log_emitted = false;
 
     // node_id больше не нужен в payload (удален согласно эталону node-sim)
     // gh_uid, zone_uid, node_uid используются только в топике, который формируется в mqtt_manager
@@ -240,6 +318,9 @@ static esp_err_t add_to_batch(
     }
 
     if (xSemaphoreTake(s_telemetry_engine.mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        bool mqtt_connected = mqtt_manager_is_connected();
+        int existing_index = find_batch_item_index_by_channel(channel);
+
         // Проверяем, нужно ли отправить батч
         bool should_flush = false;
         
@@ -256,33 +337,57 @@ static esp_err_t add_to_batch(
         if (should_flush && s_telemetry_engine.batch.count > 0) {
             // Вызываем flush под тем же mutex, чтобы избежать race condition
             esp_err_t flush_err = flush_batch_internal();
-            if (flush_err != ESP_OK) {
+            if (flush_err != ESP_OK &&
+                !(flush_err == ESP_ERR_INVALID_STATE && !mqtt_connected)) {
                 ESP_LOGW(TAG, "Failed to flush batch: %s", esp_err_to_name(flush_err));
             }
         }
 
         // Добавляем в батч
-        if (s_telemetry_engine.batch.count < TELEMETRY_BATCH_MAX_SIZE) {
-            telemetry_item_t *item = &s_telemetry_engine.batch.items[s_telemetry_engine.batch.count];
-            strncpy(item->channel, channel, 63);
-            item->channel[63] = '\0';
-            // Сохраняем metric_type в каноническом формате (UPPERCASE)
-            // Используем маппинг канала → metric_type
-            strncpy(item->metric_type, metric_type_str, 31);
-            item->metric_type[31] = '\0';
-            item->value = value;
-            item->raw = raw;
-            item->stub = stub;
-            item->stable = stable;
-            item->ts = node_utils_get_timestamp_seconds();
-            // Сохранение unit (если передан)
-            if (unit != NULL && strlen(unit) > 0) {
-                strncpy(item->unit, unit, sizeof(item->unit) - 1);
-                item->unit[sizeof(item->unit) - 1] = '\0';
-            } else {
-                item->unit[0] = '\0';
-            }
+        if (!mqtt_connected && existing_index >= 0) {
+            fill_batch_item(
+                &s_telemetry_engine.batch.items[existing_index],
+                channel,
+                metric_type_str,
+                value,
+                raw,
+                stub,
+                stable,
+                unit
+            );
+        } else if (s_telemetry_engine.batch.count < TELEMETRY_BATCH_MAX_SIZE) {
+            fill_batch_item(
+                &s_telemetry_engine.batch.items[s_telemetry_engine.batch.count],
+                channel,
+                metric_type_str,
+                value,
+                raw,
+                stub,
+                stable,
+                unit
+            );
             s_telemetry_engine.batch.count++;
+        } else if (existing_index >= 0) {
+            fill_batch_item(
+                &s_telemetry_engine.batch.items[existing_index],
+                channel,
+                metric_type_str,
+                value,
+                raw,
+                stub,
+                stable,
+                unit
+            );
+        } else if (!mqtt_connected) {
+            replace_oldest_batch_item(
+                channel,
+                metric_type_str,
+                value,
+                raw,
+                stub,
+                stable,
+                unit
+            );
         } else {
             ESP_LOGW(TAG, "Telemetry batch is full, dropping message");
         }

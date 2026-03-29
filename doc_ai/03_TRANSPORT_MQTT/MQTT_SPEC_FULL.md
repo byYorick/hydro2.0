@@ -779,6 +779,7 @@ Backend никогда не остаётся "в неизвестности": п
 - `details` (object) — детали выполнения команды
 - `error_code` (string) — машинночитаемый код ошибки для `status=ERROR`
 - `error_message` (string) — человекочитаемое пояснение для `status=ERROR`
+- `message` (string) — краткое top-level сообщение; допустимо как runtime fallback для `error_message`
 
 **Пример успешного ответа:**
 ```json
@@ -921,27 +922,21 @@ Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
 
 ## 8.6. Особые правила для авто-наполнения баков (2-бака)
 
-Для каналов `valve_clean_fill` и `valve_solution_fill`:
+Для production `storage_irrigation_node` правила такие:
 
-1. Нода обязана локально остановить наполнение по датчику `*_max`:
-   - `level_clean_max` для чистого бака;
-   - `level_solution_max` для бака раствора.
-2. При авто-остановке нода обязана отправить `command_response`:
-
-```json
-{
-  "cmd_id": "cmd-701",
-  "status": "DONE",
-  "ts": 1710003399123,
-  "details": {
-    "result": "auto_stopped",
-    "reason_code": "level_max_reached",
-    "tank": "clean"
-  }
-}
-```
-
-3. Дополнительно нода публикует событие (канал `storage_state`):
+1. `set_relay {state:true}` на actuator-каналах IRR-профиля работает как latched `ON/OFF` semantics и не должен
+   локально auto-stop'иться по `max_duration_ms`.
+2. `pump_main/set_relay {state:true, timeout_ms, stage}` используется для stage-level guard:
+   - поддерживаются только `stage="solution_fill"` и `stage="prepare_recirculation"`;
+   - immediate ответ на timed-start: `ACK`;
+   - нода держит flow-path включённым до явного `pump_main OFF` или до истечения `timeout_ms`;
+   - при timeout нода локально останавливает stage-path и публикует terminal `ERROR`
+     по исходному `cmd_id` с `error_code=stage_timeout`.
+3. `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует
+   `clean_fill_completed`.
+4. `level_solution_max` публикует `solution_fill_completed`, но не выключает локально
+   `pump_main/valve_solution_fill/valve_clean_supply`: переход в `prepare_recirculation` завершает AE3.
+5. Дополнительно нода публикует событие (канал `storage_state`):
 
 Топик:
 ```text
@@ -968,6 +963,11 @@ Payload:
   }
 }
 ```
+
+Для stage timeout `event_code` принимает одно из значений:
+
+- `solution_fill_timeout`
+- `prepare_recirculation_timeout`
 
 Нормализация в backend (`history-logger`):
 - `event_code` (или fallback-поля `event`/`type`) преобразуется в `zone_events.type`;

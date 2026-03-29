@@ -5,6 +5,7 @@ use App\Http\Controllers\NutrientProductController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecipePageController;
+use App\Helpers\ZoneAccessHelper;
 use App\Models\Alert;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
@@ -286,6 +287,14 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         ]);
 
         return $response;
+    } catch (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $accessDeniedException) {
+        \Log::warning('Broadcasting auth: Channel authorization denied', [
+            'user_id' => auth()->id(),
+            'channel' => $request->input('channel_name'),
+            'error' => $accessDeniedException->getMessage(),
+        ]);
+
+        return response()->json(['message' => 'Unauthorized.'], 403);
     } catch (\Illuminate\Broadcasting\BroadcastException $broadcastException) {
         \Log::warning('Broadcasting auth: Channel authorization denied', [
             'user_id' => auth()->id(),
@@ -491,15 +500,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 }
 
                 try {
+                    $accessibleGreenhouseIds = \App\Helpers\ZoneAccessHelper::getAccessibleGreenhouseIds($user);
                     $greenhousesQuery = Greenhouse::query()
                         ->select(['id', 'uid', 'name', 'type', 'description']);
                     if (! $user->isAdmin()) {
-                        $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
-                            $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
-                                $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
-                            })
-                                ->orWhereDoesntHave('zones');
-                        });
+                        $greenhousesQuery->whereIn('id', $accessibleGreenhouseIds ?: [0]);
                     }
                     $greenhouses = $greenhousesQuery
                         ->withCount([
@@ -631,18 +636,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
     Route::get('/greenhouses', function () {
         $user = auth()->user();
         $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
+        $accessibleGreenhouseIds = \App\Helpers\ZoneAccessHelper::getAccessibleGreenhouseIds($user);
 
         try {
             $greenhousesQuery = Greenhouse::query()
                 ->select(['id', 'uid', 'name', 'type', 'description', 'timezone', 'created_at']);
 
             if (! $user->isAdmin()) {
-                $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
-                    $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
-                        $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
-                    })
-                        ->orWhereDoesntHave('zones');
-                });
+                $greenhousesQuery->whereIn('id', $accessibleGreenhouseIds ?: [0]);
             }
 
             $greenhouses = $greenhousesQuery
@@ -682,6 +683,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
     })->name('greenhouses.create');
 
     Route::get('/greenhouses/{greenhouse}', function (Greenhouse $greenhouse) {
+        $user = auth()->user();
+        $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+
+        if (! $user->isAdmin()) {
+            abort_unless(ZoneAccessHelper::canAccessGreenhouseScope($user, $greenhouse), 403);
+        }
+
         $zones = Zone::query()
             ->where('greenhouse_id', $greenhouse->id)
             ->with([
@@ -702,6 +710,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                     $query->where('status', 'offline');
                 },
             ])
+            ->when(! $user->isAdmin(), function ($query) use ($accessibleZoneIds) {
+                $query->whereIn('id', $accessibleZoneIds ?: [0]);
+            })
             ->orderBy('status')
             ->get();
 
@@ -763,8 +774,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
     Route::prefix('zones')->group(function () {
         Route::get('/', function () {
-            $cacheKey = 'zones_list_'.auth()->id();
-            $zones = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
+            $user = auth()->user();
+            $cacheKey = 'zones_list_'.$user->id;
+            $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+
+            $zones = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () use ($user, $accessibleZoneIds) {
                 return Zone::query()
                     ->select(['id', 'name', 'status', 'description', 'greenhouse_id'])
                     ->with([
@@ -776,6 +790,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                         'activeGrowCycle.phases',
                         'activeGrowCycle.plant:id,name',
                     ])
+                    ->when(! $user->isAdmin(), function ($query) use ($accessibleZoneIds) {
+                        $query->whereIn('id', $accessibleZoneIds ?: [0]);
+                    })
                     ->get();
             });
 
@@ -809,6 +826,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                     'activeGrowCycle.plant:id,name',
                 ])
                 ->findOrFail($zoneIdInt);
+
+            abort_unless(ZoneAccessHelper::canAccessZone(auth()->user(), $zone), 403);
 
             $zone->refresh();
             $zone->loadMissing([
@@ -860,6 +879,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                     'activeGrowCycle.plant:id,name',
                 ])
                 ->findOrFail($zoneIdInt);
+
+            abort_unless(ZoneAccessHelper::canAccessZone(auth()->user(), $zone), 403);
 
             $zone->refresh();
             $zone->loadMissing([
@@ -1284,12 +1305,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
 
         Route::get('/{nodeId}', function (string $nodeId) {
             $query = DeviceNode::query()
-                ->with(['channels:id,node_id,channel,type,metric,unit', 'zone:id,name']);
+                ->with(['channels:id,node_id,channel,type,metric,unit', 'zone:id,name,status']);
 
             if (is_numeric($nodeId)) {
                 $device = $query->findOrFail((int) $nodeId);
             } else {
                 $device = $query->where('uid', $nodeId)->firstOrFail();
+            }
+
+            $user = auth()->user();
+            if (! $user || ! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $device)) {
+                abort(403, 'Forbidden: Access denied to this node');
             }
 
             return Inertia::render('Devices/Show', [
@@ -1307,20 +1333,46 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
     });
 
     Route::get('/alerts', function () {
+        $user = auth()->user();
+        $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
         $cacheKey = 'alerts_list_'.auth()->id();
-        $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
+        $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () use ($accessibleZoneIds) {
             return \App\Models\Alert::query()
                 ->with(['zone' => function ($q) {
                     $q->select('id', 'name');
                 }])
+                ->when(
+                    ! empty($accessibleZoneIds),
+                    function ($query) use ($accessibleZoneIds) {
+                        $query->where(function ($alertsQuery) use ($accessibleZoneIds) {
+                            $alertsQuery
+                                ->whereIn('zone_id', $accessibleZoneIds)
+                                ->orWhereNull('zone_id');
+                        });
+                    },
+                    function ($query) {
+                        $query->whereNull('zone_id');
+                    }
+                )
                 ->latest('id')
                 ->limit(100)
                 ->get(['id', 'type', 'source', 'code', 'status', 'severity', 'category', 'details', 'zone_id', 'created_at', 'resolved_at']);
         });
 
+        $zones = \App\Models\Zone::query()
+            ->select(['id', 'name'])
+            ->when(
+                ! empty($accessibleZoneIds),
+                fn ($query) => $query->whereIn('id', $accessibleZoneIds),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
+            ->orderBy('name')
+            ->get();
+
         return Inertia::render('Alerts/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             'alerts' => $alerts,
+            'zones' => $zones,
         ]);
     })->name('alerts.index');
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Тест совместимости прошивки с эталоном node-sim.
+Тест совместимости production IRR-ноды с MQTT/JSON контрактом.
 
 Проверяет:
 - Формат телеметрии
@@ -47,7 +47,7 @@ class TestResult:
 
 
 class NodeCompatibilityTester:
-    """Тестер совместимости прошивки с эталоном node-sim."""
+    """Тестер совместимости production IRR-ноды."""
     
     def __init__(self, mqtt_host: str = "localhost", mqtt_port: int = 1884):
         self.mqtt_host = mqtt_host
@@ -59,11 +59,16 @@ class NodeCompatibilityTester:
             "command_response": [],
             "heartbeat": [],
             "status": [],
-            "error": []
+            "error": [],
+            "event": [],
         }
         self.test_gh_uid = "gh-test-1"
         self.test_zone_uid = "zn-test-1"
-        self.test_node_uid = "nd-test-001"
+        self.test_node_uid = "nd-irrig-1"
+        self.telemetry_channel = "level_clean_min"
+        self.command_channel = "valve_clean_fill"
+        self.command_name = "set_relay"
+        self.command_params: Dict = {"state": True}
         
     def load_schema(self, schema_name: str) -> Dict:
         """Загрузить JSON схему."""
@@ -106,14 +111,15 @@ class NodeCompatibilityTester:
             
             # Подписка на все топики тестовой ноды
             topics = [
-                f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/+/telemetry",
-                f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/+/command_response",
-                f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/heartbeat",
-                f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/status",
-                f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/error",
+                (f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/+/telemetry", "telemetry"),
+                (f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/+/command_response", "command_response"),
+                (f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/heartbeat", "heartbeat"),
+                (f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/status", "status"),
+                (f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/error", "error"),
+                (f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/storage_state/event", "event"),
             ]
             
-            for topic in topics:
+            for topic, _ in topics:
                 client.subscribe(topic, qos=1)
                 print(f"  Подписка: {topic}")
         else:
@@ -125,8 +131,13 @@ class NodeCompatibilityTester:
             payload = json.loads(msg.payload.decode('utf-8'))
             topic_parts = msg.topic.split('/')
             
-            if len(topic_parts) >= 6:
-                message_type = topic_parts[5]  # telemetry, command_response, heartbeat, status, error
+            if len(topic_parts) >= 5:
+                if len(topic_parts) >= 7 and topic_parts[5] == "storage_state" and topic_parts[6] == "event":
+                    message_type = "event"
+                elif len(topic_parts) >= 7:
+                    message_type = topic_parts[6]
+                else:
+                    message_type = topic_parts[-1]
                 
                 if message_type in self.received_messages:
                     self.received_messages[message_type].append({
@@ -175,7 +186,22 @@ class NodeCompatibilityTester:
                 "Телеметрия не получена"
             )
         
-        telemetry = self.received_messages["telemetry"][0]["payload"]
+        telemetry_msg = next(
+            (
+                msg
+                for msg in self.received_messages["telemetry"]
+                if f"/{self.telemetry_channel}/telemetry" in msg["topic"]
+            ),
+            None,
+        )
+        if telemetry_msg is None:
+            return TestResult(
+                "telemetry_format",
+                False,
+                f"Телеметрия канала {self.telemetry_channel} не получена",
+            )
+
+        telemetry = telemetry_msg["payload"]
         
         # Проверка обязательных полей
         required_fields = ["metric_type", "value", "ts"]
@@ -235,11 +261,13 @@ class NodeCompatibilityTester:
         
         # Отправляем тестовую команду
         cmd_id = f"test-cmd-{int(time.time())}"
-        command_topic = f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/ph_sensor/command"
+        command_topic = (
+            f"hydro/{self.test_gh_uid}/{self.test_zone_uid}/{self.test_node_uid}/{self.command_channel}/command"
+        )
         command = self.build_signed_command(
             cmd_id=cmd_id,
-            cmd="set_relay",
-            params={"state": True},
+            cmd=self.command_name,
+            params=self.command_params,
         )
         
         self.client.publish(command_topic, json.dumps(command), qos=1)
@@ -432,7 +460,7 @@ class NodeCompatibilityTester:
     def run_all_tests(self) -> List[TestResult]:
         """Запустить все тесты."""
         print("=" * 60)
-        print("ТЕСТИРОВАНИЕ СОВМЕСТИМОСТИ С ЭТАЛОНОМ NODE-SIM")
+        print("ТЕСТИРОВАНИЕ СОВМЕСТИМОСТИ PRODUCTION IRR NODE")
         print("=" * 60)
         print()
         
@@ -494,12 +522,16 @@ class NodeCompatibilityTester:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Тест совместимости прошивки с эталоном node-sim")
+    parser = argparse.ArgumentParser(description="Тест совместимости production IRR-ноды")
     parser.add_argument("--mqtt-host", default="localhost", help="MQTT хост")
     parser.add_argument("--mqtt-port", type=int, default=1884, help="MQTT порт")
     parser.add_argument("--gh-uid", default="gh-test-1", help="UID теплицы")
     parser.add_argument("--zone-uid", default="zn-test-1", help="UID зоны")
-    parser.add_argument("--node-uid", default="nd-test-001", help="UID ноды")
+    parser.add_argument("--node-uid", default="nd-irrig-1", help="UID ноды")
+    parser.add_argument("--telemetry-channel", default="level_clean_min", help="Канал телеметрии для проверки")
+    parser.add_argument("--command-channel", default="valve_clean_fill", help="Канал команды для проверки command_response")
+    parser.add_argument("--command", default="set_relay", help="Команда для проверки command_response")
+    parser.add_argument("--command-params-json", default='{"state": true}', help="JSON params для команды")
     
     args = parser.parse_args()
     
@@ -507,6 +539,10 @@ def main():
     tester.test_gh_uid = args.gh_uid
     tester.test_zone_uid = args.zone_uid
     tester.test_node_uid = args.node_uid
+    tester.telemetry_channel = args.telemetry_channel
+    tester.command_channel = args.command_channel
+    tester.command_name = args.command
+    tester.command_params = json.loads(args.command_params_json)
     
     results = tester.run_all_tests()
     success = tester.print_results()

@@ -171,6 +171,21 @@ function makeRuntimeDocument(value = 15) {
   }
 }
 
+function makeAlertPoliciesDocument(value = 'manual_ack') {
+  return {
+    namespace: 'system.alert_policies',
+    scope_type: 'system',
+    scope_id: 0,
+    schema_version: 1,
+    payload: {
+      ae3_operational_resolution_mode: value,
+    },
+    status: 'valid',
+    updated_at: '2026-03-24T11:00:00Z',
+    updated_by: 1,
+  }
+}
+
 describe('Settings/Index.vue', () => {
   beforeEach(() => {
     apiGetMock.mockReset()
@@ -195,9 +210,24 @@ describe('Settings/Index.vue', () => {
 
       return Promise.resolve({ data: { data: [] } })
     })
-    updateDocumentMock.mockResolvedValue(makeRuntimeDocument(45))
-    resetDocumentMock.mockResolvedValue(makeRuntimeDocument(15))
-    getDocumentMock.mockResolvedValue(makeRuntimeDocument())
+    updateDocumentMock.mockImplementation(async (_scopeType: string, _scopeId: number, namespace: string, payload?: Record<string, unknown>) => {
+      if (namespace === 'system.alert_policies') {
+        return makeAlertPoliciesDocument(String(payload?.ae3_operational_resolution_mode || 'manual_ack'))
+      }
+      return makeRuntimeDocument(Number(payload?.['automation_engine.scheduler_due_grace_sec'] || 45))
+    })
+    resetDocumentMock.mockImplementation(async (_scopeType: string, _scopeId: number, namespace: string) => {
+      if (namespace === 'system.alert_policies') {
+        return makeAlertPoliciesDocument('manual_ack')
+      }
+      return makeRuntimeDocument(15)
+    })
+    getDocumentMock.mockImplementation(async (_scopeType: string, _scopeId: number, namespace: string) => {
+      if (namespace === 'system.alert_policies') {
+        return makeAlertPoliciesDocument()
+      }
+      return makeRuntimeDocument()
+    })
   })
 
   it('читает runtime snapshot только через authority API и игнорирует legacy page props', async () => {
@@ -206,7 +236,9 @@ describe('Settings/Index.vue', () => {
     await flushPromises()
 
     expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')
+    expect(getDocumentMock).toHaveBeenCalledWith('system', 0, 'system.alert_policies')
     expect(wrapper.text()).toContain('Automation Engine')
+    expect(wrapper.text()).toContain('AE3 Alert Policies')
     expect(wrapper.text()).toContain('Scheduler')
     expect(wrapper.text()).toContain('Due grace')
     expect(wrapper.text()).not.toContain('Legacy props snapshot')
@@ -235,5 +267,24 @@ describe('Settings/Index.vue', () => {
     await flushPromises()
 
     expect(resetDocumentMock).toHaveBeenCalledWith('system', 0, 'system.runtime')
+  })
+
+  it('сохраняет alert policy через authority document endpoints', async () => {
+    const wrapper = mount(SettingsIndex)
+
+    await flushPromises()
+
+    await wrapper.get('[data-testid="settings-alert-policy-input-ae3-operational-resolution-mode"]').setValue('auto_resolve_on_recovery')
+    await wrapper.get('[data-testid="settings-alert-policy-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateDocumentMock).toHaveBeenCalledWith(
+      'system',
+      0,
+      'system.alert_policies',
+      {
+        ae3_operational_resolution_mode: 'auto_resolve_on_recovery',
+      },
+    )
   })
 })

@@ -89,16 +89,28 @@ class ProcessAlert implements ShouldQueue
 
             // Если превышен лимит попыток - перемещаем в DLQ
             if ($attempts >= $maxAttempts) {
-                DB::table('pending_alerts')
-                    ->where('id', $this->pendingAlertId)
-                    ->update([
-                        'status' => 'dlq',
+                DB::transaction(function () use ($pending, $attempts, $maxAttempts, $e): void {
+                    $movedAt = now();
+                    DB::table('pending_alerts_dlq')->insert([
+                        'zone_id' => $pending->zone_id,
+                        'source' => $pending->source ?? 'biz',
+                        'code' => $pending->code,
+                        'type' => $pending->type,
+                        'status' => $pending->status ?? 'ACTIVE',
+                        'details' => $pending->details,
                         'attempts' => $attempts,
-                        'next_retry_at' => null,
-                        'moved_to_dlq_at' => now(),
+                        'max_attempts' => $maxAttempts,
                         'last_error' => $e->getMessage(),
-                        'updated_at' => now(),
+                        'failed_at' => $movedAt,
+                        'moved_to_dlq_at' => $movedAt,
+                        'original_id' => $pending->id,
+                        'created_at' => $pending->created_at ?? $movedAt,
                     ]);
+
+                    DB::table('pending_alerts')
+                        ->where('id', $this->pendingAlertId)
+                        ->delete();
+                });
 
                 Log::warning('Alert moved to DLQ after max attempts', [
                     'pending_alert_id' => $this->pendingAlertId,
@@ -114,7 +126,7 @@ class ProcessAlert implements ShouldQueue
                         'next_retry_at' => now()->addSeconds(60 * max($attempts, 1)),
                         'moved_to_dlq_at' => null,
                         'last_error' => $e->getMessage(),
-                        'status' => 'pending', // Остается pending для retry
+                        'status' => 'pending',
                         'updated_at' => now(),
                     ]);
             }

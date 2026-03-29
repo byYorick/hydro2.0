@@ -46,6 +46,7 @@ class SingleZoneServiceSeeder extends Seeder
         $this->seedPidConfigs($zone->id);
         $this->seedPredictionTelemetry($zone, $node);
         $this->pruneToSingleTopology($greenhouse->id, $zone->id, $node->id);
+        $this->call(AccessControlBootstrapSeeder::class);
 
         $this->command->info('=== Single-zone service dataset complete ===');
         $this->command->info("Greenhouse UID: {$greenhouse->uid}");

@@ -1,6 +1,5 @@
-#include "storage_irrigation_node_channel_map.h"
-#include "storage_irrigation_node_defaults.h"
-#include "cJSON.h"
+#include "storage_irrigation_node_config.h"
+#include <string.h>
 
 const storage_irrigation_node_sensor_channel_t STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[] = {
     {
@@ -10,7 +9,7 @@ const storage_irrigation_node_sensor_channel_t STORAGE_IRRIGATION_NODE_SENSOR_CH
         .gpio = STORAGE_IRRIGATION_NODE_LEVEL_CLEAN_MIN_GPIO,
         .active_low = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW,
         .poll_interval_ms = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS,
-        .precision = 0
+        .precision = 0,
     },
     {
         .name = "level_clean_max",
@@ -19,7 +18,7 @@ const storage_irrigation_node_sensor_channel_t STORAGE_IRRIGATION_NODE_SENSOR_CH
         .gpio = STORAGE_IRRIGATION_NODE_LEVEL_CLEAN_MAX_GPIO,
         .active_low = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW,
         .poll_interval_ms = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS,
-        .precision = 0
+        .precision = 0,
     },
     {
         .name = "level_solution_min",
@@ -28,7 +27,7 @@ const storage_irrigation_node_sensor_channel_t STORAGE_IRRIGATION_NODE_SENSOR_CH
         .gpio = STORAGE_IRRIGATION_NODE_LEVEL_SOLUTION_MIN_GPIO,
         .active_low = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW,
         .poll_interval_ms = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS,
-        .precision = 0
+        .precision = 0,
     },
     {
         .name = "level_solution_max",
@@ -37,7 +36,7 @@ const storage_irrigation_node_sensor_channel_t STORAGE_IRRIGATION_NODE_SENSOR_CH
         .gpio = STORAGE_IRRIGATION_NODE_LEVEL_SOLUTION_MAX_GPIO,
         .active_low = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_ACTIVE_LOW,
         .poll_interval_ms = STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS,
-        .precision = 0
+        .precision = 0,
     },
 };
 
@@ -51,7 +50,7 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
     },
     {
         .name = "valve_clean_fill",
@@ -59,7 +58,7 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
     },
     {
         .name = "valve_clean_supply",
@@ -67,7 +66,7 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
     },
     {
         .name = "valve_solution_fill",
@@ -75,7 +74,7 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
     },
     {
         .name = "valve_solution_supply",
@@ -83,7 +82,7 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND
+        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
     },
     {
         .name = "valve_irrigation",
@@ -91,8 +90,8 @@ const storage_irrigation_node_actuator_channel_t STORAGE_IRRIGATION_NODE_ACTUATO
         .fail_safe_nc = STORAGE_IRRIGATION_NODE_PUMP_FAIL_SAFE_NC,
         .max_duration_ms = STORAGE_IRRIGATION_NODE_PUMP_MAX_DURATION_MS,
         .min_off_ms = STORAGE_IRRIGATION_NODE_PUMP_MIN_OFF_MS,
-        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND
-    }
+        .ml_per_second = STORAGE_IRRIGATION_NODE_PUMP_ML_PER_SECOND,
+    },
 };
 
 const size_t STORAGE_IRRIGATION_NODE_ACTUATOR_CHANNELS_COUNT =
@@ -143,7 +142,10 @@ static cJSON *storage_irrigation_node_build_actuator_entry(
     cJSON_AddStringToObject(entry, "name", actuator->name);
     cJSON_AddStringToObject(entry, "channel", actuator->name);
     cJSON_AddStringToObject(entry, "type", "ACTUATOR");
-    cJSON_AddStringToObject(entry, "actuator_type", "PUMP");
+    const char *actuator_type = strcmp(actuator->name, "pump_main") == 0 ? "PUMP" : "VALVE";
+    const char *relay_type = actuator->fail_safe_nc ? "NC" : "NO";
+    cJSON_AddStringToObject(entry, "actuator_type", actuator_type);
+    cJSON_AddStringToObject(entry, "relay_type", relay_type);
     cJSON_AddNumberToObject(entry, "gpio", actuator->gpio);
 
     cJSON *safe_limits = cJSON_CreateObject();
@@ -153,7 +155,7 @@ static cJSON *storage_irrigation_node_build_actuator_entry(
     }
     cJSON_AddNumberToObject(safe_limits, "max_duration_ms", actuator->max_duration_ms);
     cJSON_AddNumberToObject(safe_limits, "min_off_ms", actuator->min_off_ms);
-    cJSON_AddStringToObject(safe_limits, "fail_safe_mode", actuator->fail_safe_nc ? "NC" : "NO");
+    cJSON_AddStringToObject(safe_limits, "fail_safe_mode", relay_type);
     cJSON_AddItemToObject(entry, "safe_limits", safe_limits);
     cJSON_AddNumberToObject(entry, "ml_per_second", actuator->ml_per_second);
 
@@ -184,7 +186,6 @@ cJSON *storage_irrigation_node_build_config_channels(void) {
         cJSON_AddItemToArray(channels, entry);
     }
 
-    // Service channel for two-tank state snapshots/events. No GPIO binding.
     cJSON *service_entry = cJSON_CreateObject();
     if (!service_entry) {
         cJSON_Delete(channels);

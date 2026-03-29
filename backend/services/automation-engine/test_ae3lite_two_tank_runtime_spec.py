@@ -732,3 +732,19 @@ def test_resolve_two_tank_runtime_requires_process_hold_window_for_prepare_recir
                 },
             )
         )
+
+
+def test_resolve_two_tank_runtime_injects_timeout_guard_into_pump_main_start() -> None:
+    runtime = resolve_two_tank_runtime(_snapshot(correction={}))
+
+    solution_fill = runtime["command_specs"]["solution_fill_start"]
+    pump_main = next(step for step in solution_fill if step["channel"] == "pump_main")
+    assert pump_main["params"]["timeout_ms"] == 1800 * 1000
+    assert pump_main["params"]["stage"] == "solution_fill"
+    assert pump_main["complete_on_ack"] is True
+
+    recirc = runtime["command_specs"]["prepare_recirculation_start"]
+    recirc_pump = next(step for step in recirc if step["channel"] == "pump_main")
+    assert recirc_pump["params"]["timeout_ms"] == 1200 * 1000
+    assert recirc_pump["params"]["stage"] == "prepare_recirculation"
+    assert recirc_pump["complete_on_ack"] is True

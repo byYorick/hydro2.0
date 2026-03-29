@@ -10,7 +10,7 @@
  */
 
 #include "storage_irrigation_node_init_steps.h"
-#include "storage_irrigation_node_defaults.h"
+#include "storage_irrigation_node_config.h"
 #include "storage_irrigation_node_config_utils.h"
 #include "init_steps_utils.h"
 #include "config_storage.h"
@@ -285,7 +285,7 @@ esp_err_t storage_irrigation_node_init_step_mqtt(storage_irrigation_node_init_co
         mqtt_config.use_tls = mqtt_cfg.use_tls;
         ESP_LOGI(TAG, "MQTT config from storage: %s:%d", mqtt_cfg.host, mqtt_cfg.port);
     } else {
-        // Default values из storage_irrigation_node_defaults.h
+        // Default values из storage_irrigation_node_config.h
         strncpy(mqtt_host, STORAGE_IRRIGATION_NODE_DEFAULT_MQTT_HOST, sizeof(mqtt_host) - 1);
         mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
         mqtt_config.host = mqtt_host;

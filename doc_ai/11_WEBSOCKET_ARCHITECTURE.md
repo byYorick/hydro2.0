@@ -17,10 +17,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `hydro.commands.global` | `commands.global` | CommandStatusUpdated, CommandFailed (no zone) | All authenticated users |
 | `hydro.events.global` | `events.global` | EventCreated | All authenticated users |
 | `hydro.alerts` | — | AlertCreated, AlertUpdated | All authenticated users |
-| `hydro.devices` | — | NodeTelemetryUpdated, NodeConfigUpdated (no zone) | All authenticated users |
+| `hydro.devices` | — | NodeTelemetryUpdated, NodeConfigUpdated (no zone) | `admin`, `agronomist` |
 
 **Authorization** (`backend/laravel/routes/channels.php`):
 - Zone channels check `ZoneAccessHelper::canAccessZone()` + role in `['viewer', 'operator', 'admin', 'agronomist', 'engineer']`
+- `hydro.devices` допускает только роли `admin` и `agronomist`, так как канал несёт unassigned device snapshot
 - Global channels require authenticated user + valid role
 - Auth failures return `false` (403), DB errors return `false` instead of throwing
 

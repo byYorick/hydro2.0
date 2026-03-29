@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Alert;
+use App\Helpers\ZoneAccessHelper;
 use App\Services\AlertCatalogService;
 use App\Services\AlertService;
 use Illuminate\Http\Request;
@@ -26,7 +27,7 @@ class AlertController extends Controller
             ], 401);
         }
 
-        $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
+        $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
 
         $query = Alert::query()
             ->with(['zone:id,name,status']);
@@ -39,9 +40,13 @@ class AlertController extends Controller
                 $query->whereRaw('1 = 0');
             }
         } elseif (! empty($accessibleZoneIds)) {
-            $query->whereIn('zone_id', $accessibleZoneIds);
+            $query->where(function ($alertsQuery) use ($accessibleZoneIds) {
+                $alertsQuery
+                    ->whereIn('zone_id', $accessibleZoneIds)
+                    ->orWhereNull('zone_id');
+            });
         } else {
-            $query->whereRaw('1 = 0');
+            $query->whereNull('zone_id');
         }
 
         if ($request->filled('status')) {
@@ -166,7 +171,7 @@ class AlertController extends Controller
             ], 401);
         }
 
-        if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
+        if ($alert->zone_id && ! ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this alert',
@@ -186,7 +191,7 @@ class AlertController extends Controller
             ], 401);
         }
 
-        if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
+        if ($alert->zone_id && ! ZoneAccessHelper::canAccessZone($user, $alert->zone_id)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this alert',
@@ -225,15 +230,14 @@ class AlertController extends Controller
             ], 401);
         }
 
-        $pendingAlert = \Illuminate\Support\Facades\DB::table('pending_alerts')
+        $pendingAlert = \Illuminate\Support\Facades\DB::table('pending_alerts_dlq')
             ->where('id', $id)
-            ->where('status', 'dlq')
             ->first();
 
         if (! $pendingAlert) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Pending alert not found in DLQ',
+                'message' => 'Pending alert not found in pending_alerts_dlq',
             ], 404);
         }
 
@@ -245,31 +249,44 @@ class AlertController extends Controller
         }
 
         try {
-            \Illuminate\Support\Facades\DB::table('pending_alerts')
-                ->where('id', $id)
-                ->update([
+            $newPendingId = null;
+            $alertData = null;
+            \Illuminate\Support\Facades\DB::transaction(function () use ($pendingAlert, $id, &$newPendingId, &$alertData): void {
+                $newPendingId = \Illuminate\Support\Facades\DB::table('pending_alerts')->insertGetId([
+                    'zone_id' => $pendingAlert->zone_id,
+                    'source' => $pendingAlert->source ?? 'biz',
+                    'code' => $pendingAlert->code,
+                    'type' => $pendingAlert->type,
                     'status' => 'pending',
+                    'details' => $pendingAlert->details,
                     'attempts' => 0,
+                    'max_attempts' => $pendingAlert->max_attempts ?? 3,
+                    'next_retry_at' => now(),
                     'last_error' => null,
-                    'next_retry_at' => null,
                     'moved_to_dlq_at' => null,
+                    'created_at' => now(),
                     'updated_at' => now(),
                 ]);
 
-            $alertData = [
-                'zone_id' => $pendingAlert->zone_id,
-                'source' => $pendingAlert->source ?? 'biz',
-                'code' => $pendingAlert->code,
-                'type' => $pendingAlert->type,
-                'details' => $pendingAlert->details ? json_decode($pendingAlert->details, true) : null,
-            ];
+                \Illuminate\Support\Facades\DB::table('pending_alerts_dlq')
+                    ->where('id', $id)
+                    ->delete();
 
-            \App\Jobs\ProcessAlert::dispatch($alertData, $id);
+                $alertData = [
+                    'zone_id' => $pendingAlert->zone_id,
+                    'source' => $pendingAlert->source ?? 'biz',
+                    'code' => $pendingAlert->code,
+                    'type' => $pendingAlert->type,
+                    'details' => $pendingAlert->details ? json_decode($pendingAlert->details, true) : null,
+                ];
+            });
+
+            \App\Jobs\ProcessAlert::dispatch($alertData, $newPendingId);
 
             return response()->json([
                 'status' => 'ok',
                 'message' => 'Alert queued for replay',
-                'data' => ['pending_alert_id' => $id],
+                'data' => ['pending_alert_id' => $newPendingId, 'dlq_id' => $id],
             ], Response::HTTP_OK);
         } catch (\Exception $e) {
             return response()->json([

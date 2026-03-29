@@ -13,11 +13,11 @@ import {
 } from '@/ws/sharedEchoChannels'
 import type { EchoLike } from '@/ws/subscriptionTypes'
 
-const COMMAND_STATUS_EVENT = '.App\\Events\\CommandStatusUpdated'
-const COMMAND_FAILED_EVENT = '.App\\Events\\CommandFailed'
-const GLOBAL_EVENT_CREATED = '.App\\Events\\EventCreated'
+const COMMAND_STATUS_EVENTS = ['.CommandStatusUpdated', '.App\\Events\\CommandStatusUpdated'] as const
+const COMMAND_FAILED_EVENTS = ['.CommandFailed', '.App\\Events\\CommandFailed'] as const
+const GLOBAL_EVENT_CREATED_EVENTS = ['.EventCreated', '.App\\Events\\EventCreated'] as const
 const ZONE_UPDATED_EVENT = '.App\\Events\\ZoneUpdated'
-const ALERT_CREATED_EVENT = '.App\\Events\\AlertCreated'
+const ALERT_EVENTS = ['.AlertCreated', '.App\\Events\\AlertCreated', '.AlertUpdated', '.App\\Events\\AlertUpdated'] as const
 
 interface ChannelControlManagerDeps {
   isBrowser: () => boolean
@@ -110,21 +110,27 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
     if (control.kind === 'zoneCommands') {
       const statusHandler = (payload: WsEventPayload) => deps.onCommandEvent(control.channelName, payload, false)
       const failedHandler = (payload: WsEventPayload) => deps.onCommandEvent(control.channelName, payload, true)
-      channel.listen(COMMAND_STATUS_EVENT, statusHandler)
-      channel.listen(COMMAND_FAILED_EVENT, failedHandler)
-      control.listenerRefs = {
-        [COMMAND_STATUS_EVENT]: statusHandler,
-        [COMMAND_FAILED_EVENT]: failedHandler,
-      }
+      const listenerRefs: Record<string, (payload: WsEventPayload) => void> = {}
+      COMMAND_STATUS_EVENTS.forEach((eventName) => {
+        channel.listen(eventName, statusHandler)
+        listenerRefs[eventName] = statusHandler
+      })
+      COMMAND_FAILED_EVENTS.forEach((eventName) => {
+        channel.listen(eventName, failedHandler)
+        listenerRefs[eventName] = failedHandler
+      })
+      control.listenerRefs = listenerRefs
       return
     }
 
     if (control.kind === 'globalEvents') {
       const eventHandler = (payload: WsEventPayload) => deps.onGlobalEvent(control.channelName, payload)
-      channel.listen(GLOBAL_EVENT_CREATED, eventHandler)
-      control.listenerRefs = {
-        [GLOBAL_EVENT_CREATED]: eventHandler,
-      }
+      const listenerRefs: Record<string, (payload: WsEventPayload) => void> = {}
+      GLOBAL_EVENT_CREATED_EVENTS.forEach((eventName) => {
+        channel.listen(eventName, eventHandler)
+        listenerRefs[eventName] = eventHandler
+      })
+      control.listenerRefs = listenerRefs
       return
     }
 
@@ -138,10 +144,12 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
     }
 
     const alertCreatedHandler = (payload: WsEventPayload) => deps.onAlertEvent(control.channelName, payload)
-    channel.listen(ALERT_CREATED_EVENT, alertCreatedHandler)
-    control.listenerRefs = {
-      [ALERT_CREATED_EVENT]: alertCreatedHandler,
-    }
+    const listenerRefs: Record<string, (payload: WsEventPayload) => void> = {}
+    ALERT_EVENTS.forEach((eventName) => {
+      channel.listen(eventName, alertCreatedHandler)
+      listenerRefs[eventName] = alertCreatedHandler
+    })
+    control.listenerRefs = listenerRefs
   }
 
   const detachChannel = (control: ChannelControl, removeControl = false): void => {

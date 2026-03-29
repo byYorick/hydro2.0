@@ -101,7 +101,7 @@ class NodeController extends Controller
         }
         if (isset($validated['greenhouse_id'])) {
             $greenhouse = Greenhouse::query()->findOrFail((int) $validated['greenhouse_id']);
-            if (! $user->isAdmin() && ! \App\Helpers\ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+            if (! $user->isAdmin() && ! \App\Helpers\ZoneAccessHelper::canAccessGreenhouseScope($user, $greenhouse)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this greenhouse',

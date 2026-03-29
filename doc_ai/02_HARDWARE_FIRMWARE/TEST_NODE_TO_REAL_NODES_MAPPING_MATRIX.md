@@ -53,13 +53,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
-| `pump_main` | `storage_irrigation_node` (`run_pump`) | `Partial` | В test-node канал принимает `set_relay` и `run_pump/dose`; в `storage_irrigation_node` основной контракт — `run_pump` с `duration_ms`. Для on/off семантики нужен adapter. |
+| `pump_main` | `storage_irrigation_node` (`set_relay`) | `Direct` | Production IRR-node поддерживает latched `set_relay {state:true|false}`; interlock `pump_main` остаётся обязательным. |
 | `main_pump` (alias) | `storage_irrigation_node` (`pump_main`) | `Alias/Adapter` | Alias есть только в test-node; в real-node нужно канонизировать имя в одном месте. |
-| `valve_clean_fill` | `storage_irrigation_node/valve_clean_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
-| `valve_clean_supply` | `storage_irrigation_node/valve_clean_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
-| `valve_solution_fill` | `storage_irrigation_node/valve_solution_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
-| `valve_solution_supply` | `storage_irrigation_node/valve_solution_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
-| `valve_irrigation` | `storage_irrigation_node/valve_irrigation` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; на текущем этапе выполняется через `run_pump`. |
+| `valve_clean_fill` | `storage_irrigation_node/valve_clean_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
+| `valve_clean_supply` | `storage_irrigation_node/valve_clean_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
+| `valve_solution_fill` | `storage_irrigation_node/valve_solution_fill` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
+| `valve_solution_supply` | `storage_irrigation_node/valve_solution_supply` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
+| `valve_irrigation` | `storage_irrigation_node/valve_irrigation` | `Direct` | Канал реализован в прошивочной карте `storage_irrigation_node`; основной контракт — latched `set_relay`. |
 | `level_clean_min` | `storage_irrigation_node/level_clean_min` | `Direct` | Реализован как дискретный level-switch канал. |
 | `level_clean_max` | `storage_irrigation_node/level_clean_max` | `Direct` | Реализован как дискретный level-switch канал. |
 | `level_solution_min` | `storage_irrigation_node/level_solution_min` | `Direct` | Реализован как дискретный level-switch канал. |
@@ -72,7 +72,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `pump_irrigation` (service alias) | `storage_irrigation_node` | `Alias/Adapter` | В real-node нужен явный канал в NodeConfig; в test-node это внутренний transient-контур. |
 | `pump_bus_current` (service/probe) | `storage_irrigation_node` | `Missing` | В каноническом IRR-профиле `storage_irrigation_node` этот канал не публикуется; используются `level_*` switch-каналы. |
 | `water_level` / `flow_present` (service/probe) | отдельная sensor-node / расширение irrig-node | `Missing` | В текущих real-node прошивках нет готового прямого канала с такой семантикой. |
-| `storage_state` | `relay_node`/`storage_irrigation_node` | `Missing` | Специальный event-channel test-node; в real-node эквивалент не реализован. |
+| `storage_state` | `storage_irrigation_node/storage_state` | `Direct` | Реальная IRR-нода публикует `storage_state/event` и обслуживает `storage_state/state` для two-tank runtime. |
 
 Критично:
 

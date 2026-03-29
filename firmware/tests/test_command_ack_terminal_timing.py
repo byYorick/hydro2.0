@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-HIL/интеграционный тест таймингов ACK -> terminal для test_node.
+HIL/интеграционный тест command lifecycle для production node.
 
-Проверяет:
-1) По cmd_id приходят оба статуса: ACK и terminal.
-2) ACK приходит раньше terminal.
-3) Разница времени между ACK и terminal близка к sim_delay_ms.
+По умолчанию проверяет immediate terminal path без ACK для `set_relay`.
 """
 
 import argparse
@@ -115,20 +112,20 @@ class AckTerminalTimingTester:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="HIL тест таймингов ACK -> terminal")
+    parser = argparse.ArgumentParser(description="HIL тест command lifecycle для production node")
     parser.add_argument("--mqtt-host", default="localhost")
     parser.add_argument("--mqtt-port", type=int, default=1884)
     parser.add_argument("--gh-uid", default="gh-test-1")
     parser.add_argument("--zone-uid", default="zn-test-1")
-    parser.add_argument("--node-uid", default="nd-test-001")
-    parser.add_argument("--channel", default="ph_sensor")
+    parser.add_argument("--node-uid", default="nd-irrig-1")
+    parser.add_argument("--channel", default="valve_clean_fill")
     parser.add_argument("--cmd", default="set_relay")
-    parser.add_argument("--sim-delay-ms", type=int, default=1200)
-    parser.add_argument("--sim-status", default="DONE")
+    parser.add_argument("--params-json", default='{"state": true}')
+    parser.add_argument("--expect-ack", action="store_true")
     parser.add_argument("--ack-timeout-sec", type=float, default=3.0)
-    parser.add_argument("--terminal-timeout-sec", type=float, default=12.0)
-    parser.add_argument("--lower-jitter-ms", type=int, default=200)
-    parser.add_argument("--upper-jitter-ms", type=int, default=1500)
+    parser.add_argument("--terminal-timeout-sec", type=float, default=6.0)
+    parser.add_argument("--min-terminal-delay-ms", type=int, default=0)
+    parser.add_argument("--max-terminal-delay-ms", type=int, default=3000)
     args = parser.parse_args()
 
     command_topic = (
@@ -139,11 +136,7 @@ def main() -> int:
     )
     cmd_id = f"hil-timing-{int(time.time() * 1000)}"
 
-    params: Dict[str, object] = {
-        "state": True,
-        "sim_delay_ms": args.sim_delay_ms,
-        "sim_status": str(args.sim_status).upper(),
-    }
+    params: Dict[str, object] = json.loads(args.params_json)
 
     tester = AckTerminalTimingTester(args.mqtt_host, args.mqtt_port)
     try:
@@ -154,21 +147,22 @@ def main() -> int:
         ack: Optional[ReceivedMessage] = None
         terminal: Optional[ReceivedMessage] = None
 
-        ack_deadline = time.time() + args.ack_timeout_sec
-        while time.time() < ack_deadline and ack is None:
-            ack, terminal = tester.find_ack_and_terminal(cmd_id)
+        if args.expect_ack:
+            ack_deadline = time.time() + args.ack_timeout_sec
+            while time.time() < ack_deadline and ack is None:
+                ack, terminal = tester.find_ack_and_terminal(cmd_id)
+                if ack is None:
+                    time.sleep(0.05)
+
             if ack is None:
-                time.sleep(0.05)
+                print(f"{RED}❌ ACK не получен в течение {args.ack_timeout_sec}с{NC}")
+                return 1
 
-        if ack is None:
-            print(f"{RED}❌ ACK не получен в течение {args.ack_timeout_sec}с{NC}")
-            return 1
-
-        print(f"{GREEN}✅ ACK получен{NC}: status={ack.payload.get('status')} at={ack.received_at:.3f}")
+            print(f"{GREEN}✅ ACK получен{NC}: status={ack.payload.get('status')} at={ack.received_at:.3f}")
 
         term_deadline = time.time() + args.terminal_timeout_sec
         while time.time() < term_deadline and terminal is None:
-            _, terminal = tester.find_ack_and_terminal(cmd_id)
+            ack, terminal = tester.find_ack_and_terminal(cmd_id)
             if terminal is None:
                 time.sleep(0.05)
 
@@ -181,24 +175,29 @@ def main() -> int:
             print(f"{RED}❌ Получен не-terminal статус: {terminal_status}{NC}")
             return 1
 
-        gap_ms = int((terminal.received_at - ack.received_at) * 1000)
-        min_expected = max(0, args.sim_delay_ms - args.lower_jitter_ms)
-        max_expected = args.sim_delay_ms + args.upper_jitter_ms
+        if not args.expect_ack and ack is not None:
+            print(f"{RED}❌ Для immediate terminal path ACK не ожидался, но был получен{NC}")
+            return 1
+
+        baseline = ack.received_at if ack is not None else time.time()
+        if ack is None:
+            baseline = terminal.received_at
+        gap_ms = int((terminal.received_at - baseline) * 1000) if ack is not None else 0
 
         print(
-            f"{YELLOW}ACK->terminal:{NC} gap={gap_ms}ms, expected=[{min_expected}..{max_expected}]ms, "
+            f"{YELLOW}Terminal lifecycle:{NC} gap={gap_ms}ms, expected=[{args.min_terminal_delay_ms}..{args.max_terminal_delay_ms}]ms, "
             f"terminal={terminal_status}"
         )
 
-        if gap_ms < min_expected or gap_ms > max_expected:
+        if gap_ms < args.min_terminal_delay_ms or gap_ms > args.max_terminal_delay_ms:
             print(f"{RED}❌ Тайминг вне допуска{NC}")
             return 1
 
-        if terminal.received_at < ack.received_at:
+        if ack is not None and terminal.received_at < ack.received_at:
             print(f"{RED}❌ Нарушен порядок статусов: terminal раньше ACK{NC}")
             return 1
 
-        print(f"{GREEN}✅ HIL тайминг ACK->terminal прошёл{NC}")
+        print(f"{GREEN}✅ HIL command lifecycle прошёл{NC}")
         return 0
     finally:
         tester.disconnect()

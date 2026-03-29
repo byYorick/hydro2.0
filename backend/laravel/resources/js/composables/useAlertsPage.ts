@@ -1,6 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
-import { useWebSocket } from '@/composables/useWebSocket'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
@@ -9,7 +8,13 @@ import { useAlertsStore } from '@/stores/alerts'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity, type AlertCodeMeta } from '@/constants/alertErrorMap'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import type { Alert } from '@/types/Alert'
+
+interface AlertZoneOption {
+  id: number
+  name: string
+}
 
 export interface AlertRecord extends Omit<Alert, 'zone'> {
   details?: Record<string, unknown> | null
@@ -21,6 +26,7 @@ export interface AlertRecord extends Omit<Alert, 'zone'> {
 
 interface PageProps {
   alerts?: AlertRecord[]
+  zones?: AlertZoneOption[]
   [key: string]: unknown
 }
 
@@ -39,7 +45,6 @@ export function useAlertsPage() {
   const alertsStore = useAlertsStore()
   const { api } = useApi()
   const { showToast } = useToast()
-  const { subscribeToAlerts } = useWebSocket()
 
   // ── Toast suppression ────────────────────────────────────────────────────
   const toastSuppressionSec = ref(30)
@@ -139,6 +144,14 @@ export function useAlertsPage() {
   )
 
   const alerts = computed(() => alertsStore.items as AlertRecord[])
+  const accessibleZones = computed<AlertZoneOption[]>(() => {
+    return Array.isArray(page.props.zones) ? page.props.zones : []
+  })
+  const accessibleZoneIds = computed<number[]>(() => {
+    return accessibleZones.value
+      .map((zone) => Number(zone?.id))
+      .filter((zoneId) => Number.isInteger(zoneId) && zoneId > 0)
+  })
   const catalogMetaByCode = ref<Record<string, AlertCodeMeta>>({})
 
   const isRefreshing = ref(false)
@@ -196,6 +209,11 @@ export function useAlertsPage() {
   // ── Zone options for filter ──────────────────────────────────────────────
   const zoneOptions = computed(() => {
     const map = new Map<number, string>()
+    accessibleZones.value.forEach((zone) => {
+      if (zone?.id) {
+        map.set(zone.id, zone.name || `Zone #${zone.id}`)
+      }
+    })
     alerts.value.forEach((alert) => {
       const zone = alert.zone
       if (zone?.id) {
@@ -591,29 +609,52 @@ export function useAlertsPage() {
   }
 
   // ── WebSocket subscription ────────────────────────────────────────────────
-  let unsubscribeAlerts: (() => void) | null = null
+  const ALERT_EVENT_NAMES = ['.AlertCreated', '.App\\Events\\AlertCreated', '.AlertUpdated', '.App\\Events\\AlertUpdated'] as const
+  const realtimeUnsubscribers: Array<() => void> = []
+
+  const handleRealtimeAlert = (event: AlertRecord): void => {
+    const payload = event as AlertRecord
+    if (payload?.id) {
+      alertsStore.upsert(payload as Alert)
+      if (!isResolved(payload) && !shouldSuppressAlertToast(payload)) {
+        const meta = getAlertMeta(payload)
+        const severity = resolveAlertSeverity(payload.code, payload.details)
+        showToast(
+          getAlertMessage(payload),
+          severityToToastVariant(severity),
+          TOAST_TIMEOUT.NORMAL,
+          {
+            title: meta.title,
+            allowDuplicates: true,
+          }
+        )
+      }
+    }
+  }
 
   onMounted(() => {
     loadToastSuppressionPreference()
     loadAlertCatalog()
-    unsubscribeAlerts = subscribeToAlerts((event) => {
-      const payload = event as AlertRecord
-      if (payload?.id) {
-        alertsStore.upsert(payload as Alert)
-        if (!isResolved(payload) && !shouldSuppressAlertToast(payload)) {
-          const meta = getAlertMeta(payload)
-          const severity = resolveAlertSeverity(payload.code, payload.details)
-          showToast(
-            getAlertMessage(payload),
-            severityToToastVariant(severity),
-            TOAST_TIMEOUT.NORMAL,
-            {
-              title: meta.title,
-              allowDuplicates: true,
-            }
-          )
-        }
-      }
+    const alertEventHandlers = Object.fromEntries(
+      ALERT_EVENT_NAMES.map((eventName) => [eventName, (payload: Record<string, unknown>) => handleRealtimeAlert(payload as AlertRecord)])
+    )
+
+    realtimeUnsubscribers.push(
+      subscribeManagedChannelEvents({
+        channelName: 'hydro.alerts',
+        eventHandlers: alertEventHandlers,
+        componentTag: 'useAlertsPage:global-alerts',
+      })
+    )
+
+    accessibleZoneIds.value.forEach((zoneId) => {
+      realtimeUnsubscribers.push(
+        subscribeManagedChannelEvents({
+          channelName: `hydro.zones.${zoneId}`,
+          eventHandlers: alertEventHandlers,
+          componentTag: `useAlertsPage:zone-${zoneId}`,
+        })
+      )
     })
   })
 
@@ -622,8 +663,10 @@ export function useAlertsPage() {
       clearTimeout(suppressionPersistTimer)
       suppressionPersistTimer = null
     }
-    unsubscribeAlerts?.()
-    unsubscribeAlerts = null
+    while (realtimeUnsubscribers.length > 0) {
+      const unsubscribe = realtimeUnsubscribers.pop()
+      unsubscribe?.()
+    }
   })
 
   return {

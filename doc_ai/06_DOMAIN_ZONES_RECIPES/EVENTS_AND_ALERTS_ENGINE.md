@@ -81,6 +81,27 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `ACTIVE` — тревога активна;
 - `RESOLVED` — тревога закрыта (пользователем или автоматически).
 
+### 1.3. Канонический lifecycle contract
+
+Канонический owner lifecycle:
+
+- Laravel `AlertService`.
+
+Python-сервисы и `automation-engine` являются только producer-ами и публикуют alert intent через:
+
+- `POST /api/python/alerts`
+
+Запрещено напрямую мутировать из Python runtime:
+
+- `alerts`
+- `zone_events`
+
+Дополнительные правила:
+
+- scoped identity хранится в `details.dedupe_key`;
+- `ALERT_CREATED`, `ALERT_UPDATED`, `ALERT_RESOLVED` создаёт только Laravel-side contract;
+- transport retry/DLQ path использует `pending_alerts` и `pending_alerts_dlq`.
+
 ---
 
 ## 2. Структура таблиц PostgreSQL
@@ -125,9 +146,18 @@ CREATE INDEX zone_events_type_idx
 CREATE TABLE alerts (
  id BIGSERIAL PRIMARY KEY,
  zone_id BIGINT REFERENCES zones(id) ON DELETE CASCADE,
+ source VARCHAR(16) NOT NULL,
+ code VARCHAR(64) NOT NULL,
  type VARCHAR(64) NOT NULL,
  details JSONB,
  status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / RESOLVED
+ category VARCHAR(32) NULL,
+ severity VARCHAR(32) NULL,
+ node_uid VARCHAR(100) NULL,
+ hardware_id VARCHAR(100) NULL,
+ error_count INTEGER NOT NULL DEFAULT 1,
+ first_seen_at TIMESTAMP(0) WITH TIME ZONE DEFAULT now(),
+ last_seen_at TIMESTAMP(0) WITH TIME ZONE DEFAULT now(),
  created_at TIMESTAMP(0) WITH TIME ZONE DEFAULT now(),
  resolved_at TIMESTAMP(0) WITH TIME ZONE
 );
@@ -136,11 +166,22 @@ CREATE TABLE alerts (
 **Назначение полей:**
 
 - `zone_id` — зона, в которой зафиксирована проблема;
-- `type` — тип алерта (строка);
+- `source` — источник (`biz`, `infra`, `node`);
+- `code` — канонический код инцидента;
+- `type` — display/type alias для UI и локализации;
 - `details` — JSON с параметрами (текущее значение, цель, node_id, и т.п.);
 - `status` — `ACTIVE` или `RESOLVED`;
+- `category` / `severity` — нормализованная taxonomy;
+- `node_uid` / `hardware_id` — scoped identity оборудования;
+- `error_count` / `first_seen_at` / `last_seen_at` — счётчики и timestamps дедупликации;
 - `created_at` — время создания алерта;
 - `resolved_at` — время закрытия алерта (если закрыт).
+
+Для scoped incident canonical lookup key:
+
+- `zone_id`
+- `code`
+- `details.dedupe_key`
 
 Рекомендуемые индексы:
 
@@ -164,7 +205,7 @@ CREATE INDEX alerts_type_idx
  - действия контроллеров (pH/EC/Climate/Irrigation/Light);
  - онлайн/офлайн статусы устройств (из MQTT status);
  - автопереходы фаз рецепта.
-- **Alerts**, связанные с параметрами среды:
+- **producer payload для Alerts**, связанных с параметрами среды:
  - отклонения pH, EC, температуры, влажности;
  - авиарийные ситуации (нет потока, низкий уровень воды, не отвечает сенсор).
 
@@ -183,8 +224,12 @@ Python базируется на:
  - ручное дозирование;
  - изменение рецепта/фазы;
  - ручное изменение настроек контроллеров.
-- Обновляет Alerts:
- - изменяет статус на `RESOLVED`, когда пользователь вручную закрывает тревогу.
+- Владеет полным lifecycle alert-а через `AlertService`:
+ - create/update active;
+ - resolve by code;
+ - manual acknowledge;
+ - `zone_events` ledger;
+ - realtime broadcast.
 
 ---
 

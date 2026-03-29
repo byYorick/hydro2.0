@@ -4,6 +4,7 @@
  * 
  * Реализует периодические задачи согласно FIRMWARE_STRUCTURE.md:
  * - heartbeat_task_start_default - публикация heartbeat (общий компонент)
+ * - task_sensor_scan - быстрый опрос level-switch и runtime-реакции
  * - task_current_poll - периодическая публикация level-switch telemetry
  * - task_pump_health - health-метрики насосов
  * 
@@ -11,7 +12,7 @@
  */
 
 #include "storage_irrigation_node_app.h"
-#include "storage_irrigation_node_defaults.h"
+#include "storage_irrigation_node_config.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
 #include "pump_driver.h"
@@ -36,8 +37,10 @@ static const char *TAG = "storage_irrigation_node_tasks";
 
 // Периоды задач (в миллисекундах)
 #define DEFAULT_CURRENT_POLL_MS   STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS
+#define SENSOR_SCAN_INTERVAL_MS    STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_SCAN_INTERVAL_MS
 #define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
 #define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
+#define TASK_WDT_RESET_SLICE_MS     1000
 
 // Глобальная переменная для интервала публикации level-switch (потокобезопасно)
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
@@ -82,9 +85,32 @@ static void set_current_poll_interval(uint32_t interval_ms) {
 }
 
 /**
+ * @brief Быстрая задача опроса датчиков уровня.
+ *
+ * Выполняет фактическое чтение датчиков, completion checks и обновление OLED
+ * с фиксированным периодом 200 мс, без публикации telemetry на каждый тик.
+ */
+static void task_sensor_scan(void *pvParameters) {
+    ESP_LOGI(TAG, "Sensor scan task started");
+
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add sensor scan task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(SENSOR_SCAN_INTERVAL_MS));
+        node_watchdog_reset();
+        (void)storage_irrigation_node_sensor_cycle(false);
+        node_watchdog_reset();
+    }
+}
+
+/**
  * @brief Задача публикации level-switch телеметрии
  * 
- * Интервал публикации берется из NodeConfig для канала "level_clean_min"
+ * Интервал публикации берется из NodeConfig для канала "level_clean_min".
+ * Фактическое состояние датчиков уже обновлено отдельной быстрой задачей.
  */
 static void task_current_poll(void *pvParameters) {
     ESP_LOGI(TAG, "Current poll task started");
@@ -95,20 +121,25 @@ static void task_current_poll(void *pvParameters) {
         ESP_LOGE(TAG, "Failed to add current poll task to watchdog: %s", esp_err_to_name(wdt_err));
     }
     
-    TickType_t last_wake_time = xTaskGetTickCount();
-    
     while (1) {
         // Получаем актуальный интервал из конфигурации (потокобезопасно)
         uint32_t poll_interval = get_current_poll_interval();
-        const TickType_t interval = pdMS_TO_TICKS(poll_interval);
-        
-        vTaskDelayUntil(&last_wake_time, interval);
-        
-        // Сбрасываем watchdog
+        uint32_t waited_ms = 0;
+        while (waited_ms < poll_interval) {
+            uint32_t sleep_ms = poll_interval - waited_ms;
+            if (sleep_ms > TASK_WDT_RESET_SLICE_MS) {
+                sleep_ms = TASK_WDT_RESET_SLICE_MS;
+            }
+            vTaskDelay(pdMS_TO_TICKS(sleep_ms));
+            waited_ms += sleep_ms;
+            node_watchdog_reset();
+        }
+
         node_watchdog_reset();
-        
-        // Публикация телеметрии level-switch через node_framework
+
+        // Публикация telemetry снимка по уже обновленному состоянию датчиков.
         storage_irrigation_node_publish_telemetry_callback(NULL);
+        node_watchdog_reset();
     }
 }
 
@@ -124,14 +155,20 @@ static void task_pump_health(void *pvParameters) {
         ESP_LOGE(TAG, "Failed to add pump health task to watchdog: %s", esp_err_to_name(wdt_err));
     }
 
-    TickType_t last_wake_time = xTaskGetTickCount();
-    const TickType_t interval = pdMS_TO_TICKS(PUMP_HEALTH_INTERVAL_MS);
     pump_driver_health_snapshot_t snapshot;
 
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        uint32_t waited_ms = 0;
+        while (waited_ms < PUMP_HEALTH_INTERVAL_MS) {
+            uint32_t sleep_ms = PUMP_HEALTH_INTERVAL_MS - waited_ms;
+            if (sleep_ms > TASK_WDT_RESET_SLICE_MS) {
+                sleep_ms = TASK_WDT_RESET_SLICE_MS;
+            }
+            vTaskDelay(pdMS_TO_TICKS(sleep_ms));
+            waited_ms += sleep_ms;
+            node_watchdog_reset();
+        }
 
-        // Сбрасываем watchdog
         node_watchdog_reset();
 
         if (!mqtt_manager_is_connected()) {
@@ -198,6 +235,7 @@ static void task_pump_health(void *pvParameters) {
         }
 
         cJSON_Delete(health);
+        node_watchdog_reset();
     }
 }
 
@@ -268,35 +306,13 @@ void storage_irrigation_node_publish_status(void) {
     if (!mqtt_manager_is_connected()) {
         return;
     }
-    
-    // Получение IP адреса
-    esp_netif_ip_info_t ip_info;
-    char ip_str[16] = "0.0.0.0";
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (netif != NULL) {
-        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-            snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
-        }
-    }
-    
-    // Получение RSSI
-    wifi_ap_record_t ap_info;
-    int8_t rssi = -100;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        rssi = ap_info.rssi;
-    }
-    
-    // Версия прошивки (можно взять из IDF_VER или hardcode)
-    const char *fw_version = IDF_VER;
-    
-    // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+
+    // Канонический node-level status payload: {"status":"ONLINE","ts":...}
     cJSON *status = cJSON_CreateObject();
     if (status) {
-        cJSON_AddBoolToObject(status, "online", true);
-        cJSON_AddStringToObject(status, "ip", ip_str);
-        cJSON_AddNumberToObject(status, "rssi", rssi);
-        cJSON_AddStringToObject(status, "fw", fw_version);
-        
+        cJSON_AddStringToObject(status, "status", "ONLINE");
+        cJSON_AddNumberToObject(status, "ts", (double)node_utils_get_timestamp_seconds());
+
         char *json_str = cJSON_PrintUnformatted(status);
         if (json_str) {
             mqtt_manager_publish_status(json_str);
@@ -355,16 +371,62 @@ void storage_irrigation_node_update_current_poll_interval(void) {
 void storage_irrigation_node_start_tasks(void) {
     // Обновляем интервал опроса из конфигурации
     storage_irrigation_node_update_current_poll_interval();
-    
-    // Задача опроса тока насоса (если INA209 инициализирован)
-    // Проверяем, что INA209 доступен через pump_driver
-    xTaskCreate(task_current_poll, "current_poll_task", 3072, NULL, 4, NULL);
 
-    // Health отчеты по насосам и INA209
-    xTaskCreate(task_pump_health, "pump_health_task", 4096, NULL, 4, NULL);
+    BaseType_t task_ok = pdPASS;
 
-    // Задача публикации STATUS
-    xTaskCreate(task_status, "status_task", 3072, NULL, 3, NULL);
+    task_ok = xTaskCreate(
+        task_sensor_scan,
+        "sensor_scan_task",
+        STORAGE_IRRIGATION_NODE_SENSOR_SCAN_TASK_STACK_WORDS,
+        NULL,
+        4,
+        NULL
+    );
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create sensor_scan_task");
+        return;
+    }
+
+    // task_current_poll теперь только публикует telemetry snapshot по медленному интервалу.
+    task_ok = xTaskCreate(
+        task_current_poll,
+        "current_poll_task",
+        STORAGE_IRRIGATION_NODE_CURRENT_POLL_TASK_STACK_WORDS,
+        NULL,
+        4,
+        NULL
+    );
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create current_poll_task");
+        return;
+    }
+
+    // pump_health_task собирает крупный JSON snapshot и требует заметно большего стека.
+    task_ok = xTaskCreate(
+        task_pump_health,
+        "pump_health_task",
+        STORAGE_IRRIGATION_NODE_PUMP_HEALTH_TASK_STACK_WORDS,
+        NULL,
+        4,
+        NULL
+    );
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create pump_health_task");
+        return;
+    }
+
+    task_ok = xTaskCreate(
+        task_status,
+        "status_task",
+        STORAGE_IRRIGATION_NODE_STATUS_TASK_STACK_WORDS,
+        NULL,
+        3,
+        NULL
+    );
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create status_task");
+        return;
+    }
 
     // Общая задача heartbeat из компонента
     heartbeat_task_start_default();

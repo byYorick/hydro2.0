@@ -12,10 +12,16 @@ class AlertService
 
     private AlertLocalizationService $alertLocalization;
 
-    public function __construct(?AlertCatalogService $alertCatalog = null, ?AlertLocalizationService $alertLocalization = null)
-    {
+    private AlertPolicyService $alertPolicyService;
+
+    public function __construct(
+        ?AlertCatalogService $alertCatalog = null,
+        ?AlertLocalizationService $alertLocalization = null,
+        ?AlertPolicyService $alertPolicyService = null
+    ) {
         $this->alertCatalog = $alertCatalog ?? app(AlertCatalogService::class);
         $this->alertLocalization = $alertLocalization ?? app(AlertLocalizationService::class);
+        $this->alertPolicyService = $alertPolicyService ?? app(AlertPolicyService::class);
     }
 
     /**
@@ -235,6 +241,23 @@ class AlertService
                     'resolved' => false,
                     'alert' => null,
                     'event_id' => null,
+                ];
+            }
+
+            if ($this->alertPolicyService->blocksAutomaticResolution($normalizedCode, $context)) {
+                Log::info('Alert auto-resolution blocked by policy', [
+                    'alert_id' => $alert->id,
+                    'zone_id' => $zoneId,
+                    'code' => $normalizedCode,
+                    'policy_mode' => $this->alertPolicyService->currentMode(),
+                ]);
+
+                return [
+                    'resolved' => false,
+                    'alert' => $alert,
+                    'event_id' => null,
+                    'blocked_by_policy' => true,
+                    'policy_mode' => $this->alertPolicyService->currentMode(),
                 ];
             }
 
@@ -504,6 +527,9 @@ class AlertService
         $enrichedDetails['title'] = $catalogResolved['title'];
         $enrichedDetails['description'] = $catalogResolved['description'];
         $enrichedDetails['recommendation'] = $catalogResolved['recommendation'];
+        $enrichedDetails['alert_policy_mode'] = $this->alertPolicyService->currentMode();
+        $enrichedDetails['auto_resolve_policy_managed'] = $this->alertPolicyService->isPolicyManagedCode($normalizedCode);
+        $enrichedDetails['auto_resolve_eligible'] = $this->alertPolicyService->allowsAutoResolve($normalizedCode);
 
         if (! isset($enrichedDetails['message']) || ! is_string($enrichedDetails['message']) || trim($enrichedDetails['message']) === '') {
             $enrichedDetails['message'] = $catalogResolved['description'];

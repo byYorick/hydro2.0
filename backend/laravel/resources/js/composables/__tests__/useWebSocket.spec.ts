@@ -228,6 +228,7 @@ describe('useWebSocket', () => {
     subscribeToGlobalEvents(onEvent)
 
     expect(mockEcho.private).toHaveBeenCalledWith('hydro.events.global')
+    expect(mockGlobalChannel.listen).toHaveBeenCalledWith('.EventCreated', expect.any(Function))
     expect(mockGlobalChannel.listen).toHaveBeenCalledWith('.App\\Events\\EventCreated', expect.any(Function))
   })
 
@@ -271,6 +272,18 @@ describe('useWebSocket', () => {
         zoneId: 1
       })
     }
+  })
+
+  it('should subscribe to custom and namespaced command events', () => {
+    const { useWebSocket } = useWebSocketModule
+    const { subscribeToZoneCommands } = useWebSocket()
+
+    subscribeToZoneCommands(1, vi.fn())
+
+    expect(mockZoneChannel.listen).toHaveBeenCalledWith('.CommandStatusUpdated', expect.any(Function))
+    expect(mockZoneChannel.listen).toHaveBeenCalledWith('.App\\Events\\CommandStatusUpdated', expect.any(Function))
+    expect(mockZoneChannel.listen).toHaveBeenCalledWith('.CommandFailed', expect.any(Function))
+    expect(mockZoneChannel.listen).toHaveBeenCalledWith('.App\\Events\\CommandFailed', expect.any(Function))
   })
 
   it('should unsubscribe from global events', () => {

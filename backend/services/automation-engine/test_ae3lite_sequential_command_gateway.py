@@ -216,6 +216,26 @@ async def test_run_batch_multiple_commands_all_done():
 
 
 @pytest.mark.asyncio
+async def test_run_batch_complete_on_ack_resumes_task_without_terminal_wait() -> None:
+    cmd_repo = _SequencedLegacyCommandRepo(legacy_rows=[{**_DONE_ROW, "status": "ACK"}])
+    task_repo = _FakeTaskRepo()
+    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo)
+    task = _make_task()
+    command = PlannedCommand(
+        node_uid="nd-1",
+        channel="pump_main",
+        payload={"cmd": "set_relay", "params": {"state": True, "timeout_ms": 45000, "stage": "solution_fill"}, "complete_on_ack": True},
+        step_no=1,
+    )
+
+    result = await gw.run_batch(task=task, commands=[command], now=NOW)
+
+    assert result["success"] is True
+    assert result["commands_total"] == 1
+    assert result["command_statuses"][0]["terminal_status"] == "ACK"
+
+
+@pytest.mark.asyncio
 async def test_run_batch_empty_commands():
     gw = _make_gw()
     result = await gw.run_batch(task=_make_task(), commands=[], now=NOW)

@@ -1062,6 +1062,33 @@ alerts_node_uid_idx
 alerts_hardware_id_idx
 ```
 
+Канонический lifecycle:
+
+- единственный writer: Laravel `AlertService`;
+- Python/AE3 публикуют только ingest intent;
+- scoped lookup использует `details.dedupe_key`;
+- `error_count`, `first_seen_at`, `last_seen_at` обновляются только в canonical dedup path.
+
+Практика:
+
+- `details.dedupe_key` обязателен для scoped infra/node alert-ов и для scoped business alert-ов;
+- `details.alert_policy_mode`, `details.auto_resolve_policy_managed`, `details.auto_resolve_eligible`
+  используются для policy-aware AE3 alert lifecycle;
+- `zone_id = NULL` допустим для global/unassigned incidents.
+
+## 7.1.1. pending_alerts и pending_alerts_dlq
+
+Transport queue для alert ingest:
+
+- `pending_alerts` — retry queue;
+- `pending_alerts_dlq` — dead-letter queue.
+
+Канон:
+
+- replay path не использует legacy `pending_alerts.status='dlq'`;
+- replay переносит запись из `pending_alerts_dlq` обратно в `pending_alerts`;
+- retry/replay не меняют `code`, `source`, `zone_id` и `details.dedupe_key`.
+
 ---
 
 # 8. Таблицы событий (Events)
@@ -1535,7 +1562,7 @@ INDEX(greenhouse_id, user_id)
 Назначение:
 
 - Явная привязка пользователя к теплицам.
-- Используется в `ACCESS_CONTROL_MODE=enforce` и `shadow`.
+- Используется в strict ACL как канонический источник доступа к теплицам.
 
 ## 9.3. user_zones
 

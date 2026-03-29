@@ -1791,6 +1791,7 @@ bool oled_ui_is_initialized(void) {
 
 // Задача анимации точек для шагов инициализации
 #define INIT_STEP_ANIMATION_INTERVAL_MS 500
+#define INIT_STEP_ANIMATION_TASK_STACK_SIZE 4096
 
 static void init_step_animation_task(void *arg) {
     (void)arg;
@@ -1837,7 +1838,7 @@ esp_err_t oled_ui_show_init_step(int step_num, const char *step_text) {
     // Запускаем анимацию, если еще не запущена
     if (!s_ui.init_animation_active) {
         s_ui.init_animation_active = true;
-        if (xTaskCreate(init_step_animation_task, "init_step_anim", 2048, NULL, 4, 
+        if (xTaskCreate(init_step_animation_task, "init_step_anim", INIT_STEP_ANIMATION_TASK_STACK_SIZE, NULL, 4, 
                        &s_ui.init_animation_task) != pdPASS) {
             ESP_LOGE(TAG, "Failed to create init step animation task");
             s_ui.init_animation_task = NULL;

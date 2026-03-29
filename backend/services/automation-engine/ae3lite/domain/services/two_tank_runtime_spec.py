@@ -50,6 +50,12 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
     return [dict(item) for item in defaults.get(plan_name, ())]
 
 
+_STAGE_TIMEOUT_GUARDS: dict[str, tuple[str, str]] = {
+    "solution_fill_start": ("solution_fill", "solution_fill_timeout_sec"),
+    "prepare_recirculation_start": ("prepare_recirculation", "prepare_recirculation_timeout_sec"),
+}
+
+
 def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     execution = snapshot.diagnostics_execution if isinstance(snapshot.diagnostics_execution, Mapping) else {}
     commands_cfg = execution.get("two_tank_commands") if isinstance(execution.get("two_tank_commands"), Mapping) else {}
@@ -244,6 +250,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             default_node_types=runtime["required_node_types"],
         )
         _assert_required_command_contract(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name])
+        _apply_stage_timeout_guard(plan_name=plan_name, normalized_plan=runtime["command_specs"][plan_name], runtime=runtime)
     return runtime
 
 
@@ -596,9 +603,36 @@ def _normalize_command_plan(
                 "cmd": cmd,
                 "params": dict(params),
                 "node_types": _normalize_node_types(entry.get("node_types")) or list(default_node_types),
+                "complete_on_ack": bool(entry.get("complete_on_ack")),
             }
         )
     return normalized
+
+
+def _apply_stage_timeout_guard(
+    *,
+    plan_name: str,
+    normalized_plan: list[dict[str, Any]],
+    runtime: Mapping[str, Any],
+) -> None:
+    guard = _STAGE_TIMEOUT_GUARDS.get(plan_name)
+    if not guard:
+        return
+
+    stage_name, timeout_key = guard
+    timeout_sec = int(runtime.get(timeout_key) or 0)
+    if timeout_sec <= 0:
+        return
+
+    for entry in normalized_plan:
+        if str(entry.get("channel") or "").strip().lower() != "pump_main":
+            continue
+        params = dict(entry.get("params") or {})
+        params["timeout_ms"] = timeout_sec * 1000
+        params["stage"] = stage_name
+        entry["params"] = params
+        entry["complete_on_ack"] = True
+        return
 
 
 def _assert_required_command_contract(*, plan_name: str, normalized_plan: Sequence[Mapping[str, Any]]) -> None:

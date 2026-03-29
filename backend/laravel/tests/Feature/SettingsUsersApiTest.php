@@ -2,8 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\Greenhouse;
 use App\Models\User;
-use Illuminate\Support\Facades\Event;
+use App\Models\Zone;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -11,15 +12,11 @@ class SettingsUsersApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-        Event::fake();
-    }
-
     public function test_admin_can_create_and_update_user_via_settings_api(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);
+        $greenhouse = Greenhouse::factory()->create();
+        $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
 
         $create = $this->actingAs($admin)->postJson('/settings/users', [
             'name' => 'Новый оператор',
@@ -35,6 +32,15 @@ class SettingsUsersApiTest extends TestCase
             ->assertJsonMissingPath('data.password');
 
         $userId = (int) $create->json('data.id');
+
+        $this->assertDatabaseHas('user_greenhouses', [
+            'user_id' => $userId,
+            'greenhouse_id' => $greenhouse->id,
+        ]);
+        $this->assertDatabaseHas('user_zones', [
+            'user_id' => $userId,
+            'zone_id' => $zone->id,
+        ]);
 
         $update = $this->actingAs($admin)->patchJson("/settings/users/{$userId}", [
             'name' => 'Обновленный оператор',

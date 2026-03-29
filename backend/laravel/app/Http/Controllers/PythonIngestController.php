@@ -534,6 +534,8 @@ class PythonIngestController extends Controller
                         'resolved' => (bool) ($result['resolved'] ?? false),
                         'alert_id' => $result['alert']?->id,
                         'event_id' => $result['event_id'] ?? null,
+                        'blocked_by_policy' => (bool) ($result['blocked_by_policy'] ?? false),
+                        'policy_mode' => $result['policy_mode'] ?? null,
                         'server_ts' => now()->toIso8601String(),
                     ],
                 ]);

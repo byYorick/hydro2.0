@@ -9,6 +9,9 @@ use App\Models\Command;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
 use App\Models\Alert;
+use App\Services\AlertPolicyService;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
@@ -539,5 +542,78 @@ class PythonIngestControllerTest extends TestCase
             'node_uid' => 'nd-node-1',
             'hardware_id' => 'esp32-node-1',
         ]);
+    }
+
+    public function test_alerts_endpoint_blocks_policy_managed_biz_auto_resolution_in_manual_mode(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+
+        $zone = Zone::factory()->create();
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_zone_correction_config_missing',
+            'type' => 'automation_engine',
+            'status' => 'ACTIVE',
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/alerts', [
+                'zone_id' => $zone->id,
+                'source' => 'biz',
+                'code' => 'biz_zone_correction_config_missing',
+                'type' => 'automation_engine',
+                'status' => 'RESOLVED',
+                'details' => ['reason' => 'recovered'],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.resolved', false)
+            ->assertJsonPath('data.blocked_by_policy', true)
+            ->assertJsonPath('data.policy_mode', AlertPolicyService::MODE_MANUAL_ACK);
+
+        $alert->refresh();
+        $this->assertSame('ACTIVE', $alert->status);
+    }
+
+    public function test_alerts_endpoint_allows_eligible_biz_auto_resolution_when_policy_enabled(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            [
+                'ae3_operational_resolution_mode' => AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY,
+            ]
+        );
+
+        $zone = Zone::factory()->create();
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_zone_correction_config_missing',
+            'type' => 'automation_engine',
+            'status' => 'ACTIVE',
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/alerts', [
+                'zone_id' => $zone->id,
+                'source' => 'biz',
+                'code' => 'biz_zone_correction_config_missing',
+                'type' => 'automation_engine',
+                'status' => 'RESOLVED',
+                'details' => ['reason' => 'recovered'],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.resolved', true)
+            ->assertJsonPath('data.blocked_by_policy', false);
+
+        $alert->refresh();
+        $this->assertSame('RESOLVED', $alert->status);
     }
 }

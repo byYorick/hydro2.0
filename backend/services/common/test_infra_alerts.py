@@ -11,8 +11,8 @@ from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 async def test_send_infra_alert_includes_cycle_and_intent_in_dedupe_key(monkeypatch):
     monkeypatch.setenv("INFRA_ALERTS_ENABLED", "1")
 
-    with patch("common.infra_alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
-        mock_send.return_value = True
+    with patch("common.infra_alerts._publisher.raise_active", new_callable=AsyncMock) as mock_raise:
+        mock_raise.return_value = True
 
         sent = await send_infra_alert(
             code="infra_test_code",
@@ -32,7 +32,7 @@ async def test_send_infra_alert_includes_cycle_and_intent_in_dedupe_key(monkeypa
         )
 
         assert sent is True
-        kwargs = mock_send.call_args.kwargs
+        kwargs = mock_raise.call_args.kwargs
         assert kwargs["details"]["cycle_id"] == 321
         assert kwargs["details"]["intent_id"] == "intent-321"
         assert "cycle:321" in kwargs["details"]["dedupe_key"]
@@ -48,7 +48,8 @@ async def test_send_infra_resolved_alert_uses_same_dedupe_key_as_active(monkeypa
         calls.append(kwargs)
         return True
 
-    with patch("common.infra_alerts.send_alert_to_laravel", side_effect=_send_alert_to_laravel):
+    with patch("common.infra_alerts._publisher.raise_active", side_effect=_send_alert_to_laravel), \
+         patch("common.infra_alerts._publisher.resolve", side_effect=_send_alert_to_laravel):
         await send_infra_alert(
             code="infra_test_code",
             message="active",

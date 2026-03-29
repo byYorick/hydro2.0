@@ -31,7 +31,7 @@ from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
 from common.db import create_zone_event
-from common.infra_alerts import send_infra_alert
+from common.biz_alerts import send_biz_alert
 from common.water_flow import check_water_level
 
 _logger = logging.getLogger(__name__)
@@ -84,6 +84,8 @@ class CorrectionHandler(BaseStageHandler):
             return deadline_outcome
 
         step = corr.corr_step
+        if step not in {"corr_activate", "corr_wait_stable", "corr_deactivate", "corr_done"}:
+            await self._assert_flow_path_active(task=task, plan=plan, now=now)
         if step == "corr_activate":
             return await self._run_activate(task=task, plan=plan, corr=corr, now=now)
         if step == "corr_wait_stable":
@@ -839,6 +841,39 @@ class CorrectionHandler(BaseStageHandler):
 
     # ── Helpers ─────────────────────────────────────────────────────
 
+    async def _assert_flow_path_active(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+    ) -> None:
+        expected = self._expected_flow_path_state(current_stage=str(task.current_stage or ""))
+        if expected is None:
+            return
+        await self._probe_irr_state(
+            task=task,
+            plan=plan,
+            now=now,
+            expected=expected,
+        )
+
+    def _expected_flow_path_state(self, *, current_stage: str) -> Mapping[str, bool] | None:
+        stage = str(current_stage or "").strip().lower()
+        if stage == "solution_fill_check":
+            return {
+                "valve_clean_supply": True,
+                "valve_solution_fill": True,
+                "pump_main": True,
+            }
+        if stage == "prepare_recirculation_check":
+            return {
+                "valve_solution_supply": True,
+                "valve_solution_fill": True,
+                "pump_main": True,
+            }
+        return None
+
     async def _maybe_reactivate_sensor_mode_after_empty_window(
         self,
         *,
@@ -951,24 +986,24 @@ class CorrectionHandler(BaseStageHandler):
             },
         )
         try:
-            await send_infra_alert(
+            await send_biz_alert(
                 code="biz_correction_exhausted",
                 alert_type="AE3 Correction Exhausted",
                 message="Correction cycle exhausted all configured attempts.",
                 severity="error",
                 zone_id=int(task.zone_id),
-                service="automation-engine",
-                component=f"correction:{stage}",
                 details={
                     "task_id": int(getattr(task, "id", 0) or 0),
                     "stage": stage,
                     "topology": topology,
+                    "component": f"correction:{stage}",
                     "attempt": corr.attempt,
                     "max_attempts": corr.max_attempts,
                     "ec_attempt": corr.ec_attempt,
                     "ph_attempt": corr.ph_attempt,
                     "message": "Correction cycle exhausted all dose attempts — check pH/EC dosing hardware.",
                 },
+                scope_parts=(f"stage:{stage}", f"topology:{topology}"),
             )
         except Exception:
             _logger.warning("Failed to send CORRECTION_EXHAUSTED infra alert zone_id=%s", task.zone_id)
@@ -1645,7 +1680,7 @@ class CorrectionHandler(BaseStageHandler):
             },
         )
         try:
-            await send_infra_alert(
+            await send_biz_alert(
                 code=f"biz_{pid_type}_correction_no_effect",
                 alert_type="AE3 Correction No Effect",
                 message=(
@@ -1654,17 +1689,18 @@ class CorrectionHandler(BaseStageHandler):
                 ),
                 severity="error",
                 zone_id=int(task.zone_id),
-                service="automation-engine",
-                component=f"correction:{task.current_stage}",
                 details={
                     "task_id": int(getattr(task, "id", 0) or 0),
                     "pid_type": pid_type,
+                    "stage": str(getattr(task, "current_stage", "") or ""),
+                    "component": f"correction:{task.current_stage}",
                     "baseline_value": baseline_value,
                     "observed_value": observed_value,
                     "expected_effect": expected_effect,
                     "actual_effect": actual_effect,
                     "no_effect_limit": no_effect_limit,
                 },
+                scope_parts=(f"pid_type:{pid_type}", f"stage:{task.current_stage}"),
             )
         except Exception:
             _logger.warning("Failed to send CORRECTION_NO_EFFECT infra alert zone_id=%s", task.zone_id)

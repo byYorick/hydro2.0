@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
-from common.infra_alerts import send_infra_alert
+from common.biz_alerts import send_biz_alert
 
 _logger = logging.getLogger(__name__)
 
@@ -93,20 +93,21 @@ class CleanFillCheckHandler(BaseStageHandler):
                 stage="clean_fill_check",
             ).inc()
             try:
-                await send_infra_alert(
+                await send_biz_alert(
                     code="biz_clean_fill_timeout",
                     alert_type="AE3 Clean Fill Timeout",
                     message="Clean tank fill deadline exceeded after all retry cycles.",
                     severity="warning",
                     zone_id=int(task.zone_id),
-                    service="automation-engine",
-                    component="handler:clean_fill_check",
                     details={
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "cycle": cycle,
+                        "stage": "clean_fill_check",
+                        "component": "handler:clean_fill_check",
                         "retry_limit": retry_limit,
                         "message": "Clean tank fill deadline exceeded after all retry cycles — check water supply.",
                     },
+                    scope_parts=("stage:clean_fill_check",),
                 )
             except Exception:
                 _logger.warning("Failed to send clean_fill_timeout alert zone_id=%s", task.zone_id)

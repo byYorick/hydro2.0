@@ -36,8 +36,7 @@ class ProcessDLQReplay extends Command
         $this->info("Replaying DLQ alerts older than {$olderThanHours} hours (limit: {$limit})");
 
         // Ищем записи в DLQ старше указанного времени
-        $dlqAlerts = DB::table('pending_alerts')
-            ->where('status', 'dlq')
+        $dlqAlerts = DB::table('pending_alerts_dlq')
             ->where('created_at', '<', now()->subHours($olderThanHours))
             ->limit($limit)
             ->get();
@@ -50,38 +49,49 @@ class ProcessDLQReplay extends Command
         $this->info("Found {$dlqAlerts->count()} alert(s) to replay");
 
         $replayed = 0;
-        foreach ($dlqAlerts as $pendingAlert) {
+        foreach ($dlqAlerts as $dlqAlert) {
             try {
-                // Обновляем статус обратно на pending и сбрасываем счетчик попыток
-                DB::table('pending_alerts')
-                    ->where('id', $pendingAlert->id)
-                    ->update([
+                $newPendingId = DB::transaction(function () use ($dlqAlert) {
+                    $pendingId = DB::table('pending_alerts')->insertGetId([
+                        'zone_id' => $dlqAlert->zone_id,
+                        'source' => $dlqAlert->source ?? 'biz',
+                        'code' => $dlqAlert->code,
+                        'type' => $dlqAlert->type,
                         'status' => 'pending',
                         'attempts' => 0,
+                        'max_attempts' => $dlqAlert->max_attempts ?? 3,
+                        'details' => $dlqAlert->details,
                         'last_error' => null,
-                        'next_retry_at' => null,
+                        'next_retry_at' => now(),
                         'moved_to_dlq_at' => null,
+                        'created_at' => now(),
                         'updated_at' => now(),
                     ]);
 
-                // Создаем Job для обработки алерта
+                    DB::table('pending_alerts_dlq')
+                        ->where('id', $dlqAlert->id)
+                        ->delete();
+
+                    return $pendingId;
+                });
+
                 $alertData = [
-                    'zone_id' => $pendingAlert->zone_id,
-                    'source' => $pendingAlert->source ?? 'biz',
-                    'code' => $pendingAlert->code,
-                    'type' => $pendingAlert->type,
-                    'details' => $pendingAlert->details ? json_decode($pendingAlert->details, true) : null,
+                    'zone_id' => $dlqAlert->zone_id,
+                    'source' => $dlqAlert->source ?? 'biz',
+                    'code' => $dlqAlert->code,
+                    'type' => $dlqAlert->type,
+                    'details' => $dlqAlert->details ? json_decode($dlqAlert->details, true) : null,
                 ];
 
-                ProcessAlert::dispatch($alertData, $pendingAlert->id);
+                ProcessAlert::dispatch($alertData, $newPendingId);
 
                 $replayed++;
             } catch (\Exception $e) {
                 Log::error('Failed to replay DLQ alert', [
-                    'pending_alert_id' => $pendingAlert->id,
+                    'pending_alert_id' => $dlqAlert->id,
                     'error' => $e->getMessage(),
                 ]);
-                $this->error("Failed to replay alert {$pendingAlert->id}: {$e->getMessage()}");
+                $this->error("Failed to replay alert {$dlqAlert->id}: {$e->getMessage()}");
             }
         }
 

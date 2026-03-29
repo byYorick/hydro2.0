@@ -8,6 +8,7 @@ use App\Models\GreenhouseType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Str;
 
 class GreenhouseController extends Controller
 {
@@ -21,17 +22,12 @@ class GreenhouseController extends Controller
             ], 401);
         }
         
-        // Получаем доступные зоны для пользователя
-        $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+        $accessibleGreenhouseIds = ZoneAccessHelper::getAccessibleGreenhouseIds($user);
         
-        // Фильтруем теплицы по доступным зонам
         $query = Greenhouse::query();
         
-        // Если пользователь не админ, фильтруем по доступным зонам
         if (!$user->isAdmin()) {
-            $query->whereHas('zones', function ($q) use ($accessibleZoneIds) {
-                $q->whereIn('id', $accessibleZoneIds);
-            });
+            $query->whereIn('id', $accessibleGreenhouseIds ?: [0]);
         }
         
         $items = $query
@@ -52,9 +48,19 @@ class GreenhouseController extends Controller
         }
         
         // Права доступа проверяются на уровне маршрута (middleware role:operator,admin,agronomist,engineer)
+        $normalizedInput = [];
+        if ($request->exists('uid')) {
+            $normalizedInput['uid'] = $this->normalizeStringInput($request->input('uid'));
+        }
+        if ($request->exists('greenhouse_type_id')) {
+            $normalizedInput['greenhouse_type_id'] = $this->normalizeNullableForeignId($request->input('greenhouse_type_id'));
+        }
+        if ($normalizedInput !== []) {
+            $request->merge($normalizedInput);
+        }
         
         $data = $request->validate([
-            'uid' => ['required', 'string', 'max:64', 'unique:greenhouses,uid'],
+            'uid' => ['required', 'string', 'max:64'],
             'name' => ['required', 'string', 'max:255'],
             'timezone' => ['nullable', 'string', 'max:128'],
             'type' => ['nullable', 'string', 'max:64'],
@@ -62,6 +68,8 @@ class GreenhouseController extends Controller
             'coordinates' => ['nullable', 'array'],
             'description' => ['nullable', 'string'],
         ]);
+
+        $data['uid'] = $this->makeUniqueGreenhouseUid($data['uid']);
 
         if (!empty($data['greenhouse_type_id'])) {
             $selectedType = GreenhouseType::query()->find($data['greenhouse_type_id']);
@@ -127,6 +135,17 @@ class GreenhouseController extends Controller
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this greenhouse',
             ], 403);
+        }
+
+        $normalizedInput = [];
+        if ($request->exists('uid')) {
+            $normalizedInput['uid'] = $this->normalizeStringInput($request->input('uid'));
+        }
+        if ($request->exists('greenhouse_type_id')) {
+            $normalizedInput['greenhouse_type_id'] = $this->normalizeNullableForeignId($request->input('greenhouse_type_id'));
+        }
+        if ($normalizedInput !== []) {
+            $request->merge($normalizedInput);
         }
         
         $data = $request->validate([
@@ -215,6 +234,59 @@ class GreenhouseController extends Controller
         
         $greenhouse->delete();
         return response()->json(['status' => 'ok']);
+    }
+
+    private function normalizeStringInput(mixed $value): mixed
+    {
+        if (!is_string($value)) {
+            return $value;
+        }
+
+        $normalized = trim($value);
+
+        return $normalized === '' ? '' : $normalized;
+    }
+
+    private function normalizeNullableForeignId(mixed $value): mixed
+    {
+        if ($value === null || $value === '' || $value === 'null') {
+            return null;
+        }
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        return $value;
+    }
+
+    private function makeUniqueGreenhouseUid(string $requestedUid): string
+    {
+        $baseUid = trim($requestedUid);
+
+        if (!Greenhouse::query()->where('uid', $baseUid)->exists()) {
+            return $baseUid;
+        }
+
+        $suffix = 2;
+
+        do {
+            $candidateBase = Str::limit($baseUid, 64 - strlen('-'.$suffix), '');
+            $candidateBase = rtrim($candidateBase, '-');
+
+            if ($candidateBase === '') {
+                $candidateBase = 'gh';
+            }
+
+            $candidate = $candidateBase.'-'.$suffix;
+            $suffix++;
+        } while (Greenhouse::query()->where('uid', $candidate)->exists());
+
+        return $candidate;
     }
 
     public function dashboard(Request $request, Greenhouse $greenhouse): JsonResponse

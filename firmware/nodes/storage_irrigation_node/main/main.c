@@ -12,6 +12,9 @@
 static const char *TAG = "storage_irrigation_main";
 
 void app_main(void) {
+    // DEBUG нужен для binding/MQTT, но i2c_bus write-trace забивает monitor и мешает анализу.
+    esp_log_level_set("i2c_bus", ESP_LOG_INFO);
+
     ESP_LOGI(TAG, "Starting storage_irrigation_node...");
 
     // Общая сеть + NVS + Wi-Fi STA (идемпотентно для всех нод)

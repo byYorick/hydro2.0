@@ -310,8 +310,13 @@ class TelemetryTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/telemetry/aggregates?zone_id={$zone->id}&metric=ph&period=24h");
 
-        // Должен вернуть 200 или пустой массив данных, но не 403
-        // (так как ZoneAccessHelper пока разрешает доступ ко всем зонам)
+        $response->assertStatus(403);
+
+        $user->zones()->attach($zone->id);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/telemetry/aggregates?zone_id={$zone->id}&metric=ph&period=24h");
+
         $response->assertOk()
             ->assertJsonStructure(['status', 'data']);
     }

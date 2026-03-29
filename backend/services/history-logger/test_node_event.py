@@ -266,6 +266,29 @@ async def test_handle_node_event_unknown_metric_code_falls_back_to_other():
 
 
 @pytest.mark.asyncio
+async def test_handle_node_event_prepare_recirculation_timeout_uses_dedicated_metric_code():
+    """prepare_recirculation_timeout должен попадать в метрику без fallback OTHER."""
+    from mqtt_handlers import handle_node_event
+
+    topic = "hydro/gh-1/zn-8/nd-irrig-1/storage_state/event"
+    payload = json.dumps({"event_code": "prepare_recirculation_timeout"}).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
+         patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        await handle_node_event(topic, payload)
+
+        mock_fetch.assert_not_awaited()
+        mock_create_zone_event.assert_awaited_once()
+        call_args = mock_create_zone_event.await_args.args
+        assert call_args[0] == 8
+        assert call_args[1] == "PREPARE_RECIRCULATION_TIMEOUT"
+        mock_event_received.labels.assert_called_once_with(event_code="PREPARE_RECIRCULATION_TIMEOUT")
+        mock_event_unknown.inc.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_handle_node_event_truncates_long_event_type_with_hash_suffix():
     """Слишком длинный event_code должен безопасно усекаться до лимита БД."""
     from mqtt_handlers import handle_node_event

@@ -45,6 +45,16 @@ esp_err_t node_watchdog_init(const node_watchdog_config_t *config) {
         s_watchdog.config = default_config;
     }
 
+#if CONFIG_ESP_TASK_WDT_INIT
+    // TWDT already comes up via sdkconfig during startup. Avoid calling
+    // esp_task_wdt_init() again because ESP-IDF logs it as an error.
+    s_watchdog.initialized = true;
+    ESP_LOGI(TAG, "Using pre-initialized task watchdog from sdkconfig (timeout: %lu ms, panic: %s)",
+             s_watchdog.config.timeout_ms,
+             s_watchdog.config.trigger_panic ? "enabled" : "disabled");
+    return ESP_OK;
+#endif
+
     // Инициализация watchdog таймера
     esp_task_wdt_config_t wdt_config = {
         .timeout_ms = s_watchdog.config.timeout_ms,
@@ -188,4 +198,3 @@ esp_err_t node_watchdog_get_task_runtime(const char *task_name, uint32_t *runtim
 bool node_watchdog_is_initialized(void) {
     return s_watchdog.initialized;
 }
-

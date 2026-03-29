@@ -221,6 +221,25 @@ describe('Devices/Show.vue', () => {
     expect(true).toBe(true)
   })
 
+  it('не показывает unassigned-state, если есть zone_id без relation zone', () => {
+    const originalZone = sampleDevice.zone
+    // @ts-expect-error test mutation
+    sampleDevice.zone = undefined
+    // @ts-expect-error test mutation
+    sampleDevice.zone_id = 1
+
+    const wrapper = mount(DevicesShow)
+
+    expect(wrapper.text()).toContain('Zone: Zone #1')
+    expect(wrapper.text()).toContain('Привязано к зоне')
+    expect(wrapper.text()).not.toContain('Устройство не привязано к зоне')
+
+    // @ts-expect-error test cleanup
+    sampleDevice.zone = originalZone
+    // @ts-expect-error test cleanup
+    delete sampleDevice.zone_id
+  })
+
   it('отображает компонент DeviceChannelsTable с каналами', () => {
     const wrapper = mount(DevicesShow)
     

@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Helpers\ZoneAccessHelper;
-use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\EffectiveTargetsService;
@@ -13,6 +12,7 @@ use App\Services\ZoneLifecycleService;
 use App\Services\ZoneOperationsService;
 use App\Services\ZoneReadinessService;
 use App\Services\ZoneService;
+use App\Support\ZoneNodeChannelScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -390,11 +390,7 @@ class ZoneController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $channelBelongsToZone = NodeChannel::query()
-            ->join('nodes', 'nodes.id', '=', 'node_channels.node_id')
-            ->where('node_channels.id', (int) $data['node_channel_id'])
-            ->where('nodes.zone_id', $zone->id)
-            ->exists();
+        $channelBelongsToZone = ZoneNodeChannelScope::belongsToZone($zone->id, (int) $data['node_channel_id']);
         if (! $channelBelongsToZone) {
             return response()->json([
                 'status' => 'error',

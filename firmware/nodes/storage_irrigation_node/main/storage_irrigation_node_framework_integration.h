@@ -10,6 +10,7 @@
 #define STORAGE_IRRIGATION_NODE_FRAMEWORK_INTEGRATION_H
 
 #include "esp_err.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,7 @@ extern "C" {
  * 
  * Регистрирует обработчики команд и настраивает callbacks для:
  * - Обработки NodeConfig
- * - Обработки команд (`set_relay`, `state`, `run_pump`)
+ * - Обработки команд (`set_relay`, `state`)
  * - Публикации телеметрии
  * 
  * @return ESP_OK при успехе
@@ -35,14 +36,26 @@ esp_err_t storage_irrigation_node_framework_init_integration(void);
 void storage_irrigation_node_framework_register_mqtt_handlers(void);
 
 /**
- * @brief Callback для публикации телеметрии pump
+ * @brief Callback для публикации telemetry snapshot датчиков уровня
  * 
- * Используется в storage_irrigation_node_tasks.c для периодической публикации телеметрии
+ * Используется в storage_irrigation_node_tasks.c для периодической публикации telemetry
+ * без повторного выполнения completion checks и OLED side effects.
  * 
  * @param user_ctx Пользовательский контекст (не используется)
  * @return ESP_OK при успехе
  */
 esp_err_t storage_irrigation_node_publish_telemetry_callback(void *user_ctx);
+
+/**
+ * @brief Быстрый цикл опроса level-switch датчиков и runtime-логики.
+ *
+ * Параметр publish_telemetry сохранен для совместимости сигнатуры, но публикацию
+ * telemetry выполняет отдельный publish callback.
+ *
+ * @param publish_telemetry не используется
+ * @return ESP_OK при успехе
+ */
+esp_err_t storage_irrigation_node_sensor_cycle(bool publish_telemetry);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
 # Storage Irrigation Node
 
-Нода накопления и полива (`type=irrig`) с канальным профилем, совместимым с виртуальной IRR-нодой `test_node`.
+Нода накопления и полива (`type=irrig`) для production two-tank runtime.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -19,8 +19,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Сервисный channel без GPIO: `storage_state`.
 - Основная команда актуатора: `set_relay` с `params.state`.
 - Сервисный канал two-tank: `storage_state/state` (возвращает `details.snapshot` + `details.state` + freshness-поля).
+- `set_relay {state:true}` на production IRR-ноде работает как latched `ON` и держит канал включенным до явного `set_relay {state:false}`.
+- `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill` или `prepare_recirculation`, отвечает `ACK`, а terminal `DONE/ERROR` публикует позже по тому же `cmd_id`.
 - Для `pump_main` действует interlock: включение разрешено только при открытых `valve_clean_supply|valve_solution_supply` и `valve_solution_fill|valve_irrigation`.
-- Терминальные статусы: `DONE`/`ERROR`.
+- `level_clean_max` локально завершает только `clean_fill`; `level_solution_max` публикует `solution_fill_completed`, но не выключает flow-path за AE3.
+- Терминальные статусы: `DONE`/`ERROR`; timed-start использует `ACK -> DONE/ERROR`.
 - Неизвестная команда: `ERROR` + `error_code=unknown_command`.
 
 ## GPIO
@@ -29,22 +32,26 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 - `I2C SDA` (INA209 + OLED): `GPIO21`
 - `I2C SCL` (INA209 + OLED): `GPIO22`
-- `Factory reset button`: `GPIO0` (active-low, hold 20s)
+- `Factory reset button`: `GPIO0` (active-low, hold 10s)
 
 ### GPIO каналов IRR
 
-Каналы и GPIO зашиты в прошивке (`main/storage_irrigation_node_channel_map.c`) и не принимаются извне:
+Каналы, GPIO и default-параметры зашиты в прошивке (`main/storage_irrigation_node_config.c`) и не принимаются извне:
 
 - `pump_main` -> `GPIO25`
 - `valve_clean_fill` -> `GPIO26`
 - `valve_clean_supply` -> `GPIO27`
 - `valve_solution_fill` -> `GPIO32`
 - `valve_solution_supply` -> `GPIO33`
-- `valve_irrigation` -> `GPIO23`
+- `valve_irrigation` -> `GPIO14`
 - `level_clean_min` -> `GPIO16`
 - `level_clean_max` -> `GPIO17`
 - `level_solution_min` -> `GPIO18`
 - `level_solution_max` -> `GPIO19`
+
+Логика level-switch:
+- входы подтянуты к `VCC` (`pull-up`)
+- активное состояние датчика: `LOW` (`active_low=true`)
 
 При получении внешнего `.../config` секция `channels` принудительно заменяется на firmware map.
 То же выполняется при старте ноды: сохраненный в NVS `channels` нормализуется к прошивочному набору.
@@ -62,9 +69,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## Ограничения и безопасность
 
 - Очередь команд ноды: `8`.
-- Global dedup `cmd_id`: кеш `128`, TTL `5 минут`.
 - Для production рекомендуется `allow_legacy_hmac=false` и обязательный `node_secret`.
-- `run_pump` сохранён как legacy-команда для совместимости E2E/HIL, но контур two-tank AE должен использовать `set_relay` + `storage_state/state`.
 
 ## Файлы
 
@@ -73,7 +78,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `main/storage_irrigation_node_init_steps.c`
 - `main/storage_irrigation_node_framework_integration.c`
 - `main/storage_irrigation_node_tasks.c`
-- `main/storage_irrigation_node_defaults.h`
+- `main/storage_irrigation_node_config.h`
+- `main/storage_irrigation_node_config.c`
 
 ## Связанные документы
 

@@ -304,44 +304,21 @@ async def ensure_water_level_alert(zone_id: int, level: float) -> None:
     Создание/обновление алерта WATER_LEVEL_LOW если уровень низкий.
     """
     if level < WATER_LEVEL_LOW_THRESHOLD:
-        # Проверяем, есть ли уже активный алерт
-        rows = await fetch(
-            """
-            SELECT id
-            FROM alerts
-            WHERE zone_id = $1 AND type = 'WATER_LEVEL_LOW' AND status = 'ACTIVE'
-            """,
-            zone_id,
+        await create_alert(
+            zone_id=zone_id,
+            source=AlertSource.BIZ.value,
+            code=AlertCode.BIZ_DRY_RUN.value,  # Низкий уровень воды = риск сухого хода
+            type='Water level low',
+            details={'level': level, 'threshold': WATER_LEVEL_LOW_THRESHOLD}
         )
-        
-        if not rows:
-            # Создаем новый алерт
-            await create_alert(
-                zone_id=zone_id,
-                source=AlertSource.BIZ.value,
-                code=AlertCode.BIZ_DRY_RUN.value,  # Низкий уровень воды = риск сухого хода
-                type='Water level low',
-                details={'level': level, 'threshold': WATER_LEVEL_LOW_THRESHOLD}
-            )
-            # Создаем событие
-            await create_zone_event(
-                zone_id,
-                'WATER_LEVEL_LOW',
-                {
-                    'level': level,
-                    'threshold': WATER_LEVEL_LOW_THRESHOLD
-                }
-            )
-            # Создаем событие ALERT_CREATED
-            await create_zone_event(
-                zone_id,
-                'ALERT_CREATED',
-                {
-                    'alert_type': 'WATER_LEVEL_LOW',
-                    'level': level,
-                    'threshold': WATER_LEVEL_LOW_THRESHOLD
-                }
-            )
+        await create_zone_event(
+            zone_id,
+            'WATER_LEVEL_LOW',
+            {
+                'level': level,
+                'threshold': WATER_LEVEL_LOW_THRESHOLD
+            }
+        )
 
 
 async def ensure_no_flow_alert(zone_id: int, flow_value: Optional[float], min_flow: float) -> None:
@@ -349,38 +326,16 @@ async def ensure_no_flow_alert(zone_id: int, flow_value: Optional[float], min_fl
     Создание/обновление алерта NO_FLOW если расход отсутствует.
     """
     if flow_value is None or flow_value < min_flow:
-        # Проверяем, есть ли уже активный алерт
-        rows = await fetch(
-            """
-            SELECT id
-            FROM alerts
-            WHERE zone_id = $1 AND type = 'NO_FLOW' AND status = 'ACTIVE'
-            """,
-            zone_id,
+        await create_alert(
+            zone_id=zone_id,
+            source=AlertSource.BIZ.value,
+            code=AlertCode.BIZ_NO_FLOW.value,
+            type='No water flow detected',
+            details={
+                'flow_value': flow_value,
+                'min_flow': min_flow
+            }
         )
-        
-        if not rows:
-            # Создаем новый алерт
-            await create_alert(
-                zone_id=zone_id,
-                source=AlertSource.BIZ.value,
-                code=AlertCode.BIZ_NO_FLOW.value,
-                type='No water flow detected',
-                details={
-                    'flow_value': flow_value,
-                    'min_flow': min_flow
-                }
-            )
-            # Создаем событие ALERT_CREATED
-            await create_zone_event(
-                zone_id,
-                'ALERT_CREATED',
-                {
-                    'alert_type': 'NO_FLOW',
-                    'flow_value': flow_value,
-                    'min_flow': min_flow
-                }
-            )
 
 
 async def get_irrigation_nodes(zone_id: int) -> List[Dict[str, Any]]:
@@ -1037,8 +992,16 @@ async def calibrate_pump(
             n.status AS node_status
         FROM node_channels nc
         JOIN nodes n ON n.id = nc.node_id
+        LEFT JOIN channel_bindings cb ON cb.node_channel_id = nc.id
+        LEFT JOIN infrastructure_instances ii
+          ON ii.id = cb.infrastructure_instance_id
+         AND ii.owner_type = 'zone'
         WHERE nc.id = $1
-          AND n.zone_id = $2
+          AND (
+            n.zone_id = $2
+            OR n.pending_zone_id = $2
+            OR ii.owner_id = $2
+          )
         LIMIT 1
         """,
         node_channel_id,

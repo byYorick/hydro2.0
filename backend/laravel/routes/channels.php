@@ -298,7 +298,7 @@ Broadcast::channel('hydro.devices', function ($user) use ($trackWsAuth) {
 
     // Проверяем роль пользователя
     $userRole = $user->role ?? 'viewer';
-    $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
+    $allowedRoles = ['admin', 'agronomist'];
 
     if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [

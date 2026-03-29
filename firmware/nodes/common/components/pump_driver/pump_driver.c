@@ -74,7 +74,7 @@ static TaskHandle_t s_monitor_task_handle = NULL;  // Handle для фоново
 // Forward declarations
 static void pump_timer_callback(TimerHandle_t timer);
 static void pump_monitor_task(void *pvParameters);  // Фоновая задача для мониторинга stop_requested
-static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms);
+static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms, bool auto_stop_enabled);
 static esp_err_t pump_stop_internal(const char *channel_name);
 static esp_err_t pump_stop_internal_unlocked(pump_channel_t *channel);  // Версия без mutex (для emergency_stop)
 static pump_channel_t *find_channel(const char *channel_name);
@@ -295,12 +295,15 @@ esp_err_t pump_driver_init_from_config(void) {
             continue;
         }
         
-        // Ищем только актуаторы типа PUMP/PERISTALTIC_PUMP
+        // storage_irrigation_node использует этот драйвер как safety-runtime и для
+        // насоса, и для электроклапанов, поэтому поддерживаем VALVE вместе с PUMP.
         if (strcmp(type_item->valuestring, "ACTUATOR") == 0) {
             cJSON *actuator_type = cJSON_GetObjectItem(channel, "actuator_type");
             if (actuator_type != NULL && cJSON_IsString(actuator_type)) {
                 const char *act_type = actuator_type->valuestring;
-                if (strcmp(act_type, "PUMP") == 0 || strcmp(act_type, "PERISTALTIC_PUMP") == 0) {
+                if (strcmp(act_type, "PUMP") == 0 ||
+                    strcmp(act_type, "PERISTALTIC_PUMP") == 0 ||
+                    strcmp(act_type, "VALVE") == 0) {
                     cJSON *name_item = cJSON_GetObjectItem(channel, "name");
                     cJSON *gpio_item = cJSON_GetObjectItem(channel, "gpio");
                     cJSON *safe_limits = cJSON_GetObjectItem(channel, "safe_limits");
@@ -551,7 +554,61 @@ esp_err_t pump_driver_run(const char *channel_name, uint32_t duration_ms) {
     }
     
     xSemaphoreGive(s_mutex);
-    return pump_start_internal(channel_name, duration_ms);
+    return pump_start_internal(channel_name, duration_ms, true);
+}
+
+esp_err_t pump_driver_set_state(const char *channel_name, bool state) {
+    if (!s_initialized) {
+        ESP_LOGE(TAG, "Pump driver not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (channel_name == NULL) {
+        ESP_LOGE(TAG, "Invalid channel name");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!state) {
+        return pump_driver_stop(channel_name);
+    }
+
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    pump_channel_t *channel = find_channel(channel_name);
+    if (channel == NULL) {
+        xSemaphoreGive(s_mutex);
+        ESP_LOGE(TAG, "Channel not found: %s", channel_name);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (channel->current_state == PUMP_STATE_COOLDOWN) {
+        uint64_t now_ms = esp_timer_get_time() / 1000;
+        if (now_ms < channel->last_stop_time_ms + channel->min_off_time_ms) {
+            uint32_t remaining_ms = (channel->last_stop_time_ms + channel->min_off_time_ms) - now_ms;
+            xSemaphoreGive(s_mutex);
+            ESP_LOGW(TAG, "Pump %s in cooldown, %lu ms remaining", channel_name, (unsigned long)remaining_ms);
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+
+    if (channel->is_running) {
+        xSemaphoreGive(s_mutex);
+        ESP_LOGW(TAG, "Pump %s already running", channel_name);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (channel->stop_requested) {
+        channel->stop_requested = false;
+        xSemaphoreGive(s_mutex);
+        ESP_LOGD(TAG, "Pump %s stop was requested, skipping start", channel_name);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreGive(s_mutex);
+    return pump_start_internal(channel_name, 0, false);
 }
 
 esp_err_t pump_driver_dose(const char *channel_name, float dose_ml) {
@@ -738,7 +795,7 @@ esp_err_t pump_driver_set_ina209_config(const ina209_config_t *config) {
 
 // Внутренние функции
 
-static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms) {
+static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms, bool auto_stop_enabled) {
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
@@ -757,8 +814,10 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_LOGI(TAG, "Starting pump %s: %lu ms (GPIO %d)",
-             channel_name, (unsigned long)duration_ms, channel->gpio_pin);
+    ESP_LOGI(TAG, "Starting pump %s: %s (GPIO %d)",
+             channel_name,
+             auto_stop_enabled ? "timed run" : "latched run",
+             channel->gpio_pin);
     channel->last_command_success = false;
     channel->stats.last_run_success = false;
 
@@ -853,22 +912,25 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
     channel->run_duration_ms = duration_ms;
     channel->last_command_success = true;
 
-    // Запуск таймера автоостановки
-    // КРИТИЧНО: Таймер должен быть запущен ДО отпускания mutex, чтобы гарантировать автоостановку
-    esp_err_t timer_err = xTimerChangePeriod(channel->timer, pdMS_TO_TICKS(duration_ms), 0);
-    if (timer_err != pdPASS) {
-        ESP_LOGE(TAG, "Failed to change timer period for pump %s, stopping pump", channel_name);
-        pump_stop_internal_unlocked(channel);
-        xSemaphoreGive(s_mutex);
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    timer_err = xTimerStart(channel->timer, 0);
-    if (timer_err != pdPASS) {
-        ESP_LOGE(TAG, "Failed to start timer for pump %s, stopping pump", channel_name);
-        pump_stop_internal_unlocked(channel);
-        xSemaphoreGive(s_mutex);
-        return ESP_ERR_INVALID_STATE;
+    if (auto_stop_enabled) {
+        // Таймер должен быть запущен до отпускания mutex, чтобы гарантировать автоостановку.
+        esp_err_t timer_err = xTimerChangePeriod(channel->timer, pdMS_TO_TICKS(duration_ms), 0);
+        if (timer_err != pdPASS) {
+            ESP_LOGE(TAG, "Failed to change timer period for pump %s, stopping pump", channel_name);
+            pump_stop_internal_unlocked(channel);
+            xSemaphoreGive(s_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        timer_err = xTimerStart(channel->timer, 0);
+        if (timer_err != pdPASS) {
+            ESP_LOGE(TAG, "Failed to start timer for pump %s, stopping pump", channel_name);
+            pump_stop_internal_unlocked(channel);
+            xSemaphoreGive(s_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+    } else {
+        xTimerStop(channel->timer, 0);
     }
     
     // КРИТИЧНО: Инкрементируем run_count только после успешного запуска таймера

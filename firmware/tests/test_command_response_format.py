@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Простой тест для проверки формата ответов на команды согласно эталону node-sim.
+Простой тест для проверки формата `command_response` production-ноды.
 """
 
 import json

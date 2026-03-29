@@ -316,6 +316,7 @@ class SystemController extends Controller
             // Для сервисного запроса без user отдаем полную конфигурацию без user-based фильтра.
             // Для пользовательских запросов сохраняем прежнюю user/role фильтрацию.
             $accessibleZoneIds = $user ? ZoneAccessHelper::getAccessibleZoneIds($user) : null;
+            $accessibleGreenhouseIds = $user ? ZoneAccessHelper::getAccessibleGreenhouseIds($user) : null;
 
             // Строим список колонок зон с учетом наличия миграций (чтобы не падать на неподнятой схеме)
             $zoneColumns = [
@@ -341,7 +342,12 @@ class SystemController extends Controller
             $zoneColumns[] = 'updated_at';
 
             // Загружаем теплицы с зонами, фильтруя по доступным зонам
-            $greenhouses = Greenhouse::with([
+            $greenhousesQuery = Greenhouse::query();
+            if ($user !== null && ! $user->isAdmin()) {
+                $greenhousesQuery->whereIn('id', $accessibleGreenhouseIds ?: [0]);
+            }
+
+            $greenhouses = $greenhousesQuery->with([
                 'zones' => function ($query) use ($accessibleZoneIds, $zoneColumns) {
                     if (is_array($accessibleZoneIds)) {
                         $query->whereIn('id', $accessibleZoneIds);
@@ -373,14 +379,6 @@ class SystemController extends Controller
                         }
                     }
                 }
-            }
-
-            // Фильтруем теплицы, оставляя только те, у которых есть доступные зоны
-            // (или если пользователь админ - оставляем все)
-            if ($user !== null && ! $user->isAdmin()) {
-                $greenhouses = $greenhouses->filter(function ($greenhouse) {
-                    return $greenhouse->zones->isNotEmpty();
-                })->values();
             }
 
             return response()->json([

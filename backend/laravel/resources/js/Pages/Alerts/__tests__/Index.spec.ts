@@ -42,6 +42,7 @@ const itemsDataValue = vi.hoisted(() => [
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPatchMock = vi.hoisted(() => vi.fn())
 const routerReloadMock = vi.hoisted(() => vi.fn())
+const subscribeManagedChannelEventsMock = vi.hoisted(() => vi.fn(() => vi.fn()))
 
 vi.mock('axios', () => {
   const axiosInstance = {
@@ -71,12 +72,20 @@ vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
       alerts: itemsDataValue,
+      zones: [
+        { id: 1, name: 'Zone A1' },
+        { id: 2, name: 'Zone B2' },
+      ],
     },
   }),
   router: {
     reload: routerReloadMock,
   },
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
+}))
+
+vi.mock('@/ws/managedChannelEvents', () => ({
+  subscribeManagedChannelEvents: (...args: Parameters<typeof subscribeManagedChannelEventsMock>) => subscribeManagedChannelEventsMock(...args),
 }))
 
 import AlertsIndex from '../Index.vue'
@@ -108,6 +117,7 @@ describe('Alerts/Index.vue', () => {
     axiosGetMock.mockReset()
     axiosPatchMock.mockClear()
     routerReloadMock.mockClear()
+    subscribeManagedChannelEventsMock.mockClear()
     axiosGetMock.mockResolvedValue({ data: { data: itemsDataValue } })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })

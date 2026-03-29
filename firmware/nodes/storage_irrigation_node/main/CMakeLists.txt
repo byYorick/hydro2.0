@@ -6,7 +6,7 @@ idf_component_register(
         "storage_irrigation_node_framework_integration.c"
         "storage_irrigation_node_init.c"
         "storage_irrigation_node_init_steps.c"
-        "storage_irrigation_node_channel_map.c"
+        "storage_irrigation_node_config.c"
         "storage_irrigation_node_config_utils.c"
     INCLUDE_DIRS 
         "."

@@ -37,6 +37,23 @@ class AlertsTest extends TestCase
             ->assertJsonStructure(['status', 'data' => ['data', 'current_page']]);
     }
 
+    public function test_get_alerts_list_includes_global_alerts(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create();
+
+        $globalAlert = Alert::factory()->create(['zone_id' => null]);
+        $zoneAlert = Alert::factory()->create(['zone_id' => $zone->id]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/alerts');
+
+        $resp->assertOk();
+        $alertIds = collect($resp->json('data.data'))->pluck('id')->all();
+        $this->assertContains($globalAlert->id, $alertIds);
+        $this->assertContains($zoneAlert->id, $alertIds);
+    }
+
     public function test_get_alert_details(): void
     {
         $token = $this->token();
@@ -48,6 +65,18 @@ class AlertsTest extends TestCase
         $resp->assertOk()
             ->assertJsonPath('data.id', $alert->id)
             ->assertJsonPath('data.type', $alert->type);
+    }
+
+    public function test_get_global_alert_details(): void
+    {
+        $token = $this->token();
+        $alert = Alert::factory()->create(['zone_id' => null]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/alerts/{$alert->id}");
+
+        $resp->assertOk()
+            ->assertJsonPath('data.id', $alert->id);
     }
 
     public function test_acknowledge_alert(): void
@@ -66,6 +95,21 @@ class AlertsTest extends TestCase
             'id' => $alert->id,
             'status' => 'RESOLVED',
         ]);
+    }
+
+    public function test_acknowledge_global_alert(): void
+    {
+        $token = $this->token();
+        $alert = Alert::factory()->create([
+            'zone_id' => null,
+            'status' => 'active',
+        ]);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/alerts/{$alert->id}/ack");
+
+        $resp->assertOk()
+            ->assertJsonPath('data.status', 'RESOLVED');
     }
 
     public function test_acknowledge_already_resolved_alert_returns_error(): void

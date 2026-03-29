@@ -153,7 +153,8 @@ if (err == ESP_ERR_NOT_FOUND) {
 - WiFi и MQTT настройки **НЕ обновляются** при регистрации
 - Если нода отправила `node_hello`, значит она **уже подключена** к WiFi и MQTT с правильными настройками
 - Публикация конфига с новыми WiFi/MQTT настройками **НЕ происходит**
-- Событие `NodeConfigUpdated` **НЕ срабатывает** для новых узлов без zone_id/pending_zone_id
+- При создании записи узла Laravel диспатчит `NodeConfigUpdated`, но для unassigned-ноды это только realtime snapshot для `hydro.devices`;
+  публикация NodeConfig в MQTT не запускается, пока узел не переведён в attach flow (`pending_zone_id` при `zone_id = null`).
 
 **Состояние узла после регистрации:**
 ```sql

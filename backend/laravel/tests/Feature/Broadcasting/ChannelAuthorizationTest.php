@@ -18,6 +18,13 @@ class ChannelAuthorizationTest extends TestCase
     {
         parent::setUp();
         $this->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+        config(['broadcasting.default' => 'reverb']);
+        require base_path('routes/channels.php');
+    }
+
+    private function grantZoneAccess(User $user, \App\Models\Zone $zone): void
+    {
+        $user->zones()->attach($zone->id);
     }
 
     /**
@@ -27,6 +34,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = \App\Models\Zone::factory()->create();
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
             'channel_name' => "private-hydro.zones.{$zone->id}",
@@ -43,6 +51,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = \App\Models\Zone::factory()->create();
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
             'channel_name' => "private-hydro.commands.{$zone->id}",
@@ -59,6 +68,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zone = \App\Models\Zone::factory()->create();
+        $this->grantZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
             'channel_name' => "private-commands.{$zone->id}",
@@ -118,7 +128,7 @@ class ChannelAuthorizationTest extends TestCase
      */
     public function test_authorizes_devices_channel(): void
     {
-        $user = User::factory()->create(['role' => 'operator']);
+        $user = User::factory()->create(['role' => 'agronomist']);
 
         $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
             'channel_name' => 'private-hydro.devices',
@@ -126,6 +136,18 @@ class ChannelAuthorizationTest extends TestCase
         ]);
 
         $response->assertOk();
+    }
+
+    public function test_rejects_devices_channel_for_operator(): void
+    {
+        $user = User::factory()->create(['role' => 'operator']);
+
+        $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
+            'channel_name' => 'private-hydro.devices',
+            'socket_id' => '567.891',
+        ]);
+
+        $response->assertForbidden();
     }
 
     /**
@@ -164,6 +186,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zones = \App\Models\Zone::factory()->count(3)->create();
+        $user->zones()->attach($zones->pluck('id')->all());
 
         foreach ($zones as $zone) {
             $response = $this->actingAs($user)->postJson('/broadcasting/auth', [
@@ -182,6 +205,7 @@ class ChannelAuthorizationTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $zones = \App\Models\Zone::factory()->count(3)->create();
+        $user->zones()->attach($zones->pluck('id')->all());
 
         foreach ($zones as $zone) {
             $response = $this->actingAs($user)->postJson('/broadcasting/auth', [

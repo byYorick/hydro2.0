@@ -398,16 +398,29 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json($response, 500);
             }
 
+            $webStatus = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                ? $e->getStatusCode()
+                : null;
+
             // Обработка для веб/Inertia маршрутов
             if ($isInertia || $request->is('*')) {
                 // Для Inertia запросов возвращаем Inertia-ответ с ошибкой
                 if ($isInertia) {
-                    $status = $e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException ? 404 : 500;
+                    $status = $webStatus
+                        ?? ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException ? 404 : 500);
+
+                    $defaultMessage = match ($status) {
+                        401 => 'Требуется авторизация.',
+                        403 => 'Доступ запрещен.',
+                        404 => 'Страница не найдена.',
+                        default => 'Произошла ошибка. Пожалуйста, попробуйте позже.',
+                    };
+
                     return \Inertia\Inertia::render('Error', [
                         'status' => $status,
                         'message' => $isDev
                             ? $e->getMessage()
-                            : ($status === 404 ? 'Страница не найдена.' : 'Произошла ошибка. Пожалуйста, попробуйте позже.'),
+                            : $defaultMessage,
                         'correlation_id' => $correlationId,
                         'exception' => $isDev ? get_class($e) : null,
                         'file' => $isDev ? $e->getFile() : null,
@@ -434,6 +447,24 @@ return Application::configure(basePath: dirname(__DIR__))
                         'file' => $isDev ? $e->getFile() : null,
                         'line' => $isDev ? $e->getLine() : null,
                     ], 404);
+                }
+
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                    $status = $e->getStatusCode();
+                    $view = match ($status) {
+                        403 => 'errors.403',
+                        404 => 'errors.404',
+                        429 => 'errors.429',
+                        default => 'errors.500',
+                    };
+
+                    return response()->view($view, [
+                        'correlation_id' => $correlationId,
+                        'message' => $isDev ? $e->getMessage() : null,
+                        'exception' => $isDev ? get_class($e) : null,
+                        'file' => $isDev ? $e->getFile() : null,
+                        'line' => $isDev ? $e->getLine() : null,
+                    ], $status);
                 }
 
                 // AuthenticationException уже обработано выше, здесь не должно попасть

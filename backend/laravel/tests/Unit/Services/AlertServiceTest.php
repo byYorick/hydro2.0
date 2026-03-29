@@ -4,6 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Models\Alert;
 use App\Services\AlertService;
+use App\Services\AlertPolicyService;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -194,5 +197,90 @@ class AlertServiceTest extends TestCase
 
         $this->assertSame('RESOLVED', $lightAlert->status);
         $this->assertSame('ACTIVE', $climateAlert->status);
+    }
+
+    public function test_auto_resolution_of_policy_managed_biz_alert_is_blocked_in_manual_mode(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_zone_correction_config_missing',
+            'status' => 'ACTIVE',
+            'details' => ['message' => 'missing correction config'],
+        ]);
+
+        $result = $this->service->resolveByCode($zone->id, 'biz_zone_correction_config_missing', [
+            'resolved_by' => 'zone_correction_bootstrap',
+            'resolved_via' => 'auto',
+        ]);
+
+        $this->assertFalse($result['resolved']);
+        $this->assertTrue($result['blocked_by_policy'] ?? false);
+        $this->assertSame(AlertPolicyService::MODE_MANUAL_ACK, $result['policy_mode'] ?? null);
+
+        $alert->refresh();
+        $this->assertSame('ACTIVE', $alert->status);
+    }
+
+    public function test_auto_resolution_of_eligible_biz_alert_is_allowed_when_policy_enabled(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            [
+                'ae3_operational_resolution_mode' => AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY,
+            ]
+        );
+
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_zone_correction_config_missing',
+            'status' => 'ACTIVE',
+            'details' => ['message' => 'missing correction config'],
+        ]);
+
+        $result = $this->service->resolveByCode($zone->id, 'biz_zone_correction_config_missing', [
+            'resolved_by' => 'zone_correction_bootstrap',
+            'resolved_via' => 'auto',
+        ]);
+
+        $this->assertTrue($result['resolved']);
+        $this->assertFalse($result['blocked_by_policy'] ?? false);
+
+        $alert->refresh();
+        $this->assertSame('RESOLVED', $alert->status);
+    }
+
+    public function test_auto_resolution_of_ineligible_biz_alert_stays_blocked_even_when_policy_enabled(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        app(AutomationConfigDocumentService::class)->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            [
+                'ae3_operational_resolution_mode' => AlertPolicyService::MODE_AUTO_RESOLVE_ON_RECOVERY,
+            ]
+        );
+
+        $alert = Alert::factory()->create([
+            'zone_id' => $zone->id,
+            'code' => 'biz_prepare_recirculation_retry_exhausted',
+            'status' => 'ACTIVE',
+            'details' => ['message' => 'retry exhausted'],
+        ]);
+
+        $result = $this->service->resolveByCode($zone->id, 'biz_prepare_recirculation_retry_exhausted', [
+            'resolved_by' => 'python_ingest',
+            'resolved_via' => 'auto',
+        ]);
+
+        $this->assertFalse($result['resolved']);
+        $this->assertTrue($result['blocked_by_policy'] ?? false);
+
+        $alert->refresh();
+        $this->assertSame('ACTIVE', $alert->status);
     }
 }

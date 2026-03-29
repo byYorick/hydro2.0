@@ -6,6 +6,7 @@
 #include "factory_reset_button.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -19,6 +20,7 @@
 #define FACTORY_RESET_DEFAULT_PULL_DOWN       false
 #define FACTORY_RESET_DEFAULT_HOLD_MS         20000U
 #define FACTORY_RESET_DEFAULT_POLL_INTERVAL   50U
+#define FACTORY_RESET_RELEASE_GRACE_MS        200U
 
 static const char *TAG = "factory_reset_btn";
 
@@ -50,15 +52,36 @@ static void do_factory_reset(void) {
 
 static void factory_reset_button_task(void *arg) {
     (void)arg;
-    uint32_t pressed_ms = 0;
+    bool pressed = false;
+    int64_t press_start_us = 0;
+    int64_t release_since_us = 0;
     uint32_t last_log_ms = 0;
 
     while (1) {
+        int64_t now_us = esp_timer_get_time();
         int level = gpio_get_level(s_ctx.cfg.gpio_num);
         bool active = s_ctx.cfg.active_level_low ? (level == 0) : (level != 0);
 
         if (active) {
-            pressed_ms += s_ctx.cfg.poll_interval_ms;
+            if (!pressed) {
+                pressed = true;
+                press_start_us = now_us;
+                release_since_us = 0;
+                last_log_ms = 0;
+                ESP_LOGI(TAG, "Reset button press detected");
+            } else if (release_since_us != 0) {
+                if ((now_us - release_since_us) / 1000ULL <= FACTORY_RESET_RELEASE_GRACE_MS) {
+                    release_since_us = 0;
+                } else {
+                    // Long inactive gap means this is a new press sequence.
+                    press_start_us = now_us;
+                    release_since_us = 0;
+                    last_log_ms = 0;
+                    ESP_LOGI(TAG, "Reset button press restarted after release gap");
+                }
+            }
+
+            uint32_t pressed_ms = (uint32_t)((now_us - press_start_us) / 1000ULL);
 
             // Log progress every 5 seconds to aid debugging long presses
             if (pressed_ms / 5000 != last_log_ms / 5000) {
@@ -70,8 +93,21 @@ static void factory_reset_button_task(void *arg) {
                 do_factory_reset();
             }
         } else {
-            pressed_ms = 0;
-            last_log_ms = 0;
+            if (pressed) {
+                if (release_since_us == 0) {
+                    release_since_us = now_us;
+                } else if ((now_us - release_since_us) / 1000ULL > FACTORY_RESET_RELEASE_GRACE_MS) {
+                    uint32_t held_ms = (uint32_t)((release_since_us - press_start_us) / 1000ULL);
+                    if (held_ms > 0) {
+                        ESP_LOGI(TAG, "Reset button released after %u ms before threshold %u ms",
+                                 held_ms, s_ctx.cfg.hold_time_ms);
+                    }
+                    pressed = false;
+                    press_start_us = 0;
+                    release_since_us = 0;
+                    last_log_ms = 0;
+                }
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(s_ctx.cfg.poll_interval_ms));

@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Services\EventSequenceService;
+use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -51,8 +52,12 @@ class EventCreated implements ShouldBroadcast
     /**
      * Get the channels the event should broadcast on.
      */
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn(): Channel
     {
+        if ($this->zoneId !== null) {
+            return new PrivateChannel("hydro.zones.{$this->zoneId}");
+        }
+
         return new PrivateChannel('hydro.events.global');
     }
 

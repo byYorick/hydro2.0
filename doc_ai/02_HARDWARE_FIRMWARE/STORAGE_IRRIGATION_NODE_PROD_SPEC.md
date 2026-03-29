@@ -39,34 +39,49 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 3.1. Поддерживаемые каналы
 
 - `pump_main` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO25`)
-- `valve_clean_fill` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO26`)
-- `valve_clean_supply` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO27`)
-- `valve_solution_fill` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO32`)
-- `valve_solution_supply` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO33`)
-- `valve_irrigation` (`ACTUATOR`, `actuator_type=PUMP`, `GPIO23`)
+- `valve_clean_fill` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO26`)
+- `valve_clean_supply` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO27`)
+- `valve_solution_fill` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO32`)
+- `valve_solution_supply` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO33`)
+- `valve_irrigation` (`ACTUATOR`, `actuator_type=VALVE`, `GPIO14`)
 - `level_clean_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO16`)
 - `level_clean_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO17`)
 - `level_solution_min` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO18`)
 - `level_solution_max` (`SENSOR`, `metric_type=WATER_LEVEL_SWITCH`, `GPIO19`)
 - сервисный командный канал `storage_state` (без отдельного GPIO, для `state`/`event`)
 
+Для всех 4 `level_*` датчиков:
+- вход подтянут к `VCC` (`pull-up`);
+- активное состояние определяется по `LOW` (`active_low=true`).
+
 ## 3.2. Поддерживаемые команды
 
 - `set_relay` (канальный, для всех 6 actuator-каналов IRR профиля)
 - `state` (только на сервисном канале `storage_state`, возвращает `snapshot/state` для two-tank guard)
-- `run_pump` (legacy-совместимость для E2E/HIL сценариев)
 - built-in через `node_command_handler`: `set_time`, `restart`
 
 Ожидаемая модель ответа:
-- `set_relay` и `state`: immediate terminal `DONE`/`ERROR`;
-- `run_pump`: `ACK` -> terminal `DONE`/`ERROR`.
+- `state`: immediate terminal `DONE`/`ERROR`.
+- `set_relay`: по умолчанию immediate terminal `DONE`/`ERROR`.
+- Исключение: `pump_main/set_relay {state:true, timeout_ms, stage}` для stage-level guard отвечает `ACK`,
+  а поздний terminal `DONE`/`ERROR` по тому же `cmd_id` публикуется нодой после явного `pump_main OFF`
+  или по локальному stage-timeout.
 
 Дополнительные правила:
+- `set_relay {state:true}` для actuator-каналов IRR-профиля работает как latched `ON/OFF` semantics:
+  канал остаётся включенным до явной команды `set_relay {state:false}`;
+- `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживается только для
+  `stage in {"solution_fill", "prepare_recirculation"}` и arm'ит локальный stage-guard;
+- по истечении `timeout_ms` нода обязана локально остановить весь соответствующий flow-path,
+  вернуть terminal `ERROR` для исходного timed-start с `error_code=stage_timeout`
+  и опубликовать событие `storage_state/event` (`solution_fill_timeout` или `prepare_recirculation_timeout`);
 - interlock `pump_main`: включение запрещено без открытых supply-клапанов (`valve_clean_supply|valve_solution_supply`)
   и target-клапанов (`valve_solution_fill|valve_irrigation`);
 - при попытке нарушения interlock возвращается `ERROR` + `error_code=pump_interlock_blocked`;
-- автособытия по достижению max-level:
-  `clean_fill_completed`, `solution_fill_completed` в `storage_state/event` со snapshot.
+- `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_completed`;
+- `level_solution_max` публикует `solution_fill_completed` в `storage_state/event` со snapshot,
+  но не выключает `pump_main/valve_solution_fill/valve_clean_supply`: завершением `solution_fill`
+  и переходом в `prepare_recirculation` управляет AE3.
 
 Неизвестная команда:
 - `ERROR` + `error_code=unknown_command`.
@@ -112,8 +127,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Каналы и GPIO задаются только в firmware map:
 
-- `main/storage_irrigation_node_defaults.h`
-- `main/storage_irrigation_node_channel_map.c`
+- `main/storage_irrigation_node_config.h`
+- `main/storage_irrigation_node_config.c`
 
 Внешний `.../config` не может изменить `channels/gpio`:
 
@@ -142,10 +157,13 @@ Runtime-валидация `pump_driver` сохраняется:
 
 - Каналы и GPIO ноды остаются firmware-locked; внешние `config.channels` не принимаются.
 - Рабочий two-tank runtime использует `set_relay` + `storage_state/state`.
-- `run_pump` оставлен только как legacy совместимость.
 - Очередь команд ноды: `8`.
 - Global dedup `cmd_id`: кеш `128`, TTL `5 минут`.
 - Для production обязательны `node_secret` и `allow_legacy_hmac=false`.
+- `safe_limits.max_duration_ms` остаётся частью firmware map и timed-path в `pump_driver`, но не должен
+  использоваться как auto-stop для `set_relay` в production `storage_irrigation_node`.
+- Stage-level timeout для `solution_fill` и `prepare_recirculation` приходит из backend в
+  `pump_main/set_relay` через `params.timeout_ms` и исполняется локальным guard'ом ноды.
 
 ---
 

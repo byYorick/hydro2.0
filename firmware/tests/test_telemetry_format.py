@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Простой тест для проверки формата телеметрии согласно эталону node-sim.
+Простой тест для проверки формата телеметрии production-ноды.
 
 Использование:
     python3 firmware/tests/test_telemetry_format.py <json_file>

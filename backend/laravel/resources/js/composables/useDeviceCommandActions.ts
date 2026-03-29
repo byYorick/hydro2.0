@@ -44,6 +44,33 @@ function formatCommandError(status: string, errorMessage?: string, errorCode?: s
   return status
 }
 
+function isStorageLevelSwitchChannel(nodeType: string, channelName: string, channelType: string): boolean {
+  const normalizedNodeType = (nodeType || '').toLowerCase()
+  const normalizedChannelName = (channelName || '').toLowerCase()
+  const normalizedChannelType = (channelType || '').toLowerCase()
+
+  return normalizedNodeType === 'irrig'
+    && normalizedChannelType === 'sensor'
+    && normalizedChannelName.startsWith('level_')
+}
+
+function isIrrigationServiceStateChannel(nodeType: string, channelName: string): boolean {
+  return (nodeType || '').toLowerCase() === 'irrig'
+    && (channelName || '').toLowerCase() === 'storage_state'
+}
+
+function isIrrigationActuatorChannel(nodeType: string, channelName: string, channelType: string): boolean {
+  const normalizedNodeType = (nodeType || '').toLowerCase()
+  const normalizedChannelName = (channelName || '').toLowerCase()
+  const normalizedChannelType = (channelType || '').toLowerCase()
+
+  return normalizedNodeType === 'irrig' && (
+    normalizedChannelType === 'actuator'
+    || normalizedChannelName.startsWith('pump_')
+    || normalizedChannelName.startsWith('valve_')
+  )
+}
+
 export function useDeviceCommandActions({
   device,
   api,
@@ -255,11 +282,24 @@ export function useDeviceCommandActions({
 
       const isRelayNode = nodeTypeLower.includes('relay')
       const isSensor = channelTypeLower === 'sensor'
-      const isValve = channelType === 'valve' || channelNameLower.includes('valve')
+      const isValve = channelTypeLower === 'valve' || channelNameLower.includes('valve')
+      const isStorageLevelSwitch = isStorageLevelSwitchChannel(nodeTypeLower, channelNameLower, channelTypeLower)
+      const isIrrigationServiceState = isIrrigationServiceStateChannel(nodeTypeLower, channelNameLower)
+      const isIrrigationActuator = isIrrigationActuatorChannel(nodeTypeLower, channelNameLower, channelTypeLower)
 
-      if (isSensor) {
+      if (isStorageLevelSwitch) {
+        commandType = 'state'
+        channelName = 'storage_state'
+        params = {}
+      } else if (isIrrigationServiceState) {
+        commandType = 'state'
+        params = {}
+      } else if (isSensor) {
         commandType = 'test_sensor'
         params = {}
+      } else if (isIrrigationActuator) {
+        commandType = 'set_relay'
+        params = { state: true, duration_ms: 3000 }
       } else if (isRelayNode) {
         commandType = 'set_relay'
         params = { state: 1, duration_ms: 3000 }
@@ -268,7 +308,7 @@ export function useDeviceCommandActions({
         params = { state: true, duration_ms: 3000 }
       }
 
-      const response = await api.post<{ status: string; data?: { command_id: number } }>(
+      const response = await api.post<{ status: string; data?: { command_id: string | number } }>(
         `/nodes/${device.value.id}/commands`,
         {
           type: commandType,

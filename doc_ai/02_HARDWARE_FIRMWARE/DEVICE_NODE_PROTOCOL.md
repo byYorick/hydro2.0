@@ -165,7 +165,9 @@ hydro/gh/zone/node/channel/command_response
 {
  "cmd_id": "cmd-91ab23",
  "status": "DONE",
- "details": "OK",
+ "details": {
+  "result": "ok"
+ },
  "ts": 1737355600123
 }
 ```
@@ -176,7 +178,10 @@ hydro/gh/zone/node/channel/command_response
 - `ts` (integer) — UTC timestamp в миллисекундах
 
 **Опциональные поля:**
-- `details` (string|object) — детали выполнения команды (текст или структурированный объект)
+- `details` (object) — структурированные детали выполнения команды
+- `error_code` (string) — машинночитаемый код ошибки для `status=ERROR`
+- `error_message` (string) — человекочитаемое пояснение для `status=ERROR`
+- `message` (string) — краткое top-level сообщение; backend может использовать как fallback для `error_message`
 
 Временной SLA `command_response` зависит от типа команды и runtime (длительность исполнения, очередь, retry).
 Для long-running команд рекомендуется схема:

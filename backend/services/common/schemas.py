@@ -33,6 +33,7 @@ class Command(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict, description="Параметры команды")
     ts: int = Field(..., description="Unix timestamp создания команды в секундах")
     sig: str = Field(..., min_length=64, max_length=64, description="HMAC-SHA256 подпись команды (hex, 64 символа)")
+    model_config = ConfigDict(extra="forbid")
     
     @field_validator('cmd_id')
     @classmethod
@@ -80,6 +81,10 @@ class CommandResponse(BaseModel):
     )
     ts: int = Field(..., description="Unix timestamp ответа в миллисекундах")
     details: Optional[Dict[str, Any]] = Field(None, description="Дополнительные детали ответа")
+    error_code: Optional[str] = Field(None, max_length=100, description="Код ошибки при status=ERROR")
+    error_message: Optional[str] = Field(None, max_length=512, description="Текст ошибки при status=ERROR")
+    message: Optional[str] = Field(None, max_length=512, description="Top-level сообщение ответа")
+    model_config = ConfigDict(extra="forbid")
     
     @classmethod
     def ack(cls, cmd_id: str, ts: Optional[int] = None) -> 'CommandResponse':

@@ -80,10 +80,24 @@ class AllEventsBroadcastingTest extends TestCase
             return $e->broadcastOn()->name === 'private-hydro.alerts';
         });
 
+        // AlertCreated - канал конкретной зоны
+        event(new AlertCreated(['id' => 2, 'type' => 'ALERT', 'zone_id' => $zone->id, 'message' => 'Zone alert']));
+        Event::assertDispatched(AlertCreated::class, function ($e) use ($zone) {
+            return ($e->alert['id'] ?? null) === 2
+                && $e->broadcastOn()->name === "private-hydro.zones.{$zone->id}";
+        });
+
         // EventCreated - глобальный канал событий
         event(new EventCreated(1, 'INFO', 'Test event'));
         Event::assertDispatched(EventCreated::class, function ($e) {
             return $e->broadcastOn()->name === 'private-hydro.events.global';
+        });
+
+        // EventCreated - канал конкретной зоны
+        event(new EventCreated(2, 'COMMAND_DISPATCHED', 'Zone event', $zone->id));
+        Event::assertDispatched(EventCreated::class, function ($e) use ($zone) {
+            return $e->id === 2
+                && $e->broadcastOn()->name === "private-hydro.zones.{$zone->id}";
         });
     }
 

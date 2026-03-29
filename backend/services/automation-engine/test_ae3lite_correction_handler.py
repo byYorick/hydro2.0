@@ -199,12 +199,28 @@ def _base_corr(**kwargs) -> CorrectionState:
 
 
 class _MockPlan:
-    def __init__(self, *, ph: float = 6.0, ec: float = 2.0, runtime: dict | None = None):
+    def __init__(
+        self,
+        *,
+        ph: float = 6.0,
+        ec: float = 2.0,
+        runtime: dict | None = None,
+        include_irr_state_probe: bool = False,
+    ):
         self.runtime = runtime or RUNTIME
         self.named_plans = {
             "sensor_mode_activate": (_SENSOR_CMD,),
             "sensor_mode_deactivate": (_SENSOR_CMD,),
         }
+        if include_irr_state_probe:
+            self.named_plans["irr_state_probe"] = (
+                PlannedCommand(
+                    step_no=1,
+                    node_uid="irr-node",
+                    channel="storage_state",
+                    payload={"cmd": "state", "name": "irr_state_probe", "params": {}},
+                ),
+            )
         self.targets = {}
         self._ph = ph
         self._ec = ec
@@ -224,6 +240,9 @@ class _MockRuntimeMonitor:
         solution_min_triggered: bool = False,
         has_level: bool = True,
         level_stale: bool = False,
+        irr_snapshot: dict | None = None,
+        irr_has_snapshot: bool = True,
+        irr_is_stale: bool = False,
     ):
         self._ph = ph
         self._ec = ec
@@ -233,6 +252,9 @@ class _MockRuntimeMonitor:
         self._solution_min_triggered = solution_min_triggered
         self._has_level = has_level
         self._level_stale = level_stale
+        self._irr_snapshot = dict(irr_snapshot or {})
+        self._irr_has_snapshot = irr_has_snapshot
+        self._irr_is_stale = irr_is_stale
         self._ph_samples = list(ph_samples) if ph_samples is not None else [
             {"ts": NOW - timedelta(seconds=4), "value": ph},
             {"ts": NOW - timedelta(seconds=2), "value": ph},
@@ -271,6 +293,14 @@ class _MockRuntimeMonitor:
             "has_level": self._has_level,
             "is_stale": self._level_stale,
             "is_triggered": self._solution_max_triggered if is_max else self._solution_min_triggered,
+        }
+
+    async def read_latest_irr_state(self, *, zone_id, max_age_sec, expected_cmd_id=None):
+        return {
+            "has_snapshot": self._irr_has_snapshot,
+            "is_stale": self._irr_is_stale,
+            "snapshot": dict(self._irr_snapshot) if self._irr_has_snapshot else None,
+            "cmd_id": expected_cmd_id,
         }
 
 
@@ -350,6 +380,37 @@ async def test_corr_check_within_tolerance_exits_success():
     assert outcome.next_stage == "solution_fill_stop_to_ready"
     assert outcome.correction is not None
     assert outcome.correction.outcome_success is True
+
+
+async def test_corr_check_fails_closed_when_prepare_recirc_flow_path_is_inactive():
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
+    monitor = _MockRuntimeMonitor(
+        ph=6.3,
+        ec=1.1,
+        irr_snapshot={
+            "pump_main": False,
+            "valve_solution_fill": True,
+            "valve_solution_supply": True,
+        },
+    )
+    gateway = _MockGateway()
+    handler = _make_handler(monitor=monitor, gateway=gateway)
+
+    with pytest.raises(TaskExecutionError, match="IRR state mismatch for pump_main"):
+        await handler.run(
+            task=task,
+            plan=_MockPlan(include_irr_state_probe=True),
+            stage_def=None,
+            now=NOW,
+        )
+
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["commands"][0].channel == "storage_state"
 
 
 async def test_corr_check_ignores_attempt_caps_during_solution_fill():
@@ -488,7 +549,7 @@ async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_rec
     monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
     handler = _make_handler(monitor=monitor)
     send_alert = AsyncMock(return_value=True)
-    monkeypatch.setattr("ae3lite.application.handlers.correction.send_infra_alert", send_alert)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.send_biz_alert", send_alert)
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", AsyncMock(return_value=None))
 
     await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
@@ -937,7 +998,7 @@ async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: py
     task = _make_task(corr=corr)
     send_alert = AsyncMock(return_value=True)
     create_event = AsyncMock(return_value=None)
-    monkeypatch.setattr("ae3lite.application.handlers.correction.send_infra_alert", send_alert)
+    monkeypatch.setattr("ae3lite.application.handlers.correction.send_biz_alert", send_alert)
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
     monitor = _MockRuntimeMonitor(ec_samples=[
         {"ts": NOW - timedelta(seconds=4), "value": 1.01},

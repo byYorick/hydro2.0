@@ -34,14 +34,11 @@ class AlertUpdated implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        // Если есть zone_id, отправляем в канал зоны, иначе в глобальный канал
+        // Zone-scoped alerts нельзя дублировать в global alerts channel, иначе обходим zone ACL.
         if (isset($this->alert['zone_id']) && $this->alert['zone_id']) {
-            return [
-                new PrivateChannel('hydro.alerts'),
-                new PrivateChannel("hydro.zones.{$this->alert['zone_id']}"),
-            ];
+            return new PrivateChannel("hydro.zones.{$this->alert['zone_id']}");
         }
-        
+
         return new PrivateChannel('hydro.alerts');
     }
 

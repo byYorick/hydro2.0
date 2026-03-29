@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Http\Requests\StoreNodeCommandRequest;
 use App\Models\DeviceNode;
 use App\Services\PythonBridgeService;
@@ -15,6 +16,21 @@ class NodeCommandController extends Controller
 {
     public function store(StoreNodeCommandRequest $request, DeviceNode $node, PythonBridgeService $bridge)
     {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        if (! ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+
         $data = $request->validated();
         
         // Support both 'type' and 'cmd' fields for backward compatibility

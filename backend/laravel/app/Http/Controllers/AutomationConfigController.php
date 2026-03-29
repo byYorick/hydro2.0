@@ -492,7 +492,7 @@ class AutomationConfigController extends Controller
 
         if ($scopeType === AutomationConfigRegistry::SCOPE_GREENHOUSE) {
             $greenhouse = Greenhouse::query()->findOrFail($scopeId);
-            if (! ZoneAccessHelper::canAccessGreenhouse($user, $greenhouse)) {
+            if (! ZoneAccessHelper::canAccessGreenhouseScope($user, $greenhouse)) {
                 abort(403, 'Forbidden: Access denied to this greenhouse');
             }
 

@@ -94,6 +94,7 @@ class DatabaseSeeder extends Seeder
         if ($seedProfile === 'dev-bootstrap') {
             $this->command->info('⚡ Запуск dev bootstrap сидеров (пользователи и дефолтные конфиги)');
             $this->call(DevBootstrapSeeder::class);
+            $this->call(AccessControlBootstrapSeeder::class);
             $this->command->info('✅ Dev bootstrap сидеры выполнены');
 
             return;
@@ -102,6 +103,7 @@ class DatabaseSeeder extends Seeder
         if ($seedProfile === 'start') {
             $this->command->info('⚡ Запуск стартовых сидеров (только админ и агроном)');
             $this->call(StartUsersSeeder::class);
+            $this->call(AccessControlBootstrapSeeder::class);
             $this->command->info('✅ Стартовые сидеры выполнены');
 
             return;
@@ -138,6 +140,8 @@ class DatabaseSeeder extends Seeder
             $this->command->info('🧪 Специальные E2E сидеры...');
             $this->executeSpecialSeeders();
         }
+
+        $this->call(AccessControlBootstrapSeeder::class);
 
         // Финальная статистика
         $duration = round(microtime(true) - $startTime, 2);
@@ -187,6 +191,8 @@ class DatabaseSeeder extends Seeder
         if ($isTesting) {
             $this->executeSpecialSeeders();
         }
+
+        $this->call(AccessControlBootstrapSeeder::class);
 
         $this->command->info('✅ Облегченный набор сидеров выполнен');
     }

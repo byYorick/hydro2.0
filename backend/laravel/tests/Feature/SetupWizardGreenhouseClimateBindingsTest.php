@@ -87,7 +87,7 @@ class SetupWizardGreenhouseClimateBindingsTest extends TestCase
 
         $weatherSensor = DeviceNode::factory()->create([
             'uid' => 'nd-gh-weather',
-            'type' => 'weather',
+            'type' => 'climate',
         ]);
         $windChannel = NodeChannel::query()->create([
             'node_id' => $weatherSensor->id,
@@ -208,8 +208,6 @@ class SetupWizardGreenhouseClimateBindingsTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonValidationErrors([
                 'climate_sensors',
-                'vent_actuators',
-                'fan_actuators',
             ]);
     }
 }

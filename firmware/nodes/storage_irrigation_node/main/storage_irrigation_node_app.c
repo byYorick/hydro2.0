@@ -10,7 +10,7 @@
 
 #include "storage_irrigation_node_app.h"
 #include "storage_irrigation_node_init.h"
-#include "storage_irrigation_node_defaults.h"
+#include "storage_irrigation_node_config.h"
 #include "pump_driver.h"
 #include "config_storage.h"
 #include "factory_reset_button.h"

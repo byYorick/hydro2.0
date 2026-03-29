@@ -9,13 +9,19 @@ use App\Listeners\PublishZoneConfigUpdate;
 use App\Models\Command;
 use App\Models\ZoneEvent;
 use App\Observers\CommandObserver;
+use App\Observers\GreenhouseObserver;
+use App\Observers\UserObserver;
+use App\Observers\ZoneObserver;
 use App\Observers\ZoneEventObserver;
+use App\Models\Greenhouse;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use App\Models\User;
+use App\Models\Zone;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -113,5 +119,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Регистрация Observer для ZoneEvent
         ZoneEvent::observe(ZoneEventObserver::class);
+
+        Greenhouse::observe(GreenhouseObserver::class);
+        Zone::observe(ZoneObserver::class);
+        User::observe(UserObserver::class);
     }
 }

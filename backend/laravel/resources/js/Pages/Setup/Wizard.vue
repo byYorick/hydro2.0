@@ -710,10 +710,8 @@ const pumpCalibrationDevices = computed<Device[]>(() => {
     return []
   }
 
-  const expectedNodeIds = new Set(zoneAutomationExpectedNodeIds.value)
-
   return availableNodes.value
-    .filter((node) => node.zone_id === zoneId || node.pending_zone_id === zoneId || expectedNodeIds.has(node.id))
+    .filter((node) => node.zone_id === zoneId || node.pending_zone_id === zoneId)
     .map((node) => {
       const channels = Array.isArray(node.channels)
         ? node.channels.map((channel): DeviceChannel => {

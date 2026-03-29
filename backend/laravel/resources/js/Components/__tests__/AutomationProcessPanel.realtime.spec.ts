@@ -124,9 +124,9 @@ describe('AutomationProcessPanel realtime refresh', () => {
     await vi.advanceTimersByTimeAsync(1300)
     await flushPromises()
 
-    expect(echoHolder.current.private).toHaveBeenCalledWith('hydro.events.global')
+    expect(echoHolder.current.private).toHaveBeenCalledWith('hydro.zones.7')
 
-    const eventsChannel = channels.get('hydro.events.global')
+    const eventsChannel = channels.get('hydro.zones.7')
     const eventHandler = eventsChannel?.handlers.get('.App\\Events\\EventCreated')
     expect(eventHandler).toBeTypeOf('function')
 
