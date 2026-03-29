@@ -1,0 +1,291 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-03-29T00:00:00Z",
+  "codes": [
+    {
+      "code": "unauthenticated",
+      "title": "Требуется авторизация",
+      "message": "Для выполнения действия нужно войти в систему."
+    },
+    {
+      "code": "forbidden",
+      "title": "Доступ запрещён",
+      "message": "У вас нет прав для выполнения этого действия."
+    },
+    {
+      "code": "not_found",
+      "title": "Объект не найден",
+      "message": "Запрошенный объект не найден или уже удалён."
+    },
+    {
+      "code": "validation_error",
+      "title": "Ошибка валидации",
+      "message": "Проверьте корректность переданных параметров."
+    },
+    {
+      "code": "upstream_unavailable",
+      "title": "Automation-engine недоступен",
+      "message": "Сервис automation-engine временно недоступен. Повторите попытку позже."
+    },
+    {
+      "code": "upstream_error",
+      "title": "Ошибка upstream-сервиса",
+      "message": "Не удалось получить данные от automation-engine."
+    },
+    {
+      "code": "start_cycle_zone_busy",
+      "title": "Зона уже занята",
+      "message": "Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача."
+    },
+    {
+      "code": "manual_step_forbidden_in_auto_mode",
+      "title": "Ручной шаг запрещён",
+      "message": "Ручной шаг недоступен, пока зона работает в автоматическом режиме."
+    },
+    {
+      "code": "command_send_failed",
+      "title": "Команда не отправлена",
+      "message": "Команду не удалось отправить до исполнительного узла."
+    },
+    {
+      "code": "command_timeout",
+      "title": "Таймаут команды",
+      "message": "Не дождались подтверждения или итогового ответа по команде в допустимое время."
+    },
+    {
+      "code": "timeout",
+      "title": "Таймаут выполнения",
+      "message": "Превышено время ожидания выполнения команды."
+    },
+    {
+      "code": "send_failed",
+      "title": "Ошибка отправки",
+      "message": "Команду не удалось поставить в путь до узла."
+    },
+    {
+      "code": "invalid_params",
+      "title": "Неверные параметры",
+      "message": "Переданы некорректные параметры команды."
+    },
+    {
+      "code": "unknown_command",
+      "title": "Неизвестная команда",
+      "message": "Узел не поддерживает эту команду."
+    },
+    {
+      "code": "cooldown_active",
+      "title": "Активен cooldown",
+      "message": "Команда отклонена: канал ещё находится в интервале защитной паузы."
+    },
+    {
+      "code": "stage_timeout",
+      "title": "Таймаут стадии",
+      "message": "Стадия выполнения превысила допустимое время."
+    },
+    {
+      "code": "pump_interlock_blocked",
+      "title": "Сработал interlock насоса",
+      "message": "Команда заблокирована защитой interlock для насоса."
+    },
+    {
+      "code": "node_not_activated",
+      "title": "Узел не активирован",
+      "message": "Команда отклонена: узел ещё не активирован."
+    },
+    {
+      "code": "unsupported_correction_command",
+      "title": "Команда коррекции не поддерживается",
+      "message": "Этот correction-канал не поддерживает запрошенную команду."
+    },
+    {
+      "code": "relay_not_initialized",
+      "title": "Релейный драйвер не инициализирован",
+      "message": "Нода не смогла выполнить команду: драйвер реле не готов."
+    },
+    {
+      "code": "relay_invalid_channel",
+      "title": "Неверный канал реле",
+      "message": "Указан неверный канал реле."
+    },
+    {
+      "code": "relay_channel_not_found",
+      "title": "Канал реле не найден",
+      "message": "Запрошенный канал реле отсутствует в конфигурации узла."
+    },
+    {
+      "code": "relay_mutex_timeout",
+      "title": "Таймаут релейного драйвера",
+      "message": "Релейный драйвер не успел выполнить команду в допустимое время."
+    },
+    {
+      "code": "relay_gpio_error",
+      "title": "Ошибка GPIO реле",
+      "message": "Во время переключения реле произошла ошибка GPIO."
+    },
+    {
+      "code": "relay_error",
+      "title": "Ошибка реле",
+      "message": "Команда реле завершилась с ошибкой."
+    },
+    {
+      "code": "set_time_failed",
+      "title": "Не удалось установить время",
+      "message": "Нода не смогла применить новое системное время."
+    },
+    {
+      "code": "current_not_detected",
+      "title": "Ток не обнаружен",
+      "message": "После включения канала ток не был зафиксирован."
+    },
+    {
+      "code": "overcurrent",
+      "title": "Сверхток",
+      "message": "Зафиксировано превышение допустимого тока канала."
+    },
+    {
+      "code": "ae3_task_execution_timeout",
+      "title": "Таймаут задачи AE3",
+      "message": "Выполнение задачи AE3 превысило допустимый runtime timeout."
+    },
+    {
+      "code": "ae3_task_execution_failed",
+      "title": "Ошибка выполнения задачи AE3",
+      "message": "Задача AE3 завершилась с ошибкой выполнения."
+    },
+    {
+      "code": "ae3_task_execution_unhandled_exception",
+      "title": "Необработанное исключение AE3",
+      "message": "Во время выполнения задачи AE3 произошло необработанное исключение."
+    },
+    {
+      "code": "ae3_task_finalize_failed",
+      "title": "Ошибка финализации задачи AE3",
+      "message": "AE3 не смог корректно завершить задачу и записать её terminal state."
+    },
+    {
+      "code": "ae3_task_create_failed",
+      "title": "Не удалось создать задачу AE3",
+      "message": "AE3 не смог создать canonical task для запуска цикла."
+    },
+    {
+      "code": "ae3_task_create_conflict",
+      "title": "Конфликт создания задачи AE3",
+      "message": "Параллельный worker уже создал задачу для этого запуска."
+    },
+    {
+      "code": "ae3_snapshot_build_failed",
+      "title": "Не удалось собрать runtime-снимок зоны",
+      "message": "AE3 не смог собрать консистентный runtime-снимок зоны для запуска автоматического цикла."
+    },
+    {
+      "code": "ae3_snapshot_zone_not_found",
+      "title": "Зона не найдена",
+      "message": "AE3 не нашёл зону, для которой должен был собрать runtime-снимок."
+    },
+    {
+      "code": "ae3_snapshot_no_active_grow_cycle",
+      "title": "Нет активного цикла выращивания",
+      "message": "Для зоны не найден активный цикл выращивания, поэтому автоматический запуск невозможен."
+    },
+    {
+      "code": "ae3_snapshot_missing_current_phase",
+      "title": "Не определена текущая фаза цикла",
+      "message": "У активного цикла выращивания не задана текущая фаза, поэтому AE3 не может построить runtime-снимок."
+    },
+    {
+      "code": "ae3_snapshot_bundle_missing",
+      "title": "Не найден automation bundle",
+      "message": "Для активного цикла отсутствует compiled automation bundle, необходимый для работы AE3."
+    },
+    {
+      "code": "ae3_snapshot_bundle_invalid",
+      "title": "Повреждён automation bundle",
+      "message": "Compiled automation bundle имеет некорректный формат и не может быть использован AE3."
+    },
+    {
+      "code": "ae3_snapshot_zone_bundle_missing",
+      "title": "Не найден zone bundle",
+      "message": "В compiled automation bundle отсутствует конфигурация зоны, обязательная для AE3."
+    },
+    {
+      "code": "ae3_snapshot_logic_profile_bundle_missing",
+      "title": "Не найден logic profile bundle",
+      "message": "В конфигурации зоны отсутствует активный logic profile bundle, необходимый для runtime."
+    },
+    {
+      "code": "ae3_snapshot_active_logic_profile_missing",
+      "title": "Не выбран активный automation profile",
+      "message": "Для зоны не выбран активный automation logic profile, поэтому запуск AE3 запрещён."
+    },
+    {
+      "code": "ae3_snapshot_empty_command_plans",
+      "title": "Отсутствуют command plans",
+      "message": "В активном automation profile отсутствуют command plans для выполнения цикла."
+    },
+    {
+      "code": "ae3_snapshot_no_online_actuator_channels",
+      "title": "Нет доступных исполнительных каналов",
+      "message": "В зоне нет ни одного онлайн-исполнительного канала. Проверьте привязки устройств и состояние нод."
+    },
+    {
+      "code": "ae3_snapshot_conflicting_config_values",
+      "title": "Конфликт runtime-конфигурации",
+      "message": "AE3 обнаружил конфликтующие значения в runtime-конфигурации и остановил запуск fail-closed."
+    },
+    {
+      "code": "ae3_snapshot_retry_exhausted",
+      "title": "Исчерпаны повторы сборки runtime-снимка",
+      "message": "AE3 не смог восстановить transient snapshot gap за допустимое время и завершил задачу с ошибкой."
+    },
+    {
+      "code": "ae3_snapshot_retry_persist_failed",
+      "title": "Не удалось сохранить повтор сборки runtime-снимка",
+      "message": "AE3 не смог сохранить задачу для повторной попытки после transient snapshot gap."
+    },
+    {
+      "code": "ae3_complete_transition_failed",
+      "title": "Не удалось завершить переход стадии",
+      "message": "AE3 не смог перевести задачу в completed-состояние."
+    },
+    {
+      "code": "ae3_missing_ae_command",
+      "title": "Не найдена связанная команда AE3",
+      "message": "Для recovery или ожидания не найдена связанная запись `ae_command`."
+    },
+    {
+      "code": "ae3_requeue_failed",
+      "title": "Не удалось поставить следующую задачу",
+      "message": "AE3 не смог перевести workflow в следующий pending task."
+    },
+    {
+      "code": "ae3_task_type_not_supported",
+      "title": "Тип задачи не поддерживается",
+      "message": "Планировщик попытался запустить тип задачи, который AE3 сейчас не поддерживает."
+    },
+    {
+      "code": "startup_recovery_unconfirmed_command",
+      "title": "Startup recovery не подтвердил команду",
+      "message": "После перезапуска не удалось подтвердить состояние команды startup recovery."
+    },
+    {
+      "code": "startup_recovery_inconsistent_command_state",
+      "title": "Несогласованное состояние startup recovery",
+      "message": "Startup recovery обнаружил несогласованное состояние команды и runtime."
+    },
+    {
+      "code": "clean_tank_not_filled_timeout",
+      "title": "Бак чистой воды не заполнился",
+      "message": "За отведённое время бак чистой воды не достиг требуемого уровня."
+    },
+    {
+      "code": "unsupported_command_plan_steps",
+      "title": "Некорректный command plan",
+      "message": "AE3 получил command plan без обязательных шагов и остановил выполнение."
+    },
+    {
+      "code": "prepare_recirculation_attempt_limit_reached",
+      "title": "Исчерпаны попытки подготовки рециркуляции",
+      "message": "Этап подготовки рециркуляции исчерпал допустимое число повторов."
+    }
+  ]
+}

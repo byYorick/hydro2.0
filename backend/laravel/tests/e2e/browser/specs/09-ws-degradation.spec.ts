@@ -1,10 +1,33 @@
 import { test, expect } from '../fixtures/test-data';
+import type { Page } from '@playwright/test';
 import { TEST_IDS } from '../constants';
+
+async function waitForDashboardReady(page: Page) {
+  await expect.poll(
+    async () => {
+      const indicators = [
+        page.locator('[data-testid="ws-status-indicator"]'),
+        page.getByText('В работе', { exact: true }),
+        page.getByText('Активные зоны', { exact: true }),
+        page.locator('nav a[href="/zones"]'),
+      ];
+
+      for (const indicator of indicators) {
+        if (await indicator.first().isVisible().catch(() => false)) {
+          return true;
+        }
+      }
+
+      return false;
+    },
+    { timeout: 20000, message: 'Dashboard did not expose any stable ready indicator' },
+  ).toBe(true);
+}
 
 test.describe('WebSocket Degradation', () => {
   test('should show WS connection indicator', async ({ page }) => {
     await page.goto('/', { waitUntil: 'networkidle' });
-    await page.waitForSelector('h1', { timeout: 15000 });
+    await waitForDashboardReady(page);
 
     // Проверяем наличие индикатора WebSocket (может быть в header или на странице)
     const wsIndicator = page.locator(`[data-testid="${TEST_IDS.WS_STATUS_INDICATOR}"]`)
@@ -22,7 +45,7 @@ test.describe('WebSocket Degradation', () => {
 
   test('should show disconnected state when network is offline', async ({ page }) => {
     await page.goto('/', { waitUntil: 'networkidle' });
-    await page.waitForSelector('h1', { timeout: 15000 });
+    await waitForDashboardReady(page);
 
     // Проверяем начальное состояние
     const wsIndicator = page.locator(`[data-testid="${TEST_IDS.WS_STATUS_INDICATOR}"]`)
@@ -49,7 +72,7 @@ test.describe('WebSocket Degradation', () => {
 
   test('should reconnect and show connected state when network is restored', async ({ page }) => {
     await page.goto('/', { waitUntil: 'networkidle' });
-    await page.waitForSelector('h1', { timeout: 15000 });
+    await waitForDashboardReady(page);
 
     // Отключаем сеть
     await page.context().setOffline(true);

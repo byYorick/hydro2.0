@@ -11,8 +11,6 @@ from command_service import (
     _create_command_payload,
     _get_gh_uid_from_zone_id,
     _get_zone_uid_from_id,
-    _mqtt_client_context,
-    _validate_target_level,
     publish_config_mqtt,
     publish_config_temp_mqtt,
     publish_command_mqtt,
@@ -21,17 +19,13 @@ from common.command_status_queue import send_status_to_laravel
 from common.commands import mark_command_send_failed, mark_command_sent
 from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
-from common.infra_alerts import send_infra_alert, send_infra_exception_alert
+from common.infra_alerts import send_infra_alert
 from common.mqtt import get_mqtt_client
 from common.trace_context import get_trace_id, set_trace_id
 from common.utils.time import utcnow
-from common.water_flow import calibrate_flow, calibrate_pump, execute_drain_mode, execute_fill_mode
 from metrics import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
 from models import (
-    CalibrateFlowRequest,
-    CalibratePumpRequest,
     CommandRequest,
-    FillDrainRequest,
     NodeConfigPublishRequest,
 )
 
@@ -176,20 +170,9 @@ async def _emit_command_node_zone_mismatch_observability(
 async def _resolve_effective_gh_uid(zone_id: int, requested_gh_uid: Optional[str]) -> str:
     """
     Резолвить канонический gh_uid по zone_id.
-    Если БД временно недоступна, допускается fallback на запрошенный gh_uid.
+    Publish работает fail-closed: greenhouse_uid из запроса не является authority.
     """
-    try:
-        resolved_gh_uid = await _get_gh_uid_from_zone_id(zone_id)
-    except Exception as exc:
-        if requested_gh_uid:
-            logger.warning(
-                "[MQTT_PUBLISH] Failed to resolve gh_uid from zone_id=%s, fallback to requested greenhouse_uid=%s, error=%s",
-                zone_id,
-                requested_gh_uid,
-                exc,
-            )
-            return requested_gh_uid
-        raise
+    resolved_gh_uid = await _get_gh_uid_from_zone_id(zone_id)
 
     if requested_gh_uid and requested_gh_uid != resolved_gh_uid:
         logger.warning(
@@ -594,13 +577,10 @@ async def publish_node_config(
     config_payload = _ensure_node_secret(dict(req.config))
     use_temp_topic = pending_zone_id == req.zone_id and not node_zone_id
     if pending_zone_id == req.zone_id and node_zone_id:
-        logger.warning(
-            "[CONFIG_PUBLISH] Inconsistent node state: pending_zone_id set while zone_id already set. Forcing temp publish. node_uid=%s, node_zone_id=%s, pending_zone_id=%s",
-            node_uid,
-            node_zone_id,
-            pending_zone_id,
+        raise HTTPException(
+            status_code=409,
+            detail="inconsistent node binding state: zone_id and pending_zone_id are both set",
         )
-        use_temp_topic = True
 
     if use_temp_topic:
         if not hardware_id:
@@ -1189,175 +1169,3 @@ async def publish_command(request: Request, req: CommandRequest = Body(...)):
         status_code=500,
         detail=f"Failed to publish command after {max_retries} attempts: {str(last_error)}",
     )
-
-
-@router.post("/zones/{zone_id}/fill")
-async def zone_fill(
-    request: Request, zone_id: int, req: FillDrainRequest = Body(...)
-):
-    """Выполнить режим наполнения (Fill Mode) через history-logger."""
-    _auth_ingest(request)
-
-    _validate_target_level(req.target_level, 0.1, 1.0, "fill")
-
-    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
-
-    async with _mqtt_client_context("-fill") as mqtt:
-        try:
-            result = await execute_fill_mode(
-                zone_id, req.target_level, mqtt, gh_uid, req.max_duration_sec
-            )
-            return {"status": "ok", "data": result}
-        except Exception as e:
-            logger.error(
-                f"Failed to execute fill mode for zone {zone_id}: {e}", exc_info=True
-            )
-            await send_infra_exception_alert(
-                error=e,
-                code="infra_fill_mode_failed",
-                alert_type="Fill Mode Failed",
-                severity="error",
-                zone_id=zone_id,
-                service="history-logger",
-                component="water_flow",
-                details={
-                    "target_level": req.target_level,
-                    "max_duration_sec": req.max_duration_sec,
-                },
-            )
-            raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/zones/{zone_id}/drain")
-async def zone_drain(
-    request: Request, zone_id: int, req: FillDrainRequest = Body(...)
-):
-    """Выполнить режим слива (Drain Mode) через history-logger."""
-    _auth_ingest(request)
-
-    _validate_target_level(req.target_level, 0.0, 0.9, "drain")
-
-    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
-
-    async with _mqtt_client_context("-drain") as mqtt:
-        try:
-            result = await execute_drain_mode(
-                zone_id, req.target_level, mqtt, gh_uid, req.max_duration_sec
-            )
-            return {"status": "ok", "data": result}
-        except Exception as e:
-            logger.error(
-                f"Failed to execute drain mode for zone {zone_id}: {e}", exc_info=True
-            )
-            await send_infra_exception_alert(
-                error=e,
-                code="infra_drain_mode_failed",
-                alert_type="Drain Mode Failed",
-                severity="error",
-                zone_id=zone_id,
-                service="history-logger",
-                component="water_flow",
-                details={
-                    "target_level": req.target_level,
-                    "max_duration_sec": req.max_duration_sec,
-                },
-            )
-            raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/zones/{zone_id}/calibrate-flow")
-async def zone_calibrate_flow(
-    request: Request, zone_id: int, req: CalibrateFlowRequest = Body(...)
-):
-    """Выполнить калибровку расхода воды (Flow Calibration) через history-logger."""
-    _auth_ingest(request)
-
-    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
-
-    async with _mqtt_client_context("-calibrate") as mqtt:
-        try:
-            result = await calibrate_flow(
-                zone_id,
-                req.node_id,
-                req.channel,
-                mqtt,
-                gh_uid,
-                req.pump_duration_sec,
-            )
-            return {"status": "ok", "data": result}
-        except Exception as e:
-            logger.error(
-                f"Failed to calibrate flow for zone {zone_id}: {e}", exc_info=True
-            )
-            await send_infra_exception_alert(
-                error=e,
-                code="infra_flow_calibration_failed",
-                alert_type="Flow Calibration Failed",
-                severity="error",
-                zone_id=zone_id,
-                service="history-logger",
-                component="flow_calibration",
-                details={
-                    "node_id": req.node_id,
-                    "channel": req.channel,
-                    "pump_duration_sec": req.pump_duration_sec,
-                },
-            )
-            raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/zones/{zone_id}/calibrate-pump")
-async def zone_calibrate_pump(
-    request: Request, zone_id: int, req: CalibratePumpRequest = Body(...)
-):
-    """Выполнить калибровку дозирующей помпы (ml/sec) через history-logger."""
-    _auth_ingest(request)
-
-    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
-
-    async with _mqtt_client_context("-calibrate-pump") as mqtt:
-        try:
-            result = await calibrate_pump(
-                zone_id=zone_id,
-                node_channel_id=req.node_channel_id,
-                duration_sec=req.duration_sec,
-                actual_ml=req.actual_ml,
-                skip_run=req.skip_run,
-                component=req.component,
-                test_volume_l=req.test_volume_l,
-                ec_before_ms=req.ec_before_ms,
-                ec_after_ms=req.ec_after_ms,
-                temperature_c=req.temperature_c,
-                run_token=req.run_token,
-                manual_override=req.manual_override,
-                mqtt_client=mqtt,
-                gh_uid=gh_uid,
-            )
-            return {"status": "ok", "data": result}
-        except Exception as e:
-            logger.error(
-                f"Failed to calibrate pump for zone {zone_id}: {e}", exc_info=True
-            )
-            await send_infra_exception_alert(
-                error=e,
-                code="infra_pump_calibration_failed",
-                alert_type="Pump Calibration Failed",
-                severity="error",
-                zone_id=zone_id,
-                service="history-logger",
-                component="pump_calibration",
-                details={
-                    "node_channel_id": req.node_channel_id,
-                    "duration_sec": req.duration_sec,
-                    "actual_ml": req.actual_ml,
-                    "skip_run": req.skip_run,
-                    "component": req.component,
-                    "test_volume_l": req.test_volume_l,
-                    "ec_before_ms": req.ec_before_ms,
-                    "ec_after_ms": req.ec_after_ms,
-                    "temperature_c": req.temperature_c,
-                    "run_token": req.run_token,
-                    "manual_override": req.manual_override,
-                },
-            )
-            raise HTTPException(status_code=500, detail=str(e))

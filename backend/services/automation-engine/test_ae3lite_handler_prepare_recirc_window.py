@@ -73,7 +73,7 @@ class _AlertRepository:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def create_or_update_active(self, **kwargs: Any) -> None:
+    async def raise_active(self, **kwargs: Any) -> None:
         self.calls.append(kwargs)
 
 

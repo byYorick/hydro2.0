@@ -70,6 +70,30 @@ class CommandStatusControllerTest extends TestCase
             ]);
     }
 
+    public function test_command_status_returns_human_error_message(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $this->actingAs($user);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $zone = Zone::factory()->create();
+        $command = Command::create([
+            'cmd_id' => 'test-cmd-humanized',
+            'zone_id' => $zone->id,
+            'cmd' => 'FORCE_IRRIGATION',
+            'status' => 'TIMEOUT',
+            'error_code' => 'TIMEOUT',
+            'error_message' => 'TIMEOUT',
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/commands/{$command->cmd_id}/status");
+
+        $response->assertOk()
+            ->assertJsonPath('data.error_code', 'TIMEOUT')
+            ->assertJsonPath('data.human_error_message', 'Превышено время ожидания выполнения команды.');
+    }
+
     public function test_command_status_allows_access_for_viewer_with_zone_access(): void
     {
         $user = User::factory()->create(['role' => 'viewer']);
@@ -149,4 +173,3 @@ class CommandStatusControllerTest extends TestCase
             ]);
     }
 }
-

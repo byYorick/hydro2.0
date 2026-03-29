@@ -166,7 +166,7 @@ NodeConfig определяет:
 2. Отправляет `config_report` в топик `hydro/{gh}/{zone}/{node}/config_report`.
 3. Backend сохраняет конфиг и синхронизирует `node_channels`.
 4. Нода валидирует и применяет конфиг локально.
-5. **Backend переводит ноду в `ASSIGNED_TO_ZONE`** после получения `config_report`.
+5. **Backend финализирует bind/rebind после `config_report`**: `history-logger` наблюдает событие, Laravel подтверждает namespace и переводит ноду в `ASSIGNED_TO_ZONE`.
 
 ## 5.3. Топик
 ```

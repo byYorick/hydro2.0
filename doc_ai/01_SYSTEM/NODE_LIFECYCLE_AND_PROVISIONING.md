@@ -167,6 +167,14 @@ Backend:
 
 **Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения `config_report` от ноды. Это гарантирует, что сервер использует актуальный конфиг. Любые `greenhouse_token`/`zone_id`, присланные в `node_hello`, на привязку не влияют.
 
+Инварианты bind/rebind:
+
+- Повторная привязка уже привязанной ноды к **той же самой зоне** должна быть идемпотентной: `zone_id` не очищается, новый pending-cycle не открывается.
+- Если нода уже находится в `pending_zone_id = target_zone`, повторный запрос на привязку считается retry того же bind-flow и не должен переводить ноду в противоречивое состояние.
+- Перепривязка в **другую** зону всегда проходит через pending-state: сервер очищает текущий `zone_id`, выставляет `pending_zone_id = target_zone_id`, переводит lifecycle в `REGISTERED_BACKEND` и ждёт `config_report` из целевого namespace.
+- Финализация bind/rebind выполняется только после `config_report` из целевого namespace MQTT; до этого нода не считается закреплённой за новой зоной.
+- `history-logger` в этом flow выступает только observer/transport: он сохраняет `config_report` и сообщает Laravel наблюдаемый факт. Саму финализацию bind/rebind (`zone_id`, `pending_zone_id`, lifecycle) выполняет только Laravel.
+
 Состояние: `ASSIGNED_TO_ZONE`.
 
 ---

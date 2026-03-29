@@ -281,6 +281,20 @@ export function createSetupWizardPlantNodeCommands(
       return 'failed'
     }
 
+    if (node.zone_id === zoneId && !node.pending_zone_id) {
+      showToast(`Нода "${label}" уже привязана к этой зоне`, 'success', TOAST_TIMEOUT.NORMAL)
+      return 'confirmed'
+    }
+
+    if (!node.zone_id && node.pending_zone_id === zoneId) {
+      showToast(
+        `Нода "${label}" уже ожидает подтверждения привязки. Ждём config_report от ноды (~2-5 сек)...`,
+        'info',
+        NODE_BINDING_INFO_TIMEOUT_MS
+      )
+      return 'pending'
+    }
+
     const lifecycleAllowed = await canAssignNodeToZone(node)
     if (!lifecycleAllowed) {
       return 'failed'
@@ -293,12 +307,12 @@ export function createSetupWizardPlantNodeCommands(
       })
       const updatedNode = parseNodeUpdate(response.data)
 
-      if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
+      if (updatedNode?.zone_id === zoneId && !updatedNode?.pending_zone_id) {
         showToast(`Нода "${label}" успешно привязана к зоне и отправила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
         return 'confirmed'
       }
 
-      if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
+      if (updatedNode?.pending_zone_id === zoneId && !updatedNode?.zone_id) {
         showToast(
           `Нода "${label}" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...`,
           'info',

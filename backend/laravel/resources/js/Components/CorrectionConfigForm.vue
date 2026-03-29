@@ -693,13 +693,54 @@ function applyPayload(payload: ZoneCorrectionConfigPayload): void {
   }
 }
 
+function applyDocument(document: unknown): void {
+  if (!document || typeof document !== 'object') {
+    return
+  }
+
+  const root = document as Record<string, unknown>
+  const rawPayload = (root.payload && typeof root.payload === 'object' && !Array.isArray(root.payload))
+    ? root.payload as Record<string, unknown>
+    : {}
+
+  const resolvedConfig = (
+    root.resolved_config
+    ?? rawPayload.resolved_config
+    ?? { base: {}, phases: {} }
+  ) as ZoneCorrectionConfigPayload['resolved_config']
+
+  const normalized = {
+    ...rawPayload,
+    ...root,
+    id: Number(root.id ?? rawPayload.id ?? 0),
+    zone_id: Number(root.zone_id ?? rawPayload.zone_id ?? props.zoneId),
+    preset: (root.preset ?? rawPayload.preset ?? null) as ZoneCorrectionConfigPayload['preset'],
+    base_config: (root.base_config ?? rawPayload.base_config ?? {}) as Record<string, unknown>,
+    phase_overrides: (root.phase_overrides ?? rawPayload.phase_overrides ?? {}) as ZoneCorrectionConfigPayload['phase_overrides'],
+    resolved_config: resolvedConfig,
+    version: Number(root.version ?? rawPayload.version ?? 0),
+    updated_at: (root.updated_at ?? rawPayload.updated_at ?? null) as string | null,
+    updated_by: (root.updated_by ?? rawPayload.updated_by ?? null) as number | null,
+    last_applied_at: (root.last_applied_at ?? rawPayload.last_applied_at ?? null) as string | null,
+    last_applied_version: Number(root.last_applied_version ?? rawPayload.last_applied_version ?? 0) || null,
+    meta: (root.meta ?? rawPayload.meta ?? {
+      phases: ['solution_fill', 'tank_recirc', 'irrigation'],
+      defaults: {},
+      field_catalog: [],
+    }) as ZoneCorrectionConfigPayload['meta'],
+    available_presets: (root.available_presets ?? rawPayload.available_presets ?? []) as ZoneCorrectionConfigPayload['available_presets'],
+  } satisfies ZoneCorrectionConfigPayload
+
+  applyPayload(normalized)
+}
+
 async function reload(): Promise<void> {
   try {
     const [payload, historyItems] = await Promise.all([
       automationConfig.getDocument<ZoneCorrectionConfigPayload>('zone', props.zoneId, CORRECTION_NAMESPACE),
       automationConfig.getHistory<ZoneCorrectionConfigHistoryItem>('zone', props.zoneId, CORRECTION_NAMESPACE),
     ])
-    applyPayload(payload.payload)
+    applyDocument(payload)
     history.value = historyItems
   } catch (error) {
     logger.error('[CorrectionConfigForm] Failed to load correction config', error)
@@ -741,7 +782,7 @@ async function save(): Promise<void> {
       base_config: clone(baseForm.value),
       phase_overrides: clone(phaseForms.value),
     })
-    applyPayload(payload.payload)
+    applyDocument(payload)
     history.value = await automationConfig.getHistory<ZoneCorrectionConfigHistoryItem>('zone', props.zoneId, CORRECTION_NAMESPACE)
     emit('saved')
   } catch (error) {

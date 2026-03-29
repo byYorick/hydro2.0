@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Enums\GrowCycleStatus;
-use App\Jobs\ZoneOperationJob;
 use App\Models\ChannelBinding;
+use App\Models\Command;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\DeviceNode;
@@ -19,7 +19,6 @@ use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycleService;
-use Illuminate\Support\Facades\Bus;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -333,21 +332,6 @@ class ZonesTest extends TestCase
     {
         $token = $this->token();
         $zone = Zone::factory()->create(['status' => 'online']);
-        $plant = Plant::factory()->create();
-        $recipe = Recipe::factory()->create();
-        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
-
-        \Illuminate\Support\Facades\Http::fake([
-            '*' => \Illuminate\Support\Facades\Http::response([
-                'status' => 'ok',
-                'data' => [
-                    'success' => true,
-                    'target_level' => 0.9,
-                    'final_level' => 0.9,
-                    'elapsed_sec' => 30.5,
-                ],
-            ], 200),
-        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/fill", [
@@ -355,30 +339,13 @@ class ZonesTest extends TestCase
                 'max_duration_sec' => 60,
             ]);
 
-        $resp->assertStatus(202)
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Fill operation queued');
+        $resp->assertStatus(404);
     }
 
     public function test_drain_zone_success(): void
     {
         $token = $this->token();
         $zone = Zone::factory()->create(['status' => 'online']);
-        $plant = Plant::factory()->create();
-        $recipe = Recipe::factory()->create();
-        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
-
-        \Illuminate\Support\Facades\Http::fake([
-            '*' => \Illuminate\Support\Facades\Http::response([
-                'status' => 'ok',
-                'data' => [
-                    'success' => true,
-                    'target_level' => 0.1,
-                    'final_level' => 0.1,
-                    'elapsed_sec' => 45.2,
-                ],
-            ], 200),
-        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/drain", [
@@ -386,73 +353,35 @@ class ZonesTest extends TestCase
                 'max_duration_sec' => 60,
             ]);
 
-        $resp->assertStatus(202)
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Drain operation queued');
+        $resp->assertStatus(404);
     }
 
     public function test_drain_zone_python_service_down(): void
     {
         $token = $this->token();
         $zone = Zone::factory()->create(['status' => 'online']);
-        $plant = Plant::factory()->create();
-        $recipe = Recipe::factory()->create();
-        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
-
-        \Illuminate\Support\Facades\Http::fake([
-            '*' => \Illuminate\Support\Facades\Http::response(null, 500),
-        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/drain", [
                 'target_level' => 0.1,
             ]);
 
-        // When Python service is down, the operation should still be queued
-        // but the job will fail and log the error
-        $resp->assertStatus(202)
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Drain operation queued');
+        $resp->assertStatus(404);
     }
 
     public function test_calibrate_flow_zone_success(): void
     {
         $token = $this->token();
         $zone = Zone::factory()->create(['status' => 'online']);
-        $plant = Plant::factory()->create();
-        $recipe = Recipe::factory()->create();
-        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
-
-        $node = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'status' => 'online',
-        ]);
-        NodeChannel::create([
-            'node_id' => $node->id,
-            'channel' => 'flow_sensor',
-            'type' => 'sensor',
-            'metric' => 'FLOW_RATE',
-            'unit' => 'L/min',
-            'config' => [],
-        ]);
-
-        \Illuminate\Support\Facades\Http::fake([
-            '*' => \Illuminate\Support\Facades\Http::response([
-                'status' => 'ok',
-                'data' => ['success' => true],
-            ], 200),
-        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/calibrate-flow", [
-                'node_id' => $node->id,
+                'node_id' => 1,
                 'channel' => 'flow_sensor',
                 'pump_duration_sec' => 10,
             ]);
 
-        $resp->assertStatus(202)
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Calibrate flow operation queued');
+        $resp->assertStatus(404);
     }
 
     public function test_calibrate_pump_zone_success(): void
@@ -479,21 +408,40 @@ class ZonesTest extends TestCase
         \Illuminate\Support\Facades\Http::fake([
             '*' => \Illuminate\Support\Facades\Http::response([
                 'status' => 'ok',
-                'data' => ['success' => true, 'ml_per_sec' => 0.85],
+                'data' => ['command_id' => 'transport-ok'],
             ], 200),
         ]);
 
-        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+        $runResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 30,
+                'component' => 'npk',
+            ]);
+
+        $runResp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.status', 'awaiting_actual_ml');
+
+        $runToken = (string) $runResp->json('data.run_token');
+        $command = Command::query()->latest('id')->firstOrFail();
+        $command->update(['status' => Command::STATUS_DONE]);
+
+        $saveResp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
                 'node_channel_id' => $channel->id,
                 'duration_sec' => 30,
                 'actual_ml' => 25.5,
                 'component' => 'npk',
+                'skip_run' => true,
+                'run_token' => $runToken,
             ]);
 
-        $resp->assertStatus(202)
+        $saveResp->assertOk()
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Calibrate pump operation queued');
+            ->assertJsonPath('message', 'Pump calibration saved')
+            ->assertJsonPath('data.status', 'calibrated')
+            ->assertJsonPath('data.ml_per_sec', 0.85);
     }
 
     public function test_calibrate_pump_zone_success_for_ph_down(): void
@@ -520,21 +468,70 @@ class ZonesTest extends TestCase
         \Illuminate\Support\Facades\Http::fake([
             '*' => \Illuminate\Support\Facades\Http::response([
                 'status' => 'ok',
-                'data' => ['success' => true, 'ml_per_sec' => 0.52],
+                'data' => ['command_id' => 'transport-ok'],
             ], 200),
+        ]);
+
+        $runResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 30,
+                'component' => 'ph_down',
+            ]);
+
+        $runResp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.status', 'awaiting_actual_ml');
+
+        $runToken = (string) $runResp->json('data.run_token');
+        $command = Command::query()->latest('id')->firstOrFail();
+        $command->update(['status' => Command::STATUS_DONE]);
+
+        $saveResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 30,
+                'actual_ml' => 15.6,
+                'component' => 'ph_down',
+                'skip_run' => true,
+                'run_token' => $runToken,
+            ]);
+
+        $saveResp->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Pump calibration saved')
+            ->assertJsonPath('data.status', 'calibrated')
+            ->assertJsonPath('data.component', 'ph_down');
+    }
+
+    public function test_calibrate_pump_rejects_one_shot_run_and_save(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
         ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
                 'node_channel_id' => $channel->id,
                 'duration_sec' => 30,
-                'actual_ml' => 15.6,
-                'component' => 'ph_down',
+                'actual_ml' => 12.0,
+                'component' => 'npk',
             ]);
 
-        $resp->assertStatus(202)
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Calibrate pump operation queued');
+        $resp->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'actual_ml must be submitted in a separate save step after terminal DONE');
     }
 
     public function test_calibrate_pump_allows_pending_zone_channel(): void
@@ -572,7 +569,17 @@ class ZonesTest extends TestCase
 
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('data.run_token', 'pending-run-1');
+            ->assertJsonPath('message', 'Pump calibration run accepted')
+            ->assertJsonPath('data.status', 'awaiting_actual_ml');
+
+        $this->assertIsString($resp->json('data.run_token'));
+        $this->assertNotSame('', (string) $resp->json('data.run_token'));
+        \Illuminate\Support\Facades\Http::assertSent(function ($request) use ($zone) {
+            return str_ends_with($request->url(), "/zones/{$zone->id}/commands");
+        });
+        \Illuminate\Support\Facades\Http::assertNotSent(function ($request) use ($zone) {
+            return str_ends_with($request->url(), "/zones/{$zone->id}/calibrate-pump");
+        });
     }
 
     public function test_calibrate_pump_uses_system_duration_bounds(): void
@@ -629,7 +636,11 @@ class ZonesTest extends TestCase
 
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('data.run_token', 'run-123');
+            ->assertJsonPath('message', 'Pump calibration run accepted')
+            ->assertJsonPath('data.status', 'awaiting_actual_ml');
+
+        $this->assertIsString($resp->json('data.run_token'));
+        $this->assertNotSame('', (string) $resp->json('data.run_token'));
     }
 
     public function test_calibrate_pump_skip_run_allows_offline_zone(): void
@@ -667,9 +678,9 @@ class ZonesTest extends TestCase
                 'manual_override' => true,
             ]);
 
-        $resp->assertStatus(202)
+        $resp->assertOk()
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Calibrate pump operation queued');
+            ->assertJsonPath('message', 'Pump calibration saved');
     }
 
     public function test_calibrate_pump_save_after_run_requires_run_token(): void
@@ -711,6 +722,106 @@ class ZonesTest extends TestCase
             ->assertJsonPath('message', 'run_token is required when saving calibration after a physical run');
     }
 
+    public function test_calibrate_pump_save_after_run_requires_terminal_done_status(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['command_id' => 'transport-ok'],
+            ], 200),
+        ]);
+
+        $runResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 10,
+                'component' => 'npk',
+            ]);
+
+        $runToken = (string) $runResp->json('data.run_token');
+        $command = Command::query()->latest('id')->firstOrFail();
+        $command->update(['status' => Command::STATUS_ACK]);
+
+        $saveResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 10,
+                'actual_ml' => 5.0,
+                'component' => 'npk',
+                'skip_run' => true,
+                'run_token' => $runToken,
+            ]);
+
+        $saveResp->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'pump calibration run is still ACK; wait for terminal DONE before saving calibration');
+    }
+
+    public function test_calibrate_pump_save_after_failed_run_is_rejected(): void
+    {
+        $token = $this->token();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => [],
+        ]);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'status' => 'ok',
+                'data' => ['command_id' => 'transport-ok'],
+            ], 200),
+        ]);
+
+        $runResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 10,
+                'component' => 'npk',
+            ]);
+
+        $runToken = (string) $runResp->json('data.run_token');
+        $command = Command::query()->latest('id')->firstOrFail();
+        $command->update(['status' => Command::STATUS_ERROR]);
+
+        $saveResp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/calibrate-pump", [
+                'node_channel_id' => $channel->id,
+                'duration_sec' => 10,
+                'actual_ml' => 5.0,
+                'component' => 'npk',
+                'skip_run' => true,
+                'run_token' => $runToken,
+            ]);
+
+        $saveResp->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'pump calibration run ended with status ERROR; cannot save calibration');
+    }
+
     public function test_calibrate_pump_run_allows_offline_zone_when_channel_belongs_to_zone(): void
     {
         $token = $this->token();
@@ -745,13 +856,12 @@ class ZonesTest extends TestCase
 
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Calibrate pump operation queued');
+            ->assertJsonPath('message', 'Pump calibration run accepted');
     }
 
     public function test_calibrate_pump_rejects_node_channel_from_other_zone(): void
     {
         $token = $this->token();
-        Bus::fake();
 
         $zone = Zone::factory()->create(['status' => 'online']);
         $otherZone = Zone::factory()->create(['status' => 'online']);
@@ -781,8 +891,6 @@ class ZonesTest extends TestCase
         $resp->assertStatus(422)
             ->assertJsonPath('status', 'error')
             ->assertJsonPath('message', 'node_channel_id must belong to the selected zone');
-
-        Bus::assertNotDispatched(ZoneOperationJob::class);
     }
 
     public function test_next_phase_success(): void

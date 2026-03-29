@@ -85,6 +85,33 @@ describe('useDeviceCommandActions', () => {
     })
   })
 
+  it('для irrig valve-канала отправляет transient set_relay на 3 секунды', async () => {
+    const api = {
+      get: vi.fn(),
+      post: vi.fn().mockResolvedValue({ data: { status: 'error' } }),
+    }
+    const showToast = vi.fn()
+    const upsertDevice = vi.fn()
+
+    const { onTestPump } = useDeviceCommandActions({
+      device: ref({
+        id: 11,
+        type: 'irrig',
+      } as never),
+      api,
+      showToast,
+      upsertDevice,
+    })
+
+    await onTestPump('valve_clean_fill', 'ACTUATOR')
+
+    expect(api.post).toHaveBeenCalledWith('/nodes/11/commands', {
+      type: 'set_relay',
+      channel: 'valve_clean_fill',
+      params: { state: true, duration_ms: 3000 },
+    })
+  })
+
   it('для сервисного канала storage_state отправляет state без run_pump', async () => {
     const api = {
       get: vi.fn(),
@@ -110,5 +137,44 @@ describe('useDeviceCommandActions', () => {
       channel: 'storage_state',
       params: {},
     })
+  })
+
+  it('показывает локализованную ошибку теста по human_error_message команды', async () => {
+    const api = {
+      get: vi.fn().mockResolvedValue({
+        data: {
+          status: 'ok',
+          data: {
+            status: 'TIMEOUT',
+            error_code: 'TIMEOUT',
+            error_message: 'TIMEOUT',
+            human_error_message: 'Превышено время ожидания выполнения команды.',
+          },
+        },
+      }),
+      post: vi.fn().mockResolvedValue({
+        data: { status: 'ok', data: { command_id: 'cmd-11' } },
+      }),
+    }
+    const showToast = vi.fn()
+    const upsertDevice = vi.fn()
+
+    const { onTestPump } = useDeviceCommandActions({
+      device: ref({
+        id: 11,
+        type: 'irrig',
+      } as never),
+      api,
+      showToast,
+      upsertDevice,
+    })
+
+    await onTestPump('pump_main', 'ACTUATOR')
+
+    expect(showToast).toHaveBeenCalledWith(
+      'Ошибка теста Тест главного насоса: Превышено время ожидания выполнения команды.',
+      'error',
+      5000,
+    )
   })
 })

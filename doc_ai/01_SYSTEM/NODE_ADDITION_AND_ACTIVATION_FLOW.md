@@ -266,7 +266,8 @@ if ($isAssignmentFromUI) {
 
 **Файлы:**
 - `backend/services/history-logger/mqtt_handlers.py` - обработчик config_report
-- `backend/laravel/app/Http/Controllers/NodeController.php` - API endpoints
+- `backend/laravel/app/Http/Controllers/PythonIngestController.php` - ingest endpoint
+- `backend/laravel/app/Services/NodeConfigReportObserverService.php` - owner финализации bind/rebind
 
 **Процесс:**
 
@@ -275,35 +276,28 @@ if ($isAssignmentFromUI) {
    - Функция: `handle_config_report()` в `mqtt_handlers.py`
    - Валидирует payload NodeConfig
 
-2. **History Logger завершает привязку (для REGISTERED_BACKEND узлов с pending_zone_id):**
+2. **History Logger сообщает в Laravel наблюдённый факт `config_report`:**
 
-   **Step 1:** Обновляет `zone_id` из `pending_zone_id`
+   **Step 1:** Выполняет HTTP ingest в canonical owner
    ```
-   PATCH http://laravel/api/nodes/{node_id}/service-update
+   POST http://laravel/api/python/nodes/config-report-observed
    Authorization: Bearer {PY_INGEST_TOKEN}
    
    {
-     "zone_id": 6,
-     "pending_zone_id": null
+     "node_id": 7,
+     "node_uid": "nd-clim-esp3278e",
+     "gh_uid": "gh-main",
+     "zone_uid": "zn-zone-a",
+     "is_temp_topic": false
    }
    ```
 
-   **Step 2:** Переводит узел в `ASSIGNED_TO_ZONE`
-   ```
-   POST http://laravel/api/nodes/{node_id}/lifecycle/service-transition
-   Authorization: Bearer {PY_INGEST_TOKEN}
-   
-   {
-     "target_state": "ASSIGNED_TO_ZONE",
-     "reason": "Config successfully installed and confirmed by node"
-   }
-   ```
-
-3. **Laravel обрабатывает переход:**
-   - **Service:** `NodeLifecycleService::transition()`
-   - Проверяет, разрешён ли переход (из `REGISTERED_BACKEND` в `ASSIGNED_TO_ZONE`)
-   - Обновляет `lifecycle_state`
-   - Сохраняет узел
+3. **Laravel завершает bind/rebind:**
+   - **Service:** `NodeConfigReportObserverService`
+   - Проверяет наличие `pending_zone_id`
+   - Сверяет `gh_uid/zone_uid` с target zone
+   - Выставляет `zone_id = pending_zone_id`, очищает `pending_zone_id`
+   - Вызывает `NodeLifecycleService::transitionToAssigned()`
 
 4. **Очистка retained сообщений:**
    - History Logger очищает retained сообщения на временном топике
@@ -319,20 +313,17 @@ lifecycle_state: ASSIGNED_TO_ZONE
 
 **Код обработки:**
 ```python
-# history-logger/main.py
-if lifecycle_state == "REGISTERED_BACKEND" and target_zone_id:
-    # Step 1: Обновляем zone_id
-    if pending_zone_id and not zone_id:
-        await client.patch(
-            f"{laravel_url}/api/nodes/{node_id}/service-update",
-            json={"zone_id": pending_zone_id, "pending_zone_id": None}
-        )
-    
-    # Step 2: Переводим в ASSIGNED_TO_ZONE
-    await client.post(
-        f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
-        json={"target_state": "ASSIGNED_TO_ZONE", "reason": "..."}
-    )
+# history-logger/mqtt_handlers.py
+await client.post(
+    f"{laravel_url}/api/python/nodes/config-report-observed",
+    json={
+        "node_id": node_id,
+        "node_uid": node_uid,
+        "gh_uid": gh_uid,
+        "zone_uid": zone_uid,
+        "is_temp_topic": is_temp_topic,
+    },
+)
 ```
 
 ---

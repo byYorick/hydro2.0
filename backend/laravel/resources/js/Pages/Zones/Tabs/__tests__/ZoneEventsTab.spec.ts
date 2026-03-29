@@ -131,4 +131,40 @@ describe('ZoneEventsTab.vue', () => {
     expect(wrapper.text()).toContain('1.980')
     expect(wrapper.text()).toContain('EC gap 0.0200 <= deadband 0.0500')
   })
+
+  it('локализует код ошибки в деталях AE task failed', async () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(
+            4,
+            'AE_TASK_FAILED',
+            'Automation task failed',
+            {
+              task_id: 123,
+              error_code: 'start_cycle_zone_busy',
+              error_message: 'Intent skipped: zone busy',
+              stage: 'prepare',
+            },
+          ),
+        ],
+      },
+      global: {
+        stubs: {
+          VirtualList: {
+            props: ['items'],
+            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
+          },
+        },
+      },
+    })
+
+    await wrapper.find('.cursor-pointer').trigger('click')
+
+    expect(wrapper.text()).toContain('Ошибка:')
+    expect(wrapper.text()).toContain('Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
+    expect(wrapper.text()).toContain('Код ошибки:')
+    expect(wrapper.text()).toContain('start_cycle_zone_busy')
+  })
 })

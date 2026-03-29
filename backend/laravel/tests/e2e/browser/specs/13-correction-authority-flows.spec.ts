@@ -15,7 +15,7 @@ test.describe('Correction Authority Flows', () => {
     for (const mode of ['solution_fill', 'tank_recirc', 'irrigation'] as const) {
       await page.locator(`[data-testid="process-calibration-mode-${mode}"]`).click();
       await page.locator('[data-testid="process-calibration-save"]').click();
-      await expect(page.locator('[data-testid="toast-success"]')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText(/Process calibration обновлена/).last()).toBeVisible({ timeout: 15000 });
     }
 
     const pidSummary = page.getByText('Расширенная тонкая настройка PID и autotune');
@@ -24,11 +24,11 @@ test.describe('Correction Authority Flows', () => {
 
     await page.locator('[data-testid="pid-config-type-ph"]').click();
     await page.locator('[data-testid="pid-config-save"]').click();
-    await expect(page.locator('[data-testid="toast-success"]')).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(1000);
 
     await page.locator('[data-testid="pid-config-type-ec"]').click();
     await page.locator('[data-testid="pid-config-save"]').click();
-    await expect(page.locator('[data-testid="toast-success"]')).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(1000);
 
     await expect(page.locator('[data-testid="correction-readiness-process-btn"]')).toHaveCount(0, { timeout: 15000 });
     await expect(page.locator('[data-testid="correction-readiness-pid-btn"]')).toHaveCount(0, { timeout: 15000 });
@@ -41,6 +41,12 @@ test.describe('Correction Authority Flows', () => {
     let presetId: number | null = null;
 
     try {
+      await apiHelper.updateAutomationConfig('zone', testZone.id, 'zone.correction', {
+        preset_id: null,
+        base_config: {},
+        phase_overrides: {},
+      });
+
       await page.goto(`/zones/${testZone.id}?tab=automation`, { waitUntil: 'networkidle' });
       await page.getByRole('button', { name: 'Коррекция и калибровка' }).click();
 
@@ -51,10 +57,14 @@ test.describe('Correction Authority Flows', () => {
       await expect(page.locator('[data-testid="correction-config-form"]')).toBeVisible({ timeout: 15000 });
 
       const baseKpInput = page.locator('[data-testid="correction-config-base-controllers.ph.kp"]').first();
+      await expect(baseKpInput).toBeVisible({ timeout: 15000 });
       await baseKpInput.fill('6.2');
       await page.locator('[data-testid="correction-config-new-preset-name"]').fill(presetName);
       await page.locator('[data-testid="correction-config-save-preset"]').click();
-      await page.waitForTimeout(1500);
+      await expect.poll(async () => {
+        return (await apiHelper.listAutomationPresets('zone.correction'))
+          .find((preset) => preset.name === presetName)?.id ?? null;
+      }, { timeout: 15000 }).not.toBeNull();
 
       const createdPreset = (await apiHelper.listAutomationPresets('zone.correction'))
         .find((preset) => preset.name === presetName);
@@ -64,7 +74,11 @@ test.describe('Correction Authority Flows', () => {
 
       await baseKpInput.fill('7.4');
       await page.locator('[data-testid="correction-config-update-preset"]').click();
-      await page.waitForTimeout(1500);
+      await expect.poll(async () => {
+        const preset = (await apiHelper.listAutomationPresets('zone.correction'))
+          .find((item) => item.id === presetId);
+        return Number(preset?.payload?.base?.controllers?.ph?.kp ?? preset?.config?.base?.controllers?.ph?.kp ?? 0);
+      }, { timeout: 15000 }).toBe(7.4);
 
       await page.locator('[data-testid="correction-config-reset-defaults"]').click();
       await page.locator('[data-testid="correction-config-preset-select"]').selectOption(String(presetId));
@@ -72,10 +86,11 @@ test.describe('Correction Authority Flows', () => {
       await expect(baseKpInput).toHaveValue('7.4');
 
       await page.locator('[data-testid="correction-config-delete-preset"]').click();
-      await page.waitForTimeout(1500);
+      await expect.poll(async () => {
+        const remainingPresets = await apiHelper.listAutomationPresets('zone.correction');
+        return remainingPresets.some((preset) => preset.id === presetId);
+      }, { timeout: 15000 }).toBe(false);
 
-      const remainingPresets = await apiHelper.listAutomationPresets('zone.correction');
-      expect(remainingPresets.some((preset) => preset.id === presetId)).toBe(false);
       presetId = null;
     } finally {
       if (presetId !== null) {

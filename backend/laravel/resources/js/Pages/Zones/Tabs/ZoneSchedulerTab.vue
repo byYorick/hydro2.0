@@ -354,10 +354,10 @@
             </div>
 
             <div
-              v-if="selectedExecution.error_code || selectedExecution.error_message"
+              v-if="selectedExecutionErrorMessage"
               class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
             >
-              {{ selectedExecution.error_code || selectedExecution.error_message }}
+              {{ selectedExecutionErrorMessage }}
             </div>
 
             <div
@@ -548,6 +548,7 @@ import { useApi } from '@/composables/useApi'
 import { useRole } from '@/composables/useRole'
 import { useToast } from '@/composables/useToast'
 import { useZoneScheduleWorkspace } from '@/composables/useZoneScheduleWorkspace'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 
 const props = defineProps<ZoneAutomationTabProps>()
@@ -592,6 +593,11 @@ const {
 } = useZoneScheduleWorkspace(props, { get, showToast })
 
 const zoneId = computed(() => props.zoneId)
+const selectedExecutionErrorMessage = computed(() => resolveHumanErrorMessage({
+  code: selectedExecution.value?.error_code,
+  message: selectedExecution.value?.error_message,
+  humanMessage: selectedExecution.value?.human_error_message,
+}))
 
 function attentionCardClass(tone: 'danger' | 'warning' | 'info'): string {
   if (tone === 'danger') return 'border-red-200 bg-red-50/70'

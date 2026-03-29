@@ -57,12 +57,31 @@ setup('authenticate', async ({ page }) => {
 
   // Нормализуем URL на главную (dashboard)
   await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
-  
-  // Ждем загрузки dashboard
-  await page.waitForLoadState('networkidle', { timeout: 20000 });
-  
-  // Проверяем, что мы авторизованы - ищем заголовок или любой элемент dashboard
-  await page.waitForSelector('h1, [data-testid="dashboard-zones-count"]', { timeout: 15000 });
+
+  // Ждем устойчивый post-login индикатор. h1 на dashboard не гарантирован,
+  // поэтому опираемся на навигацию и видимые dashboard widgets.
+  const readyIndicators = [
+    page.locator('[data-testid="dashboard-zones-count"]'),
+    page.locator('[data-testid^="zone-card-"]').first(),
+    page.locator('nav a[href="/zones"]'),
+    page.locator('nav a[href="/alerts"]'),
+  ];
+
+  await expect.poll(
+    async () => {
+      for (const locator of readyIndicators) {
+        if (await locator.isVisible().catch(() => false)) {
+          return true;
+        }
+      }
+
+      return false;
+    },
+    {
+      timeout: 20000,
+      message: 'Dashboard did not expose any stable authenticated indicator after login',
+    },
+  ).toBe(true);
 
   // Сохраняем состояние авторизации
   await page.context().storageState({ path: authFile });

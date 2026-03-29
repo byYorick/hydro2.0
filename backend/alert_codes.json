@@ -511,7 +511,17 @@
       "severity": "critical",
       "title": "Не настроен PID-контур зоны",
       "description": "Для зоны отсутствует обязательная PID-конфигурация коррекции.",
-      "recommendation": "Проверьте zone_pid_configs для pH и EC и заполните обязательные параметры.",
+      "recommendation": "Проверьте authority-документы zone.pid.ph и zone.pid.ec и заполните обязательные параметры.",
+      "node_related": false
+    },
+    {
+      "code": "biz_zone_recipe_phase_targets_missing",
+      "source": "biz",
+      "category": "config",
+      "severity": "critical",
+      "title": "Не настроены phase targets рецепта",
+      "description": "Для активной фазы рецепта отсутствуют обязательные целевые значения.",
+      "recommendation": "Проверьте recipe phase targets и заполните обязательные цели для активной фазы.",
       "node_related": false
     },
     {
@@ -615,6 +625,26 @@
       "node_related": false
     },
     {
+      "code": "infra_ae3_snapshot_retry_scheduled",
+      "source": "infra",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Повтор snapshot запланирован",
+      "description": "AE3 не смог сразу получить runtime snapshot и запланировал повторную попытку.",
+      "recommendation": "Проверьте доступность read-model, БД и свежесть snapshot-данных зоны.",
+      "node_related": false
+    },
+    {
+      "code": "infra_ae3_snapshot_retry_exhausted",
+      "source": "infra",
+      "category": "operations",
+      "severity": "error",
+      "title": "Повторы snapshot исчерпаны",
+      "description": "AE3 исчерпал допустимые попытки получить runtime snapshot зоны.",
+      "recommendation": "Проверьте read-model зоны, БД и логи automation-engine.",
+      "node_related": false
+    },
+    {
       "code": "infra_command_ack_command_not_found",
       "source": "infra",
       "category": "operations",
@@ -633,6 +663,56 @@
       "description": "Операция калибровки насоса завершилась ошибкой.",
       "recommendation": "Проверьте насос, исполнительный канал и параметры калибровочного прогона.",
       "node_related": true
+    },
+    {
+      "code": "infra_sensor_failure",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Сбой сенсорного контура",
+      "description": "Инфраструктурный мониторинг зафиксировал критический сбой сенсора или его канала.",
+      "recommendation": "Проверьте сенсор, wiring, питание и последние диагностические payload узла.",
+      "node_related": true
+    },
+    {
+      "code": "infra_pump_failure",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Сбой насосного контура",
+      "description": "Инфраструктурный мониторинг зафиксировал отказ насосного канала.",
+      "recommendation": "Проверьте насос, реле, питание и защитные interlock-механизмы.",
+      "node_related": true
+    },
+    {
+      "code": "infra_controller_failure",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Сбой контроллера",
+      "description": "Один из контроллеров или управляющих сервисов работает с критической ошибкой.",
+      "recommendation": "Проверьте логи контроллера, состояние зависимостей и последние deployment-изменения.",
+      "node_related": false
+    },
+    {
+      "code": "infra_power_failure",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Проблема питания",
+      "description": "Зафиксирована критическая проблема питания узла или исполнительного контура.",
+      "recommendation": "Проверьте блок питания, автоматы защиты и фактическое напряжение на узле.",
+      "node_related": true
+    },
+    {
+      "code": "infra_network_failure",
+      "source": "infra",
+      "category": "infrastructure",
+      "severity": "critical",
+      "title": "Сбой сети",
+      "description": "Критически нарушена сетевая связность между сервисами или узлами.",
+      "recommendation": "Проверьте сеть, Wi-Fi, MQTT broker и маршрутизацию между сервисами.",
+      "node_related": false
     },
     {
       "code": "infra_telemetry_timestamp_skew",

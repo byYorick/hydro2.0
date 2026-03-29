@@ -27,7 +27,7 @@ describe('useErrorHandler', () => {
       expect(error).toBeInstanceOf(ApiError)
       expect((error as ApiError).status).toBe(404)
       expect((error as ApiError).code).toBe('NOT_FOUND')
-      expect((error as ApiError).message).toBe('Not found')
+      expect((error as ApiError).message).toBe('Запрошенный объект не найден или уже удалён.')
     })
 
     it('should normalize ValidationError from 422 status', () => {
@@ -167,6 +167,29 @@ describe('useErrorHandler', () => {
       )
     })
 
+    it('should localize domain error codes to Russian', () => {
+      const { handleError, lastError } = useErrorHandler(mockShowToast)
+      const axiosError = {
+        response: {
+          status: 409,
+          data: {
+            code: 'start_cycle_zone_busy',
+            message: 'Intent skipped: zone busy',
+          }
+        }
+      }
+
+      handleError(axiosError)
+
+      expect(lastError.value).toBeInstanceOf(ApiError)
+      expect(lastError.value?.message).toBe('Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.',
+        'error',
+        5000
+      )
+    })
+
     it('should handle NetworkError', () => {
       const { handleError, lastError } = useErrorHandler(mockShowToast)
       const networkError = { code: 'ERR_NETWORK' }
@@ -253,4 +276,3 @@ describe('useErrorHandler', () => {
     })
   })
 })
-

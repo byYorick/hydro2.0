@@ -63,6 +63,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Ожидаемая модель ответа:
 - `state`: immediate terminal `DONE`/`ERROR`.
 - `set_relay`: по умолчанию immediate terminal `DONE`/`ERROR`.
+- `set_relay {state:true, duration_ms}` для diagnostic/test path отвечает `ACK`, удерживает канал включённым
+  `duration_ms`, затем нода обязана локально вернуть канал в `OFF` и отправить terminal `DONE`
+  по тому же `cmd_id`.
+- специальный dry-run path для `pump_main`: `set_relay {state:true, duration_ms<=3000}` допускается
+  без открытого flow path и должен использоваться только для ручного smoke/test;
 - Исключение: `pump_main/set_relay {state:true, timeout_ms, stage}` для stage-level guard отвечает `ACK`,
   а поздний terminal `DONE`/`ERROR` по тому же `cmd_id` публикуется нодой после явного `pump_main OFF`
   или по локальному stage-timeout.
@@ -70,8 +75,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Дополнительные правила:
 - `set_relay {state:true}` для actuator-каналов IRR-профиля работает как latched `ON/OFF` semantics:
   канал остаётся включенным до явной команды `set_relay {state:false}`;
+- если для actuator-команды явно передан `duration_ms`, latched-семантика заменяется transient test-mode:
+  канал обязан автоматически вернуться в `OFF` и завершить исходный `cmd_id` terminal-ответом;
 - `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживается только для
   `stage in {"solution_fill", "prepare_recirculation"}` и arm'ит локальный stage-guard;
+- dry-run `pump_main/set_relay {state:true, duration_ms<=3000}` является единственным разрешённым bypass
+  interlock для ручного теста "на сухую"; любой другой `pump_main ON` без flow path остаётся запрещён;
 - по истечении `timeout_ms` нода обязана локально остановить весь соответствующий flow-path,
   вернуть terminal `ERROR` для исходного timed-start с `error_code=stage_timeout`
   и опубликовать событие `storage_state/event` (`solution_fill_timeout` или `prepare_recirculation_timeout`);

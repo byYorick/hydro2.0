@@ -4,6 +4,7 @@ import apiClient from './utils/apiClient';
 import { logger } from './utils/logger';
 import { initEcho, isEchoInitializing, getEchoInstance, onWsStateChange } from './utils/echoClient';
 import Echo from 'laravel-echo';
+import { getActivePinia } from 'pinia';
 
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
   const existingPatch = (window.__boostFetchPatched === true)
@@ -259,9 +260,15 @@ window.addEventListener('ws:reconciliation', (event) => {
   // Обновляем алерты через store
   if (alerts && Array.isArray(alerts)) {
     try {
+      const pinia = getActivePinia()
+      if (!pinia) {
+        logger.debug('[bootstrap.js] Skipping alerts reconciliation until Pinia is ready', {})
+        return
+      }
+
       // Динамически импортируем store, чтобы избежать циклических зависимостей
       import('./stores/alerts').then(({ useAlertsStore }) => {
-        const alertsStore = useAlertsStore()
+        const alertsStore = useAlertsStore(pinia)
         // Обновляем только активные алерты из snapshot
         const activeAlerts = alerts.filter((a) => a.status === 'ACTIVE' || a.status === 'active')
         alertsStore.setAll(activeAlerts)

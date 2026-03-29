@@ -143,7 +143,7 @@ WHERE id = 7;
 }
 ```
 
-### 5️⃣ History Logger сохраняет config_report
+### 5️⃣ History Logger сохраняет config_report и сообщает observed-факт в Laravel
 
 **Python код:** `handle_config_report()` в `mqtt_handlers.py`
 
@@ -151,24 +151,17 @@ WHERE id = 7;
 
 **Step 1:** Сохраняет `nodes.config` и синхронизирует `node_channels`
 
-**Step 2:** Обновляет `zone_id` из `pending_zone_id` и переводит узел в ASSIGNED_TO_ZONE
+**Step 2:** Отправляет в Laravel ingest-сигнал, что `config_report` наблюдён в целевом namespace
 ```
-PATCH http://laravel/api/nodes/{node_id}/service-update
+POST http://laravel/api/python/nodes/config-report-observed
 Authorization: Bearer {PY_INGEST_TOKEN}
 
 {
-  "zone_id": 6,
-  "pending_zone_id": null
-}
-```
-
-```
-POST http://laravel/api/nodes/{node_id}/lifecycle/service-transition
-Authorization: Bearer {PY_INGEST_TOKEN}
-
-{
-  "target_state": "ASSIGNED_TO_ZONE",
-  "reason": "Config report received from node"
+  "node_id": 7,
+  "node_uid": "nd-clim-esp3278e",
+  "gh_uid": "gh-main",
+  "zone_uid": "zn-zone-a",
+  "is_temp_topic": false
 }
 ```
 
@@ -177,6 +170,16 @@ Authorization: Bearer {PY_INGEST_TOKEN}
 [CONFIG_REPORT] Config stored for node nd-clim-esp3278e
 [CONFIG_REPORT] Synced 3 channel(s) for node nd-clim-esp3278e
 ```
+
+### 6️⃣ Laravel завершает bind/rebind
+
+**Laravel код:** `NodeConfigReportObserverService`
+
+**Действия:**
+- проверяет, что у ноды есть `pending_zone_id`;
+- сверяет `gh_uid/zone_uid` из observed `config_report` с target zone;
+- выполняет финализацию bind: `zone_id = pending_zone_id`, `pending_zone_id = null`;
+- переводит lifecycle в `ASSIGNED_TO_ZONE`.
 
 **Итоговое состояние:**
 ```sql
@@ -220,22 +223,23 @@ lifecycle_state: ASSIGNED_TO_ZONE
 
 ## Проблемы и решения
 
-### ❌ Проблема: 401 Unauthorized при завершении привязки
+### ❌ Проблема: прямое завершение привязки из History Logger ломало owner-границы
 
-**Причина:** 
-- History Logger использовал неправильную переменную `laravel_api_token` вместо `history_logger_api_token`
-- PATCH маршрут `api/nodes/{node}` был защищён middleware `auth`, который требовал Sanctum аутентификацию
+**Причина:**
+- `history-logger` сам мутировал `zone_id/pending_zone_id` и lifecycle;
+- при повторном bind/rebind это приводило к race и размывало owner-грань между transport и control-plane.
 
 **Решение:**
-1. ✅ Создан отдельный маршрут `/api/nodes/{node}/service-update` без auth middleware
-2. ✅ Создан отдельный маршрут `/api/nodes/{node}/lifecycle/service-transition` без auth middleware
-3. ✅ History Logger обновлён для использования `history_logger_api_token` вместо `laravel_api_token`
-4. ✅ NodeController::update добавлена проверка всех токенов: `PY_API_TOKEN`, `PY_INGEST_TOKEN`, `HISTORY_LOGGER_API_TOKEN`
+1. ✅ `history-logger` оставлен transport/observer-only для `config_report`
+2. ✅ Добавлен canonical ingest `POST /api/python/nodes/config-report-observed`
+3. ✅ Laravel сам завершает bind/rebind через `NodeConfigReportObserverService`
+4. ✅ Прямая zone-level orchestration из `history-logger` fail-closed
 
 **Файлы изменены:**
-- `backend/services/history-logger/mqtt_handlers.py` - исправлена переменная токена
-- `backend/laravel/routes/api.php` - добавлены service маршруты
-- `backend/laravel/app/Http/Controllers/NodeController.php` - улучшена проверка токенов
+- `backend/services/history-logger/mqtt_handlers.py`
+- `backend/laravel/app/Services/NodeConfigReportObserverService.php`
+- `backend/laravel/app/Http/Controllers/PythonIngestController.php`
+- `backend/laravel/routes/api.php`
 
 ### ✅ Проверка работоспособности
 
@@ -262,15 +266,15 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 
 **Ожидаемый результат:**
 - ✅ History Logger получает config_report
-- ✅ Обновляет zone_id из pending_zone_id (PATCH /service-update)
-- ✅ Переводит в ASSIGNED_TO_ZONE (POST /lifecycle/service-transition)
+- ✅ Отправляет observed-факт в Laravel `/api/python/nodes/config-report-observed`
+- ✅ Laravel завершает bind/rebind и переводит узел в `ASSIGNED_TO_ZONE`
 - ✅ Узел полностью настроен
 
 ## Переменные окружения
 
 | Переменная | Где используется | Описание |
 |------------|------------------|----------|
-| `PY_INGEST_TOKEN` | History Logger → Laravel | Токен ingest-вызовов (register/service-update/lifecycle transition) |
+| `PY_INGEST_TOKEN` | History Logger → Laravel | Токен ingest-вызовов (`register`, `config-report-observed`) |
 | `HISTORY_LOGGER_API_TOKEN` | History Logger (auth + ingest) | Основной токен для HTTP ingest-аутентификации и fallback для исходящих ingest-вызовов в Laravel |
 | `LARAVEL_API_URL` | History Logger | URL Laravel API (http://laravel) |
 | `CONFIG_REPORT_BUFFER_TTL_SEC` | History Logger | Сколько секунд хранить config_report, пришедший до регистрации (по умолчанию 120) |
@@ -368,14 +372,14 @@ ORDER BY n.id;
 
 ### Config_report получен, но привязка не завершена
 
-**Симптомы:** Узел в ASSIGNED_TO_ZONE, но zone_id = NULL
+**Симптомы:** Узел остаётся в `REGISTERED_BACKEND` или `pending_zone_id` не очищается
 
 **Проверка:**
 ```bash
-docker compose logs history-logger | grep "Failed to update zone_id"
+docker compose logs history-logger | grep "config-report-observed"
 ```
 
-**Решение:** Проверьте токены в docker-compose.dev.yml:
+**Решение:** Проверьте ingest-токен и namespace `gh_uid/zone_uid`:
 ```yaml
 environment:
   - PY_INGEST_TOKEN=dev-token-12345
@@ -410,10 +414,10 @@ environment:
 ✅ **Автоматическая регистрация работает!**
 - Узел отправляет node_hello → автоматически регистрируется в REGISTERED_BACKEND
 - Пользователь привязывает к зоне → узел получает конфиг
-- Узел подтверждает → автоматически переходит в ASSIGNED_TO_ZONE
+- Узел подтверждает `config_report` → Laravel завершает bind и переводит узел в ASSIGNED_TO_ZONE
 - Узел начинает работу → данные записываются в базу
 
 ✅ **Все общение через History Logger**
 - ESP32 ↔ MQTT ↔ History Logger ↔ Laravel
 - Никаких прямых подключений узлов к Laravel API
-- Централизованная обработка всех сообщений
+- Централизованная transport-обработка всех сообщений, при owner-контроле bind/rebind в Laravel

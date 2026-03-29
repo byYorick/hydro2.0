@@ -38,4 +38,15 @@ final class PumpCalibrationCatalog
 
         return self::ROLE_COMPONENT_MAP[trim($role)] ?? null;
     }
+
+    public static function roleForComponent(?string $component): ?string
+    {
+        if (! is_string($component) || trim($component) === '') {
+            return null;
+        }
+
+        $role = array_search(trim($component), self::ROLE_COMPONENT_MAP, true);
+
+        return is_string($role) ? $role : null;
+    }
 }

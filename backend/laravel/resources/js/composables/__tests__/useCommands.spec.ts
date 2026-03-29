@@ -140,4 +140,41 @@ describe('useCommands', () => {
 
     wrapper.unmount()
   })
+
+  it('локализует сообщение об ошибке завершения команды', async () => {
+    const { useApi } = await import('../useApi')
+    const mockApi = {
+      api: {
+        post: vi.fn().mockResolvedValue({
+          data: { data: { id: 77, type: 'FORCE_IRRIGATION', status: 'QUEUED' } }
+        }),
+        get: vi.fn(),
+      }
+    }
+    vi.mocked(useApi).mockReturnValue(mockApi)
+
+    const showToast = vi.fn()
+    let api: ReturnType<typeof useCommands> | null = null
+    const wrapper = mount(defineComponent({
+      setup() {
+        api = useCommands(showToast)
+        return () => null
+      },
+    }))
+
+    if (!api) {
+      throw new Error('useCommands not initialized')
+    }
+
+    await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
+    api.updateCommandStatus(77, 'ERROR', 'TIMEOUT')
+
+    expect(showToast).toHaveBeenLastCalledWith(
+      'Команда "FORCE_IRRIGATION" завершилась с ошибкой: Превышено время ожидания выполнения команды.',
+      'error',
+      5000,
+    )
+
+    wrapper.unmount()
+  })
 })

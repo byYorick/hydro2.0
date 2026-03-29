@@ -100,3 +100,35 @@ async def send_biz_alert(
             extra={"code": code, "zone_id": zone_id},
         )
         return False
+
+
+class BizAlertPublisher:
+    """Small object adapter for callers that need dependency injection."""
+
+    async def raise_active(
+        self,
+        *,
+        zone_id: int,
+        code: str,
+        details: Mapping[str, Any],
+        now: Any | None = None,
+        alert_type: str = "automation_engine",
+        category: str = "operations",
+        severity: str = "error",
+    ) -> bool:
+        payload = dict(details)
+        payload.setdefault("category", category)
+        payload.setdefault("severity", severity)
+        if now is not None:
+            try:
+                payload.setdefault("observed_at", now.isoformat())
+            except Exception:
+                payload.setdefault("observed_at", str(now))
+        return await send_biz_alert(
+            code=code,
+            message=str(payload.get("message") or payload.get("description") or code),
+            zone_id=zone_id,
+            alert_type=alert_type,
+            severity=severity,
+            details=payload,
+        )

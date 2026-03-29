@@ -78,7 +78,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         if self._alert_repository is None:
             return
 
-        await self._alert_repository.create_or_update_active(
+        await self._alert_repository.raise_active(
             zone_id=task.zone_id,
             code="biz_prepare_recirculation_retry_exhausted",
             details={

@@ -50,6 +50,7 @@ export interface AutomationState {
     failed?: boolean
     error_code?: string | null
     error_message?: string | null
+    human_error_message?: string | null
   }
   workflow_phase?: string | null
   current_stage?: string | null

@@ -70,8 +70,7 @@ grep -r 'mqtt_client\.publish_json' backend/services/common/ --exclude-dir=test_
 ## Рефакторинг
 
 Все модули в `backend/services/common/*` были обновлены:
-- ✅ `water_flow.py` - все команды через `send_command()`
-- ✅ `water_cycle.py` - все команды через `send_command()`
+- ✅ `water_flow.py` - helper-only модуль; прямой публикации команд больше нет
 
 ## DoD
 

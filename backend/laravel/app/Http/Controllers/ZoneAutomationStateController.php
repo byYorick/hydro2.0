@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\AutomationRuntimeConfigService;
+use App\Services\ErrorCodeCatalogService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -22,6 +23,7 @@ class ZoneAutomationStateController extends Controller
 
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
+        private readonly ErrorCodeCatalogService $errorCodeCatalog,
     ) {
     }
 
@@ -215,6 +217,7 @@ class ZoneAutomationStateController extends Controller
                 'failed' => $lastTaskState['failed'] ?? false,
                 'error_code' => $lastTaskState['error_code'] ?? null,
                 'error_message' => $lastTaskState['error_message'] ?? null,
+                'human_error_message' => $lastTaskState['human_error_message'] ?? null,
             ],
             'system_config' => [
                 'tanks_count' => 2,
@@ -252,7 +255,7 @@ class ZoneAutomationStateController extends Controller
      * Query ae_tasks directly to get the last task status for a zone.
      * Used in the control-mode fallback to surface real failed state.
      *
-     * @return array{failed: bool, error_code: ?string, error_message: ?string, created_at: ?string}
+     * @return array{failed: bool, error_code: ?string, error_message: ?string, human_error_message: ?string, created_at: ?string}
      */
     private function fetchLastTaskStateFromDatabase(int $zoneId): array
     {
@@ -264,13 +267,19 @@ class ZoneAutomationStateController extends Controller
             );
 
             if ($row === null) {
-                return ['failed' => false, 'error_code' => null, 'error_message' => null, 'created_at' => null];
+                return ['failed' => false, 'error_code' => null, 'error_message' => null, 'human_error_message' => null, 'created_at' => null];
             }
+
+            $presentation = $this->errorCodeCatalog->present(
+                is_string($row->error_code ?? null) ? $row->error_code : null,
+                is_string($row->error_message ?? null) ? $row->error_message : null,
+            );
 
             return [
                 'failed' => $row->status === 'failed',
                 'error_code' => $row->error_code,
                 'error_message' => $row->error_message,
+                'human_error_message' => $presentation['message'],
                 'created_at' => $row->created_at,
             ];
         } catch (\Throwable $e) {
@@ -279,7 +288,7 @@ class ZoneAutomationStateController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return ['failed' => false, 'error_code' => null, 'error_message' => null, 'created_at' => null];
+            return ['failed' => false, 'error_code' => null, 'error_message' => null, 'human_error_message' => null, 'created_at' => null];
         }
     }
 
@@ -313,6 +322,16 @@ class ZoneAutomationStateController extends Controller
      */
     private function decorateStatePayload(array $payload, bool $isStale, string $source): array
     {
+        $stateDetails = is_array($payload['state_details'] ?? null) ? $payload['state_details'] : null;
+        if ($stateDetails !== null) {
+            $presentation = $this->errorCodeCatalog->present(
+                is_string($stateDetails['error_code'] ?? null) ? $stateDetails['error_code'] : null,
+                is_string($stateDetails['error_message'] ?? null) ? $stateDetails['error_message'] : null,
+            );
+            $stateDetails['human_error_message'] = $presentation['message'];
+            $payload['state_details'] = $stateDetails;
+        }
+
         $payload['state_meta'] = [
             'source' => $source,
             'is_stale' => $isStale,

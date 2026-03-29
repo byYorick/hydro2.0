@@ -1419,74 +1419,8 @@ async def _complete_binding_after_config_report(
 
     lock = await _get_binding_completion_lock(int(node_id))
     async with lock:
-        current_rows = await fetch(
-            """
-            SELECT lifecycle_state, zone_id, pending_zone_id
-            FROM nodes
-            WHERE id = $1
-            """,
-            node_id,
-        )
-        if not current_rows:
-            return
-
-        current_state = current_rows[0]
-        lifecycle_state = current_state.get("lifecycle_state")
-        zone_id = current_state.get("zone_id")
-        pending_zone_id = current_state.get("pending_zone_id")
-        target_zone_id = zone_id or pending_zone_id
-
         if is_temp_topic:
-            logger.info(
-                "[CONFIG_REPORT] Binding completion deferred for node %s (id=%s): temp namespace requires confirmation from target namespace",
-                node_uid,
-                node_id,
-            )
             return
-
-        if lifecycle_state != "REGISTERED_BACKEND" or not target_zone_id:
-            return
-
-        zone_check = await fetch(
-            """
-            SELECT z.id, z.uid AS zone_uid, g.uid AS greenhouse_uid
-            FROM zones z
-            JOIN greenhouses g ON g.id = z.greenhouse_id
-            WHERE z.id = $1
-            """,
-            target_zone_id,
-        )
-        if not zone_check:
-            logger.warning(
-                "[CONFIG_REPORT] Zone %s not found, cannot complete binding for node %s",
-                target_zone_id,
-                node_uid,
-            )
-            return
-        target_zone_uid = str(zone_check[0].get("zone_uid") or "").strip()
-        target_gh_uid = str(zone_check[0].get("greenhouse_uid") or "").strip()
-
-        # Fail-closed: подтверждаем binding только config_report-ом из целевого namespace.
-        # Это защищает от ложной финализации при периодическом config_report из старой зоны.
-        if pending_zone_id and not zone_id:
-            report_zone_uid = str(topic_zone_uid or "").strip()
-            report_gh_uid = str(topic_gh_uid or "").strip()
-            if (
-                not report_zone_uid
-                or not report_gh_uid
-                or report_zone_uid != target_zone_uid
-                or report_gh_uid != target_gh_uid
-            ):
-                logger.info(
-                    "[CONFIG_REPORT] Binding completion deferred for node %s (id=%s): namespace mismatch report=%s/%s target=%s/%s",
-                    node_uid,
-                    node_id,
-                    report_gh_uid or "-",
-                    report_zone_uid or "-",
-                    target_gh_uid or "-",
-                    target_zone_uid or "-",
-                )
-                return
 
         s = get_settings()
         laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
@@ -1517,45 +1451,29 @@ async def _complete_binding_after_config_report(
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                if pending_zone_id and not zone_id:
-                    update_response = await client.patch(
-                        f"{laravel_url}/api/nodes/{node_id}/service-update",
-                        headers=headers,
-                        json={
-                            "zone_id": pending_zone_id,
-                            "pending_zone_id": None,
-                        },
-                    )
-                    if update_response.status_code != 200:
-                        logger.warning(
-                            "[CONFIG_REPORT] Failed to update zone_id for node %s (id=%s): %s %s",
-                            node_uid,
-                            node_id,
-                            update_response.status_code,
-                            update_response.text,
-                        )
-                        return
-
-                transition_response = await client.post(
-                    f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
+                observe_response = await client.post(
+                    f"{laravel_url}/api/python/nodes/config-report-observed",
                     headers=headers,
                     json={
-                        "target_state": "ASSIGNED_TO_ZONE",
-                        "reason": "Config report received from node",
+                        "node_id": int(node_id),
+                        "node_uid": node_uid,
+                        "gh_uid": topic_gh_uid,
+                        "zone_uid": topic_zone_uid,
+                        "is_temp_topic": bool(is_temp_topic),
                     },
                 )
 
-                if transition_response.status_code != 200:
+                if observe_response.status_code != 200:
                     logger.warning(
-                        "[CONFIG_REPORT] Failed to transition node %s (id=%s) to ASSIGNED_TO_ZONE: %s %s",
+                        "[CONFIG_REPORT] Failed to notify Laravel about observed config_report for node %s (id=%s): %s %s",
                         node_uid,
                         node_id,
-                        transition_response.status_code,
-                        transition_response.text,
+                        observe_response.status_code,
+                        observe_response.text,
                     )
         except Exception as e:
             logger.error(
-                "[CONFIG_REPORT] Error while completing binding for node %s: %s",
+                "[CONFIG_REPORT] Error while notifying Laravel about config_report for node %s: %s",
                 node_uid,
                 e,
                 exc_info=True,

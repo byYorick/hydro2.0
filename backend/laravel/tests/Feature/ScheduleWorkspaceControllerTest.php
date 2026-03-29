@@ -147,6 +147,7 @@ class ScheduleWorkspaceControllerTest extends TestCase
             ->assertJsonPath('data.execution.counters.active', 1)
             ->assertJsonPath('data.execution.counters.failed_24h', 1)
             ->assertJsonPath('data.execution.latest_failure.error_code', 'start_cycle_zone_busy')
+            ->assertJsonPath('data.execution.latest_failure.human_error_message', 'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
             ->assertJsonPath('data.execution.latest_failure.source', 'zone_automation_intents');
 
         $this->assertContains('irrigation', array_column($response->json('data.plan.lanes'), 'task_type'));

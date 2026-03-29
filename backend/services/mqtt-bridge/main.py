@@ -9,17 +9,14 @@ import hmac
 from common.hmac_utils import canonical_json_payload
 import logging
 import os
-import asyncio
 import time
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 from common.env import get_settings
-from common.mqtt import MqttClient
 from common.db import fetch
 from common.simulation_events import record_simulation_event
-from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
 from common.logging_setup import setup_standard_logging, install_exception_handlers
 from common.trace_context import clear_trace_id, get_trace_id, set_trace_id, set_trace_id_from_headers
@@ -431,113 +428,6 @@ async def send_node_command(
         raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 
-class FillDrainRequest(BaseModel):
-    target_level: float
-    max_duration_sec: Optional[int] = 300
-
-
-class CalibrateFlowRequest(BaseModel):
-    node_id: int
-    channel: str
-    pump_duration_sec: Optional[int] = 10
-
-
-async def get_gh_uid_for_zone(zone_id: int) -> Optional[str]:
-    """Get greenhouse uid for zone."""
-    rows = await fetch(
-        """
-        SELECT g.uid
-        FROM zones z
-        JOIN greenhouses g ON g.id = z.greenhouse_id
-        WHERE z.id = $1
-        """,
-        zone_id,
-    )
-    if rows and len(rows) > 0:
-        return rows[0]["uid"]
-    return None
-
-
-@app.post("/bridge/zones/{zone_id}/fill")
-async def zone_fill(
-    request: Request,
-    zone_id: int = Path(..., ge=1),
-    req: FillDrainRequest = Body(...),
-):
-    """Execute fill mode for zone."""
-    _auth(request)
-    REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/fill").inc()
-    
-    # Validate target_level
-    if not (0.1 <= req.target_level <= 1.0):
-        raise HTTPException(status_code=400, detail="target_level must be between 0.1 and 1.0")
-    
-    # Get greenhouse uid
-    gh_uid = await get_gh_uid_for_zone(zone_id)
-    if not gh_uid:
-        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
-    
-    # Create MQTT client
-    mqtt = MqttClient(client_id_suffix="-fill")
-    mqtt.start()
-    
-    try:
-        # Execute fill mode (async, but we wait for it)
-        result = await execute_fill_mode(
-            zone_id,
-            req.target_level,
-            mqtt,
-            gh_uid,
-            req.max_duration_sec
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Закрываем соединение MQTT для предотвращения утечек
-        mqtt.stop()
-
-
-@app.post("/bridge/zones/{zone_id}/drain")
-async def zone_drain(
-    request: Request,
-    zone_id: int = Path(..., ge=1),
-    req: FillDrainRequest = Body(...),
-):
-    """Execute drain mode for zone."""
-    _auth(request)
-    REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/drain").inc()
-    
-    # Validate target_level
-    if not (0.0 <= req.target_level <= 0.9):
-        raise HTTPException(status_code=400, detail="target_level must be between 0.0 and 0.9")
-    
-    # Get greenhouse uid
-    gh_uid = await get_gh_uid_for_zone(zone_id)
-    if not gh_uid:
-        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
-    
-    # Create MQTT client
-    mqtt = MqttClient(client_id_suffix="-drain")
-    mqtt.start()
-    
-    try:
-        # Execute drain mode (async, but we wait for it)
-        result = await execute_drain_mode(
-            zone_id,
-            req.target_level,
-            mqtt,
-            gh_uid,
-            req.max_duration_sec
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Закрываем соединение MQTT для предотвращения утечек
-        mqtt.stop()
-
-
 from common.schemas import NodeConfigModel
 
 class NodeConfigRequest(BaseModel):
@@ -610,51 +500,10 @@ async def publish_node_config(
     try:
         logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}, node_preconfig: {node_preconfig}")
         # Преобразуем Pydantic модель в dict для публикации
-        config_dict = req.config.dict() if hasattr(req.config, 'dict') else req.config.model_dump() if hasattr(req.config, 'model_dump') else dict(req.config)
+        config_dict = req.config.model_dump() if hasattr(req.config, 'model_dump') else req.config.dict() if hasattr(req.config, 'dict') else dict(req.config)
         publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id, node_preconfig=node_preconfig)
         logger.info(f"Config published successfully for node {node_uid}")
         return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
     except Exception as e:
         logger.error(f"Failed to publish config for node {node_uid}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to publish config: {str(e)}")
-
-
-@app.post("/bridge/zones/{zone_id}/calibrate-flow")
-async def zone_calibrate_flow(
-    request: Request,
-    zone_id: int = Path(..., ge=1),
-    req: CalibrateFlowRequest = Body(...),
-):
-    """Execute flow calibration for zone."""
-    _auth(request)
-    REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/calibrate-flow").inc()
-    
-    # Validate pump_duration_sec
-    if not (5 <= req.pump_duration_sec <= 60):
-        raise HTTPException(status_code=400, detail="pump_duration_sec must be between 5 and 60")
-    
-    # Get greenhouse uid
-    gh_uid = await get_gh_uid_for_zone(zone_id)
-    if not gh_uid:
-        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
-    
-    # Create MQTT client
-    mqtt = MqttClient(client_id_suffix="-calibrate")
-    mqtt.start()
-    
-    try:
-        # Execute flow calibration (async, but we wait for it)
-        result = await calibrate_flow(
-            zone_id,
-            req.node_id,
-            req.channel,
-            mqtt,
-            gh_uid,
-            req.pump_duration_sec
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Закрываем соединение MQTT для предотвращения утечек
-        mqtt.stop()

@@ -22,10 +22,10 @@ class ZoneController extends Controller
 {
     public function __construct(
         private ZoneService $zoneService,
+        private ZoneOperationsService $operationsService,
         private ZoneReadinessService $readinessService,
         private EffectiveTargetsService $effectiveTargetsService,
         private ZoneLifecycleService $lifecycleService,
-        private ZoneOperationsService $operationsService,
         private ZoneDataService $dataService
     ) {}
 
@@ -303,61 +303,6 @@ class ZoneController extends Controller
         ]);
     }
 
-    public function fill(Request $request, Zone $zone): JsonResponse
-    {
-        $this->authorizeZoneAccess($request->user(), $zone);
-
-        $data = $request->validate([
-            'target_level' => ['required', 'numeric', 'min:0.1', 'max:1.0'],
-            'max_duration_sec' => ['nullable', 'integer', 'min:10', 'max:600'],
-        ]);
-
-        $jobId = $this->operationsService->fill($zone, $data);
-
-        return response()->json([
-            'status' => 'ok',
-            'message' => 'Fill operation queued',
-            'job_id' => $jobId,
-        ], Response::HTTP_ACCEPTED);
-    }
-
-    public function drain(Request $request, Zone $zone): JsonResponse
-    {
-        $this->authorizeZoneAccess($request->user(), $zone);
-
-        $data = $request->validate([
-            'target_level' => ['required', 'numeric', 'min:0.0', 'max:0.9'],
-            'max_duration_sec' => ['nullable', 'integer', 'min:10', 'max:600'],
-        ]);
-
-        $jobId = $this->operationsService->drain($zone, $data);
-
-        return response()->json([
-            'status' => 'ok',
-            'message' => 'Drain operation queued',
-            'job_id' => $jobId,
-        ], Response::HTTP_ACCEPTED);
-    }
-
-    public function calibrateFlow(Request $request, Zone $zone): JsonResponse
-    {
-        $this->authorizeZoneAccess($request->user(), $zone);
-
-        $data = $request->validate([
-            'node_id' => ['required', 'integer', 'exists:nodes,id'],
-            'channel' => ['required', 'string', 'max:64'],
-            'pump_duration_sec' => ['nullable', 'integer', 'min:1', 'max:120'],
-        ]);
-
-        $jobId = $this->operationsService->calibrateFlow($zone, $data);
-
-        return response()->json([
-            'status' => 'ok',
-            'message' => 'Calibrate flow operation queued',
-            'job_id' => $jobId,
-        ], Response::HTTP_ACCEPTED);
-    }
-
     public function calibratePump(Request $request, Zone $zone): JsonResponse
     {
         $this->authorizeZoneAccess($request->user(), $zone);
@@ -417,6 +362,15 @@ class ZoneController extends Controller
         $skipRun = (bool) ($data['skip_run'] ?? false);
         $manualOverride = (bool) ($data['manual_override'] ?? false);
         $hasActualMl = array_key_exists('actual_ml', $data) && $data['actual_ml'] !== null;
+        if (! $skipRun && $hasActualMl) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'actual_ml must be submitted in a separate save step after terminal DONE',
+                'errors' => [
+                    'actual_ml' => ['actual_ml must be submitted in a separate save step after terminal DONE'],
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
         if ($skipRun && $hasActualMl && ! $manualOverride && empty($data['run_token'])) {
             return response()->json([
                 'status' => 'error',
@@ -427,14 +381,28 @@ class ZoneController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $job = $this->operationsService->calibratePump($zone, $data);
+        try {
+            $result = $this->operationsService->calibratePump($zone, $data);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $resultStatus = (string) ($result['status'] ?? '');
+        $httpStatus = $resultStatus === 'awaiting_actual_ml'
+            ? Response::HTTP_ACCEPTED
+            : Response::HTTP_OK;
+        $message = $resultStatus === 'awaiting_actual_ml'
+            ? 'Pump calibration run accepted'
+            : 'Pump calibration saved';
 
         return response()->json([
             'status' => 'ok',
-            'message' => 'Calibrate pump operation queued',
-            'job_id' => $job['job_id'],
-            'data' => $job['result'],
-        ], Response::HTTP_ACCEPTED);
+            'message' => $message,
+            'data' => $result,
+        ], $httpStatus);
     }
 
     public function cycles(Request $request, Zone $zone): JsonResponse

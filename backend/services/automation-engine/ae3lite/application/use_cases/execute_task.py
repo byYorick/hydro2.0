@@ -16,6 +16,7 @@ from common.infra_alerts import send_infra_alert
 from common.service_logs import send_service_log
 from ae3lite.domain.entities import PlannedCommand
 from ae3lite.domain.errors import (
+    ErrorCodes,
     PlannerConfigurationError,
     SnapshotBuildError,
     TaskFinalizeError,
@@ -33,7 +34,6 @@ SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
     SNAPSHOT_TRANSIENT_RETRY_SEC,
     int(os.getenv("AE3_SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC", "90")),
 )
-SNAPSHOT_NO_ONLINE_ACTUATORS_TOKEN = "has no online actuator channels"
 SNAPSHOT_RETRY_SCHEDULED_CODE = "infra_ae3_snapshot_retry_scheduled"
 SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
 
@@ -196,11 +196,14 @@ class ExecuteTaskUseCase:
                 now=timeout_now,
             )
         except SnapshotBuildError as exc:
+            snapshot_error_code = str(
+                getattr(exc, "code", ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED) or ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED
+            )
             if first_run and not start_observability_emitted:
                 self._emit_start_readiness_failed(
                     task=running_task,
                     snapshot=snapshot,
-                    error_code="ae3_task_execution_failed",
+                    error_code=snapshot_error_code,
                     error=exc,
                 )
             terminal_task = await self._load_terminal_task_or_none(
@@ -232,7 +235,7 @@ class ExecuteTaskUseCase:
                 running_task.id,
                 getattr(running_task, "current_stage", None),
                 type(exc).__name__,
-                "ae3_task_execution_failed",
+                snapshot_error_code,
                 exc,
             )
             await self._attempt_fail_safe_shutdown(
@@ -244,7 +247,7 @@ class ExecuteTaskUseCase:
             return await self._fail_closed(
                 task=running_task,
                 owner=owner,
-                error_code="ae3_task_execution_failed",
+                error_code=snapshot_error_code,
                 error_message=str(exc),
                 now=now,
             )
@@ -325,8 +328,9 @@ class ExecuteTaskUseCase:
         error: SnapshotBuildError,
         now: datetime,
     ) -> Any | None:
+        snapshot_error_code = getattr(error, "code", ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED)
         error_message = str(error).strip()
-        if not self._is_transient_snapshot_gap(task=task, error_message=error_message):
+        if not self._is_transient_snapshot_gap(task=task, error_code=snapshot_error_code):
             return None
 
         stage_entered_at = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
@@ -337,6 +341,7 @@ class ExecuteTaskUseCase:
             "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
             "topology": str(getattr(task, "topology", "") or ""),
             "error_code": SNAPSHOT_RETRY_EXHAUSTED_CODE,
+            "snapshot_error_code": snapshot_error_code,
             "snapshot_error": error_message,
             "snapshot_reason": "no_online_actuator_channels",
             "stage_age_sec": stage_age_sec,
@@ -421,11 +426,11 @@ class ExecuteTaskUseCase:
         )
         return updated_task
 
-    def _is_transient_snapshot_gap(self, *, task: Any, error_message: str) -> bool:
+    def _is_transient_snapshot_gap(self, *, task: Any, error_code: str) -> bool:
         topology = str(getattr(task, "topology", "") or "").strip().lower()
         return (
             topology in {"two_tank", "two_tank_drip_substrate_trays"}
-            and SNAPSHOT_NO_ONLINE_ACTUATORS_TOKEN in error_message.lower()
+            and str(error_code or "").strip() == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
         )
 
     def _stage_age_sec(self, *, stage_entered_at: datetime | None, now: datetime) -> int:
@@ -749,7 +754,7 @@ class ExecuteTaskUseCase:
                 alert_code = "biz_zone_recipe_phase_targets_missing"
                 alert_severity = "critical"
 
-            await repository.create_or_update_active(
+            await repository.raise_active(
                 zone_id=zone_id,
                 code=alert_code,
                 details=details,

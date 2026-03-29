@@ -67,7 +67,44 @@ class NodeServiceBindingTest extends TestCase
         $this->assertEquals(NodeLifecycleState::REGISTERED_BACKEND, $updated->lifecycle_state);
     }
 
-    public function test_complete_binding_from_history_logger(): void
+    public function test_attach_node_to_same_zone_is_idempotent(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'pending_zone_id' => null,
+            'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
+            'name' => 'Old name',
+        ]);
+
+        $updated = $this->service->update($node, [
+            'zone_id' => $zone->id,
+            'name' => 'Updated name',
+        ]);
+
+        $this->assertEquals($zone->id, $updated->zone_id);
+        $this->assertNull($updated->pending_zone_id);
+        $this->assertEquals(NodeLifecycleState::ASSIGNED_TO_ZONE, $updated->lifecycle_state);
+        $this->assertEquals('Updated name', $updated->name);
+    }
+
+    public function test_retry_attach_for_same_pending_zone_normalizes_lifecycle_and_keeps_pending_state(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
+        ]);
+
+        $updated = $this->service->update($node, ['zone_id' => $zone->id]);
+
+        $this->assertNull($updated->zone_id);
+        $this->assertEquals($zone->id, $updated->pending_zone_id);
+        $this->assertEquals(NodeLifecycleState::REGISTERED_BACKEND, $updated->lifecycle_state);
+    }
+
+    public function test_complete_binding_from_laravel_observer(): void
     {
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create([
@@ -76,8 +113,7 @@ class NodeServiceBindingTest extends TestCase
             'lifecycle_state' => NodeLifecycleState::REGISTERED_BACKEND,
         ]);
 
-        // Симуляция завершения привязки от history-logger
-        // History Logger отправляет zone_id и pending_zone_id=null
+        // Симуляция завершения привязки внутренним Laravel observer после observed config_report.
         $updated = $this->service->update($node, [
             'zone_id' => $zone->id,
             'pending_zone_id' => null,

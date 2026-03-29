@@ -75,7 +75,7 @@ Zone request → zone_correction_configs.resolved_config.pump_calibration (zone-
 | Сервис | Как читает |
 |--------|-----------|
 | AE (correction_planner.py) | `ZoneSnapshot.correction_config.pump_calibration` (уже загружается из `zone_correction_configs`) |
-| History-logger (water_flow.py) | SQL запрос `system_automation_settings` |
+| Common helper (`water_flow.py`) | SQL запрос `automation_config_documents` через helper-only access |
 | Laravel (controllers) | `SystemAutomationSetting::forNamespace('pump_calibration')` → cache 300с |
 | Frontend (Vue) | Inertia props `pumpCalibrationSettings` + system settings API |
 
@@ -103,7 +103,6 @@ Zone request → zone_correction_configs.resolved_config.pump_calibration (zone-
 | `0.01` / `100.0` | ml_per_sec_min/max | `correction_planner.py:582` |
 | `min:0.01, max:20` | ml_per_sec_min/max | `ZonePumpCalibrationsController.php:126` |
 | `min="0.01" max="20"` | ml_per_sec_min/max | `PumpCalibrationsPanel.vue:62-63` |
-| `quality_score = 0.9 if ... else 0.75` | quality_score_* | `water_flow.py:1096` |
 | `> 30` (дней) | age_warning_days | `PumpCalibrationsPanel.vue:79` |
 | `duration_sec = ref(20)` | default_run_duration_sec | `usePumpCalibration.ts:45` |
 | `min: 1, max: 120` | calibration_duration_* | `usePumpCalibration.ts:314` |
@@ -619,42 +618,21 @@ def _dose_ml_to_ms(dose_ml: float, calibration: Mapping, correction_config: Mapp
 
 **Вызывающие места:** строки 244 и 288 — добавить `correction_config` параметр.
 
-### 4.3 water_flow.py — pump calibration settings из БД
+### 4.3 Laravel-owned pump calibration orchestration
 
-**Файл:** `backend/services/common/water_flow.py`
+**Файл:** `backend/laravel/app/Services/ZoneService.php`
 
-В `calibrate_pump()` (строки 923-1216):
-
-```python
-async def calibrate_pump(...):
-    s = await _load_settings("pump_calibration")
-    if not (s["calibration_duration_min_sec"] <= duration_sec <= s["calibration_duration_max_sec"]):
-        raise ValueError(
-            f"duration_sec {duration_sec} out of range "
-            f"[{s['calibration_duration_min_sec']}, {s['calibration_duration_max_sec']}]"
-        )
-    # ...
-    if not (s["ml_per_sec_min"] <= ml_per_sec <= s["ml_per_sec_max"]):
-        raise ValueError(
-            f"ml_per_sec {ml_per_sec} out of range [{s['ml_per_sec_min']}, {s['ml_per_sec_max']}]"
-        )
-    quality_score = s["quality_score_with_k"] if k_ms_per_ml_l is not None else s["quality_score_basic"]
-```
-
-Удалить `quality_score = 0.9 if ... else 0.75` (строка 1096).
+Канонический owner для pump calibration теперь только Laravel:
 
 ```python
-async def _load_settings(namespace: str) -> dict:
-    """Загрузка из system_automation_settings. Raise если не найден."""
-    rows = await fetch(
-        "SELECT config FROM system_automation_settings WHERE namespace = $1",
-        namespace,
-    )
-    if not rows:
-        raise RuntimeError(f"system_automation_settings: namespace '{namespace}' not found")
-    config = rows[0]["config"]
-    return json.loads(config) if isinstance(config, str) else config
+POST /api/zones/{zone}/calibrate-pump
+  -> Laravel ZoneController/ZoneService
+  -> history-logger POST /zones/{zone}/commands (transport only)
+  -> commands terminal DONE
+  -> Laravel persists pump_calibrations + node_channels.config.pump_calibration mirror
 ```
+
+Legacy path `services/common/water_flow.py::calibrate_pump()` удалён; orchestration больше не живёт в common helper.
 
 ---
 
@@ -936,7 +914,7 @@ Route::get('/system/settings', fn () => Inertia::render('SystemSettings'))
 | `<zone correction config controller/service path>` | write/read/reset для `resolved_config.pump_calibration` zone override |
 | `ae3lite/domain/services/correction_planner.py` | Удалить `_MIN_DOSE_MS`, `_dose_ml_to_ms()` → reads config |
 | `ae3lite/runtime/app.py` | Регистрация SystemSettingsLoader |
-| `services/common/water_flow.py` | `calibrate_pump()` → settings из БД |
+| `app/Services/ZoneService.php` | canonical pump calibration orchestration + validation по `system.pump_calibration_policy` |
 | `<existing Laravel command status ingest/reconcile path>` | Маппинг terminal command status → `sensor_calibrations` |
 | `services/history-logger/command_routes.py` | только если нужна явная validation/support для `cmd="calibrate"` внутри `POST /commands` |
 | `resources/js/Components/PumpCalibrationsPanel.vue` | Динамические пороги из props |
@@ -989,7 +967,7 @@ Route::get('/system/settings', fn () => Inertia::render('SystemSettings'))
 7. **Frontend wizard:** SensorCalibrationWizard — 2-step wizard, отправка команды, отображение результата.
 8. **Frontend status:** SensorCalibrationStatus на странице зоны — статус калибровки с цветовыми индикаторами.
 9. **AE:** `correction_planner._dose_ml_to_ms()` читает из `correction_config.pump_calibration`.
-10. **HL:** `calibrate_pump()` валидирует по настройкам из БД.
+10. **Laravel:** pump calibration валидируется и сохраняется только в `ZoneService`; `history-logger` остаётся transport-only.
 11. **Согласованность:** `ml_per_sec_max` — одно значение из одного источника.
 12. **Fail-loud:** При отсутствии namespace → RuntimeError/500.
 13. **Нет нового history-logger publish endpoint:** sensor calibration идёт через `POST /commands`.
@@ -1026,6 +1004,6 @@ Route::get('/system/settings', fn () => Inertia::render('SystemSettings'))
 4. `backend/laravel/app/Services/ZoneCorrectionConfigService.php` — образец CRUD сервиса
 5. `backend/laravel/resources/js/Components/CorrectionConfigForm.vue` — образец UI формы настроек
 6. `backend/laravel/app/Http/Controllers/ZonePumpCalibrationsController.php` — существующий CRUD насосов
-7. `backend/services/history-logger/command_routes.py:1309-1345` — паттерн calibrate-pump endpoint
+7. `backend/laravel/app/Services/ZoneService.php` — canonical pump calibration orchestration
 8. `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md:312-323` — MQTT calibrate command
 9. `firmware/nodes/ph_node/main/ph_node_framework_integration.c:252-345` — firmware calibrate handler

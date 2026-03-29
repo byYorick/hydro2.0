@@ -5,7 +5,6 @@ from .automation_task_repository import PgAutomationTaskRepository
 from .pid_state_repository import PgPidStateRepository
 from .zone_correction_authority_repository import PgZoneCorrectionAuthorityRepository
 from .zone_alert_repository import PgZoneAlertRepository
-from .zone_alert_write_repository import PgZoneAlertWriteRepository
 from .zone_intent_repository import PgZoneIntentRepository
 from .zone_lease_repository import PgZoneLeaseRepository
 from .zone_workflow_repository import PgZoneWorkflowRepository
@@ -16,7 +15,6 @@ __all__ = [
     "PgPidStateRepository",
     "PgZoneCorrectionAuthorityRepository",
     "PgZoneAlertRepository",
-    "PgZoneAlertWriteRepository",
     "PgZoneIntentRepository",
     "PgZoneLeaseRepository",
     "PgZoneWorkflowRepository",

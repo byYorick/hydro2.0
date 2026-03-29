@@ -21,7 +21,7 @@ class NodeControllerTest extends TestCase
 
     private function grantZoneAccess(User $user, Zone $zone): void
     {
-        DB::table('user_zones')->insert([
+        DB::table('user_zones')->insertOrIgnore([
             'user_id' => $user->id,
             'zone_id' => $zone->id,
             'created_at' => now(),
@@ -176,6 +176,50 @@ class NodeControllerTest extends TestCase
         $this->assertArrayNotHasKey('config', $channelPayload);
     }
 
+    public function test_nodes_index_exposes_active_pump_calibration_payload_without_channel_config(): void
+    {
+        $user = User::factory()->create();
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->grantZoneAccess($user, $zone);
+
+        $channel = NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'ACTUATOR',
+            'metric' => 'PUMP',
+            'unit' => null,
+            'config' => ['pump_calibration' => ['ml_per_sec' => 999]],
+        ]);
+
+        DB::table('pump_calibrations')->insert([
+            'node_channel_id' => $channel->id,
+            'component' => 'npk',
+            'ml_per_sec' => 0.85,
+            'k_ms_per_ml_l' => 0.25,
+            'duration_sec' => 20,
+            'actual_ml' => 17.0,
+            'source' => 'manual_calibration',
+            'quality_score' => 0.8,
+            'sample_count' => 1,
+            'valid_from' => now(),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)->getJson("/api/nodes?zone_id={$zone->id}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.data.0.channels.0.pump_calibration.ml_per_sec', 0.85)
+            ->assertJsonPath('data.data.0.channels.0.pump_calibration.k_ms_per_ml_l', 0.25)
+            ->assertJsonPath('data.data.0.channels.0.pump_calibration.component', 'npk')
+            ->assertJsonPath('data.data.0.channels.0.pump_component', 'npk');
+
+        $channelPayload = $response->json('data.data.0.channels.0');
+        $this->assertArrayNotHasKey('config', $channelPayload);
+    }
+
     public function test_nodes_search_escapes_special_characters(): void
     {
         $user = User::factory()->create();
@@ -277,6 +321,22 @@ class NodeControllerTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertEquals('Updated Name', $node->fresh()->name);
+    }
+
+    public function test_node_update_rejects_pending_zone_id_from_public_api(): void
+    {
+        $user = User::factory()->create(['role' => 'operator']);
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'pending_zone_id' => null]);
+        $this->grantZoneAccess($user, $zone);
+
+        $response = $this->actingAs($user)->putJson("/api/nodes/{$node->id}", [
+            'zone_id' => $zone->id,
+            'pending_zone_id' => $zone->id,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['pending_zone_id']);
     }
 
     public function test_publish_config_dispatches_job(): void

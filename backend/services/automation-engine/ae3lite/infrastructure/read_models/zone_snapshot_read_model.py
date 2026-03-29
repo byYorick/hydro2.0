@@ -7,7 +7,7 @@ import json
 from typing import Any, Dict, List, Mapping, Optional
 
 from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
-from ae3lite.domain.errors import SnapshotBuildError
+from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
 from ae3lite.domain.services.phase_utils import normalize_phase_key
 from common.db import get_pool
 from .effective_targets_sql_utils import (
@@ -76,13 +76,22 @@ class PgZoneSnapshotReadModel:
                     zone_id,
                 )
                 if zone_row is None:
-                    raise SnapshotBuildError(f"Zone {zone_id} not found")
+                    raise SnapshotBuildError(
+                        f"Zone {zone_id} not found",
+                        code=ErrorCodes.AE3_SNAPSHOT_ZONE_NOT_FOUND,
+                    )
 
                 grow_cycle_id = zone_row.get("grow_cycle_id")
                 if grow_cycle_id is None:
-                    raise SnapshotBuildError(f"Zone {zone_id} has no active grow_cycle")
+                    raise SnapshotBuildError(
+                        f"Zone {zone_id} has no active grow_cycle",
+                        code=ErrorCodes.AE3_SNAPSHOT_NO_ACTIVE_GROW_CYCLE,
+                    )
                 if zone_row.get("current_phase_id") is None:
-                    raise SnapshotBuildError(f"Zone {zone_id} has no current_phase_id for active grow_cycle")
+                    raise SnapshotBuildError(
+                        f"Zone {zone_id} has no current_phase_id for active grow_cycle",
+                        code=ErrorCodes.AE3_SNAPSHOT_MISSING_CURRENT_PHASE,
+                    )
 
                 bundle_row = await conn.fetchrow(
                     """
@@ -95,11 +104,17 @@ class PgZoneSnapshotReadModel:
                     grow_cycle_id,
                 )
                 if bundle_row is None:
-                    raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has no automation_effective_bundle")
+                    raise SnapshotBuildError(
+                        f"Grow cycle {grow_cycle_id} has no automation_effective_bundle",
+                        code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_MISSING,
+                    )
 
                 bundle_config = bundle_row.get("config")
                 if not isinstance(bundle_config, Mapping):
-                    raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has invalid automation bundle config")
+                    raise SnapshotBuildError(
+                        f"Grow cycle {grow_cycle_id} has invalid automation bundle config",
+                        code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_INVALID,
+                    )
 
                 system_bundle = bundle_config.get("system")
                 pump_calibration_policy = (
@@ -110,15 +125,24 @@ class PgZoneSnapshotReadModel:
 
                 zone_bundle = bundle_config.get("zone")
                 if not isinstance(zone_bundle, Mapping):
-                    raise SnapshotBuildError(f"Grow cycle {grow_cycle_id} has no zone bundle")
+                    raise SnapshotBuildError(
+                        f"Grow cycle {grow_cycle_id} has no zone bundle",
+                        code=ErrorCodes.AE3_SNAPSHOT_ZONE_BUNDLE_MISSING,
+                    )
 
                 logic_profile = zone_bundle.get("logic_profile")
                 if not isinstance(logic_profile, Mapping):
-                    raise SnapshotBuildError(f"Zone {zone_id} has no active logic profile bundle")
+                    raise SnapshotBuildError(
+                        f"Zone {zone_id} has no active logic profile bundle",
+                        code=ErrorCodes.AE3_SNAPSHOT_LOGIC_PROFILE_BUNDLE_MISSING,
+                    )
 
                 active_profile = logic_profile.get("active_profile")
                 if not isinstance(active_profile, Mapping):
-                    raise SnapshotBuildError(f"Zone {zone_id} has no active automation logic profile")
+                    raise SnapshotBuildError(
+                        f"Zone {zone_id} has no active automation logic profile",
+                        code=ErrorCodes.AE3_SNAPSHOT_ACTIVE_LOGIC_PROFILE_MISSING,
+                    )
 
                 profile_row = {
                     "mode": logic_profile.get("active_mode"),
@@ -231,7 +255,10 @@ class PgZoneSnapshotReadModel:
 
         command_plans = profile_row.get("command_plans")
         if not isinstance(command_plans, Mapping) or not command_plans:
-            raise SnapshotBuildError(f"Zone {zone_id} has empty command_plans")
+            raise SnapshotBuildError(
+                f"Zone {zone_id} has empty command_plans",
+                code=ErrorCodes.AE3_SNAPSHOT_EMPTY_COMMAND_PLANS,
+            )
 
         normalized_overrides = self._normalize_override_rows(override_rows)
         phase_targets = self._build_phase_targets(zone_row=zone_row)
@@ -267,7 +294,10 @@ class PgZoneSnapshotReadModel:
             if str(row.get("node_uid") or "").strip()
         )
         if not actuators:
-            raise SnapshotBuildError(f"Zone {zone_id} has no online actuator channels")
+            raise SnapshotBuildError(
+                f"Zone {zone_id} has no online actuator channels",
+                code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
+            )
 
         return ZoneSnapshot(
             zone_id=int(zone_row["zone_id"]),
@@ -566,7 +596,10 @@ class PgZoneSnapshotReadModel:
                 merged[key] = self._merge_execution_sources(left_value, right_value, path=current_path)
                 continue
             if left_value != right_value:
-                raise SnapshotBuildError(f"Conflicting value for {current_path}")
+                raise SnapshotBuildError(
+                    f"Conflicting value for {current_path}",
+                    code=ErrorCodes.AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES,
+                )
         return merged
 
     def _normalize_override_rows(self, rows: List[Mapping[str, Any]]) -> List[Dict[str, Any]]:

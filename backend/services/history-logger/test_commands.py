@@ -74,9 +74,15 @@ def mock_command_routes_db():
         return []
 
     with patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("command_routes.execute", new_callable=AsyncMock) as mock_execute:
+         patch("command_routes.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("command_routes.mark_command_sent", new_callable=AsyncMock) as mock_mark_command_sent, \
+         patch("command_routes.mark_command_send_failed", new_callable=AsyncMock) as mock_mark_command_send_failed, \
+         patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid:
         mock_fetch.side_effect = _mock_fetch
         mock_execute.return_value = "OK"
+        mock_mark_command_sent.return_value = None
+        mock_mark_command_send_failed.return_value = None
+        mock_get_gh_uid.return_value = "gh-1"
         yield
 
 
@@ -608,12 +614,14 @@ async def test_publish_node_config_success(client, auth_headers, mock_mqtt_clien
     """Config publish использует только параметры теплица/зона."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
          patch("command_service.get_settings") as mock_settings, \
-         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch:
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid:
         mock_get_mqtt.return_value = mock_mqtt_client
         mock_settings.return_value = Mock(mqtt_zone_format="uid")
         mock_fetch.return_value = [
             {"id": 1, "zone_id": 1, "pending_zone_id": None, "hardware_id": "esp32-test"}
         ]
+        mock_get_gh_uid.return_value = "gh-canonical"
 
         payload = {
             "greenhouse_uid": "gh-1",
@@ -627,11 +635,11 @@ async def test_publish_node_config_success(client, auth_headers, mock_mqtt_clien
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
-        assert data["data"]["greenhouse_uid"] == "gh-1"
+        assert data["data"]["greenhouse_uid"] == "gh-canonical"
         assert data["data"]["zone_uid"] == "zn-1"
         assert mock_mqtt_client._client._client.publish.called
         publish_call = mock_mqtt_client._client._client.publish.call_args
-        assert publish_call.args[0] == "hydro/gh-1/zn-1/nd-test/config"
+        assert publish_call.args[0] == "hydro/gh-canonical/zn-1/nd-test/config"
 
 
 @pytest.mark.asyncio
@@ -639,12 +647,14 @@ async def test_publish_node_config_temp_topic(client, auth_headers, mock_mqtt_cl
     """Config publish в temp-топик при pending_zone_id."""
     with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
          patch("command_service.get_settings") as mock_settings, \
-         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch:
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid:
         mock_get_mqtt.return_value = mock_mqtt_client
         mock_settings.return_value = Mock(mqtt_zone_format="uid")
         mock_fetch.return_value = [
             {"id": 1, "zone_id": None, "pending_zone_id": 1, "hardware_id": "esp32-temp"}
         ]
+        mock_get_gh_uid.return_value = "gh-canonical"
 
         payload = {
             "greenhouse_uid": "gh-1",
@@ -658,6 +668,33 @@ async def test_publish_node_config_temp_topic(client, auth_headers, mock_mqtt_cl
         assert response.status_code == 200
         publish_call = mock_mqtt_client._client._client.publish.call_args
         assert publish_call.args[0] == "hydro/gh-temp/zn-temp/esp32-temp/config"
+
+
+@pytest.mark.asyncio
+async def test_publish_node_config_rejects_inconsistent_binding_state(client, auth_headers, mock_mqtt_client):
+    with patch("command_routes.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt, \
+         patch("command_service.get_settings") as mock_settings, \
+         patch("command_routes.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("command_routes._get_gh_uid_from_zone_id", new_callable=AsyncMock) as mock_get_gh_uid:
+        mock_get_mqtt.return_value = mock_mqtt_client
+        mock_settings.return_value = Mock(mqtt_zone_format="uid")
+        mock_fetch.return_value = [
+            {"id": 1, "zone_id": 1, "pending_zone_id": 1, "hardware_id": "esp32-bad"}
+        ]
+        mock_get_gh_uid.return_value = "gh-canonical"
+
+        payload = {
+            "greenhouse_uid": "gh-1",
+            "zone_id": 1,
+            "zone_uid": "zn-1",
+            "config": {"version": 1},
+        }
+
+        response = client.post("/nodes/nd-test/config", json=payload, headers=auth_headers)
+
+        assert response.status_code == 409
+        assert "inconsistent node binding state" in response.json()["detail"]
+        assert not mock_mqtt_client._client._client.publish.called
 
 
 @pytest.mark.asyncio
@@ -873,3 +910,18 @@ async def test_publish_command_rejects_cmd_id_collision(
         assert response.status_code == 409
         assert "already belongs to another command" in response.json()["detail"]
         assert not mock_mqtt_client._client._client.publish.called
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("/zones/1/fill", {"target_level": 0.9}),
+        ("/zones/1/drain", {"target_level": 0.1}),
+        ("/zones/1/calibrate-flow", {"node_id": 1, "channel": "flow_sensor"}),
+        ("/zones/1/calibrate-pump", {"node_channel_id": 1, "duration_sec": 20}),
+    ],
+)
+def test_legacy_zone_endpoints_are_removed(client, auth_headers, path, payload):
+    response = client.post(path, json=payload, headers=auth_headers)
+
+    assert response.status_code == 404

@@ -1,3 +1,5 @@
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object') {
     return value as Record<string, unknown>
@@ -35,8 +37,13 @@ export function extractHumanErrorMessage(error: unknown, fallback = 'Произ�
   }
 
   const apiMessage = data?.message
-  if (typeof apiMessage === 'string' && apiMessage.trim().length > 0) {
-    return apiMessage
+  const apiCode = typeof data?.code === 'string' ? data.code : null
+  const localizedApiMessage = resolveHumanErrorMessage({
+    code: apiCode,
+    message: typeof apiMessage === 'string' ? apiMessage : null,
+  })
+  if (localizedApiMessage) {
+    return localizedApiMessage
   }
 
   if (status === 403) {

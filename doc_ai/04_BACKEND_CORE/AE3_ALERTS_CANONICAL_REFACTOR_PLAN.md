@@ -1,8 +1,8 @@
 # План канонического рефакторинга alerts и AE3 alert lifecycle
 
-**Версия:** 1.1  
+**Версия:** 1.3  
 **Дата:** 2026-03-29  
-**Статус:** Рабочий план, разделённый на product-contract и runtime-cutover deliverables
+**Статус:** Реализован по основному runtime cutover; остались cleanup/doc хвосты
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
@@ -22,13 +22,13 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## Контекст
 
-Сейчас в кодовой базе одновременно живут несколько несовместимых моделей:
+Исходная проблема была в том, что в кодовой базе одновременно жили несколько несовместимых моделей:
 
 1. legacy Python helper-ы напрямую читают и мутируют `alerts`;
 2. AE3 runtime напрямую пишет в `alerts` и `zone_events`;
 3. Laravel `AlertService` уже выполняет canonical enrichment/dedup/realtime path;
 4. history-logger владеет retry/DLQ transport path для alert delivery;
-5. Laravel UI/admin ещё содержит legacy replay path через `pending_alerts.status='dlq'`.
+5. Laravel UI/admin содержал legacy replay path через `pending_alerts.status='dlq'`.
 
 Отсюда следуют реальные дефекты:
 
@@ -38,6 +38,46 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - resolution semantics разъехались;
 - DLQ split между новой и старой моделью;
 - в AE3 authority-конфиге есть safety-поля, которые runtime не исполняет.
+
+## Execution Audit 2026-03-29
+
+### Уже реализовано
+
+1. Deliverable A закрыт по коду:
+   - backend namespace `system.alert_policies`;
+   - enum validation `manual_ack|auto_resolve_on_recovery`;
+   - frontend settings card;
+   - Laravel policy enforcement в auto-resolve path;
+   - tests на API/UI/lifecycle.
+2. Основной runtime cutover сделан:
+   - введён `AlertPublisher`;
+   - `common.alerts`, `common.infra_alerts`, `common.infra_monitor` переведены на canonical producer path;
+   - direct SQL lifecycle writes из AE3/runtime code удалены;
+   - AE3 business alert emitters переведены на `biz` producer path.
+3. DLQ table model унифицирована:
+   - Laravel replay path больше не использует `pending_alerts.status='dlq'`;
+   - `AlertController`, `ProcessAlert`, `ProcessDLQReplay` работают с `pending_alerts_dlq`.
+
+### Остаточные gap-ы после аудита
+
+1. Replay ownership boundary ещё не доведён до финального канона:
+   - таблица уже единая;
+   - execution replay всё ещё Laravel-side, а не через отдельный history-logger contract.
+2. Документация обновлена частично:
+   - core docs обновлены;
+   - `API_SPEC_FRONTEND_BACKEND_FULL.md` и `ARCHITECTURE_FLOWS.md` ещё требуют синхронизации под финальный contract.
+
+### Что дополнительно закрыто в версии 1.3
+
+1. `common.error_handler` переведён на `AlertPublisher`; node alerts теперь публикуются через canonical `raise_active` с `dedupe_key`.
+2. `PgZoneAlertWriteRepository` удалён полностью; AE3 runtime получает прямую publisher dependency через `BizAlertPublisher`.
+3. Regression tests подтверждают новый path:
+   - common python alert-path: `25 passed`;
+   - AE3 профильный набор: `82 passed`.
+4. Добавлен runtime regression guard:
+   - `common/test_alert_lifecycle_sql_guard.py`;
+   - ловит возврат direct alert SQL mutations и ручных alert zone-event emitters в Python runtime.
+5. Guard подключён в GitHub Actions как отдельный check `Alert lifecycle SQL guard`.
 
 ## Подтверждённые product decisions
 
@@ -206,7 +246,10 @@ explicit recovery condition.
 | Alert code | Scope | Recovery доказан когда | Кто закрывает | Допустим `auto_resolve_on_recovery` в v1 |
 | --- | --- | --- | --- | --- |
 | `biz_ae3_task_failed` | task/zone | не определено единообразно | только manual | нет |
+| `biz_clean_fill_timeout` | zone/stage | не определено единообразно | только manual | нет |
+| `biz_solution_fill_timeout` | zone/stage | не определено единообразно | только manual | нет |
 | `biz_prepare_recirculation_retry_exhausted` | zone/stage | не определено единообразно | только manual | нет |
+| `biz_correction_exhausted` | zone/stage | не определено единообразно | только manual | нет |
 | `biz_ph_correction_no_effect` | zone/pid_type | не определено единообразно | только manual | нет |
 | `biz_ec_correction_no_effect` | zone/pid_type | не определено единообразно | только manual | нет |
 | `biz_zone_correction_config_missing` | zone | валидный authority config сохранён и readiness проходит | system | да |
@@ -360,6 +403,15 @@ Retry и replay не должны менять:
 2. Recovery matrix определена хотя бы для v1 code set.
 3. Явно описано, к каким code policy применяется, а к каким нет.
 
+**Execution status 2026-03-29:** частично закрыто.
+
+Сделано:
+- обновлены `EVENTS_AND_ALERTS_ENGINE.md`, `PYTHON_SERVICES_ARCH.md`, `DATA_MODEL_REFERENCE.md`.
+
+Осталось:
+- синхронизировать `API_SPEC_FRONTEND_BACKEND_FULL.md`;
+- синхронизировать `ARCHITECTURE_FLOWS.md`.
+
 ### Фаза A2. Backend policy contract
 
 **Цель:** сделать backend owner для настройки policy.
@@ -379,6 +431,8 @@ Retry и replay не должны менять:
 2. Invalid enum reject-ится fail-closed.
 3. Docs и tests обновлены.
 
+**Execution status 2026-03-29:** закрыто.
+
 ### Фаза A3. Frontend setting
 
 **Цель:** дать оператору control surface, но без ложного обещания.
@@ -397,6 +451,8 @@ Retry и replay не должны менять:
 1. UI сохраняет policy через canonical API.
 2. UI не создаёт впечатление, что все AE3 alerts auto-resolve instantly.
 3. Browser/feature tests покрывают сохранение и отображение.
+
+**Execution status 2026-03-29:** закрыто.
 
 ### Фаза B1. Python publisher abstraction
 
@@ -421,6 +477,15 @@ Retry и replay не должны менять:
 2. `infra_monitor` при recovery вызывает canonical resolve path.
 3. Scoped alert-ы получают `dedupe_key`.
 
+**Execution status 2026-03-29:** закрыто.
+
+Сделано:
+- `AlertPublisher` введён;
+- `common.alerts`, `common.infra_alerts`, `common.infra_monitor` переведены;
+- recovery path в `infra_monitor` теперь canonical;
+- `common.error_handler` переведён на `AlertPublisher`;
+- добавлен профильный тест `common/test_error_handler.py`.
+
 ### Фаза B2. AE3 cutover
 
 **Цель:** убрать split-brain внутри `automation-engine`.
@@ -440,6 +505,15 @@ Retry и replay не должны менять:
 2. AE3 alert-ы создаются через тот же producer contract, что и остальной Python.
 3. AE3 tests и integration tests проходят на новом path.
 
+**Execution status 2026-03-29:** закрыто.
+
+Сделано:
+- direct SQL writes убраны;
+- AE3 business emitters переведены на canonical producer path;
+- compatibility adapter `PgZoneAlertWriteRepository` удалён;
+- runtime wired на прямой `BizAlertPublisher`;
+- профильные AE3 tests зелёные.
+
 ### Фаза B3. DLQ/admin path unification
 
 **Цель:** оставить в системе одну модель replay.
@@ -458,6 +532,18 @@ Retry и replay не должны менять:
 2. Нет legacy path, завязанного на `pending_alerts.status='dlq'`.
 3. Replay integration tests проходят.
 
+**Execution status 2026-03-29:** частично закрыто.
+
+Сделано:
+- legacy `status='dlq'` path удалён;
+- replay переведён на `pending_alerts_dlq`;
+- feature test на replay добавлен.
+
+Осталось:
+- финально зафиксировать ownership boundary replay execution:
+  либо history-logger API/CLI owner,
+  либо Laravel façade над ним.
+
 ### Фаза B4. Cleanup guards и final cleanup
 
 **Цель:** не допустить возврата легаси.
@@ -468,14 +554,23 @@ Retry и replay не должны менять:
 2. Добавить grep/CI guard на:
    - `UPDATE alerts`
    - `INSERT INTO alerts`
-   - `INSERT INTO zone_events`
-   в Python runtime code, кроме допустимых migration/test fixtures.
+   - прямые alert lifecycle inserts в `zone_events`
+   в Python runtime code, кроме допустимых migration/test fixtures и общего helper `create_zone_event`.
 3. Удалить мёртвые helper-ы и устаревшие тесты.
 
 **DoD B4**
 
 1. CI ловит возврат direct SQL lifecycle paths.
 2. Не осталось production runtime code с ручной mutation alert tables.
+
+**Execution status 2026-03-29:** закрыто.
+
+Сделано:
+- добавлен regression guard `common/test_alert_lifecycle_sql_guard.py`;
+- guard ловит прямые SQL lifecycle mutations в `alerts`;
+- guard ловит ручные alert event emissions вне Laravel `AlertService`.
+- guard подключён в GitHub Actions как отдельный CI step/check;
+- cleanup compatibility-слоёв по alert lifecycle завершён в runtime code.
 
 ## Rollout и rollback
 
@@ -579,3 +674,8 @@ Rollback допускается только по runtime deliverable B и не 
    - `zone_events`
    - realtime
    - resolve semantics
+
+## Следующие конкретные шаги
+
+1. Досинхронизировать `API_SPEC_FRONTEND_BACKEND_FULL.md` и `ARCHITECTURE_FLOWS.md`.
+2. Принять окончательное решение по replay ownership boundary и добить B3 до полного закрытия.

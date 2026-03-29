@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class NodeController extends Controller
 {
@@ -150,12 +151,76 @@ class NodeController extends Controller
 
         $items = $query->latest('id')->paginate(25);
 
+        $channelIds = $items->getCollection()
+            ->flatMap(fn (DeviceNode $node) => $node->channels->pluck('id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $calibrationByChannelId = collect();
+        if ($channelIds->isNotEmpty() && Schema::hasTable('pump_calibrations')) {
+            $calibrationByChannelId = DB::table('pump_calibrations as pc')
+                ->select([
+                    'pc.id',
+                    'pc.node_channel_id',
+                    'pc.component',
+                    'pc.ml_per_sec',
+                    'pc.k_ms_per_ml_l',
+                    'pc.duration_sec',
+                    'pc.actual_ml',
+                    'pc.test_volume_l',
+                    'pc.ec_before_ms',
+                    'pc.ec_after_ms',
+                    'pc.delta_ec_ms',
+                    'pc.temperature_c',
+                    'pc.sample_count',
+                    'pc.quality_score',
+                    'pc.source',
+                    'pc.valid_from',
+                ])
+                ->whereIn('pc.node_channel_id', $channelIds->all())
+                ->where('pc.is_active', true)
+                ->whereRaw('pc.valid_from <= NOW()')
+                ->where(function ($query) {
+                    $query->whereNull('pc.valid_to')
+                        ->orWhereRaw('pc.valid_to > NOW()');
+                })
+                ->orderBy('pc.node_channel_id')
+                ->orderByDesc('pc.valid_from')
+                ->orderByDesc('pc.id')
+                ->get()
+                ->groupBy('node_channel_id')
+                ->map(fn ($rows) => $rows->first());
+        }
+
         // Убираем config из результатов (на случай если он был загружен через отношения)
-        $items->getCollection()->transform(function ($node) {
+        $items->getCollection()->transform(function ($node) use ($calibrationByChannelId) {
             unset($node->config);
             foreach ($node->channels as $channel) {
                 unset($channel->config);
-                $channel->pump_component = PumpCalibrationCatalog::componentForRole($channel->binding_role);
+
+                $calibrationRow = $calibrationByChannelId->get($channel->id);
+                $channel->pump_calibration = $calibrationRow ? [
+                    'ml_per_sec' => $calibrationRow->ml_per_sec !== null ? (float) $calibrationRow->ml_per_sec : null,
+                    'k_ms_per_ml_l' => $calibrationRow->k_ms_per_ml_l !== null ? (float) $calibrationRow->k_ms_per_ml_l : null,
+                    'duration_sec' => $calibrationRow->duration_sec !== null ? (int) $calibrationRow->duration_sec : null,
+                    'actual_ml' => $calibrationRow->actual_ml !== null ? (float) $calibrationRow->actual_ml : null,
+                    'component' => $calibrationRow->component,
+                    'test_volume_l' => $calibrationRow->test_volume_l !== null ? (float) $calibrationRow->test_volume_l : null,
+                    'ec_before_ms' => $calibrationRow->ec_before_ms !== null ? (float) $calibrationRow->ec_before_ms : null,
+                    'ec_after_ms' => $calibrationRow->ec_after_ms !== null ? (float) $calibrationRow->ec_after_ms : null,
+                    'delta_ec_ms' => $calibrationRow->delta_ec_ms !== null ? (float) $calibrationRow->delta_ec_ms : null,
+                    'temperature_c' => $calibrationRow->temperature_c !== null ? (float) $calibrationRow->temperature_c : null,
+                    'sample_count' => $calibrationRow->sample_count !== null ? (int) $calibrationRow->sample_count : null,
+                    'quality_score' => $calibrationRow->quality_score !== null ? (float) $calibrationRow->quality_score : null,
+                    'source' => $calibrationRow->source,
+                    'calibrated_at' => is_string($calibrationRow->valid_from) ? $calibrationRow->valid_from : null,
+                ] : null;
+
+                $channel->pump_component = PumpCalibrationCatalog::componentForRole($channel->binding_role)
+                    ?? (is_string($calibrationRow?->component ?? null) && $calibrationRow->component !== ''
+                        ? $calibrationRow->component
+                        : null);
             }
 
             return $node;
@@ -192,7 +257,7 @@ class NodeController extends Controller
 
     public function update(UpdateNodeRequest $request, DeviceNode $node)
     {
-        $user = $this->authenticateUser($request);
+        $user = $request->user();
         if (! $user) {
             return response()->json([
                 'status' => 'error',
@@ -210,83 +275,6 @@ class NodeController extends Controller
         $node = $this->nodeService->update($node, $data);
 
         return response()->json(['status' => 'ok', 'data' => $node]);
-    }
-
-    /**
-     * Обновление узла через сервисный токен (history-logger).
-     * Используется для системных операций, например, подтверждения привязки зоны.
-     */
-    public function serviceUpdate(UpdateNodeRequest $request, DeviceNode $node)
-    {
-        $user = $this->authenticateUser($request);
-        if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
-        }
-
-        if (! $request->attributes->get('service_auth')) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden',
-            ], 403);
-        }
-
-        $data = $request->validated();
-        $data = array_intersect_key($data, array_flip(['zone_id', 'pending_zone_id']));
-
-        if (empty($data)) {
-            return response()->json(['status' => 'ok', 'data' => $node]);
-        }
-
-        $node = $this->nodeService->update($node, $data);
-
-        return response()->json(['status' => 'ok', 'data' => $node]);
-    }
-
-    /**
-     * Аутентификация пользователя через Sanctum или сервисный токен.
-     */
-    private function authenticateUser(Request $request): ?\App\Models\User
-    {
-        $user = $request->user();
-
-        // Если пользователь не авторизован через Sanctum, проверяем сервисный токен
-        if (! $user) {
-            $providedToken = $request->bearerToken();
-            \Log::debug('[NodeController] Checking service token authentication');
-
-            if ($providedToken) {
-                $pyApiToken = config('services.python_bridge.token');
-                $pyIngestToken = config('services.python_bridge.ingest_token');
-                $historyLoggerToken = config('services.history_logger.token');
-
-                $tokenValid = false;
-                if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
-                    $tokenValid = true;
-                } elseif ($pyIngestToken && hash_equals($pyIngestToken, $providedToken)) {
-                    $tokenValid = true;
-                } elseif ($historyLoggerToken && hash_equals($historyLoggerToken, $providedToken)) {
-                    $tokenValid = true;
-                }
-
-                if ($tokenValid) {
-                    $request->attributes->set('service_auth', true);
-                    $serviceUser = \App\Models\User::where('role', 'operator')->first()
-                        ?? \App\Models\User::where('role', 'admin')->first()
-                        ?? \App\Models\User::first();
-
-                    if ($serviceUser) {
-                        $request->setUserResolver(static fn () => $serviceUser);
-
-                        return $serviceUser;
-                    }
-                }
-            }
-        }
-
-        return $user;
     }
 
     /**
@@ -564,74 +552,6 @@ class NodeController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to swap node: '.$e->getMessage(),
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
-    }
-
-    /**
-     * Переход узла в указанное lifecycle состояние.
-     * POST /api/nodes/{node}/lifecycle/transition
-     */
-    public function transitionLifecycle(DeviceNode $node, Request $request)
-    {
-        $validated = $request->validate([
-            'target_state' => ['required', 'string', 'in:'.implode(',', NodeLifecycleState::values())],
-            'reason' => ['nullable', 'string', 'max:255'],
-        ]);
-
-        try {
-            $targetState = NodeLifecycleState::from($validated['target_state']);
-            $reason = $validated['reason'] ?? null;
-
-            $success = $this->lifecycleService->transition($node, $targetState, $reason);
-
-            if (! $success) {
-                $currentState = $node->lifecycleState();
-
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Transition from {$currentState->value} to {$targetState->value} is not allowed",
-                    'current_state' => $currentState->value,
-                    'target_state' => $targetState->value,
-                ], Response::HTTP_BAD_REQUEST);
-            }
-
-            // Обновляем модель после перехода
-            $node->refresh();
-
-            return response()->json([
-                'status' => 'ok',
-                'data' => [
-                    'node' => $node->fresh(),
-                    'previous_state' => $node->getOriginal('lifecycle_state'),
-                    'current_state' => $node->lifecycle_state?->value,
-                ],
-            ]);
-        } catch (\ValueError $e) {
-            \Illuminate\Support\Facades\Log::warning('NodeController: Invalid lifecycle state', [
-                'node_id' => $node->id,
-                'node_uid' => $node->uid,
-                'target_state' => $validated['target_state'] ?? null,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid lifecycle state: '.$e->getMessage(),
-            ], Response::HTTP_BAD_REQUEST);
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('NodeController: Failed to transition lifecycle', [
-                'node_id' => $node->id,
-                'node_uid' => $node->uid,
-                'target_state' => $validated['target_state'] ?? null,
-                'error' => $e->getMessage(),
-                'exception' => get_class($e),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to transition lifecycle: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }

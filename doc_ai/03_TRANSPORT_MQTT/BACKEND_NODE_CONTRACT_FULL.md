@@ -164,7 +164,8 @@ NodeConfig формируется на стороне ноды (прошивка
 Backend подписывается на топик `hydro/+/+/+/config_report` через сервис `history-logger` и обрабатывает сообщения:
 
 - Сохраняет `nodes.config` и синхронизирует `node_channels`
-- Если нода в `REGISTERED_BACKEND` и имеет `zone_id`/`pending_zone_id`, переводит в `ASSIGNED_TO_ZONE`
+- `history-logger` сообщает Laravel observed-факт `config_report` из конкретного MQTT namespace
+- Laravel как canonical owner финализирует bind/rebind: `pending_zone_id -> zone_id`, затем переводит ноду в `ASSIGNED_TO_ZONE`
 
 **Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения `config_report` от ноды. Это обеспечивает надежность привязки и гарантирует, что сервер использует актуальный конфиг.
 

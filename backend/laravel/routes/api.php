@@ -204,9 +204,6 @@ Route::middleware([
         Route::patch('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'update']);
         Route::delete('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'destroy']);
 
-        Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
-        Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
-        Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
         Route::post('zones/{zone}/calibrate-pump', [ZoneController::class, 'calibratePump']);
         Route::put('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'update']);
         Route::delete('automation-configs/{scopeType}/{scopeId}/{namespace}', [AutomationConfigController::class, 'destroy']);
@@ -376,6 +373,7 @@ Route::middleware([
 Route::prefix('python')->middleware('throttle:'.$apiThrottle)->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
+    Route::post('nodes/config-report-observed', [PythonIngestController::class, 'configReportObserved']);
     Route::post('broadcast/telemetry', [PythonIngestController::class, 'broadcastTelemetry']);
     Route::post('alerts', [PythonIngestController::class, 'alerts']);
     Route::post('logs', [ServiceLogController::class, 'store'])->middleware('verify.python.service');
@@ -395,10 +393,6 @@ Route::patch('node-channels/{nodeChannel}', [NodeChannelController::class, 'serv
 // Node registration and service updates (token-based) - умеренный лимит
 Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function () {
     Route::post('nodes/register', [NodeController::class, 'register']);
-
-    // Node updates от сервисов (history-logger и т.д.) - проверка токена в контроллере
-    Route::patch('nodes/{node}/service-update', [NodeController::class, 'serviceUpdate']);
-    Route::post('nodes/{node}/lifecycle/service-transition', [NodeController::class, 'transitionLifecycle']);
 
     // Alertmanager webhook (защищен секретом)
     Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook'])

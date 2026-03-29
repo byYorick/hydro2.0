@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\PublishNodeConfigJob;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\DeviceNode;
@@ -16,6 +17,7 @@ use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class PythonIngestControllerTest extends TestCase
@@ -438,6 +440,141 @@ class PythonIngestControllerTest extends TestCase
             'cmd_id' => 'cmd-test-123',
             'status' => 'DONE',
         ])->assertStatus(401);
+    }
+
+    public function test_config_report_observed_finalizes_pending_bind_in_laravel(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+        Queue::fake([PublishNodeConfigJob::class]);
+
+        $zone = Zone::factory()->create(['uid' => 'zn-target-1']);
+        $zone->greenhouse()->update(['uid' => 'gh-target-1']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/nodes/config-report-observed', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'gh_uid' => 'gh-target-1',
+                'zone_uid' => 'zn-target-1',
+                'is_temp_topic' => false,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.finalized', true)
+            ->assertJsonPath('data.zone_id', $zone->id);
+
+        $node->refresh();
+        $this->assertSame($zone->id, $node->zone_id);
+        $this->assertNull($node->pending_zone_id);
+        $this->assertSame('ASSIGNED_TO_ZONE', $node->lifecycle_state->value);
+    }
+
+    public function test_config_report_observed_defers_on_namespace_mismatch(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+        Queue::fake([PublishNodeConfigJob::class]);
+
+        $zone = Zone::factory()->create(['uid' => 'zn-target-2']);
+        $zone->greenhouse()->update(['uid' => 'gh-target-2']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/nodes/config-report-observed', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'gh_uid' => 'gh-old',
+                'zone_uid' => 'zn-old',
+                'is_temp_topic' => false,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.finalized', false)
+            ->assertJsonPath('data.reason', 'namespace_mismatch');
+
+        $node->refresh();
+        $this->assertNull($node->zone_id);
+        $this->assertSame($zone->id, $node->pending_zone_id);
+        $this->assertSame('REGISTERED_BACKEND', $node->lifecycle_state->value);
+    }
+
+    public function test_config_report_observed_recovers_inconsistent_pending_bind(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+        Queue::fake([PublishNodeConfigJob::class]);
+
+        $zone = Zone::factory()->create(['uid' => 'zn-target-3']);
+        $zone->greenhouse()->update(['uid' => 'gh-target-3']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::ASSIGNED_TO_ZONE,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/nodes/config-report-observed', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'gh_uid' => 'gh-target-3',
+                'zone_uid' => 'zn-target-3',
+                'is_temp_topic' => false,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.finalized', true);
+
+        $node->refresh();
+        $this->assertSame($zone->id, $node->zone_id);
+        $this->assertNull($node->pending_zone_id);
+        $this->assertSame('ASSIGNED_TO_ZONE', $node->lifecycle_state->value);
+    }
+
+    public function test_config_report_observed_rejects_node_uid_mismatch(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+        Queue::fake([PublishNodeConfigJob::class]);
+
+        $zone = Zone::factory()->create(['uid' => 'zn-target-4']);
+        $zone->greenhouse()->update(['uid' => 'gh-target-4']);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'lifecycle_state' => \App\Enums\NodeLifecycleState::REGISTERED_BACKEND,
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/nodes/config-report-observed', [
+                'node_id' => $node->id,
+                'node_uid' => 'nd-other-node',
+                'gh_uid' => 'gh-target-4',
+                'zone_uid' => 'zn-target-4',
+                'is_temp_topic' => false,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'node_uid does not match node_id');
+
+        $node->refresh();
+        $this->assertNull($node->zone_id);
+        $this->assertSame($zone->id, $node->pending_zone_id);
+        $this->assertSame('REGISTERED_BACKEND', $node->lifecycle_state->value);
     }
 
     public function test_alerts_endpoint_returns_202_when_rate_limited(): void

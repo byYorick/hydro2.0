@@ -91,6 +91,7 @@ export interface ExecutionRun {
   completed_at?: string | null
   error_code?: string | null
   error_message?: string | null
+  human_error_message?: string | null
   is_active?: boolean
   lifecycle?: ExecutionLifecycleItem[]
   timeline?: ExecutionTimelineItem[]
@@ -106,6 +107,7 @@ export interface ExecutionFailureSummary {
   status: string
   error_code?: string | null
   error_message?: string | null
+  human_error_message?: string | null
   at?: string | null
 }
 

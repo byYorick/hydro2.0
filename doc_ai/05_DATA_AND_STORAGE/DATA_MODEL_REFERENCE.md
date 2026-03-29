@@ -163,6 +163,8 @@ updated_at
 - оперативная калибровка канала насоса хранится в `node_channels.config.pump_calibration` как last-known mirror:
   `ml_per_sec`, `duration_sec`, `actual_ml`, `component`, `calibrated_at`,
   `k_ms_per_ml_l`, `test_volume_l`, `ec_before_ms`, `ec_after_ms`, `delta_ec_ms`, `temperature_c`.
+- этот mirror обновляется Laravel calibration flow; Python/history-logger не является owner для
+  pump calibration tracking или persistence.
 - системные пороги и UI/runtime defaults для pump calibration хранятся в
   `automation_config_documents(namespace='system.pump_calibration_policy', scope_type='system', scope_id=0)`.
 - zone-level correction runtime contract хранится в
@@ -1963,8 +1965,9 @@ Frontend не должен получать эти данные через Inert
   - новая калибровка деактивирует предыдущую (`is_active=false`, `valid_to=NOW()`),
   - актуальная калибровка выбирается по `is_active=true` и `valid_from DESC`.
 - Two-step UX `run -> save` коррелируется через `zone_events.payload_json.run_token`:
-  - `PUMP_CALIBRATION_STARTED` сохраняет `run_token`, `node_channel_id`, `duration_sec`, `component`, `command_id`;
-  - `PUMP_CALIBRATION_FINISHED` повторно пишет `run_token` и тем самым помечает его consumed;
+  - Laravel/backend automation flow пишет `PUMP_CALIBRATION_STARTED` с `run_token`, `node_channel_id`, `duration_sec`, `component`, `command_id`;
+  - Laravel/backend automation flow пишет `PUMP_CALIBRATION_FINISHED` и тем самым помечает `run_token` consumed;
+  - сохранение canonical calibration допускается только после terminal `commands.status='DONE'` для связанного `command_id`;
   - прямой manual persist без correlated physical run допускается только с `manual_override=true`.
 - Runtime constraint:
   - `ml_per_sec` обязан попадать в диапазон `0.01 .. 100.0`;

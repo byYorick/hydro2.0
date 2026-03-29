@@ -1,22 +1,14 @@
-"""
-Общий компонент для обработки ошибок от ESP32 нод.
-
-Обрабатывает:
-- Diagnostics сообщения (периодические метрики ошибок)
-- Error сообщения (немедленные ошибки)
-- Интеграция с Laravel API для создания Alerts
-"""
+"""Общий компонент для обработки ошибок от ESP32 нод."""
 
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime
-import httpx
-import json
+from datetime import datetime, timezone
 from .db import execute, fetch
 from .env import get_settings
-from .alert_queue import send_alert_to_laravel
+from .alert_publisher import AlertPublisher
 
 logger = logging.getLogger(__name__)
+_alert_publisher = AlertPublisher(default_source="node")
 
 
 def _normalize_node_error_fragment(value: str, fallback: str) -> str:
@@ -31,12 +23,6 @@ class NodeErrorHandler:
     
     def __init__(self):
         self.settings = get_settings()
-        self.laravel_url = self.settings.laravel_api_url if hasattr(self.settings, 'laravel_api_url') else None
-        self.ingest_token = (
-            self.settings.history_logger_api_token 
-            if hasattr(self.settings, 'history_logger_api_token') and self.settings.history_logger_api_token
-            else (self.settings.ingest_token if hasattr(self.settings, 'ingest_token') else None)
-        )
     
     async def handle_diagnostics(self, node_uid: str, diagnostics_data: Dict[str, Any]) -> None:
         """
@@ -211,12 +197,6 @@ class NodeErrorHandler:
             elif not zone_id:
                 logger.info(f"[ERROR_HANDLER] Node {node_uid} has no zone_id (unassigned), creating alert with zone_id=null")
             
-            # Структура alerts: zone_id, source, code, type, details, status
-            # source: 'node' для ошибок узлов
-            # code: код ошибки (например, 'node_error_ph_sensor')
-            # type: тип алерта (например, 'node_error')
-            # details: JSON с деталями
-
             component_norm = _normalize_node_error_fragment(component, "unknown")
             error_code_norm = _normalize_node_error_fragment(error_code, "unknown")
             alert_code = f"node_error_{component_norm}_{error_code_norm}"
@@ -235,26 +215,35 @@ class NodeErrorHandler:
                 "message": message,
                 "details": details or {}
             }
+            dedupe_key = _alert_publisher.build_dedupe_key(
+                code=alert_code,
+                zone_id=zone_id,
+                parts=(
+                    f"node_uid:{node_uid}",
+                    f"component:{component_norm}",
+                    f"error_code:{error_code_norm}",
+                ),
+            )
+            alert_details["dedupe_key"] = dedupe_key
             
             # Извлекаем ts_device из details, если есть
             ts_device = None
             if details and isinstance(details, dict):
                 ts_device = details.get("ts") or details.get("ts_device")
                 if ts_device and isinstance(ts_device, (int, float)):
-                    # Конвертируем Unix timestamp (секунды или миллисекунды) в ISO строку
-                    from datetime import datetime, timezone
                     ts_value = float(ts_device)
                     if ts_value > 1_000_000_000_000:
                         ts_value = ts_value / 1000.0
                     ts_device = datetime.fromtimestamp(ts_value, tz=timezone.utc).isoformat()
             
-            success = await send_alert_to_laravel(
+            success = await _alert_publisher.raise_active(
                 zone_id=zone_id,
                 source="node",
                 code=alert_code,
-                type=alert_type,
-                status="ACTIVE",
+                alert_type=alert_type,
                 details=alert_details,
+                dedupe_key=dedupe_key,
+                scoped=True,
                 node_uid=node_uid,
                 severity=level,  # level может быть warning, error, critical
                 ts_device=ts_device

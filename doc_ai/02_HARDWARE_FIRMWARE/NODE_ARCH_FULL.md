@@ -494,11 +494,11 @@ payload: "offline"
 
 ## 15.2. Backend компоненты
 
-✅ **Water Cycle Engine** (`backend/services/common/water_cycle.py`)
-- Логика циркуляции с учётом NC-реле
-- Проверка EC drift для смены воды
-- Точная логика duty_cycle (циклы по 10 минут)
-- Фиксация параметров после стабилизации
+✅ **Zone Workflow Runtime** (`backend/services/automation-engine`)
+- Канонический owner zone-level workflow и water-flow orchestration
+- Управляет fill/drain/correction сценариями через системные команды
+- Исполняет fail-closed state machine и runtime guards
+- Публикация device-команд идёт через `history-logger` как transport/observer
 
 ✅ **Pump Safety Engine** (`backend/services/common/pump_safety.py`)
 - Проверка MCU offline

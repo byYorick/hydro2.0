@@ -94,6 +94,45 @@ static const char *normalize_response_status(const char *status) {
     return "ERROR";
 }
 
+static void log_command_response_summary(
+    const char *cmd,
+    const char *cmd_id,
+    const char *channel,
+    const cJSON *response
+) {
+    if (!response) {
+        return;
+    }
+
+    const cJSON *status_item = cJSON_GetObjectItem((cJSON *)response, "status");
+    const cJSON *error_code_item = cJSON_GetObjectItem((cJSON *)response, "error_code");
+
+    const char *status = cJSON_IsString(status_item) ? status_item->valuestring : "UNKNOWN";
+    const char *error_code = cJSON_IsString(error_code_item) ? error_code_item->valuestring : NULL;
+
+    if (error_code && error_code[0] != '\0') {
+        ESP_LOGI(
+            TAG,
+            "Command result: cmd=%s cmd_id=%s channel=%s status=%s error_code=%s",
+            cmd ? cmd : "unknown",
+            cmd_id ? cmd_id : "-",
+            channel ? channel : "default",
+            status,
+            error_code
+        );
+        return;
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Command result: cmd=%s cmd_id=%s channel=%s status=%s",
+        cmd ? cmd : "unknown",
+        cmd_id ? cmd_id : "-",
+        channel ? channel : "default",
+        status
+    );
+}
+
 /**
  * @brief Получить node_secret из конфигурации
  *
@@ -959,6 +998,7 @@ void node_command_handler_process(
             mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
             free(json_str);
         }
+        log_command_response_summary(cmd, cmd_id, channel, response);
         cJSON_Delete(response);
     }
 
@@ -1147,7 +1187,7 @@ static esp_err_t handle_restart(
 void node_command_handler_init_builtin_handlers(void) {
     node_command_handler_register("set_time", handle_set_time, NULL);
     node_command_handler_register("restart", handle_restart, NULL);
-    ESP_LOGI(TAG, "Built-in command handlers registered");
+    ESP_LOGD(TAG, "Built-in command handlers registered");
 }
 
 cJSON *node_command_handler_create_response(

@@ -32,17 +32,23 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ### 2. history-logger::handle_config_report
 - Обрабатывает `config_report` от ноды
 - Сохраняет `nodes.config`, синхронизирует `node_channels`
-- Переводит ноду в `ASSIGNED_TO_ZONE` через Laravel API
+- Сообщает Laravel observed-факт `config_report`
 
-### 3. NodeRegistryService::registerNodeFromHello()
+### 3. NodeConfigReportObserverService
+- Laravel-owner сервис финализации bind/rebind
+- Проверяет совпадение `gh_uid/zone_uid` с целевой зоной
+- Выполняет `pending_zone_id -> zone_id`
+- Переводит ноду в `ASSIGNED_TO_ZONE`
+
+### 4. NodeRegistryService::registerNodeFromHello()
 - Убрана автоматическая установка `ASSIGNED_TO_ZONE`
 - Всегда оставляет ноду в `REGISTERED_BACKEND`
 
-### 4. NodeSwapService
+### 5. NodeSwapService
 - Убрана автоматическая установка `ASSIGNED_TO_ZONE` при swap
 - Нода остается в `REGISTERED_BACKEND` до получения `config_report`
 
-### 5. Frontend (Add.vue)
+### 6. Frontend (Add.vue)
 - Обновлено сообщение об успешной привязке
 - Показывает ожидание `config_report` от ноды
 
@@ -51,12 +57,16 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ## Поток привязки ноды
 
 1. Пользователь привязывает ноду к зоне через UI
-2. `NodeService::update()` устанавливает `zone_id`, но оставляет `lifecycle_state = REGISTERED_BACKEND`
+2. `NodeService::update()` запускает bind/rebind через `pending_zone_id`, оставляя узел в `REGISTERED_BACKEND`
 3. Нода подключается и отправляет `config_report` в `hydro/{gh}/{zone}/{node}/config_report`
 4. **history-logger обрабатывает `config_report`:**
    - сохраняет NodeConfig и синхронизирует каналы
+   - сообщает Laravel observed-факт
+5. **Laravel завершает bind/rebind:**
+   - валидирует namespace observed `config_report`
+   - переводит `pending_zone_id -> zone_id`
    - переводит ноду в `ASSIGNED_TO_ZONE`
-5. Нода считается привязанной
+6. Нода считается привязанной
 
 ---
 

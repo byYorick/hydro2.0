@@ -247,6 +247,7 @@ describe('ZoneSchedulerTab.vue', () => {
                 status: 'failed',
                 error_code: 'start_cycle_zone_busy',
                 error_message: 'Intent skipped: zone busy',
+                human_error_message: 'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.',
                 at: '2026-02-10T08:00:00Z',
               },
             },
@@ -278,7 +279,7 @@ describe('ZoneSchedulerTab.vue', () => {
     expect(wrapper.text()).toContain('Исполнения')
     expect(wrapper.text()).toContain('Детали run')
     expect(wrapper.text()).toContain('Рециркуляция раствора')
-    expect(wrapper.text()).toContain('Последняя ошибка: Полив · start_cycle_zone_busy')
+    expect(wrapper.text()).toContain('Последняя ошибка: Полив · Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
     expect(wrapper.text()).toContain('Полив')
     expect(wrapper.text()).toContain('Свет')
     expect(wrapper.text()).toContain('run')

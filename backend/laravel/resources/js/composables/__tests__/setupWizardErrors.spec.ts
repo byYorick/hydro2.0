@@ -25,7 +25,7 @@ describe('setupWizardErrors.extractSetupWizardErrorMessage', () => {
       },
     }
 
-    expect(extractSetupWizardErrorMessage(error, 'fallback')).toBe('Validation failed')
+    expect(extractSetupWizardErrorMessage(error, 'fallback')).toBe('Проверьте корректность переданных данных.')
   })
 
   it('использует fallback при неизвестной ошибке', () => {

@@ -35,6 +35,7 @@
 #include <stdlib.h>
 
 static const char *TAG = "storage_irrigation_node_framework";
+static const uint32_t STORAGE_IRRIGATION_NODE_PUMP_MAIN_DRY_RUN_MAX_MS = 3000;
 
 // Forward declaration для callback safe_mode
 static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -57,6 +58,8 @@ typedef struct {
     char cmd_id[STORAGE_IRRIGATION_NODE_CMD_ID_LEN];
     float current_ma;
     bool current_valid;
+    bool auto_off;
+    uint32_t duration_ms;
     TimerHandle_t timer;
 } storage_irrigation_node_done_entry_t;
 
@@ -65,6 +68,8 @@ typedef struct {
     char cmd_id[STORAGE_IRRIGATION_NODE_CMD_ID_LEN];
     float current_ma;
     bool current_valid;
+    bool auto_off;
+    uint32_t duration_ms;
 } storage_irrigation_node_done_event_t;
 
 typedef struct {
@@ -111,6 +116,8 @@ static void storage_irrigation_node_done_timer_cb(TimerHandle_t timer);
 static void storage_irrigation_node_stage_guard_timer_cb(TimerHandle_t timer);
 static bool storage_irrigation_node_cmd_queue_push(const storage_irrigation_node_cmd_t *cmd);
 static bool storage_irrigation_node_cmd_queue_pop(storage_irrigation_node_cmd_t *cmd);
+static void storage_irrigation_node_schedule_done(const char *channel, const char *cmd_id, uint32_t duration_ms,
+                                    float current_ma, bool current_valid, bool auto_off);
 static bool storage_irrigation_node_any_pump_running(void);
 static storage_irrigation_node_done_entry_t *storage_irrigation_node_get_done_entry(const char *channel, bool create);
 static cJSON *storage_irrigation_node_channels_callback(void *user_ctx);
@@ -122,6 +129,7 @@ static bool storage_irrigation_node_parse_relay_state(const cJSON *item, bool *s
 static bool storage_irrigation_node_refresh_actuator_state_locked(size_t index);
 static esp_err_t storage_irrigation_node_set_actuator_state_locked(size_t index, bool state);
 static bool storage_irrigation_node_get_actuator_state_locked(const char *channel, bool *state_out);
+static bool storage_irrigation_node_is_pump_main_dry_run_allowed(const char *channel, bool target_state, bool has_duration, uint32_t duration_ms);
 static bool storage_irrigation_node_is_clean_fill_active_locked(void);
 static bool storage_irrigation_node_is_solution_fill_active_locked(void);
 static bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void);
@@ -144,6 +152,7 @@ static esp_err_t storage_irrigation_node_publish_terminal_response(
 static void storage_irrigation_node_check_fill_completion_events(void);
 static esp_err_t storage_irrigation_node_publish_level_switch_telemetry_snapshot(void);
 static bool storage_irrigation_node_parse_timeout_ms(const cJSON *item, uint32_t *timeout_ms_out);
+static bool storage_irrigation_node_parse_duration_ms(const cJSON *item, uint32_t *duration_ms_out);
 static bool storage_irrigation_node_parse_stage_name(const cJSON *item, char *stage_out, size_t stage_out_size);
 static storage_irrigation_node_stage_guard_t *storage_irrigation_node_get_stage_guard(const char *stage, bool create);
 static esp_err_t storage_irrigation_node_arm_stage_guard_locked(const char *stage, const char *cmd_id, uint32_t timeout_ms);
@@ -263,6 +272,23 @@ static bool storage_irrigation_node_parse_timeout_ms(const cJSON *item, uint32_t
     return true;
 }
 
+static bool storage_irrigation_node_parse_duration_ms(const cJSON *item, uint32_t *duration_ms_out) {
+    if (duration_ms_out) {
+        *duration_ms_out = 0;
+    }
+    if (!item || !cJSON_IsNumber(item) || !duration_ms_out) {
+        return false;
+    }
+
+    double raw_value = cJSON_GetNumberValue(item);
+    if (raw_value <= 0.0 || raw_value > (double)UINT32_MAX) {
+        return false;
+    }
+
+    *duration_ms_out = (uint32_t)raw_value;
+    return true;
+}
+
 static bool storage_irrigation_node_parse_stage_name(const cJSON *item, char *stage_out, size_t stage_out_size) {
     if (stage_out && stage_out_size > 0) {
         stage_out[0] = '\0';
@@ -315,6 +341,15 @@ static bool storage_irrigation_node_get_actuator_state_locked(const char *channe
     (void)storage_irrigation_node_refresh_actuator_state_locked((size_t)index);
     *state_out = s_actuator_runtime[index].state;
     return true;
+}
+
+static bool storage_irrigation_node_is_pump_main_dry_run_allowed(const char *channel, bool target_state, bool has_duration, uint32_t duration_ms) {
+    return channel
+        && strcmp(channel, "pump_main") == 0
+        && target_state
+        && has_duration
+        && duration_ms > 0
+        && duration_ms <= STORAGE_IRRIGATION_NODE_PUMP_MAIN_DRY_RUN_MAX_MS;
 }
 
 static bool storage_irrigation_node_is_clean_fill_active_locked(void) {
@@ -699,11 +734,14 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
 
     const char *cmd_id = node_command_handler_get_cmd_id(params);
     const cJSON *state_item = cJSON_GetObjectItem((cJSON *)params, "state");
+    const cJSON *duration_ms_item = cJSON_GetObjectItem((cJSON *)params, "duration_ms");
     const cJSON *timeout_ms_item = cJSON_GetObjectItem((cJSON *)params, "timeout_ms");
     const cJSON *stage_item = cJSON_GetObjectItem((cJSON *)params, "stage");
     bool target_state = false;
+    uint32_t duration_ms = 0;
     uint32_t timeout_ms = 0;
     char stage_name[32] = {0};
+    bool has_duration = storage_irrigation_node_parse_duration_ms(duration_ms_item, &duration_ms);
     bool has_timeout = storage_irrigation_node_parse_timeout_ms(timeout_ms_item, &timeout_ms);
     bool has_stage = storage_irrigation_node_parse_stage_name(stage_item, stage_name, sizeof(stage_name));
     if (!storage_irrigation_node_parse_relay_state(state_item, &target_state)) {
@@ -723,6 +761,26 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
             "ERROR",
             "invalid_params",
             "timeout_ms and stage must be provided together and be valid",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (duration_ms_item && (!target_state || !has_duration)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "duration_ms must be a positive number and can be used only with state=true",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (target_state && has_duration && has_timeout) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "duration_ms cannot be combined with timeout_ms/stage",
             NULL
         );
         return ESP_ERR_INVALID_ARG;
@@ -763,8 +821,17 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
     }
 
     bool previous_state = false;
+    bool allow_pump_main_dry_run = storage_irrigation_node_is_pump_main_dry_run_allowed(
+        channel,
+        target_state,
+        has_duration,
+        duration_ms
+    );
     (void)storage_irrigation_node_get_actuator_state_locked(channel, &previous_state);
-    if (strcmp(channel, "pump_main") == 0 && target_state && !storage_irrigation_node_is_main_pump_interlock_satisfied_locked()) {
+    if (strcmp(channel, "pump_main") == 0
+        && target_state
+        && !allow_pump_main_dry_run
+        && !storage_irrigation_node_is_main_pump_interlock_satisfied_locked()) {
         xSemaphoreGive(s_actuator_mutex);
         cJSON *extra = cJSON_CreateObject();
         if (extra) {
@@ -818,6 +885,17 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
             return set_err;
         }
     }
+    if (target_state && has_duration && previous_state) {
+        xSemaphoreGive(s_actuator_mutex);
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "transient_requires_idle_state",
+            "Transient set_relay requires actuator to be OFF before start",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
 
     if (!target_state) {
         (void)storage_irrigation_node_complete_stage_guard_for_channel_locked(
@@ -847,6 +925,15 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
             );
             return guard_err;
         }
+    } else if (has_duration) {
+        storage_irrigation_node_schedule_done(
+            channel,
+            cmd_id,
+            duration_ms,
+            0.0f,
+            false,
+            true
+        );
     }
 
     xSemaphoreGive(s_actuator_mutex);
@@ -859,12 +946,25 @@ static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSO
         if (previous_state == target_state) {
             cJSON_AddStringToObject(extra, "note", "already_in_requested_state_treated_as_done");
         }
+        if (has_duration) {
+            cJSON_AddBoolToObject(extra, "transient", true);
+            cJSON_AddNumberToObject(extra, "duration_ms", (double)duration_ms);
+            if (allow_pump_main_dry_run) {
+                cJSON_AddBoolToObject(extra, "dry_run", true);
+            }
+        }
         if (has_timeout) {
             cJSON_AddNumberToObject(extra, "timeout_ms", (double)timeout_ms);
             cJSON_AddStringToObject(extra, "stage", stage_name);
         }
     }
-    *response = node_command_handler_create_response(cmd_id, has_timeout ? "ACK" : "DONE", NULL, NULL, extra);
+    *response = node_command_handler_create_response(
+        cmd_id,
+        (has_timeout || has_duration) ? "ACK" : "DONE",
+        NULL,
+        NULL,
+        extra
+    );
     if (extra) {
         cJSON_Delete(extra);
     }
@@ -1372,7 +1472,7 @@ static storage_irrigation_node_done_entry_t *storage_irrigation_node_get_done_en
 }
 
 static void storage_irrigation_node_schedule_done(const char *channel, const char *cmd_id, uint32_t duration_ms,
-                                    float current_ma, bool current_valid) {
+                                    float current_ma, bool current_valid, bool auto_off) {
     storage_irrigation_node_done_entry_t *entry = storage_irrigation_node_get_done_entry(channel, true);
     if (!entry) {
         ESP_LOGW(TAG, "No done entry available for channel %s", channel);
@@ -1385,6 +1485,8 @@ static void storage_irrigation_node_schedule_done(const char *channel, const cha
     }
     entry->current_ma = current_ma;
     entry->current_valid = current_valid;
+    entry->auto_off = auto_off;
+    entry->duration_ms = duration_ms;
     if (duration_ms == 0) {
         duration_ms = 1;
     }
@@ -1405,6 +1507,8 @@ static void storage_irrigation_node_done_timer_cb(TimerHandle_t timer) {
     strncpy(event.cmd_id, entry->cmd_id, sizeof(event.cmd_id) - 1);
     event.current_ma = entry->current_ma;
     event.current_valid = entry->current_valid;
+    event.auto_off = entry->auto_off;
+    event.duration_ms = entry->duration_ms;
     if (xQueueSend(s_done_queue, &event, 0) != pdTRUE) {
         ESP_LOGW(TAG, "Done queue full for channel %s", entry->channel_name);
     }
@@ -1417,10 +1521,53 @@ static void storage_irrigation_node_done_task(void *pvParameters) {
         if (xQueueReceive(s_done_queue, &event, portMAX_DELAY) != pdTRUE) {
             continue;
         }
+        if (event.auto_off) {
+            esp_err_t auto_off_err = ESP_OK;
+            if (!s_actuator_mutex || xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+                auto_off_err = ESP_ERR_TIMEOUT;
+            } else {
+                int actuator_index = storage_irrigation_node_find_actuator_index(event.channel_name);
+                if (actuator_index < 0) {
+                    auto_off_err = ESP_ERR_NOT_FOUND;
+                } else {
+                    auto_off_err = storage_irrigation_node_set_actuator_state_locked((size_t)actuator_index, false);
+                }
+                xSemaphoreGive(s_actuator_mutex);
+            }
+
+            if (auto_off_err != ESP_OK) {
+                cJSON *error_details = cJSON_CreateObject();
+                if (error_details) {
+                    cJSON_AddBoolToObject(error_details, "transient", true);
+                    cJSON_AddNumberToObject(error_details, "duration_ms", (double)event.duration_ms);
+                }
+                (void)storage_irrigation_node_publish_terminal_response(
+                    event.channel_name,
+                    event.cmd_id[0] ? event.cmd_id : NULL,
+                    "ERROR",
+                    "actuator_release_failed",
+                    "Transient actuator command could not restore OFF state",
+                    error_details
+                );
+                storage_irrigation_node_update_oled_runtime();
+                continue;
+            }
+            storage_irrigation_node_update_oled_runtime();
+        }
+
         cJSON *extra = cJSON_CreateObject();
         if (extra) {
             cJSON_AddNumberToObject(extra, "current_ma", event.current_ma);
             cJSON_AddBoolToObject(extra, "current_valid", event.current_valid);
+            if (event.auto_off) {
+                cJSON_AddBoolToObject(extra, "transient", true);
+                cJSON_AddBoolToObject(extra, "state", false);
+                cJSON_AddNumberToObject(extra, "duration_ms", (double)event.duration_ms);
+                if (strcmp(event.channel_name, "pump_main") == 0
+                    && event.duration_ms <= STORAGE_IRRIGATION_NODE_PUMP_MAIN_DRY_RUN_MAX_MS) {
+                    cJSON_AddBoolToObject(extra, "dry_run", true);
+                }
+            }
         }
         cJSON *response = node_command_handler_create_response(
             event.cmd_id[0] ? event.cmd_id : NULL,
@@ -1529,7 +1676,7 @@ static void storage_irrigation_node_process_cmd_queue(void) {
     ina209_reading_t reading = {0};
     bool current_valid = (ina209_read(&reading) == ESP_OK && reading.valid);
     float current_ma = current_valid ? reading.bus_current_ma : 0.0f;
-    storage_irrigation_node_schedule_done(cmd.channel_name, cmd.cmd_id, cmd.duration_ms, current_ma, current_valid);
+    storage_irrigation_node_schedule_done(cmd.channel_name, cmd.cmd_id, cmd.duration_ms, current_ma, current_valid, false);
 }
 
 static void storage_irrigation_node_process_stage_timeouts(void) {
@@ -1597,7 +1744,7 @@ static void storage_irrigation_node_cmd_queue_task(void *pvParameters) {
  * @brief Инициализация интеграции storage_irrigation_node с node_framework
  */
 esp_err_t storage_irrigation_node_framework_init_integration(void) {
-    ESP_LOGI(TAG, "Initializing storage_irrigation_node framework integration...");
+    ESP_LOGD(TAG, "Initializing storage_irrigation_node framework integration...");
     
     // Конфигурация node_framework
     node_framework_config_t config = {
@@ -1696,7 +1843,7 @@ esp_err_t storage_irrigation_node_framework_init_integration(void) {
 
     node_config_handler_set_channels_callback(storage_irrigation_node_channels_callback, NULL);
     
-    ESP_LOGI(TAG, "storage_irrigation_node framework integration initialized");
+    ESP_LOGD(TAG, "storage_irrigation_node framework integration initialized");
     return ESP_OK;
 }
 
@@ -1740,5 +1887,5 @@ void storage_irrigation_node_framework_register_mqtt_handlers(void) {
         STORAGE_IRRIGATION_NODE_DEFAULT_ZONE_UID
     );
     
-    ESP_LOGI(TAG, "MQTT handlers registered via node_framework");
+    ESP_LOGD(TAG, "MQTT handlers registered via node_framework");
 }

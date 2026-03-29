@@ -343,7 +343,7 @@ class TestConfigReportFormatSync:
 
     @pytest.mark.asyncio
     async def test_complete_binding_skips_duplicate_transition_after_first_success(self):
-        """Повторный config_report не должен повторно выполнять service-update и lifecycle transition."""
+        """Повторный config_report должен только повторно уведомлять Laravel, без локальной lifecycle-логики."""
         from mqtt_handlers import (
             _BINDING_COMPLETION_LOCKS,
             _complete_binding_after_config_report,
@@ -359,37 +359,16 @@ class TestConfigReportFormatSync:
             "pending_zone_id": 1,
         }
 
-        update_response = MagicMock(status_code=200, text="OK")
-        transition_response = MagicMock(status_code=200, text="OK")
+        observe_response = MagicMock(status_code=200, text="OK")
         http_client = AsyncMock()
-        http_client.patch = AsyncMock(return_value=update_response)
-        http_client.post = AsyncMock(return_value=transition_response)
+        http_client.post = AsyncMock(return_value=observe_response)
 
         client_ctx = AsyncMock()
         client_ctx.__aenter__.return_value = http_client
         client_ctx.__aexit__.return_value = False
 
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
-
-            mock_fetch.side_effect = [
-                [
-                    {
-                        "lifecycle_state": "REGISTERED_BACKEND",
-                        "zone_id": None,
-                        "pending_zone_id": 1,
-                    }
-                ],
-                [{"id": 1, "zone_uid": "zn-1", "greenhouse_uid": "gh-1"}],
-                [
-                    {
-                        "lifecycle_state": "ASSIGNED_TO_ZONE",
-                        "zone_id": 1,
-                        "pending_zone_id": None,
-                    }
-                ],
-            ]
 
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.history_logger_api_token = "test-token"
@@ -408,11 +387,10 @@ class TestConfigReportFormatSync:
                 topic_zone_uid="zn-1",
             )
 
-        assert http_client.patch.await_count == 1
-        assert http_client.post.await_count == 1
+        assert http_client.post.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_complete_binding_deferred_on_stale_namespace_report(self):
+    async def test_complete_binding_skips_temp_topic_notification(self):
         from mqtt_handlers import (
             _BINDING_COMPLETION_LOCKS,
             _complete_binding_after_config_report,
@@ -420,38 +398,16 @@ class TestConfigReportFormatSync:
 
         _BINDING_COMPLETION_LOCKS.clear()
 
-        node_snapshot = {
-            "id": 8,
-            "uid": "nd-ec-esp32aa-1",
-            "lifecycle_state": "REGISTERED_BACKEND",
-            "zone_id": None,
-            "pending_zone_id": 2,
-        }
-
-        update_response = MagicMock(status_code=200, text="OK")
-        transition_response = MagicMock(status_code=200, text="OK")
+        node_snapshot = {"id": 8, "uid": "nd-ec-esp32aa-1"}
         http_client = AsyncMock()
-        http_client.patch = AsyncMock(return_value=update_response)
-        http_client.post = AsyncMock(return_value=transition_response)
+        http_client.post = AsyncMock()
 
         client_ctx = AsyncMock()
         client_ctx.__aenter__.return_value = http_client
         client_ctx.__aexit__.return_value = False
 
-        with patch('mqtt_handlers.fetch', new_callable=AsyncMock) as mock_fetch, \
-             patch('mqtt_handlers.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
-
-            mock_fetch.side_effect = [
-                [
-                    {
-                        "lifecycle_state": "REGISTERED_BACKEND",
-                        "zone_id": None,
-                        "pending_zone_id": 2,
-                    }
-                ],
-                [{"id": 2, "zone_uid": "zn-target-2", "greenhouse_uid": "gh-target-1"}],
-            ]
 
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.history_logger_api_token = "test-token"
@@ -460,12 +416,51 @@ class TestConfigReportFormatSync:
             await _complete_binding_after_config_report(
                 node_snapshot,
                 "nd-ec-esp32aa-1",
+                is_temp_topic=True,
                 topic_gh_uid="gh-old-1",
                 topic_zone_uid="zn-old-2",
             )
 
-        assert http_client.patch.await_count == 0
         assert http_client.post.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_complete_binding_notifies_laravel_with_observed_namespace(self):
+        from mqtt_handlers import (
+            _BINDING_COMPLETION_LOCKS,
+            _complete_binding_after_config_report,
+        )
+
+        _BINDING_COMPLETION_LOCKS.clear()
+
+        node_snapshot = {"id": 9, "uid": "nd-irrig-esp32aa-1"}
+        observe_response = MagicMock(status_code=200, text="OK")
+        http_client = AsyncMock()
+        http_client.post = AsyncMock(return_value=observe_response)
+
+        client_ctx = AsyncMock()
+        client_ctx.__aenter__.return_value = http_client
+        client_ctx.__aexit__.return_value = False
+
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
+             patch('mqtt_handlers.httpx.AsyncClient', return_value=client_ctx):
+
+            mock_settings.return_value.laravel_api_url = "http://laravel"
+            mock_settings.return_value.history_logger_api_token = "test-token"
+            mock_settings.return_value.ingest_token = None
+
+            await _complete_binding_after_config_report(
+                node_snapshot,
+                "nd-irrig-esp32aa-1",
+                topic_gh_uid="gh-target-3",
+                topic_zone_uid="zn-target-3",
+            )
+
+        assert http_client.post.await_count == 1
+        request_json = http_client.post.await_args.kwargs["json"]
+        assert request_json["node_id"] == 9
+        assert request_json["node_uid"] == "nd-irrig-esp32aa-1"
+        assert request_json["gh_uid"] == "gh-target-3"
+        assert request_json["zone_uid"] == "zn-target-3"
 
 
 class TestHeartbeatFormatSync:

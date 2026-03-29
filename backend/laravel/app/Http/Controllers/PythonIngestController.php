@@ -6,6 +6,7 @@ use App\Events\TelemetryBatchUpdated;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\SensorCalibration;
+use App\Services\NodeConfigReportObserverService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
@@ -16,6 +17,11 @@ use Illuminate\Support\Facades\Response;
 
 class PythonIngestController extends Controller
 {
+    public function __construct(
+        private readonly NodeConfigReportObserverService $nodeConfigReportObserverService,
+    ) {
+    }
+
     private function ensureToken(Request $request): void
     {
         // Используем PY_INGEST_TOKEN как основной токен для ingest.
@@ -455,6 +461,35 @@ class PythonIngestController extends Controller
         ));
 
         return Response::json(['status' => 'ok']);
+    }
+
+    public function configReportObserved(Request $request)
+    {
+        $this->ensureToken($request);
+
+        $data = $request->validate([
+            'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'node_uid' => ['nullable', 'string', 'max:255'],
+            'gh_uid' => ['nullable', 'string', 'max:255'],
+            'zone_uid' => ['nullable', 'string', 'max:255'],
+            'is_temp_topic' => ['nullable', 'boolean'],
+        ]);
+
+        $node = DeviceNode::findOrFail((int) $data['node_id']);
+        $observedNodeUid = trim((string) ($data['node_uid'] ?? ''));
+        if ($observedNodeUid !== '' && $observedNodeUid !== (string) $node->uid) {
+            return Response::json([
+                'status' => 'error',
+                'message' => 'node_uid does not match node_id',
+            ], 422);
+        }
+
+        $result = $this->nodeConfigReportObserverService->observe($node, $data);
+
+        return Response::json([
+            'status' => 'ok',
+            'data' => $result,
+        ]);
     }
 
     public function alerts(Request $request)

@@ -32,13 +32,13 @@ from ae3lite.infrastructure.repositories import (
     PgPidStateRepository,
     PgZoneCorrectionAuthorityRepository,
     PgZoneAlertRepository,
-    PgZoneAlertWriteRepository,
     PgZoneIntentRepository,
     PgZoneLeaseRepository,
     PgZoneWorkflowRepository,
 )
 from ae3lite.runtime.config import Ae3RuntimeConfig
 from ae3lite.runtime.worker import Ae3RuntimeWorker
+from common.biz_alerts import BizAlertPublisher
 from common.db import fetch
 
 
@@ -96,7 +96,7 @@ def build_ae3_runtime_bundle(
         poll_interval_sec=config.reconcile_poll_interval_sec,
     )
     workflow_repository = PgZoneWorkflowRepository()
-    alert_repository = PgZoneAlertWriteRepository()
+    alert_repository = BizAlertPublisher()
     pid_state_repository = PgPidStateRepository()
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()
     runtime_monitor = PgZoneRuntimeMonitor()

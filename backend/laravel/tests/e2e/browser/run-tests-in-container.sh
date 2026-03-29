@@ -54,6 +54,12 @@ ensure_playwright_chromium() {
 
 ensure_playwright_chromium
 
+echo "Сборка актуального frontend bundle..."
+docker exec -w "/app" "${CONTAINER_NAME}" sh -c "npm run build" || {
+  echo "Ошибка сборки frontend bundle."
+  exit 1
+}
+
 # Копируем файлы тестов в контейнер (если нужно)
 # docker cp tests/e2e/browser ${CONTAINER_NAME}:/app/tests/e2e/
 

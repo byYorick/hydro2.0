@@ -31,11 +31,15 @@
     >
       <p class="font-semibold text-red-400">Ошибка выполнения</p>
       <p
+        v-if="humanErrorMessage"
+        class="text-xs text-red-300/80 break-words"
+      >{{ humanErrorMessage }}</p>
+      <p
         v-if="errorCode"
         class="text-xs text-red-300/80 font-mono"
       >{{ errorCode }}</p>
       <p
-        v-if="errorMessage"
+        v-if="errorMessage && errorMessage !== humanErrorMessage"
         class="text-xs text-red-300/70 break-words"
       >{{ errorMessage }}</p>
     </div>
@@ -128,6 +132,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AutomationProcessPanel from '@/Components/AutomationProcessPanel.vue'
 import Badge from '@/Components/Badge.vue'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { IrrigationSystem } from '@/composables/zoneAutomationTypes'
 import type { AutomationState, AutomationStateType } from '@/types/Automation'
 
@@ -182,6 +187,11 @@ const stateBadgeVariant = computed<'neutral' | 'info' | 'warning' | 'success'>((
 const hasFailed = computed(() => Boolean(lastSnapshot.value?.state_details?.failed))
 const errorCode = computed(() => lastSnapshot.value?.state_details?.error_code ?? null)
 const errorMessage = computed(() => lastSnapshot.value?.state_details?.error_message ?? null)
+const humanErrorMessage = computed(() => resolveHumanErrorMessage({
+  code: lastSnapshot.value?.state_details?.error_code,
+  message: lastSnapshot.value?.state_details?.error_message,
+  humanMessage: lastSnapshot.value?.state_details?.human_error_message,
+}))
 const currentStageLabel = computed(
   () => lastSnapshot.value?.current_stage_label ?? lastSnapshot.value?.current_stage ?? null
 )

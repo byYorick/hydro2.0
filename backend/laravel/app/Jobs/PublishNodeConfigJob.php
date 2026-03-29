@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Models\DeviceNode;
 use App\Services\NodeConfigService;
 use App\Helpers\TransactionHelper;
-use App\Enums\NodeLifecycleState;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -306,39 +305,15 @@ class PublishNodeConfigJob implements ShouldQueue
 
     /**
      * Handle a job failure.
-     * БАГ #4 FIX: Откатываем pending_zone_id при ошибке публикации конфига
+     * Bind intent не откатывается автоматически: canonical owner bind/rebind находится в Laravel,
+     * а временная проблема publish/transport не должна молча отменять user intent.
      */
     public function failed(\Throwable $exception): void
     {
         Log::error('PublishNodeConfigJob: Job failed permanently', [
             'node_id' => $this->nodeId,
             'error' => $exception->getMessage(),
+            'action' => 'pending_zone_id_kept_for_retry',
         ]);
-        
-        // Откатываем pending_zone_id при ошибке публикации
-        try {
-            DB::transaction(function () {
-                $node = DeviceNode::where('id', $this->nodeId)
-                    ->lockForUpdate()
-                    ->first();
-                    
-                if ($node && $node->pending_zone_id && !$node->zone_id) {
-                    // Если конфиг не был опубликован, откатываем привязку
-                    $node->pending_zone_id = null;
-                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                    $node->save();
-                    
-                    Log::warning('PublishNodeConfigJob: Rolled back pending_zone_id due to job failure', [
-                        'node_id' => $node->id,
-                        'uid' => $node->uid,
-                    ]);
-                }
-            });
-        } catch (\Exception $e) {
-            Log::error('PublishNodeConfigJob: Error rolling back pending_zone_id', [
-                'node_id' => $this->nodeId,
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 }

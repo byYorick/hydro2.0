@@ -5,6 +5,7 @@ import { ref, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ToastHandler } from './useApi'
 
 /**
@@ -80,7 +81,10 @@ export function useErrorHandler(showToast?: ToastHandler) {
 
       const status = axiosError.response?.status || 500
       const responseData = axiosError.response?.data
-      const message = responseData?.message || axiosError.message || ERROR_MESSAGES.UNKNOWN
+      const message = resolveHumanErrorMessage({
+        code: responseData?.code,
+        message: responseData?.message || axiosError.message || ERROR_MESSAGES.UNKNOWN,
+      }, ERROR_MESSAGES.UNKNOWN) || ERROR_MESSAGES.UNKNOWN
 
       // Ошибки валидации (422)
       if (status === 422 && responseData?.errors) {
@@ -209,7 +213,12 @@ export function useErrorHandler(showToast?: ToastHandler) {
         toastMessage = ERROR_MESSAGES.VALIDATION
         toastVariant = 'warning'
       } else if (normalizedError instanceof ApiError) {
-        if (normalizedError.status === 401) {
+        if (normalizedError.code) {
+          toastMessage = resolveHumanErrorMessage({
+            code: normalizedError.code,
+            message: normalizedError.message,
+          }, normalizedError.message) || normalizedError.message
+        } else if (normalizedError.status === 401) {
           toastMessage = ERROR_MESSAGES.UNAUTHORIZED
         } else if (normalizedError.status === 403) {
           toastMessage = ERROR_MESSAGES.FORBIDDEN

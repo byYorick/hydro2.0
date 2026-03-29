@@ -82,6 +82,7 @@ import { computed, defineComponent, h, ref } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import VirtualList from '@/Components/VirtualList.vue'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import { translateEventKind, classifyEventKind } from '@/utils/i18n'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -197,6 +198,10 @@ function boolLabel(value: unknown): string {
   if (value === true) return 'вкл'
   if (value === false) return 'выкл'
   return '—'
+}
+
+function humanizeEventError(code?: string | null, message?: string | null): string | null {
+  return resolveHumanErrorMessage({ code, message }, message ?? code ?? null)
 }
 
 // IRR_STATE_SNAPSHOT: render pump/valve/level table from snapshot object
@@ -416,9 +421,12 @@ const EventRow = defineComponent({
         } else if (item.kind === 'AE_TASK_FAILED') {
           const taskId = readNumber(payload, 'task_id')
           const errorCode = readString(payload, 'error_code')
+          const errorMessage = readString(payload, 'error_message')
           const stage = readString(payload, 'stage')
           if (taskId !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Задача ID: '), h('strong', {}, String(taskId))]))
-          if (errorCode) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Код ошибки: '), h('strong', { class: 'text-red-500' }, errorCode)]))
+          const humanError = humanizeEventError(errorCode, errorMessage)
+          if (humanError) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Ошибка: '), h('strong', { class: 'text-red-500' }, humanError)]))
+          if (errorCode && humanError !== errorCode) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Код ошибки: '), h('strong', { class: 'text-red-500' }, errorCode)]))
           if (stage) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Стадия: '), h('strong', {}, stage)]))
         } else {
           // Generic / correction events
@@ -429,7 +437,9 @@ const EventRow = defineComponent({
           const zoneState = firstString(payload, ['zone_state', 'pid_zone'])
           const integral = readNumber(payload, 'integral_term')
           const component = firstString(payload, ['component', 'correction_type'])
-          const reason = firstString(payload, ['reason', 'reason_code', 'safety_skip_reason'])
+          const reasonCode = firstString(payload, ['reason_code', 'safety_skip_reason'])
+          const reason = firstString(payload, ['reason'])
+          const humanReason = humanizeEventError(reasonCode, reason)
           if (dose !== null) detailRows.push(h('div', {}, ['Доза: ', h('strong', {}, `${formatPayloadNumber(dose, 3)} мл`)]))
           if (error !== null) detailRows.push(h('div', {}, ['Ошибка: ', h('strong', {}, formatPayloadNumber(error, 4))]))
           if (current !== null || target !== null) {
@@ -441,7 +451,8 @@ const EventRow = defineComponent({
           if (zoneState) detailRows.push(h('div', {}, ['ПИД-зона: ', h('strong', {}, zoneState)]))
           if (integral !== null) detailRows.push(h('div', {}, ['Интеграл: ', h('strong', {}, formatPayloadNumber(integral, 4))]))
           if (component) detailRows.push(h('div', {}, ['Компонент: ', h('strong', {}, component)]))
-          if (reason) detailRows.push(h('div', {}, ['Причина: ', h('strong', {}, reason)]))
+          if (humanReason) detailRows.push(h('div', {}, ['Причина: ', h('strong', {}, humanReason)]))
+          if (reasonCode && humanReason !== reasonCode) detailRows.push(h('div', {}, ['Код причины: ', h('strong', {}, reasonCode)]))
         }
       }
 

@@ -82,6 +82,20 @@ class ErrorCodes:
     AE3_STAGE_FAILED = "ae3_stage_failed"
     AE3_EMPTY_COMMAND_PLAN = "ae3_empty_command_plan"
 
+    # Snapshot / read-model
+    AE3_SNAPSHOT_BUILD_FAILED = "ae3_snapshot_build_failed"
+    AE3_SNAPSHOT_ZONE_NOT_FOUND = "ae3_snapshot_zone_not_found"
+    AE3_SNAPSHOT_NO_ACTIVE_GROW_CYCLE = "ae3_snapshot_no_active_grow_cycle"
+    AE3_SNAPSHOT_MISSING_CURRENT_PHASE = "ae3_snapshot_missing_current_phase"
+    AE3_SNAPSHOT_BUNDLE_MISSING = "ae3_snapshot_bundle_missing"
+    AE3_SNAPSHOT_BUNDLE_INVALID = "ae3_snapshot_bundle_invalid"
+    AE3_SNAPSHOT_ZONE_BUNDLE_MISSING = "ae3_snapshot_zone_bundle_missing"
+    AE3_SNAPSHOT_LOGIC_PROFILE_BUNDLE_MISSING = "ae3_snapshot_logic_profile_bundle_missing"
+    AE3_SNAPSHOT_ACTIVE_LOGIC_PROFILE_MISSING = "ae3_snapshot_active_logic_profile_missing"
+    AE3_SNAPSHOT_EMPTY_COMMAND_PLANS = "ae3_snapshot_empty_command_plans"
+    AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS = "ae3_snapshot_no_online_actuator_channels"
+    AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES = "ae3_snapshot_conflicting_config_values"
+
     # Command dispatch / reconcile
     AE3_MISSING_AE_COMMAND = "ae3_missing_ae_command"
     AE3_MISSING_CMD_ID = "ae3_missing_cmd_id"
@@ -142,6 +156,18 @@ class Ae3LiteError(Exception):
 
 class SnapshotBuildError(Ae3LiteError):
     """Raised when the runtime read-model cannot build a consistent zone snapshot."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        normalized = str(code or ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED).strip()
+        self.code = normalized or ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED
+        self.details = details if isinstance(details, dict) else {}
 
 
 class PlannerConfigurationError(Ae3LiteError):

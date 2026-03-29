@@ -2,6 +2,7 @@ import { ref, type Ref } from 'vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { normalizeStatus } from '@/composables/useCommands'
 import { logger } from '@/utils/logger'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { Device } from '@/types'
 import type { ToastHandler } from '@/composables/useApi'
 
@@ -29,6 +30,14 @@ const COMMAND_ERROR_MESSAGES: Record<string, string> = {
 }
 
 function formatCommandError(status: string, errorMessage?: string, errorCode?: string): string {
+  const localized = resolveHumanErrorMessage({
+    code: errorCode,
+    message: errorMessage,
+  })
+  if (localized) {
+    return localized
+  }
+
   if (errorCode && COMMAND_ERROR_MESSAGES[errorCode]) {
     return COMMAND_ERROR_MESSAGES[errorCode]
   }
@@ -99,18 +108,20 @@ export function useDeviceCommandActions({
     error?: string
     errorCode?: string
     errorMessage?: string
+    humanErrorMessage?: string
   }> {
     let lastStatus: string | null = null
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const response = await api.get<{
           status: string
-          data?: {
-            status: string
-            error_message?: string | null
-            error_code?: string | null
-          }
-        }>(`/commands/${cmdId}/status`)
+        data?: {
+          status: string
+          error_message?: string | null
+          error_code?: string | null
+          human_error_message?: string | null
+        }
+      }>(`/commands/${cmdId}/status`)
 
         if (response.data?.status === 'ok' && response.data?.data) {
           const normalizedStatus = normalizeStatus(response.data.data.status)
@@ -124,12 +135,14 @@ export function useDeviceCommandActions({
           if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
             const errorMessage = response.data.data.error_message || undefined
             const errorCode = response.data.data.error_code || undefined
+            const humanErrorMessage = (response.data.data as { human_error_message?: string | null }).human_error_message || undefined
             return {
               success: false,
               status: normalizedStatus,
               error: errorMessage || errorCode || undefined,
               errorCode,
               errorMessage,
+              humanErrorMessage,
             }
           }
           if (['QUEUED', 'SENT', 'ACK'].includes(normalizedStatus)) {
@@ -208,7 +221,7 @@ export function useDeviceCommandActions({
         if (result.success) {
           showToast('Нода перезапущена', 'success', TOAST_TIMEOUT.LONG)
         } else {
-          const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
+          const detail = result.humanErrorMessage || formatCommandError(result.status, result.errorMessage, result.errorCode)
           showToast(`Ошибка перезапуска: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
         }
         return
@@ -330,7 +343,7 @@ export function useDeviceCommandActions({
         if (result.success) {
           showToast(`Выполнено: ${channelLabel}`, 'success', TOAST_TIMEOUT.LONG)
         } else {
-          const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
+          const detail = result.humanErrorMessage || formatCommandError(result.status, result.errorMessage, result.errorCode)
           showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
         }
       } else {
@@ -338,7 +351,9 @@ export function useDeviceCommandActions({
       }
     } catch (err) {
       const apiMessage = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
-      const detail = apiMessage?.message || apiMessage?.error
+      const detail = resolveHumanErrorMessage({
+        message: apiMessage?.message || apiMessage?.error || null,
+      })
       if (detail) {
         showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
       }

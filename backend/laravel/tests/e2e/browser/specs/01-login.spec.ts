@@ -1,61 +1,53 @@
 import { test, expect } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import { TEST_IDS } from '../constants';
 
+async function waitForDashboardReady(page: Page) {
+  await expect.poll(
+    async () => {
+      const indicators = [
+        page.locator('[data-testid="dashboard-zones-count"]'),
+        page.locator('[data-testid="ws-status-indicator"]'),
+        page.locator('nav a[href="/zones"]'),
+        page.getByText('В работе', { exact: true }),
+        page.getByText('Активные зоны', { exact: true }),
+      ];
+
+      for (const indicator of indicators) {
+        if (await indicator.first().isVisible().catch(() => false)) {
+          return true;
+        }
+      }
+
+      return false;
+    },
+    { timeout: 20000, message: 'Dashboard did not expose any stable ready indicator' },
+  ).toBe(true);
+}
+
 test.describe('Login/Logout', () => {
-  test('should login successfully and redirect to dashboard', async ({ page, context }) => {
-    // Очищаем cookies для этого теста, чтобы проверить логин с нуля
+  async function loginViaForm(page: Page, context: BrowserContext, baseURL: string, email: string, password: string) {
     await context.clearCookies();
-    
-    const email = process.env.E2E_AUTH_EMAIL || 'admin@example.com';
-    const password = process.env.E2E_AUTH_PASSWORD || 'password';
-    const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
-
     await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' });
-
-    // Проверяем наличие формы логина
     await expect(page.locator(`[data-testid="${TEST_IDS.LOGIN_FORM}"]`)).toBeVisible({ timeout: 10000 });
-
-    // Заполняем форму
     await page.fill(`[data-testid="${TEST_IDS.LOGIN_EMAIL}"]`, email);
     await page.fill(`[data-testid="${TEST_IDS.LOGIN_PASSWORD}"]`, password);
     await page.click(`[data-testid="${TEST_IDS.LOGIN_SUBMIT}"]`);
-
-    // Ждем появления признаков авторизации или ошибки
     await page.waitForLoadState('networkidle', { timeout: 15000 });
-    const dashboardIndicator = page.locator('[data-testid="dashboard-zones-count"]')
-      .or(page.locator('nav a[href="/zones"]'));
-    let authenticated = false;
+    await waitForDashboardReady(page);
+  }
 
-    for (let i = 0; i < 15; i += 1) {
-      await page.waitForTimeout(1000);
-      const errorVisible = await page.locator(`[data-testid="${TEST_IDS.LOGIN_ERROR}"]`).isVisible().catch(() => false);
-      if (errorVisible) {
-        const errorText = await page.locator(`[data-testid="${TEST_IDS.LOGIN_ERROR}"]`).textContent();
-        throw new Error(`Login failed: ${errorText || 'Unknown error'}`);
-      }
-
-      const dashboardVisible = await dashboardIndicator.first().isVisible().catch(() => false);
-      if (dashboardVisible) {
-        authenticated = true;
-        break;
-      }
-    }
-
-    if (!authenticated) {
-      const currentURL = page.url();
-      throw new Error(`Login did not complete. Current URL: ${currentURL}`);
-    }
+  test('should login successfully and redirect to dashboard', async ({ page, context }) => {
+    // Очищаем cookies для этого теста, чтобы проверить логин с нуля
+    const email = process.env.E2E_AUTH_EMAIL || 'admin@example.com';
+    const password = process.env.E2E_AUTH_PASSWORD || 'password';
+    const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
+    await loginViaForm(page, context, baseURL, email, password);
 
     // Нормализуем URL на главную (dashboard)
     await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
 
-    // Проверяем, что мы на Dashboard
-    const dashboardZones = page.locator('[data-testid="dashboard-zones-count"]');
-    if (await dashboardZones.count() > 0) {
-      await expect(dashboardZones.first()).toBeVisible({ timeout: 15000 });
-    } else {
-      await expect(page.locator('h1').first()).toBeVisible({ timeout: 15000 });
-    }
+    await waitForDashboardReady(page);
   });
 
   test('should show error on invalid credentials', async ({ page, context }) => {
@@ -89,34 +81,26 @@ test.describe('Login/Logout', () => {
     await expect(errorLocator.first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should logout successfully', async ({ page }) => {
+  test('should logout successfully', async ({ page, context }) => {
     const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
+    const email = process.env.E2E_AUTH_EMAIL || 'admin@example.com';
+    const password = process.env.E2E_AUTH_PASSWORD || 'password';
 
-    // Используем сохраненное состояние авторизации
-    await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
+    await loginViaForm(page, context, baseURL, email, password);
 
-    // Ищем кнопку выхода (может быть в меню пользователя)
-    // Проверяем наличие элементов Dashboard для подтверждения авторизации
-    const dashboardZones = page.locator('[data-testid="dashboard-zones-count"]');
-    if (await dashboardZones.count() > 0) {
-      await expect(dashboardZones.first()).toBeVisible({ timeout: 10000 });
-    } else {
-      await expect(page.locator('h1').first()).toBeVisible({ timeout: 10000 });
+    const userMenuButton = page.getByRole('button', { name: /\? .*|[А-Яа-яA-Za-z].*(Админ|Агроном|Инженер|Оператор|Viewer|Admin)/ }).first();
+    if (await userMenuButton.isVisible().catch(() => false)) {
+      await userMenuButton.click();
     }
 
-    // Ищем кнопку logout (может быть в UserMenu или другом месте)
-    // Если есть явная кнопка logout с data-testid, используем её
-    // Иначе ищем по тексту или другим селекторам
-    const logoutButton = page.locator('text=Выйти').or(page.locator('text=Logout')).or(page.locator('[href*="logout"]'));
-    
-    if (await logoutButton.count() > 0) {
-      await logoutButton.first().click();
-      
-      // Ждем редиректа на login
-      await page.waitForURL(`${baseURL}/login`, { timeout: 10000 });
-      
-      // Проверяем, что мы на странице логина
-      await expect(page.locator(`[data-testid="${TEST_IDS.LOGIN_FORM}"]`)).toBeVisible({ timeout: 10000 });
-    }
+    const logoutButton = page.getByRole('button', { name: 'Выход' })
+      .or(page.getByRole('button', { name: 'Logout' }))
+      .or(page.locator('[href*="logout"]'));
+
+    await expect(logoutButton.first()).toBeVisible({ timeout: 10000 });
+    await logoutButton.first().click();
+
+    await page.waitForURL(`${baseURL}/login`, { timeout: 10000 });
+    await expect(page.locator(`[data-testid="${TEST_IDS.LOGIN_FORM}"]`)).toBeVisible({ timeout: 10000 });
   });
 });

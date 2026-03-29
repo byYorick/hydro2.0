@@ -29,12 +29,15 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Логирование всех отправленных команд
 - Валидация команд перед публикацией
 - Единая точка мониторинга команд
+- Transport/observer ingest для MQTT-событий нод без владения bind/rebind state machine
 
 **Архитектурный принцип:**
 ```
 Automation-Engine → REST (9300) → History-Logger → MQTT → Узлы
 Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Узлы
 ```
+
+`history-logger` не является owner-слоем для bind/rebind нод и не выполняет zone-level orchestration (`fill`, `drain`, `calibrate-flow`). Эти сценарии либо закрыты fail-closed, либо принадлежат canonical owner в Laravel/AE3.
 
 ---
 
@@ -81,6 +84,11 @@ Content-Type: application/json
 - backend публикует её через этот же `POST /commands` с `cmd="calibrate"`;
 - для pH используются `params = { "stage": 1|2, "known_ph": number }`;
 - для EC используются `params = { "stage": 1|2, "tds_value": integer }`.
+- pump calibration также не имеет поддерживаемого orchestration endpoint в `history-logger`;
+- canonical flow для pump calibration идёт через Laravel `POST /api/zones/{id}/calibrate-pump`,
+  где backend/automation владеет `run_token`, `zone_events` и `pump_calibrations`;
+- `history-logger` в этом сценарии принимает только transport publish на `POST /commands`;
+- legacy `POST /zones/{zone_id}/calibrate-pump` считается удалённым из контракта и возвращает `410 Gone`.
 
 **Response (200 OK):**
 ```json

@@ -4,7 +4,10 @@ namespace App\Services;
 
 use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Events\ZoneUpdated;
+use App\Models\Command;
+use App\Models\NodeChannel;
 use App\Models\Zone;
+use App\Models\ZoneEvent;
 use App\Services\ZoneLogicProfileCatalog;
 use App\Support\ZoneNodeChannelScope;
 use Illuminate\Support\Facades\DB;
@@ -386,226 +389,6 @@ class ZoneService
     }
 
     /**
-     * Режим наполнения (Fill Mode)
-     */
-    public function fill(Zone $zone, array $data): array
-    {
-        // Используем history-logger для всех операций с нодами
-        $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
-            throw new \DomainException('History Logger URL not configured');
-        }
-
-        $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
-        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-
-        $payload = [
-            'target_level' => $data['target_level'],
-        ];
-        if (isset($data['max_duration_sec'])) {
-            $payload['max_duration_sec'] = $data['max_duration_sec'];
-        }
-
-        try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->timeout(350) // Больше чем max_duration_sec (300) + запас
-                ->post("{$baseUrl}/zones/{$zone->id}/fill", $payload);
-
-            if (! $response->successful()) {
-                Log::error('ZoneService: Fill operation failed', [
-                    'zone_id' => $zone->id,
-                    'target_level' => $data['target_level'],
-                    'status' => $response->status(),
-                    'response' => substr($response->body(), 0, 500),
-                ]);
-                throw new \DomainException('Fill operation failed: '.substr($response->body(), 0, 200));
-            }
-
-            Log::info('Zone fill executed', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-            ]);
-
-            return $response->json('data', []);
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('ZoneService: Connection error during fill', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Unable to connect to fill service. Please try again later.');
-        } catch (\Illuminate\Http\Client\TimeoutException $e) {
-            Log::error('ZoneService: Timeout error during fill', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Fill operation timed out. Please try again later.');
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            Log::error('ZoneService: Request error during fill', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-                'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
-            ]);
-            throw new \DomainException('Fill operation failed. Please check the request parameters.');
-        }
-    }
-
-    /**
-     * Режим слива (Drain Mode)
-     */
-    public function drain(Zone $zone, array $data): array
-    {
-        // Используем history-logger для всех операций с нодами
-        $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
-            throw new \DomainException('History Logger URL not configured');
-        }
-
-        $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
-        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-
-        $payload = [
-            'target_level' => $data['target_level'],
-        ];
-        if (isset($data['max_duration_sec'])) {
-            $payload['max_duration_sec'] = $data['max_duration_sec'];
-        }
-
-        try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->timeout(350) // Больше чем max_duration_sec (300) + запас
-                ->post("{$baseUrl}/zones/{$zone->id}/drain", $payload);
-
-            if (! $response->successful()) {
-                Log::error('ZoneService: Drain operation failed', [
-                    'zone_id' => $zone->id,
-                    'target_level' => $data['target_level'],
-                    'status' => $response->status(),
-                    'response' => substr($response->body(), 0, 500),
-                ]);
-
-                // In testing environment, don't throw exception for service unavailability
-                // to allow testing of queueing behavior
-                if (app()->environment('testing')) {
-                    return [
-                        'success' => false,
-                        'error' => 'Service unavailable (simulated for testing)',
-                        'target_level' => $data['target_level'],
-                        'final_level' => $data['target_level'], // Assume operation "succeeded" for testing
-                        'elapsed_sec' => 0.0,
-                    ];
-                }
-
-                throw new \DomainException('Drain operation failed: '.substr($response->body(), 0, 200));
-            }
-
-            Log::info('Zone drain executed', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-            ]);
-
-            return $response->json('data', []);
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('ZoneService: Connection error during drain', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Unable to connect to drain service. Please try again later.');
-        } catch (\Illuminate\Http\Client\TimeoutException $e) {
-            Log::error('ZoneService: Timeout error during drain', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Drain operation timed out. Please try again later.');
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            Log::error('ZoneService: Request error during drain', [
-                'zone_id' => $zone->id,
-                'target_level' => $data['target_level'],
-                'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
-            ]);
-            throw new \DomainException('Drain operation failed. Please check the request parameters.');
-        }
-    }
-
-    /**
-     * Калибровка расхода воды
-     */
-    public function calibrateFlow(Zone $zone, array $data): array
-    {
-        // Используем history-logger для всех операций с нодами
-        $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
-            throw new \DomainException('History Logger URL not configured');
-        }
-
-        $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
-        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-
-        $payload = [
-            'node_id' => $data['node_id'],
-            'channel' => $data['channel'],
-        ];
-        if (isset($data['pump_duration_sec'])) {
-            $payload['pump_duration_sec'] = $data['pump_duration_sec'];
-        }
-
-        try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
-                ->post("{$baseUrl}/zones/{$zone->id}/calibrate-flow", $payload);
-
-            if (! $response->successful()) {
-                Log::error('ZoneService: Flow calibration failed', [
-                    'zone_id' => $zone->id,
-                    'node_id' => $data['node_id'] ?? null,
-                    'channel' => $data['channel'] ?? null,
-                    'status' => $response->status(),
-                    'response' => substr($response->body(), 0, 500),
-                ]);
-                throw new \DomainException('Flow calibration failed: '.substr($response->body(), 0, 200));
-            }
-
-            Log::info('Flow calibration executed', [
-                'zone_id' => $zone->id,
-                'node_id' => $data['node_id'],
-                'channel' => $data['channel'],
-            ]);
-
-            return $response->json('data', []);
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('ZoneService: Connection error during flow calibration', [
-                'zone_id' => $zone->id,
-                'node_id' => $data['node_id'] ?? null,
-                'channel' => $data['channel'] ?? null,
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Unable to connect to calibration service. Please try again later.');
-        } catch (\Illuminate\Http\Client\TimeoutException $e) {
-            Log::error('ZoneService: Timeout error during flow calibration', [
-                'zone_id' => $zone->id,
-                'node_id' => $data['node_id'] ?? null,
-                'channel' => $data['channel'] ?? null,
-                'error' => $e->getMessage(),
-            ]);
-            throw new \DomainException('Flow calibration timed out. Please try again later.');
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            Log::error('ZoneService: Request error during flow calibration', [
-                'zone_id' => $zone->id,
-                'node_id' => $data['node_id'] ?? null,
-                'channel' => $data['channel'] ?? null,
-                'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
-            ]);
-            throw new \DomainException('Flow calibration failed. Please check the request parameters.');
-        }
-    }
-
-    /**
      * Калибровка дозирующей помпы (ml/sec).
      */
     public function calibratePump(Zone $zone, array $data): array
@@ -621,83 +404,382 @@ class ZoneService
             );
         }
 
-        $baseUrl = config('services.history_logger.url');
-        if (! $baseUrl) {
-            throw new \DomainException('History Logger URL not configured');
+        /** @var NodeChannel|null $channel */
+        $channel = NodeChannel::query()
+            ->with('node')
+            ->find((int) $data['node_channel_id']);
+
+        if (! $channel || ! $channel->node) {
+            throw new \DomainException("node_channel_id={$data['node_channel_id']} not found");
         }
 
-        $token = config('services.history_logger.token') ?? config('services.python_bridge.token');
-        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+        $settings = app(AutomationConfigDocumentService::class)->getSystemPayloadByLegacyNamespace('pump_calibration', true);
+        $durationSec = (int) $data['duration_sec'];
+        $skipRun = (bool) ($data['skip_run'] ?? false);
+        $manualOverride = (bool) ($data['manual_override'] ?? false);
+        $runToken = ! empty($data['run_token']) ? (string) $data['run_token'] : (string) Str::uuid();
+        $normalizedComponent = $this->normalizePumpCalibrationComponent($data['component'] ?? null);
+        $actualMl = array_key_exists('actual_ml', $data) && $data['actual_ml'] !== null
+            ? (float) $data['actual_ml']
+            : null;
 
-        $payload = [
-            'node_channel_id' => $data['node_channel_id'],
-            'duration_sec' => $data['duration_sec'],
-            'skip_run' => (bool) ($data['skip_run'] ?? false),
-        ];
-        if (array_key_exists('actual_ml', $data) && $data['actual_ml'] !== null) {
-            $payload['actual_ml'] = $data['actual_ml'];
-        }
-        if (! empty($data['component'])) {
-            $payload['component'] = $data['component'];
-        }
-        if (array_key_exists('test_volume_l', $data) && $data['test_volume_l'] !== null) {
-            $payload['test_volume_l'] = $data['test_volume_l'];
-        }
-        if (array_key_exists('ec_before_ms', $data) && $data['ec_before_ms'] !== null) {
-            $payload['ec_before_ms'] = $data['ec_before_ms'];
-        }
-        if (array_key_exists('ec_after_ms', $data) && $data['ec_after_ms'] !== null) {
-            $payload['ec_after_ms'] = $data['ec_after_ms'];
-        }
-        if (array_key_exists('temperature_c', $data) && $data['temperature_c'] !== null) {
-            $payload['temperature_c'] = $data['temperature_c'];
-        }
-        if (! empty($data['run_token'])) {
-            $payload['run_token'] = $data['run_token'];
-        }
-        if (! empty($data['manual_override'])) {
-            $payload['manual_override'] = true;
-        }
+        $commandId = null;
+        $startedAt = now();
 
-        try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->timeout(180)
-                ->post("{$baseUrl}/zones/{$zone->id}/calibrate-pump", $payload);
-
-            if (! $response->successful()) {
-                Log::error('ZoneService: Pump calibration failed', [
-                    'zone_id' => $zone->id,
-                    'payload' => $payload,
-                    'status' => $response->status(),
-                    'response' => substr($response->body(), 0, 500),
-                ]);
-                throw new \DomainException('Pump calibration failed: '.substr($response->body(), 0, 200));
+        if (! $skipRun) {
+            if ((string) ($channel->node->status ?? '') !== 'online') {
+                throw new \DomainException("Node {$channel->node->uid} is offline; cannot run calibration");
             }
 
-            return $response->json('data', []);
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('ZoneService: Connection error during pump calibration', [
-                'zone_id' => $zone->id,
-                'payload' => $payload,
-                'error' => $e->getMessage(),
+            $commandId = app(PythonBridgeService::class)->sendZoneCommand($zone, [
+                'type' => 'run_pump',
+                'node_uid' => $channel->node->uid,
+                'channel' => $channel->channel,
+                'params' => [
+                    'duration_ms' => $durationSec * 1000,
+                ],
             ]);
-            throw new \DomainException('Unable to connect to pump calibration service. Please try again later.');
-        } catch (\Illuminate\Http\Client\TimeoutException $e) {
-            Log::error('ZoneService: Timeout during pump calibration', [
+
+            ZoneEvent::create([
                 'zone_id' => $zone->id,
-                'payload' => $payload,
-                'error' => $e->getMessage(),
+                'type' => 'PUMP_CALIBRATION_STARTED',
+                'payload_json' => [
+                    'node_channel_id' => $channel->id,
+                    'node_uid' => $channel->node->uid,
+                    'channel' => $channel->channel,
+                    'duration_sec' => $durationSec,
+                    'component' => $normalizedComponent,
+                    'run_token' => $runToken,
+                    'command_id' => $commandId,
+                    'start_time' => $startedAt->toIso8601String(),
+                ],
             ]);
-            throw new \DomainException('Pump calibration timed out. Please try again later.');
-        } catch (\Illuminate\Http\Client\RequestException $e) {
-            Log::error('ZoneService: Request error during pump calibration', [
+
+            if ($actualMl === null) {
+                return [
+                    'success' => true,
+                    'status' => 'awaiting_actual_ml',
+                    'node_channel_id' => $channel->id,
+                    'node_uid' => $channel->node->uid,
+                    'channel' => $channel->channel,
+                    'duration_sec' => $durationSec,
+                    'component' => $normalizedComponent,
+                    'run_token' => $runToken,
+                    'started_at' => $startedAt->toIso8601String(),
+                ];
+            }
+        } elseif ($actualMl === null) {
+            ZoneEvent::create([
                 'zone_id' => $zone->id,
-                'payload' => $payload,
-                'error' => $e->getMessage(),
-                'status' => $e->response?->status(),
+                'type' => 'PUMP_CALIBRATION_RUN_SKIPPED',
+                'payload_json' => [
+                    'node_channel_id' => $channel->id,
+                    'node_uid' => $channel->node->uid,
+                    'channel' => $channel->channel,
+                    'duration_sec' => $durationSec,
+                    'component' => $normalizedComponent,
+                    'run_token' => $runToken,
+                ],
             ]);
-            throw new \DomainException('Pump calibration failed. Please check the request parameters.');
+
+            return [
+                'success' => true,
+                'status' => 'awaiting_actual_ml',
+                'node_channel_id' => $channel->id,
+                'node_uid' => $channel->node->uid,
+                'channel' => $channel->channel,
+                'duration_sec' => $durationSec,
+                'component' => $normalizedComponent,
+                'run_token' => $runToken,
+                'started_at' => $startedAt->toIso8601String(),
+            ];
         }
+
+        if ($actualMl <= 0) {
+            throw new \DomainException('actual_ml must be greater than 0');
+        }
+
+        if ($skipRun && ! $manualOverride) {
+            if (empty($data['run_token'])) {
+                throw new \DomainException('run_token is required when saving calibration after a physical run');
+            }
+            $matchingRun = $this->findMatchingPumpCalibrationRun($zone, $runToken, $channel->id, $durationSec, $normalizedComponent);
+            if (! $matchingRun) {
+                throw new \DomainException('run_token does not match an active pump calibration run');
+            }
+            if ($this->hasCompletedPumpCalibrationRun($zone, $runToken)) {
+                throw new \DomainException('run_token has already been consumed by a completed calibration save');
+            }
+            $this->assertPumpCalibrationRunCompleted($zone, $matchingRun->command_id ?? null);
+        }
+
+        $mlPerSec = round($actualMl / (float) $durationSec, 6);
+        if ($mlPerSec <= 0) {
+            throw new \DomainException('Calculated ml_per_sec must be greater than 0');
+        }
+
+        $mlPerSecMin = (float) ($settings['ml_per_sec_min'] ?? 0.01);
+        $mlPerSecMax = (float) ($settings['ml_per_sec_max'] ?? 20.0);
+        if ($mlPerSec < $mlPerSecMin || $mlPerSec > $mlPerSecMax) {
+            throw new \DomainException("Calculated ml_per_sec must be within [{$mlPerSecMin}, {$mlPerSecMax}]");
+        }
+
+        $testVolumeL = array_key_exists('test_volume_l', $data) && $data['test_volume_l'] !== null ? (float) $data['test_volume_l'] : null;
+        $ecBeforeMs = array_key_exists('ec_before_ms', $data) && $data['ec_before_ms'] !== null ? (float) $data['ec_before_ms'] : null;
+        $ecAfterMs = array_key_exists('ec_after_ms', $data) && $data['ec_after_ms'] !== null ? (float) $data['ec_after_ms'] : null;
+        $temperatureC = array_key_exists('temperature_c', $data) && $data['temperature_c'] !== null ? (float) $data['temperature_c'] : null;
+
+        $kMsPerMlL = null;
+        $deltaEcMs = null;
+        if ($testVolumeL !== null || $ecBeforeMs !== null || $ecAfterMs !== null) {
+            if ($testVolumeL === null || $ecBeforeMs === null || $ecAfterMs === null) {
+                throw new \DomainException('test_volume_l, ec_before_ms and ec_after_ms must be provided together');
+            }
+            if ($testVolumeL <= 0) {
+                throw new \DomainException('test_volume_l must be greater than 0');
+            }
+            if ($ecAfterMs <= $ecBeforeMs) {
+                throw new \DomainException('ec_after_ms must be greater than ec_before_ms');
+            }
+
+            $deltaEcMs = round($ecAfterMs - $ecBeforeMs, 6);
+            $mlPerL = $actualMl / $testVolumeL;
+            if ($mlPerL <= 0) {
+                throw new \DomainException('Calculated ml_per_l must be greater than 0');
+            }
+
+            $kMsPerMlL = round($deltaEcMs / $mlPerL, 6);
+            if ($kMsPerMlL <= 0) {
+                throw new \DomainException('Calculated k_ms_per_ml_l must be greater than 0');
+            }
+        }
+
+        $finishedAt = now();
+        $qualityScore = $kMsPerMlL !== null
+            ? (float) ($settings['quality_score_with_k'] ?? 0.8)
+            : (float) ($settings['quality_score_basic'] ?? 0.5);
+
+        $calibrationPayload = [
+            'ml_per_sec' => $mlPerSec,
+            'duration_sec' => $durationSec,
+            'actual_ml' => $actualMl,
+            'component' => $normalizedComponent,
+            'k_ms_per_ml_l' => $kMsPerMlL,
+            'test_volume_l' => $testVolumeL,
+            'ec_before_ms' => $ecBeforeMs,
+            'ec_after_ms' => $ecAfterMs,
+            'delta_ec_ms' => $deltaEcMs,
+            'temperature_c' => $temperatureC,
+            'calibrated_at' => $finishedAt->toIso8601String(),
+        ];
+
+        DB::transaction(function () use (
+            $channel,
+            $zone,
+            $normalizedComponent,
+            $mlPerSec,
+            $kMsPerMlL,
+            $durationSec,
+            $actualMl,
+            $testVolumeL,
+            $ecBeforeMs,
+            $ecAfterMs,
+            $deltaEcMs,
+            $temperatureC,
+            $qualityScore,
+            $runToken,
+            $manualOverride,
+            $finishedAt,
+            $calibrationPayload
+        ): void {
+            DB::table('pump_calibrations')
+                ->where('node_channel_id', $channel->id)
+                ->where('is_active', true)
+                ->update([
+                    'is_active' => false,
+                    'valid_to' => $finishedAt,
+                    'updated_at' => $finishedAt,
+                ]);
+
+            DB::table('pump_calibrations')->insert([
+                'node_channel_id' => $channel->id,
+                'component' => $normalizedComponent,
+                'ml_per_sec' => $mlPerSec,
+                'k_ms_per_ml_l' => $kMsPerMlL,
+                'duration_sec' => $durationSec,
+                'actual_ml' => $actualMl,
+                'test_volume_l' => $testVolumeL,
+                'ec_before_ms' => $ecBeforeMs,
+                'ec_after_ms' => $ecAfterMs,
+                'delta_ec_ms' => $deltaEcMs,
+                'temperature_c' => $temperatureC,
+                'source' => 'manual_calibration',
+                'quality_score' => $qualityScore,
+                'sample_count' => 1,
+                'valid_from' => $finishedAt,
+                'is_active' => true,
+                'meta' => json_encode([
+                    'origin' => 'laravel_zone_calibrate_pump',
+                    'compat_write_legacy_node_channel_config' => true,
+                    'component' => $normalizedComponent,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'created_at' => $finishedAt,
+                'updated_at' => $finishedAt,
+            ]);
+
+            $channel->config = $this->mergeNodeChannelConfig($channel->config, [
+                'pump_calibration' => $calibrationPayload,
+            ]);
+            $channel->save();
+
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'PUMP_CALIBRATION_FINISHED',
+                'payload_json' => [
+                    'node_channel_id' => $channel->id,
+                    'node_uid' => $channel->node->uid,
+                    'channel' => $channel->channel,
+                    'component' => $normalizedComponent,
+                    'duration_sec' => $durationSec,
+                    'actual_ml' => $actualMl,
+                    'ml_per_sec' => $mlPerSec,
+                    'k_ms_per_ml_l' => $kMsPerMlL,
+                    'test_volume_l' => $testVolumeL,
+                    'ec_before_ms' => $ecBeforeMs,
+                    'ec_after_ms' => $ecAfterMs,
+                    'delta_ec_ms' => $deltaEcMs,
+                    'temperature_c' => $temperatureC,
+                    'run_token' => $runToken,
+                    'manual_override' => $manualOverride,
+                    'finished_at' => $finishedAt->toIso8601String(),
+                ],
+            ]);
+        });
+
+        return [
+            'success' => true,
+            'status' => 'calibrated',
+            'node_channel_id' => $channel->id,
+            'node_uid' => $channel->node->uid,
+            'channel' => $channel->channel,
+            'component' => $normalizedComponent,
+            'duration_sec' => $durationSec,
+            'actual_ml' => $actualMl,
+            'ml_per_sec' => $mlPerSec,
+            'k_ms_per_ml_l' => $kMsPerMlL,
+            'test_volume_l' => $testVolumeL,
+            'ec_before_ms' => $ecBeforeMs,
+            'ec_after_ms' => $ecAfterMs,
+            'delta_ec_ms' => $deltaEcMs,
+            'temperature_c' => $temperatureC,
+            'run_token' => $runToken,
+            'calibrated_at' => $finishedAt->toIso8601String(),
+        ];
+    }
+
+    private function normalizePumpCalibrationComponent(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = str_replace(['-', ' '], '_', strtolower(trim((string) $value)));
+        $aliases = [
+            'phup' => 'ph_up',
+            'phdown' => 'ph_down',
+            'ph_base' => 'ph_up',
+            'ph_acid' => 'ph_down',
+            'base' => 'ph_up',
+            'acid' => 'ph_down',
+        ];
+
+        return $aliases[$normalized] ?? $normalized;
+    }
+
+    private function findMatchingPumpCalibrationRun(
+        Zone $zone,
+        string $runToken,
+        int $nodeChannelId,
+        int $durationSec,
+        ?string $component
+    ): ?object {
+        return DB::table('zone_events')
+            ->selectRaw("payload_json->>'command_id' as command_id")
+            ->where('zone_id', $zone->id)
+            ->where('type', 'PUMP_CALIBRATION_STARTED')
+            ->whereRaw("payload_json->>'run_token' = ?", [$runToken])
+            ->whereRaw("(payload_json->>'node_channel_id')::int = ?", [$nodeChannelId])
+            ->whereRaw("payload_json->>'duration_sec' = ?", [(string) $durationSec])
+            ->whereRaw("payload_json->>'component' IS NOT DISTINCT FROM ?", [$component])
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function hasCompletedPumpCalibrationRun(Zone $zone, string $runToken): bool
+    {
+        return DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->where('type', 'PUMP_CALIBRATION_FINISHED')
+            ->whereRaw("payload_json->>'run_token' = ?", [$runToken])
+            ->exists();
+    }
+
+    private function assertPumpCalibrationRunCompleted(Zone $zone, ?string $commandId): void
+    {
+        if (! is_string($commandId) || trim($commandId) === '') {
+            throw new \DomainException('run_token does not reference a published pump calibration command');
+        }
+
+        $command = Command::query()
+            ->where('zone_id', $zone->id)
+            ->where('cmd_id', $commandId)
+            ->first();
+
+        if (! $command) {
+            throw new \DomainException('pump calibration run command is missing; cannot verify terminal status');
+        }
+
+        if (! $command->isFinal()) {
+            throw new \DomainException(
+                "pump calibration run is still {$command->status}; wait for terminal DONE before saving calibration"
+            );
+        }
+
+        if ($command->status !== Command::STATUS_DONE) {
+            throw new \DomainException(
+                "pump calibration run ended with status {$command->status}; cannot save calibration"
+            );
+        }
+    }
+
+    private function mergeNodeChannelConfig(mixed $current, array $incoming): array
+    {
+        $currentConfig = is_array($current) ? $current : [];
+
+        return $this->mergeAssocConfig($currentConfig, $incoming);
+    }
+
+    private function mergeAssocConfig(array $current, array $incoming): array
+    {
+        $merged = $current;
+
+        foreach ($incoming as $key => $value) {
+            $currentValue = $merged[$key] ?? null;
+            if (
+                is_string($key)
+                && is_array($value)
+                && ! array_is_list($value)
+                && is_array($currentValue)
+                && ! array_is_list($currentValue)
+            ) {
+                $merged[$key] = $this->mergeAssocConfig($currentValue, $value);
+                continue;
+            }
+
+            $merged[$key] = $value;
+        }
+
+        return $merged;
     }
 
     /**

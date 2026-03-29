@@ -15,7 +15,7 @@ from ae3lite.application.use_cases.execute_task import (
     TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
 )
 from ae3lite.domain.entities.automation_task import AutomationTask
-from ae3lite.domain.errors import PlannerConfigurationError, SnapshotBuildError, TaskTerminalStateReached
+from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError, SnapshotBuildError, TaskTerminalStateReached
 
 
 NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
@@ -105,12 +105,18 @@ class _SnapshotReadModelOk:
 
 class _SnapshotReadModelFails:
     async def load(self, *, zone_id):
-        raise SnapshotBuildError("snapshot_missing")
+        raise SnapshotBuildError(
+            "snapshot_missing",
+            code=ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED,
+        )
 
 
 class _SnapshotReadModelNoOnlineActuators:
     async def load(self, *, zone_id):
-        raise SnapshotBuildError(f"Zone {zone_id} has no online actuator channels")
+        raise SnapshotBuildError(
+            f"Zone {zone_id} has no online actuator channels",
+            code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
+        )
 
 
 class _SnapshotWithCorrectionConfig:
@@ -280,7 +286,7 @@ class _AlertRepositoryRecorder:
         self.calls: list[dict[str, object]] = []
         self._should_fail = should_fail
 
-    async def create_or_update_active(self, **kwargs):
+    async def raise_active(self, **kwargs):
         self.calls.append(kwargs)
         if self._should_fail:
             raise RuntimeError("alert write failed")
@@ -462,6 +468,7 @@ async def test_execute_task_transient_snapshot_gap_requeues_and_emits_observabil
     assert task_repo.update_stage_calls[0]["due_at"] == NOW + timedelta(seconds=SNAPSHOT_TRANSIENT_RETRY_SEC)
     assert [event_type for _, event_type, _ in recorded_events] == ["AE_SNAPSHOT_RETRY_SCHEDULED"]
     payload = recorded_events[0][2]
+    assert payload["snapshot_error_code"] == ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS
     assert payload["snapshot_reason"] == "no_online_actuator_channels"
     assert payload["retry_after_sec"] == SNAPSHOT_TRANSIENT_RETRY_SEC
     assert len(recorded_infra_alerts) == 1
@@ -1144,7 +1151,7 @@ async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle() -> N
 
     await use_case.run(task=task, now=NOW)
 
-    assert finalize.calls[0]["error_code"] == "ae3_task_execution_failed"
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED
     assert finalize.calls[0]["error_message"] == "snapshot_missing"
     assert workflow_repo.calls == [
         {

@@ -13,70 +13,16 @@ use Illuminate\Support\Facades\Log;
 class ZoneOperationsService
 {
     public function __construct(
-        private ZoneReadinessService $readinessService
+        private ZoneReadinessService $readinessService,
+        private ZoneService $zoneService,
     ) {}
-
-    /**
-     * Выполнить операцию fill зоны
-     */
-    public function fill(Zone $zone, array $data): string
-    {
-        $this->validateZoneOperation($zone, 'fill');
-
-        $jobId = \Illuminate\Support\Str::uuid()->toString();
-        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'fill', $data, $jobId);
-
-        return $jobId;
-    }
-
-    /**
-     * Выполнить операцию drain зоны
-     */
-    public function drain(Zone $zone, array $data): string
-    {
-        $this->validateZoneOperation($zone, 'drain');
-
-        $jobId = \Illuminate\Support\Str::uuid()->toString();
-        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'drain', $data, $jobId);
-
-        return $jobId;
-    }
-
-    /**
-     * Выполнить калибровку потока
-     */
-    public function calibrateFlow(Zone $zone, array $data): string
-    {
-        $this->validateZoneOperation($zone, 'calibrate_flow');
-
-        $jobId = \Illuminate\Support\Str::uuid()->toString();
-        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'calibrate_flow', $data, $jobId);
-
-        return $jobId;
-    }
 
     /**
      * Выполнить калибровку дозирующей помпы.
      */
     public function calibratePump(Zone $zone, array $data): array
     {
-        // Для pump calibration не блокируемся по zone.status.
-        // Реальный физический прогон всё равно валидируется ниже по pipeline:
-        // history-logger/common.water_flow проверяет принадлежность канала зоне и online-статус конкретной ноды.
-
-        $jobId = \Illuminate\Support\Str::uuid()->toString();
-        // Выполняем pump calibration синхронно, чтобы команда на ноду не зависела от наличия queue worker.
-        // History-logger для run-step возвращает после отправки команды и не ждёт завершения прогона.
-        \App\Jobs\ZoneOperationJob::dispatchSync($zone->id, 'calibrate_pump', $data, $jobId);
-
-        $jobState = \Illuminate\Support\Facades\Cache::get("zone_operation:{$jobId}");
-
-        return [
-            'job_id' => $jobId,
-            'result' => is_array($jobState) && is_array($jobState['result'] ?? null)
-                ? $jobState['result']
-                : [],
-        ];
+        return $this->zoneService->calibratePump($zone, $data);
     }
 
     /**

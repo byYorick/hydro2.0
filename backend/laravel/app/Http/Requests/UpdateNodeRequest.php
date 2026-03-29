@@ -23,7 +23,9 @@ class UpdateNodeRequest extends FormRequest
         
         return [
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
-            'pending_zone_id' => ['nullable', 'integer', 'exists:zones,id'],
+            // pending_zone_id — внутренний state-machine field bind/rebind.
+            // Он не должен приходить из публичного user API.
+            'pending_zone_id' => ['prohibited'],
             'uid' => ['sometimes', 'string', 'max:64', 'unique:nodes,uid,'.$nodeId],
             'name' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:64'],

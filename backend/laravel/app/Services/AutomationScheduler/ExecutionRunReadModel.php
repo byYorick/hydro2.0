@@ -11,6 +11,7 @@ class ExecutionRunReadModel
 {
     public function __construct(
         private readonly ExecutionTimelineReader $timelineReader,
+        private readonly \App\Services\ErrorCodeCatalogService $errorCodeCatalog,
     ) {}
 
     /**
@@ -263,6 +264,10 @@ class ExecutionRunReadModel
                 'completed_at' => $this->toIso8601($row->completed_at ?? null),
                 'error_code' => $this->resolveString($row->error_code ?? null),
                 'error_message' => $this->resolveString($row->error_message ?? null),
+                'human_error_message' => $this->errorCodeCatalog->present(
+                    $this->resolveString($row->error_code ?? null),
+                    $this->resolveString($row->error_message ?? null),
+                )['message'],
                 'is_active' => in_array((string) ($row->runtime_status ?? ''), ['pending', 'claimed', 'running', 'waiting_command'], true),
             ];
 
@@ -303,7 +308,7 @@ class ExecutionRunReadModel
             $lifecycle[] = [
                 'status' => (string) $summary['status'],
                 'at' => $summary['completed_at'] ?? $summary['updated_at'] ?? null,
-                'error' => $summary['error_message'] ?? null,
+                'error' => $summary['human_error_message'] ?? $summary['error_message'] ?? null,
                 'source' => 'ae_tasks',
             ];
         }
@@ -349,6 +354,9 @@ class ExecutionRunReadModel
 
         $intentPayload = $this->normalizeJson($row->intent_payload ?? null);
 
+        $errorCode = $this->resolveString($row->error_code ?? null);
+        $errorMessage = $this->resolveString($row->error_message ?? null);
+
         return [
             'source' => 'ae_tasks',
             'task_id' => (string) ($row->id ?? ''),
@@ -360,8 +368,9 @@ class ExecutionRunReadModel
                 runtimeTaskType: (string) ($row->runtime_task_type ?? ''),
             ),
             'status' => $this->normalizeExecutionStatus((string) ($row->status ?? '')),
-            'error_code' => $this->resolveString($row->error_code ?? null),
-            'error_message' => $this->resolveString($row->error_message ?? null),
+            'error_code' => $errorCode,
+            'error_message' => $errorMessage,
+            'human_error_message' => $this->errorCodeCatalog->present($errorCode, $errorMessage)['message'],
             'at' => $this->toIso8601($row->updated_at ?? null),
         ];
     }
@@ -402,6 +411,9 @@ class ExecutionRunReadModel
 
         $intentPayload = $this->normalizeJson($row->payload ?? null);
 
+        $errorCode = $this->resolveString($row->error_code ?? null);
+        $errorMessage = $this->resolveString($row->error_message ?? null);
+
         return [
             'source' => 'zone_automation_intents',
             'task_id' => null,
@@ -413,8 +425,9 @@ class ExecutionRunReadModel
                 runtimeTaskType: '',
             ),
             'status' => $this->normalizeExecutionStatus((string) ($row->status ?? '')),
-            'error_code' => $this->resolveString($row->error_code ?? null),
-            'error_message' => $this->resolveString($row->error_message ?? null),
+            'error_code' => $errorCode,
+            'error_message' => $errorMessage,
+            'human_error_message' => $this->errorCodeCatalog->present($errorCode, $errorMessage)['message'],
             'at' => $this->toIso8601($row->updated_at ?? null),
         ];
     }

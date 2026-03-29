@@ -8,6 +8,7 @@ import { useAlertsStore } from '@/stores/alerts'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity, type AlertCodeMeta } from '@/constants/alertErrorMap'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import type { Alert } from '@/types/Alert'
 
@@ -255,13 +256,19 @@ export function useAlertsPage() {
 
   const getAlertMessage = (alert?: AlertRecord | null): string => {
     if (!alert) return ''
+    const details = alert.details as Record<string, unknown> | null | undefined
     const messageFromPayload = String(
       alert.message
-      || (alert.details as Record<string, unknown>)?.message
-      || (alert.details as Record<string, unknown>)?.reason
-      || (alert.details as Record<string, unknown>)?.error_message
+      || details?.message
+      || details?.reason
+      || details?.error_message
       || ''
     ).trim()
+    const localized = resolveHumanErrorMessage({
+      code: String(details?.error_code || alert.code || '').trim() || null,
+      message: messageFromPayload || null,
+    })
+    if (localized) return localized
     if (messageFromPayload) return messageFromPayload
     return getAlertMeta(alert).description
   }

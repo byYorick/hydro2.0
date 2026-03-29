@@ -81,11 +81,19 @@ class PythonBridgeService
         }
 
         // Валидируем, что нода существует и привязана к зоне
-        $node = DeviceNode::where('uid', $nodeUid)->where('zone_id', $zone->id)->first();
+        $node = DeviceNode::where('uid', $nodeUid)
+            ->where(function ($query) use ($zone) {
+                $query->where('zone_id', $zone->id)
+                    ->orWhere(function ($pendingQuery) use ($zone) {
+                        $pendingQuery->whereNull('zone_id')
+                            ->where('pending_zone_id', $zone->id);
+                    });
+            })
+            ->first();
         if (! $node) {
-            $this->markCommandFailed($command, "Node {$nodeUid} not found or not assigned to zone {$zone->id}");
+            $this->markCommandFailed($command, "Node {$nodeUid} not found or not assigned/pending to zone {$zone->id}");
             throw new \InvalidArgumentException(
-                "Node {$nodeUid} not found or not assigned to zone {$zone->id}"
+                "Node {$nodeUid} not found or not assigned/pending to zone {$zone->id}"
             );
         }
 

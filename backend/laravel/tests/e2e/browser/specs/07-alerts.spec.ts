@@ -135,7 +135,8 @@ test.describe('Alerts', () => {
   });
 
   test('should resolve alert', async ({ page }) => {
-    await page.goto('/alerts');
+    await page.goto('/alerts', { waitUntil: 'networkidle' });
+    await page.waitForSelector('h1, table, [data-testid^="alert-row-"]', { timeout: 15000 });
 
     // Ищем первую строку алерта
     const alertRows = page.locator(`[data-testid^="${TEST_IDS.ALERT_ROW(0).replace('0', '')}"]`);
@@ -153,18 +154,15 @@ test.describe('Alerts', () => {
           
           if (await resolveBtn.count() > 0 && await resolveBtn.isEnabled()) {
             await resolveBtn.click();
-            
-            // Ждем обновления
-            await page.waitForTimeout(2000);
-            
-            // Проверяем, что кнопка стала неактивной или исчезла
-            const isDisabled = await resolveBtn.isDisabled().catch(() => false);
-            const isVisible = await resolveBtn.isVisible().catch(() => false);
-            if (!isDisabled && isVisible) {
-              // Если кнопка все еще видна и активна, это может быть нормально для некоторых сценариев
-              // Просто проверяем, что страница обновилась
-              await page.waitForTimeout(1000);
-            }
+
+            const confirmModal = page.getByText('Вы уверены, что алерт будет помечен как решённый?');
+            await expect(confirmModal).toBeVisible({ timeout: 10000 });
+
+            const confirmDialog = page.getByText('Подтвердить алерт').locator('..');
+            await confirmDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+
+            await expect(confirmModal).not.toBeVisible({ timeout: 15000 });
+            await expect(page.locator(`[data-testid="${TEST_IDS.ALERT_ROW(id)}"]`)).toHaveCount(0, { timeout: 15000 });
           }
         }
       }

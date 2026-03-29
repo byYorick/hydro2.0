@@ -1,3 +1,5 @@
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object') {
     return value as Record<string, unknown>
@@ -77,13 +79,21 @@ export function extractSetupWizardErrorMessage(error: unknown, fallback: string)
   }
 
   const responseMessage = data?.message
-  if (typeof responseMessage === 'string' && responseMessage.trim().length > 0) {
-    return responseMessage
+  const responseCode = typeof data?.code === 'string' ? data.code : null
+  const localizedResponseMessage = resolveHumanErrorMessage({
+    code: responseCode,
+    message: typeof responseMessage === 'string' ? responseMessage : null,
+  })
+  if (localizedResponseMessage) {
+    return localizedResponseMessage
   }
 
   const directMessage = errorRecord?.message
-  if (typeof directMessage === 'string' && directMessage.trim().length > 0) {
-    return directMessage
+  const localizedDirectMessage = resolveHumanErrorMessage({
+    message: typeof directMessage === 'string' ? directMessage : null,
+  })
+  if (localizedDirectMessage) {
+    return localizedDirectMessage
   }
 
   return fallback

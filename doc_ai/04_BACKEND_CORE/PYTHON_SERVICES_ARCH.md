@@ -117,6 +117,18 @@ Payload-contract:
 Источник истины:
 - таблицы PostgreSQL; не runtime HTTP запросы в Laravel API.
 
+### 3.3.1 Config-report observation
+
+Канонический flow для `config_report`:
+
+`ESP32 -> MQTT -> history-logger -> Laravel /api/python/nodes/config-report-observed -> NodeService/NodeLifecycleService`
+
+Инварианты:
+- `history-logger` только сохраняет `config_report`, синхронизирует channel snapshot и сообщает Laravel наблюдаемый факт;
+- `history-logger` не выполняет `service-update` и не делает lifecycle transition ноды напрямую;
+- решение о финализации `pending_zone_id -> zone_id` принимает только Laravel;
+- финализация bind/rebind разрешена только после namespace validation на стороне Laravel.
+
 ### 3.4 Runtime hardening
 
 Для AE3-совместимого runtime path действуют дополнительные правила:

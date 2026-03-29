@@ -38,7 +38,7 @@ class ZonePumpCalibrationsController extends Controller
                 )'
             );
 
-        $roleOrderSql = "CASE cb.role
+        $roleOrderSql = "CASE zb.role
             WHEN 'ph_acid_pump' THEN 1
             WHEN 'ph_base_pump' THEN 2
             WHEN 'ec_npk_pump' THEN 3
@@ -48,20 +48,34 @@ class ZonePumpCalibrationsController extends Controller
             ELSE 99
         END";
 
-        $rows = DB::table('infrastructure_instances as ii')
-            ->join('channel_bindings as cb', 'cb.infrastructure_instance_id', '=', 'ii.id')
-            ->join('node_channels as nc', 'nc.id', '=', 'cb.node_channel_id')
-            ->join('nodes as n', 'n.id', '=', 'nc.node_id')
-            ->leftJoinSub($latestCalibrations, 'pc', function ($join): void {
-                $join->on('pc.node_channel_id', '=', 'nc.id');
-            })
+        $zoneBindings = DB::table('channel_bindings as cb')
+            ->join('infrastructure_instances as ii', 'ii.id', '=', 'cb.infrastructure_instance_id')
             ->where('ii.owner_type', 'zone')
             ->where('ii.owner_id', $zone->id)
             ->where('cb.direction', 'actuator')
-            ->whereIn('cb.role', PumpCalibrationCatalog::dosingRoles())
+            ->selectRaw('cb.node_channel_id, MIN(cb.role) as role')
+            ->groupBy('cb.node_channel_id');
+
+        $rows = DB::table('node_channels as nc')
+            ->join('nodes as n', 'n.id', '=', 'nc.node_id')
+            ->leftJoinSub($zoneBindings, 'zb', function ($join): void {
+                $join->on('zb.node_channel_id', '=', 'nc.id');
+            })
+            ->leftJoinSub($latestCalibrations, 'pc', function ($join): void {
+                $join->on('pc.node_channel_id', '=', 'nc.id');
+            })
+            ->where(function ($query) use ($zone): void {
+                $query->where('n.zone_id', $zone->id)
+                    ->orWhere('n.pending_zone_id', $zone->id)
+                    ->orWhereNotNull('zb.node_channel_id');
+            })
+            ->where(function ($query): void {
+                $query->whereIn('zb.role', PumpCalibrationCatalog::dosingRoles())
+                    ->orWhereNotNull('pc.node_channel_id');
+            })
             ->selectRaw(
                 "nc.id AS node_channel_id,
-                 cb.role,
+                 zb.role,
                  n.uid AS node_uid,
                  nc.channel,
                  COALESCE(nc.config->>'label', nc.channel) AS channel_label,
@@ -81,10 +95,14 @@ class ZonePumpCalibrationsController extends Controller
             ->get();
 
         $result = $rows->map(function ($row) {
+            $resolvedRole = $row->role
+                ?: PumpCalibrationCatalog::roleForComponent($row->calibration_component)
+                ?: 'unbound_pump';
+
             return [
                 'node_channel_id' => (int) $row->node_channel_id,
-                'role' => (string) $row->role,
-                'component' => (string) ($row->calibration_component ?: PumpCalibrationCatalog::componentForRole($row->role) ?: 'unknown'),
+                'role' => (string) $resolvedRole,
+                'component' => (string) ($row->calibration_component ?: PumpCalibrationCatalog::componentForRole($resolvedRole) ?: 'unknown'),
                 'channel_label' => (string) ($row->channel_label ?? $row->channel),
                 'node_uid' => (string) $row->node_uid,
                 'channel' => (string) $row->channel,
@@ -153,7 +171,7 @@ class ZonePumpCalibrationsController extends Controller
                 'component' => $component,
                 'ml_per_sec' => (float) $data['ml_per_sec'],
                 'k_ms_per_ml_l' => array_key_exists('k_ms_per_ml_l', $data) ? $data['k_ms_per_ml_l'] : null,
-                'source' => 'manual',
+                'source' => 'manual_calibration',
                 'valid_from' => $now,
                 'is_active' => true,
                 'created_at' => $now,
@@ -162,13 +180,13 @@ class ZonePumpCalibrationsController extends Controller
 
             ZoneEvent::create([
                 'zone_id' => $zone->id,
-                'type' => 'PUMP_CALIBRATION_SAVED',
+                'type' => 'PUMP_CALIBRATION_FINISHED',
                 'payload_json' => [
                     'node_channel_id' => $channelId,
                     'role' => $role,
                     'component' => $component,
                     'ml_per_sec' => (float) $data['ml_per_sec'],
-                    'source' => 'manual',
+                    'source' => 'manual_calibration',
                 ],
             ]);
         });

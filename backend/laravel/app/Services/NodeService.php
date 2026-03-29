@@ -76,16 +76,16 @@ class NodeService
             $oldZoneId = $node->zone_id;
             
             /**
-             * ВАЖНАЯ ЛОГИКА: Разделяем привязку от UI и обновление от History Logger
-             * 
+             * ВАЖНАЯ ЛОГИКА: Разделяем UI bind/rebind и финализацию bind в Laravel.
+             *
              * Сценарий 1: Пользователь привязывает/перепривязывает узел к зоне (UI)
              *   - Приходит: {"zone_id": 6} (БЕЗ pending_zone_id в запросе)
              *   - Устанавливаем: pending_zone_id = 6, zone_id = null
              *   - Узел публикует config_report после подключения/инициализации
-             *   - History Logger делает финализацию
-             * 
-             * Сценарий 2: History Logger завершает привязку после config_report
-             *   - Приходит: {"zone_id": 6, "pending_zone_id": null} (С pending_zone_id в запросе)
+             *   - Laravel завершает bind после ingest-сигнала о наблюдённом config_report
+             *
+             * Сценарий 2: Laravel завершает bind после config_report
+             *   - Приходит: {"zone_id": 6, "pending_zone_id": null} (с pending_zone_id в запросе)
              *   - Устанавливаем: zone_id = 6, pending_zone_id = null
              *   - Конфиг НЕ публикуется (узел уже имеет конфиг)
              */
@@ -95,14 +95,13 @@ class NodeService
             $newZoneId = $hasZoneIdInRequest ? $data['zone_id'] : null;
             $newPendingZoneId = $hasPendingZoneIdInRequest ? $data['pending_zone_id'] : null;
             $oldPendingZoneId = $node->pending_zone_id;
+            $shouldRepublishConfig = false;
             
             /**
-             * КРИТИЧНО: Если в запросе есть zone_id, но НЕТ pending_zone_id - это ВСЕГДА запрос от UI
-             * Не важно, первая это привязка или перепривязка - всегда через pending_zone_id
-             * Если в запросе есть И zone_id И pending_zone_id - это завершение привязки от History Logger
+             * КРИТИЧНО: Если в запросе есть zone_id, но НЕТ pending_zone_id - это ВСЕГДА запрос от UI.
+             * Не важно, первая это привязка или перепривязка - всегда через pending_zone_id.
+             * Если в запросе есть И zone_id И pending_zone_id - это завершение привязки внутри Laravel.
              */
-            // Не важно, первая это привязка или переприв язка - всегда через pending_zone_id
-            // Если в запросе есть И zone_id И pending_zone_id - это завершение привязки от History Logger
             $isAssignmentFromUI = $hasZoneIdInRequest && !$hasPendingZoneIdInRequest && $newZoneId;
             $isBindingCompletion = $hasZoneIdInRequest && $hasPendingZoneIdInRequest && $newZoneId && $newPendingZoneId === null;
             
@@ -138,38 +137,91 @@ class NodeService
                     ]);
                     throw new \DomainException("Cannot assign node to zone in current state: {$currentState->value}");
                 }
-                
-                /**
-                 * КРИТИЧНО: ВСЕГДА сохраняем в pending_zone_id для получения подтверждения от ноды
-                 * zone_id будет обновлен только после config_report от ноды
-                 */
-                $data['pending_zone_id'] = $newZoneId;
-                unset($data['zone_id']); // Удаляем zone_id из данных обновления!
-                
-                // Если это переприв язка (был старый zone_id), сбрасываем в REGISTERED_BACKEND
-                if ($oldZoneId && $oldZoneId != $newZoneId) {
-                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                    $node->zone_id = null; // Явно очищаем старый zone_id
-                    $this->clearNodeChannelBindings($node->id, 'reassign_to_another_zone');
-                    Log::info('Node re-assignment: reset to REGISTERED_BACKEND, waiting for confirmation', [
+
+                $sameStableZoneAssignment = $oldZoneId
+                    && (int) $oldZoneId === (int) $newZoneId
+                    && !$oldPendingZoneId;
+                $samePendingZoneAssignment = !$oldZoneId
+                    && $oldPendingZoneId
+                    && (int) $oldPendingZoneId === (int) $newZoneId;
+
+                unset($data['zone_id']); // UI bind flow никогда не пишет zone_id напрямую
+
+                if ($sameStableZoneAssignment) {
+                    Log::info('UI zone assignment is idempotent: node already assigned to requested zone', [
                         'node_id' => $node->id,
-                        'old_zone_id' => $oldZoneId,
+                        'uid' => $node->uid,
+                        'zone_id' => $oldZoneId,
+                        'lifecycle_state' => $currentState->value,
+                    ]);
+                } elseif ($samePendingZoneAssignment) {
+                    $data['pending_zone_id'] = $newZoneId;
+
+                    if ($node->lifecycleState() !== NodeLifecycleState::REGISTERED_BACKEND) {
+                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                        Log::info('Node pending assignment normalized to REGISTERED_BACKEND before config retry', [
+                            'node_id' => $node->id,
+                            'uid' => $node->uid,
+                            'pending_zone_id' => $newZoneId,
+                            'previous_lifecycle_state' => $currentState->value,
+                        ]);
+                    }
+
+                    $shouldRepublishConfig = true;
+
+                    Log::info('UI zone assignment retry: node already pending requested zone, config will be republished', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
                         'pending_zone_id' => $newZoneId,
+                        'lifecycle_state' => $node->lifecycle_state?->value,
                     ]);
                 } else {
-                    // Первичная привязка
-                    $node->zone_id = null; // Явно очищаем zone_id
+                    /**
+                     * КРИТИЧНО: bind/rebind всегда идут через pending_zone_id.
+                     * zone_id подтверждается только после config_report из целевого namespace.
+                     */
+                    $data['pending_zone_id'] = $newZoneId;
+
+                    // Если это переприв язка в другую зону, сбрасываем в REGISTERED_BACKEND.
+                    if ($oldZoneId && (int) $oldZoneId !== (int) $newZoneId) {
+                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                        $node->zone_id = null; // Явно очищаем старый zone_id
+                        $this->clearNodeChannelBindings($node->id, 'reassign_to_another_zone');
+                        Log::info('Node re-assignment: reset to REGISTERED_BACKEND, waiting for confirmation', [
+                            'node_id' => $node->id,
+                            'old_zone_id' => $oldZoneId,
+                            'pending_zone_id' => $newZoneId,
+                        ]);
+                    } else {
+                        // Первичная привязка или recovery из неконсистентного состояния.
+                        $node->zone_id = null;
+                        if ($node->lifecycleState() !== NodeLifecycleState::REGISTERED_BACKEND) {
+                            $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                            Log::info('Node bind flow normalized lifecycle to REGISTERED_BACKEND', [
+                                'node_id' => $node->id,
+                                'uid' => $node->uid,
+                                'pending_zone_id' => $newZoneId,
+                                'previous_lifecycle_state' => $currentState->value,
+                            ]);
+                        }
+                    }
+
+                    Log::info('UI zone assignment: set pending_zone_id, waiting for node confirmation', [
+                        'node_id' => $node->id,
+                        'pending_zone_id' => $newZoneId,
+                        'old_zone_id' => $oldZoneId,
+                        'lifecycle_state' => $node->lifecycle_state?->value,
+                    ]);
                 }
-                
-                Log::info('UI zone assignment: set pending_zone_id, waiting for node confirmation', [
-                    'node_id' => $node->id,
-                    'pending_zone_id' => $newZoneId,
-                    'old_zone_id' => $oldZoneId,
-                    'lifecycle_state' => $node->lifecycle_state?->value,
-                ]);
             }
             
             $node->update($data);
+
+            if ($shouldRepublishConfig) {
+                DB::afterCommit(function () use ($node) {
+                    event(new NodeConfigUpdated($node->fresh()));
+                });
+            }
             
             // БАГ #2 FIX: Убрана дублирующая публикация конфига
             // Публикация происходит только через событие NodeConfigUpdated в DeviceNode::saved
@@ -178,9 +230,9 @@ class NodeService
             //     \App\Jobs\PublishNodeConfigJob::dispatch($node->id);
             // }
             
-            // Логируем завершение привязки от history-logger (когда zone_id устанавливается и pending_zone_id очищается)
+            // Логируем завершение bind/rebind после observed config_report.
             if ($isBindingCompletion && $node->zone_id && !$node->pending_zone_id) {
-                Log::info('NodeService: Binding completed by history-logger (zone_id set, pending_zone_id cleared)', [
+                Log::info('NodeService: Binding completed in Laravel (zone_id set, pending_zone_id cleared)', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
                     'zone_id' => $node->zone_id,
@@ -189,7 +241,7 @@ class NodeService
                     'new_zone_id' => $node->zone_id,
                     'new_pending_zone_id' => $node->pending_zone_id,
                     'lifecycle_state' => $node->lifecycle_state?->value,
-                    'reason' => 'History-logger completed node binding after config_report',
+                    'reason' => 'Laravel completed node binding after observed config_report',
                 ]);
 
                 // Превращаем накопленные unassigned ошибки в alerts теперь, когда зона известна.

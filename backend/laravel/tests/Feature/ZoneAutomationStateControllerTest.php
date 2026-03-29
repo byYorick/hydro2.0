@@ -13,6 +13,11 @@ class ZoneAutomationStateControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function automationEngineUrl(): string
+    {
+        return rtrim((string) config('services.automation_engine.api_url', 'http://automation-engine:9405'), '/');
+    }
+
     public function test_automation_state_requires_authentication(): void
     {
         $zone = Zone::factory()->create();
@@ -32,9 +37,10 @@ class ZoneAutomationStateControllerTest extends TestCase
             'status' => 'PAUSED',
             'water_state' => 'WATER_CHANGE_FILL',
         ]);
+        $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
                 'zone_id' => $zone->id,
                 'state' => 'TANK_FILLING',
                 'state_label' => 'Набор бака с раствором',
@@ -42,6 +48,9 @@ class ZoneAutomationStateControllerTest extends TestCase
                     'started_at' => now()->subSeconds(45)->toIso8601String(),
                     'elapsed_sec' => 45,
                     'progress_percent' => 30,
+                    'failed' => true,
+                    'error_code' => 'command_timeout',
+                    'error_message' => 'TIMEOUT',
                 ],
                 'system_config' => [
                     'tanks_count' => 2,
@@ -76,6 +85,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('state', 'TANK_FILLING')
             ->assertJsonPath('system_config.tanks_count', 2)
             ->assertJsonPath('active_processes.pump_in', true)
+            ->assertJsonPath('state_details.human_error_message', 'Не дождались подтверждения или итогового ответа по команде в допустимое время.')
             ->assertJsonPath('state_meta.source', 'live')
             ->assertJsonPath('state_meta.is_stale', false);
 
@@ -86,6 +96,40 @@ class ZoneAutomationStateControllerTest extends TestCase
         ]);
     }
 
+    public function test_automation_state_humanizes_snapshot_error_by_canonical_code(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'IDLE',
+                'state_label' => 'Ожидание',
+                'state_details' => [
+                    'failed' => true,
+                    'error_code' => 'ae3_snapshot_no_online_actuator_channels',
+                    'error_message' => "Zone {$zone->id} has no online actuator channels",
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state");
+
+        $response->assertOk()
+            ->assertJsonPath('state_details.error_code', 'ae3_snapshot_no_online_actuator_channels')
+            ->assertJsonPath(
+                'state_details.human_error_message',
+                'В зоне нет ни одного онлайн-исполнительного канала. Проверьте привязки устройств и состояние нод.'
+            );
+    }
+
     public function test_automation_state_returns_upstream_unavailable_on_request_exception(): void
     {
         Cache::flush();
@@ -93,9 +137,10 @@ class ZoneAutomationStateControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
                 'status' => 'error',
                 'message' => 'temporary degradation',
             ], 500),
@@ -117,9 +162,10 @@ class ZoneAutomationStateControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
                 'zone_id' => $zone->id,
                 'state' => 'TANK_RECIRC',
                 'state_label' => 'Рециркуляция бака',
@@ -160,7 +206,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             ->assertJsonPath('state_meta.is_stale', false);
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/state" => function () {
+            "{$apiUrl}/zones/{$zone->id}/state" => function () {
                 throw new \RuntimeException('upstream_down');
             },
         ]);
@@ -183,12 +229,13 @@ class ZoneAutomationStateControllerTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $token = $user->createToken('test')->plainTextToken;
         $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
                 'detail' => 'Not Found',
             ], 404),
-            "http://automation-engine:9405/zones/{$zone->id}/control-mode" => Http::response([
+            "{$apiUrl}/zones/{$zone->id}/control-mode" => Http::response([
                 'status' => 'ok',
                 'data' => [
                     'zone_id' => $zone->id,
@@ -227,6 +274,7 @@ class ZoneAutomationStateControllerTest extends TestCase
             'status' => 'NEW',
             'water_state' => 'WATER_CHANGE_STABILIZE',
         ]);
+        $apiUrl = $this->automationEngineUrl();
 
         \App\Models\GrowCycle::factory()->create([
             'zone_id' => $zone->id,
@@ -235,7 +283,7 @@ class ZoneAutomationStateControllerTest extends TestCase
         ]);
 
         Http::fake([
-            "http://automation-engine:9405/zones/{$zone->id}/state" => Http::response([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
                 'zone_id' => $zone->id,
                 'state' => 'IDLE',
                 'state_label' => 'Ожидание',

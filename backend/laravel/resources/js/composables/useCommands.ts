@@ -7,6 +7,7 @@ import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { Command, CommandType, CommandStatus, CommandParams, PendingCommand } from '@/types'
 
 interface PendingCommandInternal {
@@ -43,14 +44,16 @@ function extractCommandErrorMessage(err: unknown): string {
   const response = (err as { response?: { data?: Record<string, unknown> } }).response
   const data = response?.data
   const message = data?.message
+  const code = data?.code
   const details = data?.details
 
-  const safeMessage = typeof message === 'string' && message.trim().length > 0
-    ? message.trim()
-    : null
-  const safeDetails = typeof details === 'string' && details.trim().length > 0
-    ? details.trim()
-    : null
+  const safeMessage = resolveHumanErrorMessage({
+    code: typeof code === 'string' ? code : null,
+    message: typeof message === 'string' ? message : null,
+  })
+  const safeDetails = resolveHumanErrorMessage({
+    message: typeof details === 'string' ? details : null,
+  })
 
   if (safeMessage && safeDetails && !safeMessage.includes(safeDetails)) {
     return `${safeMessage} ${safeDetails}`
@@ -318,7 +321,7 @@ export function useCommands(showToast?: ToastHandler) {
       }
       command.status = normalizedStatus
       if (message) {
-        command.message = message
+        command.message = resolveHumanErrorMessage({ message }, message) || message
       }
       pendingCommands.value.set(commandId, command)
       
@@ -326,7 +329,8 @@ export function useCommands(showToast?: ToastHandler) {
       if (['DONE', 'NO_EFFECT'].includes(normalizedStatus) && showToast) {
         showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       } else if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus) && showToast) {
-        showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
+        const detail = resolveHumanErrorMessage({ message }, 'Неизвестная ошибка') || 'Неизвестная ошибка'
+        showToast(`Команда "${command.type}" завершилась с ошибкой: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
   }

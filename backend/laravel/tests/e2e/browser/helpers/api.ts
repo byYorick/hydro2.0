@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { APIRequestContext } from '@playwright/test';
 
 const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
@@ -85,6 +86,20 @@ export interface TestBinding {
   node_id: number;
   channel_id: number;
   role: string;
+}
+
+export interface SeededGreenhouseClimateNodes {
+  climateSensor: {
+    id: number;
+    uid: string;
+    name: string;
+  };
+  ventActuator: {
+    id: number;
+    uid: string;
+    name: string;
+  };
+  uids: string[];
 }
 
 export class APITestHelper {
@@ -226,6 +241,95 @@ export class APITestHelper {
 
     const plantData = await createPlantResponse.json();
     return plantData.data.id;
+  }
+
+  private runArtisanTinkerJson<T>(code: string): T {
+    const output = execFileSync('php', ['artisan', 'tinker', `--execute=${code}`], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+    const jsonLine = output
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find((line) => line.startsWith('{') || line.startsWith('['));
+
+    if (!jsonLine) {
+      throw new Error(`Failed to parse artisan tinker output as JSON: ${output}`);
+    }
+
+    return JSON.parse(jsonLine) as T;
+  }
+
+  async seedGreenhouseClimateNodes(prefix = `e2e-gh-${Date.now()}`): Promise<SeededGreenhouseClimateNodes> {
+    const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+    return this.runArtisanTinkerJson<SeededGreenhouseClimateNodes>(`
+      $prefix = '${safePrefix}';
+      $climate = \\App\\Models\\DeviceNode::query()->create([
+        'uid' => $prefix . '-climate-sensor',
+        'name' => 'E2E Climate Sensor ' . $prefix,
+        'type' => 'climate',
+        'status' => 'online',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $climate->id,
+        'channel' => 'temp_air',
+        'type' => 'SENSOR',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $climate->id,
+        'channel' => 'humidity_air',
+        'type' => 'SENSOR',
+      ]);
+      $vent = \\App\\Models\\DeviceNode::query()->create([
+        'uid' => $prefix . '-vent-actuator',
+        'name' => 'E2E Vent Actuator ' . $prefix,
+        'type' => 'climate',
+        'status' => 'online',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $vent->id,
+        'channel' => 'vent_drive',
+        'type' => 'ACTUATOR',
+      ]);
+      \\App\\Models\\NodeChannel::query()->create([
+        'node_id' => $vent->id,
+        'channel' => 'vent_window_pct',
+        'type' => 'ACTUATOR',
+      ]);
+      echo json_encode([
+        'climateSensor' => [
+          'id' => $climate->id,
+          'uid' => $climate->uid,
+          'name' => $climate->name,
+        ],
+        'ventActuator' => [
+          'id' => $vent->id,
+          'uid' => $vent->uid,
+          'name' => $vent->name,
+        ],
+        'uids' => [$climate->uid, $vent->uid],
+      ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
+  }
+
+  async cleanupNodesByUids(uids: string[]): Promise<void> {
+    const safeUids = uids
+      .map((uid) => String(uid).trim())
+      .filter((uid) => uid.length > 0)
+      .map((uid) => `'${uid.replace(/'/g, "\\'")}'`);
+
+    if (safeUids.length === 0) {
+      return;
+    }
+
+    this.runArtisanTinkerJson<{ deleted: number }>(`
+      $uids = [${safeUids.join(', ')}];
+      $deleted = \\App\\Models\\DeviceNode::query()->whereIn('uid', $uids)->delete();
+      echo json_encode(['deleted' => $deleted], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    `);
   }
 
   async createTestGreenhouse(data?: Partial<TestGreenhouse>): Promise<TestGreenhouse> {

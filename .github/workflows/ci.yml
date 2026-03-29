@@ -17,6 +17,10 @@ jobs:
           python-version: '3.11'
       - name: Install Python deps
         run: pip install -r requirements.txt
+      - name: Alert lifecycle SQL guard
+        env:
+          PYTHONPATH: backend/services
+        run: pytest -q ../common/test_alert_lifecycle_sql_guard.py
       - name: Run automation-engine smoke tests
         env:
           PYTHONPATH: backend/services

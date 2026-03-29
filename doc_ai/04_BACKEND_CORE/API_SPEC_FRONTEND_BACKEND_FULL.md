@@ -778,6 +778,9 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 
 - **Аутентификация:** Требуется `auth:sanctum`
 - Список узлов ESP32, их статус (online/offline), привязка к зонам.
+- `channels[*]` возвращает только safe fields; полный `config` не отдается.
+- Для actuator/dosing UX backend добавляет `channels[*].binding_role`, `channels[*].pump_component` и active `channels[*].pump_calibration` из canonical `pump_calibrations`, чтобы setup/grow-cycle wizard не теряли сохранённую калибровку после reload.
+- `channels[*].pump_calibration` — это read-only projection; source of truth остаётся `pump_calibrations`, а не `node_channels.config`.
 
 ### 3.9. GET /api/nodes/{id}
 
@@ -1227,6 +1230,8 @@ Legacy `extensions.day_target/night_target` не записывается.
   - `pump_main` и `valve_*` (`type=ACTUATOR`) публикуются как `set_relay`;
   - сервисный `storage_state` публикуется как `state`;
   - `level_*` switch test публикуется как `state` на канале `storage_state`;
+  - manual pump test должен передавать `params.duration_ms=3000`; нода допускает такой dry-run без flow-path interlock и завершает его через `ACK -> DONE`;
+  - manual valve test должен передавать `params.duration_ms=3000` и ждать `ACK -> DONE`, где `DONE` приходит после auto-close нодой;
   - `run_pump` не должен использоваться для actuator-path `pump_main`/`valve_*`, иначе прошивка возвращает `ERROR` с `error_code=unknown_command`.
 
 ### 6.3. Zone correction / calibration API
@@ -1240,6 +1245,7 @@ Legacy `extensions.day_target/night_target` не записывается.
   - принимает полный authority payload
 - `GET /api/zones/{zone}/pump-calibrations`
   - список дозирующих каналов с активной ручной калибровкой
+  - включает zone-bound и `pending_zone_id` каналы, если у них уже есть active calibration даже без `channel_bindings`
 - `PUT /api/zones/{zone}/pump-calibrations/{channelId}`
   - body: `{ "ml_per_sec": number, "k_ms_per_ml_l"?: number }`
   - validation min/max берётся из `system.pump_calibration_policy`
@@ -1262,9 +1268,15 @@ Legacy `extensions.day_target/night_target` не записывается.
 - `POST /api/zones/{zone}/calibrate-pump`
   - `duration_sec` uses `system.pump_calibration_policy`
   - `node_channel_id` is accepted when zone ownership resolves via `nodes.zone_id`, `nodes.pending_zone_id` or zone-level `channel_bindings`
-  - first-step run response returns `data.run_token`
+  - orchestration is backend-owned: Laravel writes `zone_events`, persists canonical `pump_calibrations` and updates legacy `node_channels.config.pump_calibration`
+  - history-logger participates only as transport for physical `run_pump` publish via `POST /zones/{zone}/commands`
+  - one-shot `run + actual_ml + save` is rejected; physical run and save-step are separate requests
+  - first-step run response returns `202 Accepted`, `data.run_token` and `data.status=awaiting_actual_ml`
   - second-step save with `skip_run=true` requires `run_token`, unless caller explicitly sets `manual_override=true`
+  - second-step save after a physical run is allowed only when the correlated command reached terminal `DONE`
+  - successful save-step returns `200 OK` and does not expose synthetic `job_id`
   - legacy mirror `node_channels.config.pump_calibration` is updated through merge patch, not full overwrite
+  - legacy internal route `history-logger POST /zones/{zone_id}/calibrate-pump` is deprecated and returns `410 Gone`
 
 ---
 

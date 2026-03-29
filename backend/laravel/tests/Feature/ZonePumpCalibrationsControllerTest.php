@@ -83,7 +83,13 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             'node_channel_id' => $channel->id,
             'component' => 'ph_down',
             'ml_per_sec' => 5.0,
+            'source' => 'manual_calibration',
             'is_active' => true,
+        ]);
+
+        $this->assertDatabaseHas('zone_events', [
+            'zone_id' => $zone->id,
+            'type' => 'PUMP_CALIBRATION_FINISHED',
         ]);
     }
 
@@ -128,5 +134,42 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             ->assertJsonPath('data.0.node_channel_id', $channel->id)
             ->assertJsonPath('data.0.role', 'ec_npk_pump')
             ->assertJsonPath('data.0.component', 'npk');
+    }
+
+    public function test_index_includes_pending_zone_channel_with_active_calibration_without_binding(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => null,
+            'pending_zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'pump_pending',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => '',
+            'config' => [],
+        ]);
+
+        DB::table('pump_calibrations')->insert([
+            'node_channel_id' => $channel->id,
+            'component' => 'npk',
+            'ml_per_sec' => 0.75,
+            'source' => 'manual_calibration',
+            'valid_from' => now(),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/pump-calibrations");
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.node_channel_id', $channel->id)
+            ->assertJsonPath('data.0.role', 'ec_npk_pump')
+            ->assertJsonPath('data.0.component', 'npk')
+            ->assertJsonPath('data.0.ml_per_sec', 0.75);
     }
 }

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field
 
 
 class TelemetryPayloadModel(BaseModel):
@@ -89,64 +89,7 @@ class NodeConfigPublishRequest(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    greenhouse_uid: str = Field(..., max_length=128, description="Greenhouse UID")
+    greenhouse_uid: str = Field(..., max_length=128, description="Requested greenhouse UID for cross-check; canonical value is resolved from zone_id")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
     config: Dict[str, Any] = Field(..., description="Node config payload")
-
-
-class FillDrainRequest(BaseModel):
-    """Request model for fill/drain operations."""
-
-    target_level: float = Field(..., ge=0.0, le=1.0, description="Target water level (0.0-1.0)")
-    max_duration_sec: Optional[int] = Field(300, ge=1, le=600, description="Maximum operation duration in seconds")
-
-
-class CalibrateFlowRequest(BaseModel):
-    """Request model for flow calibration."""
-
-    node_id: int = Field(..., ge=1, description="Node ID with flow sensor")
-    channel: str = Field(..., min_length=1, max_length=64, description="Flow sensor channel name")
-    pump_duration_sec: Optional[int] = Field(10, ge=1, le=60, description="Pump duration for calibration")
-
-
-class CalibratePumpRequest(BaseModel):
-    """Request model for dosing pump calibration."""
-
-    node_channel_id: int = Field(..., ge=1, description="Actuator node_channel ID for pump")
-    duration_sec: int = Field(..., ge=1, le=600, description="Pump run duration (seconds)")
-    actual_ml: Optional[float] = Field(None, gt=0.0, description="Measured real volume in ml")
-    skip_run: bool = Field(False, description="Skip physical run and only persist calibration")
-    component: Optional[str] = Field(None, max_length=16, description="npk|calcium|magnesium|micro|ph_up|ph_down")
-    test_volume_l: Optional[float] = Field(None, gt=0.0, description="Calibration test volume in liters")
-    ec_before_ms: Optional[float] = Field(None, ge=0.0, le=20.0, description="EC before dosing, mS/cm")
-    ec_after_ms: Optional[float] = Field(None, ge=0.0, le=20.0, description="EC after dosing, mS/cm")
-    temperature_c: Optional[float] = Field(None, ge=0.0, le=50.0, description="Water temperature in Celsius")
-    run_token: Optional[str] = Field(None, max_length=128, description="Correlation token for two-step run/save flow")
-    manual_override: bool = Field(False, description="Allow direct save without correlated physical run")
-
-    @field_validator("component")
-    @classmethod
-    def validate_component(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-        aliases = {
-            "phup": "ph_up",
-            "phdown": "ph_down",
-            "ph_base": "ph_up",
-            "ph_acid": "ph_down",
-            "base": "ph_up",
-            "acid": "ph_down",
-        }
-        normalized = aliases.get(normalized, normalized)
-        allowed = {"npk", "calcium", "magnesium", "micro", "ph_up", "ph_down"}
-        if normalized not in allowed:
-            raise ValueError("component must be one of npk|calcium|magnesium|micro|ph_up|ph_down")
-        return normalized
-
-    @model_validator(mode="after")
-    def validate_ec_range(self) -> "CalibratePumpRequest":
-        if self.ec_before_ms is not None and self.ec_after_ms is not None and self.ec_after_ms <= self.ec_before_ms:
-            raise ValueError("ec_after_ms must be greater than ec_before_ms")
-        return self

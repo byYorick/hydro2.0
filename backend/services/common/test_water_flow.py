@@ -1,9 +1,10 @@
-"""Tests for water_flow module."""
+"""Tests for water_flow helper module."""
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, Mock
-from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, patch
+from datetime import timedelta
+
 from common.utils.time import utcnow
 
 # Add parent directory to path for imports
@@ -17,11 +18,6 @@ from common.water_flow import (
     calculate_irrigation_volume,
     ensure_water_level_alert,
     ensure_no_flow_alert,
-    get_irrigation_nodes,
-    execute_fill_mode,
-    execute_drain_mode,
-    calibrate_flow,
-    calibrate_pump,
     WATER_LEVEL_LOW_THRESHOLD,
     MIN_FLOW_THRESHOLD,
 )
@@ -34,940 +30,221 @@ async def test_load_system_authority_policy_uses_builtin_fallback_for_pump_calib
 
         result = await _load_system_authority_policy("pump_calibration")
 
-        assert result["calibration_duration_min_sec"] == 1
-        assert result["calibration_duration_max_sec"] == 120
-        assert result["ml_per_sec_min"] == pytest.approx(0.01)
-        assert result["ml_per_sec_max"] == pytest.approx(20.0)
+    assert result["calibration_duration_min_sec"] == 1
+    assert result["calibration_duration_max_sec"] == 120
+    assert result["ml_per_sec_min"] == pytest.approx(0.01)
+    assert result["ml_per_sec_max"] == pytest.approx(20.0)
 
 
 @pytest.mark.asyncio
 async def test_check_water_level_normal():
-    """Test water level check when level is normal."""
     with patch("common.water_flow.fetch") as mock_fetch:
-        mock_fetch.return_value = [{"value": 0.5}]  # 50% - нормальный уровень
+        mock_fetch.return_value = [{"value": 0.5}]
+
         is_ok, level = await check_water_level(1)
-        assert is_ok is True
-        assert level == 0.5
+
+    assert is_ok is True
+    assert level == 0.5
 
 
 @pytest.mark.asyncio
 async def test_check_water_level_low():
-    """Test water level check when level is low."""
     with patch("common.water_flow.fetch") as mock_fetch:
-        mock_fetch.return_value = [{"value": 0.15}]  # 15% - низкий уровень
+        mock_fetch.return_value = [{"value": 0.15}]
+
         is_ok, level = await check_water_level(1)
-        assert is_ok is False
-        assert level == 0.15
+
+    assert is_ok is False
+    assert level == 0.15
 
 
 @pytest.mark.asyncio
 async def test_check_water_level_no_data():
-    """Test water level check when no data available."""
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = []
+
         is_ok, level = await check_water_level(1)
-        assert is_ok is True  # Не блокируем если нет данных
-        assert level is None
+
+    assert is_ok is True
+    assert level is None
 
 
 @pytest.mark.asyncio
 async def test_check_water_level_zero_value_is_bypassed_in_active_irrigation_phase():
-    """0.0 в активной фазе ирригации считается артефактом перезагрузки ноды."""
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = [{"value": 0.0}]
 
         is_ok, level = await check_water_level(1, workflow_phase="irrigating")
 
-        assert is_ok is True
-        assert level == 0.0
+    assert is_ok is True
+    assert level == 0.0
 
 
 @pytest.mark.asyncio
 async def test_check_water_level_zero_value_is_not_bypassed_outside_active_irrigation_phase():
-    """Вне активной ирригации 0.0 остаётся low-water состоянием."""
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = [{"value": 0.0}]
 
         is_ok, level = await check_water_level(1, workflow_phase="idle")
 
-        assert is_ok is False
-        assert level == 0.0
+    assert is_ok is False
+    assert level == 0.0
 
 
 @pytest.mark.asyncio
 async def test_check_water_level_prefers_clean_tank_labels_in_query():
-    """Regression: dry-run check must prioritize clean/fresh sensors."""
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = [{"value": 0.5}]
+
         await check_water_level(2)
-        sql = mock_fetch.call_args.args[0]
-        assert "LIKE '%clean%'" in sql
-        assert "LIKE '%fresh%'" in sql
-        assert "LIKE '%solution%'" in sql
-        assert "LIKE '%min%'" in sql
+
+    sql = mock_fetch.call_args.args[0]
+    assert "LIKE '%clean%'" in sql
+    assert "LIKE '%fresh%'" in sql
+    assert "LIKE '%solution%'" in sql
+    assert "LIKE '%min%'" in sql
 
 
 @pytest.mark.asyncio
 async def test_check_flow_normal():
-    """Test flow check when flow is normal."""
     with patch("common.water_flow.fetch") as mock_fetch:
-        mock_fetch.return_value = [{"value": 2.5}]  # 2.5 L/min - нормальный поток
+        mock_fetch.return_value = [{"value": 2.5}]
+
         is_ok, flow = await check_flow(1, min_flow=0.1)
-        assert is_ok is True
-        assert flow == 2.5
+
+    assert is_ok is True
+    assert flow == 2.5
 
 
 @pytest.mark.asyncio
 async def test_check_flow_low():
-    """Test flow check when flow is too low."""
     with patch("common.water_flow.fetch") as mock_fetch:
-        mock_fetch.return_value = [{"value": 0.05}]  # 0.05 L/min - низкий поток
+        mock_fetch.return_value = [{"value": 0.05}]
+
         is_ok, flow = await check_flow(1, min_flow=0.1)
-        assert is_ok is False
-        assert flow == 0.05
+
+    assert is_ok is False
+    assert flow == 0.05
 
 
 @pytest.mark.asyncio
 async def test_check_flow_no_data():
-    """Test flow check when no data available."""
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = []
+
         is_ok, flow = await check_flow(1, min_flow=0.1)
-        assert is_ok is False  # Нет данных = нет потока
-        assert flow is None
+
+    assert is_ok is False
+    assert flow is None
 
 
 @pytest.mark.asyncio
 async def test_check_dry_run_protection_safe():
-    """Test dry run protection when pump just started."""
-    pump_start_time = utcnow() - timedelta(seconds=1)  # Прошла 1 секунда
-    
+    pump_start_time = utcnow() - timedelta(seconds=1)
+
     with patch("common.water_flow.check_flow") as mock_check_flow:
-        # Не проверяем flow если прошло меньше 3 секунд
         is_safe, error = await check_dry_run_protection(1, pump_start_time, min_flow=0.1)
-        assert is_safe is True
-        assert error is None
-        mock_check_flow.assert_not_called()
+
+    assert is_safe is True
+    assert error is None
+    mock_check_flow.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_check_dry_run_protection_no_flow():
-    """Test dry run protection when no flow detected."""
-    pump_start_time = utcnow() - timedelta(seconds=5)  # Прошло 5 секунд
-    
+    pump_start_time = utcnow() - timedelta(seconds=5)
+
     with patch("common.water_flow.check_flow") as mock_check_flow, \
          patch("common.water_flow.create_zone_event") as mock_event:
-        mock_check_flow.return_value = (False, 0.0)  # Нет потока
-        
+        mock_check_flow.return_value = (False, 0.0)
+
         is_safe, error = await check_dry_run_protection(1, pump_start_time, min_flow=0.1)
-        assert is_safe is False
-        assert error is not None
-        assert "NO_FLOW" in error
-        mock_event.assert_called_once()
+
+    assert is_safe is False
+    assert error is not None
+    assert "NO_FLOW" in error
+    mock_event.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_check_dry_run_protection_flow_ok():
-    """Test dry run protection when flow is normal."""
-    pump_start_time = utcnow() - timedelta(seconds=5)  # Прошло 5 секунд
-    
+    pump_start_time = utcnow() - timedelta(seconds=5)
+
     with patch("common.water_flow.check_flow") as mock_check_flow:
-        mock_check_flow.return_value = (True, 2.0)  # Поток нормальный
-        
+        mock_check_flow.return_value = (True, 2.0)
+
         is_safe, error = await check_dry_run_protection(1, pump_start_time, min_flow=0.1)
-        assert is_safe is True
-        assert error is None
+
+    assert is_safe is True
+    assert error is None
 
 
 @pytest.mark.asyncio
 async def test_calculate_irrigation_volume():
-    """Test irrigation volume calculation."""
     start_time = utcnow() - timedelta(minutes=10)
     end_time = utcnow()
-    
-    # Симулируем данные flow: 2.0 L/min в течение 10 минут
+
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = [
             {"value": 2.0, "ts": start_time},
             {"value": 2.0, "ts": end_time},
         ]
-        
+
         volume = await calculate_irrigation_volume(1, start_time, end_time)
-        # Объем = средний flow * время в минутах
-        # (2.0 + 2.0) / 2 * 10 = 20 литров
-        assert volume > 0
-        assert volume == pytest.approx(20.0, rel=0.1)
+
+    assert volume > 0
+    assert volume == pytest.approx(20.0, rel=0.1)
 
 
 @pytest.mark.asyncio
 async def test_calculate_irrigation_volume_no_data():
-    """Test irrigation volume calculation when no data."""
     start_time = utcnow() - timedelta(minutes=10)
     end_time = utcnow()
-    
+
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = []
-        
+
         volume = await calculate_irrigation_volume(1, start_time, end_time)
-        assert volume == 0.0
+
+    assert volume == 0.0
 
 
 @pytest.mark.asyncio
 async def test_ensure_water_level_alert_low():
-    """Test water level alert creation when level is low."""
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.execute") as mock_execute, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
+    with patch("common.water_flow.create_zone_event") as mock_event, \
          patch("common.water_flow.create_alert") as mock_create_alert:
-        # Нет активного алерта
-        mock_fetch.return_value = []
-        mock_execute.return_value = [{"id": 1}]
         mock_create_alert.return_value = {"id": 1}
         mock_event.return_value = None
-        
-        await ensure_water_level_alert(1, 0.15)  # Низкий уровень
-        
-        # Должен создать алерт
-        assert mock_create_alert.call_count >= 1
-        # Должен создать событие
-        assert mock_event.call_count >= 1
+
+        await ensure_water_level_alert(1, 0.15)
+
+    assert mock_create_alert.call_count >= 1
+    assert mock_event.call_count >= 1
 
 
 @pytest.mark.asyncio
 async def test_ensure_water_level_alert_normal():
-    """Test water level alert when level is normal."""
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.execute") as mock_execute:
-        await ensure_water_level_alert(1, 0.5)  # Нормальный уровень
-        
-        # Не должен создавать алерт
-        mock_execute.assert_not_called()
+    with patch("common.water_flow.create_zone_event") as mock_event, \
+         patch("common.water_flow.create_alert") as mock_create_alert:
+        await ensure_water_level_alert(1, 0.5)
+
+    mock_create_alert.assert_not_called()
+    mock_event.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_ensure_no_flow_alert():
-    """Test no flow alert creation."""
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.execute") as mock_execute, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
+    with patch("common.water_flow.create_zone_event") as mock_event, \
          patch("common.water_flow.create_alert") as mock_create_alert:
-        # Нет активного алерта
-        mock_fetch.return_value = []
-        mock_execute.return_value = [{"id": 1}]
         mock_create_alert.return_value = {"id": 1}
         mock_event.return_value = None
-        
-        await ensure_no_flow_alert(1, 0.05, min_flow=0.1)  # Низкий поток
-        
-        # Должен создать алерт
-        assert mock_create_alert.call_count >= 1
-        # Должен создать событие
-        assert mock_event.call_count >= 1
 
+        await ensure_no_flow_alert(1, 0.05, min_flow=0.1)
 
-@pytest.mark.asyncio
-async def test_get_irrigation_nodes():
-    """Test getting irrigation nodes for zone."""
-    with patch("common.water_flow.fetch") as mock_fetch:
-        mock_fetch.return_value = [
-            {
-                "id": 1,
-                "uid": "nd-irrig-1",
-                "type": "irrig",
-                "channel": "pump1",
-            }
-        ]
-        
-        nodes = await get_irrigation_nodes(1)
-        assert len(nodes) == 1
-        assert nodes[0]["node_uid"] == "nd-irrig-1"
-        assert nodes[0]["type"] == "irrig"
-        assert nodes[0]["channel"] == "pump1"
+    assert mock_create_alert.call_count >= 1
+    assert mock_event.call_count == 0
 
 
-@pytest.mark.asyncio
-async def test_get_irrigation_nodes_no_nodes():
-    """Test getting irrigation nodes when no nodes available."""
-    with patch("common.water_flow.fetch") as mock_fetch:
-        # Первый вызов - нет специальных узлов
-        # Второй вызов - нет обычных irrigation узлов
-        mock_fetch.side_effect = [[], []]
-        
-        nodes = await get_irrigation_nodes(1)
-        assert len(nodes) == 0
-
-
-@pytest.mark.asyncio
-async def test_execute_fill_mode_success():
-    """Test fill mode execution when successful."""
-    mqtt_client = Mock()
-    mqtt_client.publish_json = Mock()
-    
-    call_count = {"sleep": 0, "level": 0}
-    
-    async def mock_sleep(delay):
-        call_count["sleep"] += 1
-        # После первого sleep возвращаем уровень, который достиг цели
-        if call_count["sleep"] == 1:
-            call_count["level"] = 1
-    
-    with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
-         patch("common.water_flow.check_water_level") as mock_level, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("asyncio.sleep", side_effect=mock_sleep):
-        
-        # Настройка моков
-        mock_nodes.return_value = [
-            {
-                "node_id": 1,
-                "node_uid": "nd-irrig-1",
-                "type": "irrig",
-                "channel": "pump1",
-            }
-        ]
-        
-        # Симулируем достижение целевого уровня после первого sleep
-        def level_side_effect(*args):
-            if call_count["level"] == 0:
-                return (True, 0.3)  # Начальный уровень
-            else:
-                return (True, 0.9)  # Достигли цели
-        
-        mock_level.side_effect = level_side_effect
-        
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-
-        result = await execute_fill_mode(1, 0.9, mqtt_client, "gh-1", max_duration_sec=10)
-        
-        # Проверяем результат
-        assert result["success"] is True
-        assert result["target_level"] == 0.9
-        assert result["final_level"] == 0.9
-        
-        # Проверяем, что были созданы события
-        assert mock_event.call_count >= 2  # FILL_STARTED и FILL_FINISHED
-        
-        # Проверяем, что были отправлены команды включения и остановки
-        start_calls = [
-            call for call in mock_send.call_args_list
-            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": True}
-        ]
-        stop_calls = [
-            call for call in mock_send.call_args_list
-            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
-        ]
-        assert start_calls
-        assert stop_calls
-
-
-@pytest.mark.asyncio
-async def test_execute_fill_mode_no_nodes():
-    """Test fill mode when no nodes available."""
-    mqtt_client = Mock()
-    
-    with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
-         patch("common.water_flow.create_zone_event") as mock_event:
-        
-        mock_nodes.return_value = []
-        
-        result = await execute_fill_mode(1, 0.9, mqtt_client, "gh-1")
-        
-        assert result["success"] is False
-        assert result["error"] == "no_nodes"
-        # Должны быть созданы события STARTED и FINISHED с ошибкой
-        assert mock_event.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_execute_fill_mode_timeout():
-    """Test fill mode when timeout occurs."""
-    mqtt_client = Mock()
-    mqtt_client.publish_json = Mock()
-    
-    start_time = utcnow()
-    call_count = {"sleep": 0}
-    
-    async def mock_sleep(delay):
-        call_count["sleep"] += 1
-    
-    with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
-         patch("common.water_flow.check_water_level") as mock_level, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.water_flow.utcnow") as mock_utcnow, \
-         patch("asyncio.sleep", side_effect=mock_sleep):
-        
-        mock_nodes.return_value = [
-            {
-                "node_id": 1,
-                "node_uid": "nd-irrig-1",
-                "type": "irrig",
-                "channel": "pump1",
-            }
-        ]
-        
-        # Симулируем, что уровень не достигает цели
-        mock_level.return_value = (True, 0.5)
-        
-        # Симулируем таймаут - после первого sleep время превышает max_duration
-        def utcnow_side_effect():
-            if call_count["sleep"] <= 1:
-                return start_time
-            return start_time + timedelta(seconds=301)
-
-        mock_utcnow.side_effect = utcnow_side_effect
-        
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-
-        result = await execute_fill_mode(1, 0.9, mqtt_client, "gh-1", max_duration_sec=300)
-        
-        assert result["success"] is False
-        assert result["error"] == "timeout"
-        stop_calls = [
-            call for call in mock_send.call_args_list
-            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
-        ]
-        assert stop_calls
-
-
-@pytest.mark.asyncio
-async def test_execute_drain_mode_success():
-    """Test drain mode execution when successful."""
-    mqtt_client = Mock()
-    mqtt_client.publish_json = Mock()
-    
-    call_count = {"sleep": 0, "level": 0}
-    
-    async def mock_sleep(delay):
-        call_count["sleep"] += 1
-        if call_count["sleep"] == 1:
-            call_count["level"] = 1
-    
-    with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
-         patch("common.water_flow.check_water_level") as mock_level, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("asyncio.sleep", side_effect=mock_sleep):
-        
-        mock_nodes.return_value = [
-            {
-                "node_id": 1,
-                "node_uid": "nd-irrig-1",
-                "type": "irrig",
-                "channel": "drain_valve",
-            }
-        ]
-        
-        # Симулируем достижение целевого уровня после первого sleep
-        def level_side_effect(*args):
-            if call_count["level"] == 0:
-                return (True, 0.7)  # Начальный уровень
-            else:
-                return (True, 0.1)  # Достигли цели
-        
-        mock_level.side_effect = level_side_effect
-        
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-
-        result = await execute_drain_mode(1, 0.1, mqtt_client, "gh-1", max_duration_sec=10)
-        
-        assert result["success"] is True
-        assert result["target_level"] == 0.1
-        assert result["final_level"] == 0.1
-        
-        # Проверяем события
-        assert mock_event.call_count >= 2  # DRAIN_STARTED и DRAIN_FINISHED
-        
-        # Проверяем команды включения и остановки
-        start_calls = [
-            call for call in mock_send.call_args_list
-            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": True}
-        ]
-        stop_calls = [
-            call for call in mock_send.call_args_list
-            if call[1]["cmd"] == "set_relay" and call[1]["params"] == {"state": False}
-        ]
-        assert start_calls
-        assert stop_calls
-
-
-@pytest.mark.asyncio
-async def test_execute_drain_mode_no_nodes():
-    """Test drain mode when no nodes available."""
-    mqtt_client = Mock()
-    
-    with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
-         patch("common.water_flow.create_zone_event") as mock_event:
-        
-        mock_nodes.return_value = []
-        
-        result = await execute_drain_mode(1, 0.1, mqtt_client, "gh-1")
-        
-        assert result["success"] is False
-        assert result["error"] == "no_nodes"
-        assert mock_event.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_calibrate_flow_success():
-    """Test flow calibration when successful."""
-    mqtt_client = Mock()
-    mqtt_client.publish_json = Mock()
-    
-    # Моки для fetch
-    node_info = {
-        "id": 1,
-        "uid": "nd-flow-1",
-        "zone_id": 1,
-        "channel_id": 10,
-        "config": {}
-    }
-    
-    pump_info = {
-        "id": 2,
-        "uid": "nd-pump-1",
-        "channel": "pump_irrigation"
-    }
-    
-    # Данные flow для калибровки
-    flow_samples = [
-        {"value": 2.0, "ts": utcnow() - timedelta(seconds=8), "metadata": {"raw": {"pulses": 100}}},
-        {"value": 2.1, "ts": utcnow() - timedelta(seconds=6), "metadata": {"raw": {"pulses": 120}}},
-        {"value": 2.0, "ts": utcnow() - timedelta(seconds=4), "metadata": {"raw": {"pulses": 140}}},
-        {"value": 2.2, "ts": utcnow() - timedelta(seconds=2), "metadata": {"raw": {"pulses": 160}}},
-    ]
-    
-    # Мок для MQTT клиента
-    mqtt_client.publish_json = Mock()
-    
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.check_water_level") as mock_water_level, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.command_orchestrator.send_command", new_callable=AsyncMock) as mock_orchestrator_send, \
-         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep") as mock_sleep:
-        
-        # Настройка моков
-        mock_fetch.side_effect = [
-            [node_info],  # Получение информации об узле
-            [pump_info],  # Получение насоса
-            flow_samples,  # Получение данных flow
-        ]
-        mock_water_level.return_value = (True, 0.5)  # Нормальный уровень воды
-        
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-        mock_orchestrator_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = "OK"
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__.return_value = mock_http_client
-        mock_http_client.patch.return_value = mock_response
-        mock_httpx_client.return_value = mock_http_client
-        
-        result = await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1", pump_duration_sec=10)
-        
-        # Проверяем результат
-        assert result["success"] is True
-        assert "K" in result
-        assert "avg_flow_l_per_min" in result
-        assert "samples_count" in result
-        assert result["samples_count"] == len(flow_samples)
-        
-        # Проверяем, что были созданы события
-        assert mock_event.call_count >= 2  # FLOW_CALIBRATION_STARTED и FLOW_CALIBRATION_FINISHED
-        
-        # Проверяем, что была отправлена команда запуска насоса
-        assert mock_send.called
-
-
-@pytest.mark.asyncio
-async def test_calibrate_flow_no_node():
-    """Test flow calibration when node not found."""
-    mqtt_client = Mock()
-    
-    with patch("common.water_flow.fetch") as mock_fetch:
-        mock_fetch.return_value = []  # Узел не найден
-        
-        with pytest.raises(ValueError, match="Node.*not found"):
-            await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1")
-
-
-@pytest.mark.asyncio
-async def test_calibrate_flow_no_pump():
-    """Test flow calibration when no pump found."""
-    mqtt_client = Mock()
-    
-    node_info = {
-        "id": 1,
-        "uid": "nd-flow-1",
-        "zone_id": 1,
-        "channel_id": 10,
-        "config": {}
-    }
-    
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.check_water_level") as mock_water_level:
-        
-        mock_fetch.side_effect = [
-            [node_info],  # Узел найден
-            [],  # Насос не найден
-        ]
-        mock_water_level.return_value = (True, 0.5)
-        
-        with pytest.raises(ValueError, match="No irrigation pump found"):
-            await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1")
-
-
-@pytest.mark.asyncio
-async def test_calibrate_flow_low_water_level():
-    """Test flow calibration when water level is low."""
-    mqtt_client = Mock()
-    
-    node_info = {
-        "id": 1,
-        "uid": "nd-flow-1",
-        "zone_id": 1,
-        "channel_id": 10,
-        "config": {}
-    }
-    
-    pump_info = {
-        "id": 2,
-        "uid": "nd-pump-1",
-        "channel": "pump_irrigation"
-    }
-    
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.check_water_level") as mock_water_level:
-        
-        mock_fetch.side_effect = [
-            [node_info],
-            [pump_info],
-        ]
-        mock_water_level.return_value = (False, 0.15)  # Низкий уровень воды
-        
-        with pytest.raises(ValueError, match="Water level too low"):
-            await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1")
-
-
-@pytest.mark.asyncio
-async def test_calibrate_flow_insufficient_data():
-    """Test flow calibration when insufficient flow data."""
-    mqtt_client = Mock()
-    mqtt_client.publish_json = Mock()
-    
-    node_info = {
-        "id": 1,
-        "uid": "nd-flow-1",
-        "zone_id": 1,
-        "channel_id": 10,
-        "config": {}
-    }
-    
-    pump_info = {
-        "id": 2,
-        "uid": "nd-pump-1",
-        "channel": "pump_irrigation"
-    }
-    
-    with patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.check_water_level") as mock_water_level, \
-         patch("common.water_flow.create_zone_event") as mock_event, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.command_orchestrator.send_command", new_callable=AsyncMock) as mock_orchestrator_send, \
-         patch("asyncio.sleep") as mock_sleep:
-        
-        mock_fetch.side_effect = [
-            [node_info],
-            [pump_info],
-            [],  # Нет данных flow
-        ]
-        mock_water_level.return_value = (True, 0.5)
-        mock_event.return_value = None
-        
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-        mock_orchestrator_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-
-        with pytest.raises(ValueError, match="Insufficient flow data"):
-            await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1", pump_duration_sec=10)
-
-
-@pytest.mark.asyncio
-async def test_calibrate_pump_success():
-    channel_info = {
-        "channel_id": 21,
-        "channel": "pump_a",
-        "config": {},
-        "node_id": 11,
-        "node_uid": "nd-ec-a",
-        "node_status": "online",
-    }
-
-    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
-         patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.water_flow.execute", new_callable=AsyncMock), \
-         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
-         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep"):
-        mock_settings.return_value = {
-            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
-            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
-            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
-        }
-        mock_fetch.return_value = [channel_info]
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
-
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = "OK"
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__.return_value = mock_http_client
-        mock_http_client.patch.return_value = mock_response
-        mock_httpx_client.return_value = mock_http_client
-
-        result = await calibrate_pump(
-            zone_id=1,
-            node_channel_id=21,
-            duration_sec=30,
-            actual_ml=27.0,
-            component="npk",
-            gh_uid="gh-1",
-        )
-
-        assert result["success"] is True
-        assert result["status"] == "calibrated"
-        assert result["ml_per_sec"] == pytest.approx(0.9, abs=0.000001)
-        assert isinstance(result["run_token"], str)
-        assert mock_send.called
-
-
-@pytest.mark.asyncio
-async def test_calibrate_pump_calculates_k_from_ec_profile():
-    channel_info = {
-        "channel_id": 24,
-        "channel": "pump_c",
-        "config": {},
-        "node_id": 14,
-        "node_uid": "nd-ec-c",
-        "node_status": "online",
-    }
-
-    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
-         patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.water_flow.execute", new_callable=AsyncMock), \
-         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
-         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep"):
-        mock_settings.return_value = {
-            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
-            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
-            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
-        }
-        mock_fetch.return_value = [channel_info]
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-4"}
-
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = "OK"
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__.return_value = mock_http_client
-        mock_http_client.patch.return_value = mock_response
-        mock_httpx_client.return_value = mock_http_client
-
-        result = await calibrate_pump(
-            zone_id=1,
-            node_channel_id=24,
-            duration_sec=20,
-            actual_ml=10.0,
-            component="magnesium",
-            test_volume_l=10.0,
-            ec_before_ms=0.10,
-            ec_after_ms=0.35,
-            temperature_c=21.5,
-            gh_uid="gh-1",
-        )
-
-        assert result["success"] is True
-        assert result["component"] == "magnesium"
-        assert result["k_ms_per_ml_l"] == pytest.approx(0.25, abs=0.000001)
-
-
-@pytest.mark.asyncio
-async def test_calibrate_pump_run_only_waits_for_actual_ml():
-    channel_info = {
-        "channel_id": 22,
-        "channel": "pump_b",
-        "config": {},
-        "node_id": 12,
-        "node_uid": "nd-ec-b",
-        "node_status": "online",
-    }
-
-    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
-         patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.water_flow.execute", new_callable=AsyncMock), \
-         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
-         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        mock_settings.return_value = {
-            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
-            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
-            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
-        }
-        mock_fetch.return_value = [channel_info]
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-2"}
-        mock_httpx_client.return_value = AsyncMock()
-
-        result = await calibrate_pump(
-            zone_id=1,
-            node_channel_id=22,
-            duration_sec=20,
-            actual_ml=None,
-            component="calcium",
-            gh_uid="gh-1",
-        )
-
-        assert result["success"] is True
-        assert result["status"] == "awaiting_actual_ml"
-        assert isinstance(result["run_token"], str)
-        mock_sleep.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_calibrate_pump_skip_run_with_actual_ml_does_not_emit_skipped_event():
-    channel_info = {
-        "channel_id": 25,
-        "channel": "pump_d",
-        "config": {},
-        "node_id": 15,
-        "node_uid": "nd-ec-d",
-        "node_status": "online",
-    }
-
-    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
-         patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.water_flow.execute", new_callable=AsyncMock), \
-         patch("common.water_flow.create_zone_event", new_callable=AsyncMock) as mock_event, \
-         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep"):
-        mock_settings.return_value = {
-            "calibration_duration_min_sec": 1, "calibration_duration_max_sec": 120,
-            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
-            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
-        }
-        mock_fetch.return_value = [channel_info]
-
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = "OK"
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__.return_value = mock_http_client
-        mock_http_client.patch.return_value = mock_response
-        mock_httpx_client.return_value = mock_http_client
-
-        result = await calibrate_pump(
-            zone_id=1,
-            node_channel_id=25,
-            duration_sec=1,
-            actual_ml=0.8,
-            component="micro",
-            skip_run=True,
-            manual_override=True,
-            gh_uid="gh-1",
-        )
-
-        assert result["success"] is True
-        assert result["status"] == "calibrated"
-        mock_send.assert_not_called()
-
-        event_types = [call.args[1] for call in mock_event.await_args_list]
-        assert "PUMP_CALIBRATION_RUN_SKIPPED" not in event_types
-        assert "PUMP_CALIBRATION_FINISHED" in event_types
-
-
-@pytest.mark.asyncio
-async def test_calibrate_pump_save_after_run_requires_run_token():
-    channel_info = {
-        "channel_id": 26,
-        "channel": "pump_manual",
-        "config": {},
-        "node_id": 16,
-        "node_uid": "nd-irrig-1",
-        "node_status": "online",
-    }
-
-    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
-         patch("common.water_flow.fetch") as mock_fetch:
-        mock_settings.return_value = {
-            "calibration_duration_min_sec": 1, "calibration_duration_max_sec": 120,
-            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
-            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
-        }
-        mock_fetch.return_value = [channel_info]
-
-        with pytest.raises(ValueError, match="run_token is required"):
-            await calibrate_pump(
-                zone_id=1,
-                node_channel_id=26,
-                duration_sec=10,
-                actual_ml=5.0,
-                component="npk",
-                skip_run=True,
-                gh_uid="gh-1",
-            )
-
-
-@pytest.mark.asyncio
-async def test_calibrate_pump_accepts_ph_component_alias():
-    channel_info = {
-        "channel_id": 23,
-        "channel": "pump_acid",
-        "config": {},
-        "node_id": 13,
-        "node_uid": "nd-ph-1",
-        "node_status": "online",
-    }
-
-    with patch("common.water_flow._load_system_authority_policy", new_callable=AsyncMock) as mock_settings, \
-         patch("common.water_flow.fetch") as mock_fetch, \
-         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
-         patch("common.water_flow.execute", new_callable=AsyncMock), \
-         patch("common.water_flow.create_zone_event", new_callable=AsyncMock), \
-         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
-         patch("asyncio.sleep"):
-        mock_settings.return_value = {
-            "calibration_duration_min_sec": 5, "calibration_duration_max_sec": 120,
-            "ml_per_sec_min": 0.01, "ml_per_sec_max": 10.0,
-            "quality_score_with_k": 95.0, "quality_score_basic": 90.0,
-        }
-        mock_fetch.return_value = [channel_info]
-        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-3"}
-
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = "OK"
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__.return_value = mock_http_client
-        mock_http_client.patch.return_value = mock_response
-        mock_httpx_client.return_value = mock_http_client
-
-        result = await calibrate_pump(
-            zone_id=1,
-            node_channel_id=23,
-            duration_sec=20,
-            actual_ml=8.0,
-            component="ph-down",
-            gh_uid="gh-1",
-        )
-
-        assert result["success"] is True
-        assert result["component"] == "ph_down"
-        assert result["ml_per_sec"] == pytest.approx(0.4, abs=0.000001)
+def test_water_flow_constants_are_canonical():
+    assert WATER_LEVEL_LOW_THRESHOLD == pytest.approx(0.2)
+    assert MIN_FLOW_THRESHOLD == pytest.approx(0.1)

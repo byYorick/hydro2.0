@@ -4,12 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Command;
 use App\Helpers\ZoneAccessHelper;
+use App\Services\ErrorCodeCatalogService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 
 class CommandStatusController extends Controller
 {
+    public function __construct(
+        private readonly ErrorCodeCatalogService $errorCodeCatalog,
+    ) {}
+
     /**
      * Получить статус команды.
      * 
@@ -79,6 +84,7 @@ class CommandStatusController extends Controller
                 'sent_at' => $command->sent_at?->toIso8601String(),
                 'error_code' => $command->error_code,
                 'error_message' => $command->error_message,
+                'human_error_message' => $this->errorCodeCatalog->present($command->error_code, $command->error_message)['message'],
                 'result_code' => $command->result_code,
                 'duration_ms' => $command->duration_ms,
             ],

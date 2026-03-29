@@ -241,6 +241,7 @@ import { useFilteredList } from '@/composables/useFilteredList'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { Device } from '@/types'
 
 interface Props {
@@ -314,6 +315,7 @@ async function waitForCommandResult(
   status: string
   errorMessage?: string
   errorCode?: string
+  humanErrorMessage?: string
 }> {
   let lastStatus: string | null = null
   for (let i = 0; i < maxAttempts; i++) {
@@ -324,6 +326,7 @@ async function waitForCommandResult(
           status: string
           error_message?: string | null
           error_code?: string | null
+          human_error_message?: string | null
         }
       }>(
         `/commands/${cmdId}/status`
@@ -346,6 +349,7 @@ async function waitForCommandResult(
             status: cmdStatus,
             errorMessage: response.data.data.error_message || undefined,
             errorCode: response.data.data.error_code || undefined,
+            humanErrorMessage: response.data.data.human_error_message || undefined,
           }
         }
       }
@@ -433,7 +437,9 @@ async function confirmRestart(): Promise<void> {
       if (result.success) {
         showToast('Устройство перезапущено', 'success', TOAST_TIMEOUT.LONG)
       } else {
-        const detail = result.errorMessage || result.errorCode || result.status
+        const detail = result.humanErrorMessage
+          || resolveHumanErrorMessage({ code: result.errorCode, message: result.errorMessage }, result.status)
+          || result.status
         showToast(`Ошибка перезапуска: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
       }
       return

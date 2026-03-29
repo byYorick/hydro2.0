@@ -403,6 +403,50 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
     )
   })
 
+  it('не отправляет PATCH повторно для ноды, уже привязанной к текущей зоне', async () => {
+    canAssignToZoneMock.mockResolvedValue(true)
+    const showToast = vi.fn()
+    const apiPatch = vi.fn()
+
+    const commands = createSetupWizardPlantNodeCommands({
+      api: {
+        get: vi.fn(),
+        post: vi.fn(),
+        patch: apiPatch,
+      },
+      loading: createLoadingState(),
+      canConfigure: computed(() => true),
+      showToast,
+      availableNodes: ref([
+        { id: 101, uid: 'nd-test-101', zone_id: 20, pending_zone_id: null, lifecycle_state: 'ASSIGNED_TO_ZONE' },
+      ]),
+      availablePlants: ref([]),
+      selectedPlantId: ref(null),
+      selectedZone: ref({ id: 20, name: 'Zone A', greenhouse_id: 10 }),
+      selectedPlant: ref(null),
+      selectedNodeIds: ref([101]),
+      attachedNodesCount: ref(0),
+      plantForm: {
+        name: '',
+        species: '',
+        variety: '',
+      },
+      loaders: {
+        loadPlants: vi.fn(),
+        loadAvailableNodes: vi.fn(),
+      },
+    })
+
+    await commands.attachNodesToZone()
+
+    expect(apiPatch).not.toHaveBeenCalled()
+    expect(showToast).toHaveBeenCalledWith(
+      'Нода "nd-test-101" уже привязана к этой зоне',
+      'success',
+      expect.any(Number)
+    )
+  })
+
   it('считает ноду подтверждённой по фактическому zone_id после повторной загрузки списка', () => {
     const showToast = vi.fn()
     const commands = createSetupWizardPlantNodeCommands({

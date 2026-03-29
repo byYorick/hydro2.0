@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ae3lite.domain.errors import SnapshotBuildError
+from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
 from ae3lite.infrastructure.read_models.zone_snapshot_read_model import PgZoneSnapshotReadModel
 
 
@@ -83,9 +83,10 @@ def test_resolve_profile_execution_fails_on_conflict() -> None:
                     }
                 },
             }
-        )
+    )
 
     assert "diagnostics.execution.topology" in str(exc_info.value)
+    assert exc_info.value.code == ErrorCodes.AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES
 
 
 def test_resolve_ec_component_policy_extracts_correction_policy() -> None:

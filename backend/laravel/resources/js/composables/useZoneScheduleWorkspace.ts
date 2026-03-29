@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { logger } from '@/utils/logger'
+import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import type { ToastHandler } from '@/composables/useApi'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 import type { AutomationState } from '@/types/Automation'
@@ -81,24 +82,27 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     const items: Array<{ tone: 'danger' | 'warning' | 'info', title: string, detail: string | null }> = []
 
     if (latestFailure.value) {
-      const failureCode = latestFailure.value.error_code || latestFailure.value.error_message || 'Неизвестная ошибка'
-      const failureDetail = latestFailure.value.error_message && latestFailure.value.error_message !== failureCode
-        ? latestFailure.value.error_message
-        : latestFailure.value.at
-          ? `Зафиксировано ${formatDateTime(latestFailure.value.at)}`
-          : null
+      const failureMessage = resolveHumanErrorMessage({
+        code: latestFailure.value.error_code,
+        message: latestFailure.value.error_message,
+        humanMessage: latestFailure.value.human_error_message,
+      }, 'Неизвестная ошибка') || 'Неизвестная ошибка'
+      const failureDetail = latestFailure.value.at
+        ? `Зафиксировано ${formatDateTime(latestFailure.value.at)}`
+        : null
       items.push({
         tone: 'danger',
-        title: `Последняя ошибка: ${laneLabel(latestFailure.value.task_type)} · ${failureCode}`,
+        title: `Последняя ошибка: ${laneLabel(latestFailure.value.task_type)} · ${failureMessage}`,
         detail: failureDetail,
       })
     }
 
     if (executionCounters.value.failed_24h > 0) {
+      const latestFailureCode = asNonEmptyString(latestFailure.value?.error_code)
       items.push({
         tone: latestFailure.value ? 'warning' : 'danger',
         title: `Ошибок за 24ч: ${executionCounters.value.failed_24h}`,
-        detail: latestFailure.value?.error_code === 'start_cycle_zone_busy'
+        detail: latestFailureCode === 'start_cycle_zone_busy'
           ? 'Повторные старты полива отклоняются, пока зона занята активным intent.'
           : 'Есть неуспешные scheduler/AE исполнения, которые требуют внимания.',
       })
@@ -340,6 +344,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     if (!step) return 'событие'
 
     const details = isRecord(step.details) ? step.details : null
+    const humanErrorCode = resolveHumanErrorMessage({ code: step.error_code }, null)
     const candidates = [
       step.reason_code,
       step.stage,
@@ -347,7 +352,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
       asNonEmptyString(details?.current_stage),
       step.status,
       step.decision,
-      step.error_code,
+      humanErrorCode,
       step.reason,
     ]
 
@@ -394,7 +399,9 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     if (reason && reason !== label) return reason
 
     const errorCode = asNonEmptyString(step.error_code)
-    if (errorCode && errorCode !== label) return errorCode
+    if (errorCode && errorCode !== label) {
+      return resolveHumanErrorMessage({ code: errorCode }, errorCode) || errorCode
+    }
 
     if (step.event_type === 'AE_TASK_STARTED') {
       return 'Переход стадии automation-engine'

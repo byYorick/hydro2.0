@@ -58,9 +58,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 | Метод | Путь | Auth | Описание |
 |-------|-----------------------------------|------|------------------------------------|
-| POST | /api/zones/{id}/fill | auth:sanctum (operator/admin/agronomist/engineer) | Режим наполнения зоны |
-| POST | /api/zones/{id}/drain | auth:sanctum (operator/admin/agronomist/engineer) | Режим слива зоны |
-| POST | /api/zones/{id}/calibrate-flow | auth:sanctum (operator/admin/agronomist/engineer) | Калибровка датчика расхода |
 | POST | /api/zones/{id}/calibrate-pump | auth:sanctum (operator/admin/agronomist/engineer) | Калибровка дозирующей помпы (ml/sec) |
 | POST | /api/zones/{id}/grow-cycles | auth:sanctum (agronomist) | Создать новый grow cycle для зоны |
 | GET | /api/zones/{id}/health | auth:sanctum | Состояние зоны + launch readiness для мастеров запуска |
@@ -88,10 +85,18 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - не блокируется по `zones.status`;
 - требует, чтобы `node_channel_id` принадлежал выбранной зоне по одному из допустимых ownership-path:
   `nodes.zone_id`, `nodes.pending_zone_id` или zone-scoped `channel_bindings`;
-- физический прогон помпы (`skip_run=false`) валидируется по online-статусу конкретной ноды уже в `history-logger/common.water_flow`, а не по coarse-grained статусу зоны.
+- orchestration выполняется в Laravel/backend automation layer: backend сам создаёт `zone_events`
+  (`PUMP_CALIBRATION_STARTED` / `PUMP_CALIBRATION_RUN_SKIPPED` / `PUMP_CALIBRATION_FINISHED`),
+  пишет canonical запись в `pump_calibrations` и обновляет legacy mirror
+  `node_channels.config.pump_calibration`;
+- `history-logger` в этом flow является только transport-посредником для физического шага
+  `run_pump` через `POST /zones/{zone}/commands` и не владеет tracking/persistence калибровки;
+- one-shot запрос `skip_run=false` вместе с `actual_ml` запрещён: physical run и save-step разделены;
 - `duration_sec` валидируется по `system.pump_calibration_policy`, а не по hardcoded controller-bound;
-- первый шаг (`skip_run=false`, без `actual_ml`) возвращает `data.run_token` для двухшагового UX `run -> measure -> save`;
+- первый шаг (`skip_run=false`, без `actual_ml`) возвращает `202 Accepted`, `data.run_token` и `data.status=awaiting_actual_ml` для двухшагового UX `run -> measure -> save`;
 - второй шаг (`skip_run=true`, с `actual_ml`) требует `run_token`, если это сохранение после физического прогона; для явного manual persist без correlated run используется `manual_override=true`;
+- save-step после физического прогона допускается только если связанная `commands.cmd_id` достигла terminal `DONE`;
+- успешный save-step возвращает `200 OK` и больше не использует synthetic `job_id`/sync job wrapper;
 - mirror в `node_channels.config.pump_calibration` обновляется merge-патчем и не должен затирать соседние config-ключи канала.
 
 Контракт `GET /api/zones/{id}/health`:
@@ -154,10 +159,19 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `admin` и `agronomist` видят узлы без `zone_id` в `/api/nodes`, `/api/nodes/{id}`, `/api/nodes/{id}/config`, `/api/nodes/{id}/telemetry/*` и в setup-wizard bind flows;
 - `viewer`, `operator`, `engineer` видят узлы только через доступ к зоне/теплице.
 
+Контракт `GET /api/nodes`:
+- `channels[*]` не включает полный `config`;
+- для calibration UX backend добавляет safe projection: `binding_role`, `pump_component`, `pump_calibration`;
+- `channels[*].pump_calibration` читается из активной записи `pump_calibrations` и нужен, чтобы setup wizard / grow-cycle wizard не теряли уже сохранённые calibration после refresh списка нод;
+- source of truth для dosing calibration остаётся `pump_calibrations`; `node_channels.config.pump_calibration` допускается только как legacy mirror.
+- deprecated internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` больше не используется и должен возвращать `410 Gone`.
+
 Контракт manual device-test для `POST /api/nodes/{id}/commands`:
 - production `irrig` actuator-каналы (`pump_main`, `valve_*`, `type=ACTUATOR`) должны тестироваться через `cmd=set_relay`, а не `run_pump`;
 - сервисный канал `storage_state` у `irrig`-ноды должен тестироваться через `cmd=state`;
 - `level_*` switch-каналы `irrig`-ноды тоже используют `cmd=state` на канале `storage_state`;
+- manual pump test должен передавать `params.duration_ms=3000`; это единственный разрешённый dry-run bypass для `pump_main` без flow path, и нода завершает его через `ACK -> DONE`;
+- manual valve test должен передавать `params.duration_ms=3000`; нода отвечает `ACK`, сама закрывает клапан через 3 секунды и завершает исходный `cmd_id` статусом `DONE`;
 - `run_pump` остаётся корректным для time-based pump channels, но не для actuator path production `storage_irrigation_node`.
 
 ---
@@ -366,6 +380,7 @@ Preset rules:
 |-------|-------------------------------------|------|-------------------------------------------|
 | POST | /api/python/ingest/telemetry | token-based | Инжест телеметрии из Python‑сервисов |
 | POST | /api/python/commands/ack | token-based | Подтверждение статусов команд (`SENT/ACK/DONE/NO_EFFECT/ERROR/INVALID/BUSY/TIMEOUT/SEND_FAILED`) |
+| POST | /api/python/nodes/config-report-observed | token-based | Observation ingest: Laravel-owner финализация bind/rebind после `config_report` |
 
 Примечание по `POST /api/python/commands/ack`:
 - Терминальные статусы: `DONE`, `NO_EFFECT`, `ERROR`, `INVALID`, `BUSY`, `TIMEOUT`, `SEND_FAILED`.
@@ -598,7 +613,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - request body: `{ "ml_per_sec": number, "k_ms_per_ml_l"?: number }`;
 - min/max validation и default duration берутся из `system.pump_calibration_policy`;
 - деактивирует предыдущую активную калибровку `node_channel_id`;
-- создаёт `zone_event` типа `PUMP_CALIBRATION_SAVED`.
+- пишет `source=manual_calibration` и создаёт `zone_event` типа `PUMP_CALIBRATION_FINISHED`.
+
+Контракт `GET /api/zones/{zone}/pump-calibrations`:
+- возвращает zone-bound dosing channels и pending-zone channels, если у них уже есть active calibration;
+- для unbound calibrated channels `role` восстанавливается по `pump_calibrations.component`, чтобы frontend не терял сохранённую calibration после refresh.
 
 Контракт `GET/PUT /api/automation-configs/zone/{zone}/zone.correction`:
 - `payload.resolved_config.pump_calibration` обязателен для correction runtime;
