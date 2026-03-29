@@ -86,6 +86,12 @@ class SensorCalibrationCommandService
         float $referenceValue,
         string $commandId,
     ): array {
+        $channel->loadMissing('node');
+        $node = $channel->node;
+        if (! $node) {
+            throw new \RuntimeException("node_channel {$channel->id} has no node");
+        }
+
         $params = ['stage' => $stage];
         if ($calibration->sensor_type === 'ph') {
             $params['known_ph'] = $referenceValue;

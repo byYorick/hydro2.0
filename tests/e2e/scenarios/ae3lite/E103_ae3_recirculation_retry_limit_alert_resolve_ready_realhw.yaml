@@ -1087,7 +1087,7 @@ actions:
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ = 'pump_a'\n  AND payload->>'cmd' = 'run_pump'\nORDER BY id DESC\nLIMIT 1\n"
+    \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 40.0
@@ -1097,7 +1097,7 @@ actions:
   type: database_query
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'run_pump'\nORDER BY id DESC\n"
+    \ IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\n"
   params:
     task_id: ${task_id}
   expected_rows: 0
@@ -1152,9 +1152,9 @@ actions:
   type: database_query
   query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n\
     \      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND\
-    \ payload->>'cmd' = 'run_pump'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER\
+    \ payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER\
     \ (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n\
-    \      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'run_pump'\n  )::int\
+    \      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int\
     \ AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
   params:
     task_id: ${task_id}
@@ -1697,7 +1697,7 @@ actions:
   type: db.wait
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ = 'pump_a'\n  AND payload->>'cmd' = 'run_pump'\nORDER BY id DESC\nLIMIT 1\n"
+    \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
   timeout: 60.0
@@ -1707,7 +1707,7 @@ actions:
   type: database_query
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'run_pump'\nORDER BY id DESC\n"
+    \ IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\n"
   params:
     task_id_2: ${task_id_2}
   expected_rows: 0
@@ -1727,7 +1727,7 @@ actions:
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND id > CAST(:after_command_id AS bigint)\n\
     \  AND publish_status = 'accepted'\n  AND channel = 'pump_a'\n  AND payload->>'cmd'\
-    \ = 'run_pump'\nORDER BY id DESC\nLIMIT 1\n"
+    \ = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
     after_command_id: ${fill_ec_correction_second_row.0.id}
@@ -1739,7 +1739,7 @@ actions:
   query: "SELECT COUNT(*)::int AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND id > CAST(:after_command_id AS bigint)\n\
     \  AND publish_status = 'accepted'\n  AND channel IN ('pump_acid', 'pump_base')\n\
-    \  AND payload->>'cmd' = 'run_pump'\n"
+    \  AND payload->>'cmd' = 'dose'\n"
   params:
     task_id_2: ${task_id_2}
     after_command_id: ${fill_ec_correction_second_row.0.id}
@@ -1797,7 +1797,7 @@ actions:
   save: targets_reached_second_row
 - step: load_recirc_command_counts_second
   type: database_query
-  query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND payload->>'cmd' = 'run_pump'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'run_pump'\n  )::int AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
+  query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
   params:
     task_id: ${task_id_2}
     after_ec_id: ${fill_ec_correction_second_row.0.id}
@@ -1922,9 +1922,7 @@ cleanup:
 - step: cleanup_e2e_process_calibrations
   type: database_execute
   optional: true
-  query: "DELETE FROM zone_process_calibrations\nWHERE zone_id = :zone_id\n  AND source = 'e2e_realhw_process_observe'\n"
-  params:
-    zone_id: ${zone_id}
+  query: 'SELECT 1;'
 - step: cleanup_e2e_bindings
   type: database_execute
   optional: true
@@ -2025,11 +2023,7 @@ cleanup:
 - step: cleanup_created_profile
   type: database_execute
   optional: true
-  query: "DELETE FROM zone_automation_logic_profiles\nWHERE zone_id = :zone_id\n \
-    \ AND created_at >= :started_at\n"
-  params:
-    zone_id: ${zone_id}
-    started_at: ${scenario_window.0.started_at}
+  query: 'SELECT 1;'
 - step: cleanup_e2e_ph_ec_sensors
   type: database_execute
   optional: true
@@ -2042,14 +2036,7 @@ cleanup:
 - step: restore_previous_profile_state
   type: database_execute
   optional: true
-  query: "UPDATE zone_automation_logic_profiles\nSET is_active = CASE\n  WHEN id =\
-    \ (\n    SELECT id\n    FROM zone_automation_logic_profiles\n    WHERE zone_id\
-    \ = :zone_id\n      AND created_at < :started_at\n    ORDER BY id DESC\n    LIMIT\
-    \ 1\n  ) THEN TRUE\n  ELSE FALSE\nEND,\nupdated_at = NOW()\nWHERE zone_id = :zone_id\n\
-    \  AND created_at < :started_at\n"
-  params:
-    zone_id: ${zone_id}
-    started_at: ${scenario_window.0.started_at}
+  query: 'SELECT 1;'
 - step: restore_previous_zone_runtime
   type: database_execute
   optional: true

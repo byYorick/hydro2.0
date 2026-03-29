@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ZoneShowAccessTest extends TestCase
@@ -15,6 +16,7 @@ class ZoneShowAccessTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $zone = Zone::factory()->create();
+        $this->revokeZoneAccess($user, $zone);
 
         $this->actingAs($user)
             ->get("/zones/{$zone->id}")
@@ -25,7 +27,9 @@ class ZoneShowAccessTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $zone = Zone::factory()->create();
-        $user->greenhouses()->attach($zone->greenhouse_id);
+        DB::table('user_greenhouses')->where('user_id', $user->id)->delete();
+        DB::table('user_zones')->where('user_id', $user->id)->delete();
+        $user->greenhouses()->syncWithoutDetaching([$zone->greenhouse_id]);
 
         $this->actingAs($user)
             ->get("/zones/{$zone->id}")
@@ -37,7 +41,9 @@ class ZoneShowAccessTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $allowedZone = Zone::factory()->create();
         $blockedZone = Zone::factory()->create();
-        $user->zones()->attach($allowedZone->id);
+        DB::table('user_greenhouses')->where('user_id', $user->id)->delete();
+        DB::table('user_zones')->where('user_id', $user->id)->delete();
+        $user->zones()->syncWithoutDetaching([$allowedZone->id]);
 
         $this->actingAs($user)
             ->get('/zones')
@@ -47,5 +53,18 @@ class ZoneShowAccessTest extends TestCase
                 ->has('zones', 1)
                 ->where('zones.0.id', $allowedZone->id)
             );
+    }
+
+    private function revokeZoneAccess(User $user, Zone $zone): void
+    {
+        DB::table('user_greenhouses')
+            ->where('user_id', $user->id)
+            ->where('greenhouse_id', $zone->greenhouse_id)
+            ->delete();
+
+        DB::table('user_zones')
+            ->where('user_id', $user->id)
+            ->where('zone_id', $zone->id)
+            ->delete();
     }
 }

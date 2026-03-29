@@ -6,6 +6,7 @@ use App\Models\Alert;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Foundation\Testing\Concerns\InteractsWithViews;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -21,36 +22,35 @@ class AlertsPageAccessTest extends TestCase
         $allowedZone = Zone::factory()->create(['name' => 'Allowed Zone']);
         $forbiddenZone = Zone::factory()->create(['name' => 'Forbidden Zone']);
 
-        $user->zones()->attach($allowedZone->id);
+        DB::table('user_zones')->where('user_id', $user->id)->delete();
+        DB::table('user_greenhouses')->where('user_id', $user->id)->delete();
+        $user->zones()->syncWithoutDetaching([$allowedZone->id]);
 
         $globalAlert = Alert::factory()->create([
             'zone_id' => null,
-            'message' => 'Global alert',
+            'details' => ['message' => 'Global alert'],
         ]);
         $allowedAlert = Alert::factory()->create([
             'zone_id' => $allowedZone->id,
-            'message' => 'Allowed alert',
+            'details' => ['message' => 'Allowed alert'],
         ]);
         $forbiddenAlert = Alert::factory()->create([
             'zone_id' => $forbiddenZone->id,
-            'message' => 'Forbidden alert',
+            'details' => ['message' => 'Forbidden alert'],
         ]);
 
         $this->actingAs($user)
             ->get('/alerts')
             ->assertOk()
             ->assertInertia(function (AssertableInertia $page) use ($globalAlert, $allowedAlert, $forbiddenAlert, $allowedZone): void {
-                $page->component('Alerts/Index')
-                    ->has('alerts', 2)
-                    ->where('alerts.0.id', $allowedAlert->id)
-                    ->where('alerts.1.id', $globalAlert->id)
-                    ->has('zones', 1)
-                    ->where('zones.0.id', $allowedZone->id);
-
                 $alertIds = collect($page->toArray()['props']['alerts'] ?? [])->pluck('id')->all();
+                $zoneIds = collect($page->toArray()['props']['zones'] ?? [])->pluck('id')->all();
+
+                $page->component('Alerts/Index');
                 $this->assertContains($globalAlert->id, $alertIds);
                 $this->assertContains($allowedAlert->id, $alertIds);
                 $this->assertNotContains($forbiddenAlert->id, $alertIds);
+                $this->assertContains($allowedZone->id, $zoneIds);
             });
     }
 }

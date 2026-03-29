@@ -289,15 +289,10 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
                 return item
         self.fail(f"Step '{step_name}' is missing in section '{section}'")
 
-    def test_fill_ph_command_is_optional_but_recirc_ph_command_is_still_required(self) -> None:
+    def test_fill_and_recirc_ph_commands_are_optional_in_cold_start_setup_ready(self) -> None:
         fill_step = self._find_step("actions", "load_fill_ph_correction_commands_if_any")
         recirc_stage_step = self._find_step("actions", "wait_prepare_recirculation_stage")
-        recirc_ph_step = self._find_step("actions", "wait_recirculation_ph_correction_command")
-        assertion = next(
-            item
-            for item in self.scenario.get("assertions", [])
-            if item.get("name") == "ph_down_correction_logged"
-        )
+        recirc_ph_step = self._find_step("actions", "load_recirculation_ph_correction_commands_if_any")
 
         self.assertEqual(fill_step.get("type"), "database_query")
         fill_query = str(fill_step.get("query") or "")
@@ -309,14 +304,12 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
 
         recirc_ph_query = str(recirc_ph_step.get("query") or "")
         self.assertIn("created_at >= CAST(:after_stage_started_at AS timestamptz)", recirc_ph_query)
+        self.assertIn("channel IN ('pump_acid', 'pump_base')", recirc_ph_query)
+        self.assertNotIn("expected_rows", recirc_ph_step)
         self.assertEqual(
             recirc_ph_step.get("params", {}).get("after_command_id"),
             "${recirc_ec_correction_row.0.id}",
         )
-
-        condition = str(assertion.get("condition") or "")
-        self.assertIn("ph_down_correction_cnt", condition)
-        self.assertIn(">= 1", condition)
 
     def test_process_observe_windows_match_default_real_hardware_contract(self) -> None:
         for step_name in [
@@ -346,6 +339,25 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
         self.assertNotIn("status = 'completed'", query)
         self.assertNotIn("ABS(ph.last_value - 5.0)", query)
         self.assertNotIn("ABS(ec.last_value - 2.4)", query)
+        self.assertGreaterEqual(float(step.get("timeout", 0.0)), 600.0)
+
+
+class TestAe3LiteDoseCommandContract(unittest.TestCase):
+    SCENARIO_PATHS = [
+        READY_DURING_FILL_SCENARIO_PATH,
+        SETUP_READY_SCENARIO_PATH,
+        RETRY_LIMIT_SCENARIO_PATH,
+        RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+        HOT_RELOAD_SCENARIO_PATH,
+        PIGGYBACK_SCENARIO_PATH,
+    ]
+
+    def test_realhw_correction_scenarios_expect_canonical_dose_command(self) -> None:
+        for path in self.SCENARIO_PATHS:
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn("payload->>'cmd' = 'run_pump'", text)
+                self.assertIn("payload->>'cmd' = 'dose'", text)
 
 
 class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):

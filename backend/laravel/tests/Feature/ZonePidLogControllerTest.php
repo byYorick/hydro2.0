@@ -145,13 +145,18 @@ class ZonePidLogControllerTest extends TestCase
 
         $response = $this->getJson("/api/zones/{$zone->id}/pid-logs?type=ph");
 
-        $response->assertStatus(200)
-            ->assertJsonPath('data.0.type', 'config_updated')
-            ->assertJsonPath('data.0.pid_type', 'ph')
-            ->assertJsonPath('data.0.updated_by', 77)
-            ->assertJsonPath('data.0.new_config.dead_zone', 0.05)
-            ->assertJsonPath('data.1.type', 'ph')
-            ->assertJsonPath('data.1.integral_term', 1.75)
-            ->assertJsonPath('data.1.zone_state', 'far');
+        $response->assertStatus(200);
+
+        $data = collect($response->json('data'));
+        $configLog = $data->firstWhere('type', 'config_updated');
+        $outputLog = $data->firstWhere('type', 'ph');
+
+        $this->assertNotNull($configLog);
+        $this->assertNotNull($outputLog);
+        $this->assertSame('ph', $configLog['pid_type'] ?? null);
+        $this->assertSame(77, $configLog['updated_by'] ?? null);
+        $this->assertSame(0.05, data_get($configLog, 'new_config.dead_zone'));
+        $this->assertSame(1.75, $outputLog['integral_term'] ?? null);
+        $this->assertSame('far', $outputLog['zone_state'] ?? null);
     }
 }

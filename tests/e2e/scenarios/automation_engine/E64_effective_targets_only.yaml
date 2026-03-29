@@ -5,8 +5,8 @@ name: E64_effective_targets_only
 description: |
   Проверяет, что Automation-engine читает targets только через effective-targets:
   - Recipe targets игнорируются в пользу effective-targets
-  - Override targets имеют приоритет над recipe targets
-  - Batch updates корректно отражаются в effective-targets
+  - cycle.manual_overrides не имеют права переопределять canonical pH/EC targets
+  - execution/config overrides корректно отражаются в effective-targets
 
 actions:
   - step: set_test_zone_uid
@@ -363,7 +363,7 @@ actions:
     endpoint: /api/zones/${zone_id}/effective-targets
     save: initial_effective_targets
 
-  # Override targets через authority cycle.manual_overrides
+  # Manual overrides: climate request разрешен, canonical pH/EC targets должны остаться recipe-derived
   - step: apply_manual_target_overrides
     type: api_put
     endpoint: /api/automation-configs/grow_cycle/${cycle_id}/cycle.manual_overrides
@@ -389,7 +389,8 @@ actions:
     type: sleep
     seconds: 2
 
-  # Проверяем финальные effective-targets (должны быть override значения)
+  # Проверяем финальные effective-targets:
+  # climate_request должен обновиться, а canonical pH/EC targets должны остаться recipe-derived
   - step: fetch_final_effective_targets
     type: api_get
     endpoint: /api/zones/${zone_id}/effective-targets
@@ -412,18 +413,18 @@ assertions:
         operator: equals
         value: 22
 
-  # Проверка 2: Финальные effective-targets соответствуют override
-  - name: final_targets_from_override
+  # Проверка 2: pH/EC остаются canonical recipe-derived, execution override применяется только к climate_request
+  - name: final_targets_keep_canonical_ph_ec_and_apply_climate_override
     type: json_assertion
     source: final_effective_targets
     path: data.targets
     expected:
       - field: ph.target
         operator: equals
-        value: 6.5
+        value: 6
       - field: ec.target
         operator: equals
-        value: 1.8
+        value: 1.5
       - field: climate_request.temp_air_target
         operator: equals
         value: 25

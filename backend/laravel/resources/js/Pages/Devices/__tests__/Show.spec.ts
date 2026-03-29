@@ -1,6 +1,58 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const { sampleDevice, resetSampleDevice } = vi.hoisted(() => {
+  const makeDevice = () => ({
+    id: 1,
+    uid: 'node-ph-1',
+    name: 'pH Sensor Node',
+    type: 'ph',
+    status: 'online',
+    fw_version: '1.0.0',
+    config: { sample_rate: 60 },
+    zone: {
+      id: 1,
+      name: 'Zone A1',
+    },
+    channels: [
+      {
+        channel: 'ph_sensor',
+        type: 'SENSOR',
+        metric: 'PH',
+        unit: 'pH',
+      },
+      {
+        channel: 'pump_acid',
+        type: 'ACTUATOR',
+        metric: null,
+        unit: null,
+      },
+      {
+        channel: 'temp_sensor',
+        type: 'SENSOR',
+        metric: 'TEMPERATURE',
+        unit: '°C',
+      },
+      {
+        channel: 'humidity_sensor',
+        type: 'SENSOR',
+        metric: 'HUMIDITY',
+        unit: '%',
+      },
+    ],
+  })
+
+  const sampleDevice = makeDevice()
+  const resetSampleDevice = () => {
+    Object.keys(sampleDevice).forEach((key) => {
+      delete sampleDevice[key as keyof typeof sampleDevice]
+    })
+    Object.assign(sampleDevice, makeDevice())
+  }
+
+  return { sampleDevice, resetSampleDevice }
+})
+
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
 }))
@@ -107,46 +159,6 @@ vi.mock('@/composables/useToast', () => ({
   }),
 }))
 
-const sampleDevice = {
-  id: 1,
-  uid: 'node-ph-1',
-  name: 'pH Sensor Node',
-  type: 'ph',
-  status: 'online',
-  fw_version: '1.0.0',
-  config: { sample_rate: 60 },
-  zone: {
-    id: 1,
-    name: 'Zone A1',
-  },
-  channels: [
-    {
-      channel: 'ph_sensor',
-      type: 'SENSOR',
-      metric: 'PH',
-      unit: 'pH',
-    },
-    {
-      channel: 'pump_acid',
-      type: 'ACTUATOR',
-      metric: null,
-      unit: null,
-    },
-    {
-      channel: 'temp_sensor',
-      type: 'SENSOR',
-      metric: 'TEMPERATURE',
-      unit: '°C',
-    },
-    {
-      channel: 'humidity_sensor',
-      type: 'SENSOR',
-      metric: 'HUMIDITY',
-      unit: '%',
-    },
-  ],
-}
-
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
@@ -160,6 +172,7 @@ import DevicesShow from '../Show.vue'
 
 describe('Devices/Show.vue', () => {
   beforeEach(() => {
+    resetSampleDevice()
     axiosPostMock.mockClear()
     mockShowToast.mockClear()
     mockApiGet.mockClear()
@@ -216,9 +229,18 @@ describe('Devices/Show.vue', () => {
     expect(link.props('href')).toBe('/zones/1')
   })
 
-  it.skip('обрабатывает устройство без зоны', () => {
-    // Пропускаем - требует динамического мока
-    expect(true).toBe(true)
+  it('обрабатывает устройство без зоны', () => {
+    // @ts-expect-error test mutation
+    sampleDevice.zone = undefined
+    // @ts-expect-error test mutation
+    delete sampleDevice.zone_id
+    // @ts-expect-error test mutation
+    delete sampleDevice.pending_zone_id
+
+    const wrapper = mount(DevicesShow)
+
+    expect(wrapper.text()).toContain('Zone: -')
+    expect(wrapper.text()).toContain('Устройство не привязано к зоне')
   })
 
   it('не показывает unassigned-state, если есть zone_id без relation zone', () => {
@@ -343,14 +365,24 @@ describe('Devices/Show.vue', () => {
     }
   })
 
-  it.skip('обрабатывает устройство без каналов', () => {
-    // Пропускаем - требует динамического мока
-    expect(true).toBe(true)
+  it('обрабатывает устройство без каналов', () => {
+    sampleDevice.channels = []
+
+    const wrapper = mount(DevicesShow)
+
+    const channelsTable = wrapper.findComponent({ name: 'DeviceChannelsTable' })
+    expect(channelsTable.exists()).toBe(true)
+    expect(channelsTable.props('channels')).toEqual([])
   })
 
-  it.skip('обрабатывает устройство со статусом offline', () => {
-    // Пропускаем - требует динамического мока
-    expect(true).toBe(true)
+  it('обрабатывает устройство со статусом offline', () => {
+    sampleDevice.status = 'offline'
+
+    const wrapper = mount(DevicesShow)
+
+    expect(wrapper.text()).toContain('OFFLINE')
+    const badge = wrapper.findComponent({ name: 'Badge' })
+    expect(badge.props('variant')).toBe('danger')
   })
 
   it('форматирует NodeConfig как JSON', () => {

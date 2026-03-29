@@ -7,6 +7,7 @@ import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 import sys
 import os
+import importlib
 
 # Добавляем путь к модулям
 sys.path.insert(0, os.path.dirname(__file__))
@@ -76,40 +77,38 @@ async def test_sql_injection_protection():
 @pytest.mark.asyncio
 async def test_handle_heartbeat_field_whitelist():
     """Проверка, что handle_heartbeat использует whitelist для полей."""
-    # Импортируем только если модуль доступен
-    try:
-        history_logger_dir = os.path.join(os.path.dirname(__file__), "history-logger")
-        if history_logger_dir not in sys.path:
-            sys.path.insert(0, history_logger_dir)
-        from mqtt_handlers import handle_heartbeat
+    history_logger_dir = os.path.join(os.path.dirname(__file__), "history-logger")
+    if history_logger_dir not in sys.path:
+        sys.path.insert(0, history_logger_dir)
+
+    mqtt_handlers = importlib.import_module("mqtt_handlers")
+    handle_heartbeat = mqtt_handlers.handle_heartbeat
+
+    with patch("mqtt_handlers.execute") as mock_execute, \
+         patch("mqtt_handlers._extract_node_uid") as mock_extract, \
+         patch("mqtt_handlers._parse_json") as mock_parse:
         
-        with patch("mqtt_handlers.execute") as mock_execute, \
-             patch("mqtt_handlers._extract_node_uid") as mock_extract, \
-             patch("mqtt_handlers._parse_json") as mock_parse:
-            
-            mock_extract.return_value = "test-node-uid"
-            mock_parse.return_value = {
-                "uptime": 12345,
-                "free_heap": 50000,
-                "rssi": -55
-            }
-            
-            # Вызываем handle_heartbeat
-            await handle_heartbeat("hydro/test/zn-1/test-node/heartbeat", b'{}')
-            
-            # Проверяем, что execute был вызван
-            assert mock_execute.called
-            
-            # Проверяем, что запрос содержит только разрешенные поля
-            call_args = mock_execute.call_args
-            query = call_args[0][0]
-            
-            # Проверяем наличие разрешенных полей
-            assert "uptime_seconds" in query or "last_heartbeat_at" in query
-            # Проверяем, что используются параметры
-            assert "$" in query
-    except ImportError:
-        pytest.skip("history_logger module not available")
+        mock_extract.return_value = "test-node-uid"
+        mock_parse.return_value = {
+            "uptime": 12345,
+            "free_heap": 50000,
+            "rssi": -55
+        }
+        
+        # Вызываем handle_heartbeat
+        await handle_heartbeat("hydro/test/zn-1/test-node/heartbeat", b'{}')
+        
+        # Проверяем, что execute был вызван
+        assert mock_execute.called
+        
+        # Проверяем, что запрос содержит только разрешенные поля
+        call_args = mock_execute.call_args
+        query = call_args[0][0]
+        
+        # Проверяем наличие разрешенных полей
+        assert "uptime_seconds" in query or "last_heartbeat_at" in query
+        # Проверяем, что используются параметры
+        assert "$" in query
 
 
 @pytest.mark.asyncio

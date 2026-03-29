@@ -7,6 +7,7 @@ use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\User;
 use App\Models\Zone;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -39,6 +40,10 @@ class ChannelBindingsTest extends TestCase
             'flow_rate' => null,
             'specs' => null,
         ]);
+
+        DB::table('user_zones')->where('user_id', $user->id)->delete();
+        DB::table('user_greenhouses')->where('user_id', $user->id)->delete();
+        $user->zones()->syncWithoutDetaching([$zone->id]);
 
         $response = $this->actingAs($user)->postJson('/api/channel-bindings', [
             'infrastructure_instance_id' => $instance->id,

@@ -22,6 +22,15 @@ class AutomationConfigDocumentServiceTest extends TestCase
         $documents = app(AutomationConfigDocumentService::class);
         $zone = Zone::factory()->create();
 
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_SYSTEM_ALERT_POLICIES,
+            AutomationConfigRegistry::SCOPE_SYSTEM,
+            0,
+            [
+                'ae3_operational_resolution_mode' => 'auto_resolve_on_recovery',
+            ]
+        );
+
         Alert::query()->create([
             'zone_id' => $zone->id,
             'source' => 'automation-engine',

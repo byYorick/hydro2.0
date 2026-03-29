@@ -15,7 +15,7 @@ class NodesTest extends TestCase
 
     private function grantZoneAccess(User $user, Zone $zone): void
     {
-        DB::table('user_zones')->insert([
+        DB::table('user_zones')->insertOrIgnore([
             'user_id' => $user->id,
             'zone_id' => $zone->id,
             'created_at' => now(),

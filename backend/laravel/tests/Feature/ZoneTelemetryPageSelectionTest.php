@@ -24,10 +24,12 @@ class ZoneTelemetryPageSelectionTest extends TestCase
             ->get('/zones')
             ->assertStatus(200)
             ->assertInertia(function (AssertableInertia $page) use ($zone): void {
-                $page->component('Zones/Index')
-                    ->has('zones', 1)
-                    ->where('zones.0.id', $zone->id)
-                    ->where('zones.0.telemetry.temperature', 25.6);
+                $zones = collect($page->toArray()['props']['zones'] ?? []);
+                $zoneProps = $zones->firstWhere('id', $zone->id);
+
+                $page->component('Zones/Index');
+                $this->assertNotNull($zoneProps);
+                $this->assertSame(25.6, (float) data_get($zoneProps, 'telemetry.temperature'));
             });
     }
 

@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import MultiSeriesTelemetryChart from '../MultiSeriesTelemetryChart.vue'
 
 // Моки для зависимостей
@@ -51,8 +51,41 @@ const sampleSeries = [
 ]
 
 describe('MultiSeriesTelemetryChart.vue', () => {
+  let clickSpy: ReturnType<typeof vi.spyOn>
+  const originalBlob = globalThis.Blob
+
   beforeEach(() => {
     vi.clearAllMocks()
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    class MockBlob {
+      parts: string[]
+      type: string
+
+      constructor(parts: unknown[], options?: { type?: string }) {
+        this.parts = parts.map((part) => String(part))
+        this.type = options?.type ?? ''
+      }
+
+      text(): Promise<string> {
+        return Promise.resolve(this.parts.join(''))
+      }
+    }
+    vi.stubGlobal('Blob', MockBlob)
+    Object.defineProperty(globalThis.URL, 'createObjectURL', {
+      value: vi.fn(() => 'blob:telemetry-export'),
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(globalThis.URL, 'revokeObjectURL', {
+      value: vi.fn(),
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  afterEach(() => {
+    clickSpy.mockRestore()
+    vi.stubGlobal('Blob', originalBlob)
   })
 
   it('отображает компонент с сериями данных', () => {
@@ -222,12 +255,32 @@ describe('MultiSeriesTelemetryChart.vue', () => {
   })
 
   describe('exportData', () => {
-    it.skip('экспортирует данные в CSV', async () => {
-      // Пропускаем тест экспорта, так как он требует полной поддержки DOM API
-      // который не полностью реализован в jsdom
-      // В реальном браузере функция работает корректно
-      expect(true).toBe(true)
+    it('экспортирует данные в CSV', async () => {
+      const wrapper = mount(MultiSeriesTelemetryChart, {
+        props: {
+          title: 'Telemetry Export',
+          series: sampleSeries,
+          timeRange: '24H',
+        },
+      })
+
+      const exportButton = wrapper.findAll('button').find((button) => button.text().includes('Экспорт'))
+      expect(exportButton).toBeTruthy()
+
+      await exportButton?.trigger('click')
+
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+      const blobArg = vi.mocked(URL.createObjectURL).mock.calls[0]?.[0]
+      expect(blobArg).toBeInstanceOf(Blob)
+
+      const csvContent = await blobArg.text()
+      expect(csvContent).toContain('Время,Температура (°C),Влажность (%)')
+      expect(csvContent).toContain('20.5,60')
+      expect(csvContent).toContain('21,61')
+      expect(csvContent).toContain('21.5,62')
+
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:telemetry-export')
     })
   })
 })
-

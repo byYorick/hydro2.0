@@ -611,10 +611,7 @@ describe('Zones/Show.vue', () => {
     const zoneTargets = wrapper.findComponent({ name: 'ZoneTargets' })
     expect(zoneTargets.exists()).toBe(true)
     expect(zoneTargets.props('telemetry')).toEqual(sampleTelemetry)
-    expect(zoneTargets.props('targets')).toEqual({
-      ph: { target: 5.0, min: 4.9, max: 5.1 },
-      ec: { target: 1.8, min: 1.7, max: 1.9 },
-    })
+    expect(zoneTargets.props('targets')).toEqual(sampleTargets)
   })
 
   it('отображает графики с данными', async () => {

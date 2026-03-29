@@ -19,6 +19,7 @@ class DeviceNodeAccessConsistencyTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->revokeZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->get("/devices/{$node->id}");
 
@@ -30,6 +31,7 @@ class DeviceNodeAccessConsistencyTest extends TestCase
         $user = User::factory()->create(['role' => 'operator']);
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $this->revokeZoneAccess($user, $zone);
 
         $response = $this->actingAs($user)->postJson("/api/nodes/{$node->id}/commands", [
             'cmd' => 'restart',
@@ -49,12 +51,7 @@ class DeviceNodeAccessConsistencyTest extends TestCase
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
 
-        DB::table('user_zones')->insert([
-            'user_id' => $user->id,
-            'zone_id' => $zone->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $user->zones()->syncWithoutDetaching([$zone->id]);
 
         $this->mock(PythonBridgeService::class, function ($mock) use ($node): void {
             $mock->shouldReceive('sendNodeCommand')
@@ -99,5 +96,18 @@ class DeviceNodeAccessConsistencyTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.command_id', 'cmd-agronomist-unassigned');
+    }
+
+    private function revokeZoneAccess(User $user, Zone $zone): void
+    {
+        DB::table('user_zones')
+            ->where('user_id', $user->id)
+            ->where('zone_id', $zone->id)
+            ->delete();
+
+        DB::table('user_greenhouses')
+            ->where('user_id', $user->id)
+            ->where('greenhouse_id', $zone->greenhouse_id)
+            ->delete();
     }
 }

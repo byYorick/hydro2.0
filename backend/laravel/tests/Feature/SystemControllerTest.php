@@ -10,6 +10,7 @@ use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class SystemControllerTest extends TestCase
@@ -185,8 +186,10 @@ class SystemControllerTest extends TestCase
             ->getJson('/api/system/config/full');
 
         $response->assertOk();
-        
-        $viewer->greenhouses()->attach($greenhouse1->id);
+
+        DB::table('user_greenhouses')->where('user_id', $viewer->id)->delete();
+        DB::table('user_zones')->where('user_id', $viewer->id)->delete();
+        $viewer->greenhouses()->syncWithoutDetaching([$greenhouse1->id]);
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $viewerToken)
             ->getJson('/api/system/config/full');

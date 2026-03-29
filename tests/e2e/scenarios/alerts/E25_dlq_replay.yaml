@@ -1,17 +1,18 @@
-# E25: DLQ Replay - pending_alerts.dlq -> replay -> delivered
-# DoD: DLQ item -> replay -> delivered
+# E25: DLQ Replay - pending_alerts_dlq -> replay -> delivered
+# DoD: pending_alerts_dlq item -> replay -> delivered
 
 name: E25_dlq_replay
 description: |
   Проверяет механизм replay алерта из DLQ:
-  - Создается pending_alert со статусом dlq
+  - Создается запись в pending_alerts_dlq
   - Выполняется replay через API
-  - pending_alert удаляется
+  - запись удаляется из pending_alerts_dlq
   - алерт создается в alerts со статусом ACTIVE
 
 setup:
   prerequisites:
     - database: pending_alerts table exists
+    - database: pending_alerts_dlq table exists
     - database: alerts table exists
     - database: zones table exists with zone_id for zn-test-1
     - backend: Laravel is running
@@ -61,13 +62,23 @@ actions:
       zone_id: ${zone_id}
       code: infra_sensor_failure
 
+  - step: cleanup_pending_alerts_dlq
+    type: db.execute
+    query: |
+      DELETE FROM pending_alerts_dlq
+      WHERE zone_id = :zone_id
+      AND code = :code
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+
   - step: create_dlq_item
     type: database_query
     query: |
-      INSERT INTO pending_alerts
-        (zone_id, source, code, type, status, details, attempts, max_attempts, last_error, next_retry_at, moved_to_dlq_at, created_at, updated_at)
+      INSERT INTO pending_alerts_dlq
+        (zone_id, source, code, type, status, details, attempts, max_attempts, last_error, failed_at, moved_to_dlq_at, created_at, original_id)
       VALUES
-        (:zone_id, 'infra', :code, 'error', 'dlq', :details::jsonb, 3, 3, 'Simulated delivery failure', NULL, NOW(), NOW(), NOW())
+        (:zone_id, 'infra', :code, 'error', 'dlq', :details::jsonb, 3, 3, 'Simulated delivery failure', NOW(), NOW(), NOW(), NULL)
       RETURNING id
     params:
       zone_id: ${zone_id}
@@ -75,27 +86,27 @@ actions:
       details: '{"reason":"simulated_dlq"}'
     save: dlq_row
 
-  - step: set_pending_alert_id
+  - step: set_dlq_id
     type: set
-    pending_alert_id: ${dlq_row.0.id}
+    dlq_id: ${dlq_row.0.id}
 
   - step: replay_dlq_item
     type: api_post
-    endpoint: /api/alerts/dlq/${pending_alert_id}/replay
+    endpoint: /api/alerts/dlq/${dlq_id}/replay
     expected_status: 200
     retries: 10
     retry_delay_seconds: 1
     wait_seconds: 1
 
 assertions:
-  - name: pending_alert_removed
+  - name: dlq_item_removed
     type: db.wait
     query: |
       SELECT id
-      FROM pending_alerts
-      WHERE id = :pending_alert_id
+      FROM pending_alerts_dlq
+      WHERE id = :dlq_id
     params:
-      pending_alert_id: ${pending_alert_id}
+      dlq_id: ${dlq_id}
     timeout: 15.0
     expected_rows: 0
 
@@ -119,6 +130,26 @@ cleanup:
     type: db.execute
     query: |
       DELETE FROM alerts
+      WHERE zone_id = :zone_id
+      AND code = :code
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+
+  - step: cleanup_pending_alerts
+    type: db.execute
+    query: |
+      DELETE FROM pending_alerts
+      WHERE zone_id = :zone_id
+      AND code = :code
+    params:
+      zone_id: ${zone_id}
+      code: infra_sensor_failure
+
+  - step: cleanup_pending_alerts_dlq
+    type: db.execute
+    query: |
+      DELETE FROM pending_alerts_dlq
       WHERE zone_id = :zone_id
       AND code = :code
     params:

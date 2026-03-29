@@ -1,4 +1,5 @@
 import { mount, config } from '@vue/test-utils'
+import { ref } from 'vue'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
@@ -12,6 +13,23 @@ vi.mock('@/Components/Badge.vue', () => ({
 }))
 vi.mock('@/Components/ZoneComparisonModal.vue', () => ({
   default: { name: 'ZoneComparisonModal', props: ['open', 'zones'], template: '<div v-if="open"><slot /></div>' },
+}))
+vi.mock('@/Components/DataTableV2.vue', () => ({
+  default: {
+    name: 'DataTableV2',
+    props: ['columns', 'rows', 'emptyTitle', 'emptyDescription', 'containerClass'],
+    template: '<div class="data-table-v2-stub"><slot /></div>',
+  },
+}))
+vi.mock('@/Components/Pagination.vue', () => ({
+  default: {
+    name: 'Pagination',
+    props: ['currentPage', 'perPage', 'total'],
+    template: '<div class="pagination-stub"></div>',
+  },
+}))
+vi.mock('@/composables/useUrlState', () => ({
+  useUrlState: ({ defaultValue }: { defaultValue: string | number | boolean }) => ref(defaultValue),
 }))
 
 const sampleZones = [
@@ -122,38 +140,48 @@ beforeAll(async () => {
 
 const mountZones = () => mount(ZonesIndex)
 
-describe('Zones Index - Virtualization (P2-1)', () => {
-  // ПРИМЕЧАНИЕ: Virtualization не реализован в текущей версии Index.vue
-  // Компонент использует обычную таблицу вместо RecycleScroller
-  it.skip('should render RecycleScroller for table body', () => {
+describe('Zones Index - Table Contract', () => {
+  it('should render DataTableV2 for table body', () => {
     const wrapper = mountZones()
     
-    const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
-    expect(scroller.exists()).toBe(true)
+    const table = wrapper.findComponent({ name: 'DataTableV2' })
+    expect(table.exists()).toBe(true)
   })
 
-  it.skip('should pass filtered rows to RecycleScroller', () => {
+  it('should pass paginated rows to DataTableV2', () => {
     const wrapper = mountZones()
     
-    const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
-    expect(scroller.props('items')).toBeDefined()
-    expect(Array.isArray(scroller.props('items'))).toBe(true)
+    const table = wrapper.findComponent({ name: 'DataTableV2' })
+    expect(table.props('rows')).toEqual(sampleZones)
   })
 
-  it.skip('should set item-size prop', () => {
+  it('should expose canonical columns configuration', () => {
     const wrapper = mountZones()
     
-    const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
-    const sizeProp = scroller.props('itemSize') ?? scroller.props('item-size')
-    expect(sizeProp).toBe(44)
+    const table = wrapper.findComponent({ name: 'DataTableV2' })
+    const columns = table.props('columns')
+
+    expect(columns).toBeDefined()
+    expect(Array.isArray(columns)).toBe(true)
+    expect(columns.map((column: { key: string }) => column.key)).toEqual([
+      'name',
+      'status',
+      'greenhouse',
+      'ph',
+      'ec',
+      'temperature',
+      'actions',
+    ])
   })
 
-  it.skip('should set key-field prop', () => {
+  it('should keep default pagination state', () => {
     const wrapper = mountZones()
     
-    const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
-    const keyField = scroller.props('keyField') ?? scroller.props('key-field')
-    expect(keyField).toBe('0')
+    const pagination = wrapper.findComponent({ name: 'Pagination' })
+    expect(pagination.exists()).toBe(true)
+    expect(pagination.props('currentPage')).toBe(1)
+    expect(pagination.props('perPage')).toBe(25)
+    expect(pagination.props('total')).toBe(3)
   })
 
   it('should filter zones correctly with virtualization', async () => {
@@ -182,14 +210,10 @@ describe('Zones Index - Virtualization (P2-1)', () => {
     expect(wrapper.vm.filteredZones[0].name).toBe('Zone 1')
   })
 
-  it.skip('should return all zones when no filters are applied', () => {
+  it('should return all zones when no filters are applied', () => {
     const wrapper = mountZones()
     
-    const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
-    const filteredItems = scroller.props('items')
-    
-    // Без фильтров должны быть все зоны
-    expect(filteredItems.length).toBe(3)
+    expect(wrapper.vm.filteredZones).toHaveLength(3)
+    expect(wrapper.vm.paginatedZones).toHaveLength(3)
   })
 })
-

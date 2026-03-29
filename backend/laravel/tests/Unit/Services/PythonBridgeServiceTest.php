@@ -100,7 +100,7 @@ class PythonBridgeServiceTest extends TestCase
         $zone = Zone::factory()->create();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Node non-existent-node not found or not assigned to zone \d+/');
+        $this->expectExceptionMessageMatches('/Node non-existent-node not found or not assigned(?:\/pending)? to zone \d+/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -117,7 +117,7 @@ class PythonBridgeServiceTest extends TestCase
         $node = DeviceNode::factory()->create(['zone_id' => $zone1->id, 'uid' => 'nd-ph-1']);
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Node nd-ph-1 not found or not assigned to zone \d+/');
+        $this->expectExceptionMessageMatches('/Node nd-ph-1 not found or not assigned(?:\/pending)? to zone \d+/');
 
         $this->service->sendZoneCommand($zone2, [
             'type' => 'FORCE_IRRIGATION',

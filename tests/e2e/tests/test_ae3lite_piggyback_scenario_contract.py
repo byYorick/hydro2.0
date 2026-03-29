@@ -44,24 +44,30 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertIn("updated_at AS stage_started_at", stage_query)
 
         ec_query = str(ec_step.get("query") or "")
-        self.assertIn("created_at >= CAST(:after_stage_started_at AS timestamptz)", ec_query)
+        self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", ec_query)
         self.assertEqual(
-            ec_step.get("params", {}).get("after_stage_started_at"),
-            "${prepare_recirc_stage_row.0.stage_started_at}",
+            ec_step.get("params", {}).get("after_seeded_at"),
+            "${seed_recirculation_command_row.0.created_at}",
         )
+        self.assertIn("payload->>'cmd' = 'dose'", ec_query)
 
         ph_query = str(ph_step.get("query") or "")
-        self.assertIn("created_at >= CAST(:after_stage_started_at AS timestamptz)", ph_query)
+        self.assertIn("created_at >= CAST(:after_seeded_at AS timestamptz)", ph_query)
         self.assertEqual(
             ph_step.get("params", {}).get("after_command_id"),
             "${recirc_ec_correction_row.0.id}",
         )
+        self.assertEqual(
+            ph_step.get("params", {}).get("after_seeded_at"),
+            "${seed_recirculation_command_row.0.created_at}",
+        )
+        self.assertIn("payload->>'cmd' = 'dose'", ph_query)
 
     def test_post_piggyback_checks_require_live_targets_not_just_status(self) -> None:
-        task_step = self._find_step("actions", "wait_task_not_failed_after_piggyback")
-        targets_step = self._find_step("actions", "wait_targets_reached_on_node_after_piggyback")
+        task_step = self._find_step("actions", "wait_task_not_failed_after_sequential_loop")
+        targets_step = self._find_step("actions", "wait_targets_reached_on_node_after_sequential_loop")
         internal_assert = self._find_assertion("internal_task_not_failed")
-        targets_assert = self._find_assertion("targets_reached_after_piggyback")
+        targets_assert = self._find_assertion("targets_reached_after_sequential_loop")
 
         task_query = str(task_step.get("query") or "")
         self.assertIn("status IN ('pending', 'completed')", task_query)
@@ -77,15 +83,20 @@ class TestAe3LitePiggybackScenarioContract(unittest.TestCase):
         self.assertIn("in ('pending', 'completed')", condition)
 
         targets_condition = str(targets_assert.get("condition") or "")
-        self.assertIn("len(context.get('targets_reached_after_piggyback_row', [])) == 1", targets_condition)
+        self.assertIn("len(context.get('targets_reached_after_sequential_loop_row', [])) == 1", targets_condition)
 
     def test_fixture_profile_does_not_embed_legacy_startup_or_correction_runtime(self) -> None:
-        profile_step = self._find_step("actions", "insert_ae3_profile")
-        query = str(profile_step.get("query") or "")
+        profile_step = self._find_step("actions", "apply_test_node_correction_preset")
+        payload = (profile_step.get("payload") or {}).get("payload") or {}
+        phase_overrides = payload.get("phase_overrides") or {}
+        solution_fill = phase_overrides.get("solution_fill") or {}
+        tank_recirc = phase_overrides.get("tank_recirc") or {}
 
-        self.assertNotIn("'startup', jsonb_build_object(", query)
-        self.assertNotIn("'correction', jsonb_build_object(", query)
-        self.assertIn("'two_tank_commands', jsonb_build_object(", query)
+        for phase in (solution_fill, tank_recirc):
+            dosing = phase.get("dosing") or {}
+            self.assertEqual(dosing.get("dose_ec_channel"), "dose_ec_a")
+            self.assertEqual(dosing.get("dose_ph_up_channel"), "dose_ph_up")
+            self.assertEqual(dosing.get("dose_ph_down_channel"), "dose_ph_down")
 
 
 if __name__ == "__main__":

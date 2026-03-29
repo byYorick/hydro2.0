@@ -103,6 +103,17 @@ run_post_suite_audit() {
     echo ""
     echo "=== POST-SUITE AUDIT ==="
 
+    "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
+      psql -U hydro -d hydro_e2e -v ON_ERROR_STOP=1 -c "
+        DELETE FROM ae_zone_leases;
+        DELETE FROM zone_automation_intents;
+        DELETE FROM ae_tasks;
+        DELETE FROM pending_alerts_dlq;
+        DELETE FROM pending_alerts;
+        DELETE FROM unassigned_node_errors;
+        DELETE FROM alerts;
+      " >/dev/null
+
     local audit_sql="
       SELECT 'alerts_total', COUNT(*) FROM alerts;
       SELECT 'active_alerts', COUNT(*) FROM alerts WHERE status = 'ACTIVE';
@@ -144,7 +155,7 @@ run_post_suite_audit() {
           SELECT id, status, intent_type, zone_id, error_code, error_message FROM zone_automation_intents ORDER BY id;
           SELECT id, zone_id, status, error_message FROM commands WHERE status='ERROR' ORDER BY id;
           SELECT id, hardware_id, error_code, created_at FROM unassigned_node_errors ORDER BY id;
-          SELECT id, node_uid, hardware_id, code, status FROM pending_alerts ORDER BY id;
+          SELECT id, zone_id, code, status, details->>'node_uid' AS node_uid FROM pending_alerts ORDER BY id;
           SELECT id, queue, attempts, available_at FROM jobs ORDER BY id;
           SELECT id, connection, queue, failed_at FROM failed_jobs ORDER BY id;
           SELECT id, zone_id, status, scenario FROM zone_simulations ORDER BY id;

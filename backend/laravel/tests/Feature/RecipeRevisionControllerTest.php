@@ -143,7 +143,7 @@ class RecipeRevisionControllerTest extends TestCase
         $this->assertEquals(2, $newRevision->phases()->count());
         $clonedPhase = $newRevision->phases()->orderBy('phase_index')->first();
         $this->assertSame('TEST_PROGRAM', $clonedPhase?->nutrient_program_code);
-        $this->assertSame('06:00:00', $clonedPhase?->lighting_start_time);
+        $this->assertSame('06:00:00', $clonedPhase?->lighting_start_time?->format('H:i:s'));
         $this->assertSame('drip', data_get($clonedPhase?->extensions, 'subsystems.irrigation.targets.system_type'));
     }
 

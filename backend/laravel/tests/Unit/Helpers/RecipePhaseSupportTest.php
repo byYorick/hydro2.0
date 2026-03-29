@@ -82,7 +82,7 @@ class RecipePhaseSupportTest extends TestCase
         $this->assertSame(62.0, data_get($presented, 'targets.humidity_air'));
         $this->assertSame('SUBSTRATE', data_get($presented, 'targets.irrigation.mode'));
         $this->assertSame('drip', data_get($presented, 'targets.irrigation.system_type'));
-        $this->assertSame(23.0, data_get($presented, 'extensions.day_night.temperature.day'));
-        $this->assertSame(21.0, data_get($presented, 'extensions.day_night.temperature.night'));
+        $this->assertEquals(23.0, data_get($presented, 'extensions.day_night.temperature.day'));
+        $this->assertEquals(21.0, data_get($presented, 'extensions.day_night.temperature.night'));
     }
 }

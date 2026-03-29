@@ -52,6 +52,15 @@ class ZoneLogicProfileNormalizer
                 $entry['enabled'] = (bool) $subsystem['enabled'];
             }
 
+            $targets = [];
+            if (isset($subsystem['targets']) && is_array($subsystem['targets']) && ! array_is_list($subsystem['targets'])) {
+                $targets = $subsystem['targets'];
+            }
+
+            if ($targets !== []) {
+                $entry['targets'] = $targets;
+            }
+
             $execution = [];
             if (isset($subsystem['execution']) && is_array($subsystem['execution'])) {
                 $execution = $subsystem['execution'];

@@ -21,6 +21,14 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   # Проверяем статус узлов (некоторые могут быть offline)
   - step: check_nodes_status
     type: database_query
@@ -75,13 +83,23 @@ actions:
       name: Test Phase
       duration_hours: 24
       ph_target: 6.0
+      ph_min: 5.5
+      ph_max: 6.5
       ec_target: 1.5
+      ec_min: 1.3
+      ec_max: 1.7
       irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+      temp_air_target: 22.0
+      humidity_target: 60.0
+      lighting_photoperiod_hours: 16
     optional: true
 
   - step: publish_revision_if_needed
     type: api_post
     endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
     optional: true
 
   - step: create_cycle_if_needed

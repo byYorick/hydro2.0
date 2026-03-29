@@ -98,6 +98,13 @@ class ZoneCommandController extends Controller
             $activeCycle = $this->findActiveCycle($zone);
             if ($activeCycle) {
                 $requestedSystemType = Arr::get($data, 'params.subsystems.irrigation.targets.system_type');
+                if (! is_string($requestedSystemType) || trim($requestedSystemType) === '') {
+                    $profileMode = Arr::get($data, 'params.profile_mode');
+                    if (is_string($profileMode) && trim($profileMode) !== '') {
+                        $profile = $this->automationLogicProfiles->resolveProfileByMode($zone->id, $profileMode);
+                        $requestedSystemType = Arr::get($profile?->subsystems ?? [], 'irrigation.targets.system_type');
+                    }
+                }
                 if (is_string($requestedSystemType) && $requestedSystemType !== '') {
                     $currentSystemType = Arr::get($activeCycle->settings ?? [], 'irrigation.system_type');
                     if (!is_string($currentSystemType) || trim($currentSystemType) === '') {

@@ -82,6 +82,28 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: grant_e2e_greenhouse_acl
+    type: database_execute
+    query: |
+      INSERT INTO user_greenhouses (user_id, greenhouse_id, created_at, updated_at)
+      SELECT id, :greenhouse_id, NOW(), NOW()
+      FROM users
+      WHERE email = 'e2e@test.local'
+      ON CONFLICT (user_id, greenhouse_id) DO NOTHING
+    params:
+      greenhouse_id: ${greenhouse_id}
+
+  - step: grant_e2e_zone_acl
+    type: database_execute
+    query: |
+      INSERT INTO user_zones (user_id, zone_id, created_at, updated_at)
+      SELECT id, :zone_id, NOW(), NOW()
+      FROM users
+      WHERE email = 'e2e@test.local'
+      ON CONFLICT (user_id, zone_id) DO NOTHING
+    params:
+      zone_id: ${zone_id}
+
   - step: create_recipe
     type: database_execute
     query: |
@@ -237,60 +259,137 @@ actions:
       phase_id: ${phase_id}
       grow_cycle_id: ${grow_cycle_id}
 
-  - step: create_profile
-    type: database_execute
+  - step: load_test_node_correction_preset
+    type: database_query
     query: |
-      INSERT INTO zone_automation_logic_profiles (
-        zone_id,
-        mode,
-        subsystems,
-        command_plans,
-        is_active,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        :zone_id,
-        'working',
-        jsonb_build_object(
-          'diagnostics', jsonb_build_object(
-            'execution', jsonb_build_object(
-              'workflow', 'cycle_start',
-              'topology', 'two_tank_drip_substrate_trays',
-              'required_node_types', jsonb_build_array('irrig'),
-              'startup', jsonb_build_object('level_poll_interval_sec', 11)
-            )
-          )
-        ),
-        jsonb_build_object(
-          'schema_version', 1,
-          'plan_version', 1,
-          'plans', jsonb_build_object(
-            'diagnostics', jsonb_build_object(
-              'execution', jsonb_build_object(
-                'workflow', 'cycle_start',
-                'topology', 'two_tank_drip_substrate_trays',
-                'required_node_types', jsonb_build_array('irrig'),
-                'startup', jsonb_build_object('level_poll_interval_sec', 11)
-              ),
-              'steps', jsonb_build_array(
-                jsonb_build_object(
-                  'name', 'pump_start',
-                  'channel', 'irrigation_pump',
-                  'cmd', 'set_relay',
-                  'params', jsonb_build_object('state', true),
-                  'timeout_sec', 20
-                )
-              )
-            )
-          )
-        ),
-        TRUE,
-        NOW(),
-        NOW()
-      )
+      SELECT id
+      FROM zone_correction_presets
+      WHERE slug = 'test-node'
+      LIMIT 1
+    expected_rows: 1
+    save: test_node_correction_preset_row
+
+  - step: apply_test_node_correction_preset
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
+    payload:
+      payload:
+        preset_id: ${test_node_correction_preset_row.0.id}
+        base_config: {}
+        phase_overrides: {}
+
+  - step: apply_zone_pid_ph
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.pid.ph
+    payload:
+      payload:
+        dead_zone: 0.04
+        close_zone: 0.18
+        far_zone: 0.65
+        zone_coeffs:
+          close:
+            kp: 0.18
+            ki: 0.01
+            kd: 0.0
+          far:
+            kp: 0.28
+            ki: 0.015
+            kd: 0.0
+        max_integral: 12.0
+
+  - step: apply_zone_pid_ec
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.pid.ec
+    payload:
+      payload:
+        dead_zone: 0.06
+        close_zone: 0.25
+        far_zone: 0.9
+        zone_coeffs:
+          close:
+            kp: 0.35
+            ki: 0.02
+            kd: 0.0
+          far:
+            kp: 0.55
+            ki: 0.03
+            kd: 0.0
+        max_integral: 20.0
+
+  - step: apply_cycle_start_snapshot
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.start_snapshot
+    payload:
+      payload:
+        cycle_id: ${grow_cycle_id}
+        zone_id: ${zone_id}
+
+  - step: apply_cycle_phase_overrides
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+    payload:
+      payload: {}
+
+  - step: wait_grow_cycle_bundle_ready
+    type: db.wait
+    query: |
+      SELECT scope_type, scope_id, status, bundle_revision
+      FROM automation_effective_bundles
+      WHERE scope_type = 'grow_cycle'
+        AND scope_id = CAST(:grow_cycle_id AS bigint)
+        AND status = 'valid'
+      LIMIT 1
     params:
-      zone_id: ${zone_id}
+      grow_cycle_id: ${grow_cycle_id}
+    timeout: 20.0
+    expected_rows: 1
+    save: grow_cycle_bundle_row
+
+  - step: create_profile
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+    payload:
+      payload:
+        active_mode: working
+        profiles:
+          working:
+            mode: working
+            is_active: true
+            subsystems:
+              diagnostics:
+                execution:
+                  workflow: cycle_start
+                  topology: generic_cycle_start
+                  required_node_types:
+                    - irrig
+                  startup:
+                    level_poll_interval_sec: 11
+                  steps:
+                    - name: pump_start
+                      channel: irrigation_pump
+                      cmd: set_relay
+                      params:
+                        state: true
+                      timeout_sec: 20
+            command_plans:
+              schema_version: 1
+              plan_version: 1
+              plans:
+                diagnostics:
+                  execution:
+                    workflow: cycle_start
+                    topology: generic_cycle_start
+                    required_node_types:
+                      - irrig
+                    startup:
+                      level_poll_interval_sec: 11
+                  steps:
+                    - name: pump_start
+                      channel: irrigation_pump
+                      cmd: set_relay
+                      params:
+                        state: true
+                      timeout_sec: 20
 
   - step: create_workflow_state
     type: database_execute
@@ -423,7 +522,7 @@ actions:
           'source', CAST(:source AS text),
           'task_type', 'diagnostics',
           'workflow', 'cycle_start',
-          'topology', 'two_tank_drip_substrate_trays'
+          'topology', 'generic_cycle_start'
         ),
         :idempotency_key,
         'pending',
@@ -701,8 +800,10 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      DELETE FROM zone_automation_logic_profiles
-      WHERE zone_id = :zone_id
+      DELETE FROM automation_config_documents
+      WHERE namespace = 'zone.logic_profile'
+        AND scope_type = 'zone'
+        AND scope_id = :zone_id
     params:
       zone_id: ${zone_id}
 

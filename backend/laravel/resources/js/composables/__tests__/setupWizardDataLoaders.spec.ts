@@ -41,14 +41,17 @@ describe('setupWizardDataLoaders', () => {
       availablePlants: ref([]),
       availableRecipes: ref([]),
       availableNodes: ref([]),
+      greenhouseClimateNodes: ref([]),
       selectedGreenhouse: ref(null),
+      selectedZone: ref(null),
+      selectedZoneId: ref(null),
     })
 
     await loaders.loadGreenhouses()
 
     expect(availableGreenhouses.value).toEqual([])
     expect(showToast).toHaveBeenCalled()
-    expect(showToast.mock.calls[0]?.[0]).toBe('Boom greenhouses')
+    expect(showToast.mock.calls[0]?.[0]).toBe('Произошла ошибка сервиса. Проверьте логи и повторите попытку.')
   })
 
   it('не делает запрос зон без выбранной теплицы', async () => {
@@ -69,7 +72,10 @@ describe('setupWizardDataLoaders', () => {
       availablePlants: ref([]),
       availableRecipes: ref([]),
       availableNodes: ref([]),
+      greenhouseClimateNodes: ref([]),
       selectedGreenhouse: ref(null),
+      selectedZone: ref(null),
+      selectedZoneId: ref(null),
     })
 
     await loaders.loadZones()

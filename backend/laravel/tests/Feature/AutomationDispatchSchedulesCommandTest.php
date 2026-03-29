@@ -105,7 +105,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
         $this->assertIsArray($intentPayload);
         $this->assertSame('laravel_scheduler', $intentPayload['source'] ?? null);
-        $this->assertArrayNotHasKey('task_type', $intentPayload);
+        $this->assertSame('irrigation', $intentPayload['task_type'] ?? null);
         $this->assertArrayNotHasKey('topology', $intentPayload);
         $this->assertSame('cycle_start', $intentPayload['workflow'] ?? null);
         $this->assertArrayNotHasKey('task_payload', $intentPayload);
@@ -132,7 +132,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         });
     }
 
-    public function test_command_recovery_reconciles_persisted_active_task_before_next_dispatch(): void
+    public function test_command_recovery_reconciles_persisted_active_task_without_immediate_redispatch(): void
     {
         $this->enableSchedulerConfig();
         Config::set('services.automation_engine.scheduler_hard_stale_after_sec', 121);
@@ -175,7 +175,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->artisan('automation:dispatch-schedules')
             ->assertExitCode(0);
 
-        $this->assertSame(2, $postCalls);
+        $this->assertSame(1, $postCalls);
 
         $oldTask = LaravelSchedulerActiveTask::query()
             ->where('task_id', '2001')
@@ -184,16 +184,18 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertSame('timeout', $oldTask->status);
         $this->assertNotNull($oldTask->terminal_at);
         $this->assertSame('laravel_dispatcher_hard_stale_expiry', $oldTask->details['terminal_source'] ?? null);
-
-        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+        $this->assertDatabaseMissing('laravel_scheduler_active_tasks', [
             'task_id' => '2002',
             'zone_id' => $zone->id,
-            'status' => 'accepted',
         ]);
-        $this->assertDatabaseCount('zone_automation_intents', 2);
+        $this->assertDatabaseCount('zone_automation_intents', 1);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'status' => 'failed',
+        ]);
     }
 
-    public function test_command_marks_task_terminal_when_ae3_engine_reports_completed(): void
+    public function test_command_marks_task_terminal_when_ae3_intent_is_completed_without_immediate_redispatch(): void
     {
         $this->enableSchedulerConfig();
         [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
@@ -252,7 +254,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             return $request->method() === 'GET' && str_ends_with($request->url(), '/internal/tasks/3001');
         });
 
-        $this->assertSame(2, $postCalls);
+        $this->assertSame(1, $postCalls);
         $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
             'task_id' => '3001',
             'status' => 'completed',
@@ -262,15 +264,15 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             ->first();
         $this->assertNotNull($completedTask);
         $this->assertNotNull($completedTask->terminal_at);
-        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+        $this->assertDatabaseMissing('laravel_scheduler_active_tasks', [
             'task_id' => '3002',
             'zone_id' => $zone->id,
-            'status' => 'accepted',
         ]);
         $this->assertDatabaseHas('zone_automation_intents', [
             'id' => $intentId,
             'status' => 'completed',
         ]);
+        $this->assertDatabaseCount('zone_automation_intents', 1);
     }
 
     public function test_command_uses_task_status_from_start_cycle_payload_even_if_accepted_false(): void

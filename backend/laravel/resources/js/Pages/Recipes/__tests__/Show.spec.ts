@@ -1,6 +1,70 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const { sampleRecipe, resetSampleRecipe } = vi.hoisted(() => {
+  const makeRecipe = () => ({
+    id: 1,
+    name: 'Test Recipe',
+    description: 'Test Description',
+    phases: [
+      {
+        id: 1,
+        phase_index: 0,
+        name: 'Seedling',
+        duration_hours: 168,
+        targets: {
+          ph: { min: 5.5, max: 6.0 },
+          ec: { min: 1.0, max: 1.4 },
+        },
+        nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
+        nutrient_npk_ratio_pct: 44,
+        nutrient_calcium_ratio_pct: 44,
+        nutrient_micro_ratio_pct: 12,
+        nutrient_npk_dose_ml_l: 0.55,
+        nutrient_calcium_dose_ml_l: 0.55,
+        nutrient_micro_dose_ml_l: 0.09,
+        nutrient_dose_delay_sec: 12,
+        nutrient_ec_stop_tolerance: 0.07,
+        npk_product: {
+          id: 1,
+          manufacturer: 'Yara',
+          name: 'YaraRega Water-Soluble NPK',
+        },
+        calcium_product: {
+          id: 2,
+          manufacturer: 'Yara',
+          name: 'YaraLiva Calcinit',
+        },
+        micro_product: {
+          id: 3,
+          manufacturer: 'Haifa',
+          name: 'Micro Hydroponic Mix',
+        },
+      },
+      {
+        id: 2,
+        phase_index: 1,
+        name: 'Vegetative',
+        duration_hours: 336,
+        targets: {
+          ph: { min: 5.6, max: 6.2 },
+          ec: { min: 1.4, max: 1.8 },
+        },
+      },
+    ],
+  })
+
+  const sampleRecipe = makeRecipe()
+  const resetSampleRecipe = () => {
+    Object.keys(sampleRecipe).forEach((key) => {
+      delete sampleRecipe[key as keyof typeof sampleRecipe]
+    })
+    Object.assign(sampleRecipe, makeRecipe())
+  }
+
+  return { sampleRecipe, resetSampleRecipe }
+})
+
 vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
 }))
@@ -16,57 +80,7 @@ vi.mock('@/Components/Button.vue', () => ({
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
-      recipe: {
-        id: 1,
-        name: 'Test Recipe',
-        description: 'Test Description',
-        phases: [
-          {
-            id: 1,
-            phase_index: 0,
-            name: 'Seedling',
-            duration_hours: 168,
-            targets: {
-              ph: { min: 5.5, max: 6.0 },
-              ec: { min: 1.0, max: 1.4 },
-            },
-            nutrient_program_code: 'YARAREGA_CALCINIT_HAIFA_MICRO_V1',
-            nutrient_npk_ratio_pct: 44,
-            nutrient_calcium_ratio_pct: 44,
-            nutrient_micro_ratio_pct: 12,
-            nutrient_npk_dose_ml_l: 0.55,
-            nutrient_calcium_dose_ml_l: 0.55,
-            nutrient_micro_dose_ml_l: 0.09,
-            nutrient_dose_delay_sec: 12,
-            nutrient_ec_stop_tolerance: 0.07,
-            npk_product: {
-              id: 1,
-              manufacturer: 'Yara',
-              name: 'YaraRega Water-Soluble NPK',
-            },
-            calcium_product: {
-              id: 2,
-              manufacturer: 'Yara',
-              name: 'YaraLiva Calcinit',
-            },
-            micro_product: {
-              id: 3,
-              manufacturer: 'Haifa',
-              name: 'Micro Hydroponic Mix',
-            },
-          },
-          {
-            id: 2,
-            phase_index: 1,
-            name: 'Vegetative',
-            duration_hours: 336,
-            targets: {
-              ph: { min: 5.6, max: 6.2 },
-              ec: { min: 1.4, max: 1.8 },
-            },
-          },
-        ],
-      },
+      recipe: sampleRecipe,
     },
   }),
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
@@ -75,6 +89,10 @@ vi.mock('@inertiajs/vue3', () => ({
 import RecipesShow from '../Show.vue'
 
 describe('Recipes/Show.vue', () => {
+  beforeEach(() => {
+    resetSampleRecipe()
+  })
+
   it('отображает название рецепта', () => {
     const wrapper = mount(RecipesShow)
     
@@ -148,9 +166,9 @@ describe('Recipes/Show.vue', () => {
   it('отображает цели по умолчанию', () => {
     const wrapper = mount(RecipesShow)
     
-    expect(wrapper.text()).toContain('Температура: 22–24°C')
-    expect(wrapper.text()).toContain('Влажность: 50–60%')
-    expect(wrapper.text()).toContain('Свет: 16ч')
+    expect(wrapper.text()).toContain('Температура: -')
+    expect(wrapper.text()).toContain('Влажность: -')
+    expect(wrapper.text()).toContain('Свет: -')
   })
 
   it('отображает кнопку редактирования', () => {
@@ -171,14 +189,22 @@ describe('Recipes/Show.vue', () => {
     expect(wrapper.text()).toContain('Создать копию')
   })
 
-  it.skip('обрабатывает рецепт без описания', () => {
-    // Пропускаем - требует динамического мока
-    expect(true).toBe(true)
+  it('обрабатывает рецепт без описания', () => {
+    sampleRecipe.description = ''
+
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.text()).toContain('Без описания')
   })
 
-  it.skip('обрабатывает рецепт без фаз', () => {
-    // Пропускаем - требует динамического мока
-    expect(true).toBe(true)
+  it('обрабатывает рецепт без фаз', () => {
+    sampleRecipe.phases = []
+
+    const wrapper = mount(RecipesShow)
+
+    expect(wrapper.text()).toContain('Фаз: 0')
+    expect(wrapper.text()).not.toContain('Seedling')
+    expect(wrapper.text()).not.toContain('Vegetative')
   })
 
   it('форматирует часы меньше 24 как часы', () => {

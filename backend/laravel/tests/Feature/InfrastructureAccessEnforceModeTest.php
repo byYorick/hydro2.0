@@ -7,6 +7,7 @@ use App\Models\InfrastructureInstance;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class InfrastructureAccessEnforceModeTest extends TestCase
@@ -17,6 +18,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $greenhouse = Greenhouse::factory()->create();
+        $this->revokeGreenhouseAccess($user, $greenhouse);
 
         InfrastructureInstance::create([
             'owner_type' => 'greenhouse',
@@ -37,7 +39,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'viewer']);
         $greenhouse = Greenhouse::factory()->create();
-        $user->greenhouses()->attach($greenhouse->id);
+        $user->greenhouses()->syncWithoutDetaching([$greenhouse->id]);
 
         InfrastructureInstance::create([
             'owner_type' => 'greenhouse',
@@ -59,7 +61,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
         $user = User::factory()->create(['role' => 'viewer']);
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
-        $user->greenhouses()->attach($greenhouse->id);
+        $user->greenhouses()->syncWithoutDetaching([$greenhouse->id]);
 
         InfrastructureInstance::create([
             'owner_type' => 'zone',
@@ -80,6 +82,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $greenhouse = Greenhouse::factory()->create();
+        $this->revokeGreenhouseAccess($user, $greenhouse);
 
         $response = $this->actingAs($user)->postJson('/api/infrastructure-instances', [
             'owner_type' => 'greenhouse',
@@ -99,7 +102,7 @@ class InfrastructureAccessEnforceModeTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'operator']);
         $greenhouse = Greenhouse::factory()->create();
-        $user->greenhouses()->attach($greenhouse->id);
+        $user->greenhouses()->syncWithoutDetaching([$greenhouse->id]);
 
         $response = $this->actingAs($user)->postJson('/api/infrastructure-instances', [
             'owner_type' => 'greenhouse',
@@ -117,5 +120,13 @@ class InfrastructureAccessEnforceModeTest extends TestCase
             'owner_id' => $greenhouse->id,
             'label' => 'Allowed Fan',
         ]);
+    }
+
+    private function revokeGreenhouseAccess(User $user, Greenhouse $greenhouse): void
+    {
+        DB::table('user_greenhouses')
+            ->where('user_id', $user->id)
+            ->where('greenhouse_id', $greenhouse->id)
+            ->delete();
     }
 }

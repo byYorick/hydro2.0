@@ -53,6 +53,30 @@ const sampleRecipesData = vi.hoisted(() => [
   },
 ])
 
+const resetSampleRecipesData = vi.hoisted(() => () => {
+  sampleRecipesData.splice(
+    0,
+    sampleRecipesData.length,
+    {
+      id: 1,
+      name: 'Lettuce Recipe',
+      description: 'Recipe for growing lettuce',
+      phases_count: 3,
+    },
+    {
+      id: 2,
+      name: 'Basil Recipe',
+      description: 'Recipe for growing basil',
+      phases_count: 2,
+    },
+    {
+      id: 3,
+      name: 'Tomato Recipe',
+      phases_count: 4,
+    },
+  )
+})
+
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
@@ -70,6 +94,7 @@ import RecipesIndex from '../Index.vue'
 describe('Recipes/Index.vue', () => {
   beforeEach(() => {
     console.log = vi.fn()
+    resetSampleRecipesData()
   })
 
   it('отображает заголовок Recipes', () => {
@@ -164,10 +189,13 @@ describe('Recipes/Index.vue', () => {
     expect(wrapper.text()).not.toContain('Lettuce Recipe')
   })
 
-  it.skip('показывает сообщение "Рецепты не найдены" когда нет рецептов', () => {
-    // Пропускаем этот тест, так как требует динамического мока, который сложно реализовать
-    // В реальном приложении этот случай обрабатывается компонентом через computed
-    expect(true).toBe(true)
+  it('показывает сообщение "Рецепты не найдены" когда нет рецептов', () => {
+    sampleRecipesData.splice(0, sampleRecipesData.length)
+
+    const wrapper = mount(RecipesIndex)
+
+    expect(wrapper.text()).toContain('Рецепты не найдены')
+    expect(wrapper.text()).not.toContain('Lettuce Recipe')
   })
 
   it('отображает ссылки на рецепты', () => {

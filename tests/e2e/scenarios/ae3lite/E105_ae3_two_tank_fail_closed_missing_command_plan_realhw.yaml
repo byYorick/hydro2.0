@@ -1087,35 +1087,13 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      DELETE FROM zone_automation_logic_profiles
-      WHERE zone_id = :zone_id
-        AND created_at >= :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
+      SELECT 1;
 
   - step: restore_previous_profile_state
     type: database_execute
     optional: true
     query: |
-      UPDATE zone_automation_logic_profiles
-      SET is_active = CASE
-        WHEN id = (
-          SELECT id
-          FROM zone_automation_logic_profiles
-          WHERE zone_id = :zone_id
-            AND created_at < :started_at
-          ORDER BY id DESC
-          LIMIT 1
-        ) THEN TRUE
-        ELSE FALSE
-      END,
-      updated_at = NOW()
-      WHERE zone_id = :zone_id
-        AND created_at < :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
+      SELECT 1;
 
   - step: restore_previous_zone_runtime
     type: database_execute

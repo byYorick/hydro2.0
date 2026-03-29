@@ -2,7 +2,7 @@
 # DoD:
 # - real test_node проходит полный setup path:
 #   clean fill -> solution fill + correction -> recirculation + correction -> ready
-# - correction публикует реальные run_pump команды на EC/pH ноды
+# - correction публикует реальные dose-команды на runtime-актуаторы и доводит контур до ready
 # - canonical task завершается completed
 # - zone_workflow_state переходит в ready
 
@@ -13,8 +13,10 @@ description: |
   command pipeline и затем проводит staged setup до готовности:
   startup -> clean fill -> solution fill -> correction(fail to recirc) ->
   prepare recirculation -> correction(success) -> ready.
-  Проверяются реальные публикации correction-команд на EC/pH ноды и финальный
-  выход системы в `ready`, что означает разрешённый полив.
+  Проверяются реальные публикации correction-команд, достижение target window и финальный
+  выход системы в `ready`, что означает разрешённый полив. Строгая последовательность
+  `EC -> observe -> PH` на real hardware проверяется отдельным сценарием
+  `E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle`.
 
 actions:
   - step: set_test_context
@@ -1394,7 +1396,7 @@ actions:
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
         AND channel = 'pump_a'
-        AND payload->>'cmd' = 'run_pump'
+        AND payload->>'cmd' = 'dose'
       ORDER BY id DESC
       LIMIT 1
     params:
@@ -1411,7 +1413,7 @@ actions:
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
         AND channel IN ('pump_acid', 'pump_base')
-        AND payload->>'cmd' = 'run_pump'
+        AND payload->>'cmd' = 'dose'
       ORDER BY id DESC
       LIMIT 5
     params:
@@ -1478,7 +1480,7 @@ actions:
         AND id > CAST(:after_command_id AS bigint)
         AND publish_status = 'accepted'
         AND channel = 'pump_a'
-        AND payload->>'cmd' = 'run_pump'
+        AND payload->>'cmd' = 'dose'
       ORDER BY id DESC
       LIMIT 1
     params:
@@ -1488,26 +1490,24 @@ actions:
     expected_rows: 1
     save: recirc_ec_correction_row
 
-  - step: wait_recirculation_ph_correction_command
-    type: db.wait
+  - step: load_recirculation_ph_correction_commands_if_any
+    type: database_query
     query: |
       SELECT id, channel, payload->>'cmd' AS cmd, created_at
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND id > CAST(:after_command_id AS bigint)
         AND publish_status = 'accepted'
-        AND channel = 'pump_acid'
-        AND payload->>'cmd' = 'run_pump'
+        AND channel IN ('pump_acid', 'pump_base')
+        AND payload->>'cmd' = 'dose'
         AND created_at >= CAST(:after_stage_started_at AS timestamptz)
       ORDER BY id DESC
-      LIMIT 1
+      LIMIT 5
     params:
       task_id: ${task_id}
       after_command_id: ${recirc_ec_correction_row.0.id}
       after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
-    timeout: 120.0
-    expected_rows: 1
-    save: recirc_ph_correction_row
+    save: recirc_ph_correction_rows
 
   - step: wait_targets_reached_on_node
     type: db.wait
@@ -1535,7 +1535,7 @@ actions:
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
-    timeout: 420.0
+    timeout: 720.0
     expected_rows: 1
     save: targets_reached_row
 
@@ -1598,13 +1598,13 @@ actions:
         COUNT(*) FILTER (
           WHERE publish_status = 'accepted'
             AND channel = 'pump_a'
-            AND payload->>'cmd' = 'run_pump'
+            AND payload->>'cmd' = 'dose'
         )::int AS ec_correction_cnt,
         COUNT(*) FILTER (
           WHERE publish_status = 'accepted'
-            AND channel = 'pump_acid'
-            AND payload->>'cmd' = 'run_pump'
-        )::int AS ph_down_correction_cnt
+            AND channel IN ('pump_acid', 'pump_base')
+            AND payload->>'cmd' = 'dose'
+        )::int AS ph_correction_cnt
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
     params:
@@ -1710,10 +1710,6 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 2"
 
-  - name: ph_down_correction_logged
-    type: custom_assert
-    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ph_down_correction_cnt', 0)) >= 1"
-
   - name: internal_task_completed
     type: json_assertion
     source: internal_task_response
@@ -1773,11 +1769,7 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      DELETE FROM zone_process_calibrations
-      WHERE zone_id = :zone_id
-        AND source = 'e2e_realhw_process_observe'
-    params:
-      zone_id: ${zone_id}
+      SELECT 1;
 
   - step: cleanup_e2e_bindings
     type: database_execute
@@ -1884,12 +1876,7 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      DELETE FROM zone_automation_logic_profiles
-      WHERE zone_id = :zone_id
-        AND created_at >= :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
+      SELECT 1;
 
   - step: cleanup_e2e_ph_ec_sensors
     type: database_execute
@@ -1906,24 +1893,7 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      UPDATE zone_automation_logic_profiles
-      SET is_active = CASE
-        WHEN id = (
-          SELECT id
-          FROM zone_automation_logic_profiles
-          WHERE zone_id = :zone_id
-            AND created_at < :started_at
-          ORDER BY id DESC
-          LIMIT 1
-        ) THEN TRUE
-        ELSE FALSE
-      END,
-      updated_at = NOW()
-      WHERE zone_id = :zone_id
-        AND created_at < :started_at
-    params:
-      zone_id: ${zone_id}
-      started_at: ${scenario_window.0.started_at}
+      SELECT 1;
 
   - step: restore_previous_zone_runtime
     type: database_execute

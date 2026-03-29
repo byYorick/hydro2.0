@@ -247,7 +247,7 @@ class TelemetryTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.temperature', 24.8)
-            ->assertJsonPath('data.humidity', 61.0);
+            ->assertJsonPath('data.humidity', 61);
     }
 
     public function test_node_telemetry_history_returns_samples(): void
@@ -307,12 +307,15 @@ class TelemetryTest extends TestCase
 
         $zone = \App\Models\Zone::factory()->create();
 
+        DB::table('user_zones')->where('user_id', $user->id)->delete();
+        DB::table('user_greenhouses')->where('user_id', $user->id)->delete();
+
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/telemetry/aggregates?zone_id={$zone->id}&metric=ph&period=24h");
 
         $response->assertStatus(403);
 
-        $user->zones()->attach($zone->id);
+        $user->zones()->syncWithoutDetaching([$zone->id]);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/telemetry/aggregates?zone_id={$zone->id}&metric=ph&period=24h");
@@ -390,10 +393,13 @@ class TelemetryTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.avg', 24.0)
-            ->assertJsonPath('data.0.min', 23.0)
-            ->assertJsonPath('data.0.max', 25.0)
-            ->assertJsonPath('data.0.median', 24.0);
+            ->assertJsonCount(1, 'data');
+
+        $first = $response->json('data.0');
+        $this->assertNotNull($first);
+        $this->assertSame(24.0, (float) $first['avg']);
+        $this->assertSame(23.0, (float) $first['min']);
+        $this->assertSame(25.0, (float) $first['max']);
+        $this->assertSame(24.0, (float) $first['median']);
     }
 }
