@@ -173,6 +173,39 @@ class ExecutionRunReadModel
 
     private function baseQuery(int $zoneId)
     {
+        $select = [
+            'tasks.id',
+            'tasks.zone_id',
+            'tasks.status as runtime_status',
+            'tasks.task_type as runtime_task_type',
+            'tasks.idempotency_key as runtime_idempotency_key',
+            'tasks.current_stage',
+            'tasks.workflow_phase',
+            'tasks.error_code',
+            'tasks.error_message',
+            'tasks.scheduled_for',
+            'tasks.due_at',
+            'tasks.claimed_at',
+            'tasks.completed_at',
+            'tasks.stage_entered_at',
+            'tasks.control_mode_snapshot',
+            'tasks.created_at',
+            'tasks.updated_at',
+            'tasks.intent_id',
+            'intents.intent_type',
+            'intents.status as intent_status',
+            'intents.idempotency_key as correlation_id',
+            'intents.payload as intent_payload',
+        ];
+
+        $select[] = $this->optionalTaskColumnSelect('irrigation_mode');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_requested_duration_sec');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_decision_strategy');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_decision_outcome');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_decision_reason_code');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_decision_degraded');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_replay_count');
+
         return DB::table('ae_tasks as tasks')
             ->leftJoin('zone_automation_intents as intents', function ($join): void {
                 $join
@@ -180,30 +213,16 @@ class ExecutionRunReadModel
                     ->on('intents.zone_id', '=', 'tasks.zone_id');
             })
             ->where('tasks.zone_id', $zoneId)
-            ->select([
-                'tasks.id',
-                'tasks.zone_id',
-                'tasks.status as runtime_status',
-                'tasks.task_type as runtime_task_type',
-                'tasks.idempotency_key as runtime_idempotency_key',
-                'tasks.current_stage',
-                'tasks.workflow_phase',
-                'tasks.error_code',
-                'tasks.error_message',
-                'tasks.scheduled_for',
-                'tasks.due_at',
-                'tasks.claimed_at',
-                'tasks.completed_at',
-                'tasks.stage_entered_at',
-                'tasks.control_mode_snapshot',
-                'tasks.created_at',
-                'tasks.updated_at',
-                'tasks.intent_id',
-                'intents.intent_type',
-                'intents.status as intent_status',
-                'intents.idempotency_key as correlation_id',
-                'intents.payload as intent_payload',
-            ]);
+            ->select($select);
+    }
+
+    private function optionalTaskColumnSelect(string $column): string|\Illuminate\Database\Query\Expression
+    {
+        if (Schema::hasColumn('ae_tasks', $column)) {
+            return "tasks.{$column}";
+        }
+
+        return DB::raw("NULL as {$column}");
     }
 
     /**
@@ -255,6 +274,17 @@ class ExecutionRunReadModel
                 'control_mode_snapshot' => $this->resolveString($row->control_mode_snapshot ?? null),
                 'current_stage' => $this->resolveString($row->current_stage ?? null),
                 'workflow_phase' => $this->resolveString($row->workflow_phase ?? null),
+                'irrigation_mode' => $this->resolveString($row->irrigation_mode ?? null),
+                'requested_duration_sec' => isset($row->irrigation_requested_duration_sec) && is_numeric($row->irrigation_requested_duration_sec)
+                    ? (int) $row->irrigation_requested_duration_sec
+                    : null,
+                'decision_strategy' => $this->resolveString($row->irrigation_decision_strategy ?? null),
+                'decision_outcome' => $this->resolveString($row->irrigation_decision_outcome ?? null),
+                'decision_reason_code' => $this->resolveString($row->irrigation_decision_reason_code ?? null),
+                'decision_degraded' => $this->normalizeOptionalBool($row->irrigation_decision_degraded ?? null),
+                'replay_count' => isset($row->irrigation_replay_count) && is_numeric($row->irrigation_replay_count)
+                    ? (int) $row->irrigation_replay_count
+                    : 0,
                 'created_at' => $this->toIso8601($row->created_at ?? null),
                 'updated_at' => $this->toIso8601($row->updated_at ?? null),
                 'scheduled_for' => $this->toIso8601($row->scheduled_for ?? null),
@@ -456,7 +486,7 @@ class ExecutionRunReadModel
             return match ($candidate) {
                 'ventilation' => 'climate',
                 'lighting_tick', 'lighting' => 'lighting',
-                'irrigate_once', 'irrigation', 'cycle_start' => 'irrigation',
+                'irrigate_once', 'irrigation', 'irrigation_start', 'cycle_start' => 'irrigation',
                 default => $candidate,
             };
         }
@@ -495,6 +525,27 @@ class ExecutionRunReadModel
         }
 
         return [];
+    }
+
+    private function normalizeOptionalBool(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value) || is_float($value)) {
+            return (bool) $value;
+        }
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return null;
     }
 
     private function resolveString(mixed $value): ?string

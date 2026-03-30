@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, Mapping
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
-from ae3lite.api.contracts import StartCycleRequest
+from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest
 from common.utils.time import utcnow_naive as _utcnow
 
 
@@ -217,3 +217,105 @@ def bind_start_cycle_route(
         )
 
     return zone_start_cycle
+
+
+def bind_start_irrigation_route(
+    app: FastAPI,
+    *,
+    validate_scheduler_zone_fn: Callable[[int], Awaitable[None]],
+    validate_scheduler_security_baseline_fn: Callable[[Request], Awaitable[None]],
+    claim_start_irrigation_intent_fn: Callable[..., Awaitable[dict[str, Any]]],
+    create_task_from_intent_fn: Callable[..., Awaitable[Any]],
+    kick_worker_fn: Callable[[], Any],
+    build_start_cycle_response_fn: Callable[..., dict[str, Any]],
+    mark_intent_terminal_fn: Callable[..., Awaitable[None]],
+    logger: Any,
+) -> Callable[..., Awaitable[dict[str, Any]]]:
+    async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
+        requested = intent_claim.get("requested_intent")
+        requested_intent = requested if isinstance(requested, Mapping) else {}
+        requested_intent_id = int(requested_intent.get("id") or 0)
+        requested_status = str(requested_intent.get("status") or "").strip().lower()
+        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed"}:
+            return
+        try:
+            await mark_intent_terminal_fn(
+                intent_id=requested_intent_id,
+                now=_utcnow(),
+                success=False,
+                error_code="start_irrigation_zone_busy",
+                error_message=f"Intent skipped: zone busy (zone_id={zone_id})",
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "AE3 compat start-irrigation failed to mark requested intent terminal: zone_id=%s intent_id=%s",
+                zone_id,
+                requested_intent_id,
+                exc_info=True,
+            )
+
+    @app.post("/zones/{zone_id}/start-irrigation")
+    async def zone_start_irrigation(
+        zone_id: int,
+        request: Request,
+        req: StartIrrigationRequest = Body(...),
+    ) -> dict[str, Any]:
+        await validate_scheduler_zone_fn(zone_id)
+        await validate_scheduler_security_baseline_fn(request)
+
+        now = _utcnow()
+        intent_claim = await claim_start_irrigation_intent_fn(zone_id=zone_id, req=req, now=now)
+        decision = str(intent_claim.get("decision") or "").strip().lower()
+        intent = intent_claim.get("intent")
+        intent_row = dict(intent) if isinstance(intent, Mapping) else {}
+
+        if decision == "zone_busy":
+            await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "start_irrigation_zone_busy",
+                    "zone_id": zone_id,
+                    "active_intent_id": (lambda v: int(v) if v is not None else None)(intent_row.get("id")),
+                    "active_status": str(intent_row.get("status") or "").strip().lower() or "running",
+                },
+            )
+        if decision == "missing":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "start_irrigation_intent_not_found",
+                    "zone_id": zone_id,
+                    "idempotency_key": req.idempotency_key,
+                },
+            )
+        if decision not in {"claimed", "deduplicated", "terminal"}:
+            raise HTTPException(status_code=503, detail={"error": "start_irrigation_intent_claim_unavailable", "zone_id": zone_id})
+
+        creation = await create_task_from_intent_fn(
+            zone_id=zone_id,
+            source=req.source,
+            idempotency_key=req.idempotency_key,
+            intent_row=intent_row,
+            now=now,
+            allow_create=decision != "terminal",
+        )
+        task = creation.task
+        if task.status in {"pending", "claimed", "running", "waiting_command"}:
+            kick_worker_fn()
+
+        accepted = task.status not in {"completed", "failed", "cancelled"}
+        return build_start_cycle_response_fn(
+            zone_id=zone_id,
+            req=req,
+            is_duplicate=(decision != "claimed") or (not creation.created),
+            task_id=str(task.id),
+            accepted=accepted,
+            runner_state="active" if accepted else "terminal",
+            task_status=task.status if not accepted else None,
+            reason="start_irrigation_intent_terminal" if decision == "terminal" else None,
+        )
+
+    return zone_start_irrigation

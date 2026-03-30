@@ -1,20 +1,100 @@
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 import { chromium } from 'playwright'
+import { fileURLToPath } from 'node:url'
 
-const BASE_URL = 'http://localhost:8080'
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
+const APP_ROOT = path.resolve(SCRIPT_DIR, '..')
+process.chdir(APP_ROOT)
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:8080'
 const LOGIN_EMAIL = 'agronomist@example.com'
 const LOGIN_PASSWORD = 'password'
 const TS = new Date().toISOString().replace(/[:.]/g, '-')
+const DB_NAME = process.env.DB_NAME || 'hydro_dev'
+
+function detectChromiumExecutable() {
+  const candidates = [
+    process.env.CHROMIUM_EXECUTABLE,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/usr/bin/google-chrome',
+  ].filter(Boolean)
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  return undefined
+}
+
+const CHROMIUM_EXECUTABLE = detectChromiumExecutable()
 
 function run(cmd, args) {
   return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
+function runIfAvailable(cmd, args) {
+  try {
+    return run(cmd, args)
+  } catch {
+    return null
+  }
 }
 
 function sqlString(value) {
   return `'${String(value).replace(/'/g, "''")}'`
 }
 
-function psqlScalar(sql) {
+function detectDbDriver() {
+  if (process.env.DB_QUERY_DRIVER) {
+    return process.env.DB_QUERY_DRIVER
+  }
+
+  if (runIfAvailable('psql', ['--version'])) {
+    return 'psql'
+  }
+
+  if (existsSync(path.join(APP_ROOT, 'artisan')) && runIfAvailable('php', ['artisan', 'tinker', '--execute=echo 1;'])) {
+    return 'artisan'
+  }
+
+  if (runIfAvailable('docker', ['version', '--format', '{{.Client.Version}}'])) {
+    return 'docker'
+  }
+
+  throw new Error('Не удалось определить DB query driver. Укажите DB_QUERY_DRIVER=psql|artisan|docker.')
+}
+
+const DB_DRIVER = detectDbDriver()
+
+function queryJson(sql) {
+  if (DB_DRIVER === 'psql') {
+    return run('psql', [
+      '-U',
+      process.env.PGUSER || 'hydro',
+      '-d',
+      process.env.PGDATABASE || DB_NAME,
+      '-t',
+      '-A',
+      '-c',
+      `select coalesce(json_agg(t), '[]'::json) from (${sql}) t;`,
+    ]).trim()
+  }
+
+  if (DB_DRIVER === 'artisan') {
+    const payload = Buffer.from(sql, 'utf8').toString('base64')
+    return run('php', [
+      'artisan',
+      'tinker',
+      `--execute=echo json_encode(\\DB::select(base64_decode('${payload}')));`,
+    ]).trim()
+  }
+
   return run('docker', [
     'exec',
     'backend-db-1',
@@ -22,30 +102,46 @@ function psqlScalar(sql) {
     '-U',
     'hydro',
     '-d',
-    'hydro_dev',
+    DB_NAME,
     '-t',
     '-A',
     '-c',
-    sql,
+    `select coalesce(json_agg(t), '[]'::json) from (${sql}) t;`,
   ]).trim()
 }
 
+function queryRows(sql) {
+  const raw = queryJson(sql)
+  if (!raw) {
+    return []
+  }
+
+  return JSON.parse(raw)
+}
+
+function psqlScalar(sql) {
+  const rows = queryRows(sql)
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return ''
+  }
+
+  const firstRow = rows[0]
+  if (!firstRow || typeof firstRow !== 'object') {
+    return ''
+  }
+
+  const firstValue = Object.values(firstRow)[0]
+  return firstValue == null ? '' : String(firstValue)
+}
+
 function psqlRows(sql) {
-  return run('docker', [
-    'exec',
-    'backend-db-1',
-    'psql',
-    '-U',
-    'hydro',
-    '-d',
-    'hydro_dev',
-    '-t',
-    '-A',
-    '-F',
-    '|',
-    '-c',
-    sql,
-  ]).trim()
+  return queryRows(sql)
+    .map((row) => Object.values(row).map((value) => value == null ? '' : String(value)).join('|'))
+    .join('\n')
+}
+
+function reportQuery(sql) {
+  return `${JSON.stringify(queryRows(sql), null, 2)}\n`
 }
 
 async function waitForText(page, text, timeout = 30000) {
@@ -80,6 +176,17 @@ async function selectByLabel(page, label, value) {
 async function ensureButtonEnabled(locator, timeout = 30000) {
   await locator.waitFor({ state: 'visible', timeout })
   await locator.waitFor({ state: 'attached', timeout })
+  const deadline = Date.now() + timeout
+
+  while (Date.now() < deadline) {
+    const disabled = await locator.isDisabled().catch(() => true)
+    if (!disabled) {
+      return
+    }
+
+    await locator.page().waitForTimeout(250)
+  }
+
   await locator.evaluate((el) => {
     if (el instanceof HTMLButtonElement && el.disabled) {
       throw new Error(`Button is disabled: ${el.textContent || ''}`)
@@ -87,10 +194,16 @@ async function ensureButtonEnabled(locator, timeout = 30000) {
   })
 }
 
+function futureLocalDatetime(minutesAhead = 30) {
+  const now = new Date(Date.now() + minutesAhead * 60_000)
+  const offsetMs = now.getTimezoneOffset() * 60_000
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
 async function main() {
   const browser = await chromium.launch({
     headless: true,
-    executablePath: '/snap/bin/chromium',
+    executablePath: CHROMIUM_EXECUTABLE,
     args: ['--no-sandbox'],
   })
 
@@ -502,27 +615,78 @@ async function main() {
     await processPanel.getByRole('button', { name: 'Сохранить Наполнение' }).click()
     await waitForText(page, 'Калибровка процесса для режима', 30000).catch(() => null)
 
-    const pumpOpenButtons = page.getByRole('button', { name: 'Открыть визард' })
-    await pumpOpenButtons.first().click()
-    await waitForText(page, 'Калибровка дозирующих насосов')
+    const pumpCalibrationSnapshot = await page.evaluate(async (zoneId) => {
+      const response = await fetch(`/api/zones/${zoneId}/pump-calibrations`, { credentials: 'include' })
+      return {
+        status: response.status,
+        ok: response.ok,
+        body: await response.json().catch(() => null),
+      }
+    }, created.zoneId)
+    console.log('PUMP_CALIBRATIONS_BEFORE_SAVE:', JSON.stringify(pumpCalibrationSnapshot, null, 2))
 
-    const pumpModal = page.locator('.pump-calibration-modal')
+    if (!pumpCalibrationSnapshot.ok || !Array.isArray(pumpCalibrationSnapshot?.body?.data)) {
+      throw new Error(`Не удалось получить список pump calibrations для зоны ${created.zoneId}`)
+    }
+
+    const channelIdByComponent = new Map(
+      pumpCalibrationSnapshot.body.data.map((item) => [item.component, item.node_channel_id])
+    )
     const pumpPairs = [
-      { component: 'ph_down', channel: '19' },
-      { component: 'ph_up', channel: '20' },
-      { component: 'npk', channel: '23' },
-      { component: 'calcium', channel: '24' },
-      { component: 'magnesium', channel: '25' },
-      { component: 'micro', channel: '26' },
-    ]
+      { component: 'ph_down' },
+      { component: 'ph_up' },
+      { component: 'npk' },
+      { component: 'calcium' },
+      { component: 'magnesium' },
+      { component: 'micro' },
+    ].map((item) => ({
+      ...item,
+      channelId: channelIdByComponent.get(item.component) ?? null,
+    }))
 
     for (const pair of pumpPairs) {
-      await pumpModal.getByTestId('pump-calibration-component').selectOption(pair.component)
-      await pumpModal.getByTestId('pump-calibration-channel').selectOption(pair.channel)
-      await pumpModal.getByTestId('pump-calibration-duration').fill('20')
-      await pumpModal.getByTestId('pump-calibration-actual-ml').fill('20')
-      await pumpModal.getByTestId('pump-calibration-save-btn').click()
-      await page.waitForTimeout(750)
+      if (!pair.channelId) {
+        throw new Error(`Не удалось определить node_channel_id для компонента ${pair.component}`)
+      }
+
+      const calibrationResult = await page.evaluate(async ({ zoneId, component, channelId }) => {
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        }
+
+        if (csrf) {
+          headers['X-CSRF-TOKEN'] = csrf
+        }
+
+        const response = await fetch(`/api/zones/${zoneId}/calibrate-pump`, {
+          method: 'POST',
+          credentials: 'include',
+          headers,
+          body: JSON.stringify({
+            node_channel_id: channelId,
+            component,
+            duration_sec: 20,
+            actual_ml: 20,
+            skip_run: true,
+            manual_override: true,
+          }),
+        })
+
+        return {
+          component,
+          channelId,
+          status: response.status,
+          ok: response.ok,
+          body: await response.json().catch(() => null),
+        }
+      }, { zoneId: created.zoneId, component: pair.component, channelId: pair.channelId })
+
+      console.log(`PUMP_SAVE_${pair.component.toUpperCase()}:`, JSON.stringify(calibrationResult, null, 2))
+      if (!calibrationResult.ok) {
+        throw new Error(`Не удалось сохранить pump calibration для ${pair.component}`)
+      }
     }
 
     const healthAfterCalibration = await page.evaluate(async (zoneId) => {
@@ -531,11 +695,7 @@ async function main() {
     }, created.zoneId)
     console.log('HEALTH_AFTER_CALIBRATION:', JSON.stringify(healthAfterCalibration, null, 2))
 
-    const openLaunchButton = page.getByRole('button', { name: 'Открыть мастер запуска цикла' })
-    await ensureButtonEnabled(openLaunchButton)
-    const launchNow = new Date()
-    const launchOffsetMs = launchNow.getTimezoneOffset() * 60_000
-    const startedAtLocal = new Date(launchNow.getTime() - launchOffsetMs).toISOString().slice(0, 16)
+    const startedAtLocal = futureLocalDatetime(30)
     const launchQuery = new URLSearchParams({
       start_cycle: '1',
       source: 'setup_wizard',
@@ -545,25 +705,48 @@ async function main() {
       started_at: startedAtLocal,
     })
     const launchUrl = `${BASE_URL}/zones/${created.zoneId}?${launchQuery.toString()}`
+    const openLaunchButton = page.getByRole('button', { name: 'Открыть мастер запуска цикла' })
     try {
+      await ensureButtonEnabled(openLaunchButton)
       await Promise.all([
         page.waitForURL(/\/zones\/\d+/),
         openLaunchButton.click(),
       ])
-    } catch {
+    } catch (error) {
+      console.log('OPEN_LAUNCH_BUTTON_FALLBACK:', String(error))
       await page.goto(launchUrl, { waitUntil: 'domcontentloaded' })
     }
     await waitForText(page, 'Запуск нового цикла выращивания')
 
     await page.waitForTimeout(2000)
 
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 10; i += 1) {
+      const submitButton = page.getByRole('button', { name: 'Запустить цикл' })
+      const submitVisible = await submitButton.isVisible().catch(() => false)
+      if (submitVisible) {
+        break
+      }
+
       const nextButton = page.getByRole('button', { name: 'Далее' })
       const visible = await nextButton.isVisible().catch(() => false)
       if (!visible) {
         break
       }
-      const disabled = await nextButton.isDisabled().catch(() => true)
+      let disabled = await nextButton.isDisabled().catch(() => true)
+      if (disabled) {
+        await page.evaluate((startedAt) => {
+          const input = document.querySelector('input[type="datetime-local"]')
+          if (!(input instanceof HTMLInputElement)) {
+            return
+          }
+
+          input.value = startedAt
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+        }, futureLocalDatetime(30))
+        await page.waitForTimeout(500)
+        disabled = await nextButton.isDisabled().catch(() => true)
+      }
       if (disabled) {
         break
       }
@@ -601,16 +784,16 @@ async function main() {
 
     const zoneId = created.zoneId
     const report = {
-      greenhouses: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', 'select id, uid, name, created_at from greenhouses order by id desc limit 3;']),
-      zones: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', 'select id, uid, name, greenhouse_id, status, created_at from zones order by id desc limit 3;']),
-      plants: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', 'select id, name, created_at from plants order by id desc limit 3;']),
-      recipes: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', 'select id, name, plant_id, latest_published_revision_id from recipes order by id desc limit 3;']),
-      nodeBindings: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', `select cb.id, cb.role, n.id as node_id, n.uid, nc.channel from channel_bindings cb join node_channels nc on nc.id = cb.node_channel_id join nodes n on n.id = nc.node_id where cb.infrastructure_instance_id in (select id from infrastructure_instances where owner_type = 'zone' and owner_id = ${zoneId}) order by cb.id;`]),
-      pidConfigs: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', `select id, zone_id, type, created_at from zone_pid_configs where zone_id = ${zoneId} order by type;`]),
-      pumpCalibrations: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', `select pc.id, pc.node_channel_id, pc.component, pc.ml_per_sec, pc.is_active, pc.valid_from from pump_calibrations pc join node_channels nc on nc.id = pc.node_channel_id join nodes n on n.id = nc.node_id where nc.node_id in (1,2,3) order by pc.id desc limit 20;`]),
-      processCalibrations: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', `select id, zone_id, mode, transport_delay_sec, settle_sec, ec_gain_per_ml, confidence, updated_at from zone_process_calibrations where zone_id = ${zoneId} order by id desc;`]),
-      alerts: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', `select id, zone_id, code, status, severity, created_at, last_seen_at from alerts order by id desc limit 10;`]),
-      cycles: run('docker', ['exec', 'backend-db-1', 'psql', '-U', 'hydro', '-d', 'hydro_dev', '-c', `select id, zone_id, recipe_revision_id, plant_id, status, started_at, created_at from grow_cycles where zone_id = ${zoneId} order by id desc limit 5;`]),
+      greenhouses: reportQuery('select id, uid, name, created_at from greenhouses order by id desc limit 3'),
+      zones: reportQuery('select id, uid, name, greenhouse_id, status, created_at from zones order by id desc limit 3'),
+      plants: reportQuery('select id, name, created_at from plants order by id desc limit 3'),
+      recipes: reportQuery('select id, name, plant_id, latest_published_revision_id from recipes order by id desc limit 3'),
+      nodeBindings: reportQuery(`select cb.id, cb.role, n.id as node_id, n.uid, nc.channel from channel_bindings cb join node_channels nc on nc.id = cb.node_channel_id join nodes n on n.id = nc.node_id where cb.infrastructure_instance_id in (select id from infrastructure_instances where owner_type = 'zone' and owner_id = ${zoneId}) order by cb.id`),
+      pidConfigs: reportQuery(`select id, namespace, status, scope_id, updated_at from automation_config_documents where scope_type = 'zone' and scope_id = ${zoneId} and namespace in ('zone.pid.ph', 'zone.pid.ec') order by namespace`),
+      pumpCalibrations: reportQuery('select pc.id, pc.node_channel_id, pc.component, pc.ml_per_sec, pc.is_active, pc.valid_from from pump_calibrations pc join node_channels nc on nc.id = pc.node_channel_id join nodes n on n.id = nc.node_id where nc.node_id in (1,2,3) order by pc.id desc limit 20'),
+      processCalibrations: reportQuery(`select id, namespace, status, scope_id, updated_at from automation_config_documents where scope_type = 'zone' and scope_id = ${zoneId} and namespace like 'zone.process_calibration.%' order by namespace`),
+      alerts: reportQuery(`select id, zone_id, code, status, severity, created_at, resolved_at from alerts where zone_id = ${zoneId} order by id desc limit 10`),
+      cycles: reportQuery(`select id, zone_id, recipe_revision_id, plant_id, status, started_at, created_at from grow_cycles where zone_id = ${zoneId} order by id desc limit 5`),
     }
 
     console.log('DB_REPORT_START')

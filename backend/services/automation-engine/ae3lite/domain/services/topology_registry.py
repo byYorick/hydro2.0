@@ -158,8 +158,61 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
         next_stage="complete_ready",
     ),
+    # === Irrigation path ===
+    "await_ready": StageDef("await_ready", "await_ready", workflow_phase="ready"),
+    "decision_gate": StageDef("decision_gate", "decision_gate", workflow_phase="ready"),
+    "irrigation_start": StageDef(
+        "irrigation_start", "command",
+        workflow_phase="irrigating",
+        command_plans=("sensor_mode_activate", "irrigation_start"),
+        next_stage="irrigation_check",
+    ),
+    "irrigation_check": StageDef(
+        "irrigation_check", "irrigation_check",
+        workflow_phase="irrigating",
+    ),
+    "irrigation_stop_to_ready": StageDef(
+        "irrigation_stop_to_ready", "command",
+        workflow_phase="ready",
+        command_plans=("irrigation_stop", "sensor_mode_deactivate"),
+        next_stage="completed_run",
+    ),
+    "irrigation_stop_to_recovery": StageDef(
+        "irrigation_stop_to_recovery", "command",
+        workflow_phase="irrig_recirc",
+        command_plans=("irrigation_stop", "sensor_mode_deactivate"),
+        next_stage="irrigation_recovery_start",
+    ),
+    "irrigation_stop_to_setup": StageDef(
+        "irrigation_stop_to_setup", "command",
+        workflow_phase="tank_filling",
+        command_plans=("irrigation_stop", "sensor_mode_deactivate"),
+        next_stage="startup",
+    ),
+    "irrigation_recovery_start": StageDef(
+        "irrigation_recovery_start", "command",
+        workflow_phase="irrig_recirc",
+        command_plans=("sensor_mode_activate", "irrigation_recovery_start"),
+        next_stage="irrigation_recovery_check",
+    ),
+    "irrigation_recovery_check": StageDef(
+        "irrigation_recovery_check", "irrigation_recovery",
+        workflow_phase="irrig_recirc",
+        timeout_key="prepare_recirculation_timeout_sec",
+        has_correction=True,
+        on_corr_success="irrigation_recovery_stop_to_ready",
+        on_corr_fail="irrigation_recovery_stop_to_ready",
+    ),
+    "irrigation_recovery_stop_to_ready": StageDef(
+        "irrigation_recovery_stop_to_ready", "command",
+        workflow_phase="ready",
+        command_plans=("irrigation_recovery_stop", "sensor_mode_deactivate"),
+        next_stage="completed_run",
+    ),
     # === Terminal ===
     "complete_ready": StageDef("complete_ready", "ready", workflow_phase="ready"),
+    "completed_run": StageDef("completed_run", "ready", workflow_phase="ready"),
+    "completed_skip": StageDef("completed_skip", "ready", workflow_phase="ready"),
 }
 
 

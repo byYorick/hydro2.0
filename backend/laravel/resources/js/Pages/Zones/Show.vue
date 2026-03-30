@@ -22,6 +22,7 @@
         :computed-phase-days-elapsed="computedPhaseDaysElapsed"
         :computed-phase-days-total="computedPhaseDaysTotal"
         :events="events"
+        @start-irrigation="openActionModal('START_IRRIGATION')"
         @force-irrigation="openActionModal('FORCE_IRRIGATION')"
       />
       <ZoneTelemetryTab

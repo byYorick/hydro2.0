@@ -25,6 +25,18 @@ type ZoneExtended = Zone & {
   active_grow_cycle?: GrowCycle
 }
 
+interface RealtimeZoneEventPayload {
+  id?: number | string
+  kind?: string
+  message?: string
+  zoneId?: number | string
+  zone_id?: number | string
+  occurredAt?: string
+  occurred_at?: string
+  created_at?: string
+  payload?: Record<string, unknown> | null
+}
+
 interface PageProps {
   zone?: Zone
   zoneId?: number
@@ -120,6 +132,51 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   const telemetryRef = ref<ZoneTelemetry>(
     page.props.telemetry || ({ ph: null, ec: null, temperature: null, humidity: null } as ZoneTelemetry)
   )
+  const telemetrySampleTsByMetric = new Map<'ph' | 'ec' | 'temperature' | 'humidity', number>()
+
+  const normalizeTelemetryMetric = (metricType: string): 'ph' | 'ec' | 'temperature' | 'humidity' | null => {
+    switch (String(metricType).trim().toUpperCase()) {
+      case 'PH':
+        return 'ph'
+      case 'EC':
+        return 'ec'
+      case 'TEMPERATURE':
+        return 'temperature'
+      case 'HUMIDITY':
+        return 'humidity'
+      default:
+        return null
+    }
+  }
+
+  const applyRealtimeTelemetryPoint = (metricType: string, value: number, ts?: number): void => {
+    const metric = normalizeTelemetryMetric(metricType)
+    if (!metric) {
+      return
+    }
+
+    const normalizedTs = typeof ts === 'number' && Number.isFinite(ts)
+      ? (ts < 10_000_000_000 ? ts * 1000 : ts)
+      : undefined
+
+    const lastAcceptedTs = telemetrySampleTsByMetric.get(metric)
+    if (
+      typeof normalizedTs === 'number' &&
+      typeof lastAcceptedTs === 'number' &&
+      normalizedTs < lastAcceptedTs
+    ) {
+      return
+    }
+
+    telemetryRef.value = {
+      ...telemetryRef.value,
+      [metric]: value,
+    }
+
+    if (typeof normalizedTs === 'number') {
+      telemetrySampleTsByMetric.set(metric, normalizedTs)
+    }
+  }
 
   const { addUpdate, flush } = useTelemetryBatch((updates) => {
     const currentZoneId = zoneId.value
@@ -127,7 +184,12 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       if (zoneIdStr === String(currentZoneId)) {
         const current = { ...telemetryRef.value }
         metrics.forEach((value, metric) => {
-          switch (metric) {
+          const normalizedMetric = normalizeTelemetryMetric(metric)
+          if (!normalizedMetric) {
+            return
+          }
+
+          switch (normalizedMetric) {
             case 'ph': current.ph = value; break
             case 'ec': current.ec = value; break
             case 'temperature': current.temperature = value; break
@@ -140,6 +202,70 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   })
 
   const telemetry = computed(() => telemetryRef.value)
+
+  const toRealtimeZoneEvent = (payload: unknown): ZoneEvent | null => {
+    if (!payload || typeof payload !== 'object') {
+      return null
+    }
+
+    const eventPayload = payload as RealtimeZoneEventPayload
+    const rawId = eventPayload.id
+    const numericId = typeof rawId === 'number'
+      ? rawId
+      : typeof rawId === 'string' && rawId.trim() !== ''
+        ? Number.parseInt(rawId, 10)
+        : NaN
+
+    if (!Number.isFinite(numericId)) {
+      return null
+    }
+
+    const occurredAt = eventPayload.occurredAt
+      ?? eventPayload.occurred_at
+      ?? eventPayload.created_at
+      ?? new Date().toISOString()
+
+    const rawZoneId = eventPayload.zoneId ?? eventPayload.zone_id
+    const normalizedZoneId = typeof rawZoneId === 'number'
+      ? rawZoneId
+      : typeof rawZoneId === 'string' && rawZoneId.trim() !== ''
+        ? Number.parseInt(rawZoneId, 10)
+        : undefined
+
+    return {
+      id: numericId,
+      kind: typeof eventPayload.kind === 'string' ? eventPayload.kind : 'INFO',
+      message: typeof eventPayload.message === 'string' ? eventPayload.message : '',
+      zone_id: typeof normalizedZoneId === 'number' && Number.isFinite(normalizedZoneId)
+        ? normalizedZoneId
+        : undefined,
+      occurred_at: occurredAt,
+      created_at: eventPayload.created_at ?? occurredAt,
+      payload: eventPayload.payload && typeof eventPayload.payload === 'object'
+        ? eventPayload.payload
+        : undefined,
+    }
+  }
+
+  const applyRealtimeZoneEvent = (event: ZoneEvent): void => {
+    const currentZoneId = zoneId.value
+    if (event.zone_id && currentZoneId && event.zone_id !== currentZoneId) {
+      return
+    }
+
+    const existingIndex = eventsRef.value.findIndex((item) => item.id === event.id)
+    if (existingIndex >= 0) {
+      const nextEvents = [...eventsRef.value]
+      nextEvents[existingIndex] = {
+        ...nextEvents[existingIndex],
+        ...event,
+      }
+      eventsRef.value = nextEvents
+      return
+    }
+
+    eventsRef.value = [event, ...eventsRef.value]
+  }
 
   // ─── Page props ───────────────────────────────────────────────────────────
 
@@ -217,7 +343,11 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.value))
   const devices = computed(() => (devicesProp.value || []) as Device[])
   const alerts = computed(() => (alertsProp.value || []) as Alert[])
-  const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
+  const eventsRef = ref<ZoneEvent[]>((eventsProp.value || []) as ZoneEvent[])
+  watch(eventsProp, (newEvents) => {
+    eventsRef.value = Array.isArray(newEvents) ? [...newEvents] as ZoneEvent[] : []
+  }, { deep: true, immediate: true })
+  const events = computed(() => eventsRef.value)
   const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
   // ─── Permissions ─────────────────────────────────────────────────────────
@@ -332,6 +462,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
 
   let unsubscribeZoneCommands: (() => void) | null = null
   let stopGrowCycleUpdatedChannel: (() => void) | null = null
+  let stopZoneEventsRealtimeChannel: (() => void) | null = null
   let propsReloadTimer: ReturnType<typeof setTimeout> | null = null
 
   const reloadZonePageProps = (only: string[] = defaultZoneReloadProps): void => {
@@ -350,9 +481,17 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     }
   }
 
+  const cleanupZoneEventsRealtimeSubscription = (): void => {
+    if (stopZoneEventsRealtimeChannel) {
+      stopZoneEventsRealtimeChannel()
+      stopZoneEventsRealtimeChannel = null
+    }
+  }
+
   const cleanupZoneRealtimeSubscriptions = (): void => {
     if (unsubscribeZoneCommands) { unsubscribeZoneCommands(); unsubscribeZoneCommands = null }
     cleanupGrowCycleRealtimeSubscription()
+    cleanupZoneEventsRealtimeSubscription()
   }
 
   const subscribeGrowCycleRealtime = (targetZoneId: number): void => {
@@ -383,6 +522,25 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     })
 
     subscribeGrowCycleRealtime(targetZoneId)
+
+    stopZoneEventsRealtimeChannel = subscribeManagedChannelEvents({
+      channelName: `hydro.zones.${targetZoneId}`,
+      componentTag: 'Zones/Show.events',
+      eventHandlers: {
+        '.EventCreated': (payload) => {
+          const event = toRealtimeZoneEvent(payload)
+          if (event) {
+            applyRealtimeZoneEvent(event)
+          }
+        },
+        '.App\\Events\\EventCreated': (payload) => {
+          const event = toRealtimeZoneEvent(payload)
+          if (event) {
+            applyRealtimeZoneEvent(event)
+          }
+        },
+      },
+    })
   }
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -417,7 +575,11 @@ export function useZonePageState(deps: ZonePageStateDeps) {
         return
       }
 
-      reloadZone(zoneId.value!, ['zone', 'active_grow_cycle', 'active_cycle'])
+      if (!zoneId.value) {
+        return
+      }
+
+      reloadZone(zoneId.value, ['zone', 'active_grow_cycle', 'active_cycle'])
       reloadZonePageProps()
     })
   })
@@ -452,5 +614,6 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     phaseTimeLeftLabel,
     cyclesList,
     reloadZonePageProps,
+    applyRealtimeTelemetryPoint,
   }
 }

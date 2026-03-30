@@ -169,6 +169,7 @@ const MANUAL_STEP_LABELS: Record<AutomationManualStep, string> = {
   solution_fill_stop: 'Стоп набор раствора',
   prepare_recirculation_start: 'Старт рециркуляции setup',
   prepare_recirculation_stop: 'Стоп рециркуляции setup',
+  irrigation_stop: 'Стоп полива',
   irrigation_recovery_start: 'Старт рециркуляции полива',
   irrigation_recovery_stop: 'Стоп рециркуляции полива',
 }
@@ -180,6 +181,7 @@ const STEP_VARIANTS: Record<AutomationManualStep, 'secondary' | 'outline'> = {
   solution_fill_stop: 'outline',
   prepare_recirculation_start: 'secondary',
   prepare_recirculation_stop: 'outline',
+  irrigation_stop: 'outline',
   irrigation_recovery_start: 'secondary',
   irrigation_recovery_stop: 'outline',
 }

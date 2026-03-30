@@ -29,7 +29,8 @@ class ZoneEventObserver
                 kind: $zoneEvent->type ?? 'INFO',
                 message: $message,
                 zoneId: $zoneEvent->zone_id,
-                occurredAt: $zoneEvent->created_at?->toIso8601String() ?? now()->toIso8601String()
+                occurredAt: $zoneEvent->created_at?->toIso8601String() ?? now()->toIso8601String(),
+                payload: is_array($zoneEvent->details) ? $zoneEvent->details : null
             ));
         } catch (\Exception $e) {
             Log::error('Failed to broadcast EventCreated', [
@@ -39,4 +40,3 @@ class ZoneEventObserver
         }
     }
 }
-

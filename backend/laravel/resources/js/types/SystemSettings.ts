@@ -118,6 +118,15 @@ export interface AutomationDefaultsSettings {
   water_irrigation_recovery_target_tolerance_ph_pct: number
   water_irrigation_recovery_degraded_tolerance_ec_pct: number
   water_irrigation_recovery_degraded_tolerance_ph_pct: number
+  water_irrigation_decision_strategy: 'task' | 'smart_soil_v1'
+  water_irrigation_decision_lookback_sec: number
+  water_irrigation_decision_min_samples: number
+  water_irrigation_decision_stale_after_sec: number
+  water_irrigation_decision_hysteresis_pct: number
+  water_irrigation_decision_spread_alert_threshold_pct: number
+  water_irrigation_stop_on_solution_min: boolean
+  water_irrigation_auto_replay_after_setup: boolean
+  water_irrigation_max_setup_replays: number
   water_prepare_tolerance_ec_pct: number
   water_prepare_tolerance_ph_pct: number
   water_correction_max_ec_attempts: number
@@ -125,6 +134,8 @@ export interface AutomationDefaultsSettings {
   water_correction_prepare_recirculation_max_attempts: number
   water_correction_prepare_recirculation_max_correction_attempts: number
   water_correction_stabilization_sec: number
+  water_two_tank_irrigation_start_steps: number
+  water_two_tank_irrigation_stop_steps: number
   water_two_tank_clean_fill_start_steps: number
   water_two_tank_clean_fill_stop_steps: number
   water_two_tank_solution_fill_start_steps: number
@@ -159,6 +170,8 @@ export interface AutomationCommandTemplateStep {
 }
 
 export interface AutomationCommandTemplatesSettings {
+  irrigation_start: AutomationCommandTemplateStep[]
+  irrigation_stop: AutomationCommandTemplateStep[]
   clean_fill_start: AutomationCommandTemplateStep[]
   clean_fill_stop: AutomationCommandTemplateStep[]
   solution_fill_start: AutomationCommandTemplateStep[]

@@ -605,6 +605,14 @@ async def test_corr_check_keeps_ec_and_ph_in_same_correction_window(monkeypatch:
     assert outcome.correction.needs_ec is True
     assert outcome.correction.needs_ph_down is True
     assert outcome.correction.ph_channel == "ph_down_pump"
+    create_event.assert_awaited_once()
+    assert create_event.await_args.args[1] == "CORRECTION_DECISION_MADE"
+    decision_payload = create_event.await_args.args[2]
+    assert decision_payload["selected_action"] == "ec"
+    assert decision_payload["decision_reason"] == "ec_first_in_window"
+    assert decision_payload["correction_window_id"] == "task:6:tank_recirc:prepare_recirculation_check"
+    assert decision_payload["needs_ec"] is True
+    assert decision_payload["needs_ph_down"] is True
     assert pid_repo.upsert_calls == [
         {
             "zone_id": 60,
@@ -639,8 +647,14 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     )
     task = _make_task(corr=corr)
     gateway = _MockGateway()
+    create_event = AsyncMock(return_value=None)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
     handler = _make_handler(gateway=gateway)
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    try:
+        outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_ec"
@@ -654,6 +668,17 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
         "cmd": "dose",
         "params": {"ml": 2.0},
     }
+    create_event.assert_awaited_once()
+    assert create_event.await_args.args[1] == "EC_DOSING"
+    payload = create_event.await_args.args[2]
+    assert payload["task_id"] == 6
+    assert payload["stage"] == "solution_fill_check"
+    assert payload["workflow_phase"] == "tank_filling"
+    assert payload["correction_window_id"] == "task:6:tank_filling:solution_fill_check"
+    assert payload["corr_step"] == "corr_dose_ec"
+    assert payload["observe_seq"] == 1
+    assert payload["attempt"] == 1
+    assert payload["ec_attempt"] == 1
 
 
 async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
@@ -667,9 +692,15 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     )
     task = _make_task(corr=corr)
     gateway = _MockGateway()
+    create_event = AsyncMock(return_value=None)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
     handler = _make_handler(gateway=gateway)
 
-    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    try:
+        outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
 
     assert outcome.kind == "enter_correction"
     assert outcome.correction.corr_step == "corr_wait_ph"
@@ -683,6 +714,17 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
         "cmd": "dose",
         "params": {"ml": 1.5},
     }
+    create_event.assert_awaited_once()
+    assert create_event.await_args.args[1] == "PH_CORRECTED"
+    payload = create_event.await_args.args[2]
+    assert payload["task_id"] == 6
+    assert payload["stage"] == "solution_fill_check"
+    assert payload["workflow_phase"] == "tank_filling"
+    assert payload["correction_window_id"] == "task:6:tank_filling:solution_fill_check"
+    assert payload["corr_step"] == "corr_dose_ph"
+    assert payload["observe_seq"] == 1
+    assert payload["attempt"] == 1
+    assert payload["ph_attempt"] == 1
 
 
 async def test_corr_wait_ec_observes_response_and_returns_to_check():
@@ -722,6 +764,50 @@ async def test_corr_wait_ec_observes_response_and_returns_to_check():
     assert outcome.correction.ec_attempt == 0
     assert outcome.correction.needs_ec is False
     assert pid_repo.feedforward_cleared == [60]
+
+
+async def test_corr_wait_ec_preserves_pending_ph_for_next_corr_check():
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=2,
+        ec_attempt=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        needs_ph_down=True,
+        ph_amount_ml=1.5,
+        ph_node_uid="ph-node",
+        ph_channel="ph_down_pump",
+        ph_duration_ms=1500,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 0,
+        }
+    }
+    task = _make_task(corr=corr)
+    monitor = _MockRuntimeMonitor(ec_samples=[
+        {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+        {"ts": NOW - timedelta(seconds=2), "value": 1.4},
+        {"ts": NOW, "value": 1.45},
+    ])
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.correction.needs_ec is False
+    assert outcome.correction.needs_ph_down is True
+    assert outcome.correction.ph_node_uid == "ph-node"
+    assert outcome.correction.ph_channel == "ph_down_pump"
+    assert outcome.correction.ph_amount_ml == 1.5
 
 
 async def test_corr_wait_ec_interrupts_to_prepare_when_solution_fill_completed(monkeypatch: pytest.MonkeyPatch):
@@ -1024,6 +1110,8 @@ async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: py
     assert observation_payload["is_no_effect"] is True
     assert observation_payload["no_effect_count_next"] == 3
     assert observation_payload["dose_amount_ml"] == pytest.approx(2.0)
+    assert observation_payload["observe_seq"] == 1
+    assert observation_payload["correction_window_id"] == "task:6:tank_filling:solution_fill_check"
     no_effect_call = create_event.await_args_list[1]
     assert no_effect_call.args[1] == "CORRECTION_NO_EFFECT"
     payload = no_effect_call.args[2]
@@ -1081,6 +1169,8 @@ async def test_corr_wait_ec_logs_observation_evaluation_for_reaction(monkeypatch
     assert payload["is_no_effect"] is False
     assert payload["no_effect_count_next"] == 0
     assert payload["dose_amount_ml"] == pytest.approx(2.0)
+    assert payload["observe_seq"] == 3
+    assert payload["correction_window_id"] == "task:6:tank_filling:solution_fill_check"
 
 
 async def test_corr_wait_ec_wave_response_does_not_increment_attempts(monkeypatch: pytest.MonkeyPatch):
@@ -1681,6 +1771,50 @@ async def test_corr_check_prepare_recirc_keeps_ec_and_ph_in_same_correction_wind
     assert outcome.correction.ph_channel == "ph_down_pump"
     assert outcome.correction.ph_duration_ms is not None
     assert outcome.correction.ph_duration_ms > 0
+
+
+async def test_corr_check_prioritizes_pending_ph_after_ec_observe_when_both_still_needed():
+    class _PlannerStub:
+        def is_within_tolerance(self, **kwargs):
+            return False
+
+        def build_dose_plan(self, **kwargs):
+            return DosePlan(
+                needs_ec=True,
+                ec_node_uid="ec-node",
+                ec_channel="ec_pump",
+                ec_amount_ml=2.0,
+                ec_duration_ms=2000,
+                needs_ph_down=True,
+                ph_node_uid="ph-node",
+                ph_channel="ph_down_pump",
+                ph_amount_ml=1.5,
+                ph_duration_ms=1500,
+            )
+
+    corr = _base_corr(
+        corr_step="corr_check",
+        needs_ph_down=True,
+        ph_node_uid="ph-node",
+        ph_channel="ph_down_pump",
+        ph_duration_ms=1500,
+        ph_amount_ml=1.5,
+    )
+    task = _make_task(corr=corr, current_stage="prepare_recirculation_check", workflow_phase="tank_recirc")
+    handler = _make_handler(
+        monitor=_MockRuntimeMonitor(ph=6.4, ec=1.6),
+        pid_repo=_MockPidStateRepository(),
+        planner=_PlannerStub(),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=dict(RUNTIME)), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_dose_ph"
+    assert outcome.correction.needs_ec is True
+    assert outcome.correction.needs_ph_down is True
+    assert outcome.correction.ec_channel == "ec_pump"
+    assert outcome.correction.ph_channel == "ph_down_pump"
 
 
 async def test_corr_check_unready_decision_window_retries_on_telemetry_period_when_missing_one_sample() -> None:

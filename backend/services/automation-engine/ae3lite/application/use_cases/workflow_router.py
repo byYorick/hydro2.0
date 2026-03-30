@@ -13,9 +13,13 @@ from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.handlers.await_ready import AwaitReadyHandler
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.application.handlers.command import CommandHandler
 from ae3lite.application.handlers.correction import CorrectionHandler
+from ae3lite.application.handlers.decision_gate import DecisionGateHandler
+from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
+from ae3lite.application.handlers.irrigation_recovery import IrrigationRecoveryCheckHandler
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.application.handlers.prepare_recirc_window import PrepareRecircWindowHandler
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
@@ -46,9 +50,13 @@ class WorkflowRouter:
     # Handler key → handler class mapping
     HANDLER_MAP: dict[str, type[BaseStageHandler]] = {
         "startup": StartupHandler,
+        "await_ready": AwaitReadyHandler,
+        "decision_gate": DecisionGateHandler,
         "command": CommandHandler,
         "clean_fill": CleanFillCheckHandler,
         "solution_fill": SolutionFillCheckHandler,
+        "irrigation_check": IrrigationCheckHandler,
+        "irrigation_recovery": IrrigationRecoveryCheckHandler,
         "prepare_recirc": PrepareRecircCheckHandler,
         "prepare_recirc_window": PrepareRecircWindowHandler,
         "correction": CorrectionHandler,
@@ -65,6 +73,7 @@ class WorkflowRouter:
         correction_planner: Any = None,
         alert_repository: Any = None,
         pid_state_repository: Any = None,
+        decision_controller: Any = None,
     ) -> None:
         self._task_repo = task_repository
         self._workflow_repo = workflow_repository
@@ -79,6 +88,10 @@ class WorkflowRouter:
                 "runtime_monitor": runtime_monitor,
                 "command_gateway": command_gateway,
             }
+            if key in {"await_ready", "decision_gate", "irrigation_check"}:
+                kwargs["task_repository"] = task_repository
+            if key == "decision_gate":
+                kwargs["decision_controller"] = decision_controller
             if key == "correction":
                 if correction_planner is not None:
                     kwargs["planner"] = correction_planner
@@ -110,8 +123,17 @@ class WorkflowRouter:
         stage_def = self._registry.get(topology, current_stage)
         handler_key = stage_def.handler
 
-        # complete_ready is terminal — no handler, just complete
-        if current_stage == "complete_ready":
+        # ready-style terminal stages are handled centrally
+        if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "") == "irrigation_start":
+            if int(getattr(task, "irrigation_replay_count", 0) or 0) > 0:
+                return await self._apply_transition(
+                    task=task,
+                    plan=plan,
+                    outcome=StageOutcome(kind="transition", next_stage="irrigation_start"),
+                    now=now,
+                )
+            return await self._complete_task(task=task, now=now)
+        if handler_key == "ready":
             return await self._complete_task(task=task, now=now)
 
         handler = self._handlers.get(handler_key)

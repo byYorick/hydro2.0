@@ -11,7 +11,7 @@
     >
       <!-- Динамические поля на основе actionType -->
       <div
-        v-if="actionType === 'FORCE_IRRIGATION'"
+        v-if="actionType === 'START_IRRIGATION' || actionType === 'FORCE_IRRIGATION'"
         class="space-y-3"
       >
         <div>
@@ -230,7 +230,7 @@ import { useFormValidation } from '@/composables/useFormValidation'
 import { VALIDATION_RANGES, VALIDATION_MESSAGES } from '@/constants/validation'
 import type { CommandType } from '@/types'
 
-type ActionType = CommandType
+type ActionType = CommandType | 'START_IRRIGATION'
 
 interface ActionParams {
   duration_sec?: number
@@ -285,6 +285,7 @@ const form = ref<ActionParams>({
 // Заголовок и описание в зависимости от типа действия
 const title = computed<string>(() => {
   const titles: Record<ActionType, string> = {
+    'START_IRRIGATION': 'Полив зоны',
     'FORCE_IRRIGATION': 'Полив зоны',
     'FORCE_PH_CONTROL': 'Коррекция pH',
     'FORCE_EC_CONTROL': 'Коррекция EC',
@@ -315,7 +316,7 @@ function onSubmit(): void {
   error.value = null
 
   // Валидация полей с использованием useFormValidation
-  if (props.actionType === 'FORCE_IRRIGATION') {
+  if (props.actionType === 'START_IRRIGATION' || props.actionType === 'FORCE_IRRIGATION') {
     const validationError = validateNumberRange(
       form.value.duration_sec,
       VALIDATION_RANGES.IRRIGATION_DURATION.min,
@@ -395,7 +396,7 @@ function onSubmit(): void {
   // Формируем параметры в зависимости от типа действия
   const params: ActionParams = {}
   
-  if (props.actionType === 'FORCE_IRRIGATION') {
+  if (props.actionType === 'START_IRRIGATION' || props.actionType === 'FORCE_IRRIGATION') {
     params.duration_sec = form.value.duration_sec
   } else if (props.actionType === 'FORCE_PH_CONTROL') {
     params.target_ph = form.value.target_ph

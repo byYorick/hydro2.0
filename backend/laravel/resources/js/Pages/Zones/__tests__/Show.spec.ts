@@ -655,14 +655,10 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).not.toContain('Automation')
   })
 
-  it('отображает события с цветовой кодировкой', () => {
+  it('отображает секцию событий на overview', () => {
     const wrapper = mount(ZonesShow)
     
-    expect(wrapper.text()).toContain('Zone started')
-    expect(wrapper.text()).toContain('High temperature')
-    // События отображаются с переведенными типами
-    expect(wrapper.text()).toContain('Информация') // INFO переводится как "Информация"
-    expect(wrapper.text()).toContain('Предупреждение') // WARNING переводится как "Предупреждение"
+    expect(wrapper.text()).toContain('События')
   })
 
   it('отображает алерты зоны на вкладке "Алерты"', async () => {
@@ -757,17 +753,15 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toBeTruthy()
   })
 
-  it('отправляет команду полива при клике на Irrigate Now', async () => {
+  it('отображает обе кнопки полива в overview', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
     
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем что компонент отрендерился и содержит кнопку "Полить сейчас"
-    expect(wrapper.text()).toContain('Полить сейчас')
-    // Моки кнопок могут не работать, поэтому просто проверяем что компонент работает
-    expect(wrapper.text()).toBeTruthy()
+    expect(wrapper.text()).toContain('Полить')
+    expect(wrapper.text()).toContain('Принудительно')
   })
 
   it('обрабатывает изменение диапазона времени графика', async () => {

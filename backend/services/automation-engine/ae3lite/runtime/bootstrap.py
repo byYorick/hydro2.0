@@ -23,6 +23,7 @@ from ae3lite.application.use_cases import (
 )
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
 from ae3lite.domain.services import CycleStartPlanner, TopologyRegistry
+from ae3lite.domain.services.irrigation_decision_controller import IrrigationDecisionController
 from ae3lite.infrastructure.clients import HistoryLoggerClient
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
 from ae3lite.infrastructure.read_models import PgTaskStatusReadModel, PgZoneRuntimeMonitor, PgZoneSnapshotReadModel
@@ -101,6 +102,7 @@ def build_ae3_runtime_bundle(
     correction_authority_repository = PgZoneCorrectionAuthorityRepository()
     runtime_monitor = PgZoneRuntimeMonitor()
     topology_registry = TopologyRegistry()
+    irrigation_decision_controller = IrrigationDecisionController()
 
     workflow_router = WorkflowRouter(
         task_repository=task_repository,
@@ -110,6 +112,7 @@ def build_ae3_runtime_bundle(
         command_gateway=command_gateway,
         alert_repository=alert_repository,
         pid_state_repository=pid_state_repository,
+        decision_controller=irrigation_decision_controller,
     )
 
     worker = Ae3RuntimeWorker(

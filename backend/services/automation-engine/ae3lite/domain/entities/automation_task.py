@@ -64,6 +64,17 @@ class AutomationTask:
     # ── Correction state (None when correction inactive) ────────────
     correction: Optional[CorrectionState]
 
+    # ── Irrigation runtime state (typed columns, NULL for cycle_start) ─
+    irrigation_mode: Optional[str] = None
+    irrigation_requested_duration_sec: Optional[int] = None
+    irrigation_decision_strategy: Optional[str] = None
+    irrigation_decision_outcome: Optional[str] = None
+    irrigation_decision_reason_code: Optional[str] = None
+    irrigation_decision_degraded: Optional[bool] = None
+    irrigation_replay_count: int = 0
+    irrigation_wait_ready_deadline_at: Optional[datetime] = None
+    irrigation_setup_deadline_at: Optional[datetime] = None
+
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> AutomationTask:
         """Construct from an asyncpg Record or dict-like row."""
@@ -140,6 +151,35 @@ class AutomationTask:
             intent_meta=intent_meta if isinstance(intent_meta, Mapping) else {},
             workflow=workflow,
             correction=correction,
+            irrigation_mode=str(row["irrigation_mode"]) if row.get("irrigation_mode") is not None else None,
+            irrigation_requested_duration_sec=(
+                int(row["irrigation_requested_duration_sec"])
+                if row.get("irrigation_requested_duration_sec") is not None
+                else None
+            ),
+            irrigation_decision_strategy=(
+                str(row["irrigation_decision_strategy"])
+                if row.get("irrigation_decision_strategy") is not None
+                else None
+            ),
+            irrigation_decision_outcome=(
+                str(row["irrigation_decision_outcome"])
+                if row.get("irrigation_decision_outcome") is not None
+                else None
+            ),
+            irrigation_decision_reason_code=(
+                str(row["irrigation_decision_reason_code"])
+                if row.get("irrigation_decision_reason_code") is not None
+                else None
+            ),
+            irrigation_decision_degraded=(
+                bool(row.get("irrigation_decision_degraded"))
+                if row.get("irrigation_decision_degraded") is not None
+                else None
+            ),
+            irrigation_replay_count=int(row.get("irrigation_replay_count") or 0),
+            irrigation_wait_ready_deadline_at=_naive(row.get("irrigation_wait_ready_deadline_at")),
+            irrigation_setup_deadline_at=_naive(row.get("irrigation_setup_deadline_at")),
         )
 
     @property

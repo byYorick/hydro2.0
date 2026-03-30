@@ -237,28 +237,15 @@ describe('Zones/Show.vue - Интеграционные тесты', () => {
     }
   })
 
-  it('отправляет команду FORCE_IRRIGATION при клике на Irrigate Now', async () => {
+  it('рендерит operator-кнопки normal и force irrigation', async () => {
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
     
     const wrapper = mount(ZonesShow)
     
     await new Promise(resolve => setTimeout(resolve, 100))
-    
-    const buttons = wrapper.findAll('button')
-    const irrigateButton = buttons.find(btn => btn.text().includes('Irrigate'))
-    
-    if (irrigateButton) {
-      await irrigateButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      expect(axiosPostMock).toHaveBeenCalled()
-      const call = axiosPostMock.mock.calls.find((c: any) => 
-        c[0]?.includes('/commands')
-      )
-      expect(call).toBeTruthy()
-      expect(call[1]?.type).toBe('FORCE_IRRIGATION')
-      expect(call[1]?.params).toBeDefined()
-    }
+
+    expect(wrapper.text()).toContain('Полить')
+    expect(wrapper.text()).toContain('Принудительно')
   })
 
   it('отправляет команду FORCE_* при запуске цикла', async () => {

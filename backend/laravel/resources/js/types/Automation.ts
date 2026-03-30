@@ -15,6 +15,7 @@ export type AutomationManualStep =
   | 'solution_fill_stop'
   | 'prepare_recirculation_start'
   | 'prepare_recirculation_stop'
+  | 'irrigation_stop'
   | 'irrigation_recovery_start'
   | 'irrigation_recovery_stop'
 
@@ -85,6 +86,12 @@ export interface AutomationState {
     source?: string
     is_stale?: boolean
     served_at?: string
+  } | null
+  decision?: {
+    outcome?: string | null
+    reason_code?: string | null
+    strategy?: string | null
+    degraded?: boolean | null
   } | null
 }
 

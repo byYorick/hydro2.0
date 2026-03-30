@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
@@ -16,8 +16,12 @@ import { useZoneTelemetryChart } from '@/composables/useZoneTelemetryChart'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
+import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
 import type { CommandType } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
+
+type ZoneActionType = CommandType | 'START_IRRIGATION'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -79,7 +83,7 @@ export function useZoneShowPage() {
   const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
   const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
 
-  const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
+  const currentActionType = ref<ZoneActionType>('START_IRRIGATION')
   const selectedNodeId = ref<number | null>(null)
   const selectedNode = ref<any>(null)
   const growthCycleInitialData = ref<{
@@ -127,6 +131,33 @@ export function useZoneShowPage() {
   const chart = useZoneTelemetryChart(pageState.zoneId, { fetchHistory })
 
   const { zoneId, zone, activeGrowCycle, reloadZonePageProps } = pageState
+  let stopTelemetryRealtimeSubscription: (() => void) | null = null
+
+  const handleRealtimeTelemetryBatch = (payload: unknown): void => {
+    const updates = parseNodeTelemetryBatch(payload)
+    updates.forEach((update) => {
+      pageState.applyRealtimeTelemetryPoint(update.metric_type, update.value, update.ts)
+      chart.appendRealtimePoint(update.metric_type, {
+        ts: update.ts,
+        value: update.value,
+      })
+    })
+  }
+
+  const subscribeTelemetryRealtime = (targetZoneId: number): void => {
+    if (stopTelemetryRealtimeSubscription) {
+      stopTelemetryRealtimeSubscription()
+      stopTelemetryRealtimeSubscription = null
+    }
+
+    stopTelemetryRealtimeSubscription = subscribeManagedChannelEvents({
+      channelName: `hydro.zones.${targetZoneId}`,
+      componentTag: 'Zones/Show.telemetry',
+      eventHandlers: {
+        '.telemetry.batch.updated': handleRealtimeTelemetryBatch,
+      },
+    })
+  }
 
   // ─── Zone status ──────────────────────────────────────────────────────────
 
@@ -142,7 +173,7 @@ export function useZoneShowPage() {
 
   // ─── Action handlers ──────────────────────────────────────────────────────
 
-  const openActionModal = (actionType: CommandType): void => {
+  const openActionModal = (actionType: ZoneActionType): void => {
     currentActionType.value = actionType
     modals.open('action')
   }
@@ -158,17 +189,34 @@ export function useZoneShowPage() {
     modals.open('growthCycle')
   }
 
+  const startZoneIrrigation = async ({
+    mode,
+    durationSec,
+  }: {
+    mode: 'normal' | 'force'
+    durationSec?: number
+  }): Promise<void> => {
+    if (!zoneId.value) return
+
+    await api.post(`/api/zones/${zoneId.value}/start-irrigation`, {
+      mode,
+      source: 'frontend',
+      requested_duration_sec: durationSec ?? null,
+    })
+  }
+
   const onActionSubmit = async ({
     actionType,
     params,
   }: {
-    actionType: CommandType
+    actionType: ZoneActionType
     params: Record<string, unknown>
   }): Promise<void> => {
     if (!zoneId.value) return
     setLoading('irrigate', true)
 
-    const actionNames: Record<CommandType, string> = {
+    const actionNames: Record<string, string> = {
+      START_IRRIGATION: 'Полив',
       FORCE_IRRIGATION: 'Полив',
       FORCE_PH_CONTROL: 'Коррекция pH',
       FORCE_EC_CONTROL: 'Коррекция EC',
@@ -177,7 +225,19 @@ export function useZoneShowPage() {
     }
 
     try {
-      await sendZoneCommand(zoneId.value, actionType, params)
+      if (actionType === 'START_IRRIGATION') {
+        await startZoneIrrigation({
+          mode: 'normal',
+          durationSec: typeof params.duration_sec === 'number' ? params.duration_sec : undefined,
+        })
+      } else if (actionType === 'FORCE_IRRIGATION') {
+        await startZoneIrrigation({
+          mode: 'force',
+          durationSec: typeof params.duration_sec === 'number' ? params.duration_sec : undefined,
+        })
+      } else {
+        await sendZoneCommand(zoneId.value, actionType, params)
+      }
       const actionName = actionNames[actionType] || 'Действие'
       showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
@@ -314,6 +374,33 @@ export function useZoneShowPage() {
 
     chart.initStoredRange()
     await chart.refreshChartData(chart.chartTimeRange.value)
+
+    if (zoneId.value) {
+      subscribeTelemetryRealtime(zoneId.value)
+    }
+  })
+
+  onUnmounted(() => {
+    if (stopTelemetryRealtimeSubscription) {
+      stopTelemetryRealtimeSubscription()
+      stopTelemetryRealtimeSubscription = null
+    }
+  })
+
+  watch(zoneId, (newZoneId, oldZoneId) => {
+    if (newZoneId === oldZoneId) {
+      return
+    }
+
+    if (!newZoneId) {
+      if (stopTelemetryRealtimeSubscription) {
+        stopTelemetryRealtimeSubscription()
+        stopTelemetryRealtimeSubscription = null
+      }
+      return
+    }
+
+    subscribeTelemetryRealtime(newZoneId)
   })
 
   return {

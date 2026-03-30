@@ -1,0 +1,175 @@
+"""Extensible irrigation decision-controller registry for AE3-Lite."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from statistics import mean
+from typing import Any, Mapping, Protocol, Sequence
+
+
+@dataclass(frozen=True)
+class IrrigationDecision:
+    outcome: str
+    reason_code: str
+    degraded: bool = False
+    details: dict[str, Any] | None = None
+
+
+class IrrigationDecisionStrategy(Protocol):
+    async def evaluate(
+        self,
+        *,
+        zone_id: int,
+        runtime_monitor: Any,
+        runtime: Mapping[str, Any],
+        requested_duration_sec: int | None,
+        now: datetime,
+    ) -> IrrigationDecision:
+        ...
+
+
+class TaskDecisionStrategy:
+    async def evaluate(
+        self,
+        *,
+        zone_id: int,
+        runtime_monitor: Any,
+        runtime: Mapping[str, Any],
+        requested_duration_sec: int | None,
+        now: datetime,
+    ) -> IrrigationDecision:
+        return IrrigationDecision(
+            outcome="run",
+            reason_code="irrigation_task_strategy_run",
+            degraded=False,
+            details={"requested_duration_sec": requested_duration_sec},
+        )
+
+
+class SmartSoilDecisionStrategy:
+    async def evaluate(
+        self,
+        *,
+        zone_id: int,
+        runtime_monitor: Any,
+        runtime: Mapping[str, Any],
+        requested_duration_sec: int | None,
+        now: datetime,
+    ) -> IrrigationDecision:
+        decision_cfg = runtime.get("irrigation_decision") if isinstance(runtime.get("irrigation_decision"), Mapping) else {}
+        config = decision_cfg.get("config") if isinstance(decision_cfg.get("config"), Mapping) else {}
+        lookback_sec = int(config.get("lookback_sec") or 1800)
+        stale_after_sec = int(config.get("stale_after_sec") or 600)
+        min_samples = int(config.get("min_samples") or 3)
+        hysteresis_pct = float(config.get("hysteresis_pct") or 0.0)
+        spread_threshold_pct = float(config.get("spread_alert_threshold_pct") or 0.0)
+        soil_target = runtime.get("soil_moisture_target") if isinstance(runtime.get("soil_moisture_target"), Mapping) else {}
+        target_min = _to_float(soil_target.get("min"))
+        target_max = _to_float(soil_target.get("max"))
+
+        if target_min is None or target_max is None:
+            return IrrigationDecision(
+                outcome="degraded_run",
+                reason_code="smart_soil_target_missing",
+                degraded=True,
+            )
+
+        sensor_data = await runtime_monitor.read_metric_windows(
+            zone_id=zone_id,
+            sensor_type="SOIL_MOISTURE",
+            since_ts=now - timedelta(seconds=max(1, lookback_sec)),
+            telemetry_max_age_sec=stale_after_sec,
+        )
+        sensor_windows = sensor_data.get("sensor_windows") if isinstance(sensor_data.get("sensor_windows"), Sequence) else ()
+        per_sensor_values: list[float] = []
+        total_samples = 0
+        stale = False
+        for sensor in sensor_windows:
+            if not isinstance(sensor, Mapping):
+                continue
+            stale = stale or bool(sensor.get("is_stale"))
+            samples = sensor.get("samples") if isinstance(sensor.get("samples"), Sequence) else ()
+            values = [_to_float(sample.get("value")) for sample in samples if isinstance(sample, Mapping)]
+            values = [value for value in values if value is not None]
+            total_samples += len(values)
+            if values:
+                per_sensor_values.append(float(mean(values)))
+
+        if not per_sensor_values or total_samples < min_samples or stale:
+            return IrrigationDecision(
+                outcome="degraded_run",
+                reason_code="smart_soil_telemetry_missing_or_stale",
+                degraded=True,
+                details={"samples": total_samples, "sensor_count": len(per_sensor_values)},
+            )
+
+        zone_average = float(mean(per_sensor_values))
+        spread_pct = max(per_sensor_values) - min(per_sensor_values) if len(per_sensor_values) > 1 else 0.0
+        details = {
+            "zone_average_pct": zone_average,
+            "sensor_count": len(per_sensor_values),
+            "samples": total_samples,
+            "spread_pct": spread_pct,
+            "spread_alert": spread_pct > spread_threshold_pct,
+            "requested_duration_sec": requested_duration_sec,
+        }
+
+        if zone_average < (target_min - hysteresis_pct):
+            return IrrigationDecision(outcome="run", reason_code="smart_soil_below_min", details=details)
+
+        if zone_average > (target_max + hysteresis_pct):
+            return IrrigationDecision(outcome="skip", reason_code="smart_soil_above_max", details=details)
+
+        return IrrigationDecision(outcome="skip", reason_code="smart_soil_within_band", details=details)
+
+
+class IrrigationDecisionController:
+    def __init__(self) -> None:
+        self._strategies: dict[str, IrrigationDecisionStrategy] = {
+            "task": TaskDecisionStrategy(),
+            "smart_soil_v1": SmartSoilDecisionStrategy(),
+        }
+
+    async def evaluate(
+        self,
+        *,
+        zone_id: int,
+        runtime_monitor: Any,
+        runtime: Mapping[str, Any],
+        mode: str,
+        requested_duration_sec: int | None,
+        now: datetime,
+    ) -> IrrigationDecision:
+        if str(mode or "").strip().lower() == "force":
+            return IrrigationDecision(
+                outcome="run",
+                reason_code="irrigation_force_mode",
+                details={"requested_duration_sec": requested_duration_sec},
+            )
+
+        decision_cfg = runtime.get("irrigation_decision") if isinstance(runtime.get("irrigation_decision"), Mapping) else {}
+        strategy_name = str(decision_cfg.get("strategy") or "task").strip().lower() or "task"
+        strategy = self._strategies.get(strategy_name)
+        if strategy is None:
+            return IrrigationDecision(
+                outcome="fail",
+                reason_code="irrigation_decision_strategy_unknown",
+                details={"strategy": strategy_name},
+            )
+
+        return await strategy.evaluate(
+            zone_id=zone_id,
+            runtime_monitor=runtime_monitor,
+            runtime=runtime,
+            requested_duration_sec=requested_duration_sec,
+            now=now,
+        )
+
+
+def _to_float(raw_value: Any) -> float | None:
+    try:
+        return float(raw_value) if raw_value is not None else None
+    except (TypeError, ValueError):
+        return None
+

@@ -217,6 +217,97 @@ class PgZoneRuntimeMonitor:
             "sample_age_sec": age_sec,
         }
 
+    async def read_metric_windows(
+        self,
+        *,
+        zone_id: int,
+        sensor_type: str,
+        since_ts: datetime,
+        telemetry_max_age_sec: int,
+        limit_per_sensor: int = 64,
+    ) -> Mapping[str, Any]:
+        normalized_since_ts = self._normalize_timestamp(since_ts)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            sensor_rows = await conn.fetch(
+                """
+                SELECT
+                    s.id AS sensor_id,
+                    s.label AS sensor_label,
+                    COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+                FROM sensors s
+                LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
+                WHERE s.zone_id = $1
+                  AND s.is_active = TRUE
+                  AND s.type = $2
+                ORDER BY s.id ASC
+                """,
+                zone_id,
+                sensor_type,
+            )
+
+            sensor_windows: list[dict[str, Any]] = []
+            latest_sample_ts: Optional[datetime] = None
+            for sensor_row in sensor_rows:
+                rows = await conn.fetch(
+                    """
+                    SELECT ts, value
+                    FROM (
+                        SELECT ts, value, id
+                        FROM telemetry_samples
+                        WHERE sensor_id = $1
+                          AND ts >= $2
+                        ORDER BY ts DESC, id DESC
+                        LIMIT $3
+                    ) recent
+                    ORDER BY ts ASC, id ASC
+                    """,
+                    int(sensor_row["sensor_id"]),
+                    normalized_since_ts,
+                    max(1, int(limit_per_sensor)),
+                )
+                samples: list[dict[str, Any]] = []
+                sensor_latest_ts = sensor_row.get("sample_ts")
+                for row in rows:
+                    raw_value = row.get("value")
+                    try:
+                        value = float(raw_value) if raw_value is not None else None
+                    except (TypeError, ValueError):
+                        value = None
+                    ts = row.get("ts")
+                    if ts is not None:
+                        sensor_latest_ts = ts
+                    if value is None:
+                        continue
+                    samples.append({"ts": ts, "value": value})
+
+                if sensor_latest_ts is not None and (latest_sample_ts is None or sensor_latest_ts > latest_sample_ts):
+                    latest_sample_ts = sensor_latest_ts
+
+                sensor_age_sec = self._age_sec(sensor_latest_ts)
+                sensor_windows.append(
+                    {
+                        "sensor_id": sensor_row.get("sensor_id"),
+                        "sensor_label": sensor_row.get("sensor_label"),
+                        "samples": tuple(samples),
+                        "latest_sample_ts": sensor_latest_ts,
+                        "sample_age_sec": sensor_age_sec,
+                        "is_stale": bool(
+                            sensor_latest_ts is not None
+                            and ((sensor_age_sec or 0.0) > max(0, int(telemetry_max_age_sec)))
+                        ),
+                    }
+                )
+
+        age_sec = self._age_sec(latest_sample_ts)
+        return {
+            "has_sensors": bool(sensor_windows),
+            "sensor_windows": tuple(sensor_windows),
+            "latest_sample_ts": latest_sample_ts,
+            "sample_age_sec": age_sec,
+            "is_stale": bool(latest_sample_ts is not None and ((age_sec or 0.0) > max(0, int(telemetry_max_age_sec)))),
+        }
+
     async def read_latest_irr_state(
         self,
         *,

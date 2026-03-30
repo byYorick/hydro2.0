@@ -811,17 +811,20 @@ status IN ('pending','claimed','running','completed','failed','cancelled')
 
 Назначение:
 - durable contract между Laravel scheduler-dispatch и automation-engine;
-- идемпотентный запуск циклов через `POST /zones/{id}/start-cycle`;
+- идемпотентный запуск workflow через `POST /zones/{id}/start-cycle`
+  и `POST /zones/{id}/start-irrigation`;
 - арбитраж конкурентных запусков через claim (`FOR UPDATE SKIP LOCKED`).
 
 Payload-contract (`payload` JSONB, wake-up only):
 ```json
 {
   "source": "laravel_scheduler",
-  "task_type": "diagnostics",
-  "workflow": "cycle_start",
+  "task_type": "irrigation_start",
+  "workflow": "irrigation_start",
   "topology": "two_tank_drip_substrate_trays",
-  "grow_cycle_id": 123
+  "grow_cycle_id": 123,
+  "mode": "normal",
+  "requested_duration_sec": 120
 }
 ```
 
@@ -888,12 +891,27 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   },
   "irrigation": {
     "enabled": true,
+    "decision": {
+      "strategy": "smart_soil_v1",
+      "config": {
+        "lookback_sec": 1800,
+        "min_samples": 3,
+        "stale_after_sec": 600,
+        "hysteresis_pct": 2,
+        "spread_alert_threshold_pct": 12
+      }
+    },
     "recovery": {
       "max_continue_attempts": 5,
+      "auto_replay_after_setup": true,
+      "max_setup_replays": 1,
       "degraded_tolerance": {
         "ec_pct": 20,
         "ph_pct": 10
       }
+    },
+    "safety": {
+      "stop_on_solution_min": true
     },
     "dosing_rules": {
       "irrigation_allowed_components": ["calcium", "magnesium", "micro"],
@@ -914,7 +932,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```
 id BIGSERIAL PK
 zone_id BIGINT NOT NULL FK -> zones ON DELETE CASCADE
-task_type VARCHAR(64) NOT NULL         -- в v1 допустимо только cycle_start
+task_type VARCHAR(64) NOT NULL         -- в v1 допустимо cycle_start|irrigation_start
 status VARCHAR(32) NOT NULL            -- pending|claimed|running|waiting_command|completed|failed|cancelled
 idempotency_key VARCHAR(191) NOT NULL
 intent_source VARCHAR(64) NULL
@@ -965,6 +983,15 @@ corr_ph_attempt SMALLINT NULL
 corr_ph_max_attempts SMALLINT NULL
 pending_manual_step VARCHAR(64) NULL
 control_mode_snapshot VARCHAR(16) NULL
+irrigation_mode VARCHAR(16) NULL
+irrigation_requested_duration_sec INTEGER NULL
+irrigation_decision_strategy VARCHAR(64) NULL
+irrigation_decision_outcome VARCHAR(32) NULL
+irrigation_decision_reason_code VARCHAR(128) NULL
+irrigation_decision_degraded BOOLEAN NOT NULL DEFAULT FALSE
+irrigation_replay_count SMALLINT NOT NULL DEFAULT 0
+irrigation_wait_ready_deadline_at TIMESTAMPTZ NULL
+irrigation_setup_deadline_at TIMESTAMPTZ NULL
 ```
 
 Ключевые индексы:
@@ -982,7 +1009,9 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 - `idempotency_key` уникален только в рамках `zone_id`;
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
 - `corr_limit_policy_logged=true` означает, что `CORRECTION_LIMIT_POLICY_APPLIED` уже был записан для текущего correction-window и повторно эмитироваться не должен;
-- `task_type='cycle_start'` фиксируется DB check constraint.
+- `task_type IN ('cycle_start', 'irrigation_start')` фиксируется DB check constraint.
+- `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|irrig_recirc|ready`.
+- irrigation decision/replay/runtime state хранится в explicit columns, а не в свободном JSON.
 - canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из legacy `payload`.
 
 ### 6.10.2. ae_commands

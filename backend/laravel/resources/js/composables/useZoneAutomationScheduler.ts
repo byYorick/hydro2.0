@@ -35,6 +35,7 @@ export function useZoneAutomationScheduler(props: ZoneAutomationTabProps, deps: 
     solution_fill_stop: false,
     prepare_recirculation_start: false,
     prepare_recirculation_stop: false,
+    irrigation_stop: false,
     irrigation_recovery_start: false,
     irrigation_recovery_stop: false,
   })

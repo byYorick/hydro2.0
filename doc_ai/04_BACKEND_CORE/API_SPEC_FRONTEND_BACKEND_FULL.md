@@ -27,10 +27,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ## 0.1 Authority / AE3 Canonical Overrides (2026-03-24)
 
 Эти правила имеют приоритет над более старыми фрагментами документа:
-- внешний запуск автоматики: только `POST /zones/{id}/start-cycle`;
+- внешний запуск автоматики: `POST /zones/{id}/start-cycle` и `POST /zones/{id}/start-irrigation`;
 - legacy transport `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удален из runtime;
 - runtime automation-engine использует direct SQL read-model (без runtime HTTP вызовов в `/api/internal/effective-targets/*`);
-- scheduler передает intent через БД (`zone_automation_intents`) и будит зону через `start-cycle`;
+- scheduler передает intent через БД (`zone_automation_intents`) и будит зону через `start-cycle` или `start-irrigation`;
 - endpoint `POST /api/zones/{id}/automation/manual-resume` удален.
 - web-admin/system settings/correction editors не получают authority-конфиги через Inertia props и используют только unified automation API.
 
@@ -563,6 +563,9 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - `subsystems.diagnostics.execution.startup.solution_fill_timeout_sec` (default `1800`)
 - `subsystems.diagnostics.execution.startup.level_poll_interval_sec` (default `60`)
 - `subsystems.diagnostics.execution.startup.clean_fill_retry_cycles` (default `1`)
+- `subsystems.irrigation.decision.strategy = "task"|"smart_soil_v1"`
+- `subsystems.irrigation.recovery.max_continue_attempts`
+- `subsystems.irrigation.safety.stop_on_solution_min`
 - `subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec` (default `1200`)
 - `subsystems.irrigation.recovery.max_continue_attempts` (default `5`)
 - `subsystems.irrigation.recovery.degraded_tolerance.ec_pct` (default `20`)
@@ -623,7 +626,24 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `POST /api/zones/{id}/manual-step`
   - `POST /zones/{id}/start-cycle` (внутренний wake-up).
 
-### 3.5.9. GET /api/zones/{id}/control-mode
+### 3.5.9. POST /api/zones/{id}/start-irrigation
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator`, `admin`, `agronomist` или `engineer`
+- **Описание:** Канонический запуск AE3 irrigation workflow.
+- **Поведение:** Laravel вызывает `automation-engine /zones/{zone_id}/start-irrigation`.
+- **Тело запроса:**
+```json
+{
+  "mode": "normal",
+  "duration_sec": 120
+}
+```
+- **Семантика:**
+  - `mode=normal` проходит через decision-controller (`task|smart_soil_v1`);
+  - `mode=force` bypass-ит decision-controller, но не bypass-ит AE3 task/runtime path;
+  - response возвращает canonical numeric `task_id` AE3.
+
+### 3.5.10. GET /api/zones/{id}/control-mode
 
 - **Аутентификация:** Требуется `auth:sanctum`
 - **Описание:** Текущий режим управления автоматикой зоны и доступные ручные шаги.
@@ -637,9 +657,10 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `data.pending_manual_step`
   - `data.allowed_manual_steps[]`
 - **Public manual-step names:** runtime возвращает только public/generic коды:
-  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`, `prepare_recirculation_stop`.
+  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`,
+  `prepare_recirculation_stop`, `irrigation_stop`, `irrigation_recovery_stop`.
 
-### 3.5.8. POST /api/zones/{id}/control-mode
+### 3.5.11. POST /api/zones/{id}/control-mode
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`
 - **Описание:** Переключение режима управления автоматикой зоны.
@@ -656,7 +677,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 }
 ```
 
-### 3.5.9. POST /api/zones/{id}/manual-step
+### 3.5.12. POST /api/zones/{id}/manual-step
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator`
 - **Описание:** Запрос public manual-step для активной canonical AE3 task.
@@ -666,7 +687,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Ограничение:** список `allowed_manual_steps` stage-aware; шаг вне списка для текущей стадии
   возвращает `422 manual_step_not_allowed_for_stage`.
 - **Public manual-step names:** runtime принимает только generic коды:
-  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`, `prepare_recirculation_stop`.
+  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`,
+  `prepare_recirculation_stop`, `irrigation_stop`, `irrigation_recovery_stop`.
 - **Контракт ответа:** успешный ответ обязан содержать canonical numeric `data.task_id`
   (в JSON остаётся строкой для совместимости), `data.pending_manual_step`,
   `data.current_stage` и `data.workflow_phase`.
@@ -1187,6 +1209,9 @@ Legacy `extensions.day_target/night_target` не записывается.
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Отправка команд на зону (через Python-сервис).
 - Контракт strict: поле `cmd` обязательно, legacy-поле `type` отклоняется (`400`).
+- Для зон с `automation_runtime='ae3'` команда `FORCE_IRRIGATION` сохраняет внешний контракт,
+  но внутри Laravel должна маршрутизироваться в `POST /api/zones/{id}/start-irrigation`
+  c `mode=force`; direct device-command publish для этого кейса запрещён.
 - Примеры команд:
  - `FORCE_IRRIGATION` - принудительный полив (требует `params.duration_sec`);
  - `FORCE_DRAIN` - принудительный дренаж;

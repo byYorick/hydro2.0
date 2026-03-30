@@ -16,6 +16,7 @@ export const AUTOMATION_MANUAL_STEPS_SET = new Set<AutomationManualStep>([
   'solution_fill_stop',
   'prepare_recirculation_start',
   'prepare_recirculation_stop',
+  'irrigation_stop',
   'irrigation_recovery_start',
   'irrigation_recovery_stop',
 ])
