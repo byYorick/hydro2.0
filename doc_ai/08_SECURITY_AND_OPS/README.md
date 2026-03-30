@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -64,6 +64,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Стратегия логирования
 - Мониторинг системы
 - Алерты и уведомления
+
+#### [MONITORING_USER_GUIDE.md](MONITORING_USER_GUIDE.md)
+**Grafana для оператора**
+- доступ и учётные записи
+- основные дашборды dev/prod
 
 #### [TESTING_AND_CICD_STRATEGY.md](TESTING_AND_CICD_STRATEGY.md)
 **Стратегия тестирования и CI/CD**

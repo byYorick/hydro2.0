@@ -469,7 +469,7 @@ Transient-overlap правило для `pump_main`:
 2. Нет `DONE` для неизвестных команд.
 3. Каналы в `config_report` полностью совпадают с тем, что реально принимает командный runtime.
 4. `activate_sensor_mode/deactivate_sensor_mode` детерминированно включают/выключают telemetry и коррекции.
-5. Поток `Scheduler -> Automation-Engine -> History-Logger -> MQTT -> Node` стабилен под retry/reconnect.
+5. Поток `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> Node` стабилен под retry/reconnect.
 6. При reboot нет потери финального `command_response`.
 7. Нет скрытых alias, ломающих модель backend.
 
@@ -514,7 +514,7 @@ Runtime wrapper поведения:
    через `command_response`; иначе hardware reset/bind stage считается несовместимым со smoke-harness.
 3. `history-logger`, `automation-engine` и MQTT bridge доступны.
 4. `telemetry_last` по `level_clean_*` и `level_solution_*` приходит от test-node и свежее runtime window.
-5. Scheduler security baseline разрешает `POST /zones/{id}/start-cycle` и `GET /internal/tasks/{task_id}`.
+5. Security baseline ingress (Laravel → automation-engine) разрешает `POST /zones/{id}/start-cycle` и `GET /internal/tasks/{task_id}`.
 
 ---
 

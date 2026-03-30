@@ -1,22 +1,20 @@
 # RECIPE_ENGINE_FULL.md
-# Полная архитектура Recipe Engine 2.0 (ОБНОВЛЕНО ПОСЛЕ РЕФАКТОРИНГА 2025-12-25)
+# Полная архитектура Recipe Engine 2.0
 
 Recipe Engine — это подсистема, которая управляет рецептами выращивания:
 версиями рецептов, фазами с целями по колонкам, циклами выращивания и effective targets.
 
-**КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА:**
-- ✅ Убрана модель `zone_recipe_instances` + JSON targets
-- ✅ Введено версионирование через `RecipeRevision`
-- ✅ Центр истины — `GrowCycle` вместо `Zone`
-- ✅ Цели хранятся по колонкам, а не в JSON
-- ✅ Единая бизнес-семантика через `EffectiveTargetsService` и authority bundles
-- ✅ Канонический phase write-contract: flat columns + `extensions.day_night` + `extensions.subsystems.irrigation.targets.system_type`
-- ✅ `targets` на выдаче — derived compatibility/view helper, а не source of truth
-- ✅ `PlantCreateModal` больше не оркестрирует `plant -> recipe -> revision -> phases` на фронте; используется атомарный backend flow
+Инварианты модели:
+
+- нет `zone_recipe_instances` + JSON targets как source of truth;
+- версионирование через `RecipeRevision`, активный цикл — `GrowCycle`;
+- цели фаз — по колонкам и authority bundles; `targets` в API может быть derived view;
+- канонический write-contract фазы: flat columns + `extensions.day_night` + `extensions.subsystems.irrigation.targets.system_type`;
+- атомарное создание растения/цикла/ревизии на backend, не оркестрация цепочки только на фронте.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -61,7 +59,7 @@ Read-shape для API/Inertia:
 - `extensions` как есть;
 - derived `targets` для UI/read-model совместимости.
 
-Legacy `extensions.day_target/night_target` больше не записываются. Если такие данные встречаются в старых строках, они нормализуются в presenter layer до `extensions.day_night`.
+`extensions.day_target/night_target` больше не записываются. Если такие данные встречаются в старых строках, они нормализуются в presenter layer до `extensions.day_night`.
 
 **Пример структуры RecipeRevisionPhase:**
 ```sql
@@ -148,7 +146,7 @@ CREATE TABLE recipe_revision_phases (
 
 - Агроном может временно перекрыть параметры цикла
 - Хранятся в authority-документах `cycle.phase_overrides` и `cycle.manual_overrides`
-- Включаются в effective targets через compiled bundle, без legacy-table merge path
+- Включаются в effective targets через compiled bundle, без merge через устаревшие таблицы
 - Для `pH/EC target|min|max` overrides запрещены: эти поля всегда берутся только из phase snapshot / recipe phase
 
 ---
@@ -220,7 +218,7 @@ CREATE TABLE recipe_revision_phases (
 Строгое правило схемы питания:
 - используются 4 компонента (`npk`, `calcium`, `magnesium`, `micro`);
 - API фаз требует заполнения всех 4 `*_ratio_pct`;
-- fallback на legacy 3-компонентную схему не поддерживается.
+- fallback на старую 3-компонентную схему не поддерживается.
 
 ---
 

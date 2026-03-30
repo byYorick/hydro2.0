@@ -2,11 +2,11 @@
 # Ключевые архитектурные потоки hydro 2.0 (AE3 authority runtime)
 
 **Версия:** 3.3  
-**Дата обновления:** 2026-03-24  
+**Дата обновления:** 2026-03-30  
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy scheduler-task transport удален из runtime.
+Breaking-change: HTTP-транспорт задач планировщика удалён из runtime.
 
 ---
 
@@ -37,7 +37,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime.
 
 Правила:
 - внешний wake-up endpoint только один: `POST /zones/{id}/start-cycle`;
-- scheduler передает намерение через `zone_automation_intents`;
+- Laravel scheduler-dispatch передаёт намерение через `zone_automation_intents`;
 - workflow шаги выполняются последовательно: `send -> await terminal -> next`.
 - single-writer на уровне зоны: одновременно допускается только один активный `start-cycle` runner на зону;
 - при активном intent/active task endpoint возвращает `409 start_cycle_zone_busy`.
@@ -80,7 +80,7 @@ Precedence compile:
 
 Ограничения:
 - runtime path не зависит от `/api/internal/effective-targets/*`;
-- runtime path не читает legacy automation config tables как source of truth;
+- runtime path не читает устаревшие automation config tables как source of truth;
 - fallback на чтении не допускается.
 
 ---
@@ -109,7 +109,6 @@ API:
 - `04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 - `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - `05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-- `04_BACKEND_CORE/ae3lite.md`
 
 ---
 
@@ -117,7 +116,7 @@ API:
 
 Базовый command flow (инвариант не меняется):
 
-`Scheduler -> Automation-Engine -> history-logger -> MQTT -> ESP32`
+`Laravel scheduler-dispatch -> Automation-Engine -> history-logger -> MQTT -> ESP32`
 
 Режимы выполнения:
 - `ae3`: ownership по зоне переключается на current authority runtime через `zones.automation_runtime='ae3'`.
@@ -129,12 +128,12 @@ Routing:
 Compatibility path:
 - ingress до cutover остаётся через `POST /zones/{id}/start-cycle` и `zone_automation_intents`;
 - status migration идёт через canonical `GET /internal/tasks/{task_id}`;
-- dual-run shadow, legacy status mirrors и `root_intent_id` bridge в canonical v1 не требуются.
+- dual-run shadow, зеркала статусов вне канона и `root_intent_id` bridge в canonical v1 не требуются.
 
 AE3 fast-path / fallback:
 - terminal transition intent-а публикует `scheduler_intent_terminal`, который будит Laravel listener и AE3 worker fast-path;
 - fast-path не заменяет canonical PostgreSQL state и reconcile polling;
-- ожидание terminal legacy command status использует bounded backoff, а не фиксированный sleep.
+- ожидание terminal статуса в `commands` использует bounded backoff, а не фиксированный sleep.
 
 AE3 timeout invariants:
 - whole-task execution ограничен `AE_MAX_TASK_EXECUTION_SEC` (default `900s`);

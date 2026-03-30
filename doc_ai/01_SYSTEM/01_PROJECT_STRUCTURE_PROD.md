@@ -20,7 +20,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -103,16 +103,17 @@ hydro2.0/
 │  ├─ DIGITAL_TWIN_ENGINE.md
 │  └─ ...
 ├─ 10_AI_DEV_GUIDES/
-│  ├─ TASKS_FOR_AI_AGENTS.md
-│  └─ PROMPTS_LIBRARY.md
-├─ 11_LEGACY_ARCHIVES/
-│  └─ ...                         # Исторические архивы документации
+│  └─ ...                         # Гайды для ИИ-агентов
 ├─ 12_ANDROID_APP/
 │  ├─ ANDROID_APP_ARCH.md
 │  ├─ ANDROID_APP_SCREENS.md
 │  ├─ ANDROID_APP_API_INTEGRATION.md
 │  └─ ...
 ├─ INDEX.md                       # Главный индекс документации
+├─ SYSTEM_ARCH_FULL.md            # Сводная архитектура (корень doc_ai)
+├─ ARCHITECTURE_FLOWS.md          # Потоки и инварианты pipeline
+├─ 11_WEBSOCKET_ARCHITECTURE.md   # WebSocket/Reverb (корень doc_ai)
+├─ TASKS_FOR_AI_AGENTS.md         # Правила задач для ИИ (корень doc_ai)
 └─ README_STRUCTURE.md            # Описание структуры папок
 ```
 
@@ -209,8 +210,8 @@ backend/
 │  ├─ tests/
 │  └─ ...
 ├─ services/
-│  ├─ api-gateway/             # LEGACY / NOT USED — роль API Gateway выполняет Laravel
-│  │  ├─ README.md             # Описание legacy статуса
+│  ├─ api-gateway/             # НЕ ИСПОЛЬЗУЕТСЯ — роль API Gateway выполняет Laravel
+│  │  ├─ README.md             # Пояснение статуса каталога
 │  │  └─ Dockerfile            # Placeholder
 │  ├─ mqtt-bridge/             # MQTT-мост: подписка на ноды, публикация команд
 │  │  ├─ main.py               # Основной код (FastAPI)
@@ -218,7 +219,7 @@ backend/
 │  │  ├─ requirements.txt
 │  │  ├─ Dockerfile
 │  │  └─ README.md
-│  ├─ device-registry/         # LEGACY / NOT USED — функционал реализован в Laravel
+│  ├─ device-registry/         # НЕ ИСПОЛЬЗУЕТСЯ — функционал реализован в Laravel
 │  ├─ automation-engine/       # Правила автоматизации (по расписанию/датчикам)
 │  ├─ history-logger/          # Логирование телеметрии в БД/TSDB
 │  └─ common/                  # Общие библиотеки для Python-сервисов (модели, DTO, клиенты MQTT/БД)
@@ -253,9 +254,9 @@ backend/
   - принимает события (`telemetry`, `command_response`);
   - решает, когда включить насос/свет/климат в зависимости от состояния.
 - `history-logger`:
-  - пишет телеметрию в БД/TSDB (InfluxDB, PostgreSQL + Timescale и т.п.).
+  - пишет телеметрию в PostgreSQL + TimescaleDB (основной стек dev/prod); отдельная TSDB возможна в иных деплоях.
 
-**Примечание:** Сервисы `api-gateway` и `device-registry` помечены как LEGACY / NOT USED — их функционал полностью реализован в Laravel.
+**Примечание:** Каталоги `api-gateway` и `device-registry` не используются в рантайме — их функционал полностью реализован в Laravel.
 
 ---
 

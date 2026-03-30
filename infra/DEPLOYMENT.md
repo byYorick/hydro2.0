@@ -200,7 +200,7 @@ sudo -u hydro npm ci
 
 # Python сервисы
 cd /opt/hydro/backend/services
-for service in mqtt-bridge automation-engine history-logger scheduler digital-twin telemetry-aggregator; do
+for service in mqtt-bridge automation-engine history-logger digital-twin telemetry-aggregator; do
     if [ -d "$service" ] && [ -f "$service/requirements.txt" ]; then
         sudo -u hydro "$service/venv/bin/pip" install -r "$service/requirements.txt"
     fi

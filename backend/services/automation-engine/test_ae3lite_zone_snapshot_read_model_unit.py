@@ -201,6 +201,34 @@ def test_build_phase_targets_uses_recipe_phase_without_runtime_overrides() -> No
     assert result["diagnostics"]["execution"]["target_ph"] == 9.9
 
 
+def test_build_phase_targets_preserves_phase_extensions_for_runtime_consumers() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    result = read_model._build_phase_targets(
+        zone_row={
+            "phase_extensions": {
+                "subsystems": {
+                    "irrigation": {
+                        "targets": {
+                            "soil_moisture": {
+                                "min": 38.0,
+                                "max": 48.0,
+                                "target": 43.0,
+                                "unit": "pct",
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    )
+
+    assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["min"] == 38.0
+    assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["max"] == 48.0
+    assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["target"] == 43.0
+    assert result["extensions"]["subsystems"]["irrigation"]["targets"]["soil_moisture"]["unit"] == "pct"
+
+
 def test_build_process_calibrations_normalizes_legacy_mode_aliases() -> None:
     read_model = PgZoneSnapshotReadModel()
 

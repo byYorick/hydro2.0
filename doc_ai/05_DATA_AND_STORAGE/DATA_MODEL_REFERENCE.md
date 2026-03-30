@@ -8,7 +8,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -142,7 +142,7 @@ nodes_status_idx (status) -- уже существует
 Ограничения:
 - В БД действует `CHECK`-ограничение `nodes_type_canonical_check`.
 - `nodes.type` не допускает `NULL` (используется default/fallback `unknown`).
-- Legacy-алиасы (`pump_node`, `irrigation`, `lighting_node`, `climate_node`, и т.п.) не допускаются.
+- Алиасы вне канона (`pump_node`, `irrigation`, `lighting_node`, `climate_node`, и т.п.) не допускаются.
 - Для нераспознанных значений используется `unknown`.
 
 ## 3.2. node_channels
@@ -171,7 +171,7 @@ updated_at
   `automation_config_documents(namespace='zone.correction', scope_type='zone', scope_id={zone_id})`
   и materialized bundle `automation_effective_bundles(scope_type='zone', scope_id={zone_id})`.
 - `component` для EC-питания поддерживает: `npk`, `calcium`, `magnesium`, `micro` (для pH — `acid`/`base`).
-- Для новой логики питания не используется legacy 3-компонентная схема: актуальна только 4-компонентная модель.
+- Для новой логики питания не используется старая 3-компонентная схема: актуальна только 4-компонентная модель.
 
 ---
 
@@ -395,7 +395,7 @@ id BIGSERIAL PK
 greenhouse_id BIGINT FK → greenhouses
 zone_id BIGINT FK → zones
 plant_id BIGINT FK → plants
-recipe_id BIGINT FK → recipes (legacy, для совместимости)
+recipe_id BIGINT FK → recipes (историческое поле для совместимости)
 recipe_revision_id BIGINT FK → recipe_revisions NOT NULL
 
 -- Статус и временные метки
@@ -521,7 +521,7 @@ INDEX: grow_cycle_phase_step_phase_idx (grow_cycle_phase_id)
 
 ## 6.4. cycle.phase_overrides / cycle.manual_overrides
 
-Legacy таблица `grow_cycle_overrides` удалена из authority-path.
+Таблица `grow_cycle_overrides` не входит в authority-path.
 Cycle-level overrides теперь хранятся в `automation_config_documents`:
 
 - `namespace='cycle.phase_overrides'`, `scope_type='grow_cycle'`
@@ -718,7 +718,7 @@ zone_workflow_state_scheduler_task_id_idx (scheduler_task_id)
 
 ## 6.7. zone.logic_profile
 
-Legacy таблица `zone_automation_logic_profiles` удалена из authority-path.
+Таблица `zone_automation_logic_profiles` не входит в authority-path.
 Runtime profile зоны хранится в:
 
 `automation_config_documents(namespace='zone.logic_profile', scope_type='zone', scope_id={zone_id})`
@@ -738,7 +738,7 @@ Payload:
 Требования к `command_plans`:
 - содержит `schema_version` и `plan_version`;
 - каждый plan содержит `steps[]` с `channel`, `cmd`, `params`;
-- runtime использует `active_profile.command_plans` из compiled bundle, без legacy fallback.
+- runtime использует `active_profile.command_plans` из compiled bundle, без запасного чтения из устаревших таблиц.
 
 Минимальная JSON-схема `command_plans` (runtime):
 
@@ -1012,7 +1012,7 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 - `task_type IN ('cycle_start', 'irrigation_start')` фиксируется DB check constraint.
 - `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|irrig_recirc|ready`.
 - irrigation decision/replay/runtime state хранится в explicit columns, а не в свободном JSON.
-- canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из legacy `payload`.
+- canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из произвольного JSON в `payload`.
 
 ### 6.10.2. ae_commands
 
@@ -1116,7 +1116,7 @@ Transport queue для alert ingest:
 
 Канон:
 
-- replay path не использует legacy `pending_alerts.status='dlq'`;
+- replay path не использует `pending_alerts.status='dlq'`;
 - replay переносит запись из `pending_alerts_dlq` обратно в `pending_alerts`;
 - retry/replay не меняют `code`, `source`, `zone_id` и `details.dedupe_key`.
 
@@ -1214,7 +1214,7 @@ simulation_reports_status_index (status)
 
 ---
 
-## 8.4. scheduler_logs (LEGACY / DIAGNOSTICS)
+## 8.4. scheduler_logs (диагностика / опционально)
 
 ```
 id PK
@@ -1237,7 +1237,7 @@ scheduler_logs_task_zone_created_idx -- expression index по details->>'zone_id
 scheduler_logs_zone_created_idx -- expression partial index по details->>'zone_id'
 ```
 
-### 8.4.1. Контракт `scheduler_logs.details` (LEGACY)
+### 8.4.1. Контракт `scheduler_logs.details` (вне основного authority-path)
 
 Обязательные ключи task snapshot:
 - `task_id: string`
@@ -1268,7 +1268,7 @@ scheduler_logs_zone_created_idx -- expression partial index по details->>'zone
 ## 8.5. laravel_scheduler_active_tasks (ACTIVE: Laravel scheduler owner)
 
 Durable state Laravel dispatcher для reconcile/anti-overlap в цепочке
-`Scheduler -> /start-cycle -> intent -> executor`.
+`Laravel scheduler-dispatch -> /start-cycle -> intent -> executor`.
 
 Примечание:
 - `zone_automation_intents` — canonical lifecycle намерений;
@@ -1382,9 +1382,9 @@ ls_cycle_duration_bucket_mode_idx (dispatch_mode)
 
 ---
 
-## 8.6. laravel_scheduler_zone_cursors (LEGACY / OPTIONAL)
+## 8.6. laravel_scheduler_zone_cursors (опционально, вне основного authority-path)
 
-Исторический курсор legacy scheduler-reconcile.
+Исторический курсор reconcile (до единого Laravel ownership dispatch).
 
 ```
 zone_id BIGINT PK FK -> zones
@@ -1710,7 +1710,7 @@ zone 1—1 ae_zone_leases
 
 **Устаревшие модели (удалены после рефакторинга):**
 - ❌ ZoneRecipeInstance
-- ❌ RecipePhase (legacy JSON targets)
+- ❌ RecipePhase (устаревшие JSON targets)
 - ❌ ZoneCycle
 - ❌ PlantCycle
 
@@ -1824,7 +1824,7 @@ zone 1—1 ae_zone_leases
 - `subsystems.irrigation.recovery.degraded_tolerance.ph_pct` -> `targets.irrigation.execution.degraded_tolerance.ph_pct`
 
 Совместимость rollout:
-- legacy `subsystems.*.targets` отклоняется backend-слоем (`422`);
+- поле `subsystems.*.targets` отклоняется backend-слоем (`422`);
 - канонический формат для новых payload/документации: `subsystems.*.execution`.
 
 Политика enable/disable подсистем:
@@ -1860,7 +1860,7 @@ Zonal climate bindings аналогично остаются zone-owned:
 Ручные override-действия (`fill_clean_tank`, `prepare_solution`, `recirculate_solution`, `resume_irrigation`)
 обязаны фиксироваться в `zone_events` и lifecycle `zone_automation_intents`.
 
-Legacy примечание:
+Примечание:
 - старый scheduler-task транспорт и его таблицы считаются историческими.
 
 ---
@@ -2025,12 +2025,12 @@ Process-gain и observe-window contract хранятся в zone-scoped authorit
   `preset_id`, `base_config`, `phase_overrides`, `resolved_config`;
 - `resolved_config` materialized compiler/service layer и входит в zone/grow-cycle bundle;
 - zone correction history хранится в `automation_config_versions`;
-- AE runtime использует correction payload из compiled bundle, а не legacy table напрямую.
+- AE runtime использует correction payload из compiled bundle, а не напрямую из отдельной correction-таблицы.
 
 ### 16.5. Zone correction config: timing contract
 
 - `zone.correction.base_config.timing` и `zone.correction.resolved_config.timing`
-  больше не содержат legacy wait-поля correction timing.
+  больше не содержат устаревшие wait-поля correction timing.
 - `zone.correction.base_config` больше не содержит секцию adaptive timing.
 - `zone.correction.*.retry.prepare_recirculation_max_correction_attempts`
   хранит только явный конечный лимит correction-loop внутри recirculation window;

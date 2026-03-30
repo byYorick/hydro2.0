@@ -10,7 +10,7 @@ Backend является «мозгом» всех контроллеров.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -25,7 +25,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 4. **ZoneLightController** — свет, интесивность, длительность.
 5. **ZoneHealthMonitor** — состояние зоны, алерты, деградации.
 
-Все контроллеры работают через единый Scheduler.
+Все контроллеры вызываются в рамках **единого цикла automation-engine** (тик зоны), см. `../04_BACKEND_CORE/ae3lite.md`.
 
 ---
 
@@ -45,7 +45,7 @@ NutrientCtrl ClimateCtrl IrrigationCtrl LightCtrl ZoneHealthMonitor
 
 # 3. Общий pipeline работы контроллера
 
-Scheduler каждые 1–5 секунд выполняет:
+Цикл automation-engine каждые 1–5 секунд (или по событию) выполняет:
 
 ```
 read telemetry
@@ -246,7 +246,7 @@ ALARM_EXIT
 
 - читают telemetry
 - создают команды
-- Scheduler → отправляет MQTT команду
+- automation-engine → REST к **history-logger** → публикация MQTT-команды
 - Node → выполняет → даёт command_response
 - контроллер → обновляет zone state
 

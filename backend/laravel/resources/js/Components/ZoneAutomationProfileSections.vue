@@ -718,6 +718,149 @@
                 />
               </label>
             </div>
+
+            <details class="mt-3 rounded-xl border border-[color:var(--border-muted)] p-3">
+              <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
+                Decision, recovery и safety
+              </summary>
+
+              <p class="mt-2 text-xs text-[color:var(--text-dim)]">
+                Настройки decision-controller для штатного полива, replay после setup и fail-closed guard по уровню раствора.
+              </p>
+
+              <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionStrategy')"
+                >
+                  Decision strategy
+                  <select
+                    v-model="waterForm.irrigationDecisionStrategy"
+                    data-test="irrigation-decision-strategy"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option value="task">task</option>
+                    <option value="smart_soil_v1">smart_soil_v1</option>
+                  </select>
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionLookbackSeconds')"
+                >
+                  Lookback (сек)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionLookbackSeconds"
+                    type="number"
+                    min="60"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionMinSamples')"
+                >
+                  Min samples
+                  <input
+                    v-model.number="waterForm.irrigationDecisionMinSamples"
+                    type="number"
+                    min="1"
+                    max="100"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionStaleAfterSeconds')"
+                >
+                  Telemetry stale after (сек)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionStaleAfterSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionHysteresisPct')"
+                >
+                  Hysteresis (%)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionHysteresisPct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionSpreadAlertThresholdPct')"
+                >
+                  Spread alert threshold (%)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionSpreadAlertThresholdPct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationAutoReplayAfterSetup')"
+                >
+                  Auto replay after setup
+                  <select
+                    v-model="waterForm.irrigationAutoReplayAfterSetup"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option :value="true">Включён</option>
+                    <option :value="false">Выключен</option>
+                  </select>
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationMaxSetupReplays')"
+                >
+                  Max setup replays
+                  <input
+                    v-model.number="waterForm.irrigationMaxSetupReplays"
+                    type="number"
+                    min="0"
+                    max="10"
+                    class="input-field mt-1 w-full"
+                    :disabled="!canConfigure"
+                  />
+                </label>
+                <label
+                  class="text-xs text-[color:var(--text-muted)] md:col-span-2 xl:col-span-2"
+                  :title="fieldHelp('water.stopOnSolutionMin')"
+                >
+                  Stop on solution min
+                  <select
+                    v-model="waterForm.stopOnSolutionMin"
+                    data-test="irrigation-stop-on-solution-min"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option :value="true">Fail-closed при low solution</option>
+                    <option :value="false">Не останавливать irrigation workflow</option>
+                  </select>
+                </label>
+              </div>
+            </details>
           </div>
 
           <div
@@ -1047,6 +1190,147 @@
             </summary>
 
             <div class="mt-3 space-y-4">
+              <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
+                <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  Decision, recovery и safety
+                </h5>
+                <p class="mt-1 text-xs text-[color:var(--text-dim)]">
+                  Strategy обычного полива, требования к телеметрии и replay-policy после setup/recovery.
+                </p>
+                <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationDecisionStrategy')"
+                  >
+                    Decision strategy
+                    <select
+                      v-model="waterForm.irrigationDecisionStrategy"
+                      data-test="irrigation-decision-strategy"
+                      class="input-select mt-1 w-full"
+                      :disabled="!canConfigure"
+                    >
+                      <option value="task">task</option>
+                      <option value="smart_soil_v1">smart_soil_v1</option>
+                    </select>
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationDecisionLookbackSeconds')"
+                  >
+                    Lookback (сек)
+                    <input
+                      v-model.number="waterForm.irrigationDecisionLookbackSeconds"
+                      type="number"
+                      min="60"
+                      max="86400"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationDecisionMinSamples')"
+                  >
+                    Min samples
+                    <input
+                      v-model.number="waterForm.irrigationDecisionMinSamples"
+                      type="number"
+                      min="1"
+                      max="100"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationDecisionStaleAfterSeconds')"
+                  >
+                    Telemetry stale after (сек)
+                    <input
+                      v-model.number="waterForm.irrigationDecisionStaleAfterSeconds"
+                      type="number"
+                      min="30"
+                      max="86400"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationDecisionHysteresisPct')"
+                  >
+                    Hysteresis (%)
+                    <input
+                      v-model.number="waterForm.irrigationDecisionHysteresisPct"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationDecisionSpreadAlertThresholdPct')"
+                  >
+                    Spread alert threshold (%)
+                    <input
+                      v-model.number="waterForm.irrigationDecisionSpreadAlertThresholdPct"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationAutoReplayAfterSetup')"
+                  >
+                    Auto replay after setup
+                    <select
+                      v-model="waterForm.irrigationAutoReplayAfterSetup"
+                      class="input-select mt-1 w-full"
+                      :disabled="!canConfigure"
+                    >
+                      <option :value="true">Включён</option>
+                      <option :value="false">Выключен</option>
+                    </select>
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.irrigationMaxSetupReplays')"
+                  >
+                    Max setup replays
+                    <input
+                      v-model.number="waterForm.irrigationMaxSetupReplays"
+                      type="number"
+                      min="0"
+                      max="10"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)] md:col-span-2 xl:col-span-2"
+                    :title="fieldHelp('water.stopOnSolutionMin')"
+                  >
+                    Stop on solution min
+                    <select
+                      v-model="waterForm.stopOnSolutionMin"
+                      data-test="irrigation-stop-on-solution-min"
+                      class="input-select mt-1 w-full"
+                      :disabled="!canConfigure"
+                    >
+                      <option :value="true">Fail-closed при low solution</option>
+                      <option :value="false">Не останавливать irrigation workflow</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
               <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
                 <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
                   Диагностика и refill
@@ -2169,8 +2453,17 @@ const FIELD_HELP: Record<string, string> = {
   'water.startupSolutionFillTimeoutSeconds': 'Fail-closed таймаут на набор раствора при startup workflow.',
   'water.startupPrepareRecirculationTimeoutSeconds': 'Максимальное время ожидания стадии prepare recirculation до аварийного завершения.',
   'water.startupCleanFillRetryCycles': 'Сколько раз startup workflow может повторить clean fill перед отказом.',
+  'water.irrigationDecisionStrategy': 'Decision-controller штатного полива: task принудительно выполняет запуск по плану, smart_soil_v1 сначала оценивает soil moisture и качество телеметрии.',
+  'water.irrigationDecisionLookbackSeconds': 'Глубина окна истории телеметрии, из которого decision-controller берёт soil moisture samples.',
+  'water.irrigationDecisionMinSamples': 'Минимум samples в lookback-окне, без которого smart_soil_v1 должен деградировать или skip-нуть запуск.',
+  'water.irrigationDecisionStaleAfterSeconds': 'Порог stale telemetry: если последние данные старше этого окна, decision-controller не должен считать их надёжными.',
+  'water.irrigationDecisionHysteresisPct': 'Гистерезис вокруг target moisture, который уменьшает лишние запуски полива на шумных данных.',
+  'water.irrigationDecisionSpreadAlertThresholdPct': 'Порог разброса датчиков влажности, после которого smart_soil_v1 должен считать зону неоднородной и поднять degraded signal.',
   'water.irrigationRecoveryMaxContinueAttempts': 'Максимум продолжений recovery-окна после полива, если targets ещё не достигнуты.',
   'water.irrigationRecoveryTimeoutSeconds': 'Общий таймаут recovery-фазы после полива.',
+  'water.irrigationAutoReplayAfterSetup': 'Разрешает AE3 автоматически повторить normal irrigation после setup/recovery, если initial launch был отложен или оборван safety-path.',
+  'water.irrigationMaxSetupReplays': 'Сколько раз runtime может автоматически переиграть irrigation после setup/recovery без нового operator trigger.',
+  'water.stopOnSolutionMin': 'Fail-closed guard: normal irrigation должен останавливаться при low-solution signal, а не продолжать workflow вслепую.',
   'water.manualIrrigationSeconds': 'Стандартная длительность ручного полива из UI, если оператор запускает irrigation вручную.',
   'water.solutionChangeEnabled': 'Включает плановую замену раствора по расписанию, отдельную от обычного поливочного цикла.',
   'water.solutionChangeIntervalMinutes': 'Интервал между плановыми заменами раствора, если этот режим включён.',

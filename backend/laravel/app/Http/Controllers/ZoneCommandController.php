@@ -250,7 +250,7 @@ class ZoneCommandController extends Controller
     {
         $params = is_array($data['params'] ?? null) ? $data['params'] : [];
         $durationSec = isset($params['duration_sec']) ? (int) $params['duration_sec'] : null;
-        $ae3Payload = $this->ae3IrrigationBridge->startIrrigation($zone->id, [
+        $ae3Payload = $this->ae3IrrigationBridge->dispatchStartIrrigation($zone->id, [
             'mode' => 'force',
             'source' => 'zone_commands_force_irrigation',
             'requested_duration_sec' => $durationSec,

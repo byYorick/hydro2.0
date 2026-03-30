@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -48,11 +48,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 #### [REPO_MAPPING.md](REPO_MAPPING.md)
 Маппинг репозиториев и компонентов
 
-#### [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
-Предложение по полной системной архитектуре
-
 #### [NODE_ASSIGNMENT_LOGIC.md](NODE_ASSIGNMENT_LOGIC.md)
 Логика привязки узлов к зонам
+
+#### [NODE_ADDITION_AND_ACTIVATION_FLOW.md](NODE_ADDITION_AND_ACTIVATION_FLOW.md)
+Добавление и активация узла в системе
 
 #### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
 Реализация отвязки узлов от зон

@@ -14,20 +14,15 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
-> Важно (2026-02-20): документ `PARTIALLY_HISTORICAL`.  
-> Блоки, где фигурирует отдельный Python `scheduler` сервис в compose/структуре,
-> относятся к исторической фазе до decommission runtime scheduler.  
-> Актуальный runtime owner planning/dispatch: Laravel scheduler-dispatch.  
-> Источник истины: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` и
-> `doc_ai/10_AI_DEV_GUIDES/LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md`.
+> Планировщик расписаний (полив, свет, климат) выполняется **внутри Laravel** (`automation:dispatch-schedules`, intents в БД). Отдельного Python-сервиса `scheduler` в compose **нет**.  
+> Источник истины: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`,
+> `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
 
 ## 1. Структура репозитория
-
-Исторический пример структуры проекта (до decommission Python scheduler runtime):
 
 ```text
 hydro2.0/
@@ -37,7 +32,6 @@ hydro2.0/
    mqtt-bridge/
    history-logger/
    automation-engine/
-   scheduler/
    common/              # Общая библиотека для Python сервисов
   docker-compose.dev.yml
   docker-compose.prod.yml
@@ -84,8 +78,8 @@ hydro2.0/
 - Несколько независимых сервисов:
  - `mqtt-bridge` - FastAPI мост для отправки команд через MQTT
  - `history-logger` - запись телеметрии в PostgreSQL
- - `automation-engine` - контроллер зон, проверка targets
- - `scheduler` - расписания поливов/света из recipe phases
+ - `automation-engine` - контроллер зон, проверка targets, исполнение intents от Laravel
+- Расписания полива/света/фаз рецепта планирует **Laravel** (см. `SCHEDULER_ENGINE.md`), а не отдельный Python-процесс
 - Общая библиотека `common/` для всех сервисов
 - Пакеты: `asyncio-mqtt` или `gmqtt`, `sqlalchemy`, `psycopg2` или `asyncpg`, `pydantic`, `loguru`
 
@@ -102,10 +96,9 @@ hydro2.0/
 
 ---
 
-## 3. docker-compose.yml (актуальная структура)
+## 3. docker-compose.yml (иллюстративная структура)
 
-Примечание: пример ниже содержит исторический сервис `scheduler` и показан только для контекста эволюции.
-Для реального запуска использовать текущие `backend/docker-compose*.yml`.
+Пример упрощённый; для реального запуска использовать текущие `backend/docker-compose*.yml`.
 
 Основные сервисы:
 
@@ -199,20 +192,6 @@ services:
    ports:
      - "9401:9401"
 
- scheduler:
-   build:
-     context: ./services
-     dockerfile: scheduler/Dockerfile
-   environment:
-     MQTT_HOST: mqtt
-     PG_HOST: db
-     PG_DB: hydro_dev  # или hydro для production
-   depends_on:
-     - mqtt
-     - db
-   ports:
-     - "9402:9402"
-
 volumes:
  postgres_data:
 ```
@@ -274,9 +253,9 @@ CMD ["python", "main.py"]
 
 **Сервисы:**
 - `mqtt-bridge` - FastAPI сервис на порту `9000`
-- `history-logger` - подписка на MQTT, запись телеметрии
+- `history-logger` - подписка на MQTT, запись телеметрии (`9301` metrics)
 - `automation-engine` - контроллер зон, порт `9401` (Prometheus metrics)
-- `scheduler` - расписания, порт `9402` (Prometheus metrics)
+- расписания и dispatch — в **Laravel** (метрики при необходимости: `GET /api/system/scheduler/metrics` на `8080`)
 
 ---
 
@@ -452,17 +431,17 @@ LARAVEL_API_TOKEN=<token>  # Генерируется через Laravel Sanctum
  - используется для realtime обновлений UI;
  - см. раздел 13 ниже.
 
-4. **Python сервисы уже разделены**:
- - `scheduler` - отдельный контейнер для расписаний;
- - `automation-engine` - отдельный контейнер для контроллеров зон;
- - `history-logger` - отдельный контейнер для записи телеметрии;
- - `mqtt-bridge` - отдельный контейнер для REST → MQTT моста.
+4. **Python-сервисы**:
+ - `automation-engine` — контроллеры зон и исполнение workflow;
+ - `history-logger` — телеметрия и публикация команд в MQTT;
+ - `mqtt-bridge` — REST → MQTT мост;
+ - расписания — логика Laravel (отдельного контейнера `scheduler` нет).
 
 ---
 
 ## 11. Чего нельзя делать ИИ-агенту
 
-- Менять имена сервисов (`db`, `mqtt`, `laravel`, `redis`, `mqtt-bridge`, `history-logger`, `automation-engine`, `scheduler`) без обновления всех зависимостей.
+- Менять имена сервисов (`db`, `mqtt`, `laravel`, `redis`, `mqtt-bridge`, `history-logger`, `automation-engine`) без обновления всех зависимостей.
 - Менять порты без синхронизации с конфигами ESP32/клиентов.
 - Удалять автоматический запуск миграций без замены на понятный альтернативный процесс.
 - Хардкодить IP-адреса внутри контейнеров (использовать имена сервисов).

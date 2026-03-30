@@ -7,7 +7,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -264,13 +264,13 @@ pg_dump + compression + encryption
 
 # 10. Архивирование (Archiving Engine)
 
-Архивация выполняется Python Scheduler:
+Архивация и прогрессия агрегатов выполняются **по расписанию приложения** (команды Laravel вроде `telemetry:cleanup-raw` / `telemetry:aggregate`, политики Timescale/БД).
 
 ```
 raw → agg_1m → agg_1h → daily → cold archive
 ```
 
-Ротация выполняется автоматически.
+Ротация выполняется автоматически по выбранной политике окружения.
 
 ---
 

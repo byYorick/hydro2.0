@@ -51,12 +51,12 @@ class PythonIngestControllerTest extends TestCase
         ]);
 
         Config::set('services.history_logger.url', 'http://history-logger:9300');
+        Config::set('services.history_logger.token', 'history-token');
         Config::set('services.python_bridge.ingest_token', 'test-token');
 
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
-
-        $token = $this->token();
+        $this->token();
         
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
@@ -74,6 +74,7 @@ class PythonIngestControllerTest extends TestCase
         Http::assertSent(function ($request) use ($zone, $node) {
             return $request->url() === 'http://history-logger:9300/ingest/telemetry'
                 && $request->method() === 'POST'
+                && $request->hasHeader('Authorization', 'Bearer history-token')
                 && isset($request->data()['samples'])
                 && count($request->data()['samples']) === 1
                 && $request->data()['samples'][0]['node_uid'] === $node->uid

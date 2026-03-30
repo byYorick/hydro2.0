@@ -158,7 +158,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 Real-node (`node_command_handler`):
 
-- требует HMAC-подпись (`ts` + `sig`), если не включён `allow_legacy_hmac`;
+- требует HMAC-подпись (`ts` + `sig`), пока в NodeConfig включена строгая проверка команд (см. `NODE_CONFIG_SPEC.md`);
 - проверяет timestamp и подпись;
 - при неизвестной команде возвращает `ERROR/unknown_command`.
 

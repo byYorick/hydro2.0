@@ -7,7 +7,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -323,7 +323,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 
 Runtime-оговорка:
 - при подключении `mqtt_manager` публикует канонический `{"status":"ONLINE","ts":...}`;
-- на части real-node поверх этого публикуется node-specific legacy payload (`online/ip/rssi/fw` без `status`/`ts`),
+- на части real-node поверх этого публикуется node-specific сокращённый payload (`online/ip/rssi/fw` без `status`/`ts`),
   что считается техническим долгом для production hardening.
 
 ## 8.2. LWT (offline)

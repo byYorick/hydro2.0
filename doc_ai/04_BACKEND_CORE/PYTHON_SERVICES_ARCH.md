@@ -6,7 +6,7 @@
 **Статус:** Актуально (канонично для runtime)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy scheduler-task transport удален из runtime; обратная совместимость не поддерживается.
+Breaking-change: HTTP-транспорт задач планировщика удалён из runtime; обратная совместимость не поддерживается.
 
 ---
 
@@ -49,7 +49,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 
 ### 2.3 Прочие Python-сервисы
 
-- `mqtt-bridge`, `digital-twin`, `health-monitor` и др. работают в своих доменах.
+- `mqtt-bridge`, `digital-twin`, `telemetry-aggregator` (и прочие вспомогательные сервисы из `docker-compose`) работают в своих доменах.
 - Никакой сервис, кроме `history-logger`, не публикует device-команды напрямую в MQTT.
 
 ---
@@ -84,7 +84,7 @@ Breaking-change: legacy scheduler-task transport удален из runtime; об
 Единый внешний entrypoint:
 - `POST /zones/{id}/start-cycle`
 
-Scheduler модель:
+Laravel scheduler-dispatch модель:
 1. Laravel scheduler пишет запись в `zone_automation_intents` со статусом `pending`.
 2. Laravel вызывает `POST /zones/{id}/start-cycle`.
 3. AE3 claim intent (`FOR UPDATE SKIP LOCKED`) и исполняет.
@@ -92,10 +92,10 @@ Scheduler модель:
 
 Контракт intent payload (wake-up only):
 - разрешены только поля metadata: `source`, `task_type=diagnostics`, `workflow=cycle_start`, `topology`, `grow_cycle_id` (опционально);
-- `task_payload` и `schedule_payload` не используются и считаются legacy;
+- `task_payload` и `schedule_payload` не используются и не входят в актуальный контракт;
 - runtime path `start-cycle` не принимает и не исполняет device-level payload из intent.
 
-Legacy endpoint-ы:
+Удалённые endpoint'ы (в прошлом):
 - `POST /scheduler/task` — удален.
 - `GET /scheduler/task/{task_id}` — удален.
 
@@ -133,7 +133,7 @@ Payload-contract:
 
 Для AE3-совместимого runtime path действуют дополнительные правила:
 - `scheduler_intent_terminal` используется только как fast-path для `worker.kick()`; source of truth остаётся в PostgreSQL.
-- reconcile polling для legacy command wait использует bounded exponential backoff: старт от `reconcile_poll_interval_sec`, множитель `1.5`, верхняя граница `5s`.
+- reconcile polling при ожидании terminal статуса в `commands` использует bounded exponential backoff: старт от `reconcile_poll_interval_sec`, множитель `1.5`, верхняя граница `5s`.
 - публикация команды в `history-logger` допускает не более одного transient retry с backoff `1s` для transport error или `HTTP 5xx`; далее runtime fail-closed.
 - registry background tasks должен быть hard-limited; overflow не может продолжаться в режиме best-effort.
 - whole-task execution ограничен `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout обязан переводить runtime в fail-closed path с fail-safe shutdown и terminal `failed`.
@@ -186,7 +186,7 @@ Compile precedence:
 
 Требования:
 - runtime path не зависит от `/api/internal/effective-targets/*`;
-- runtime path не читает legacy automation config tables как source of truth;
+- runtime path не читает устаревшие automation config tables как source of truth;
 - missing bundle / revision mismatch обрабатываются fail-closed.
 
 ---
@@ -258,10 +258,10 @@ Fail-closed:
 
 ---
 
-## 10. Legacy policy
+## 10. Политика по устаревшему коду
 
-- замененный legacy-код удаляется в той же итерации;
-- отключенные “временно” legacy route/флаги не допускаются;
+- заменённый устаревший код удаляется в той же итерации;
+- отключенные «временно» устаревшие route/флаги не допускаются;
 - после этапов обязателен cleanup-аудит.
 
 ---

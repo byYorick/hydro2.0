@@ -15,7 +15,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -218,7 +218,7 @@ resources/js/Pages/
 - вкладка показывает только runtime/operations слой зоны: текущий workflow, control-mode, quick actions, профиль, коррекцию/калибровки и low-level AE settings;
 - не смешивает operator flow с scheduler/execution detail-view;
 - manual-step controls рендерятся из `allowed_manual_steps`, а не из зашитого списка кнопок;
-- workflow/timeline в automation-панели строятся из canonical automation state и `zone_events`, без legacy scheduler-task snapshots;
+- workflow/timeline в automation-панели строятся из canonical automation state и `zone_events`, без снимков `scheduler-task`;
 - оператор должен получать быстрый доступ к управлению зоной, не переключаясь в developer diagnostics.
 
 ## 6.7. Scheduler Tab: Schedule Workspace
@@ -232,7 +232,7 @@ resources/js/Pages/
 - не рендерит сотни raw `plan windows`; показывает только ближайшие окна из `capabilities.executable_task_types[]`, а `config-only` lane сводит в компактный summary;
 - execution detail рендерит `lifecycle` и сжатый timeline из canonical `ae_tasks` + `zone_events`, группируя повторяющиеся `AE_TASK_STARTED`;
 - отдельный diagnostics block допускается только для `admin|engineer` и читает `GET /api/zones/{id}/scheduler-diagnostics`;
-- `scheduler_logs` и legacy `scheduler-tasks` не являются частью operator UX;
+- `scheduler_logs` и старые `scheduler-tasks` не являются частью operator UX;
 - основной фокус экрана: понять текущее состояние зоны, операционные проблемы и ближайшие исполнимые действия без инженерного шума.
 
 ---

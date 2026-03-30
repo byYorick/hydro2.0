@@ -4,11 +4,14 @@ namespace Tests\Unit;
 
 use App\Enums\GrowCycleStatus;
 use App\Models\AutomationEffectiveBundle;
+use App\Models\AutomationConfigDocument;
 use App\Models\GrowCycle;
 use App\Models\Zone;
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
+use App\Models\Recipe;
 use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Services\GrowCycleService;
 use App\Services\SimulationOrchestratorService;
 use Illuminate\Support\Facades\DB;
@@ -74,6 +77,7 @@ class SimulationOrchestratorServiceTest extends TestCase
         $this->assertContains('pump_main', $irrigChannels);
         $this->assertContains('level_clean_max', $irrigChannels);
         $this->assertContains('level_solution_max', $irrigChannels);
+        $this->assertContains('soil_moisture', $irrigChannels);
 
         $phChannels = NodeChannel::query()
             ->where('node_id', $phNode->id)
@@ -108,6 +112,17 @@ class SimulationOrchestratorServiceTest extends TestCase
             ->first();
         $this->assertNotNull($zoneBundle?->bundle_revision);
         $this->assertNotEmpty(data_get($zoneBundle?->config, 'zone.logic_profile.active_profile.command_plans.plans.diagnostics.steps'));
+
+        $revisionId = $context['recipe_revision']?->id;
+        $this->assertNotNull($revisionId);
+        $soilTarget = RecipeRevisionPhase::query()
+            ->where('recipe_revision_id', $revisionId)
+            ->orderBy('phase_index')
+            ->value('extensions');
+        $this->assertSame('pct', data_get($soilTarget, 'subsystems.irrigation.targets.soil_moisture.unit'));
+        $this->assertEquals(38.0, data_get($soilTarget, 'subsystems.irrigation.targets.soil_moisture.min'));
+        $this->assertEquals(48.0, data_get($soilTarget, 'subsystems.irrigation.targets.soil_moisture.max'));
+        $this->assertEquals(43.0, data_get($soilTarget, 'subsystems.irrigation.targets.soil_moisture.target'));
     }
 
     public function test_simulation_grow_cycle_starts_after_outer_transaction_commits(): void
@@ -260,6 +275,87 @@ class SimulationOrchestratorServiceTest extends TestCase
             NodeChannel::query()
                 ->where('node_id', $simPhNode->id)
                 ->where('channel', 'system')
+                ->count()
+        );
+    }
+
+    public function test_simulation_context_fills_irrigation_fallback_defaults_for_empty_zone_logic_profile(): void
+    {
+        $sourceZone = Zone::factory()->create([
+            'status' => 'online',
+            'water_state' => 'NORMAL_RECIRC',
+            'capabilities' => [
+                'ph_control' => true,
+                'ec_control' => true,
+                'irrigation_control' => true,
+            ],
+        ]);
+
+        $service = app(SimulationOrchestratorService::class);
+        $context = $service->createSimulationContext($sourceZone, null, ['full_simulation' => true]);
+        $simZone = $context['zone'];
+
+        $logicProfile = AutomationConfigDocument::query()
+            ->where('namespace', 'zone.logic_profile')
+            ->where('scope_type', 'zone')
+            ->where('scope_id', $simZone->id)
+            ->value('payload');
+        $phPid = AutomationConfigDocument::query()
+            ->where('namespace', 'zone.pid.ph')
+            ->where('scope_type', 'zone')
+            ->where('scope_id', $simZone->id)
+            ->value('payload');
+        $ecPid = AutomationConfigDocument::query()
+            ->where('namespace', 'zone.pid.ec')
+            ->where('scope_type', 'zone')
+            ->where('scope_id', $simZone->id)
+            ->value('payload');
+
+        $this->assertNotNull($logicProfile);
+        $this->assertSame(0.28, data_get($phPid, 'zone_coeffs.far.kp'));
+        $this->assertSame(0.55, data_get($ecPid, 'zone_coeffs.far.kp'));
+        $this->assertSame(120, data_get($logicProfile, 'profiles.working.subsystems.irrigation.execution.duration_sec'));
+        $this->assertSame(1800, data_get($logicProfile, 'profiles.working.subsystems.irrigation.execution.interval_sec'));
+        $this->assertSame('task', data_get($logicProfile, 'profiles.working.subsystems.irrigation.decision.strategy'));
+        $this->assertSame(1800, data_get($logicProfile, 'profiles.working.subsystems.irrigation.decision.config.lookback_sec'));
+        $this->assertSame(3, data_get($logicProfile, 'profiles.working.subsystems.irrigation.decision.config.min_samples'));
+        $this->assertSame(600, data_get($logicProfile, 'profiles.working.subsystems.irrigation.decision.config.stale_after_sec'));
+        $this->assertEquals(2.0, data_get($logicProfile, 'profiles.working.subsystems.irrigation.decision.config.hysteresis_pct'));
+        $this->assertEquals(12.0, data_get($logicProfile, 'profiles.working.subsystems.irrigation.decision.config.spread_alert_threshold_pct'));
+        $this->assertTrue((bool) data_get($logicProfile, 'profiles.working.subsystems.irrigation.recovery.auto_replay_after_setup'));
+        $this->assertSame(1, data_get($logicProfile, 'profiles.working.subsystems.irrigation.recovery.max_setup_replays'));
+        $this->assertTrue((bool) data_get($logicProfile, 'profiles.working.subsystems.irrigation.safety.stop_on_solution_min'));
+    }
+
+    public function test_simulation_context_falls_back_to_generated_recipe_bundle_when_source_recipe_has_no_phases(): void
+    {
+        $sourceZone = Zone::factory()->create([
+            'status' => 'online',
+            'water_state' => 'NORMAL_RECIRC',
+            'capabilities' => [
+                'ph_control' => true,
+                'ec_control' => true,
+                'irrigation_control' => true,
+            ],
+        ]);
+        $invalidRecipe = Recipe::factory()->create();
+        RecipeRevision::factory()->create([
+            'recipe_id' => $invalidRecipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+
+        $service = app(SimulationOrchestratorService::class);
+        $context = $service->createSimulationContext($sourceZone, $invalidRecipe->id);
+
+        $this->assertNotNull($context['recipe']);
+        $this->assertNotNull($context['recipe_revision']);
+        $this->assertNotSame($invalidRecipe->id, $context['recipe']->id);
+        $this->assertSame($context['recipe_revision']->id, $context['grow_cycle']->recipe_revision_id);
+        $this->assertSame($context['recipe']->id, $context['grow_cycle']->recipeRevision?->recipe_id);
+        $this->assertGreaterThan(
+            0,
+            RecipeRevisionPhase::query()
+                ->where('recipe_revision_id', $context['recipe_revision']->id)
                 ->count()
         );
     }

@@ -42,7 +42,7 @@ class ZoneAutomationStartIrrigationController extends Controller
         ];
 
         try {
-            return response()->json($this->bridge->startIrrigation($zone->id, $payload));
+            return response()->json($this->bridge->dispatchStartIrrigation($zone->id, $payload));
         } catch (RequestException $e) {
             $proxyResponse = $this->buildUpstreamErrorResponse($e);
             if ($proxyResponse instanceof JsonResponse) {

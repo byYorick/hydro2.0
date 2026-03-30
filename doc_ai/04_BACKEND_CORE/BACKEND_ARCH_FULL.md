@@ -10,7 +10,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -143,7 +143,7 @@ PostgreSQL
 
 - Backend является основным владельцем automation/runtime-конфигурации.
 - Automation authority хранится в versioned documents и materialized bundles.
-- Python runtime не должен собирать business config через `env()` или legacy config tables.
+- Python runtime не должен собирать business config через `env()` или устаревшие config tables.
 - AE3 читает compiled bundle из PostgreSQL по `bundle_revision`, привязанному к cycle snapshot.
 
 ### 4.2. Поток телеметрии

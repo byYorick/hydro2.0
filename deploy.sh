@@ -1191,7 +1191,7 @@ fi
 
 log_info "Установка Python зависимостей для сервисов..."
 
-SERVICES=("mqtt-bridge" "automation-engine" "history-logger" "scheduler" "digital-twin" "telemetry-aggregator")
+SERVICES=("mqtt-bridge" "automation-engine" "history-logger" "digital-twin" "telemetry-aggregator")
 
 for service in "${SERVICES[@]}"; do
     service_dir="$SERVICES_DIR/$service"
@@ -1339,23 +1339,6 @@ stdout_logfile=/var/log/hydro/history-logger.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=5
 stopwaitsecs=10
-EOF
-fi
-
-if [ -d "$SERVICES_DIR/scheduler" ]; then
-    cat > /etc/supervisor/conf.d/hydro-scheduler.conf <<EOF
-[program:hydro-scheduler]
-process_name=%(program_name)s
-command=$SERVICES_DIR/scheduler/venv/bin/python $SERVICES_DIR/scheduler/main.py
-directory=$SERVICES_DIR/scheduler
-autostart=true
-autorestart=true
-user=$APP_USER
-environment=$ENV_VARS
-redirect_stderr=true
-stdout_logfile=/var/log/hydro/scheduler.log
-stdout_logfile_maxbytes=10MB
-stdout_logfile_backups=5
 EOF
 fi
 

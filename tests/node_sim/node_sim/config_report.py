@@ -46,6 +46,10 @@ def _sensor_metric(sensor_name: str) -> str:
         return "PH"
     if name in ("ec_sensor", "ec"):
         return "EC"
+    if name in ("level_clean_min", "level_clean_max", "level_solution_min", "level_solution_max"):
+        return "WATER_LEVEL_SWITCH"
+    if name in ("water_level",):
+        return "WATER_LEVEL"
     if name in ("solution_temp_c", "temp_solution", "solution_temp"):
         return "TEMPERATURE"
     if name in ("air_temp_c", "temp_air", "temperature", "temp"):

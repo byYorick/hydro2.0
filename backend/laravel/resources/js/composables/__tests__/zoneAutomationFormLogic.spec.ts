@@ -57,8 +57,17 @@ function createForms(): ZoneAutomationForms {
       startupSolutionFillTimeoutSeconds: 1350,
       startupPrepareRecirculationTimeoutSeconds: 900,
       startupCleanFillRetryCycles: 1,
+      irrigationDecisionStrategy: 'task',
+      irrigationDecisionLookbackSeconds: 1800,
+      irrigationDecisionMinSamples: 3,
+      irrigationDecisionStaleAfterSeconds: 600,
+      irrigationDecisionHysteresisPct: 2,
+      irrigationDecisionSpreadAlertThresholdPct: 12,
       irrigationRecoveryMaxContinueAttempts: 5,
       irrigationRecoveryTimeoutSeconds: 600,
+      irrigationAutoReplayAfterSetup: true,
+      irrigationMaxSetupReplays: 1,
+      stopOnSolutionMin: true,
       prepareToleranceEcPct: 25,
       prepareTolerancePhPct: 15,
       correctionMaxEcCorrectionAttempts: 5,
@@ -124,6 +133,23 @@ describe('zoneAutomationFormLogic', () => {
         subsystems: {
           irrigation: {
             enabled: true,
+            decision: {
+              strategy: 'smart_soil_v1',
+              config: {
+                lookback_sec: 3600,
+                min_samples: 5,
+                stale_after_sec: 900,
+                hysteresis_pct: 3.5,
+                spread_alert_threshold_pct: 18,
+              },
+            },
+            recovery: {
+              auto_replay_after_setup: false,
+              max_setup_replays: 4,
+            },
+            safety: {
+              stop_on_solution_min: false,
+            },
             targets: {
               interval_sec: 2400,
               duration_sec: 75,
@@ -222,7 +248,7 @@ describe('zoneAutomationFormLogic', () => {
                 prepare_recirculation_start: [{}, {}, {}],
                 prepare_recirculation_stop: [{}, {}],
                 irrigation_recovery_start: [{}, {}, {}, {}, {}],
-                irrigation_recovery_stop: [{}, {}, {}],
+                irrigation_recovery_stop: [{}, {}, {}, {}],
               },
             },
           },
@@ -274,8 +300,17 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.startupSolutionFillTimeoutSeconds).toBe(1410)
     expect(forms.waterForm.startupPrepareRecirculationTimeoutSeconds).toBe(960)
     expect(forms.waterForm.startupCleanFillRetryCycles).toBe(2)
+    expect(forms.waterForm.irrigationDecisionStrategy).toBe('smart_soil_v1')
+    expect(forms.waterForm.irrigationDecisionLookbackSeconds).toBe(3600)
+    expect(forms.waterForm.irrigationDecisionMinSamples).toBe(5)
+    expect(forms.waterForm.irrigationDecisionStaleAfterSeconds).toBe(900)
+    expect(forms.waterForm.irrigationDecisionHysteresisPct).toBe(3.5)
+    expect(forms.waterForm.irrigationDecisionSpreadAlertThresholdPct).toBe(18)
     expect(forms.waterForm.irrigationRecoveryMaxContinueAttempts).toBe(7)
     expect(forms.waterForm.irrigationRecoveryTimeoutSeconds).toBe(800)
+    expect(forms.waterForm.irrigationAutoReplayAfterSetup).toBe(false)
+    expect(forms.waterForm.irrigationMaxSetupReplays).toBe(4)
+    expect(forms.waterForm.stopOnSolutionMin).toBe(false)
     expect(forms.waterForm.prepareToleranceEcPct).toBe(18)
     expect(forms.waterForm.prepareTolerancePhPct).toBe(12)
     expect(forms.waterForm.correctionMaxEcCorrectionAttempts).toBe(6)
@@ -290,7 +325,7 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.twoTankPrepareRecirculationStartSteps).toBe(3)
     expect(forms.waterForm.twoTankPrepareRecirculationStopSteps).toBe(2)
     expect(forms.waterForm.twoTankIrrigationRecoveryStartSteps).toBe(5)
-    expect(forms.waterForm.twoTankIrrigationRecoveryStopSteps).toBe(3)
+    expect(forms.waterForm.twoTankIrrigationRecoveryStopSteps).toBe(4)
     expect(forms.waterForm.refillRequiredNodeTypes).toBe('irrig,climate')
     expect(forms.waterForm.refillPreferredChannel).toBe('fill_valve')
     expect(forms.waterForm.solutionChangeEnabled).toBe(true)
@@ -312,8 +347,17 @@ describe('zoneAutomationFormLogic', () => {
     forms.waterForm.startupSolutionFillTimeoutSeconds = 1300
     forms.waterForm.startupPrepareRecirculationTimeoutSeconds = 920
     forms.waterForm.startupCleanFillRetryCycles = 4
+    forms.waterForm.irrigationDecisionStrategy = 'smart_soil_v1'
+    forms.waterForm.irrigationDecisionLookbackSeconds = 2400
+    forms.waterForm.irrigationDecisionMinSamples = 4
+    forms.waterForm.irrigationDecisionStaleAfterSeconds = 720
+    forms.waterForm.irrigationDecisionHysteresisPct = 4.5
+    forms.waterForm.irrigationDecisionSpreadAlertThresholdPct = 16
     forms.waterForm.irrigationRecoveryMaxContinueAttempts = 9
     forms.waterForm.irrigationRecoveryTimeoutSeconds = 650
+    forms.waterForm.irrigationAutoReplayAfterSetup = false
+    forms.waterForm.irrigationMaxSetupReplays = 3
+    forms.waterForm.stopOnSolutionMin = false
     forms.waterForm.prepareToleranceEcPct = 19
     forms.waterForm.prepareTolerancePhPct = 11
     forms.waterForm.correctionMaxEcCorrectionAttempts = 11
@@ -352,8 +396,17 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.diagnostics.execution.startup.solution_fill_timeout_sec).toBe(1300)
     expect(payload.subsystems.diagnostics.execution.startup.prepare_recirculation_timeout_sec).toBe(920)
     expect(payload.subsystems.diagnostics.execution.startup.clean_fill_retry_cycles).toBe(4)
+    expect(payload.subsystems.irrigation.decision.strategy).toBe('smart_soil_v1')
+    expect(payload.subsystems.irrigation.decision.config.lookback_sec).toBe(2400)
+    expect(payload.subsystems.irrigation.decision.config.min_samples).toBe(4)
+    expect(payload.subsystems.irrigation.decision.config.stale_after_sec).toBe(720)
+    expect(payload.subsystems.irrigation.decision.config.hysteresis_pct).toBe(4.5)
+    expect(payload.subsystems.irrigation.decision.config.spread_alert_threshold_pct).toBe(16)
     expect(payload.subsystems.diagnostics.execution.irrigation_recovery.max_continue_attempts).toBe(9)
     expect(payload.subsystems.diagnostics.execution.irrigation_recovery.timeout_sec).toBe(650)
+    expect(payload.subsystems.irrigation.recovery.auto_replay_after_setup).toBe(false)
+    expect(payload.subsystems.irrigation.recovery.max_setup_replays).toBe(3)
+    expect(payload.subsystems.irrigation.safety.stop_on_solution_min).toBe(false)
     expect(payload.subsystems.diagnostics.execution.prepare_tolerance.ec_pct).toBe(19)
     expect(payload.subsystems.diagnostics.execution.prepare_tolerance.ph_pct).toBe(11)
     expect(payload.subsystems.diagnostics.execution.correction.max_ec_correction_attempts).toBe(11)
@@ -394,7 +447,7 @@ describe('zoneAutomationFormLogic', () => {
     expect(twoTankCommands.prepare_recirculation_start).toHaveLength(3)
     expect(twoTankCommands.prepare_recirculation_stop).toHaveLength(3)
     expect(twoTankCommands.irrigation_recovery_start).toHaveLength(4)
-    expect(twoTankCommands.irrigation_recovery_stop).toHaveLength(3)
+    expect(twoTankCommands.irrigation_recovery_stop).toHaveLength(4)
   })
 
   it('buildGrowthCycleConfigPayload может не отправлять system_type для активного цикла', () => {

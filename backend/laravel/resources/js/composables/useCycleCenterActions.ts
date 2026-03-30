@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ZoneSummary } from './useCycleCenterView'
 
-type ZoneActionType = 'FORCE_IRRIGATION'
+type ZoneActionType = 'START_IRRIGATION' | 'FORCE_IRRIGATION'
 
 interface ApiLike {
   post: (url: string, payload?: Record<string, unknown>) => Promise<{ data?: { status?: string } }>
@@ -12,14 +12,12 @@ interface UseCycleCenterActionsDeps {
   api: ApiLike
   showToast: (message: string, type?: 'success' | 'error' | 'warning', timeout?: number) => void
   reloadCenter: () => Promise<void>
-  sendZoneCommand: (zoneId: number, actionType: ZoneActionType, params: Record<string, number>) => Promise<unknown>
 }
 
 export function useCycleCenterActions({
   api,
   showToast,
   reloadCenter,
-  sendZoneCommand,
 }: UseCycleCenterActionsDeps) {
   const actionLoading = reactive<Record<string, boolean>>({})
 
@@ -38,7 +36,7 @@ export function useCycleCenterActions({
   const actionModal = reactive<{ open: boolean; zone: ZoneSummary | null; actionType: ZoneActionType }>({
     open: false,
     zone: null,
-    actionType: 'FORCE_IRRIGATION',
+    actionType: 'START_IRRIGATION',
   })
 
   function setActionLoading(zoneId: number, action: string, value: boolean): void {
@@ -168,7 +166,19 @@ export function useCycleCenterActions({
     if (!actionModal.zone) {
       return
     }
-    await sendZoneCommand(actionModal.zone.id, payload.actionType, payload.params)
+    const durationSec = typeof payload.params.duration_sec === 'number' ? payload.params.duration_sec : undefined
+    const response = await api.post(`/api/zones/${actionModal.zone.id}/start-irrigation`, {
+      mode: payload.actionType === 'FORCE_IRRIGATION' ? 'force' : 'normal',
+      source: 'cycle_center',
+      requested_duration_sec: durationSec ?? null,
+    })
+    ensureOkStatus(response, 'Не удалось запустить полив')
+    showToast(
+      payload.actionType === 'FORCE_IRRIGATION' ? 'Запущена forced-промывка' : 'Запущен обычный полив',
+      'success',
+      TOAST_TIMEOUT.NORMAL
+    )
+    await reloadCenter()
     closeActionModal()
   }
 

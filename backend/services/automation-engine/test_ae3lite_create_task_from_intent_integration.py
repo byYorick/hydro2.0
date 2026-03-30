@@ -55,6 +55,23 @@ def _intent_row(zone_id: int, prefix: str) -> dict[str, object]:
     }
 
 
+def _irrigation_intent_row(zone_id: int, prefix: str) -> dict[str, object]:
+    return {
+        "id": 901,
+        "zone_id": zone_id,
+        "intent_type": "irrigation",
+        "retry_count": 0,
+        "payload": {
+            "workflow": "cycle_start",
+            "task_type": "irrigation_start",
+            "source": "zone_ui",
+            "mode": "normal",
+            "requested_duration_sec": 180,
+        },
+        "idempotency_key": f"{prefix}-irrigation-idem",
+    }
+
+
 @pytest.mark.asyncio
 async def test_create_task_from_intent_creates_canonical_pending_task() -> None:
     prefix = f"ae3-create-task-{uuid4().hex}"
@@ -80,6 +97,64 @@ async def test_create_task_from_intent_creates_canonical_pending_task() -> None:
         assert result.task.status == "pending"
         assert result.task.intent_id == 801
         assert result.task.topology == "two_tank"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_create_task_from_intent_persists_irrigation_runtime_columns() -> None:
+    prefix = f"ae3-create-task-irrigation-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=PgAutomationTaskRepository(),
+        zone_lease_repository=PgZoneLeaseRepository(),
+        legacy_intent_mapper=LegacyIntentMapper(),
+    )
+
+    try:
+        zone_id = await _insert_zone(prefix)
+        result = await use_case.run(
+            zone_id=zone_id,
+            source="zone_ui",
+            idempotency_key=f"{prefix}-irrigation-idem",
+            intent_row=_irrigation_intent_row(zone_id, prefix),
+            now=now,
+        )
+
+        assert result.created is True
+        assert result.task.task_type == "irrigation_start"
+        assert result.task.current_stage == "await_ready"
+        assert result.task.workflow_phase == "ready"
+        assert result.task.irrigation_mode == "normal"
+        assert result.task.irrigation_requested_duration_sec == 180
+
+        rows = await fetch(
+            """
+            SELECT
+                task_type,
+                current_stage,
+                workflow_phase,
+                irrigation_mode,
+                irrigation_requested_duration_sec,
+                irrigation_decision_strategy,
+                irrigation_decision_outcome,
+                irrigation_replay_count
+            FROM ae_tasks
+            WHERE id = $1
+            """,
+            int(result.task.id),
+        )
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["task_type"] == "irrigation_start"
+        assert row["current_stage"] == "await_ready"
+        assert row["workflow_phase"] == "ready"
+        assert row["irrigation_mode"] == "normal"
+        assert int(row["irrigation_requested_duration_sec"]) == 180
+        assert row["irrigation_decision_strategy"] is None
+        assert row["irrigation_decision_outcome"] is None
+        assert int(row["irrigation_replay_count"] or 0) == 0
     finally:
         await _cleanup(prefix)
 

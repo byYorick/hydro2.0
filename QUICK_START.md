@@ -9,13 +9,14 @@
 
 - **📖 Начните с:** `doc_ai/INDEX.md` — главный индекс документации
 - **Архитектура системы:** `doc_ai/SYSTEM_ARCH_FULL.md`
+- **Пайплайны и инварианты AE3:** `doc_ai/ARCHITECTURE_FLOWS.md`
 - **Структура проекта:** `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
 - **Конвенции разработки:** `doc_ai/DEV_CONVENTIONS.md`
 
 ### Специфические документы
 
 - **Backend (Laravel):** `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- **Python-сервисы:** `backend/services/PYTHON_SERVICES_ARCH.md`
+- **Python-сервисы:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` (копия в `backend/services/PYTHON_SERVICES_ARCH.md` должна совпадать по смыслу)
 - **Firmware (ESP32):** `doc_ai/02_HARDWARE_FIRMWARE/`
 - **NodeConfig:** `firmware/NODE_CONFIG_SPEC.md`
 - **MQTT:** `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
@@ -39,11 +40,16 @@ make up
 make refresh
 ```
 
-Сервисы:
+Сервисы (dev, `backend/docker-compose.dev.yml`):
 - Laravel: http://localhost:8080
 - mqtt-bridge: http://localhost:9000
+- history-logger REST: http://localhost:9300
+- history-logger metrics: http://localhost:9301/metrics
+- automation-engine REST: http://localhost:9405
 - automation-engine metrics: http://localhost:9401/metrics
-- scheduler metrics: http://localhost:9402/metrics
+- Laravel scheduler-dispatch metrics: http://localhost:8080/api/system/scheduler/metrics
+
+Поток команд к узлам (инвариант): `Laravel scheduler-dispatch → automation-engine → history-logger (POST /commands) → MQTT → ESP32` — см. `doc_ai/ARCHITECTURE_FLOWS.md`.
 
 ### Проверка работы
 
@@ -85,7 +91,7 @@ hydro2.0/
 ### Где найти информацию о...
 
 - **Архитектуре системы:** `doc_ai/SYSTEM_ARCH_FULL.md`
-- **Python-сервисах:** `backend/services/PYTHON_SERVICES_ARCH.md`
+- **Python-сервисах:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
 - **NodeConfig:** `firmware/NODE_CONFIG_SPEC.md`
 - **MQTT протоколе:** `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - **Backend API:** `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`

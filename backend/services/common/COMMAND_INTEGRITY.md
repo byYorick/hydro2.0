@@ -4,7 +4,7 @@
 
 **ВАЖНО**: Все команды из `backend/services/common/*` должны идти через единый оркестратор `command_orchestrator.send_command()`, а НЕ напрямую через `mqtt_client.publish_json()`.
 
-Единый формат команд (без legacy):
+Единый формат команд (канонический envelope):
 ```
 {"cmd_id","cmd","params","ts","sig"}
 ```

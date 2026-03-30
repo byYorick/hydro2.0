@@ -31,9 +31,8 @@ describe('useCycleCenterActions', () => {
     const api = { post: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) }
     const showToast = vi.fn()
     const reloadCenter = vi.fn().mockResolvedValue(undefined)
-    const sendZoneCommand = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useCycleCenterActions({ api, showToast, reloadCenter, sendZoneCommand })
+    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
     const zone = buildZone()
 
     await actions.pauseCycle(zone)
@@ -48,9 +47,8 @@ describe('useCycleCenterActions', () => {
     const api = { post: vi.fn().mockResolvedValue({ data: { status: 'fail' } }) }
     const showToast = vi.fn()
     const reloadCenter = vi.fn().mockResolvedValue(undefined)
-    const sendZoneCommand = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useCycleCenterActions({ api, showToast, reloadCenter, sendZoneCommand })
+    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
     const zone = buildZone()
     actions.openHarvestModal(zone)
     actions.harvestModal.batchLabel = 'BATCH-1'
@@ -63,5 +61,50 @@ describe('useCycleCenterActions', () => {
     expect(showToast).toHaveBeenCalledWith('Не удалось зафиксировать урожай', 'error', expect.any(Number))
     expect(actions.harvestModal.open).toBe(true)
     expect(actions.isActionLoading(zone.id, 'harvest')).toBe(false)
+  })
+
+  it('submitAction запускает normal irrigation через public endpoint', async () => {
+    const api = { post: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) }
+    const showToast = vi.fn()
+    const reloadCenter = vi.fn().mockResolvedValue(undefined)
+    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
+    const zone = buildZone()
+
+    actions.openActionModal(zone, 'START_IRRIGATION')
+    await actions.submitAction({
+      actionType: 'START_IRRIGATION',
+      params: { duration_sec: 45 },
+    })
+
+    expect(api.post).toHaveBeenCalledWith('/api/zones/1/start-irrigation', {
+      mode: 'normal',
+      source: 'cycle_center',
+      requested_duration_sec: 45,
+    })
+    expect(showToast).toHaveBeenCalledWith('Запущен обычный полив', 'success', expect.any(Number))
+    expect(reloadCenter).toHaveBeenCalled()
+    expect(actions.actionModal.open).toBe(false)
+  })
+
+  it('submitAction запускает force irrigation через тот же AE3 endpoint', async () => {
+    const api = { post: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) }
+    const showToast = vi.fn()
+    const reloadCenter = vi.fn().mockResolvedValue(undefined)
+    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
+    const zone = buildZone()
+
+    actions.openActionModal(zone, 'FORCE_IRRIGATION')
+    await actions.submitAction({
+      actionType: 'FORCE_IRRIGATION',
+      params: { duration_sec: 90 },
+    })
+
+    expect(api.post).toHaveBeenCalledWith('/api/zones/1/start-irrigation', {
+      mode: 'force',
+      source: 'cycle_center',
+      requested_duration_sec: 90,
+    })
+    expect(showToast).toHaveBeenCalledWith('Запущена forced-промывка', 'success', expect.any(Number))
+    expect(reloadCenter).toHaveBeenCalled()
   })
 })

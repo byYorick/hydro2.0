@@ -168,7 +168,7 @@ Runtime-валидация `pump_driver` сохраняется:
 - Рабочий two-tank runtime использует `set_relay` + `storage_state/state`.
 - Очередь команд ноды: `8`.
 - Global dedup `cmd_id`: кеш `128`, TTL `5 минут`.
-- Для production обязательны `node_secret` и `allow_legacy_hmac=false`.
+- Для production обязательны `node_secret` и строгая HMAC-проверка команд (без ослабления совместимости в NodeConfig; см. `NODE_CONFIG_SPEC.md`).
 - `safe_limits.max_duration_ms` остаётся частью firmware map и timed-path в `pump_driver`, но не должен
   использоваться как auto-stop для `set_relay` в production `storage_irrigation_node`.
 - Stage-level timeout для `solution_fill` и `prepare_recirculation` приходит из backend в
@@ -183,8 +183,8 @@ Runtime-валидация `pump_driver` сохраняется:
 3. Нет конфликта GPIO с `21/22/0`.
 4. Для каждого actuator-канала определены `safe_limits.max_duration_ms` и `safe_limits.min_off_ms` в firmware map.
 5. Команды проходят по защищённому пути:
-   `Scheduler -> Automation-Engine -> History-Logger -> MQTT -> Node`.
-6. HMAC-валидация включена (без legacy bypass).
+   `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> Node`.
+6. HMAC-валидация включена (обход проверки не допускается).
 7. Проверены контракты two-tank:
    `set_relay`, `storage_state/state`, `storage_state/event`, interlock `pump_main`.
 8. HIL-проверка пройдена: terminal `DONE/ERROR`, стабильная telemetry, корректный recover после reconnect.

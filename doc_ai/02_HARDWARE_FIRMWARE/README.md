@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -64,6 +64,9 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 #### [DEVICE_NODE_PROTOCOL.md](DEVICE_NODE_PROTOCOL.md)
 Протокол взаимодействия с узлами
+
+#### [CONFIG_REPORT_HANDLING.md](CONFIG_REPORT_HANDLING.md)
+Подтверждение привязки ноды к зоне через `config_report` (fail-closed binding)
 
 #### [TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md](TEST_NODE_REAL_HW_PROD_READINESS_SPEC.md)
 Спецификация `firmware/test_node` для HIL/E2E и доведения реальных нод до production-ready режима:

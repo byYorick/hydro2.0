@@ -130,8 +130,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 | Событие | Описание | Откуда |
 |---------|----------|--------|
-| `start_tank_fill` | Начать набор бака | Scheduler / Manual |
-| `start_irrigation` | Начать полив | Scheduler / Manual |
+| `start_tank_fill` | Начать набор бака | Laravel dispatch / Manual |
+| `start_irrigation` | Начать полив | Laravel dispatch / Manual |
 | `targets_achieved` | Целевые значения достигнуты | Automation-engine |
 | `targets_not_achieved` | Целевые значения НЕ достигнуты | Automation-engine |
 | `need_correction` | Нужна коррекция во время полива | Automation-engine |
@@ -163,7 +163,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `zone.correction.payload.resolved_config` считается полным runtime-контрактом:
   если обязательный correction/runtime/tolerance/controller parameter отсутствует,
   correction path идёт fail-closed и не добирает значение из seed/default или
-  legacy `diagnostics.execution.*`;
+  устаревшие `diagnostics.execution.*`;
 - `telemetry_max_age_sec` должен быть согласован с фактической частотой telemetry;
 - для production in-flow режима ожидается telemetry cadence порядка `2 сек`;
 - если в `corr_check` или `corr_wait_{ec|ph}` telemetry временно stale/unavailable,

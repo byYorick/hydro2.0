@@ -6,7 +6,7 @@
 Command, Responses и системные события.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -24,7 +24,7 @@ MQTT используется как **единая шина данных** ме
  - Config_report → НАВЕРХ
  - Command → ВНИЗ
 - Backend слушает всё.
-- Узлы подписываются только на свои command (config — опционально, legacy).
+- Узлы подписываются только на свои command (config — опционально, вне основного канона подписки).
 
 ---
 
@@ -53,7 +53,7 @@ hydro/{gh}/{zone}/{node}/{type}
 - **command**
 - **command_response**
 - **config_report**
-- **config** (legacy)
+- **config** (опционально, сервисный сценарий)
 - **status**
 - **lwt**
 
@@ -170,7 +170,7 @@ hydro/{gh}/{zone}/{node}/status
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО
 4. Подписка на `hydro/{gh}/{zone}/{node}/+/command` (wildcard для всех каналов)
-5. (Опционально) Подписка на `hydro/{gh}/{zone}/{node}/config` для legacy/сервисного сценария
+5. (Опционально) Подписка на `hydro/{gh}/{zone}/{node}/config` для сервисного сценария
 6. Вызов connection callback (если зарегистрирован)
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
@@ -456,7 +456,7 @@ Automation-engine:
 
 Контракт history-logger strict:
 - поле `cmd` обязательно;
-- legacy `type` в `/commands` не допускается.
+- поле `type` в `/commands` не допускается (только `cmd`).
 
 ### 7.4.4. History-Logger → MQTT
 
@@ -469,7 +469,7 @@ History-logger:
 
 ### 7.4.5. Пример полного потока
 
-**1. Scheduler создает intent и будит зону**
+**1. Laravel scheduler-dispatch создаёт intent и будит зону**
 ```bash
 POST http://automation-engine:9405/zones/1/start-cycle
 {
@@ -509,8 +509,8 @@ POST http://history-logger:9300/commands
    - Упрощенный мониторинг через Prometheus
 
 3. **Гибкость:**
-   - Scheduler работает с абстрактными задачами
-   - Automation-engine может менять логику преобразования без изменения scheduler
+   - Laravel планирует абстрактные задачи расписания
+   - Automation-engine может менять логику преобразования без изменения контракта Laravel → AE
    - History-logger может менять MQTT брокер без изменения вышестоящих сервисов
 
 4. **Безопасность:**
@@ -873,7 +873,7 @@ Backend никогда не остаётся "в неизвестности": п
 - `NO_EFFECT` — команда не оказала эффекта (например, реле уже в нужном состоянии).
 - `TIMEOUT` — команда/операция прервана по таймауту на стороне ноды.
 
-Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+Статусы `ACCEPTED` и `FAILED` (вне канона) запрещены.
 `SEND_FAILED` — backend-layer статус (ошибка публикации), в `command_response` от ноды не используется.
 
 ## 8.4. Расширенный payload для ошибок
@@ -992,7 +992,7 @@ Payload:
 Назначение:
 - automation-engine использует это событие как fast-path подтверждение;
 - scheduler/automation сохраняют периодический poll как резервный канал контроля.
-- history-logger извлекает snapshot состояния из `snapshot` (предпочтительно) или `state` (legacy fallback).
+- history-logger извлекает snapshot состояния из `snapshot` (предпочтительно) или `state` (запасной ключ).
 
 ---
 # 9. Дополнительные системные топики
@@ -1029,7 +1029,7 @@ hydro/{gh}/{zone}/{node}/node_hello
 - Retain = false
 - Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid). Поля `greenhouse_token` и `zone_id` из `provisioning_meta` игнорируются; привязка теплицы/зоны выполняется только вручную через UI/Android, после чего нода отправляет `config_report`.
 - `node_type` передаётся только в канонической схеме: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Legacy-алиасы `node_type` не поддерживаются.
+- Алиасы `node_type` вне канона не поддерживаются.
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API; автопривязка по token отключена)
 
@@ -1202,7 +1202,7 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 Узел **ОБЯЗАН** подписаться на:
 - `hydro/{gh}/{zone}/{node}/+/command` — для получения команд по всем каналам (wildcard)
 
-Опционально (legacy/сервисный сценарий):
+Опционально (сервисный сценарий):
 - `hydro/{gh}/{zone}/{node}/config` — получение конфигурации с сервера, если она публикуется вручную
 
 ## 13.2. Публикации (обязательные)

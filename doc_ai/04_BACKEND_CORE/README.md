@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: несовместимые изменения в защищенном pipeline запрещены; authority cutover завершён, legacy automation config stack выведен из runtime read-path.
+Breaking-change: несовместимые изменения в защищённом pipeline запрещены; authority cutover завершён, прежний стек automation config не используется в runtime read-path.
 
 Канонический документ по AE3:
 - `ae3lite.md`
@@ -32,12 +32,6 @@ Breaking-change: несовместимые изменения в защищен
 - Documents / bundles / violations / presets
 - Unified API
 - Runtime read-path
-
-#### [AUTOMATION_CONFIG_AUTHORITY_TODO.md](AUTOMATION_CONFIG_AUTHORITY_TODO.md)
-**Финальный статус добивки после cutover**
-- Исторический backlog cleanup/tests/docs
-- Открытый остаток: browser smoke в рабочем окружении
-- Контроль residual regression guard-ов
 
 #### [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
 **Архитектура Python-сервисов**
@@ -70,22 +64,22 @@ Breaking-change: несовместимые изменения в защищен
 ### Специализированные документы
 
 #### [ae3lite.md](ae3lite.md)
-Минимальная каноническая спецификация AE3-Lite (`DB-first`, `LISTEN/NOTIFY + fallback polling`, manual rollout/rollback).
+Каноническая спецификация AE3-Lite (`DB-first`, `LISTEN/NOTIFY + fallback polling`, ручной rollout/rollback — раздел 10).
 
-#### [AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md](AE3LITE_ROLLOUT_ROLLBACK_RUNBOOK.md)
-Ручной rollout/rollback runbook для `zones.automation_runtime` и AE3 handoff guards.
+#### [HISTORY_LOGGER_API.md](HISTORY_LOGGER_API.md)
+Контракт REST API публикации команд в MQTT через history-logger.
 
-#### [archive/ae3full.md](archive/ae3full.md)
-Архивный план AE3FULL (исторический reference, не канон).
+#### [ERROR_CODE_CATALOG.md](ERROR_CODE_CATALOG.md)
+Каталог кодов ошибок backend/AE3 для API и UI.
 
-#### [archive/AE3_ARCHITECTURE.md](archive/AE3_ARCHITECTURE.md)
-Архивная детальная архитектура AE3 (исторический reference, не канон).
+#### [END_TO_END_WORKFLOW_GUIDE.md](END_TO_END_WORKFLOW_GUIDE.md)
+Сквозные сценарии и точки интеграции стека.
 
 #### [REALTIME_UPDATES_ARCH.md](REALTIME_UPDATES_ARCH.md)
 Архитектура real-time обновлений
 
 #### [FULL_STACK_DEPLOY_DOCKER.md](FULL_STACK_DEPLOY_DOCKER.md)
-Деплой полного стека через Docker (`PARTIALLY_HISTORICAL` для legacy Python scheduler секций)
+Деплой полного стека через Docker (Laravel + Python-сервисы mqtt-bridge / history-logger / automation-engine)
 
 ---
 
@@ -111,10 +105,7 @@ Breaking-change: несовместимые изменения в защищен
 и `AUTOMATION_CONFIG_AUTHORITY.md`
 как приоритетные источники.
 
-Для AE3 приоритет документов:
-1. `ae3lite.md` (канонический план и контракты)
-2. `archive/ae3full.md` (исторический контекст)
-3. `archive/AE3_ARCHITECTURE.md` (историческая детализация)
+Для AE3 единственный нормативный документ в этом разделе: `ae3lite.md` (см. также `../ARCHITECTURE_FLOWS.md`).
 
 ---
 

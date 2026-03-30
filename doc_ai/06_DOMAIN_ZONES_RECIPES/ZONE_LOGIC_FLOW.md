@@ -1,7 +1,7 @@
 # ZONE_LOGIC_FLOW.md
 # Полная логика работы зоны в системе 2.0
 # Полный жизненный цикл: данные → контроллеры → команды → события → UI
-# ESP32 • MQTT • Python Scheduler • PostgreSQL • Laravel • Vue 3
+# ESP32 • MQTT • automation-engine (AE3) • history-logger • PostgreSQL • Laravel • Vue 3
 
 Документ описывает, **как работает зона 2.0 как целостная система**:
 от телеметрии до формирования решений и отображения на UI.
@@ -18,7 +18,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -55,7 +55,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 }
 ```
 
-Python Router получает → валидирует → сохраняет:
+**history-logger** (подписчик MQTT) получает → валидирует → сохраняет:
 
 1. `telemetry_samples` (история)
 2. `telemetry_last` (актуальные данные)
@@ -64,7 +64,7 @@ Python Router получает → валидирует → сохраняет:
 
 ## 2.2. Zone State Assembly
 
-Scheduler собирает состояние зоны:
+**automation-engine** на тике цикла собирает состояние зоны (из БД / уведомлений):
 
 ```
 ph = telemetry_last["PH"]

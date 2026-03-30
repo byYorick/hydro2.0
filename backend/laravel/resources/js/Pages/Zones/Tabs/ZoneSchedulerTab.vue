@@ -108,7 +108,10 @@
               v-if="automationState?.decision?.reason_code"
               class="mt-1 text-sm text-[color:var(--text-dim)]"
             >
-              Decision: {{ automationState.decision.reason_code }}
+              Decision: {{ decisionReasonLabel(automationState.decision.reason_code) || automationState.decision.reason_code }}
+              <span v-if="decisionReasonLabel(automationState.decision.reason_code) !== automationState.decision.reason_code">
+                · {{ automationState.decision.reason_code }}
+              </span>
             </p>
 
             <div
@@ -279,6 +282,12 @@
               >
                 planned: {{ formatDateTime(activeRun.scheduled_for) }}
               </p>
+              <p
+                v-if="activeRunDecisionSummary"
+                class="mt-2 text-xs text-[color:var(--text-dim)]"
+              >
+                {{ activeRunDecisionSummary }}
+              </p>
             </div>
 
             <div class="rounded-2xl border border-[color:var(--border-muted)] p-4">
@@ -324,6 +333,12 @@
                     </div>
                     <p class="mt-1 text-xs text-[color:var(--text-muted)]">
                       {{ formatDateTime(run.updated_at || run.created_at || null) }}
+                    </p>
+                    <p
+                      v-if="decisionSummary(run)"
+                      class="mt-1 text-xs text-[color:var(--text-dim)]"
+                    >
+                      {{ decisionSummary(run) }}
                     </p>
                   </div>
                   <span class="shrink-0 text-xs text-[color:var(--text-dim)]">
@@ -387,6 +402,12 @@
                     {{ selectedExecution.decision_reason_code }}
                   </Badge>
                 </div>
+                <p
+                  v-if="selectedExecutionDecisionSummary"
+                  class="mt-2 text-xs text-[color:var(--text-dim)]"
+                >
+                  {{ selectedExecutionDecisionSummary }}
+                </p>
               </div>
               <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-4">
                 <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Время</p>
@@ -644,6 +665,9 @@ const {
   statusVariant,
   controlModeLabel,
   laneLabel,
+  decisionLabel,
+  decisionReasonLabel,
+  describeDecision,
 } = useZoneScheduleWorkspace(props, { get, showToast })
 
 const zoneId = computed(() => props.zoneId)
@@ -652,20 +676,13 @@ const selectedExecutionErrorMessage = computed(() => resolveHumanErrorMessage({
   message: selectedExecution.value?.error_message,
   humanMessage: selectedExecution.value?.human_error_message,
 }))
+const activeRunDecisionSummary = computed(() => decisionSummary(activeRun.value))
+const selectedExecutionDecisionSummary = computed(() => decisionSummary(selectedExecution.value))
 
 function attentionCardClass(tone: 'danger' | 'warning' | 'info'): string {
   if (tone === 'danger') return 'border-red-200 bg-red-50/70'
   if (tone === 'warning') return 'border-amber-200 bg-amber-50/70'
   return 'border-sky-200 bg-sky-50/70'
-}
-
-function decisionLabel(outcome: string | null | undefined, degraded: boolean | null | undefined): string {
-  const normalized = String(outcome ?? '').trim().toLowerCase()
-  if (normalized === 'skip') return 'skip'
-  if (normalized === 'degraded_run') return degraded ? 'degraded run' : 'run'
-  if (normalized === 'run') return degraded ? 'degraded run' : 'run'
-  if (normalized === 'fail') return 'decision fail'
-  return normalized || 'decision'
 }
 
 function decisionVariant(
@@ -678,6 +695,27 @@ function decisionVariant(
   if (degraded) return 'warning'
   if (normalized === 'run' || normalized === 'degraded_run') return 'info'
   return 'secondary'
+}
+
+function decisionSummary(execution: {
+  decision_outcome?: string | null
+  decision_degraded?: boolean | null
+  decision_reason_code?: string | null
+  error_code?: string | null
+  replay_count?: number | null
+} | null | undefined): string | null {
+  if (!execution) return null
+
+  const detail = describeDecision({
+    outcome: execution.decision_outcome,
+    degraded: execution.decision_degraded,
+    reasonCode: execution.decision_reason_code,
+    errorCode: execution.error_code,
+  })
+  const replayCount = typeof execution.replay_count === 'number' ? execution.replay_count : 0
+  const replayLabel = replayCount > 0 ? `Setup replay: ${replayCount}` : null
+
+  return [detail, replayLabel].filter((part): part is string => Boolean(part && part.trim() !== '')).join(' · ') || null
 }
 
 function changeHorizon(nextHorizon: '24h' | '7d'): void {

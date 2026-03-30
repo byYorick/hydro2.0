@@ -18,36 +18,30 @@
 - Убедиться, что фронтенд использует правильные VITE_WS_HOST/PORT/TLS.
 - Проверить авторизацию приватных каналов (`routes/channels.php`) и токен сессии.
 
-## 3.1. Cutover scheduler -> Laravel
+## 3.1. Планировщик (Laravel scheduler-dispatch)
 
-Цель: включить Laravel как единственный planner/dispatch owner (legacy Python `scheduler` выведен из runtime).
+Владелец расписаний и wake-up в automation-engine — **Laravel**.
 
-### 3.1.1. Включение cutover (dev/prod)
-- Laravel env: `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1`.
-- Обязательная синхронизация токенов ingress:
+### 3.1.1. Конфигурация (dev/prod)
+- Laravel env: `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1` для активного dispatch.
+- Синхронизация токенов ingress с automation-engine:
   - `AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=<token>`
   - `SCHEDULER_API_TOKEN=<тот_же_token>`
   - `PY_INGEST_TOKEN=<тот_же_token>`
-- В production запрещено оставлять разные значения для этих трех переменных:
-  рассинхронизация приводит к `401 unauthorized` на `POST /zones/{id}/start-cycle`.
-- Перезапуск: `docker compose up -d laravel`.
+- В production запрещено оставлять разные значения для этих переменных:
+  рассинхронизация даёт `401 unauthorized` на `POST /zones/{id}/start-cycle`.
+- После смены env: `docker compose up -d laravel`.
 
-### 3.1.2. Проверки после включения
-- Проверить регистрацию команды: `docker compose exec laravel php artisan list | rg automation:dispatch-schedules`.
-- Ручной прогон цикла: `docker compose exec -e AUTOMATION_LARAVEL_SCHEDULER_ENABLED=1 laravel php artisan automation:dispatch-schedules --zone-id=1`.
-- Проверить отсутствие legacy scheduler в runtime: `docker compose ps | rg scheduler` (ожидается пусто).
-- Security smoke ingress (`/start-cycle`):
-  - без токена должен быть `401`:
-    `curl -s -o /dev/null -w "%{http_code}\n" -X POST http://automation-engine:9405/zones/1/start-cycle -H 'Content-Type: application/json' -d '{"source":"laravel_scheduler","idempotency_key":"smoke-no-token-1"}'`
-  - c токеном, но без `X-Trace-Id`, должен быть `422`:
-    `curl -s -o /dev/null -w "%{http_code}\n" -X POST http://automation-engine:9405/zones/1/start-cycle -H "Authorization: Bearer $SCHEDULER_API_TOKEN" -H 'Content-Type: application/json' -d '{"source":"laravel_scheduler","idempotency_key":"smoke-no-trace-1"}'`
+### 3.1.2. Проверки
+- Команда зарегистрирована: `docker compose exec laravel php artisan list | rg automation:dispatch-schedules`.
+- Ручной прогон: `docker compose exec laravel php artisan automation:dispatch-schedules --zone-id=1`.
+- В compose не должно быть сервиса с именем `scheduler` — планирование выполняется в контейнере `laravel`.
+- Security smoke `POST /zones/{id}/start-cycle`:
+  - без токена — `401`;
+  - с токеном, без `X-Trace-Id` — `422` (см. актуальные требования в `doc_ai/04_BACKEND_CORE/ae3lite.md`).
 
-### 3.1.3. Rollback
-- Минимальный safe-stop: вернуть `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=0` и перезапустить `laravel`.
-- Важно: это останавливает dispatch, но не включает legacy Python scheduler автоматически.
-- Для полного rollback на legacy scheduler нужен отдельный rollback artifact
-  (compose overlay или откат на release, где сервис `scheduler` присутствует в runtime).
-- После включения legacy scheduler убедиться, что в один момент активен только один dispatcher owner.
+### 3.1.3. Отключение dispatch
+- `AUTOMATION_LARAVEL_SCHEDULER_ENABLED=0` и перезапуск `laravel` — останавливает автоматический dispatch; исполнение уже запущенных задач в AE смотреть отдельно.
 
 ### 3.1.4. Инциденты `start-cycle` / intents / active tasks
 
@@ -106,7 +100,7 @@ ORDER BY accepted_at ASC;
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 

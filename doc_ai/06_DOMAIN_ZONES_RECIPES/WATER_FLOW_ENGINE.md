@@ -7,7 +7,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -365,16 +365,14 @@ UI должен показывать:
 
 ---
 
-# 17. Python Scheduler
+# 17. Automation-engine и планировщик
 
-Use cases:
+Типовые задачи рантайма (см. `../04_BACKEND_CORE/ae3lite.md`, `SCHEDULER_ENGINE.md`):
 
-- start irrigation
-- validate flow
-- compute volume
-- generate events
-- create alerts
-- block unsafe actions
+- старт/оркестрация полива и связанных шагов;
+- проверка расхода/объёма по телеметрии;
+- генерация событий и алертов;
+- блокировка небезопасных действий (fail-closed).
 
 ---
 

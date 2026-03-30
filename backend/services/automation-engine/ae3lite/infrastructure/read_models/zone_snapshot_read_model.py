@@ -448,6 +448,9 @@ class PgZoneSnapshotReadModel:
 
         phase_extensions = zone_row.get("phase_extensions")
         if isinstance(phase_extensions, Mapping):
+            existing_extensions = targets.get("extensions")
+            existing_extensions = existing_extensions if isinstance(existing_extensions, Mapping) else {}
+            targets["extensions"] = merge_recursive(dict(existing_extensions), dict(phase_extensions))
             phase_extension_targets = phase_extensions.get("targets")
             if isinstance(phase_extension_targets, Mapping):
                 targets = merge_recursive(targets, dict(phase_extension_targets))

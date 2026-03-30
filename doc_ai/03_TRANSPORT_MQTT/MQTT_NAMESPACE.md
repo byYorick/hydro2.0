@@ -11,7 +11,7 @@ Frontend и Android **не** обращаются к MQTT напрямую.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -121,7 +121,7 @@ hydro/{gh}/{zone}/{node}/{channel}/command_response
 ```
 
 Канонические `status`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.  
-Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+Статусы `ACCEPTED` и `FAILED` (вне канона) запрещены.
 Статус `SEND_FAILED` относится к backend/publish-layer и не публикуется нодой в MQTT `command_response`.
 
 ### 2.4. event

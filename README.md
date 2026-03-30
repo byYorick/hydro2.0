@@ -40,9 +40,10 @@ docker compose -f docker-compose.dev.yml up -d --build
 Основные сервисы:
 - Laravel API: http://localhost:8080
 - mqtt-bridge: http://localhost:9000
+- history-logger REST: http://localhost:9300
 - history-logger metrics: http://localhost:9301/metrics
 - automation-engine metrics: http://localhost:9401/metrics
-- scheduler metrics: http://localhost:9402/metrics
+- Laravel scheduler-dispatch metrics (Prometheus text): http://localhost:8080/api/system/scheduler/metrics
 
 Больше деталей: `backend/README.md` и `backend/services/README.md`.
 

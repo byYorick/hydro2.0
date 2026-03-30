@@ -7,6 +7,14 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Hydro 2.0 (этот монорепозиторий)
+
+- Канон документации: `../../doc_ai/INDEX.md`
+- Пайплайны команд и телеметрии: `../../doc_ai/ARCHITECTURE_FLOWS.md`
+- Backend и API: `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- Порты dev-стека и мониторинг: `../README.md`
+- Python-сервисы (AE3, history-logger): `../../doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
+
 ## Документация
 
 - `docs/` - документация Laravel приложения

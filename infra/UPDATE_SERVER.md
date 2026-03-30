@@ -68,7 +68,8 @@ sudo supervisorctl restart hydro-mqtt-bridge
 sudo supervisorctl restart hydro-history-logger
 sudo supervisorctl restart hydro-automation-engine
 sudo supervisorctl restart hydro-digital-twin
-sudo supervisorctl restart hydro-scheduler
+
+# Планировщик расписаний зон — в Laravel (`schedule:work` / cron), отдельного unit `hydro-scheduler` нет.
 
 # Проверьте статус
 sudo supervisorctl status

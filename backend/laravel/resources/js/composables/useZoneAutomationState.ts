@@ -200,6 +200,62 @@ function sanitizeWaterForm(
       0,
       20
     ),
+    irrigationDecisionStrategy:
+      raw?.irrigationDecisionStrategy === 'task' || raw?.irrigationDecisionStrategy === 'smart_soil_v1'
+        ? raw.irrigationDecisionStrategy
+        : fallback.irrigationDecisionStrategy === 'task' || fallback.irrigationDecisionStrategy === 'smart_soil_v1'
+          ? fallback.irrigationDecisionStrategy
+          : defaults.water_irrigation_decision_strategy,
+    irrigationDecisionLookbackSeconds: clamp(
+      toRoundedNumber(
+        raw?.irrigationDecisionLookbackSeconds,
+        typeof fallback.irrigationDecisionLookbackSeconds === 'number'
+          ? fallback.irrigationDecisionLookbackSeconds
+          : defaults.water_irrigation_decision_lookback_sec
+      ),
+      60,
+      86400
+    ),
+    irrigationDecisionMinSamples: clamp(
+      toRoundedNumber(
+        raw?.irrigationDecisionMinSamples,
+        typeof fallback.irrigationDecisionMinSamples === 'number'
+          ? fallback.irrigationDecisionMinSamples
+          : defaults.water_irrigation_decision_min_samples
+      ),
+      1,
+      100
+    ),
+    irrigationDecisionStaleAfterSeconds: clamp(
+      toRoundedNumber(
+        raw?.irrigationDecisionStaleAfterSeconds,
+        typeof fallback.irrigationDecisionStaleAfterSeconds === 'number'
+          ? fallback.irrigationDecisionStaleAfterSeconds
+          : defaults.water_irrigation_decision_stale_after_sec
+      ),
+      30,
+      86400
+    ),
+    irrigationDecisionHysteresisPct: clamp(
+      toNumber(
+        raw?.irrigationDecisionHysteresisPct,
+        typeof fallback.irrigationDecisionHysteresisPct === 'number'
+          ? fallback.irrigationDecisionHysteresisPct
+          : defaults.water_irrigation_decision_hysteresis_pct
+      ),
+      0,
+      100
+    ),
+    irrigationDecisionSpreadAlertThresholdPct: clamp(
+      toNumber(
+        raw?.irrigationDecisionSpreadAlertThresholdPct,
+        typeof fallback.irrigationDecisionSpreadAlertThresholdPct === 'number'
+          ? fallback.irrigationDecisionSpreadAlertThresholdPct
+          : defaults.water_irrigation_decision_spread_alert_threshold_pct
+      ),
+      0,
+      100
+    ),
     irrigationRecoveryMaxContinueAttempts: clamp(
       toRoundedNumber(
         raw?.irrigationRecoveryMaxContinueAttempts,
@@ -219,6 +275,28 @@ function sanitizeWaterForm(
       ),
       30,
       86400
+    ),
+    irrigationAutoReplayAfterSetup: toBoolean(
+      raw?.irrigationAutoReplayAfterSetup,
+      typeof fallback.irrigationAutoReplayAfterSetup === 'boolean'
+        ? fallback.irrigationAutoReplayAfterSetup
+        : defaults.water_irrigation_auto_replay_after_setup
+    ),
+    irrigationMaxSetupReplays: clamp(
+      toRoundedNumber(
+        raw?.irrigationMaxSetupReplays,
+        typeof fallback.irrigationMaxSetupReplays === 'number'
+          ? fallback.irrigationMaxSetupReplays
+          : defaults.water_irrigation_max_setup_replays
+      ),
+      0,
+      10
+    ),
+    stopOnSolutionMin: toBoolean(
+      raw?.stopOnSolutionMin,
+      typeof fallback.stopOnSolutionMin === 'boolean'
+        ? fallback.stopOnSolutionMin
+        : defaults.water_irrigation_stop_on_solution_min
     ),
     prepareToleranceEcPct: clamp(
       toNumber(

@@ -11,7 +11,7 @@
 ---
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -34,7 +34,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 **Архитектурный принцип:**
 ```
 Automation-Engine → REST (9300) → History-Logger → MQTT → Узлы
-Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Узлы
+Laravel scheduler-dispatch → REST (9405) → Automation-Engine → REST (9300) → History-Logger → MQTT → Узлы
 ```
 
 `history-logger` не является owner-слоем для bind/rebind нод и не выполняет zone-level orchestration (`fill`, `drain`, `calibrate-flow`). Эти сценарии либо закрыты fail-closed, либо принадлежат canonical owner в Laravel/AE3.
@@ -76,7 +76,7 @@ Content-Type: application/json
 - `channel` (string, required) — канал ноды
 - `cmd` (string, required) — команда для ноды
 - `params` (object, required) — параметры команды
-- `source` (string, optional) — источник команды (`automation`, `scheduler`, `api`)
+- `source` (string, optional) — источник команды (`automation-engine`, `laravel_scheduler`, `api`, …)
 - `cmd_id` (string, optional) — внешний command id, который будет сохранён в `commands.cmd_id`
 
 Примечание:
@@ -88,7 +88,7 @@ Content-Type: application/json
 - canonical flow для pump calibration идёт через Laravel `POST /api/zones/{id}/calibrate-pump`,
   где backend/automation владеет `run_token`, `zone_events` и `pump_calibrations`;
 - `history-logger` в этом сценарии принимает только transport publish на `POST /commands`;
-- legacy `POST /zones/{zone_id}/calibrate-pump` считается удалённым из контракта и возвращает `410 Gone`.
+- `POST /zones/{zone_id}/calibrate-pump` считается удалённым из контракта и возвращает `410 Gone`.
 
 **Response (200 OK):**
 ```json
@@ -106,7 +106,7 @@ Content-Type: application/json
 **Response (400 Bad Request):**
 ```json
 {
-  "detail": "Field 'cmd' is required; legacy field 'type' is not supported"
+  "detail": "Field 'cmd' is required; field 'type' is not supported"
 }
 ```
 
@@ -290,7 +290,7 @@ History-logger выполняет следующую валидацию пере
 
 1. **Проверка структуры:**
    - Наличие обязательных полей (`greenhouse_uid`, `node_uid`, `channel`, `cmd`, `params`)
-   - Поле `type` отклоняется (strict policy, legacy alias не поддерживается)
+   - Поле `type` отклоняется (strict policy, алиас не поддерживается)
    - Корректность типов данных
 
 2. **Проверка типа команды:**
@@ -451,10 +451,10 @@ print(response.json())
 # {"status": "ok", "data": {"command_id": "cmd-123456", ...}}
 ```
 
-### 8.2. Scheduler отправляет команду полива
+### 8.2. Automation-engine публикует команду полива
 
 ```python
-# Scheduler через automation-engine отправляет команду полива
+# Только automation-engine (после решения контроллера) вызывает history-logger; Laravel dispatch не пишет в MQTT напрямую.
 command = {
     "cmd": "run_pump",
     "params": {
@@ -495,7 +495,7 @@ $response = Http::timeout(5)->post('http://history-logger:9300/commands', [
 
 **Strict policy (актуально):**
 1. Для `POST /commands` поле `cmd` обязательно.
-2. Legacy поле `type` отклоняется с `400`.
+2. Поле `type` отклоняется с `400`.
 3. `GROWTH_CYCLE_CONFIG` не является device-командой и не должен отправляться в `history-logger /commands`; эта команда завершается локально на backend как zone-level control-plane update.
 
 **Аутентификация (фактическая модель):**

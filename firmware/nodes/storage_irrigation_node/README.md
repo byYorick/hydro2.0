@@ -10,7 +10,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Поддерживает сервисную команду `state` на канале `storage_state` с `snapshot` для `IRR_STATE_SNAPSHOT`.
 - Публикует телеметрию по level-switch каналам 2-бакового контура.
 - Публикует `storage_state/event` со `snapshot` (и `state` alias) при событиях заполнения (`clean_fill_completed`, `solution_fill_completed`).
-- Работает через `node_framework` с HMAC-проверкой команд (если `allow_legacy_hmac=false`).
+- Работает через `node_framework` с HMAC-проверкой команд (строгий режим по умолчанию; см. `../../NODE_CONFIG_SPEC.md`).
 
 ## Канонический контракт
 
@@ -69,7 +69,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## Ограничения и безопасность
 
 - Очередь команд ноды: `8`.
-- Для production рекомендуется `allow_legacy_hmac=false` и обязательный `node_secret`.
+- Для production: обязательный `node_secret` и включённая строгая проверка HMAC (см. `../../NODE_CONFIG_SPEC.md`).
 
 ## Файлы
 

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -58,6 +59,23 @@ class ZoneAutomationStartIrrigationControllerTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.task_id', '777');
 
+        $intentRow = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->where('idempotency_key', 'manual-force-irrigation-777')
+            ->first();
+        $this->assertNotNull($intentRow);
+        $this->assertSame('IRRIGATE_ONCE', $intentRow->intent_type);
+        $this->assertSame('pending', $intentRow->status);
+        $intentPayloadRaw = $intentRow->payload ?? null;
+        $intentPayload = is_string($intentPayloadRaw)
+            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
+        $this->assertSame('laravel_api', $intentPayload['source'] ?? null);
+        $this->assertSame('irrigation_start', $intentPayload['task_type'] ?? null);
+        $this->assertSame('irrigation_start', $intentPayload['workflow'] ?? null);
+        $this->assertSame('force', $intentPayload['mode'] ?? null);
+        $this->assertSame(120, $intentPayload['requested_duration_sec'] ?? null);
+
         Http::assertSent(function (HttpRequest $request) use ($zone): bool {
             $body = $request->data();
 
@@ -65,6 +83,8 @@ class ZoneAutomationStartIrrigationControllerTest extends TestCase
                 && $request->hasHeader('Authorization', 'Bearer test-scheduler-token')
                 && $request->hasHeader('X-Trace-Id')
                 && ($body['mode'] ?? null) === 'force'
+                && ($body['source'] ?? null) === 'laravel_api'
+                && ($body['idempotency_key'] ?? null) === 'manual-force-irrigation-777'
                 && ($body['requested_duration_sec'] ?? null) === 120;
         });
     }

@@ -12,7 +12,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -161,7 +161,7 @@ Pipeline:
 4. Генерировать код, не совместимый с Laravel Inertia 
 5. Разрывать связь Python ↔ MQTT 
 6. Генерировать команды, не соответствующие спецификации 
-7. Обходить scheduler или создавать команды напрямую в MQTT (мимо Python)
+7. Обходить Laravel dispatch / history-logger или публиковать команды напрямую в MQTT
 
 ---
 

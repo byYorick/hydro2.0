@@ -3,11 +3,11 @@
 # HMAC • Timestamp • Limits • Safety • Restrictions • Node-level Validation
 
 Документ описывает полную архитектуру проверки команд (Command Validation)
-в системе 2.0. Это критический слой безопасности между Python → ESP32 узлами.
+в системе 2.0. Это критический слой безопасности на пути **backend/Python-сервисы → MQTT → ESP32**.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -16,10 +16,10 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 Любая команда, отправляемая узлу ESP32, должна пройти три уровня валидации:
 
 ```
-Laravel → Python Scheduler → ESP32 Firmware
+Laravel (и/или automation-engine) → history-logger → MQTT → ESP32 Firmware
 ```
 
-Каждый уровень выполняет свои проверки.
+Каноническая публикация в MQTT — только через **history-logger** (см. `../04_BACKEND_CORE/HISTORY_LOGGER_API.md`, `../ARCHITECTURE_FLOWS.md`). Каждый уровень выполняет свои проверки.
 
 ---
 
@@ -68,9 +68,9 @@ Laravel создаёт запись в таблице `commands`.
 
 ---
 
-# 4. Уровень 2 — Python Scheduler Validation
+# 4. Уровень 2 — валидация в Python-сервисе (history-logger)
 
-Python Dispatcher выполняет:
+Перед публикацией в MQTT **history-logger** (и связанные компоненты приёма команды) выполняют:
 
 ## 4.1. Проверка срока годности команды
 

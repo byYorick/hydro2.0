@@ -3,11 +3,11 @@
 # Node Failures • Controller Faults • Network Loss • Data Loss • Auto‑Recovery • Safe Modes
 
 Документ описывает систему восстановления после сбоев (Failure Recovery) в архитектуре 2.0.
-Она охватывает все уровни: ESP32 узлы, MQTT, Python Scheduler, Laravel, БД, AI, UI.
+Она охватывает все уровни: ESP32 узлы, MQTT, Python-сервисы (automation-engine, history-logger, mqtt-bridge), Laravel, БД, AI, UI.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -28,7 +28,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ```
 L1 — Node Recovery (узлы ESP32)
 L2 — Network/MQTT Recovery
-L3 — Python Scheduler Recovery
+L3 — Python-сервисы (AE / HL / mqtt-bridge)
 L4 — Backend (Laravel/API) Recovery
 L5 — Database/Data Integrity Recovery
 ```
@@ -86,7 +86,7 @@ Safe Mode блокирует:
 
 # 4. L2 — Network/MQTT Recovery
 
-Осуществляется Python Scheduler:
+Диагностика и восстановление на стороне брокера и Python-сервисов:
 
 ### 4.1. MQTT Failure Detection
 - нет ACK от узлов
@@ -97,26 +97,27 @@ Safe Mode блокирует:
 ### 4.2. Recovery Strategy
 1. reconnect MQTT 
 2. restart connection 
-3. restart scheduler process 
-4. переключение на резервный MQTT-брокер (если настроен)
+3. перезапуск контейнеров/юнитов Python-сервисов (compose/k8s)
+4. переключение на резервный MQTT-брокер (только если он реально настроен в окружении)
 
-### 4.3. MQTT Load Balancing (опционально)
-Если узлов много → система переключает узлы на разные брокеры.
+### 4.3. Несколько брокеров (только если развернуто в окружении)
+Каноника `doc_ai` описывает один брокер на среду. Резервный/второй брокер — отдельная инфраструктурная настройка, не «автоматический LB» из документации.
 
 ---
 
-# 5. L3 — Python Scheduler Recovery
+# 5. L3 — Python-сервисы (AE / HL / mqtt-bridge)
 
-Scheduler отвечает за:
+В совокупности сервисы отвечают за:
 
-- командную очередь,
-- ретраи,
-- симуляции,
-- алерты,
-- сохранение телеметрии.
+- приём и исполнение автоматизации (AE),
+- публикацию команд в MQTT и запись телеметрии (HL),
+- мост REST↔MQTT при необходимости (mqtt-bridge);
 
-### 5.1. Если Scheduler завис
-Watchdog перезапускает процесс.
+- ретраи и идемпотентность на границах REST,
+- генерацию событий/алертов в доменной модели.
+
+### 5.1. Если «завис» критичный процесс сервиса
+Оркестратор/Watchdog перезапускает соответствующий контейнер или юнит.
 
 ### 5.2. Если очередь команд повреждена
 Система:
@@ -292,7 +293,7 @@ DB_ROLLBACK
 
 1. Узлы корректно переходят в safe mode? 
 2. MQTT восстанавливается? 
-3. Scheduler перезапускается? 
+3. Критичные Python-сервисы (AE / HL) перезапускаются штатно? 
 4. Laravel переходит в read‑only? 
 5. БД откатывается корректно? 
 6. AI ограничивается? 

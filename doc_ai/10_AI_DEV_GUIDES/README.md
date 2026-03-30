@@ -2,10 +2,10 @@
 
 Этот раздел содержит руководства для работы с ИИ-агентами над различными компонентами системы.
 
-**Статус раздела:** MIXED (`ACTIVE` + `HISTORICAL`)
+**Статус раздела:** операционные гайды и шаблоны задач (без дорожных карт и migration-планов — см. канонические спеки в `doc_ai/04_BACKEND_CORE/` и `doc_ai/06_DOMAIN_ZONES_RECIPES/`).
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -45,34 +45,6 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - Паттерны задач
 - Примеры использования
 
-### Планы и rollout
-
-#### [LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md](LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md)
-**Актуальный план по scheduler migration/cutover (source of truth)**
-- As-Is статус Laravel scheduler-dispatch
-- Явная граница `переносим/не переносим`
-- Implementation backlog и rollback artifact policy
-
-#### [AI_AGENT_EXECUTION_PLAN_V2.md](AI_AGENT_EXECUTION_PLAN_V2.md)
-**Операционный план выполнения задач ИИ-агентов**
-- Последовательность этапов исполнения
-- Контрольные точки и результаты
-
-#### [AUTOMATION_LOGIC_AI_AGENT_PLAN.md](AUTOMATION_LOGIC_AI_AGENT_PLAN.md)
-**План работ по automation-логике**
-- Разделение ответственности scheduler/automation-engine
-- Этапы внедрения и критерии готовности
-
-#### [ACCESS_CONTROL_ENFORCE_ROLLOUT.md](ACCESS_CONTROL_ENFORCE_ROLLOUT.md)
-**План rollout для access control**
-- Порядок включения enforcement
-- Риски и обратимость
-
-
-### Исторические документы (scheduler runtime owner = Python, не использовать как source of truth)
-
-Исторические документы по до-cutover runtime удалены из активного набора и не должны использоваться как source of truth.
-
 ### Специализированные гайды
 
 #### [BACKEND_LARAVEL_PG_AI_GUIDE.md](BACKEND_LARAVEL_PG_AI_GUIDE.md)
@@ -110,6 +82,8 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ## 🔗 Связанные разделы
 
 - **[TASKS_FOR_AI_AGENTS.md](../TASKS_FOR_AI_AGENTS.md)** — общие правила работы с ИИ
+- **[06_DOMAIN_ZONES_RECIPES](../06_DOMAIN_ZONES_RECIPES/)** — планировщик и доменная логика
+- **[04_BACKEND_CORE](../04_BACKEND_CORE/)** — Python-сервисы, AE3, API
 - **[09_AI_AND_DIGITAL_TWIN](../09_AI_AND_DIGITAL_TWIN/)** — AI архитектура
 - **[DEV_CONVENTIONS.md](../DEV_CONVENTIONS.md)** — конвенции разработки
 
@@ -120,16 +94,12 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. **Общий гайд?** → Изучите [AI_ASSISTANT_DEV_GUIDE.md](AI_ASSISTANT_DEV_GUIDE.md)
 2. **Формат задач?** → См. [DEV_TASKS_FOR_AI_ASSISTANTS_SPEC.md](DEV_TASKS_FOR_AI_ASSISTANTS_SPEC.md)
 3. **Шаблоны?** → Прочитайте [AI_TASK_TEMPLATES_AND_PATTERNS.md](AI_TASK_TEMPLATES_AND_PATTERNS.md)
-4. **Конкретный компонент?** → Выберите соответствующий специализированный гайд
+4. **Промпты под репозиторий?** → [HYDRO_PROMPTING_GUIDE.md](HYDRO_PROMPTING_GUIDE.md)
+5. **Конкретный компонент?** → Выберите соответствующий специализированный гайд
 
----
+### Владение scheduler / runtime
 
-## 📊 Статус документов
-
-1. `ACTIVE`: общие гайды, шаблоны задач, актуальные migration/cutover планы.
-2. `HISTORICAL`: старые stage/roadmap/ADR документы, отражающие закрытые этапы или прежнюю owner-модель runtime.
-3. При конфликте по scheduler owner использовать:
-`LARAVEL_SCHEDULER_MIGRATION_PLAN_FOR_AI.md` + `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`.
+Каноника: `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
 
 ---
 

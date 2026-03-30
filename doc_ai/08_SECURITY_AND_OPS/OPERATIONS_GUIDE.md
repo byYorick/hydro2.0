@@ -5,7 +5,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -51,7 +51,7 @@ docker-compose ps
 curl http://localhost:8080/api/system/health
 curl http://localhost:9000/metrics  # MQTT bridge
 curl http://localhost:9401/metrics  # Automation engine
-curl http://localhost:9402/metrics  # Scheduler
+curl http://localhost:8080/api/system/scheduler/metrics  # метрики Laravel scheduler-dispatch (Prometheus text)
 
 # Проверка Grafana (если доступна)
 curl http://localhost:3000/api/health

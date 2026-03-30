@@ -6,7 +6,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -37,11 +37,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
  - пользователи и права;
  - REST/WS API.
 
-3. **Python-сервис**
- - MQTT-router;
- - контроллеры зон (pH, EC, климат, полив, свет);
- - запись телеметрии и событий в БД;
- - отправка команд на узлы.
+3. **Python-микросервисы** (см. `04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`)
+ - `mqtt-bridge` — мост REST→MQTT;
+ - `history-logger` — MQTT→PostgreSQL, запись телеметрии и **единственная** публикация команд в MQTT;
+ - `automation-engine` (AE3) — автоматизация зон; команды на узлы только через `history-logger`;
+ - прочие сервисы (`digital-twin`, агрегаторы и т.д.) — по своим контрактам.
 
 4. **MQTT Broker**
  - единая шина сообщений `hydro/ `.
@@ -78,17 +78,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 1. **Конфигурация**:
  - создаётся/редактируется в Laravel UI;
  - хранится в PostgreSQL;
- - периодически выгружается Python-сервисом;
- - NodeConfig узлов синхронизируется через MQTT/provisioning.
+ - на узлы уходит как NodeConfig через MQTT/provisioning (публикация — через цепочку сервисов, не напрямую из Laravel);
+ - жизненный цикл ноды см. `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md`.
 
 2. **Телеметрия**:
  - ESP32 → `hydro/{gh}/{zone}/{node}/{channel}/telemetry`;
- - Python-сервис → таблицы `telemetry_samples` и `telemetry_last`;
+ - `history-logger` (+ ingest-пайплайн) → таблицы `telemetry_samples` и `telemetry_last`;
  - Laravel/Frontend → графики и дашборды.
 
 3. **Команды**:
- - Пользователь/AI/Python → запись намерения/команды в БД;
- - Python-сервис → публикация ` /command` в MQTT;
+ - Пользователь/Laravel → намерения и orchestration (в т.ч. scheduler-dispatch → AE);
+ - `automation-engine` → `POST /commands` в `history-logger` → публикация `.../command` в MQTT;
  - ESP32 → исполнение + `status`/`event`.
 
 4. **AI / Digital Twin**:
@@ -100,6 +100,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 ## 5. Ключевые компоненты и ссылки на документы
 
+- **Защищённые pipeline и AE3**: `ARCHITECTURE_FLOWS.md`
 - **Логика системы**: `01_SYSTEM/LOGIC_ARCH.md`
 - **Жизненный цикл узла и provisioning**: `01_SYSTEM/NODE_LIFECYCLE_AND_PROVISIONING.md`
 - **MQTT namespace**: `03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`
@@ -126,7 +127,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 1. **Чёткие границы между слоями** 
  - ESP32 — только железо;
- - Python — контроллеры зон + MQTT;
+ - Python — телеметрия, автоматизация зон, MQTT (несколько сервисов, см. `PYTHON_SERVICES_ARCH.md`);
  - Laravel — конфиг/история/пользователи;
  - UI — отображение и UX;
  - AI — рекомендации и аналитика.

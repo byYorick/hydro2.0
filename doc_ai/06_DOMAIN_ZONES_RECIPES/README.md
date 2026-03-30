@@ -4,7 +4,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -23,9 +23,11 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 #### [RECIPE_ENGINE_FULL.md](RECIPE_ENGINE_FULL.md)
 **Полная архитектура Recipe Engine**
 - Назначение Recipe Engine
-- Модель данных
+- Модель данных (ревизии, фазы, GrowCycle)
 - Логика работы по зоне
 - Связь с контроллерами
+
+> Единственный нормативный документ по рецептам и фазам в дереве `doc_ai/` — `RECIPE_ENGINE_FULL.md` (модель GrowCycle / RecipeRevision).
 
 #### [ZONES_AND_PRESETS.md](ZONES_AND_PRESETS.md)
 **Зоны и пресеты**
@@ -53,14 +55,17 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 #### [WATER_FLOW_ENGINE.md](WATER_FLOW_ENGINE.md)
 Движок управления водой
 
-#### [GLOBAL_SCHEDULER_ENGINE.md](GLOBAL_SCHEDULER_ENGINE.md)
-Глобальный планировщик
-
-#### [HYDROPONIC_RECIPES_ENGINE.md](HYDROPONIC_RECIPES_ENGINE.md)
-Движок гидропонных рецептов
-
 #### [ALERTS_AND_NOTIFICATIONS_CHANNELS.md](ALERTS_AND_NOTIFICATIONS_CHANNELS.md)
 Каналы уведомлений и алертов
+
+#### [CORRECTION_CYCLE_SPEC.md](CORRECTION_CYCLE_SPEC.md)
+Машина состояний циклов коррекции pH/EC (AE3)
+
+#### [EFFECTIVE_TARGETS_SPEC.md](EFFECTIVE_TARGETS_SPEC.md)
+Effective targets для контроллеров и authority bundles
+
+#### [PID_CONFIG_REFERENCE.md](PID_CONFIG_REFERENCE.md)
+Справочник настроек PID / калибровок в контрактах зоны
 
 ---
 

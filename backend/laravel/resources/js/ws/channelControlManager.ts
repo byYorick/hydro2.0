@@ -9,6 +9,7 @@ import type {
 import {
   detachSharedEchoChannel,
   ensureOwnedSharedEchoChannel,
+  getSharedEchoChannel,
   releaseOwnedSharedEchoChannel,
 } from '@/ws/sharedEchoChannels'
 import type { EchoLike } from '@/ws/subscriptionTypes'
@@ -303,7 +304,27 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
 
     deps.channelControls.forEach(control => {
       try {
+        const sharedChannel = getSharedEchoChannel(control.channelName, control.channelType)
+        const hasListenerRefs = Object.keys(control.listenerRefs ?? {}).length > 0
+
+        if (sharedChannel && sharedChannel === control.echoChannel && hasListenerRefs) {
+          logger.debug('[useWebSocket] Resubscribe skipped for live shared channel', {
+            channel: control.channelName,
+          })
+          return
+        }
+
         removeChannelListeners(control)
+
+        if (sharedChannel && sharedChannel !== control.echoChannel) {
+          control.echoChannel = sharedChannel
+          attachChannelListeners(control)
+          logger.debug('[useWebSocket] Rebound listeners to reattached shared channel', {
+            channel: control.channelName,
+          })
+          return
+        }
+
         if (control.echoChannel && isChannelDead(control.channelName)) {
           detachSharedEchoChannel(control.channelName, control.channelType, false)
           control.echoChannel = null

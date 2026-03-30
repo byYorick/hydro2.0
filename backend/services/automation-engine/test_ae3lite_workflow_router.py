@@ -29,6 +29,7 @@ def _make_task(
     *,
     stage: str = "startup",
     phase: str = "idle",
+    task_type: str = "cycle_start",
     correction: CorrectionState | None = None,
     clean_fill_cycle: int = 0,
     stage_deadline_at: datetime | None = None,
@@ -36,6 +37,7 @@ def _make_task(
     stage_retry_count: int = 0,
     control_mode: str = "auto",
     pending_manual_step: str | None = None,
+    irrigation_requested_duration_sec: int | None = None,
 ) -> AutomationTask:
     corr_row: dict = {}
     if correction:
@@ -67,7 +69,7 @@ def _make_task(
         corr_row = {"corr_step": None}
 
     return AutomationTask.from_row({
-        "id": 99, "zone_id": 99, "task_type": "cycle_start", "status": "running",
+        "id": 99, "zone_id": 99, "task_type": task_type, "status": "running",
         "idempotency_key": "k99", "scheduled_for": NOW, "due_at": NOW,
         "claimed_by": "w1", "claimed_at": NOW, "error_code": None, "error_message": None,
         "created_at": NOW, "updated_at": NOW, "completed_at": None,
@@ -77,6 +79,7 @@ def _make_task(
         "stage_deadline_at": stage_deadline_at, "stage_retry_count": stage_retry_count,
         "stage_entered_at": stage_entered_at or NOW, "clean_fill_cycle": clean_fill_cycle,
         "control_mode_snapshot": control_mode, "pending_manual_step": pending_manual_step,
+        "irrigation_requested_duration_sec": irrigation_requested_duration_sec,
         **corr_row,
     })
 
@@ -524,6 +527,49 @@ async def test_router_transition_no_deadline_for_command_stage():
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.stage_deadline_at is None  # clean_fill_start has no timeout_key
+
+
+async def test_router_transition_to_irrigation_check_uses_requested_duration_for_deadline():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+        irrigation_requested_duration_sec=180,
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"irrigation_execution": {"duration_sec": 120}}),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=180)
+
+
+async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallback():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"irrigation_execution": {"duration_sec": 120}}),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=120)
 
 
 async def test_router_transition_upsert_payload_uses_next_stage_not_old():

@@ -1,0 +1,80 @@
+{
+  "finalUrl": "http://localhost:8080/zones/16?tab=scheduler",
+  "cookies": [
+    {
+      "name": "XSRF-TOKEN",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1774903999.938069,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "laravel_session",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1774903999.938146,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "requiredTexts": [
+    "Планировщик зоны",
+    "Исполнения",
+    "Детали run",
+    "#26",
+    "IRRIGATION_TASK_STRATEGY_RUN",
+    "strategy task"
+  ],
+  "detailRequired": [
+    "IRRIGATION_TASK_STRATEGY_RUN",
+    "strategy task",
+    "Timeline",
+    "Lifecycle"
+  ],
+  "detailSnippet": "Детали run\n\nСжатый timeline без мусорных повторов `AE_TASK_STARTED`.\n\nACCEPTED\n\nRUN\n\n#26\n\nПолив · irrigation_recovery_check\n\nЗАПУСК\nIRRIGATION_TASK_STRATEGY_RUN\n\nСтратегия task разрешила запуск по расписанию.\n\nВРЕМЯ\n\nupdated 30.03, 21:53\n\nplanned 30.03, 21:40\n\nmode normal · strategy task\n\nLifecycle\nACCEPTED\nae_tasks\n30.03, 21:40\nTimeline\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2\n\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2\n\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=1; EC=insufficient_samples,samples=1\n\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2\n\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2\n\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=2; EC=insufficient_samples,samples=2\n\nCORRECTION_SKIPPED_WINDOW_NOT_READY\nirrigation_recovery_check\n30.03, 21:50\n\nCorrection decision window not ready: PH=insufficient_samples,samples=1; EC=insu",
+  "consoleMessages": [
+    "[log] 🔍 Browser logger active (MCP server detected). Posting to: http://localhost:8080/_boost/browser-logs",
+    "[debug] [vite] connecting...",
+    "[debug] [vite] connected.",
+    "[log] [INFO] [echoClient] Using page port for nginx proxy {pagePort: 8080, isDev: true, envPort: 6001, scheme: http, reason: dev mode (auto)}",
+    "[log] [DEBUG] [echoClient] Building Echo config {scheme: http, host: localhost, port: 8080, path: undefined, pathType: undefined}",
+    "[log] [DEBUG] [echoClient] wsPath not set, pusher-js will use default /app {note: Reverb listens on /app/{app_key}, pusher-js defaults to /app}",
+    "[log] [DEBUG] [echoClient] Final Echo config {hasWsPath: false, wsPath: undefined, key: local, wsHost: localhost, wsPort: 8080}",
+    "[log] [INFO] [echoClient] Creating Echo instance with config {hasWsPath: false, wsPath: undefined, key: local, wsHost: localhost, wsPort: 8080}",
+    "[log] [INFO] [bootstrap.js] Echo client initialized via single entry point {socketId: undefined, forceReinit: false}",
+    "[log] [DEBUG] [bootstrap.js] Echo initialized successfully {hasConnection: true, connectionState: connecting}",
+    "[log] [INFO] [bootstrap.js] Echo initialized successfully {socketId: undefined}",
+    "[log] [INFO] [echoClient] Connection state: connected {socketId: 359659539.868681031, connectionState: connected}",
+    "[log] [DEBUG] [echoClient] Connection already active {state: connected, socketId: 359659539.868681031}",
+    "[log] [INFO] [echoClient] Starting data reconciliation after reconnect",
+    "[log] [INFO] [echoClient] Using page port for nginx proxy {pagePort: 8080, isDev: true, envPort: 6001, scheme: http, reason: dev mode (auto)}",
+    "[log] [DEBUG] [useSystemStatus] WebSocket state {state: connected, socketId: 359659539.868681031, hasConnection: true}",
+    "[log] [DEBUG] [useWebSocket] Created global channel (first auth request) {channel: hydro.events.global, kind: globalEvents}",
+    "[log] [DEBUG] [ws/invariants] Subscription registered {channelName: hydro.events.global, eventName: .App\\Events\\EventCreated, handlerId: sub-1, componentTag: component-2, totalSubscriptions: 1}",
+    "[log] [DEBUG] [useWebSocket] Added subscription {channel: hydro.events.global, subscriptionId: sub-1, componentTag: component-2}",
+    "[log] [DEBUG] [useWebSocket] Created new global events channel (first auth request) {channel: hydro.events.global, subscriptionId: sub-1, componentTag: component-2, refCount: 1}",
+    "[log] [INFO] [Show.vue] Компонент смонтирован {zoneId: 16}",
+    "[log] [DEBUG] [Zones/Show] Zone initialized in store from props {zoneId: 16}",
+    "[log] [DEBUG] [useWebSocket] Created channel subscription {channel: hydro.commands.16, kind: zoneCommands}",
+    "[log] [DEBUG] [ws/invariants] Subscription registered {channelName: hydro.commands.16, eventName: .App\\Events\\CommandStatusUpdated, handlerId: sub-2, componentTag: component-1, totalSubscriptions: 1}",
+    "[log] [DEBUG] [useWebSocket] Added subscription {channel: hydro.commands.16, subscriptionId: sub-2, componentTag: component-1}",
+    "[log] [DEBUG] [ws/invariants] Subscription registered {channelName: hydro.zones.16, eventName: .App\\Events\\GrowCycleUpdated, handlerId: Zones/Show.grow-cycle:hydro.zones.16:.App\\Events\\GrowCycleUpdated:1774896804650-i1xfjpio:0, componentTag: Zones/Show.grow-cycle, totalSubscriptions: 1}",
+    "[log] [DEBUG] [ws/invariants] Subscription registered {channelName: hydro.zones.16, eventName: .EventCreated, handlerId: Zones/Show.events:hydro.zones.16:.EventCreated:1774896804651-ijmsycb8:0, componentTag: Zones/Show.events, totalSubscriptions: 1}",
+    "[log] [DEBUG] [ws/invariants] Subscription registered {channelName: hydro.zones.16, eventName: .App\\Events\\EventCreated, handlerId: Zones/Show.events:hydro.zones.16:.App\\Events\\EventCreated:1774896804651-ijmsycb8:1, componentTag: Zones/Show.events, totalSubscriptions: 1}",
+    "[log] [INFO] [echoClient] Reconciliation completed {telemetryCount: 85, commandsCount: 0, alertsCount: 22, timestamp: 2026-03-30T18:53:24+00:00}",
+    "[log] [DEBUG] [ziggy] ZiggyVue installed successfully",
+    "[log] [INFO] [bootstrap.js] Processing reconciliation data {telemetryCount: 85, commandsCount: 0, alertsCount: 22}",
+    "[log] [DEBUG] [useTelemetry] Processing reconciliation telemetry data {count: 85}",
+    "[log] [INFO] [useTelemetry] Reconciliation completed {zonesUpdated: 5}",
+    "[log] [DEBUG] [useCommands] Processing reconciliation commands data {count: 0}",
+    "[log] [INFO] [useCommands] Reconciliation completed {commandsProcessed: 0, pendingCount: 0}",
+    "[log] [DEBUG] [useCommands] Processing reconciliation commands data {count: 0}",
+    "[log] [INFO] [useCommands] Reconciliation completed {commandsProcessed: 0, pendingCount: 0}",
+    "[log] [DEBUG] [bootstrap.js] Alerts updated from reconciliation {count: 22}",
+    "[log] [INFO] [useWebSocket] Snapshot fetched and stored {zoneId: 16, snapshot_id: 60c26355-3c95-41cd-a9ea-d2ab139d270e, server_ts: 1774896805000}",
+    "[log] [DEBUG] [ws/invariants] Subscription registered {channelName: hydro.zones.16, eventName: .telemetry.batch.updated, handlerId: Zones/Show.telemetry:hydro.zones.16:.telemetry.batch.updated:1774896805636-gyxs4ecq:0, componentTag: Zones/Show.telemetry, totalSubscriptions: 1}"
+  ]
+}

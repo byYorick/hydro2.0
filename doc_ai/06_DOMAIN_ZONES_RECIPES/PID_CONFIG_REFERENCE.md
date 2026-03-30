@@ -41,7 +41,7 @@ PID-параметров — те поля были удалены как dead c
 - target берётся только из текущей recipe phase;
 - лимиты доз и интервалы между дозами живут только в `zone.correction.resolved_config.controllers.*`.
 
-Legacy-поля `target`, `max_output`, `min_interval_ms` в `zone.pid.*` и
+Поля `target`, `max_output`, `min_interval_ms` в `zone.pid.*` (вне актуального контракта) и
 `system.pid_defaults.*` удалены и не поддерживаются.
 
 ### 1.3. Расчёт дозы (упрощённо)

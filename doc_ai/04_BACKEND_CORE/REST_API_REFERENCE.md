@@ -9,13 +9,13 @@
 Актуализация authority / AE3 (2026-03-24):
 - канонический запуск workflow через internal AE endpoints `POST /zones/{id}/start-cycle`
   и `POST /zones/{id}/start-irrigation`;
-- legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
+- `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
 - runtime path automation-engine использует direct SQL read-model.
 
 Актуализация AE3 irrigation runtime (2026-03-30):
 - добавлен public operator endpoint `POST /api/zones/{id}/start-irrigation`;
 - добавлен internal AE endpoint `POST /zones/{id}/start-irrigation`;
-- legacy `FORCE_IRRIGATION` сохраняет внешний контракт, но внутри маршрутизируется в AE3
+- `FORCE_IRRIGATION` сохраняет внешний контракт, но внутри маршрутизируется в AE3
   `start-irrigation`, а не в direct device command path;
 - canonical `ae_tasks` расширены typed irrigation runtime columns и фазами
   `irrigating|irrig_recirc`.
@@ -27,7 +27,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -97,7 +97,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
   `nodes.zone_id`, `nodes.pending_zone_id` или zone-scoped `channel_bindings`;
 - orchestration выполняется в Laravel/backend automation layer: backend сам создаёт `zone_events`
   (`PUMP_CALIBRATION_STARTED` / `PUMP_CALIBRATION_RUN_SKIPPED` / `PUMP_CALIBRATION_FINISHED`),
-  пишет canonical запись в `pump_calibrations` и обновляет legacy mirror
+  пишет canonical запись в `pump_calibrations` и обновляет зеркало в `node_channels.config`
   `node_channels.config.pump_calibration`;
 - `history-logger` в этом flow является только transport-посредником для физического шага
   `run_pump` через `POST /zones/{zone}/commands` и не владеет tracking/persistence калибровки;
@@ -182,7 +182,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `channels[*]` не включает полный `config`;
 - для calibration UX backend добавляет safe projection: `binding_role`, `pump_component`, `pump_calibration`;
 - `channels[*].pump_calibration` читается из активной записи `pump_calibrations` и нужен, чтобы setup wizard / grow-cycle wizard не теряли уже сохранённые calibration после refresh списка нод;
-- source of truth для dosing calibration остаётся `pump_calibrations`; `node_channels.config.pump_calibration` допускается только как legacy mirror.
+- source of truth для dosing calibration остаётся `pump_calibrations`; `node_channels.config.pump_calibration` допускается только как денормализованное зеркало для узла.
 - deprecated internal endpoint `history-logger POST /zones/{zone_id}/calibrate-pump` больше не используется и должен возвращать `410 Gone`.
 
 Контракт manual device-test для `POST /api/nodes/{id}/commands`:
@@ -232,7 +232,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `extensions.subsystems.irrigation.targets.system_type`.
 - `extensions.subsystems.irrigation.targets.soil_moisture.{unit,min,max,target}` для smart irrigation decision-controller.
 
-Legacy `extensions.day_target/night_target` больше не используется.
+Поля `extensions.day_target/night_target` больше не используются.
 
 ---
 
@@ -486,7 +486,7 @@ Preset rules:
   (в JSON остаётся строкой для совместимости внешнего контракта);
 - если AE3-ответ не содержит canonical numeric `task_id`, Laravel scheduler трактует submit как failed/retryable
   и не создаёт fallback snapshot с `intent-*`;
-- legacy `intent-*` task snapshots удалены; runtime обязан возвращать canonical numeric `task_id`.
+- снимки задач с префиксом `intent-*` удалены; runtime обязан возвращать canonical numeric `task_id`.
 
 Инварианты `POST /zones/{id}/start-irrigation`:
 - endpoint принимает `source`, `idempotency_key`, `mode`, `requested_duration_sec`;
@@ -621,7 +621,7 @@ Lifecycle intents:
 Ограничения payload:
 - `task_payload` и `schedule_payload` запрещены;
 - любые device-level steps/commands запрещены;
-- при наличии legacy-ключей runtime трактует их как невалидные для контракта wake-up only.
+- при наличии устаревших ключей runtime трактует их как невалидные для контракта wake-up only.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 

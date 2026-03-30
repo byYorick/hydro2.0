@@ -78,10 +78,10 @@ common/
 **Порт:** 9000
 
 **Функционал:**
-- REST API для отправки команд на ноды
+- REST API для сценариев моста (внешние вызовы); для прод-пайплайна узлов командный MQTT-путь идёт через **`history-logger`**
 - Валидация команд через Pydantic
-- Публикация команд в MQTT топики
-- Логирование всех команд
+- Публикация в MQTT там, где мост явно используется (не подменяет централизованный путь AE → HL)
+- Логирование операций моста
 
 **Эндпоинты:**
 - `POST /bridge/zones/{zone_id}/commands` — отправка команды в зону
@@ -275,7 +275,7 @@ automation-engine/
 
 **Публикации:**
 - `history-logger`: **единственная точка публикации команд** → `hydro/{gh}/{zone}/{node}/{channel}/command`
-- `mqtt-bridge`: `hydro/{gh}/{zone}/{node}/{channel}/command` (legacy, для внешних систем)
+- `mqtt-bridge`: `hydro/{gh}/{zone}/{node}/{channel}/command` (мост для внешних систем; прод-пайплайн AE → history-logger)
 
 **Важно:** 
 - `automation-engine` **не публикует команды напрямую в MQTT**

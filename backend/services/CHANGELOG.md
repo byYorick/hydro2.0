@@ -1,5 +1,11 @@
 # Changelog - Python Services
 
+## 2026-03-30 — Планировщик только в Laravel
+
+- Удалён отдельный Python-сервис `backend/services/scheduler` из боевого стека и supervisor.
+- Расписания и wake-up: **Laravel** (`automation:dispatch-schedules`, intents) → `POST /zones/{id}/start-cycle` → automation-engine.
+- Legacy `POST /scheduler/command` и HTTP task transport к Python-планировщику не используются.
+
 ## 2025-12-11 - Рефакторинг на REST API
 
 ### Архитектурные изменения
@@ -7,7 +13,7 @@
 **Централизация публикации команд:**
 - `history-logger` теперь **единственная точка публикации команд в MQTT**
 - `automation-engine` публикует команды через `history-logger` REST API
-- `scheduler` публикует команды через `automation-engine` REST API → `history-logger` REST API
+- *(исторически)* отдельный Python scheduler ходил в AE/HL; **с 2026-03** dispatch в Laravel — см. запись выше
 
 **Новые REST API endpoints:**
 
@@ -17,7 +23,6 @@
 - `POST /nodes/{node_uid}/commands` - команды для ноды
 
 **Automation-Engine (порт 9405):**
-- `POST /scheduler/command` - прием команд от scheduler
 - `GET /health` - health check
 
 ### Улучшения
@@ -30,7 +35,6 @@
 ### Тестирование
 
 - ✅ 20 тестов для automation-engine (CommandBus + REST API)
-- ✅ 9 тестов для scheduler (REST интеграция)
 - ✅ 13 тестов для history-logger (REST API endpoints)
 
 ### Документация

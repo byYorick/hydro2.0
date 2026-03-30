@@ -7,7 +7,7 @@
 
 **КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА:**
 - ✅ Новые эндпоинты для GrowCycle: `/api/grow-cycles/*`
-- ✅ Удалены legacy эндпоинты: `/api/zones/*/attach-recipe`
+- ✅ Удалены устаревшие эндпоинты: `/api/zones/*/attach-recipe`
 - ✅ Для AE3/automation-engine закреплен единый wake-up endpoint: `POST /zones/{id}/start-cycle`
 - ✅ Версионирование рецептов: `/api/recipe-revisions/*`
 - ✅ Unified authority API: `/api/automation-configs/*`, `/api/automation-bundles/*`, `/api/automation-presets/*`
@@ -20,7 +20,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -28,7 +28,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 Эти правила имеют приоритет над более старыми фрагментами документа:
 - внешний запуск автоматики: `POST /zones/{id}/start-cycle` и `POST /zones/{id}/start-irrigation`;
-- legacy transport `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удален из runtime;
+- HTTP transport `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалён из runtime;
 - runtime automation-engine использует direct SQL read-model (без runtime HTTP вызовов в `/api/internal/effective-targets/*`);
 - scheduler передает intent через БД (`zone_automation_intents`) и будит зону через `start-cycle` или `start-irrigation`;
 - endpoint `POST /api/zones/{id}/automation/manual-resume` удален.
@@ -184,7 +184,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 ```
 
 Примечания по запуску:
-- `start_immediately=true` создаёт цикл через canonical path `PLANNED -> start`, без отдельного legacy wizard-launch endpoint;
+- `start_immediately=true` создаёт цикл через canonical path `PLANNED -> start`, без отдельного wizard-launch endpoint;
 - перед immediate-start backend выполняет fail-closed readiness;
 - readiness должен совпадать с runtime gate и учитывает bind-ы, калибровки, PID, runtime-флаг dispatch и hard-blocking alerts automation-engine.
 
@@ -299,7 +299,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `node_types` (array<string>): типы нод для выполнения.
 - `node_types` должны содержать только канонические значения `nodes.type`:
   `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Legacy-алиасы (`irrigation`, `pump_node`, `climate_node`, `lighting_node` и т.п.) не допускаются.
+- Алиасы вне канона (`irrigation`, `pump_node`, `climate_node`, `lighting_node` и т.п.) не допускаются.
 - `cmd` (string): основная команда для task.
 - `cmd_true`/`cmd_false` (string): команды для state-based task (например свет).
 - `state_key` (string): имя поля в payload для выбора ветки `cmd_true/cmd_false`.
@@ -493,7 +493,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Инварианты:**
   - `timeline[]` сортируется строго по `created_at ASC`, затем `id ASC`;
   - операторский detail view не читает `scheduler_logs`;
-  - historical `st-*` и legacy `intent-*` идентификаторы больше не поддерживаются.
+  - historical `st-*` и префикс `intent-*` у идентификаторов больше не поддерживаются.
 
 ### 3.5.2.1. GET /api/zones/{id}/scheduler-diagnostics
 
@@ -708,7 +708,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - **Ограничение (DB intent):** `zone_automation_intents.payload` работает в режиме wake-up only; `task_payload` и `schedule_payload` не допускаются.
 - **Важно для scheduler:** при наличии в ответе `data.task_status` этот статус приоритетнее бинарного `accepted`.
 - **Важно для scheduler (AE3):** для зон с `automation_runtime='ae3'` ответ обязан содержать canonical numeric
-  `data.task_id`; отсутствие или legacy/non-numeric `task_id` трактуется Laravel dispatcher как failed/retryable submit.
+  `data.task_id`; отсутствие или нечисловой `task_id` трактуется Laravel dispatcher как failed/retryable submit.
 - **Ограничение:** при активном intent зоны (другой `idempotency_key`) endpoint возвращает
   `409 start_cycle_zone_busy` с `active_intent_id`.
 - **Ограничение:** при активном execution run зоны (`accepted|running` в canonical `ae_tasks`) endpoint возвращает
@@ -1095,7 +1095,7 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 - `extensions.subsystems.irrigation.targets.system_type` хранит канонический irrigation system type;
 - `targets` в read-shape используется только как compatibility/view helper.
 
-Legacy `extensions.day_target/night_target` не записывается.
+`extensions.day_target/night_target` не записывается.
 
 ### 4.6.6. POST /api/plants/with-recipe
 
@@ -1208,7 +1208,7 @@ Legacy `extensions.day_target/night_target` не записывается.
 - **Авторизация:** Проверка прав через `ZonePolicy::sendCommand`
 - **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Отправка команд на зону (через Python-сервис).
-- Контракт strict: поле `cmd` обязательно, legacy-поле `type` отклоняется (`400`).
+- Контракт strict: поле `cmd` обязательно, поле `type` отклоняется (`400`).
 - Для зон с `automation_runtime='ae3'` команда `FORCE_IRRIGATION` сохраняет внешний контракт,
   но внутри Laravel должна маршрутизироваться в `POST /api/zones/{id}/start-irrigation`
   c `mode=force`; direct device-command publish для этого кейса запрещён.
@@ -1220,7 +1220,7 @@ Legacy `extensions.day_target/night_target` не записывается.
  - `FORCE_LIGHTING` - принудительное управление освещением;
  - `FORCE_CLIMATE` - принудительное управление климатом;
  - `FORCE_LIGHT_ON/OFF` - включение/выключение света (устаревшая, используйте `FORCE_LIGHTING`);
- - `ZONE_PAUSE/RESUME` - legacy-команды управления зоной (предпочтителен lifecycle через grow-cycle endpoints).
+ - `ZONE_PAUSE/RESUME` - устаревшие команды управления зоной (предпочтителен lifecycle через grow-cycle endpoints).
 
 Тело запроса:
 
@@ -1293,15 +1293,15 @@ Legacy `extensions.day_target/night_target` не записывается.
 - `POST /api/zones/{zone}/calibrate-pump`
   - `duration_sec` uses `system.pump_calibration_policy`
   - `node_channel_id` is accepted when zone ownership resolves via `nodes.zone_id`, `nodes.pending_zone_id` or zone-level `channel_bindings`
-  - orchestration is backend-owned: Laravel writes `zone_events`, persists canonical `pump_calibrations` and updates legacy `node_channels.config.pump_calibration`
+  - orchestration is backend-owned: Laravel writes `zone_events`, persists canonical `pump_calibrations` and updates denormalized `node_channels.config.pump_calibration`
   - history-logger participates only as transport for physical `run_pump` publish via `POST /zones/{zone}/commands`
   - one-shot `run + actual_ml + save` is rejected; physical run and save-step are separate requests
   - first-step run response returns `202 Accepted`, `data.run_token` and `data.status=awaiting_actual_ml`
   - second-step save with `skip_run=true` requires `run_token`, unless caller explicitly sets `manual_override=true`
   - second-step save after a physical run is allowed only when the correlated command reached terminal `DONE`
   - successful save-step returns `200 OK` and does not expose synthetic `job_id`
-  - legacy mirror `node_channels.config.pump_calibration` is updated through merge patch, not full overwrite
-  - legacy internal route `history-logger POST /zones/{zone_id}/calibrate-pump` is deprecated and returns `410 Gone`
+  - `node_channels.config.pump_calibration` is updated through merge patch, not full overwrite
+  - internal route `history-logger POST /zones/{zone_id}/calibrate-pump` is deprecated and returns `410 Gone`
 
 ---
 

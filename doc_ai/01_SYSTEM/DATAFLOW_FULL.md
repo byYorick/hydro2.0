@@ -8,7 +8,7 @@ telemetry, commands, config, status/LWT, heartbeat, alerts, events,
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -214,7 +214,7 @@ hydro/{gh}/{zone}/{node}/status
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО (выполняется сразу после `MQTT_EVENT_CONNECTED`)
-4. Подписка на command топики (config — опционально, legacy)
+4. Подписка на command топики (config — опционально, сервисный сценарий)
 5. Вызов connection callback (если зарегистрирован)
 
 **Требования:**

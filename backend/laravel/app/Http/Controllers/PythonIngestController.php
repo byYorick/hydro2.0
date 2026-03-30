@@ -163,7 +163,13 @@ class PythonIngestController extends Controller
         // Проксируем в history-logger
         try {
             $historyLoggerUrl = Config::get('services.history_logger.url', 'http://history-logger:9300');
-            $response = Http::timeout(5)->post(
+            $historyLoggerToken = Config::get('services.history_logger.token');
+            $http = Http::timeout(5);
+            if (is_string($historyLoggerToken) && $historyLoggerToken !== '') {
+                $http = $http->withToken($historyLoggerToken);
+            }
+
+            $response = $http->post(
                 $historyLoggerUrl.'/ingest/telemetry',
                 ['samples' => [$sample]]
             );

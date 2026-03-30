@@ -15,8 +15,8 @@ fi
 # Запрещаем прямые внутренние сервисные адреса и порты в UI-коде.
 # Фронтенд должен ходить к backend через относительные пути Laravel API (/api/*).
 PATTERN_INTERNAL_HOSTS='(https?|wss?)://(history-logger|automation-engine|mqtt-bridge|scheduler|db|redis|mqtt|laravel|node-sim-manager)(:[0-9]+)?(/|$)'
-PATTERN_INTERNAL_LOCAL_PORTS='(https?|wss?)://(localhost|127\.0\.0\.1|0\.0\.0\.0):(9300|9401|9000|9402|5432|6379|1883|9100)(/|$)'
-PATTERN_INTERNAL_HOSTPORT='(history-logger:9300|automation-engine:9401|mqtt-bridge:9000|scheduler:9402|db:5432|redis:6379|mqtt:1883|node-sim-manager:9100)([^0-9]|$)'
+PATTERN_INTERNAL_LOCAL_PORTS='(https?|wss?)://(localhost|127\.0\.0\.1|0\.0\.0\.0):(9300|9401|9405|9000|5432|6379|1883|9100)(/|$)'
+PATTERN_INTERNAL_HOSTPORT='(history-logger:9300|automation-engine:9401|mqtt-bridge:9000|db:5432|redis:6379|mqtt:1883|node-sim-manager:9100)([^0-9]|$)'
 
 search_pattern() {
   local pattern="$1"

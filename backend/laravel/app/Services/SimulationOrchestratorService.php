@@ -44,6 +44,14 @@ class SimulationOrchestratorService
             $createdRevision = null;
             $createdNode = null;
 
+            if (! $fullSimulation && $recipeId && ! $this->hasPublishedSimulationRevision((int) $recipeId)) {
+                Log::warning('Simulation recipe bundle fallback activated for invalid source recipe', [
+                    'source_zone_id' => $sourceZone->id,
+                    'recipe_id' => (int) $recipeId,
+                ]);
+                $fullSimulation = true;
+            }
+
             if ($fullSimulation) {
                 [$createdPlant, $createdRecipe, $createdRevision] = $this->createSimulationRecipeBundle();
                 $recipeId = $createdRecipe->id;
@@ -125,7 +133,17 @@ class SimulationOrchestratorService
         /** @var AutomationConfigRegistry $registry */
         $registry = app(AutomationConfigRegistry::class);
 
-        foreach ($registry->requiredNamespacesForScope(AutomationConfigRegistry::SCOPE_ZONE) as $namespace) {
+        $zoneNamespaces = $registry->requiredNamespacesForScope(AutomationConfigRegistry::SCOPE_ZONE);
+        foreach ([
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+        ] as $pidNamespace) {
+            if (! in_array($pidNamespace, $zoneNamespaces, true)) {
+                $zoneNamespaces[] = $pidNamespace;
+            }
+        }
+
+        foreach ($zoneNamespaces as $namespace) {
             if ($namespace === AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE) {
                 continue;
             }
@@ -312,6 +330,55 @@ class SimulationOrchestratorService
         $irrigationExecution['tanks_count'] = isset($irrigationExecution['tanks_count'])
             ? (int) $irrigationExecution['tanks_count']
             : (int) ($automationDefaults['water_tanks_count'] ?? 2);
+        $irrigationExecution['duration_sec'] = isset($irrigationExecution['duration_sec']) && is_numeric($irrigationExecution['duration_sec'])
+            ? max(1, (int) $irrigationExecution['duration_sec'])
+            : max(1, (int) ($automationDefaults['water_duration_sec'] ?? 120));
+        $irrigationExecution['interval_sec'] = isset($irrigationExecution['interval_sec']) && is_numeric($irrigationExecution['interval_sec'])
+            ? max(1, (int) $irrigationExecution['interval_sec'])
+            : max(1, (int) ($automationDefaults['water_interval_min'] ?? 30) * 60);
+        $irrigationDecision = is_array($irrigation['decision'] ?? null) && ! array_is_list($irrigation['decision'])
+            ? $irrigation['decision']
+            : [];
+        $irrigationDecisionConfig = is_array($irrigationDecision['config'] ?? null) && ! array_is_list($irrigationDecision['config'])
+            ? $irrigationDecision['config']
+            : [];
+        $irrigationDecision['strategy'] = is_string($irrigationDecision['strategy'] ?? null) && $irrigationDecision['strategy'] !== ''
+            ? $irrigationDecision['strategy']
+            : (string) ($automationDefaults['water_irrigation_decision_strategy'] ?? 'task');
+        $irrigationDecisionConfig['lookback_sec'] = isset($irrigationDecisionConfig['lookback_sec']) && is_numeric($irrigationDecisionConfig['lookback_sec'])
+            ? max(60, (int) $irrigationDecisionConfig['lookback_sec'])
+            : max(60, (int) ($automationDefaults['water_irrigation_decision_lookback_sec'] ?? 1800));
+        $irrigationDecisionConfig['min_samples'] = isset($irrigationDecisionConfig['min_samples']) && is_numeric($irrigationDecisionConfig['min_samples'])
+            ? max(1, (int) $irrigationDecisionConfig['min_samples'])
+            : max(1, (int) ($automationDefaults['water_irrigation_decision_min_samples'] ?? 3));
+        $irrigationDecisionConfig['stale_after_sec'] = isset($irrigationDecisionConfig['stale_after_sec']) && is_numeric($irrigationDecisionConfig['stale_after_sec'])
+            ? max(30, (int) $irrigationDecisionConfig['stale_after_sec'])
+            : max(30, (int) ($automationDefaults['water_irrigation_decision_stale_after_sec'] ?? 600));
+        $irrigationDecisionConfig['hysteresis_pct'] = isset($irrigationDecisionConfig['hysteresis_pct']) && is_numeric($irrigationDecisionConfig['hysteresis_pct'])
+            ? (float) $irrigationDecisionConfig['hysteresis_pct']
+            : (float) ($automationDefaults['water_irrigation_decision_hysteresis_pct'] ?? 2.0);
+        $irrigationDecisionConfig['spread_alert_threshold_pct'] = isset($irrigationDecisionConfig['spread_alert_threshold_pct']) && is_numeric($irrigationDecisionConfig['spread_alert_threshold_pct'])
+            ? (float) $irrigationDecisionConfig['spread_alert_threshold_pct']
+            : (float) ($automationDefaults['water_irrigation_decision_spread_alert_threshold_pct'] ?? 12.0);
+        $irrigationDecision['config'] = $irrigationDecisionConfig;
+        $irrigation['decision'] = $irrigationDecision;
+        $irrigationRecovery = is_array($irrigation['recovery'] ?? null) && ! array_is_list($irrigation['recovery'])
+            ? $irrigation['recovery']
+            : [];
+        $irrigationRecovery['auto_replay_after_setup'] = array_key_exists('auto_replay_after_setup', $irrigationRecovery)
+            ? (bool) $irrigationRecovery['auto_replay_after_setup']
+            : (bool) ($automationDefaults['water_irrigation_auto_replay_after_setup'] ?? true);
+        $irrigationRecovery['max_setup_replays'] = isset($irrigationRecovery['max_setup_replays']) && is_numeric($irrigationRecovery['max_setup_replays'])
+            ? max(0, (int) $irrigationRecovery['max_setup_replays'])
+            : max(0, (int) ($automationDefaults['water_irrigation_max_setup_replays'] ?? 1));
+        $irrigation['recovery'] = $irrigationRecovery;
+        $irrigationSafety = is_array($irrigation['safety'] ?? null) && ! array_is_list($irrigation['safety'])
+            ? $irrigation['safety']
+            : [];
+        $irrigationSafety['stop_on_solution_min'] = array_key_exists('stop_on_solution_min', $irrigationSafety)
+            ? (bool) $irrigationSafety['stop_on_solution_min']
+            : (bool) ($automationDefaults['water_irrigation_stop_on_solution_min'] ?? true);
+        $irrigation['safety'] = $irrigationSafety;
         $irrigation['enabled'] = (bool) ($irrigation['enabled'] ?? true);
         $irrigation['execution'] = $irrigationExecution;
         $subsystems['irrigation'] = $irrigation;
@@ -541,11 +608,7 @@ class SimulationOrchestratorService
 
     private function createSimulationGrowCycle(Zone $sourceZone, Zone $simZone, int $recipeId, ?int $plantId = null)
     {
-        $revision = RecipeRevision::query()
-            ->where('recipe_id', $recipeId)
-            ->where('status', 'PUBLISHED')
-            ->orderByDesc('revision_number')
-            ->first();
+        $revision = $this->resolvePublishedSimulationRevision($recipeId);
 
         if (! $revision) {
             throw new \RuntimeException('Published recipe revision not found for simulation.');
@@ -627,6 +690,7 @@ class SimulationOrchestratorService
                 'ph_target' => 6.0,
                 'ec_target' => 1.4,
                 'irrigation_mode' => 'SUBSTRATE',
+                'extensions' => $this->simulationRecipePhaseExtensions(),
             ],
             [
                 'phase_index' => 1,
@@ -635,6 +699,7 @@ class SimulationOrchestratorService
                 'ph_target' => 6.1,
                 'ec_target' => 1.6,
                 'irrigation_mode' => 'SUBSTRATE',
+                'extensions' => $this->simulationRecipePhaseExtensions(),
             ],
             [
                 'phase_index' => 2,
@@ -643,6 +708,7 @@ class SimulationOrchestratorService
                 'ph_target' => 6.2,
                 'ec_target' => 1.8,
                 'irrigation_mode' => 'SUBSTRATE',
+                'extensions' => $this->simulationRecipePhaseExtensions(),
             ],
         ];
 
@@ -678,6 +744,7 @@ class SimulationOrchestratorService
             ['channel' => 'level_clean_max', 'type' => 'SENSOR', 'metric' => 'WATER_LEVEL', 'unit' => '', 'config' => ['poll_interval_ms' => 500]],
             ['channel' => 'level_solution_min', 'type' => 'SENSOR', 'metric' => 'WATER_LEVEL', 'unit' => '', 'config' => ['poll_interval_ms' => 500]],
             ['channel' => 'level_solution_max', 'type' => 'SENSOR', 'metric' => 'WATER_LEVEL', 'unit' => '', 'config' => ['poll_interval_ms' => 500]],
+            ['channel' => 'soil_moisture', 'type' => 'SENSOR', 'metric' => 'SOIL_MOISTURE', 'unit' => '%', 'config' => ['poll_interval_ms' => 500]],
             ['channel' => 'flow_present', 'type' => 'SENSOR', 'metric' => 'FLOW_RATE', 'unit' => '', 'config' => ['poll_interval_ms' => 500]],
             ['channel' => 'pump_bus_current', 'type' => 'SENSOR', 'metric' => 'PUMP_CURRENT', 'unit' => 'mA', 'config' => ['poll_interval_ms' => 500]],
         ]);
@@ -825,6 +892,42 @@ class SimulationOrchestratorService
                 'role' => $role,
             ],
         );
+    }
+
+    private function hasPublishedSimulationRevision(int $recipeId): bool
+    {
+        return $this->resolvePublishedSimulationRevision($recipeId) instanceof RecipeRevision;
+    }
+
+    private function resolvePublishedSimulationRevision(int $recipeId): ?RecipeRevision
+    {
+        return RecipeRevision::query()
+            ->where('recipe_id', $recipeId)
+            ->where('status', 'PUBLISHED')
+            ->whereHas('phases')
+            ->orderByDesc('revision_number')
+            ->first();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function simulationRecipePhaseExtensions(): array
+    {
+        return [
+            'subsystems' => [
+                'irrigation' => [
+                    'targets' => [
+                        'soil_moisture' => [
+                            'unit' => 'pct',
+                            'min' => 38.0,
+                            'max' => 48.0,
+                            'target' => 43.0,
+                        ],
+                    ],
+                ],
+            ],
+        ];
     }
 
     private function ensureSimulationDosingInfrastructure(Zone $simZone, ?DeviceNode $preferredNode = null): void

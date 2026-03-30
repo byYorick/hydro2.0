@@ -72,7 +72,7 @@ echo ""
 # Проверка Python сервисов (метрики)
 echo "--- Python Services Metrics ---"
 check_endpoint "Automation Engine metrics" "http://localhost:9401/metrics" || ERRORS=$((ERRORS + 1))
-check_endpoint "Scheduler metrics" "http://localhost:9402/metrics" || ERRORS=$((ERRORS + 1))
+check_endpoint "Laravel scheduler metrics" "http://localhost:8080/api/system/scheduler/metrics" || ERRORS=$((ERRORS + 1))
 check_endpoint "MQTT Bridge metrics" "http://localhost:9000/metrics" || echo -e "${YELLOW}WARNING: MQTT Bridge metrics may not be available${NC}"
 echo ""
 

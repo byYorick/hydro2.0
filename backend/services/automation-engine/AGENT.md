@@ -9,7 +9,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Поддерживать и развивать **AE3-Lite v1** — DB-backed executor для `cycle_start`.
 Canonical spec: `doc_ai/04_BACKEND_CORE/ae3lite.md`.
 
-Legacy runtime полностью удалён. Рабочий пакет автоматики — `ae3lite/`.
+Прежний monolithic automation runtime удалён. Рабочий пакет автоматики — `ae3lite/`.
 
 ## 2. Жёсткие ограничения (инварианты из spec §2)
 
@@ -38,7 +38,7 @@ ae3lite/
   application/
     use_cases/      # create_task, claim_next, execute_task, finalize_task,
                     # reconcile_command, startup_recovery, two_tank_executor
-    adapters/       # legacy_intent_mapper
+    adapters/       # intent mapping adapter (фактическое имя модуля см. в каталоге)
   infrastructure/
     repositories/   # PgAutomationTaskRepository, PgZoneWorkflowRepository,
                     # PgZoneLease, PgAeCommandRepository
@@ -69,7 +69,7 @@ pending → claimed → running → waiting_command → completed
 
 ## 5. Политика cleanup
 
-1. Если новая функция готова — соответствующий legacy удаляется в той же итерации.
+1. Если новая функция готова — соответствующий устаревший код удаляется в той же итерации.
 2. Нельзя оставлять "временно отключенный" код.
 3. Любой неиспользуемый код, endpoint, флаг, тест — удалить.
 4. После крупного этапа обязателен cleanup-аудит.

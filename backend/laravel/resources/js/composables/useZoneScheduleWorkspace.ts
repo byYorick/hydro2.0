@@ -30,6 +30,15 @@ export interface TimelineDisplayItem {
   grouped?: boolean
 }
 
+interface DecisionDescriptorInput {
+  outcome?: string | null
+  degraded?: boolean | null
+  reasonCode?: string | null
+  reason?: string | null
+  errorCode?: string | null
+  details?: Record<string, unknown> | null
+}
+
 export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: ZoneScheduleWorkspaceDeps) {
   const { get } = deps
 
@@ -340,18 +349,57 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     return normalized || '—'
   }
 
+  function decisionLabel(outcome: string | null | undefined, degraded: boolean | null | undefined): string {
+    const normalized = String(outcome ?? '').trim().toLowerCase()
+    if (normalized === 'skip') return 'Пропуск'
+    if (normalized === 'degraded_run' || (normalized === 'run' && degraded)) return 'Деградированный запуск'
+    if (normalized === 'run') return 'Запуск'
+    if (normalized === 'fail') return 'Сбой decision-controller'
+    return normalized || 'Decision'
+  }
+
+  function decisionReasonLabel(reasonCode: string | null | undefined): string | null {
+    const normalized = String(reasonCode ?? '').trim().toLowerCase()
+    if (normalized === '') return null
+
+    const labels: Record<string, string> = {
+      irrigation_task_strategy_run: 'Стратегия task разрешила запуск по расписанию.',
+      irrigation_force_mode: 'Force path обходит decision-controller.',
+      smart_soil_target_missing: 'Целевой диапазон soil moisture не настроен, поэтому используется degraded path.',
+      smart_soil_telemetry_missing_or_stale: 'Нет свежей soil telemetry, поэтому используется degraded path.',
+      smart_soil_below_min: 'Средняя влажность ниже нижней границы.',
+      smart_soil_above_max: 'Средняя влажность выше верхней границы.',
+      smart_soil_within_band: 'Средняя влажность уже внутри целевого диапазона.',
+      irrigation_decision_strategy_unknown: 'Указана неизвестная стратегия decision-controller.',
+    }
+
+    return labels[normalized] ?? normalized.replace(/_/g, ' ')
+  }
+
   function timelinePrimaryLabel(step: ExecutionRun['timeline'][number] | null | undefined): string {
     if (!step) return 'событие'
+
+    const decision = asNonEmptyString(step.decision)
+    if (decision) {
+      return decisionLabel(decision, decision === 'degraded_run')
+    }
+
+    if (step.event_type === 'AE_TASK_STARTED') {
+      const stageLabel = asNonEmptyString(step.stage)
+      return stageLabel ?? 'Переход стадии'
+    }
+
+    if (step.event_type === 'AE_TASK_FAILED') {
+      return 'Ошибка выполнения'
+    }
 
     const details = isRecord(step.details) ? step.details : null
     const humanErrorCode = resolveHumanErrorMessage({ code: step.error_code }, null)
     const candidates = [
       step.reason_code,
-      step.stage,
       asNonEmptyString(details?.stage),
       asNonEmptyString(details?.current_stage),
       step.status,
-      step.decision,
       humanErrorCode,
       step.reason,
     ]
@@ -362,6 +410,62 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     }
 
     return 'событие'
+  }
+
+  function describeDecision(input: DecisionDescriptorInput): string | null {
+    const details = isRecord(input.details) ? input.details : null
+    const result = isRecord(details?.result) ? details.result : null
+    const reasonLabel = decisionReasonLabel(input.reasonCode)
+    const explicitReason = asNonEmptyString(input.reason)
+    const errorCode = asNonEmptyString(input.errorCode)
+
+    const infoParts: string[] = []
+    if (reasonLabel) {
+      infoParts.push(reasonLabel)
+    }
+    if (explicitReason && explicitReason !== reasonLabel) {
+      infoParts.push(explicitReason)
+    }
+
+    const zoneAverage = readDecisionNumber(details, result, ['zone_average_pct'])
+    if (zoneAverage !== null) {
+      infoParts.push(`Средняя влажность ${zoneAverage.toFixed(1)}%.`)
+    }
+
+    const spreadPct = readDecisionNumber(details, result, ['spread_pct'])
+    if (spreadPct !== null) {
+      infoParts.push(`Разбег сенсоров ${spreadPct.toFixed(1)}%.`)
+    }
+
+    const sensorCount = readDecisionNumber(details, result, ['sensor_count'])
+    const samples = readDecisionNumber(details, result, ['samples'])
+    if (sensorCount !== null || samples !== null) {
+      const telemetryBits: string[] = []
+      if (sensorCount !== null) telemetryBits.push(`сенсоров ${Math.round(sensorCount)}`)
+      if (samples !== null) telemetryBits.push(`samples ${Math.round(samples)}`)
+      infoParts.push(`Telemetry: ${telemetryBits.join(', ')}.`)
+    }
+
+    if (readDecisionBool(details, result, ['spread_alert']) === true) {
+      infoParts.push('Разбег сенсоров выше alert-порога.')
+    }
+
+    const requestedDurationSec = readDecisionNumber(details, result, ['requested_duration_sec'])
+    if (requestedDurationSec !== null) {
+      infoParts.push(`Запрошенная длительность ${Math.round(requestedDurationSec)} с.`)
+    }
+
+    const strategy = readDecisionString(details, result, ['strategy'])
+    if (strategy) {
+      infoParts.push(`Strategy: ${strategy}.`)
+    }
+
+    if (!reasonLabel && errorCode) {
+      const resolvedError = resolveHumanErrorMessage({ code: errorCode }, errorCode) || errorCode
+      infoParts.push(resolvedError)
+    }
+
+    return infoParts.length > 0 ? infoParts.join(' ') : null
   }
 
   function collapseTimeline(items: ExecutionRun['timeline'] = []): TimelineDisplayItem[] {
@@ -395,8 +499,23 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
   function timelineDetail(step: ExecutionRun['timeline'][number] | null | undefined, label: string): string | null {
     if (!step) return null
 
+    const decision = asNonEmptyString(step.decision)
+    if (decision) {
+      return describeDecision({
+        outcome: decision,
+        degraded: decision === 'degraded_run',
+        reasonCode: step.reason_code,
+        reason: step.reason,
+        errorCode: step.error_code,
+        details: step.details,
+      })
+    }
+
     const reason = asNonEmptyString(step.reason)
     if (reason && reason !== label) return reason
+
+    const reasonLabel = decisionReasonLabel(step.reason_code)
+    if (reasonLabel && reasonLabel !== label) return reasonLabel
 
     const errorCode = asNonEmptyString(step.error_code)
     if (errorCode && errorCode !== label) {
@@ -416,6 +535,55 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
 
   function asNonEmptyString(value: unknown): string | null {
     return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+  }
+
+  function readDecisionNumber(
+    details: Record<string, unknown> | null,
+    result: Record<string, unknown> | null,
+    keys: string[],
+  ): number | null {
+    for (const key of keys) {
+      const value = details?.[key] ?? result?.[key]
+      if (typeof value === 'number' && Number.isFinite(value)) return value
+      if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed)) return parsed
+      }
+    }
+
+    return null
+  }
+
+  function readDecisionBool(
+    details: Record<string, unknown> | null,
+    result: Record<string, unknown> | null,
+    keys: string[],
+  ): boolean | null {
+    for (const key of keys) {
+      const value = details?.[key] ?? result?.[key]
+      if (typeof value === 'boolean') return value
+      if (typeof value === 'number') return value !== 0
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase()
+        if (['true', '1', 'yes', 'on'].includes(normalized)) return true
+        if (['false', '0', 'no', 'off'].includes(normalized)) return false
+      }
+    }
+
+    return null
+  }
+
+  function readDecisionString(
+    details: Record<string, unknown> | null,
+    result: Record<string, unknown> | null,
+    keys: string[],
+  ): string | null {
+    for (const key of keys) {
+      const value = asNonEmptyString(details?.[key] ?? result?.[key])
+      if (value) return value
+    }
+
+    return null
   }
 
   return {
@@ -457,5 +625,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     statusVariant,
     controlModeLabel,
     laneLabel,
+    decisionLabel,
+    decisionReasonLabel,
+    describeDecision,
   }
 }

@@ -12,6 +12,7 @@ class Ae3IrrigationBridgeService
 {
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
+        private readonly ZoneAutomationIntentService $intentService,
     ) {
     }
 
@@ -42,6 +43,62 @@ class Ae3IrrigationBridgeService
         }
 
         return $decoded;
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
+    public function dispatchStartIrrigation(
+        int $zoneId,
+        array $payload,
+    ): array {
+        $mode = ($payload['mode'] ?? null) === 'force' ? 'force' : 'normal';
+        $source = trim((string) ($payload['source'] ?? 'laravel_api'));
+        $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
+        $requestedDurationSec = isset($payload['requested_duration_sec']) && is_numeric($payload['requested_duration_sec'])
+            ? max(1, (int) $payload['requested_duration_sec'])
+            : null;
+
+        $normalizedPayload = [
+            'mode' => $mode,
+            'source' => $source !== '' ? $source : 'laravel_api',
+            'requested_duration_sec' => $requestedDurationSec,
+            'idempotency_key' => $idempotencyKey,
+        ];
+
+        $this->intentService->upsertStartIrrigationIntent(
+            zoneId: $zoneId,
+            source: $normalizedPayload['source'],
+            idempotencyKey: $idempotencyKey,
+            mode: $mode,
+            requestedDurationSec: $requestedDurationSec,
+        );
+
+        try {
+            return $this->startIrrigation($zoneId, $normalizedPayload);
+        } catch (RequestException $e) {
+            $this->intentService->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: 'automation_engine_start_irrigation_http_error',
+                errorMessage: $e->getMessage(),
+            );
+
+            throw $e;
+        } catch (ConnectionException $e) {
+            $this->intentService->markIntentFailed(
+                zoneId: $zoneId,
+                idempotencyKey: $idempotencyKey,
+                errorCode: 'automation_engine_start_irrigation_connection_error',
+                errorMessage: $e->getMessage(),
+            );
+
+            throw $e;
+        }
     }
 
     /**

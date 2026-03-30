@@ -242,6 +242,10 @@ class TelemetryPublisher:
             return "FLOW_RATE"
         if channel_lower in ("solution_temp_c", "temp_solution", "solution_temp"):
             return "TEMPERATURE"
+        if channel_lower in ("level_clean_min", "level_clean_max", "level_solution_min", "level_solution_max"):
+            return "WATER_LEVEL_SWITCH"
+        if channel_lower in ("water_level",):
+            return "WATER_LEVEL"
 
         return channel_lower.upper()
     

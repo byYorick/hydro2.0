@@ -3,11 +3,12 @@ import { useCommands } from "@/composables/useCommands";
 import { useDashboardRealtimeFeed } from "@/composables/useDashboardRealtimeFeed";
 import { useTheme } from "@/composables/useTheme";
 import { useToast } from "@/composables/useToast";
+import { useApi } from "@/composables/useApi";
 import { logger } from "@/utils/logger";
 import type { Alert, Device, Greenhouse, Zone } from "@/types";
 import type { Recipe } from "@/types/Recipe";
 
-export type QuickAction = "PAUSE" | "RESUME" | "FORCE_IRRIGATION";
+export type QuickAction = "PAUSE" | "RESUME" | "START_IRRIGATION";
 export type TelemetryPeriod = "1h" | "24h" | "7d";
 
 export type TelemetryZone = Pick<Zone, "id" | "name" | "status"> & {
@@ -87,6 +88,7 @@ export function useDashboardPage({ dashboard }: UseDashboardPageOptions): {
   handleQuickAction: (zone: Zone, action: QuickAction) => Promise<void>;
 } {
   const { showToast } = useToast();
+  const { api } = useApi(showToast);
   const { sendZoneCommand } = useCommands(showToast);
   const { theme } = useTheme();
 
@@ -255,8 +257,11 @@ export function useDashboardPage({ dashboard }: UseDashboardPageOptions): {
         await sendZoneCommand(zoneId, "RESUME", {});
         showToast(`Зона "${zone.name}" запущена`, "success");
       } else {
-        await sendZoneCommand(zoneId, "FORCE_IRRIGATION", {});
-        showToast(`Запущен полив для зоны "${zone.name}"`, "success");
+        await api.post(`/api/zones/${zoneId}/start-irrigation`, {
+          mode: "normal",
+          source: "dashboard_quick_action",
+        });
+        showToast(`Запущен обычный полив для зоны "${zone.name}"`, "success");
       }
     } catch (error) {
       logger.error("[Dashboard] Failed to execute quick action:", error);

@@ -6,7 +6,7 @@
 обработку ошибок, синхронизацию состояний и правила безопасности.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -447,7 +447,7 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 ```
 
 Канонические статусы `command_response`: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`.
-Legacy-статусы `ACCEPTED` и `FAILED` запрещены.
+Статусы `ACCEPTED` и `FAILED` (вне канона) запрещены.
 Статус `SEND_FAILED` фиксируется на backend-слое при ошибке публикации и не приходит от ноды как `command_response`.
 
 ## 11.4. Подтверждение авто-остановки наполнения (2-бака)
@@ -607,7 +607,7 @@ Backend обязан:
 - Если узлы повышают version → backend валидирует node_type/hw_version.
 - `node_type` в payload-ах (`node_hello`, registration, config-report metadata) допускает только канонические
   значения: `ph|ec|climate|irrig|light|relay|water_sensor|recirculation|unknown`.
-- Legacy-алиасы `node_type` (`pump_node`, `irrigation`, `climate_node`, `lighting_node` и т.п.) не поддерживаются.
+- Алиасы `node_type` вне канона (`pump_node`, `irrigation`, `climate_node`, `lighting_node` и т.п.) не поддерживаются.
 
 ---
 

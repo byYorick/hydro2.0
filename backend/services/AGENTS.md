@@ -1,7 +1,7 @@
 # AGENTS.md
 # Правила для ИИ-агентов (backend/services)
 
-**Дата обновления:** 2026-02-10
+**Дата обновления:** 2026-03-30
 **Область:** `backend/services/*`
 
 ## 1) Общие правила
@@ -52,7 +52,7 @@
 
 ## 6) Что запрещено
 
-- Возвращать runtime planner/dispatch обратно в Python `scheduler`.
+- Вводить отдельный процесс/контейнер планировщика вне Laravel для production dispatch.
 - Обходить `history-logger` при отправке команд на узлы.
-- Использовать legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` в новом runtime.
+- Использовать удалённые endpoint'ы `POST /scheduler/task` и `GET /scheduler/task/{task_id}` в новом runtime.
 - Изменять роли/авторизацию без явной причины и тестов.

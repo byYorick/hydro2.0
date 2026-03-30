@@ -19,14 +19,14 @@
 
 ### Runtime cleanup guard
 
-Для проверки, что рабочий стек не содержит legacy automation-config/runtime хвостов:
+Для проверки, что рабочий стек не содержит хвостов pre-cutover automation-config/runtime:
 
 ```bash
 backend/laravel/scripts/check-automation-authority-cleanup.sh
 ```
 
 Guard используется в CI и валит сборку, если в репозиторий возвращаются:
-1. legacy automation routes/controllers/composables;
+1. запрещённые pre-cutover automation routes/controllers/composables;
 2. запрещённые runtime/env paths;
 3. obsolete authority обходы после cutover.
 
@@ -82,7 +82,7 @@ cp tests/e2e/.env.e2e.example tests/e2e/.env.e2e
 - `LARAVEL_PORT` - порт Laravel API (по умолчанию 8081)
 - `POSTGRES_PORT` - порт PostgreSQL (по умолчанию 5433)
 - `MQTT_PORT` - порт MQTT брокера (по умолчанию 1884)
-- `LARAVEL_API_TOKEN` - опционально (legacy), по умолчанию используется AuthClient
+- `LARAVEL_API_TOKEN` — опционально (прямой токен); по умолчанию используется AuthClient
 
 ## Ручной запуск
 

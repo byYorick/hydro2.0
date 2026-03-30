@@ -6,7 +6,7 @@
 **Статус:** Канонично для Laravel runtime, AE3 read-model и web-admin
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy automation config endpoints, Inertia authority props и старые authority-таблицы выведены из runtime read-path; обратная совместимость не поддерживается.
+Breaking-change: прежние automation config endpoints, Inertia authority props и старые authority-таблицы не входят в runtime read-path; обратная совместимость не поддерживается.
 
 ---
 
@@ -222,11 +222,11 @@ AE3 direct SQL read-model использует:
 - `automation_effective_bundles`
 - `grow_cycles.settings.bundle_revision`
 
-AE3 не должен собирать runtime-конфиг из legacy таблиц или `env()` business settings.
+AE3 не должен собирать runtime-конфиг из таблиц вне authority или из `env()` business settings.
 
 ### 6.3 history-logger/common
 
-Python common/runtime helpers могут читать system policy из authority documents, но не должны использовать legacy `system_automation_settings`.
+Python common/runtime helpers могут читать system policy из authority documents, но не должны опираться на `system_automation_settings` как на источник истины.
 
 ---
 
@@ -266,4 +266,3 @@ Post-create запись `phase_overrides` вне этого pipeline не до�
 - `REST_API_REFERENCE.md`
 - `../ARCHITECTURE_FLOWS.md`
 - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
-- `AUTOMATION_CONFIG_AUTHORITY_TODO.md`

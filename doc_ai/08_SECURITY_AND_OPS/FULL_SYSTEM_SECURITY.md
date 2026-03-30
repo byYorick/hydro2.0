@@ -3,11 +3,11 @@
 # Auth • Network Security • Command Safety • Data Protection • AI Restrictions • Infrastructure Hardening
 
 Документ описывает полную архитектуру безопасности системы 2.0:
-Laravel + Python Scheduler + ESP32 Узлы + MQTT + Postgres + UI + AI.
+Laravel + Python-сервисы (AE, history-logger, mqtt-bridge) + ESP32-узлы + MQTT + Postgres + UI + AI.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 

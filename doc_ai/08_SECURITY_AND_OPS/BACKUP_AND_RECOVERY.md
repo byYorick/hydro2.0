@@ -7,7 +7,7 @@
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -17,7 +17,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 
 1. **PostgreSQL** — основная БД (критически важная)
 2. **Laravel Backend** — конфигурации, .env, файлы OTA
-3. **Python Scheduler** — конфигурации и secrets
+3. **Python-сервисы** (automation-engine, history-logger, mqtt-bridge) — конфигурации и secrets
 4. **MQTT Broker** — ACL, пароли
 5. **ESP32 узлы** — прошивки + конфигурация NVS
 6. **Docker** — тома, образы, сеть
@@ -87,7 +87,7 @@ zip -r laravel_backup.zip .env storage/app/ota storage/app/public composer.lock
 
 - `.env`
 - конфиг nodes secrets (`nodes.json`)
-- scheduler config (`config.yaml`)
+- конфиги сервисов (`automation-engine`, `history-logger`, `mqtt-bridge`, при наличии)
 
 ## 4.2. Команда:
 
@@ -207,12 +207,12 @@ php artisan migrate --force
 
 ---
 
-## 9.3. Восстановление Python Service
+## 9.3. Восстановление Python-сервисов
 
 ```
-unzip python.zip
-cp .env /srv/python
-systemctl restart python_scheduler
+unzip python-services.zip
+# Развернуть конфиги для automation-engine / history-logger / mqtt-bridge
+docker compose up -d automation-engine history-logger mqtt-bridge
 ```
 
 ---

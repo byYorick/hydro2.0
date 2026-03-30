@@ -13,7 +13,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 - backend и AE3 передают наружу `error_code`;
 - frontend показывает локализованное описание по коду;
-- raw `error_message` считается debug-context и legacy fallback, но не business contract.
+- raw `error_message` считается debug-context и запасным каналом без строгого контракта, но не business contract.
 
 Полный машиночитаемый source of truth:
 
@@ -61,10 +61,10 @@ Frontend показывает ошибку в таком порядке:
 
 1. `human_error_message`, если backend уже прислал локализованное описание.
 2. `error_code` -> lookup в `error_codes.json`.
-3. Legacy raw-message translation для старых записей.
+3. Raw-message translation для старых записей.
 4. Безопасный fallback `Внутренняя ошибка системы (код: ...)`.
 
-## Legacy fallback
+## Fallback на сырые сообщения
 
 На переходный период сохраняется compatibility mapping для старых сырых сообщений, например:
 

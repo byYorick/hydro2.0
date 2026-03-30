@@ -253,7 +253,7 @@ class WorkflowRouter:
         deadline = (
             task.workflow.stage_deadline_at
             if same_stage
-            else self._compute_deadline(stage_def=next_def, runtime=runtime, now=now)
+            else self._compute_deadline(task=task, stage_def=next_def, runtime=runtime, now=now)
         )
         clean_fill_cycle = (
             outcome.clean_fill_cycle
@@ -402,9 +402,20 @@ class WorkflowRouter:
     # ── Helpers ─────────────────────────────────────────────────────
 
     def _compute_deadline(
-        self, *, stage_def: Any, runtime: Mapping[str, Any], now: datetime,
+        self, *, task: Any, stage_def: Any, runtime: Mapping[str, Any], now: datetime,
     ) -> Optional[datetime]:
         """Compute stage_deadline_at from runtime config timeout keys."""
+        if stage_def.name == "irrigation_check":
+            irrigation_runtime = runtime.get("irrigation_execution")
+            irrigation_runtime = irrigation_runtime if isinstance(irrigation_runtime, Mapping) else {}
+            requested_duration_sec = getattr(task, "irrigation_requested_duration_sec", None)
+            if requested_duration_sec is None:
+                requested_duration_sec = runtime.get("irrigation_requested_duration_sec")
+            if requested_duration_sec is None:
+                requested_duration_sec = irrigation_runtime.get("duration_sec")
+            if requested_duration_sec is None:
+                return None
+            return now + timedelta(seconds=int(requested_duration_sec))
         if stage_def.timeout_key is None:
             return None
         timeout_sec = runtime.get(stage_def.timeout_key)

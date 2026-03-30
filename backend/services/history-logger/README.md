@@ -402,7 +402,7 @@ docker run -p 9300:9300 history-logger
 Prometheus метрики.
 
 ### POST /nodes/{node_uid}/config
-Публикация NodeConfig в MQTT (legacy/служебный сценарий).
+Публикация NodeConfig в MQTT (служебный сценарий, вне основного provisioning-flow).
 
 **Примечание:** В актуальном флоу конфиг не пушится с сервера. Ноды отправляют
 `config_report` при подключении, а history-logger сохраняет его в БД.

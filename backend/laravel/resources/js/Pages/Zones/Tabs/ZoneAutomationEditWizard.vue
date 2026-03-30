@@ -119,6 +119,37 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   if (form.startupCleanFillRetryCycles === undefined || !Number.isFinite(Number(form.startupCleanFillRetryCycles))) {
     form.startupCleanFillRetryCycles = automationDefaults.value.water_startup_clean_fill_retry_cycles
   }
+  if (form.irrigationDecisionStrategy !== 'task' && form.irrigationDecisionStrategy !== 'smart_soil_v1') {
+    form.irrigationDecisionStrategy = automationDefaults.value.water_irrigation_decision_strategy
+  }
+  if (
+    form.irrigationDecisionLookbackSeconds === undefined ||
+    !Number.isFinite(Number(form.irrigationDecisionLookbackSeconds))
+  ) {
+    form.irrigationDecisionLookbackSeconds = automationDefaults.value.water_irrigation_decision_lookback_sec
+  }
+  if (form.irrigationDecisionMinSamples === undefined || !Number.isFinite(Number(form.irrigationDecisionMinSamples))) {
+    form.irrigationDecisionMinSamples = automationDefaults.value.water_irrigation_decision_min_samples
+  }
+  if (
+    form.irrigationDecisionStaleAfterSeconds === undefined ||
+    !Number.isFinite(Number(form.irrigationDecisionStaleAfterSeconds))
+  ) {
+    form.irrigationDecisionStaleAfterSeconds = automationDefaults.value.water_irrigation_decision_stale_after_sec
+  }
+  if (
+    form.irrigationDecisionHysteresisPct === undefined ||
+    !Number.isFinite(Number(form.irrigationDecisionHysteresisPct))
+  ) {
+    form.irrigationDecisionHysteresisPct = automationDefaults.value.water_irrigation_decision_hysteresis_pct
+  }
+  if (
+    form.irrigationDecisionSpreadAlertThresholdPct === undefined ||
+    !Number.isFinite(Number(form.irrigationDecisionSpreadAlertThresholdPct))
+  ) {
+    form.irrigationDecisionSpreadAlertThresholdPct =
+      automationDefaults.value.water_irrigation_decision_spread_alert_threshold_pct
+  }
   if (
     form.irrigationRecoveryMaxContinueAttempts === undefined ||
     !Number.isFinite(Number(form.irrigationRecoveryMaxContinueAttempts))
@@ -127,6 +158,15 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   }
   if (form.irrigationRecoveryTimeoutSeconds === undefined || !Number.isFinite(Number(form.irrigationRecoveryTimeoutSeconds))) {
     form.irrigationRecoveryTimeoutSeconds = automationDefaults.value.water_irrigation_recovery_timeout_sec
+  }
+  if (form.irrigationAutoReplayAfterSetup === undefined) {
+    form.irrigationAutoReplayAfterSetup = automationDefaults.value.water_irrigation_auto_replay_after_setup
+  }
+  if (form.irrigationMaxSetupReplays === undefined || !Number.isFinite(Number(form.irrigationMaxSetupReplays))) {
+    form.irrigationMaxSetupReplays = automationDefaults.value.water_irrigation_max_setup_replays
+  }
+  if (form.stopOnSolutionMin === undefined) {
+    form.stopOnSolutionMin = automationDefaults.value.water_irrigation_stop_on_solution_min
   }
   if (form.prepareToleranceEcPct === undefined || !Number.isFinite(Number(form.prepareToleranceEcPct))) {
     form.prepareToleranceEcPct = automationDefaults.value.water_prepare_tolerance_ec_pct
@@ -161,8 +201,14 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   form.startupSolutionFillTimeoutSeconds = clamp(Math.round(form.startupSolutionFillTimeoutSeconds), 30, 86400)
   form.startupPrepareRecirculationTimeoutSeconds = clamp(Math.round(form.startupPrepareRecirculationTimeoutSeconds), 30, 86400)
   form.startupCleanFillRetryCycles = clamp(Math.round(form.startupCleanFillRetryCycles), 0, 20)
+  form.irrigationDecisionLookbackSeconds = clamp(Math.round(form.irrigationDecisionLookbackSeconds), 60, 86400)
+  form.irrigationDecisionMinSamples = clamp(Math.round(form.irrigationDecisionMinSamples), 1, 100)
+  form.irrigationDecisionStaleAfterSeconds = clamp(Math.round(form.irrigationDecisionStaleAfterSeconds), 30, 86400)
+  form.irrigationDecisionHysteresisPct = clamp(form.irrigationDecisionHysteresisPct, 0, 100)
+  form.irrigationDecisionSpreadAlertThresholdPct = clamp(form.irrigationDecisionSpreadAlertThresholdPct, 0, 100)
   form.irrigationRecoveryMaxContinueAttempts = clamp(Math.round(form.irrigationRecoveryMaxContinueAttempts), 1, 30)
   form.irrigationRecoveryTimeoutSeconds = clamp(Math.round(form.irrigationRecoveryTimeoutSeconds), 30, 86400)
+  form.irrigationMaxSetupReplays = clamp(Math.round(form.irrigationMaxSetupReplays), 0, 10)
   form.prepareToleranceEcPct = clamp(form.prepareToleranceEcPct, 0.1, 100)
   form.prepareTolerancePhPct = clamp(form.prepareTolerancePhPct, 0.1, 100)
   form.correctionMaxEcCorrectionAttempts = clamp(Math.round(form.correctionMaxEcCorrectionAttempts), 1, 50)

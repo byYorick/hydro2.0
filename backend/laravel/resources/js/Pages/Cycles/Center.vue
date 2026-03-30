@@ -328,6 +328,14 @@
               <Button
                 v-if="canIssueZoneCommands"
                 size="sm"
+                variant="secondary"
+                @click="openActionModal(zone, 'START_IRRIGATION')"
+              >
+                Полив
+              </Button>
+              <Button
+                v-if="canIssueZoneCommands"
+                size="sm"
                 variant="outline"
                 @click="openActionModal(zone, 'FORCE_IRRIGATION')"
               >
@@ -455,7 +463,6 @@ import { translateStatus } from '@/utils/i18n'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
-import { useCommands } from '@/composables/useCommands'
 import {
   useCycleCenterView,
   type Greenhouse,
@@ -479,7 +486,6 @@ const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 
 
 const { api } = useApi()
 const { showToast } = useToast()
-const { sendZoneCommand } = useCommands(showToast)
 
 const zonesRef = computed(() => props.zones)
 const {
@@ -522,6 +528,5 @@ const {
   api,
   showToast,
   reloadCenter,
-  sendZoneCommand,
 })
 </script>

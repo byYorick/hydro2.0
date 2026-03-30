@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -43,12 +44,30 @@ class ZoneCommandForceIrrigationAe3Test extends TestCase
             ->assertJsonPath('data.task_id', '991')
             ->assertJsonPath('data.command_id', 'ae3-task-991');
 
+        $intentRow = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($intentRow);
+        $this->assertSame('IRRIGATE_ONCE', $intentRow->intent_type);
+        $this->assertSame('pending', $intentRow->status);
+        $intentPayloadRaw = $intentRow->payload ?? null;
+        $intentPayload = is_string($intentPayloadRaw)
+            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
+        $this->assertSame('zone_commands_force_irrigation', $intentPayload['source'] ?? null);
+        $this->assertSame('irrigation_start', $intentPayload['task_type'] ?? null);
+        $this->assertSame('irrigation_start', $intentPayload['workflow'] ?? null);
+        $this->assertSame('force', $intentPayload['mode'] ?? null);
+        $this->assertSame(90, $intentPayload['requested_duration_sec'] ?? null);
+
         Http::assertSent(function (HttpRequest $request) use ($zone): bool {
             $body = $request->data();
 
             return $request->url() === "http://automation-engine:9405/zones/{$zone->id}/start-irrigation"
                 && $request->hasHeader('Authorization', 'Bearer test-scheduler-token')
                 && ($body['mode'] ?? null) === 'force'
+                && ($body['source'] ?? null) === 'zone_commands_force_irrigation'
                 && ($body['requested_duration_sec'] ?? null) === 90;
         });
     }

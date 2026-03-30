@@ -8,14 +8,14 @@
 - ✅ Новый мастер создания циклов (`GrowCycles/Wizard.vue`)
 - ✅ Центр циклов (`Cycles/Center.vue`) с управлением GrowCycle
 - ✅ Версионирование рецептов в UI
-- ✅ Удалены legacy компоненты (AttachRecipeModal, etc.)
+- ✅ Удалены устаревшие компоненты (AttachRecipeModal, etc.)
 - ✅ Новые API endpoints для циклов и ревизий
 - ✅ Scheduler workspace cutover: `ZoneSchedulerTab.vue` работает через `schedule-workspace` / `executions`
 Здесь собраны принципы UI/UX, структура интерфейса, экраны, реалтайм-механики, компоненты, state‑management, интеграция с backend и ИИ.
 
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
-Breaking-change: legacy форматы/алиасы удалены, обратная совместимость не поддерживается.
+Breaking-change: обратная совместимость со старыми форматами и алиасами не поддерживается.
 
 ---
 
@@ -141,7 +141,7 @@ Canonical recipe UX:
 
 Экран `Greenhouses/Show.vue` теперь использует ту же greenhouse-climate форму, что и setup wizard:
 
-- legacy modal массовой отправки `FORCE_CLIMATE` по зонам удалён;
+- устаревший modal массовой отправки `FORCE_CLIMATE` по зонам удалён;
 - greenhouse climate сохраняется как отдельный greenhouse profile + greenhouse bindings;
 - runtime dispatcher для greenhouse climate остаётся `WIP`, но UI уже редактирует и показывает сохранённый профиль.
 

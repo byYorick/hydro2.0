@@ -330,9 +330,9 @@
                   variant="outline"
                   class="text-xs text-[color:var(--accent-green)] border-[color:var(--badge-success-border)] hover:bg-[color:var(--badge-success-bg)]"
                   :disabled="isQuickActionLoading(zone.id)"
-                  @click="handleQuickAction(zone, 'FORCE_IRRIGATION')"
+                  @click="handleQuickAction(zone, 'START_IRRIGATION')"
                 >
-                  <template v-if="isQuickActionLoading(zone.id, 'FORCE_IRRIGATION')">
+                  <template v-if="isQuickActionLoading(zone.id, 'START_IRRIGATION')">
                     <span class="inline-flex items-center gap-1">
                       <svg
                         class="w-3.5 h-3.5 animate-spin text-[color:var(--badge-success-text)]"
