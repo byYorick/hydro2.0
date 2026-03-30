@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 
 from ae3lite.application.use_cases.execute_task import TASK_EXECUTION_TIMEOUT_CANCEL_MSG
 from ae3lite.infrastructure.metrics import ACTIVE_TASKS, TICK_DURATION, TICK_ERRORS, ZONE_LEASE_LOST, ZONE_LEASE_RELEASE_FAILED
-from common.infra_alerts import send_infra_alert
+from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 
 
 class Ae3RuntimeWorker:
@@ -167,36 +167,48 @@ class Ae3RuntimeWorker:
                             task.id,
                         )
                     released = await self._zone_lease_repository.release(zone_id=task.zone_id, owner=self._owner)
-                    if not released:
-                        self._logger.warning(
-                            "AE3 runtime failed to release zone lease: zone_id=%s owner=%s task_id=%s",
-                            task.zone_id,
-                            self._owner,
-                            task.id,
-                        )
-                        ZONE_LEASE_RELEASE_FAILED.labels(zone_id=str(task.zone_id)).inc()
-                        try:
-                            await send_infra_alert(
-                                code="ae3_zone_lease_release_failed",
-                                alert_type="AE3 Zone Lease Release Failed",
-                                message="Zone lease could not be released after task completion.",
-                                severity="error",
-                                zone_id=int(task.zone_id),
-                                service="automation-engine",
-                                component="worker:lease",
-                                details={
-                                    "task_id": int(task.id),
-                                    "owner": self._owner,
-                                    "topology": str(getattr(task, "topology", "")),
-                                    "message": "Zone lease could not be released after task completion — zone may be locked.",
-                                },
-                            )
-                        except Exception:
-                            self._logger.warning(
-                                "AE3 failed to send lease_release_failed alert zone_id=%s",
+                    if released:
+                        await self._resolve_zone_lease_release_alert(task=task)
+                    else:
+                        lease_after_release = await self._zone_lease_repository.get(zone_id=task.zone_id)
+                        if lease_after_release is None:
+                            self._log_debug(
+                                "AE3 runtime lease already absent during release: zone_id=%s owner=%s task_id=%s",
                                 task.zone_id,
-                                exc_info=True,
+                                self._owner,
+                                task.id,
                             )
+                            await self._resolve_zone_lease_release_alert(task=task)
+                        else:
+                            self._logger.warning(
+                                "AE3 runtime failed to release zone lease: zone_id=%s owner=%s task_id=%s",
+                                task.zone_id,
+                                self._owner,
+                                task.id,
+                            )
+                            ZONE_LEASE_RELEASE_FAILED.labels(zone_id=str(task.zone_id)).inc()
+                            try:
+                                await send_infra_alert(
+                                    code="ae3_zone_lease_release_failed",
+                                    alert_type="AE3 Zone Lease Release Failed",
+                                    message="Zone lease could not be released after task completion.",
+                                    severity="error",
+                                    zone_id=int(task.zone_id),
+                                    service="automation-engine",
+                                    component="worker:lease",
+                                    details={
+                                        "task_id": int(task.id),
+                                        "owner": self._owner,
+                                        "topology": str(getattr(task, "topology", "")),
+                                        "message": "Zone lease could not be released after task completion — zone may be locked.",
+                                    },
+                                )
+                            except Exception:
+                                self._logger.warning(
+                                    "AE3 failed to send lease_release_failed alert zone_id=%s",
+                                    task.zone_id,
+                                    exc_info=True,
+                                )
 
                 if timed_out:
                     if intent_id > 0:
@@ -224,6 +236,29 @@ class Ae3RuntimeWorker:
         finally:
             self._last_drain_exit_ok = drain_ok
             self._last_drain_exit_reason = drain_reason
+
+    async def _resolve_zone_lease_release_alert(self, *, task: Any) -> None:
+        try:
+            await send_infra_resolved_alert(
+                code="ae3_zone_lease_release_failed",
+                alert_type="AE3 Zone Lease Release Failed",
+                message="Zone lease is no longer present after task completion.",
+                zone_id=int(task.zone_id),
+                service="automation-engine",
+                component="worker:lease",
+                details={
+                    "task_id": int(task.id),
+                    "owner": self._owner,
+                    "topology": str(getattr(task, "topology", "")),
+                    "message": "Zone lease is no longer present after task completion.",
+                },
+            )
+        except Exception:
+            self._logger.warning(
+                "AE3 failed to send lease_release_resolved alert zone_id=%s",
+                task.zone_id,
+                exc_info=True,
+            )
 
     async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
         """Periodically extend zone lease while task is executing (heartbeat at 1/3 of TTL)."""

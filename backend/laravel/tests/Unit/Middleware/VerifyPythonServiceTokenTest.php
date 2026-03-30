@@ -172,6 +172,26 @@ class VerifyPythonServiceTokenTest extends TestCase
         $this->assertTrue((bool) $serviceAuthFlag);
     }
 
+    public function test_valid_service_token_short_circuits_before_sanctum_check(): void
+    {
+        Config::set('services.python_bridge.token', 'test-token');
+        $this->truncateUsers();
+
+        $request = Request::create('/api/system/config/full', 'GET');
+        $request->headers->set('Authorization', 'Bearer test-token');
+        $request->headers->set('Accept', 'application/json');
+
+        Auth::shouldReceive('guard')
+            ->with('sanctum')
+            ->never();
+
+        $response = $this->middleware->handle($request, function ($req) {
+            return response()->json(['status' => 'ok']);
+        });
+
+        $this->assertEquals(200, $response->getStatusCode());
+    }
+
     public function test_rejects_when_no_tokens_configured(): void
     {
         Config::set('services.python_bridge.token', null);

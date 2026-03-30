@@ -795,6 +795,98 @@ async def test_runtime_worker_continues_draining_after_timeout_without_extra_kic
 
 
 @pytest.mark.asyncio
+async def test_runtime_worker_does_not_warn_when_lease_was_already_removed_during_cleanup() -> None:
+    warnings: list[tuple] = []
+    debug_messages: list[tuple] = []
+    resolved_calls: list[dict[str, object]] = []
+
+    task = SimpleNamespace(
+        id=901,
+        zone_id=191,
+        topology="generic_cycle_start",
+        intent_id=0,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimOnce:
+        def __init__(self) -> None:
+            self._used = False
+
+        async def run(self, **kwargs):
+            if self._used:
+                return None
+            self._used = True
+            return task, None
+
+    class _ExecuteImmediateDone:
+        async def run(self, *, task, now):
+            return SimpleNamespace(
+                id=task.id,
+                zone_id=task.zone_id,
+                topology=task.topology,
+                intent_id=task.intent_id,
+                status="completed",
+                error_code=None,
+                error_message=None,
+                is_active=False,
+            )
+
+    class _ZoneLeaseRepoMissingAfterRelease:
+        async def release(self, *, zone_id, owner):
+            return False
+
+        async def get(self, *, zone_id):
+            return None
+
+    async def _noop(**kwargs):
+        return None
+
+    async def _record_resolved_alert(**kwargs):
+        resolved_calls.append(kwargs)
+        return True
+
+    import ae3lite.runtime.worker as worker_module
+
+    original_resolved = worker_module.send_infra_resolved_alert
+    worker_module.send_infra_resolved_alert = _record_resolved_alert
+    try:
+        worker = Ae3RuntimeWorker(
+            owner="worker-lease-cleanup-test",
+            claim_next_task_use_case=_ClaimOnce(),
+            idle_poll_interval_sec=0.05,
+            execute_task_use_case=_ExecuteImmediateDone(),
+            startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+            zone_lease_repository=_ZoneLeaseRepoMissingAfterRelease(),
+            zone_intent_repository=_MockIntentRepository(mark_terminal_calls=[]),
+            spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
+            now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+            logger=type(
+                "Logger",
+                (),
+                {
+                    "debug": staticmethod(lambda *args, **kwargs: debug_messages.append(args)),
+                    "warning": staticmethod(lambda *args, **kwargs: warnings.append(args)),
+                    "error": staticmethod(lambda *args, **kwargs: None),
+                },
+            )(),
+            max_task_execution_sec=0.5,
+        )
+
+        await worker._drain_pending_tasks()
+    finally:
+        worker_module.send_infra_resolved_alert = original_resolved
+
+    assert warnings == []
+    assert any("lease already absent during release" in str(args[0]) for args in debug_messages)
+    assert len(resolved_calls) == 1
+    assert resolved_calls[0]["code"] == "ae3_zone_lease_release_failed"
+    assert resolved_calls[0]["zone_id"] == 191
+
+
+@pytest.mark.asyncio
 async def test_runtime_worker_health_reports_unexpected_clean_exit() -> None:
     worker = _build_noop_worker(
         spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),

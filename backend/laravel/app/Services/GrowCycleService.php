@@ -951,6 +951,15 @@ class GrowCycleService
             $cycle->refresh();
 
             $zone = $cycle->zone;
+            $this->cancelGrowCycleStartRuntimeState(
+                $cycle,
+                $zone,
+                'grow_cycle_harvested',
+                sprintf(
+                    'Grow cycle %d harvested before AE3 start-cycle task completed',
+                    (int) $cycle->id
+                )
+            );
             $this->syncZoneStatus($zone, 'NEW');
 
             // Записываем событие в zone_events
@@ -1027,7 +1036,12 @@ class GrowCycleService
         });
     }
 
-    protected function cancelGrowCycleStartRuntimeState(GrowCycle $cycle, Zone $zone): void
+    protected function cancelGrowCycleStartRuntimeState(
+        GrowCycle $cycle,
+        Zone $zone,
+        string $errorCode = 'grow_cycle_aborted',
+        ?string $errorMessage = null
+    ): void
     {
         if (strtolower(trim((string) $zone->automation_runtime)) !== 'ae3') {
             return;
@@ -1041,9 +1055,8 @@ class GrowCycleService
 
         $idempotencyKey = $this->buildGrowCycleStartIdempotencyKey($zoneId, $cycleId);
         $now = Carbon::now('UTC')->setMicroseconds(0);
-        $errorCode = 'grow_cycle_aborted';
-        $errorMessage = sprintf(
-            'Grow cycle %d aborted before AE3 start-cycle task completed',
+        $errorMessage ??= sprintf(
+            'Grow cycle %d cancelled before AE3 start-cycle task completed',
             $cycleId
         );
 

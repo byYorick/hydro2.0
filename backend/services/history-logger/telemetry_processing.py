@@ -99,6 +99,20 @@ def _is_sensor_fk_error(error: Exception) -> bool:
     )
 
 
+async def _filter_existing_sensor_ids(sensor_ids: list[int]) -> set[int]:
+    if not sensor_ids:
+        return set()
+    rows = await fetch(
+        """
+        SELECT id
+        FROM sensors
+        WHERE id = ANY($1::bigint[])
+        """,
+        sensor_ids,
+    )
+    return {int(row["id"]) for row in rows if row.get("id") is not None}
+
+
 def _normalize_metric_type(metric_type: str) -> str:
     return (metric_type or "").strip().upper()
 
@@ -1776,6 +1790,31 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
     if not resolved_with_sensor:
         return
 
+    unique_sensor_ids = sorted({
+        int(item["sensor_id"])
+        for item in resolved_with_sensor
+        if item.get("sensor_id") is not None
+    })
+    existing_sensor_ids = await _filter_existing_sensor_ids(unique_sensor_ids)
+    if len(existing_sensor_ids) != len(unique_sensor_ids):
+        stale_sensor_ids = sorted(set(unique_sensor_ids) - existing_sensor_ids)
+        logger.warning(
+            "Dropping telemetry samples for stale sensor cache entries",
+            extra={"stale_sensor_ids": stale_sensor_ids},
+        )
+        fresh_items: list[dict] = []
+        for item in resolved_with_sensor:
+            sensor_id = int(item["sensor_id"])
+            if sensor_id in existing_sensor_ids:
+                fresh_items.append(item)
+                continue
+            _sensor_cache.pop(item["sensor_key"], None)
+            TELEMETRY_DROPPED.labels(reason="stale_sensor_cache").inc()
+        resolved_with_sensor = fresh_items
+
+    if not resolved_with_sensor:
+        return
+
     broadcast_groups: dict[
         tuple[int, str, Optional[int], Optional[str]], list[dict]
     ] = {}
@@ -1817,7 +1856,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     WITH incoming AS (
                         SELECT *
                         FROM UNNEST(
-                            $1::integer[],
+                            $1::bigint[],
                             $2::double precision[],
                             $3::timestamp[],
                             $4::text[],
@@ -1891,9 +1930,12 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     )
 
     processed_count = 0
-    values_list = []
-    params_list = []
-    param_index = 1
+    sensor_ids: list[int] = []
+    sample_ts_values: list[datetime] = []
+    zone_ids: list[int | None] = []
+    sample_values: list[float] = []
+    qualities: list[str] = []
+    metadata_values: list[dict | None] = []
     for item in resolved_with_sensor:
         sample = item["sample"]
         metadata = {
@@ -1907,32 +1949,55 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             metadata.pop("channel", None)
         if metadata and not metadata.get("node_uid"):
             metadata.pop("node_uid", None)
-        values_list.append(
-            f"(${param_index}, ${param_index + 1}, ${param_index + 2}, "
-            f"${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
-        )
-        params_list.extend(
-            [
-                item["sensor_id"],
-                _normalize_ts_for_db(sample.ts),
-                item["zone_id"],
-                sample.value,
-                "GOOD",
-                metadata or None,
-            ]
-        )
-        param_index += 6
+        sensor_ids.append(int(item["sensor_id"]))
+        sample_ts_values.append(_normalize_ts_for_db(sample.ts))
+        zone_ids.append(int(item["zone_id"]) if item["zone_id"] is not None else None)
+        sample_values.append(sample.value)
+        qualities.append("GOOD")
+        metadata_values.append(metadata or None)
 
-    if values_list:
-        query = f"""
+    if sensor_ids:
+        query = """
+            WITH incoming (sensor_id, ts, zone_id, value, quality, metadata) AS (
+                SELECT *
+                FROM UNNEST(
+                    $1::bigint[],
+                    $2::timestamp[],
+                    $3::bigint[],
+                    $4::double precision[],
+                    $5::text[],
+                    $6::jsonb[]
+                ) AS t(sensor_id, ts, zone_id, value, quality, metadata)
+            )
             INSERT INTO telemetry_samples (
                 sensor_id, ts, zone_id, value, quality, metadata
             )
-            VALUES {', '.join(values_list)}
+            SELECT
+                incoming.sensor_id,
+                incoming.ts,
+                incoming.zone_id,
+                incoming.value,
+                incoming.quality,
+                incoming.metadata
+            FROM incoming
+            JOIN sensors s
+              ON s.id = incoming.sensor_id
+             AND s.zone_id = incoming.zone_id
         """
         try:
-            await execute(query, *params_list)
-            processed_count = len(resolved_with_sensor)
+            result = await execute(
+                query,
+                sensor_ids,
+                sample_ts_values,
+                zone_ids,
+                sample_values,
+                qualities,
+                metadata_values,
+            )
+            try:
+                processed_count = int(str(result).rsplit(" ", 1)[-1])
+            except Exception:
+                processed_count = len(resolved_with_sensor)
             logger.info(
                 "[TELEMETRY] Written: count=%s, unique_sensors=%s",
                 processed_count,

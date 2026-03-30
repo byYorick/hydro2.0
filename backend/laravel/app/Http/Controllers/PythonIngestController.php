@@ -354,17 +354,17 @@ class PythonIngestController extends Controller
         }, 3);
 
         if (! $command) {
-            Log::warning('Python ingest commandAck command not found', [
+            Log::info('Python ingest commandAck command not found, treating as idempotent noop', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
                 'normalized_status' => $normalizedStatus,
             ]);
 
             return Response::json([
-                'status' => 'error',
-                'code' => 'COMMAND_NOT_FOUND',
-                'message' => 'Command not found',
-            ], 404);
+                'status' => 'ok',
+                'message' => 'Command not found; ack ignored',
+                'code' => 'COMMAND_NOT_FOUND_IGNORED',
+            ]);
         }
 
         if ($skipMessage !== null) {

@@ -582,7 +582,11 @@ class PgAutomationTaskRepository:
         metadata: Mapping[str, Any] | None = None,
         now: datetime,
     ) -> None:
-        """INSERT into ae_stage_transitions (append-only audit log)."""
+        """INSERT into ae_stage_transitions (append-only audit log).
+
+        If the task was already removed by cleanup, skip the transition silently.
+        This keeps the audit trail best-effort and avoids FK races during teardown.
+        """
         normalized_now = self._normalize_timestamp(now)
         normalized_meta = self._normalize_meta(metadata)
         await self._execute(
@@ -591,7 +595,10 @@ class PgAutomationTaskRepository:
                 task_id, from_stage, to_stage, workflow_phase,
                 triggered_at, metadata
             )
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            SELECT
+                $1, $2, $3, $4, $5, $6::jsonb
+            FROM ae_tasks
+            WHERE id = $1
             """,
             task_id,
             from_stage,

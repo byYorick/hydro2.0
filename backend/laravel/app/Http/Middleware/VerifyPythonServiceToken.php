@@ -22,17 +22,48 @@ class VerifyPythonServiceToken
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Сначала проверяем, авторизован ли пользователь через Sanctum
+        // Проверяем сервисный токен ДО Sanctum.
+        // Иначе каждый service-to-service запрос с Bearer token сначала ударяет в
+        // personal_access_tokens, что делает внутренние API зависимыми от БД даже
+        // когда достаточно статического service token.
+        $pyApiToken = Config::get('services.python_bridge.token');
+        $laravelApiToken = env('LARAVEL_API_TOKEN');
+        $providedToken = $request->bearerToken();
+
+        if ($providedToken) {
+            $tokenValid = false;
+            if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
+                $tokenValid = true;
+            } elseif ($laravelApiToken && hash_equals($laravelApiToken, $providedToken)) {
+                $tokenValid = true;
+            }
+
+            if ($tokenValid) {
+                $request->attributes->set('python_service_authenticated', true);
+
+                $serviceUser = $this->getServiceUser();
+                if ($serviceUser) {
+                    Auth::guard('sanctum')->setUser($serviceUser);
+                    Auth::guard('web')->setUser($serviceUser);
+                    $request->setUserResolver(static fn () => $serviceUser);
+                } else {
+                    static $logged = false;
+                    if (! $logged) {
+                        Log::info('Python service token verified but service user not found - allowing request for public endpoints', [
+                            'note' => 'Consider creating a viewer user for better security and authorization',
+                        ]);
+                        $logged = true;
+                    }
+                }
+
+                return $next($request);
+            }
+        }
+
+        // Если сервисный токен не подошёл, разрешаем доступ авторизованным пользователям через Sanctum.
         if (Auth::guard('sanctum')->check()) {
             return $next($request);
         }
-
-        // Если пользователь не авторизован, проверяем токен Python сервисов
-        // Поддерживаем два типа токенов:
-        // 1. PY_API_TOKEN (services.python_bridge.token) - основной токен для Python сервисов
-        // 2. LARAVEL_API_TOKEN - токен для сервисов, обращающихся к Laravel API
-        $pyApiToken = Config::get('services.python_bridge.token');
-        $laravelApiToken = env('LARAVEL_API_TOKEN');
 
         // Если ни один токен не настроен, всегда запрещаем доступ
         if (! $pyApiToken && ! $laravelApiToken) {
@@ -48,8 +79,6 @@ class VerifyPythonServiceToken
             ], 401);
         }
 
-        $providedToken = $request->bearerToken();
-
         if (! $providedToken) {
             Log::warning('Python service request missing Authorization header', [
                 'url' => $request->fullUrl(),
@@ -61,55 +90,19 @@ class VerifyPythonServiceToken
                 'message' => 'Unauthorized: missing service token',
             ], 401);
         }
+        // НЕ логируем части токена - это утечка секрета
+        // Логируем только факт ошибки и контекст запроса
+        Log::warning('Python service request with invalid token', [
+            'url' => $request->fullUrl(),
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'method' => $request->method(),
+        ]);
 
-        // Проверяем оба токена
-        $tokenValid = false;
-        if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
-            $tokenValid = true;
-        } elseif ($laravelApiToken && hash_equals($laravelApiToken, $providedToken)) {
-            $tokenValid = true;
-        }
-
-        if (! $tokenValid) {
-            // НЕ логируем части токена - это утечка секрета
-            // Логируем только факт ошибки и контекст запроса
-            Log::warning('Python service request with invalid token', [
-                'url' => $request->fullUrl(),
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'method' => $request->method(),
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized: invalid service token',
-            ], 401);
-        }
-
-        // Токен валиден - помечаем сервисную аутентификацию для downstream контроллеров.
-        // Это важно для /api/system/config/full, где в dev среде может не быть пользователей.
-        $request->attributes->set('python_service_authenticated', true);
-
-        // Токен валиден - устанавливаем сервисного пользователя, если он существует
-        // Для публичных эндпоинтов (например, /api/system/config/full) пользователь не обязателен
-        $serviceUser = $this->getServiceUser();
-        if ($serviceUser) {
-            Auth::guard('sanctum')->setUser($serviceUser);
-            Auth::guard('web')->setUser($serviceUser);
-            $request->setUserResolver(static fn () => $serviceUser);
-        } else {
-            // Пользователь не найден, но токен валиден - разрешаем запрос для публичных эндпоинтов
-            // Логируем только один раз, чтобы не засорять логи
-            static $logged = false;
-            if (!$logged) {
-                Log::info('Python service token verified but service user not found - allowing request for public endpoints', [
-                    'note' => 'Consider creating a viewer user for better security and authorization',
-                ]);
-                $logged = true;
-            }
-        }
-
-        return $next($request);
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Unauthorized: invalid service token',
+        ], 401);
     }
 
     /**

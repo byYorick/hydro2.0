@@ -144,6 +144,31 @@ cleanup:
 - optional: true
   step: stop_node_simulator
   type: stop_simulator
+- optional: true
+  params:
+    hardware_id: e2e-unassigned-001
+  query: |
+    DELETE FROM alerts
+    WHERE hardware_id = :hardware_id
+       OR details->>'hardware_id' = :hardware_id
+  step: cleanup_attached_unassigned_alerts
+  type: database_execute
+- optional: true
+  params:
+    hardware_id: e2e-unassigned-001
+  query: |
+    DELETE FROM unassigned_node_errors
+    WHERE hardware_id = :hardware_id
+  step: cleanup_unassigned_node_errors
+  type: database_execute
+- optional: true
+  params:
+    hardware_id: e2e-unassigned-001
+  query: |
+    DELETE FROM unassigned_node_errors_archive
+    WHERE hardware_id = :hardware_id
+  step: cleanup_unassigned_node_errors_archive
+  type: database_execute
 description: 'Проверяет сценарий присвоения не назначенного узла:
 
   - Узел публикует телеметрию без привязки к зоне (unassigned)

@@ -201,6 +201,7 @@ class SchemaValidator:
             "presence-hydro.",
             "public-hydro.",
             "private-App.",
+            "hydro.commands.",
             "private-commands.",
             "commands.",
             "hydro.zones.",

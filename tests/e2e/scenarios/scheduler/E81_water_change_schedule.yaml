@@ -1,11 +1,12 @@
-# E81: Scheduler Task Lifecycle (st-* task id)
-# DoD: scheduler-tasks show корректно отображает lifecycle для ae_scheduler_task_st-*
+# E81: Scheduler Diagnostics Lifecycle (st-* task id)
+# DoD: scheduler-diagnostics корректно отображает lifecycle для ae_scheduler_task_st-*
 
 name: E81_water_change_schedule
+auth_role: admin
 description: |
   Проверяет lifecycle scheduler-task для формата task_id `st-*`:
   - создаются accepted/running/failed записи в scheduler_logs
-  - detail endpoint возвращает агрегированный статус failed
+  - scheduler-diagnostics возвращает recent_logs для задачи
   - lifecycle содержит accepted, running и failed
 
 actions:
@@ -90,40 +91,27 @@ actions:
       task_id: ${task_id}
       zone_id: ${zone_id}
 
-  - step: get_scheduler_task_detail
+  - step: get_scheduler_diagnostics
     type: api_get
-    endpoint: /api/zones/${zone_id}/scheduler-tasks/${task_id}
-    save: task_detail
+    endpoint: /api/zones/${zone_id}/scheduler-diagnostics
+    save: scheduler_diagnostics
 
 assertions:
-  - name: detail_returns_expected_task
+  - name: diagnostics_returns_ok
     type: json_assertion
-    source: task_detail
+    source: scheduler_diagnostics
     expected:
       - field: status
         operator: equals
         value: ok
-      - field: data.task_id
-        operator: equals
-        value: ${task_id}
-      - field: data.status
-        operator: equals
-        value: failed
-      - field: data.source
-        operator: equals
-        value: scheduler_logs
 
   - name: lifecycle_contains_all_statuses
     type: custom_assert
-    condition: "{'accepted', 'running', 'failed'}.issubset({str(s.get('status')) for s in context.get('task_detail', {}).get('data', {}).get('lifecycle', [])})"
+    condition: "{'accepted', 'running', 'failed'}.issubset({str(log.get('status')) for log in context.get('scheduler_diagnostics', {}).get('data', {}).get('recent_logs', []) if str(log.get('task_name')) == str(context.get('task_name')) and str((log.get('details') or {}).get('task_id')) == str(context.get('task_id'))})"
 
   - name: failure_code_is_mapped
-    type: json_assertion
-    source: task_detail
-    expected:
-      - field: data.error_code
-        operator: equals
-        value: e2e_water_change_failed
+    type: custom_assert
+    condition: "'e2e_water_change_failed' in {str((log.get('details') or {}).get('error_code')) for log in context.get('scheduler_diagnostics', {}).get('data', {}).get('recent_logs', []) if str(log.get('task_name')) == str(context.get('task_name')) and str((log.get('details') or {}).get('task_id')) == str(context.get('task_id'))}"
 
 cleanup:
   - step: delete_task_logs

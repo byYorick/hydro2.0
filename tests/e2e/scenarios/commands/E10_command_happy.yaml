@@ -77,7 +77,7 @@ actions:
 
   - step: subscribe_command_channel
     type: websocket_subscribe
-    channel: "private-commands.${test_zone_id}"
+    channel: "private-hydro.commands.${test_zone_id}"
 
   - step: subscribe_zone_channel
     type: websocket_subscribe

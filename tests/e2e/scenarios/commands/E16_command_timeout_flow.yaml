@@ -74,7 +74,7 @@ actions:
 
   - step: subscribe_commands_channel
     type: websocket_subscribe
-    channel: private-commands.${test_zone_id}
+    channel: private-hydro.commands.${test_zone_id}
 
   # Отключаем node-sim временно для имитации timeout
   - step: pause_node_sim

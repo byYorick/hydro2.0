@@ -22,6 +22,68 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: cleanup_blocking_ae_alerts
+    type: database_execute
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+        AND code = 'biz_ae3_task_failed'
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_scheduler_snapshots
+    type: database_execute
+    query: |
+      DELETE FROM laravel_scheduler_active_tasks
+      WHERE zone_id = :zone_id
+        AND (
+          task_id ~ '^\d+$'
+          OR (
+            details->>'intent_id' IS NOT NULL
+            AND (details->>'intent_id')::bigint IN (
+              SELECT id
+              FROM zone_automation_intents
+              WHERE zone_id = :zone_id
+                AND intent_type = 'DIAGNOSTICS_TICK'
+                AND payload->>'source' = 'laravel_grow_cycle_start'
+            )
+          )
+        )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_ae_commands
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND intent_source = 'laravel_grow_cycle_start'
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_ae_tasks
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :zone_id
+        AND intent_source = 'laravel_grow_cycle_start'
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_intents
+    type: database_execute
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND intent_type = 'DIAGNOSTICS_TICK'
+        AND payload->>'source' = 'laravel_grow_cycle_start'
+    params:
+      zone_id: ${zone_id}
+
   - step: cleanup_active_zone_intents
     type: database_execute
     query: |
@@ -187,6 +249,88 @@ actions:
     save: progress_data
 
 cleanup:
+  - step: abort_cycle_before_cleanup
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_response.data.id}/abort
+    payload:
+      notes: E52 cleanup abort
+    optional: true
+
+  - step: wait_after_abort_before_cleanup
+    type: sleep
+    seconds: 1
+    optional: true
+
+  - step: cleanup_grow_cycle_start_scheduler_snapshots_after_run
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM laravel_scheduler_active_tasks
+      WHERE zone_id = :zone_id
+        AND (
+          task_id ~ '^\d+$'
+          OR (
+            details->>'intent_id' IS NOT NULL
+            AND (details->>'intent_id')::bigint IN (
+              SELECT id
+              FROM zone_automation_intents
+              WHERE zone_id = :zone_id
+                AND intent_type = 'DIAGNOSTICS_TICK'
+                AND payload->>'source' = 'laravel_grow_cycle_start'
+            )
+          )
+        )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_terminal_grow_cycle_start_ae_commands_after_run
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND intent_source = 'laravel_grow_cycle_start'
+          AND status IN ('completed', 'failed', 'cancelled')
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_terminal_grow_cycle_start_ae_tasks_after_run
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :zone_id
+        AND intent_source = 'laravel_grow_cycle_start'
+        AND status IN ('completed', 'failed', 'cancelled')
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_terminal_grow_cycle_start_intents_after_run
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND intent_type = 'DIAGNOSTICS_TICK'
+        AND payload->>'source' = 'laravel_grow_cycle_start'
+        AND status IN ('completed', 'failed', 'cancelled')
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_blocking_ae_alerts_after_run
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+        AND code = 'biz_ae3_task_failed'
+    params:
+      zone_id: ${zone_id}
+
   - step: delete_grow_cycle
     type: database_execute
     query: |

@@ -15,10 +15,16 @@ use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
+use App\Services\AutomationConfigDocumentService;
+use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycleService;
+use App\Services\ZoneLogicProfileCatalog;
+use App\Services\ZoneLogicProfileService;
+use App\Support\Automation\ZonePidDefaults;
 use Carbon\Carbon;
 use Database\Seeders\Support\CanonicalRecipePhaseSupport;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -85,101 +91,182 @@ class AutomationEngineE2ESeeder extends Seeder
         );
 
         $this->command->info("✓ Zone created: {$zone->id} (uid: {$zone->uid})");
+        $this->grantFixtureAccess($greenhouse, $zone);
 
-        // 3. Создаем узел с UID из node-sim-config.yaml
-        $node = DeviceNode::firstOrCreate(
+        // 3. Создаем канонический набор test-node симуляторов, чтобы telemetry/heartbeat
+        // не создавали startup drift до первого E2E сценария.
+        $seededNodes = [
             [
-                'zone_id' => $zone->id,
                 'uid' => 'nd-ph-esp32una',
-            ],
-            [
                 'hardware_id' => 'esp32-test-001',
                 'type' => 'ph',
                 'name' => 'E2E Test PH Node',
-                'status' => 'online',
-                'lifecycle_state' => 'ASSIGNED_TO_ZONE',
-                'last_seen_at' => Carbon::now(),
-                'config' => [
-                    'sensors' => ['ph_sensor', 'ec_sensor', 'solution_temp_c', 'air_temp_c', 'air_rh'],
-                    'actuators' => ['main_pump', 'drain_pump', 'fan', 'heater', 'light', 'mister'],
+                'sensors' => [
+                    ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH'],
+                    ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
+                    ['channel' => 'solution_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+                    ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+                    ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
                 ],
-            ]
-        );
-        // Приводим ноду к ожидаемому состоянию при повторных прогонах сидера.
-        $node->status = 'online';
-        $node->lifecycle_state = 'ASSIGNED_TO_ZONE';
-        $node->last_seen_at = Carbon::now();
-        $node->save();
-
-        $this->command->info("✓ Node created: {$node->id} (uid: {$node->uid})");
-
-        // 4. Создаем каналы для узла
-        $channels = [
-            ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'solution_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%', 'type' => 'sensor', 'data_type' => 'float'],
+                'actuators' => [
+                    ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'main_pump'],
+                    ['channel' => 'drain_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'drain'],
+                    ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'fan'],
+                    ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'heater'],
+                    ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'light'],
+                    ['channel' => 'mister', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'mist'],
+                ],
+            ],
+            [
+                'uid' => 'nd-test-irrig-1',
+                'hardware_id' => 'nd-test-irrig-1',
+                'type' => 'irrig',
+                'name' => 'E2E Test Irrigation Node',
+                'sensors' => [
+                    ['channel' => 'level_clean_min', 'metric' => 'WATER_LEVEL_SWITCH', 'unit' => 'bool'],
+                    ['channel' => 'level_clean_max', 'metric' => 'WATER_LEVEL_SWITCH', 'unit' => 'bool'],
+                    ['channel' => 'level_solution_min', 'metric' => 'WATER_LEVEL_SWITCH', 'unit' => 'bool'],
+                    ['channel' => 'level_solution_max', 'metric' => 'WATER_LEVEL_SWITCH', 'unit' => 'bool'],
+                ],
+                'actuators' => [
+                    ['channel' => 'pump_main', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'main_pump'],
+                    ['channel' => 'valve_clean_fill', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_clean_fill'],
+                    ['channel' => 'valve_clean_supply', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_clean_supply'],
+                    ['channel' => 'valve_solution_fill', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_solution_fill'],
+                    ['channel' => 'valve_solution_supply', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_solution_supply'],
+                    ['channel' => 'valve_irrigation', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'valve_irrigation'],
+                ],
+            ],
+            [
+                'uid' => 'nd-test-ph-1',
+                'hardware_id' => 'nd-test-ph-1',
+                'type' => 'ph',
+                'name' => 'E2E Test pH Dosing Node',
+                'sensors' => [
+                    ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH'],
+                ],
+                'actuators' => [
+                    ['channel' => 'pump_acid', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_acid'],
+                    ['channel' => 'pump_base', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_base'],
+                    ['channel' => 'system', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'system'],
+                ],
+            ],
+            [
+                'uid' => 'nd-test-ec-1',
+                'hardware_id' => 'nd-test-ec-1',
+                'type' => 'ec',
+                'name' => 'E2E Test EC Dosing Node',
+                'sensors' => [
+                    ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
+                ],
+                'actuators' => [
+                    ['channel' => 'pump_a', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_a'],
+                    ['channel' => 'pump_b', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_b'],
+                    ['channel' => 'pump_c', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_c'],
+                    ['channel' => 'pump_d', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'pump_d'],
+                    ['channel' => 'system', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'system'],
+                ],
+            ],
+            [
+                'uid' => 'nd-test-climate-1',
+                'hardware_id' => 'nd-test-climate-1',
+                'type' => 'climate',
+                'name' => 'E2E Test Climate Node',
+                'sensors' => [
+                    ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+                    ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%'],
+                ],
+                'actuators' => [
+                    ['channel' => 'fan_air', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'fan_air'],
+                    ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'fan'],
+                    ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'heater'],
+                ],
+            ],
+            [
+                'uid' => 'nd-test-light-1',
+                'hardware_id' => 'nd-test-light-1',
+                'type' => 'light',
+                'name' => 'E2E Test Light Node',
+                'sensors' => [
+                    ['channel' => 'light_level', 'metric' => 'LIGHT_INTENSITY', 'unit' => 'lux'],
+                ],
+                'actuators' => [
+                    ['channel' => 'white_light', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'white_light'],
+                ],
+            ],
         ];
 
-        NodeChannel::withoutEvents(function () use ($channels, $node): void {
-            foreach ($channels as $channelData) {
-                NodeChannel::firstOrCreate(
-                    [
-                        'node_id' => $node->id,
-                        'channel' => $channelData['channel'],
-                    ],
-                    [
-                        'type' => $channelData['type'],
-                        'metric' => $channelData['metric'],
-                        'unit' => $channelData['unit'],
-                        'config' => ['data_type' => $channelData['data_type']],
-                    ]
-                );
-            }
-        });
-
-        $this->command->info('✓ Channels created for node');
-
-        // 5. Создаем actuators (каналы типа actuator)
-        $actuators = [
-            ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
-            ['channel' => 'drain_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
-            ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
-            ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
-            ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
-            ['channel' => 'mister', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
-        ];
-        $zoneRoles = [
-            'main_pump' => 'main_pump',
-            'drain_pump' => 'drain',
-            'fan' => 'fan',
-            'heater' => 'heater',
-            'light' => 'light',
-            'mister' => 'mist',
-        ];
-
-        NodeChannel::withoutEvents(function () use ($actuators, $node, $zoneRoles): void {
-            foreach ($actuators as $actuatorData) {
-                NodeChannel::updateOrCreate(
-                    [
-                        'node_id' => $node->id,
-                        'channel' => $actuatorData['channel'],
-                    ],
-                    [
-                        'type' => $actuatorData['type'],
-                        'metric' => $actuatorData['metric'],
-                        'unit' => $actuatorData['unit'],
-                        'config' => [
-                            'data_type' => $actuatorData['data_type'],
-                            'zone_role' => $zoneRoles[$actuatorData['channel']] ?? $actuatorData['channel'],
+        $seedNodeChannels = static function (DeviceNode $seededNode, array $sensorChannels, array $actuatorChannels): void {
+            NodeChannel::withoutEvents(function () use ($actuatorChannels, $seededNode, $sensorChannels): void {
+                foreach ($sensorChannels as $channelData) {
+                    NodeChannel::updateOrCreate(
+                        [
+                            'node_id' => $seededNode->id,
+                            'channel' => $channelData['channel'],
                         ],
-                    ]
-                );
-            }
-        });
+                        [
+                            'type' => 'sensor',
+                            'metric' => $channelData['metric'],
+                            'unit' => $channelData['unit'],
+                            'config' => ['data_type' => 'float'],
+                            'is_active' => true,
+                        ]
+                    );
+                }
 
-        $this->command->info('✓ Actuators created for node');
+                foreach ($actuatorChannels as $channelData) {
+                    NodeChannel::updateOrCreate(
+                        [
+                            'node_id' => $seededNode->id,
+                            'channel' => $channelData['channel'],
+                        ],
+                        [
+                            'type' => 'actuator',
+                            'metric' => $channelData['metric'],
+                            'unit' => $channelData['unit'],
+                            'config' => [
+                                'data_type' => 'boolean',
+                                'zone_role' => $channelData['zone_role'] ?? $channelData['channel'],
+                            ],
+                            'is_active' => true,
+                        ]
+                    );
+                }
+            });
+        };
+
+        $primaryNode = null;
+        foreach ($seededNodes as $nodeData) {
+            $seededNode = DeviceNode::updateOrCreate(
+                ['uid' => $nodeData['uid']],
+                [
+                    'zone_id' => $zone->id,
+                    'pending_zone_id' => null,
+                    'hardware_id' => $nodeData['hardware_id'],
+                    'type' => $nodeData['type'],
+                    'name' => $nodeData['name'],
+                    'status' => 'online',
+                    'lifecycle_state' => 'ASSIGNED_TO_ZONE',
+                    'last_seen_at' => Carbon::now(),
+                    'last_heartbeat_at' => Carbon::now(),
+                    'config' => [
+                        'sensors' => array_column($nodeData['sensors'], 'channel'),
+                        'actuators' => array_column($nodeData['actuators'], 'channel'),
+                    ],
+                ]
+            );
+
+            $seedNodeChannels($seededNode, $nodeData['sensors'], $nodeData['actuators']);
+            $this->command->info("✓ Node created: {$seededNode->id} (uid: {$seededNode->uid})");
+
+            if ($nodeData['uid'] === 'nd-ph-esp32una') {
+                $primaryNode = $seededNode;
+            }
+        }
+
+        /** @var DeviceNode $node */
+        $node = $primaryNode ?? DeviceNode::query()->where('uid', 'nd-ph-esp32una')->firstOrFail();
+        $this->command->info('✓ Channels created for canonical E2E nodes');
 
         // 6. Создаем инфраструктуру зоны
         $infrastructure = [
@@ -245,6 +332,35 @@ class AutomationEngineE2ESeeder extends Seeder
         $recipe->plants()->syncWithoutDetaching([$plant->id]);
 
         $creatorId = User::where('role', 'admin')->value('id') ?? User::value('id');
+        $adminId = $creatorId ? (int) $creatorId : null;
+
+        $documents = app(AutomationConfigDocumentService::class);
+        $documents->ensureSystemDefaults();
+        $documents->ensureZoneDefaults((int) $zone->id);
+        app(ZoneLogicProfileService::class)->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_WORKING,
+            subsystems: $this->defaultAutomationSubsystems(),
+            activate: true,
+            userId: $adminId,
+        );
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            ZonePidDefaults::forType('ph'),
+            $adminId,
+            'automation_engine_e2e_seed'
+        );
+        $documents->upsertDocument(
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            AutomationConfigRegistry::SCOPE_ZONE,
+            (int) $zone->id,
+            ZonePidDefaults::forType('ec'),
+            $adminId,
+            'automation_engine_e2e_seed'
+        );
+        $this->cleanupFixtureRuntimeState($zone);
 
         $revision = RecipeRevision::firstOrCreate([
             'recipe_id' => $recipe->id,
@@ -329,6 +445,7 @@ class AutomationEngineE2ESeeder extends Seeder
         );
 
         $this->command->info('✓ Recipe revision and phases created');
+        $this->cleanupFixtureAlerts($zone);
 
         // 8. Создаем активный grow-cycle (если еще нет)
         $existingCycle = GrowCycle::where('zone_id', $zone->id)
@@ -336,15 +453,35 @@ class AutomationEngineE2ESeeder extends Seeder
             ->orderByDesc('created_at')
             ->first();
 
+        $plantingAt = Carbon::now()->subDays(5)->setMicroseconds(0);
+
         if ($existingCycle) {
             $growCycle = $existingCycle;
+            app(GrowCycleService::class)->syncCycleConfigDocuments(
+                $growCycle->fresh(),
+                ['planting_at' => $plantingAt->toIso8601String()],
+                $adminId
+            );
+
+            if ($growCycle->status === 'PLANNED') {
+                $growCycle = app(GrowCycleService::class)->startCycle($growCycle->fresh(), $plantingAt->copy());
+            } elseif ($growCycle->status === 'PAUSED') {
+                $growCycle = app(GrowCycleService::class)->resume($growCycle->fresh(), $adminId ?? 0);
+            }
+
             $this->command->info("✓ Grow cycle already exists: {$growCycle->id}");
         } else {
             $service = app(GrowCycleService::class);
             $growCycle = $service->createCycle($zone, $revision, $plant->id, [
-                'start_immediately' => true,
-                'planting_at' => Carbon::now()->subDays(5),
-            ]);
+                'start_immediately' => false,
+                'planting_at' => $plantingAt->toIso8601String(),
+            ], $adminId);
+            $service->syncCycleConfigDocuments(
+                $growCycle->fresh(),
+                ['planting_at' => $plantingAt->toIso8601String()],
+                $adminId
+            );
+            $growCycle = $service->startCycle($growCycle->fresh(), $plantingAt->copy());
 
             $this->command->info("✓ Grow cycle created: {$growCycle->id}");
         }
@@ -355,5 +492,86 @@ class AutomationEngineE2ESeeder extends Seeder
         $this->command->info("Node UID: {$node->uid}");
         $this->command->info("Recipe ID: {$recipe->id}");
         $this->command->info("Grow Cycle ID: {$growCycle->id}");
+    }
+
+    private function grantFixtureAccess(Greenhouse $greenhouse, Zone $zone): void
+    {
+        $users = User::query()
+            ->where('email', 'e2e@test.local')
+            ->orWhere('role', 'agronomist')
+            ->get();
+
+        foreach ($users as $user) {
+            if ($user->isAdmin()) {
+                continue;
+            }
+
+            $user->greenhouses()->syncWithoutDetaching([(int) $greenhouse->id]);
+            $user->zones()->syncWithoutDetaching([(int) $zone->id]);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultAutomationSubsystems(): array
+    {
+        return [
+            'diagnostics' => [
+                'enabled' => true,
+                'execution' => [
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                ],
+            ],
+        ];
+    }
+
+    private function cleanupFixtureAlerts(Zone $zone): void
+    {
+        DB::table('alerts')
+            ->where(function ($query) use ($zone): void {
+                $query->where('zone_id', (int) $zone->id)
+                    ->orWhereRaw("COALESCE(details->>'gh_uid', '') = 'gh-test-1'")
+                    ->orWhereRaw("COALESCE(details->>'zone_uid', '') = 'zn-test-1'");
+            })
+            ->whereIn('code', [
+                'biz_ae3_task_failed',
+                'infra_telemetry_zone_not_found',
+                'infra_telemetry_node_not_found',
+                'infra_telemetry_sample_dropped_node_not_found',
+                'infra_telemetry_sample_dropped_zone_not_found',
+                'biz_zone_pid_config_missing',
+            ])
+            ->delete();
+    }
+
+    private function cleanupFixtureRuntimeState(Zone $zone): void
+    {
+        $zoneId = (int) $zone->id;
+
+        DB::table('ae_commands')
+            ->whereIn('task_id', function ($query) use ($zoneId): void {
+                $query->select('id')
+                    ->from('ae_tasks')
+                    ->where('zone_id', $zoneId);
+            })
+            ->delete();
+
+        DB::table('ae_tasks')
+            ->where('zone_id', $zoneId)
+            ->delete();
+
+        DB::table('zone_automation_intents')
+            ->where('zone_id', $zoneId)
+            ->delete();
+
+        DB::table('ae_zone_leases')
+            ->where('zone_id', $zoneId)
+            ->delete();
+
+        DB::table('zone_workflow_state')
+            ->where('zone_id', $zoneId)
+            ->delete();
     }
 }

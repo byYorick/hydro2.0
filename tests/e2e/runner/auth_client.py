@@ -59,16 +59,38 @@ class AuthClient:
             role: Роль пользователя (admin, operator, viewer)
             token_ttl_seconds: TTL токена в секундах (по умолчанию 24 часа)
         """
-        # Если уже инициализирован, не переинициализируем
+        resolved_api_url = (api_url or os.getenv("LARAVEL_URL", "http://localhost:8081")).rstrip('/')
+
+        # Если singleton уже инициализирован, допускаем переопределение контекста
+        # между сценариями с разными ролями/e-mail и сбрасываем устаревший токен.
         if hasattr(self, '_initialized'):
+            context_changed = any([
+                getattr(self, 'api_url', None) != resolved_api_url,
+                getattr(self, 'email', None) != email,
+                getattr(self, 'role', None) != role,
+            ])
+
+            self.api_url = resolved_api_url
+            self.email = email
+            self.role = role
+            if token_ttl_seconds:
+                self.__class__._token_ttl_seconds = token_ttl_seconds
+
+            if context_changed:
+                self.__class__._token = None
+                self.__class__._token_expires_at = None
+                logger.info(
+                    "AuthClient context changed, invalidating cached token: "
+                    f"api_url={self.api_url}, email={self.email}, role={self.role}"
+                )
             return
-        
-        self.api_url = (api_url or os.getenv("LARAVEL_URL", "http://localhost:8081")).rstrip('/')
+
+        self.api_url = resolved_api_url
         self.email = email
         self.role = role
         if token_ttl_seconds:
             self.__class__._token_ttl_seconds = token_ttl_seconds
-        
+
         self._initialized = True
         logger.debug(f"AuthClient initialized: api_url={self.api_url}, email={self.email}, role={self.role}")
     
@@ -323,4 +345,3 @@ class AuthClient:
     def get_current_token(cls) -> Optional[str]:
         """Получить текущий токен (синхронно, для отладки)."""
         return cls._token
-

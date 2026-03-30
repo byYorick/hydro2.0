@@ -1,12 +1,12 @@
-# E19: AE Legacy SQL Guard - проверка работы guard для legacy таблиц в AE
-# DoD: AE legacy SQL guard корректно логирует доступ к legacy таблицам/колонкам
+# E19: AE Legacy SQL Guard - проверка отсутствия legacy SQL доступа в AE
+# DoD: каноничный AE runtime не трогает legacy таблицы/колонки, а guard остаётся пассивным
 
 name: E19_ae_legacy_sql_guard
 description: |
-  Проверяет работу Automation Engine Legacy SQL Guard:
+  Проверяет каноничное поведение Automation Engine Legacy SQL Guard:
   - Создает запрос к AE эндпоинту (grow-cycles/effective-targets)
-  - Проверяет логи на наличие записей о legacy SQL доступе
-  - Убеждается, что guard логирует, но не блокирует работу системы
+  - Проверяет отсутствие записей о legacy SQL доступе
+  - Убеждается, что каноничный runtime больше не ходит в удалённые legacy сущности
 
 actions:
   - step: get_greenhouses
@@ -95,18 +95,18 @@ actions:
     endpoint: /api/zones/${zone_id}/effective-targets
     save: targets_response
 
-  # Получаем активный цикл (триггерит guard через доступ к legacy таблицам)
+  # Получаем активный цикл и убеждаемся, что каноничный runtime не трогает legacy path
   - step: get_active_cycle
     type: api_get
     endpoint: /api/zones/${zone_id}/grow-cycle
     save: grow_cycle_response
 
-  # Ждем немного, чтобы логи были записаны
+  # Ждем немного, чтобы потенциальные guard-логи успели записаться
   - step: wait_for_logging
     type: sleep
     duration: 2.0
 
-  # Проверяем логи на наличие AE_LEGACY_SQL_GUARD записей
+  # Проверяем логи на отсутствие AE_LEGACY_SQL_GUARD записей
   - step: check_legacy_sql_logs
     type: database_query
     query: |
@@ -138,17 +138,17 @@ assertions:
         operator: equals
         value: ok
 
-  # Проверка 3: Guard логирует legacy SQL доступ (предупреждения в логах)
-  - name: guard_logs_legacy_access
+  # Проверка 3: Каноничный runtime не должен трогать legacy SQL path
+  - name: no_legacy_sql_access_logged
     type: json_assertion
     source: guard_logs
     path: "[0]"
     expected:
       - field: guard_log_count
-        operator: greater_than
+        operator: equals
         value: 0
 
-  # Проверка 4: Guard не блокирует работу (нет ошибок в ответах)
+  # Проверка 4: Guard не блокирует работу каноничного runtime (нет ошибок в ответах)
   - name: guard_does_not_block
     type: custom_assert
     condition: "context.get('cycle_response', {}).get('status') == 'ok' and context.get('targets_response', {}).get('status') == 'ok'"

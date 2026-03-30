@@ -35,8 +35,10 @@ class TestSuite:
         # Dynamic import to avoid dependency issues
         from .e2e_runner import E2ERunner
 
+        scenario_config = self._load_scenario_runner_config(scenario_path)
+
         # Create runner with merged config
-        runner_config = {**self.config, **kwargs}
+        runner_config = {**self.config, **scenario_config, **kwargs}
         self.runner = E2ERunner(runner_config)
 
         try:
@@ -46,6 +48,28 @@ class TestSuite:
         finally:
             if self.runner:
                 await self.runner.cleanup()
+
+    def _load_scenario_runner_config(self, scenario_path: str) -> Dict[str, Any]:
+        """Load optional runner-level config embedded in a scenario file."""
+        try:
+            import yaml
+
+            with open(scenario_path, 'r', encoding='utf-8') as handle:
+                payload = yaml.safe_load(handle) or {}
+        except Exception as exc:
+            logger.warning(f"Failed to load scenario config from {scenario_path}: {exc}")
+            return {}
+
+        runner_config: Dict[str, Any] = {}
+        auth_email = payload.get("auth_email")
+        auth_role = payload.get("auth_role")
+
+        if isinstance(auth_email, str) and auth_email.strip() != "":
+            runner_config["auth_email"] = auth_email.strip()
+        if isinstance(auth_role, str) and auth_role.strip() != "":
+            runner_config["auth_role"] = auth_role.strip()
+
+        return runner_config
 
     async def run_scenarios(self, scenario_paths: List[str], **kwargs) -> Dict[str, bool]:
         """

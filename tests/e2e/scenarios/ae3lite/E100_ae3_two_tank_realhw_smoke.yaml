@@ -1080,6 +1080,77 @@ actions:
     expected_rows: 1
     save: zero_levels_row
 
+  - step: cleanup_grow_cycle_start_scheduler_snapshots
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM laravel_scheduler_active_tasks
+      WHERE zone_id = :zone_id
+        AND (
+          task_id ~ '^\d+$'
+          OR (
+            details->>'intent_id' IS NOT NULL
+            AND (details->>'intent_id')::bigint IN (
+              SELECT id
+              FROM zone_automation_intents
+              WHERE zone_id = :zone_id
+                AND intent_type = 'DIAGNOSTICS_TICK'
+                AND payload->>'source' = 'laravel_grow_cycle_start'
+            )
+          )
+        )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_ae_commands
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND intent_source = 'laravel_grow_cycle_start'
+          AND intent_id IN (
+            SELECT id
+            FROM zone_automation_intents
+            WHERE zone_id = :zone_id
+              AND intent_type = 'DIAGNOSTICS_TICK'
+              AND payload->>'source' = 'laravel_grow_cycle_start'
+          )
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_ae_tasks
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :zone_id
+        AND intent_source = 'laravel_grow_cycle_start'
+        AND intent_id IN (
+          SELECT id
+          FROM zone_automation_intents
+          WHERE zone_id = :zone_id
+            AND intent_type = 'DIAGNOSTICS_TICK'
+            AND payload->>'source' = 'laravel_grow_cycle_start'
+        )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_grow_cycle_start_intents
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND intent_type = 'DIAGNOSTICS_TICK'
+        AND payload->>'source' = 'laravel_grow_cycle_start'
+    params:
+      zone_id: ${zone_id}
+
   - step: insert_scheduler_like_intent
     type: database_execute
     query: |

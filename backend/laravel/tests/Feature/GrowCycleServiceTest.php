@@ -792,4 +792,129 @@ class GrowCycleServiceTest extends TestCase
             'zone_id' => $zone->id,
         ]);
     }
+
+    #[Test]
+    public function it_cancels_active_ae3_start_cycle_runtime_state_on_harvest(): void
+    {
+        config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', true);
+
+        $zone = Zone::factory()->create(['automation_runtime' => 'ae3']);
+        $recipe = Recipe::factory()->create();
+        $plant = Plant::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id, [
+            'start_immediately' => false,
+        ]);
+        $idempotencyKey = sprintf(
+            'gcs:z%d:c%d:%s',
+            $zone->id,
+            $cycle->id,
+            substr(hash('sha256', sprintf('grow-cycle-start|zone:%d|cycle:%d', $zone->id, $cycle->id)), 0, 24)
+        );
+        $schedulerKey = sprintf('harvest-start-cycle-%d', $cycle->id);
+        $now = Carbon::now('UTC')->setMicroseconds(0);
+
+        DB::table('zone_automation_intents')->insert([
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'DIAGNOSTICS_TICK',
+                'payload' => json_encode([
+                    'source' => 'laravel_grow_cycle_start',
+                    'task_type' => 'diagnostics',
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'grow_cycle_id' => $cycle->id,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'idempotency_key' => $idempotencyKey,
+                'status' => 'pending',
+                'not_before' => $now,
+                'retry_count' => 0,
+                'max_retries' => 3,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'zone_id' => $zone->id,
+                'intent_type' => 'DIAGNOSTICS_TICK',
+                'payload' => json_encode([
+                    'source' => 'laravel_scheduler',
+                    'task_type' => 'diagnostics',
+                    'workflow' => 'cycle_start',
+                    'topology' => 'two_tank_drip_substrate_trays',
+                    'grow_cycle_id' => $cycle->id,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'idempotency_key' => $schedulerKey,
+                'status' => 'running',
+                'not_before' => $now,
+                'retry_count' => 0,
+                'max_retries' => 3,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+
+        DB::table('ae_tasks')->insert([
+            'zone_id' => $zone->id,
+            'task_type' => 'cycle_start',
+            'status' => 'running',
+            'idempotency_key' => $schedulerKey,
+            'topology' => 'two_tank_drip_substrate_trays',
+            'current_stage' => 'solution_fill_start',
+            'workflow_phase' => 'tank_filling',
+            'control_mode_snapshot' => 'auto',
+            'intent_source' => 'laravel_scheduler',
+            'intent_trigger' => 'irrigate_once',
+            'intent_meta' => json_encode([
+                'intent_payload' => [
+                    'workflow' => 'cycle_start',
+                    'grow_cycle_id' => $cycle->id,
+                ],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'scheduled_for' => $now,
+            'due_at' => $now,
+            'stage_entered_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('ae_zone_leases')->insert([
+            'zone_id' => $zone->id,
+            'owner' => 'worker:test',
+            'leased_until' => $now->copy()->addMinute(),
+            'updated_at' => $now,
+        ]);
+
+        $harvested = $this->service->harvest($cycle->fresh(), ['batch_label' => 'batch-1'], 7);
+
+        $this->assertSame(GrowCycleStatus::HARVESTED, $harvested->status);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $idempotencyKey,
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_harvested',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $schedulerKey,
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_harvested',
+        ]);
+        $this->assertDatabaseHas('ae_tasks', [
+            'zone_id' => $zone->id,
+            'idempotency_key' => $schedulerKey,
+            'status' => 'cancelled',
+            'error_code' => 'grow_cycle_harvested',
+        ]);
+        $this->assertDatabaseHas('ae_zone_leases', [
+            'zone_id' => $zone->id,
+        ]);
+    }
 }

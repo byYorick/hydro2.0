@@ -42,6 +42,8 @@ class E2EAuthBootstrap extends Command
             $this->bootstrapZone();
         }
 
+        $this->grantFixtureAccess($user);
+
         // Удаляем старые токены для этого пользователя (опционально, для чистоты)
         // $user->tokens()->delete();
 
@@ -98,6 +100,33 @@ class E2EAuthBootstrap extends Command
         if ($this->getOutput()->isVerbose()) {
             $this->info('E2E zone fixture ready');
             $this->line('Greenhouse UID: '.$greenhouse->uid.' | Zone UID: '.$zone->uid);
+        }
+    }
+
+    private function grantFixtureAccess(User $user): void
+    {
+        if ($user->isAdmin()) {
+            return;
+        }
+
+        $greenhouseIds = Greenhouse::query()
+            ->whereIn('uid', ['gh-test-1', 'e2e-gh-main'])
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        if ($greenhouseIds !== []) {
+            $user->greenhouses()->syncWithoutDetaching($greenhouseIds);
+        }
+
+        $zoneIds = Zone::query()
+            ->whereIn('uid', ['zn-test-1', 'e2e-zone-main'])
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        if ($zoneIds !== []) {
+            $user->zones()->syncWithoutDetaching($zoneIds);
         }
     }
 }

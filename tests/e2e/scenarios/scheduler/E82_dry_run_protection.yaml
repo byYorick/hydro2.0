@@ -1,11 +1,12 @@
 # E82: Scheduler Intent Task Compatibility
-# DoD: detail endpoint поддерживает intent-* task_id и возвращает lifecycle
+# DoD: scheduler-diagnostics поддерживает intent-* task_id и возвращает lifecycle
 
 name: E82_dry_run_protection
+auth_role: admin
 description: |
   Проверяет совместимость scheduler-task detail для `intent-*`:
   - создаются accepted/completed логи с intent task_id
-  - detail endpoint возвращает completed задачу
+  - scheduler-diagnostics возвращает completed lifecycle по scheduler_logs
   - lifecycle содержит минимум два статуса
 
 actions:
@@ -72,37 +73,27 @@ actions:
       zone_id: ${zone_id}
       correlation_id: "sch:z${zone_id}:irrigation:${task_id}"
 
-  - step: get_scheduler_tasks_index
+  - step: get_scheduler_diagnostics
     type: api_get
-    endpoint: /api/zones/${zone_id}/scheduler-tasks
-    save: tasks_index
-
-  - step: get_scheduler_task_detail
-    type: api_get
-    endpoint: /api/zones/${zone_id}/scheduler-tasks/${task_id}
-    save: task_detail
+    endpoint: /api/zones/${zone_id}/scheduler-diagnostics
+    save: scheduler_diagnostics
 
 assertions:
-  - name: detail_returns_completed_intent_task
+  - name: diagnostics_returns_ok
     type: json_assertion
-    source: task_detail
+    source: scheduler_diagnostics
     expected:
       - field: status
         operator: equals
         value: ok
-      - field: data.task_id
-        operator: equals
-        value: ${task_id}
-      - field: data.status
-        operator: equals
-        value: completed
-      - field: data.source
-        operator: equals
-        value: scheduler_logs
 
   - name: lifecycle_has_two_states
     type: custom_assert
-    condition: "len(context.get('task_detail', {}).get('data', {}).get('lifecycle', [])) >= 2"
+    condition: "(lambda logs: len([log for log in logs if str(log.get('task_name')) == str(context.get('task_name')) and str((log.get('details') or {}).get('task_id')) == str(context.get('task_id'))]) >= 2)(context.get('scheduler_diagnostics', {}).get('data', {}).get('recent_logs', []))"
+
+  - name: diagnostics_exposes_completed_intent_task
+    type: custom_assert
+    condition: "(lambda logs: 'completed' in {str(log.get('status')) for log in logs if str(log.get('task_name')) == str(context.get('task_name')) and str((log.get('details') or {}).get('task_id')) == str(context.get('task_id'))})(context.get('scheduler_diagnostics', {}).get('data', {}).get('recent_logs', []))"
 
 cleanup:
   - step: delete_task_logs

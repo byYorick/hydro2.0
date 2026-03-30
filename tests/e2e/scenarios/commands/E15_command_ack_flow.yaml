@@ -98,7 +98,7 @@ actions:
 
   - step: subscribe_commands_channel
     type: websocket_subscribe
-    channel: private-commands.${test_zone_id}
+    channel: private-hydro.commands.${test_zone_id}
 
   - step: send_test_command
     type: api_post

@@ -77,7 +77,7 @@ actions:
 
   - step: subscribe_commands_channel
     type: websocket_subscribe
-    channel: commands.${test_zone_id}
+    channel: private-hydro.commands.${test_zone_id}
 
   # Останавливаем node-sim, чтобы не получить DONE и вручную смоделировать ERROR
   - step: stop_node_simulator

@@ -264,7 +264,7 @@ class PythonIngestControllerTest extends TestCase
         $this->assertEquals(Command::STATUS_DONE, $command->status);
     }
 
-    public function test_command_ack_endpoint_returns_404_when_command_not_found(): void
+    public function test_command_ack_endpoint_treats_missing_command_as_idempotent_noop(): void
     {
         Config::set('services.python_bridge.ingest_token', 'test-token');
 
@@ -273,11 +273,11 @@ class PythonIngestControllerTest extends TestCase
                 'cmd_id' => 'cmd-missing-404',
                 'status' => 'SENT',
             ])
-            ->assertStatus(404)
+            ->assertOk()
             ->assertJson([
-                'status' => 'error',
-                'code' => 'COMMAND_NOT_FOUND',
-                'message' => 'Command not found',
+                'status' => 'ok',
+                'code' => 'COMMAND_NOT_FOUND_IGNORED',
+                'message' => 'Command not found; ack ignored',
             ]);
     }
 

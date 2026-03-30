@@ -158,6 +158,103 @@ async def test_batch_upsert_telemetry_last_joins_sensors_to_avoid_fk_errors():
 
 
 @pytest.mark.asyncio
+async def test_batch_insert_telemetry_samples_joins_sensors_to_avoid_fk_errors():
+    with patch('telemetry_processing.fetch') as mock_fetch, \
+         patch('telemetry_processing.execute') as mock_execute:
+
+        mock_fetch.side_effect = [
+            [{'id': 101}],
+        ]
+
+        _zone_cache.clear()
+        _node_cache.clear()
+        _sensor_cache.clear()
+        tp._cache_last_update = time.time()
+        _zone_cache[('zn-1', 'gh-1')] = 1
+        _node_cache[('nd-1', 'gh-1')] = (10, 1)
+        _sensor_cache[(1, 10, "TEMPERATURE", "TEMPERATURE")] = 101
+
+        samples = [
+            TelemetrySampleModel(
+                zone_uid='zn-1',
+                gh_uid='gh-1',
+                node_uid='nd-1',
+                metric_type='TEMPERATURE',
+                value=25.0,
+                ts=utcnow()
+            ),
+        ]
+
+        mock_execute.side_effect = [
+            None,
+            "INSERT 0 1",
+        ]
+
+        await process_telemetry_batch(samples)
+
+        telemetry_samples_queries = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+            if call.args and 'telemetry_samples' in str(call.args[0])
+        ]
+        assert telemetry_samples_queries
+        query = telemetry_samples_queries[0]
+        assert "WITH incoming (sensor_id, ts, zone_id, value, quality, metadata) AS" in query
+        assert "FROM UNNEST(" in query
+        assert "JOIN sensors s" in query
+        assert "s.id = incoming.sensor_id" in query
+        assert "s.zone_id = incoming.zone_id" in query
+        assert "$1::bigint[]" in query
+        assert "$3::bigint[]" in query
+
+
+@pytest.mark.asyncio
+async def test_filter_existing_sensor_ids_casts_bigint_array():
+    with patch('telemetry_processing.fetch') as mock_fetch:
+        mock_fetch.return_value = [{'id': 101}]
+
+        result = await tp._filter_existing_sensor_ids([101])
+
+        assert result == {101}
+        query = mock_fetch.call_args.args[0]
+        assert "ANY($1::bigint[])" in query
+
+
+@pytest.mark.asyncio
+async def test_batch_processing_drops_stale_sensor_cache_entries_before_insert():
+    with patch('telemetry_processing.fetch') as mock_fetch, \
+         patch('telemetry_processing.execute') as mock_execute:
+
+        _zone_cache.clear()
+        _node_cache.clear()
+        _sensor_cache.clear()
+        tp._cache_last_update = time.time()
+        _zone_cache[('zn-1', 'gh-1')] = 1
+        _node_cache[('nd-1', 'gh-1')] = (10, 1)
+        _sensor_cache[(1, 10, "TEMPERATURE", "TEMPERATURE")] = 101
+
+        samples = [
+            TelemetrySampleModel(
+                zone_uid='zn-1',
+                gh_uid='gh-1',
+                node_uid='nd-1',
+                metric_type='TEMPERATURE',
+                value=25.0,
+                ts=utcnow()
+            ),
+        ]
+
+        mock_fetch.side_effect = [
+            [],
+        ]
+
+        await process_telemetry_batch(samples)
+
+        assert mock_execute.call_count == 0
+        assert (1, 10, "TEMPERATURE", "TEMPERATURE") not in _sensor_cache
+
+
+@pytest.mark.asyncio
 async def test_sensor_insert_uses_on_conflict_and_caches_id():
     with patch('telemetry_processing.fetch') as mock_fetch, \
          patch('telemetry_processing.execute') as mock_execute:

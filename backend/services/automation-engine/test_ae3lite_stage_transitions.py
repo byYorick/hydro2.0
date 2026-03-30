@@ -173,3 +173,32 @@ async def test_record_transition_metadata_stored():
         await execute("DELETE FROM ae_stage_transitions WHERE task_id = $1", task_id)
         await _cleanup(zone_id)
         await execute("DELETE FROM greenhouses WHERE id = $1", gh_id)
+
+
+@pytest.mark.integration
+async def test_record_transition_skips_missing_task_without_fk_error():
+    """Deleted task should not cause FK failure during transition audit write."""
+    gh_id = await _insert_greenhouse()
+    zone_id = await _insert_zone(gh_id)
+    task_id = await _insert_task(zone_id)
+    try:
+        await execute("DELETE FROM ae_tasks WHERE id = $1", task_id)
+
+        repo = PgAutomationTaskRepository()
+        await repo.record_transition(
+            task_id=task_id,
+            from_stage="startup",
+            to_stage="clean_fill_start",
+            workflow_phase="tank_filling",
+            now=NOW,
+        )
+
+        rows = await fetch(
+            "SELECT * FROM ae_stage_transitions WHERE task_id = $1",
+            task_id,
+        )
+        assert rows == []
+    finally:
+        await execute("DELETE FROM ae_stage_transitions WHERE task_id = $1", task_id)
+        await _cleanup(zone_id)
+        await execute("DELETE FROM greenhouses WHERE id = $1", gh_id)

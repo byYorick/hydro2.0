@@ -1162,3 +1162,46 @@ async def test_execute_task_fail_closed_syncs_zone_workflow_state_to_idle() -> N
             "now": NOW,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_fail_closed_skips_zone_bound_side_effects_when_zone_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+
+    task = _make_task(stage="solution_fill_start", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    workflow_repo = _WorkflowRepoRecorder()
+    alerts = _AlertRepositoryRecorder()
+
+    class _TaskRepoDeletedDuringFailClosed(_TaskRepoRunning):
+        async def get_by_id(self, *, task_id):
+            assert task_id == task.id
+            return None
+
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoDeletedDuringFailClosed(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelFails(),
+        planner=_PlannerFails(),
+        command_gateway=object(),
+        workflow_router=object(),
+        workflow_repository=workflow_repo,
+        alert_repository=alerts,
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == ErrorCodes.AE3_SNAPSHOT_BUILD_FAILED
+    assert workflow_repo.calls == []
+    assert alerts.calls == []
+    assert recorded_events == []

@@ -633,19 +633,28 @@ class ExecuteTaskUseCase:
             error_code=error_code,
             now=now,
         )
-        await self._sync_workflow_failure_state(task=task, now=now)
-        await self._emit_task_failed_alert(
-            task=task,
-            error_code=error_code,
-            error_message=error_message,
-            now=now,
-            extra_details=extra_details,
-        )
+        zone_id = int(getattr(task, "zone_id", 0) or 0)
+        task_still_exists = await self._task_still_exists(task=task)
+        if task_still_exists:
+            await self._sync_workflow_failure_state(task=task, now=now)
+            await self._emit_task_failed_alert(
+                task=task,
+                error_code=error_code,
+                error_message=error_message,
+                now=now,
+                extra_details=extra_details,
+            )
+        else:
+            logger.info(
+                "AE3 fail-closed skipping zone-bound side-effects because task was already cleaned up: zone_id=%s task_id=%s",
+                zone_id,
+                int(getattr(task, "id", 0) or 0),
+            )
         try:
             startup_probe_timeout = extra_details.get("startup_probe_timeout")
-            if isinstance(startup_probe_timeout, Mapping):
+            if task_still_exists and isinstance(startup_probe_timeout, Mapping):
                 await create_zone_event(
-                    int(getattr(task, "zone_id", 0) or 0),
+                    zone_id,
                     "AE_STARTUP_PROBE_TIMEOUT",
                     {
                         "task_id": int(getattr(task, "id", 0) or 0),
@@ -654,18 +663,19 @@ class ExecuteTaskUseCase:
                         **dict(startup_probe_timeout),
                     },
                 )
-            await create_zone_event(
-                int(getattr(task, "zone_id", 0) or 0),
-                "AE_TASK_FAILED",
-                {
-                    "task_id": int(getattr(task, "id", 0) or 0),
-                    "error_code": str(error_code),
-                    "error_message": str(error_message),
-                    "stage": str(getattr(task, "current_stage", "") or ""),
-                    "topology": str(getattr(task, "topology", "") or ""),
-                    **extra_details,
-                },
-            )
+            if task_still_exists:
+                await create_zone_event(
+                    zone_id,
+                    "AE_TASK_FAILED",
+                    {
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "error_code": str(error_code),
+                        "error_message": str(error_message),
+                        "stage": str(getattr(task, "current_stage", "") or ""),
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        **extra_details,
+                    },
+                )
         except Exception:
             logger.warning(
                 "AE3 failed to log AE_TASK_FAILED event zone_id=%s task_id=%s error_code=%s",
@@ -700,6 +710,13 @@ class ExecuteTaskUseCase:
                 int(getattr(task, "id", 0) or 0),
                 exc_info=True,
             )
+
+    async def _task_still_exists(self, *, task: Any) -> bool:
+        get_by_id = getattr(self._task_repository, "get_by_id", None)
+        if not callable(get_by_id):
+            return True
+        current = await get_by_id(task_id=int(getattr(task, "id", 0) or 0))
+        return current is not None
 
     async def _emit_task_failed_alert(
         self,
