@@ -1,7 +1,7 @@
 # AE3 Irrigation Plan Gaps
 
 **Дата:** 2026-03-30  
-**Статус:** open  
+**Статус:** in_progress  
 **Контекст:** после реализации плана `AE3-полив с decision-controller в существующей системе конфигурирования`
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
@@ -17,6 +17,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - internal/public backend endpoints для запуска irrigation workflow;
 - backward-compatible bridge `FORCE_IRRIGATION -> AE3 start-irrigation`;
 - explicit runtime columns в `ae_tasks`;
+- schema-safe fallback в Laravel read-model, если миграция `ae_tasks.irrigation_*` ещё не применена;
+- UI action для обычного полива через `POST /api/zones/{id}/start-irrigation`;
+- разделение operator actions на `normal` и `force` в zone overview;
+- проброс irrigation decision metadata в runtime state и execution read-model;
 - базовые backend/python/php tests;
 - обновление ключевых canonical specs в `doc_ai`.
 
@@ -24,32 +28,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 2. Незаполненные пункты плана
 
-### 2.1 UI не переведён на two-action irrigation UX
-
-По плану должны быть две явные пользовательские операции:
-- `Полить` -> `mode=normal`
-- `Принудительно полить` -> `mode=force`
-
-Фактическое состояние:
-- UI по-прежнему живёт вокруг legacy-действия `FORCE_IRRIGATION`;
-- normal-path через `POST /api/zones/{id}/start-irrigation` как основная операторская кнопка не внедрён;
-- отдельной операторской кнопки для `mode=normal` нет.
-
-Затронутые файлы:
-- `backend/laravel/resources/js/Pages/Zones/Show.vue`
-- `backend/laravel/resources/js/Pages/Zones/Tabs/ZoneOverviewTab.vue`
-- `backend/laravel/resources/js/composables/useZoneShowPage.ts`
-- `backend/laravel/resources/js/composables/useDashboardPage.ts`
-- `backend/laravel/resources/js/composables/useCycleCenterActions.ts`
-- `backend/laravel/resources/js/Components/ZoneActionModal.vue`
-
-Что нужно сделать:
-- добавить пользовательский normal irrigation action;
-- оставить forced action как отдельную explicit операцию;
-- развести label/UX/confirmation для `normal` и `force`;
-- перевести operator flows на новый public endpoint, а legacy `FORCE_IRRIGATION` оставить только как compatibility path.
-
-### 2.2 Decision/recovery/safety конфиги не выведены в реальные формы редактирования
+### 2.1 Decision/recovery/safety конфиги не выведены в реальные формы редактирования
 
 Фактическое состояние:
 - типы, parser и payload уже поддерживают `subsystems.irrigation.decision`, `recovery`, `safety`;
@@ -66,30 +45,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - покрыть сохранение/загрузку через authority path;
 - отобразить sensible defaults и validation hints.
 
-### 2.3 `/api/zones/{id}/state` и execution read-model не отдают decision metadata
-
-По плану UI должен видеть:
-- `decision`
-- `reason_code`
-- `degraded`
-- `skip`
-
-Фактическое состояние:
-- runtime state уже умеет показывать irrigation phases/stages;
-- decision runtime columns в `ae_tasks` есть;
-- но state/execution responses не пробрасывают эти поля в operator-facing payload.
-
-Затронутые файлы:
-- `backend/services/automation-engine/ae3lite/application/use_cases/get_zone_automation_state.py`
-- `backend/laravel/app/Services/AutomationScheduler/ExecutionRunReadModel.php`
-
-Что нужно сделать:
-- вернуть `irrigation_decision_outcome`, `irrigation_decision_reason_code`, `irrigation_decision_degraded`
-  в `/state` и execution detail;
-- отобразить skipped/degraded outcome в timeline/detail UI;
-- добавить frontend rendering для этих полей.
-
-### 2.4 Frontend/unit tests ещё не полностью синхронизированы с новым contract
+### 2.2 Frontend/unit tests ещё не полностью синхронизированы с новым contract
 
 Фактическое состояние:
 - часть узких тестов уже обновлена;
@@ -107,17 +63,33 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
   - новые decision/recovery/safety поля;
 - прогнать полный vitest suite, а не только точечные тесты.
 
-### 2.5 Полный operator flow под новый public endpoint не завершён
+### 2.3 Decision metadata ещё не доведены до полного operator rendering
 
 Фактическое состояние:
-- backend endpoint `POST /api/zones/{id}/start-irrigation` существует;
-- scheduler path на backend уже умеет вызывать irrigation workflow;
-- UI/operator layer не использует этот endpoint как canonical primary action.
+- backend и state/read-model уже отдают `decision_outcome`, `decision_reason_code`, `decision_degraded`, `decision_strategy`;
+- базовый UI path для normal/force irrigation уже подключён;
+- но полный operator rendering outcome-состояний везде ещё не доведён.
 
 Что нужно сделать:
-- подключить новый endpoint в UI composables;
-- развести `normal` и `force` submit path;
-- обновить integration tests фронта и zone page interaction tests.
+- отобразить skipped/degraded outcome в execution detail и timeline без пробелов между страницами;
+- проверить scheduler/workspace UI на корректный показ decision metadata;
+- добавить явные UI labels для `skip`, `degraded_run`, `fail`.
+
+### 2.4 Dashboard и cycle-center quick actions ещё не переведены на новый normal path
+
+Фактическое состояние:
+- zone overview уже умеет `normal` и `force`;
+- но быстрые действия в dashboard/cycle-center ещё не подтверждены как полностью переведённые на новый public endpoint;
+- остаётся риск, что часть operator shortcuts всё ещё живёт вокруг legacy forced semantics.
+
+Затронутые файлы:
+- `backend/laravel/resources/js/composables/useDashboardPage.ts`
+- `backend/laravel/resources/js/composables/useCycleCenterActions.ts`
+
+Что нужно сделать:
+- выровнять quick actions с тем же `normal`/`force` контрактом;
+- убедиться, что основной shortcut использует `POST /api/zones/{id}/start-irrigation`;
+- оставить legacy `FORCE_IRRIGATION` только как compatibility path.
 
 ---
 
@@ -128,13 +100,27 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Прогнаны только точечные тесты:
 - `Wizard.spec.ts`
 - `useGrowthCycleWizard.spec.ts`
+- `ZoneActionModal.spec.ts`
+- `ZoneActionModal.validation.spec.ts`
+- `Show.spec.ts`
+- `Show.integration.spec.ts`
+- `ZoneSchedulerTab.spec.ts`
 
 Не подтверждено:
 - что остальные vitest suites зелёные;
 - что legacy UI integration tests не ломаются на новой семантике полива;
 - что build/typecheck целиком не содержит остаточных несоответствий.
 
-### 3.2 Нет полного e2e/operator подтверждения нового UX-контракта
+### 3.2 Совместимость до миграции закрыта только на уровне read-model
+
+Сделан защитный fallback в:
+- `backend/laravel/app/Services/AutomationScheduler/ExecutionRunReadModel.php`
+
+Это решает падение списка/детали execution до применения миграции, но не отменяет необходимость прогнать:
+- Laravel migration `2026_03_30_120000_add_ae3lite_irrigation_runtime.php`;
+- smoke-проверку сценариев, которые реально пишут `irrigation_*` поля в `ae_tasks`.
+
+### 3.3 Нет полного e2e/operator подтверждения нового UX-контракта
 
 Не подтвержден end-to-end сценарий:
 1. оператор запускает `normal` irrigation;
@@ -143,7 +129,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 4. forced path остаётся отдельно доступным;
 5. low-solution/setup replay отражается в UI/state/timeline.
 
-### 3.3 Документация обновлена на уровне canonical specs, но не закрыт слой task-specific runbook
+### 3.4 Документация обновлена на уровне canonical specs, но не закрыт слой task-specific runbook
 
 Обновлены:
 - `doc_ai/04_BACKEND_CORE/ae3lite.md`
@@ -160,21 +146,20 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ## 4. Рекомендуемый следующий этап
 
 Приоритет 1:
-- внедрить в UI две отдельные irrigation actions: `normal` и `force`;
-- подключить public endpoint `POST /api/zones/{id}/start-irrigation` как основной operator path;
 - вывести decision/recovery/safety настройки в форму.
 
 Приоритет 2:
-- пробросить decision metadata в `/state` и execution detail;
-- обновить UI rendering skipped/degraded outcome;
+- довести UI rendering skipped/degraded outcome;
+- синхронизировать dashboard/cycle-center quick actions с `normal`/`force`;
 - синхронизировать оставшиеся frontend tests.
 
 Приоритет 3:
-- прогнать полный frontend test suite и, при наличии, e2e/operator сценарии.
+- прогнать полный frontend test suite и, при наличии, e2e/operator сценарии;
+- применить migration на средах и сделать smoke-проверку записи `irrigation_*` runtime fields.
 
 ---
 
 ## 5. Краткий вывод
 
-Backend/runtime часть плана в основном реализована.  
-Основной незакрытый объём теперь находится в operator UI, frontend contract rendering и полном frontend test alignment.
+Backend/runtime часть плана реализована заметно глубже, чем на предыдущей итерации.  
+Основной незакрытый объём теперь находится в editor UI для irrigation-конфигов, полном operator rendering decision outcome, quick actions и полном frontend test alignment.
