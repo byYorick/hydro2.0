@@ -86,6 +86,7 @@ class ZoneLogicProfileService
             $userId,
             'zone_logic_profile'
         );
+        $this->syncZoneCapabilitiesFromSubsystems($zone, $normalizedSubsystems);
 
         $this->emitProfileUpdatedZoneEvent(
             zoneId: (int) $zone->id,
@@ -234,5 +235,46 @@ class ZoneLogicProfileService
         }
 
         return Carbon::parse($value);
+    }
+
+    /**
+     * zones.capabilities — materialized read-model для старых экранов и сервисов.
+     *
+     * @param  array<string, mixed>  $subsystems
+     */
+    private function syncZoneCapabilitiesFromSubsystems(Zone $zone, array $subsystems): void
+    {
+        $capabilities = is_array($zone->capabilities) ? $zone->capabilities : [];
+        $subsystemEnabled = static function (array $subsystems, string $name): ?bool {
+            $entry = $subsystems[$name] ?? null;
+            if (! is_array($entry) || array_is_list($entry) || ! array_key_exists('enabled', $entry)) {
+                return null;
+            }
+
+            return (bool) $entry['enabled'];
+        };
+
+        $mapping = [
+            'ph_control' => $subsystemEnabled($subsystems, 'ph'),
+            'ec_control' => $subsystemEnabled($subsystems, 'ec'),
+            'irrigation_control' => $subsystemEnabled($subsystems, 'irrigation'),
+            'light_control' => $subsystemEnabled($subsystems, 'lighting'),
+        ];
+
+        foreach ($mapping as $capability => $enabled) {
+            if ($enabled !== null) {
+                $capabilities[$capability] = $enabled;
+            }
+        }
+
+        $climateEnabled = $subsystemEnabled($subsystems, 'climate');
+        $zoneClimateEnabled = $subsystemEnabled($subsystems, 'zone_climate');
+        if ($climateEnabled !== null || $zoneClimateEnabled !== null) {
+            $capabilities['climate_control'] = ($climateEnabled ?? false) || ($zoneClimateEnabled ?? false);
+        }
+
+        $zone->forceFill([
+            'capabilities' => $capabilities,
+        ])->save();
     }
 }

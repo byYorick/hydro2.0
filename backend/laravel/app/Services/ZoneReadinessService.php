@@ -81,7 +81,7 @@ class ZoneReadinessService
      */
     private function getCapabilityRequiredBindings(Zone $zone): array
     {
-        $capabilities = is_array($zone->capabilities) ? $zone->capabilities : [];
+        $capabilities = $this->resolveEffectiveCapabilities($zone);
         $required = [];
 
         if ($this->isCapabilityEnabled($capabilities['ph_control'] ?? false)) {
@@ -93,6 +93,56 @@ class ZoneReadinessService
         }
 
         return $required;
+    }
+
+    /**
+     * Канонический источник capability-флагов — активный zone.logic_profile.
+     * zones.capabilities используется как fallback для legacy-зон без сохранённого профиля.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveEffectiveCapabilities(Zone $zone): array
+    {
+        $capabilities = is_array($zone->capabilities) ? $zone->capabilities : [];
+        $profile = $this->resolveActiveAutomationProfile($zone);
+        $subsystems = is_array($profile?->subsystems ?? null) ? $profile->subsystems : [];
+
+        $subsystemEnabled = static function (array $subsystems, string $name): ?bool {
+            $entry = $subsystems[$name] ?? null;
+            if (! is_array($entry) || array_is_list($entry) || ! array_key_exists('enabled', $entry)) {
+                return null;
+            }
+
+            return (bool) $entry['enabled'];
+        };
+
+        $phEnabled = $subsystemEnabled($subsystems, 'ph');
+        if ($phEnabled !== null) {
+            $capabilities['ph_control'] = $phEnabled;
+        }
+
+        $ecEnabled = $subsystemEnabled($subsystems, 'ec');
+        if ($ecEnabled !== null) {
+            $capabilities['ec_control'] = $ecEnabled;
+        }
+
+        $irrigationEnabled = $subsystemEnabled($subsystems, 'irrigation');
+        if ($irrigationEnabled !== null) {
+            $capabilities['irrigation_control'] = $irrigationEnabled;
+        }
+
+        $lightingEnabled = $subsystemEnabled($subsystems, 'lighting');
+        if ($lightingEnabled !== null) {
+            $capabilities['light_control'] = $lightingEnabled;
+        }
+
+        $climateEnabled = $subsystemEnabled($subsystems, 'climate');
+        $zoneClimateEnabled = $subsystemEnabled($subsystems, 'zone_climate');
+        if ($climateEnabled !== null || $zoneClimateEnabled !== null) {
+            $capabilities['climate_control'] = ($climateEnabled ?? false) || ($zoneClimateEnabled ?? false);
+        }
+
+        return $capabilities;
     }
 
     /**

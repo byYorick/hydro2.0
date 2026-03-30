@@ -412,6 +412,47 @@ class ZoneReadinessServiceTest extends TestCase
         $this->assertContains('ec_npk_pump', $readiness['missing_bindings']);
     }
 
+    public function test_check_zone_readiness_uses_active_logic_profile_capabilities_when_zone_row_is_stale(): void
+    {
+        $zone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => false,
+                'ph_control' => false,
+            ],
+        ]);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->createActuatorBinding($zone, $node, 'pump_main', 'main_pump', 'Основная помпа');
+        $this->storeZoneLogicProfile($zone, [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'tanks_count' => 2,
+                ],
+            ],
+            'ph' => [
+                'enabled' => true,
+            ],
+            'ec' => [
+                'enabled' => true,
+            ],
+        ]);
+
+        $readiness = $this->service->checkZoneReadiness($zone->fresh());
+
+        $this->assertFalse($readiness['ready']);
+        $this->assertContains('ph_acid_pump', $readiness['missing_bindings']);
+        $this->assertContains('ec_npk_pump', $readiness['missing_bindings']);
+        $this->assertSame(
+            ['main_pump', 'ph_acid_pump', 'ph_base_pump', 'ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'],
+            $readiness['required_bindings']
+        );
+    }
+
     public function test_check_zone_readiness_is_not_ready_when_dispatch_is_disabled(): void
     {
         config()->set('services.automation_engine.grow_cycle_start_dispatch_enabled', false);

@@ -19,6 +19,8 @@ use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\GrowCycleService;
+use App\Services\ZoneLogicProfileCatalog;
+use App\Services\ZoneLogicProfileService;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -162,6 +164,20 @@ class GrowCycleControllerTest extends TestCase
                 ],
                 'max_integral' => 100.0,
             ]
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $subsystems
+     */
+    private function saveZoneLogicProfile(Zone $zone, array $subsystems): void
+    {
+        app(ZoneLogicProfileService::class)->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_SETUP,
+            subsystems: $subsystems,
+            activate: true,
+            userId: null,
         );
     }
 
@@ -452,6 +468,106 @@ class GrowCycleControllerTest extends TestCase
         $this->assertContains('Для насоса EC Calcium не задана калибровка', $errors);
         $this->assertContains('Для насоса EC Magnesium не задана калибровка', $errors);
         $this->assertContains('Для насоса EC Micro не задана калибровка', $errors);
+    }
+
+    #[Test]
+    public function it_blocks_cycle_start_when_logic_profile_enables_dosing_but_zone_capabilities_are_stale(): void
+    {
+        $zone = Zone::factory()->create([
+            'capabilities' => [
+                'ec_control' => false,
+                'ph_control' => false,
+            ],
+        ]);
+        $this->attachRequiredInfrastructure($zone);
+        $this->createPidConfigs($zone);
+
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+
+        $this->bindChannelToRole($zone, NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_acid',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]), 'ph_acid_pump', 'Насос pH кислоты');
+        $this->bindChannelToRole($zone, NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_base',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]), 'ph_base_pump', 'Насос pH щёлочи');
+        $this->bindChannelToRole($zone, NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_a',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]), 'ec_npk_pump', 'Насос EC NPK');
+        $this->bindChannelToRole($zone, NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_b',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]), 'ec_calcium_pump', 'Насос EC Calcium');
+        $this->bindChannelToRole($zone, NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_c',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]), 'ec_magnesium_pump', 'Насос EC Magnesium');
+        $this->bindChannelToRole($zone, NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_d',
+            'type' => 'actuator',
+            'metric' => 'pump',
+            'unit' => null,
+            'config' => [],
+        ]), 'ec_micro_pump', 'Насос EC Micro');
+
+        $this->saveZoneLogicProfile($zone, [
+            'irrigation' => [
+                'enabled' => true,
+                'execution' => [
+                    'tanks_count' => 2,
+                ],
+            ],
+            'ph' => [
+                'enabled' => true,
+            ],
+            'ec' => [
+                'enabled' => true,
+            ],
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/zones/{$zone->id}/grow-cycles", [
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
+                'start_immediately' => true,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start');
+
+        $errors = $response->json('readiness_errors', []);
+        $this->assertContains('Для насоса pH кислоты не задана калибровка', $errors);
+        $this->assertContains('Для насоса pH щёлочи не задана калибровка', $errors);
+        $this->assertContains('Для насоса EC NPK не задана калибровка', $errors);
+        $this->assertTrue((bool) data_get($zone->fresh()->capabilities, 'ph_control'));
+        $this->assertTrue((bool) data_get($zone->fresh()->capabilities, 'ec_control'));
     }
 
     #[Test]

@@ -161,6 +161,42 @@ class ZoneLogicProfileServiceTest extends TestCase
         $this->assertCount(1, data_get($profile->commandPlans, 'plans.diagnostics.steps', []));
     }
 
+    public function test_it_syncs_zone_capabilities_from_saved_subsystems(): void
+    {
+        $zone = Zone::factory()->create([
+            'capabilities' => [
+                'ph_control' => false,
+                'ec_control' => false,
+                'climate_control' => false,
+                'light_control' => false,
+                'irrigation_control' => false,
+            ],
+        ]);
+        $user = User::factory()->create();
+
+        $this->service->upsertProfile(
+            zone: $zone,
+            mode: ZoneLogicProfileCatalog::MODE_SETUP,
+            subsystems: [
+                'ph' => ['enabled' => true],
+                'ec' => ['enabled' => true],
+                'irrigation' => ['enabled' => true, 'execution' => ['tanks_count' => 2]],
+                'lighting' => ['enabled' => true],
+                'climate' => ['enabled' => true],
+                'zone_climate' => ['enabled' => false],
+            ],
+            activate: true,
+            userId: (int) $user->id,
+        );
+
+        $fresh = $zone->fresh();
+        $this->assertTrue((bool) data_get($fresh?->capabilities, 'ph_control'));
+        $this->assertTrue((bool) data_get($fresh?->capabilities, 'ec_control'));
+        $this->assertTrue((bool) data_get($fresh?->capabilities, 'irrigation_control'));
+        $this->assertTrue((bool) data_get($fresh?->capabilities, 'light_control'));
+        $this->assertTrue((bool) data_get($fresh?->capabilities, 'climate_control'));
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */
