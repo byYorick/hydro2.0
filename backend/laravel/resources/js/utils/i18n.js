@@ -60,6 +60,11 @@ export function classifyEventKind(kind) {
   if (
     kind === 'PID_OUTPUT' ||
     kind === 'PID_CONFIG_UPDATED' ||
+    kind === 'CORRECTION_DECISION_MADE' ||
+    kind === 'CORRECTION_OBSERVATION_EVALUATED' ||
+    kind === 'CORRECTION_LIMIT_POLICY_APPLIED' ||
+    kind === 'CORRECTION_ATTEMPT_CAP_IGNORED' ||
+    kind === 'CORRECTION_INTERRUPTED_STAGE_COMPLETE' ||
     kind === 'CORRECTION_STATE_TRANSITION' ||
     kind.startsWith('CORRECTION_SKIPPED_') ||
     kind === 'CORRECTION_SKIPPED_WINDOW_NOT_READY' ||
@@ -162,6 +167,11 @@ export function translateEventKind(kind) {
     'PUMP_DOSE_SENT': 'Доза отправлена насосу',
     'PID_OUTPUT': 'PID: расчёт выхода',
     'PID_CONFIG_UPDATED': 'Конфиг PID обновлён',
+    'CORRECTION_DECISION_MADE': 'Коррекция: выбран следующий шаг',
+    'CORRECTION_OBSERVATION_EVALUATED': 'Коррекция: наблюдение оценено',
+    'CORRECTION_LIMIT_POLICY_APPLIED': 'Коррекция: применена политика лимитов',
+    'CORRECTION_ATTEMPT_CAP_IGNORED': 'Коррекция: лимит попыток проигнорирован',
+    'CORRECTION_INTERRUPTED_STAGE_COMPLETE': 'Коррекция: стадия завершилась во время окна',
     'CORRECTION_STATE_TRANSITION': 'Коррекция: переход состояния',
 
     // Итоги коррекции

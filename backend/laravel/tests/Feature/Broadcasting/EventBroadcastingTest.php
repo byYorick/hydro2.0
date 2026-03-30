@@ -222,7 +222,10 @@ class EventBroadcastingTest extends TestCase
         $event = new EventCreated(
             id: 1001,
             kind: 'INFO',
-            message: 'Событие создано'
+            message: 'Событие создано',
+            zoneId: null,
+            occurredAt: '2026-03-30T10:00:00Z',
+            payload: ['entity_type' => 'telemetry']
         );
 
         event($event);
@@ -250,6 +253,29 @@ class EventBroadcastingTest extends TestCase
             return $e->zoneId === 9
                 && $e->broadcastOn()->name === 'private-hydro.zones.9';
         });
+    }
+
+    public function test_event_created_broadcast_with_payload(): void
+    {
+        $event = new EventCreated(
+            id: 1003,
+            kind: 'COMMAND_DISPATCHED',
+            message: 'Событие с payload',
+            zoneId: 9,
+            occurredAt: '2026-03-30T11:00:00Z',
+            payload: ['cmd_id' => 'abc-123']
+        );
+
+        $data = $event->broadcastWith();
+
+        $this->assertEquals(1003, $data['id']);
+        $this->assertEquals('COMMAND_DISPATCHED', $data['kind']);
+        $this->assertEquals('Событие с payload', $data['message']);
+        $this->assertEquals(9, $data['zoneId']);
+        $this->assertEquals(9, $data['zone_id']);
+        $this->assertEquals('2026-03-30T11:00:00Z', $data['occurredAt']);
+        $this->assertEquals('2026-03-30T11:00:00Z', $data['occurred_at']);
+        $this->assertEquals(['cmd_id' => 'abc-123'], $data['payload']);
     }
 
     /**

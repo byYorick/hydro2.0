@@ -242,6 +242,40 @@ class GrowCycleControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_rejects_start_endpoint_when_zone_is_not_ready(): void
+    {
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $this->zone->id,
+            'recipe_revision_id' => $this->revision->id,
+            'plant_id' => $this->plant->id,
+            'status' => GrowCycleStatus::PLANNED,
+        ]);
+        $initialZoneStatus = (string) $this->zone->fresh()->status;
+
+        AutomationConfigDocument::query()
+            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+            ->where('scope_id', $this->zone->id)
+            ->whereIn('namespace', [
+                AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
+                AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
+            ])
+            ->delete();
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/grow-cycles/{$cycle->id}/start");
+
+        $response->assertStatus(422)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Zone is not ready for cycle start')
+            ->assertJsonPath('readiness.checks.pid_config_ph', false)
+            ->assertJsonPath('readiness.checks.pid_config_ec', false);
+
+        $cycle->refresh();
+        $this->assertSame(GrowCycleStatus::PLANNED, $cycle->status);
+        $this->assertSame($initialZoneStatus, (string) $this->zone->fresh()->status);
+    }
+
+    #[Test]
     public function it_rejects_immediate_start_when_required_zone_pid_authority_documents_are_not_saved(): void
     {
         $this->assertSame(0, $this->pidAuthorityDocumentCount($this->zone));

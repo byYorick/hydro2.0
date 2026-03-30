@@ -10,6 +10,7 @@ import { resolveAlertCodeMeta, resolveAlertSeverity, type AlertSeverity, type Al
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
+import type { WsEventPayload } from '@/ws/subscriptionTypes'
 import type { Alert } from '@/types/Alert'
 
 interface AlertZoneOption {
@@ -639,11 +640,15 @@ export function useAlertsPage() {
     }
   }
 
+  const handleRealtimeAlertPayload = (payload: WsEventPayload): void => {
+    handleRealtimeAlert(payload as unknown as AlertRecord)
+  }
+
   onMounted(() => {
     loadToastSuppressionPreference()
     loadAlertCatalog()
     const alertEventHandlers = Object.fromEntries(
-      ALERT_EVENT_NAMES.map((eventName) => [eventName, (payload: Record<string, unknown>) => handleRealtimeAlert(payload as AlertRecord)])
+      ALERT_EVENT_NAMES.map((eventName) => [eventName, handleRealtimeAlertPayload])
     )
 
     realtimeUnsubscribers.push(

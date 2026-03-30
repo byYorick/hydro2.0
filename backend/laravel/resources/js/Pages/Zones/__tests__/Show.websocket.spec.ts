@@ -379,6 +379,143 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
     wrapper.unmount()
   })
 
+  it('should append realtime telemetry samples to zone charts', async () => {
+    const baseTs = Date.now()
+    const zoneChannel = {
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+    }
+
+    mockEchoPrivate.mockReturnValue(zoneChannel)
+
+    const wrapper = mount(ShowComponent, {
+      global: {
+        stubs: {
+          AppLayout: true,
+          Card: true,
+          Button: true,
+          Badge: true,
+          ZoneTargets: true,
+          ZoneTelemetryChart: true,
+          MultiSeriesTelemetryChart: true,
+          PhaseProgress: true,
+          ZoneDevicesVisualization: true,
+          PidConfigForm: true,
+        },
+      },
+    })
+
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 120))
+    await nextTick()
+
+    const telemetryBatchListenCall = zoneChannel.listen.mock.calls.find(
+      ([eventName]) => eventName === '.telemetry.batch.updated'
+    )
+
+    expect(telemetryBatchListenCall).toBeTruthy()
+
+    const telemetryBatchHandler = telemetryBatchListenCall?.[1]
+    expect(typeof telemetryBatchHandler).toBe('function')
+
+    telemetryBatchHandler({
+      zone_id: 1,
+      server_ts: baseTs + 100,
+      updates: [
+        {
+          node_id: 11,
+          channel: 'ph_sensor',
+          metric_type: 'PH',
+          value: 6.1,
+          ts: baseTs,
+        },
+        {
+          node_id: 12,
+          channel: 'ec_sensor',
+          metric_type: 'EC',
+          value: 1.9,
+          ts: baseTs + 5000,
+        },
+      ],
+    })
+
+    await nextTick()
+
+    expect(wrapper.vm.telemetry.ph).toBe(6.1)
+    expect(wrapper.vm.telemetry.ec).toBe(1.9)
+    expect(wrapper.vm.chartDataPh.at(-1)).toEqual({
+      ts: baseTs,
+      value: 6.1,
+    })
+    expect(wrapper.vm.chartDataEc.at(-1)).toEqual({
+      ts: baseTs + 5000,
+      value: 1.9,
+    })
+  })
+
+  it('should append realtime zone events to the events list', async () => {
+    const zoneChannel = {
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+    }
+
+    mockEchoPrivate.mockReturnValue(zoneChannel)
+
+    const wrapper = mount(ShowComponent, {
+      global: {
+        stubs: {
+          AppLayout: true,
+          Card: true,
+          Button: true,
+          Badge: true,
+          ZoneTargets: true,
+          ZoneTelemetryChart: true,
+          MultiSeriesTelemetryChart: true,
+          PhaseProgress: true,
+          ZoneDevicesVisualization: true,
+          PidConfigForm: true,
+        },
+      },
+    })
+
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 120))
+    await nextTick()
+
+    const eventCreatedListenCall = zoneChannel.listen.mock.calls.find(
+      ([eventName]) => eventName === '.EventCreated'
+    )
+
+    expect(eventCreatedListenCall).toBeTruthy()
+
+    const eventCreatedHandler = eventCreatedListenCall?.[1]
+    expect(typeof eventCreatedHandler).toBe('function')
+
+    eventCreatedHandler({
+      id: 777,
+      kind: 'COMMAND_DISPATCHED',
+      message: 'Команда отправлена',
+      zoneId: 1,
+      occurredAt: '2026-03-30T10:00:00.000Z',
+      payload: {
+        cmd_id: 'abc-123',
+      },
+    })
+
+    await nextTick()
+
+    expect(wrapper.vm.events[0]).toMatchObject({
+      id: 777,
+      kind: 'COMMAND_DISPATCHED',
+      message: 'Команда отправлена',
+      zone_id: 1,
+      occurred_at: '2026-03-30T10:00:00.000Z',
+      payload: {
+        cmd_id: 'abc-123',
+      },
+    })
+  })
+
   it('should stop previous GrowCycleUpdated listener when zoneId changes', async () => {
     const reactivePageProps = reactive({
       zoneId: 1,
@@ -457,7 +594,10 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
 
       wrapper.unmount()
       await nextTick()
-      expect(stopListeningMock).toHaveBeenCalledTimes(2)
+      const growCycleStopCalls = stopListeningMock.mock.calls.filter(
+        ([eventName]) => eventName === '.App\\Events\\GrowCycleUpdated'
+      )
+      expect(growCycleStopCalls).toHaveLength(2)
       expect(leaveMock).toHaveBeenCalledWith('hydro.zones.2')
     } finally {
       const win = window as any

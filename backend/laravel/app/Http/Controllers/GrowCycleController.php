@@ -98,6 +98,17 @@ class GrowCycleController extends Controller
         }
 
         try {
+            $zone->loadMissing('nodes.channels');
+            $readiness = $this->checkZoneReadiness($zone);
+            if (($readiness['ready'] ?? false) !== true) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Zone is not ready for cycle start',
+                    'readiness_errors' => $readiness['errors'] ?? [],
+                    'readiness' => $readiness,
+                ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
             $cycle = $this->growCycleService->startCycle($growCycle);
 
             return response()->json([

@@ -1495,8 +1495,14 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                 key = (zone_id, sample.node_uid)
                 node_unassigned_detected_in_batch.add(key)
                 _node_unassigned_last_seen[key] = time.time()
-            logger.warning(
-                "Skipping sample: node is not assigned to any zone",
+            _log_warning_throttled(
+                key=(
+                    "node_unassigned",
+                    sample.gh_uid or "-",
+                    sample.node_uid or "-",
+                    str(zone_id),
+                ),
+                message="Skipping sample: node is not assigned to any zone",
                 extra={
                     "node_uid": sample.node_uid,
                     "node_id": node_id,
@@ -1523,6 +1529,28 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                     "sample_metric_type": sample.metric_type,
                 },
             )
+            continue
+
+        if (
+            node_zone_id is not None
+            and node_zone_id != zone_id
+            and node_pending_zone_id is not None
+            and node_pending_zone_id == zone_id
+        ):
+            logger.info(
+                "Skipping sample: node rebind pending, telemetry ignored until old zone assignment is finalized",
+                extra={
+                    "node_uid": sample.node_uid,
+                    "node_id": node_id,
+                    "node_zone_id": node_zone_id,
+                    "pending_zone_id": node_pending_zone_id,
+                    "requested_zone_id": zone_id,
+                    "zone_uid": sample.zone_uid,
+                    "gh_uid": sample.gh_uid,
+                    "metric_type": sample.metric_type,
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="node_rebind_pending").inc()
             continue
 
         if node_zone_id != zone_id:

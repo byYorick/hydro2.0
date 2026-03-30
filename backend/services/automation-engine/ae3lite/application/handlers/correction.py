@@ -586,13 +586,58 @@ class CorrectionHandler(BaseStageHandler):
             ph_amount_ml=dose_plan.ph_amount_ml if dose_plan.ph_amount_ml else None,
         )
 
-        if dose_plan.needs_ec:
+        prioritize_pending_ph = (
+            (corr.needs_ph_up or corr.needs_ph_down)
+            and (dose_plan.needs_ph_up or dose_plan.needs_ph_down)
+        )
+
+        selected_action: str | None = None
+        decision_reason: str | None = None
+        if prioritize_pending_ph:
+            next_corr = replace(next_corr, corr_step="corr_dose_ph")
+            selected_action = "ph_up" if dose_plan.needs_ph_up else "ph_down"
+            decision_reason = "prioritize_pending_ph_after_ec_observe"
+        elif dose_plan.needs_ec:
             next_corr = replace(next_corr, corr_step="corr_dose_ec")
+            selected_action = "ec"
+            if dose_plan.needs_ph_up or dose_plan.needs_ph_down:
+                decision_reason = "ec_first_in_window"
+            else:
+                decision_reason = "ec_only_needed"
         elif dose_plan.needs_ph_up or dose_plan.needs_ph_down:
             next_corr = replace(next_corr, corr_step="corr_dose_ph")
+            selected_action = "ph_up" if dose_plan.needs_ph_up else "ph_down"
+            decision_reason = "ph_raise_needed" if dose_plan.needs_ph_up else "ph_lower_needed"
         else:
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
 
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_DECISION_MADE",
+            task=task,
+            corr=next_corr,
+            payload={
+                "selected_action": selected_action,
+                "decision_reason": decision_reason,
+                "current_ph": current_ph,
+                "current_ec": current_ec,
+                "target_ph": target_ph,
+                "target_ec": target_ec,
+                "target_ph_min": runtime.get("target_ph_min"),
+                "target_ph_max": runtime.get("target_ph_max"),
+                "target_ec_min": runtime.get("target_ec_min"),
+                "target_ec_max": runtime.get("target_ec_max"),
+                "needs_ec": dose_plan.needs_ec,
+                "needs_ph_up": dose_plan.needs_ph_up,
+                "needs_ph_down": dose_plan.needs_ph_down,
+                "pending_ph_from_previous_step": bool(corr.needs_ph_up or corr.needs_ph_down),
+                **(
+                    dict(dose_plan.dead_zone_details)
+                    if isinstance(dose_plan.dead_zone_details, Mapping)
+                    else {}
+                ),
+            },
+        )
         return StageOutcome(kind="enter_correction", correction=next_corr)
 
     async def _run_dose_ec(
@@ -635,26 +680,25 @@ class CorrectionHandler(BaseStageHandler):
                 )
             except Exception:
                 _logger.debug("Could not read EC pid_state for event logging", exc_info=True)
-        try:
-            await create_zone_event(
-                task.zone_id,
-                "EC_DOSING",
-                {
-                    "node_uid": corr.ec_node_uid,
-                    "channel": corr.ec_channel,
-                    "duration_ms": corr.ec_duration_ms,
-                    "amount_ml": corr.ec_amount_ml,
-                    "ec_component": corr.ec_component,
-                    "current_ec": current_ec,
-                    "target_ec": runtime.get("target_ec"),
-                    "target_ec_min": runtime.get("target_ec_min"),
-                    "target_ec_max": runtime.get("target_ec_max"),
-                    "attempt": corr.ec_attempt + 1,
-                    "source": "correction_handler",
-                },
-            )
-        except Exception:
-            _logger.warning("Failed to log EC_DOSING zone event", exc_info=True)
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="EC_DOSING",
+            task=task,
+            corr=replace(corr, ec_attempt=corr.ec_attempt + 1),
+            payload={
+                "node_uid": corr.ec_node_uid,
+                "channel": corr.ec_channel,
+                "duration_ms": corr.ec_duration_ms,
+                "amount_ml": corr.ec_amount_ml,
+                "observe_seq": self._observe_seq(corr=corr, pid_type="ec", after_dose=True),
+                "ec_component": corr.ec_component,
+                "current_ec": current_ec,
+                "target_ec": runtime.get("target_ec"),
+                "target_ec_min": runtime.get("target_ec_min"),
+                "target_ec_max": runtime.get("target_ec_max"),
+                "source": "correction_handler",
+            },
+        )
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
@@ -687,12 +731,6 @@ class CorrectionHandler(BaseStageHandler):
             corr_step="corr_wait_ec",
             ec_attempt=corr.ec_attempt + 1,
             wait_until=wait_until,
-            needs_ph_up=False,
-            needs_ph_down=False,
-            ph_node_uid=None,
-            ph_channel=None,
-            ph_duration_ms=None,
-            ph_amount_ml=None,
         )
         return StageOutcome(
             kind="enter_correction",
@@ -754,26 +792,25 @@ class CorrectionHandler(BaseStageHandler):
             except Exception:
                 _logger.debug("Could not read PH pid_state for event logging", exc_info=True)
         ph_direction = "up" if corr.needs_ph_up else "down"
-        try:
-            await create_zone_event(
-                task.zone_id,
-                "PH_CORRECTED",
-                {
-                    "node_uid": corr.ph_node_uid,
-                    "channel": corr.ph_channel,
-                    "duration_ms": corr.ph_duration_ms,
-                    "amount_ml": corr.ph_amount_ml,
-                    "direction": ph_direction,
-                    "current_ph": current_ph,
-                    "target_ph": runtime.get("target_ph"),
-                    "target_ph_min": runtime.get("target_ph_min"),
-                    "target_ph_max": runtime.get("target_ph_max"),
-                    "attempt": corr.ph_attempt + 1,
-                    "source": "correction_handler",
-                },
-            )
-        except Exception:
-            _logger.warning("Failed to log PH_CORRECTED zone event", exc_info=True)
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="PH_CORRECTED",
+            task=task,
+            corr=replace(corr, ph_attempt=corr.ph_attempt + 1),
+            payload={
+                "node_uid": corr.ph_node_uid,
+                "channel": corr.ph_channel,
+                "duration_ms": corr.ph_duration_ms,
+                "amount_ml": corr.ph_amount_ml,
+                "observe_seq": self._observe_seq(corr=corr, pid_type="ph", after_dose=True),
+                "direction": ph_direction,
+                "current_ph": current_ph,
+                "target_ph": runtime.get("target_ph"),
+                "target_ph_min": runtime.get("target_ph_min"),
+                "target_ph_max": runtime.get("target_ph_max"),
+                "source": "correction_handler",
+            },
+        )
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
@@ -1345,6 +1382,7 @@ class CorrectionHandler(BaseStageHandler):
             payload={
                 "pid_type": pid_type,
                 "sensor_type": sensor_type,
+                "observe_seq": self._observe_seq(corr=corr, pid_type=pid_type),
                 "dose_amount_ml": dose_amount_ml,
                 "baseline_value": float(baseline_value),
                 "observed_value": observed_value,
@@ -1419,6 +1457,10 @@ class CorrectionHandler(BaseStageHandler):
             next_ec_attempt = 0
             next_ph_attempt = 0
 
+        preserve_ec_pending = pid_type != "ec" and bool(corr.needs_ec)
+        preserve_ph_up_pending = pid_type != "ph" and bool(corr.needs_ph_up)
+        preserve_ph_down_pending = pid_type != "ph" and bool(corr.needs_ph_down)
+
         next_corr = replace(
             corr,
             corr_step="corr_check",
@@ -1426,18 +1468,18 @@ class CorrectionHandler(BaseStageHandler):
             ec_attempt=next_ec_attempt,
             ph_attempt=next_ph_attempt,
             wait_until=None,
-            needs_ec=False,
-            ec_node_uid=None,
-            ec_channel=None,
-            ec_duration_ms=None,
-            ec_component=None,
-            ec_amount_ml=None,
-            needs_ph_up=False,
-            needs_ph_down=False,
-            ph_node_uid=None,
-            ph_channel=None,
-            ph_duration_ms=None,
-            ph_amount_ml=None,
+            needs_ec=preserve_ec_pending,
+            ec_node_uid=corr.ec_node_uid if preserve_ec_pending else None,
+            ec_channel=corr.ec_channel if preserve_ec_pending else None,
+            ec_duration_ms=corr.ec_duration_ms if preserve_ec_pending else None,
+            ec_component=corr.ec_component if preserve_ec_pending else None,
+            ec_amount_ml=corr.ec_amount_ml if preserve_ec_pending else None,
+            needs_ph_up=preserve_ph_up_pending,
+            needs_ph_down=preserve_ph_down_pending,
+            ph_node_uid=corr.ph_node_uid if (preserve_ph_up_pending or preserve_ph_down_pending) else None,
+            ph_channel=corr.ph_channel if (preserve_ph_up_pending or preserve_ph_down_pending) else None,
+            ph_duration_ms=corr.ph_duration_ms if (preserve_ph_up_pending or preserve_ph_down_pending) else None,
+            ph_amount_ml=corr.ph_amount_ml if (preserve_ph_up_pending or preserve_ph_down_pending) else None,
         )
         return StageOutcome(kind="enter_correction", correction=next_corr)
 
@@ -1732,14 +1774,23 @@ class CorrectionHandler(BaseStageHandler):
     ) -> None:
         event_payload: dict[str, Any] = dict(payload or {})
         if task is not None:
+            task_id = getattr(task, "id", None)
             stage = str(getattr(task, "current_stage", "") or "").strip()
             workflow = getattr(task, "workflow", None)
             workflow_phase = str(getattr(workflow, "workflow_phase", "") or "").strip()
+            stage_entered_at = self._serialize_metric_ts(getattr(workflow, "stage_entered_at", None))
             topology = str(getattr(task, "topology", "") or "").strip()
+            if task_id is not None:
+                event_payload.setdefault("task_id", int(task_id))
             if stage:
                 event_payload.setdefault("stage", stage)
             if workflow_phase:
                 event_payload.setdefault("workflow_phase", workflow_phase)
+            correction_window_id = self._correction_window_id(task=task)
+            if correction_window_id:
+                event_payload.setdefault("correction_window_id", correction_window_id)
+            if stage_entered_at:
+                event_payload.setdefault("stage_entered_at", stage_entered_at)
             if topology:
                 event_payload.setdefault("topology", topology)
         if corr is not None:
@@ -1754,6 +1805,24 @@ class CorrectionHandler(BaseStageHandler):
             await create_zone_event(zone_id, event_type, event_payload)
         except Exception:
             _logger.warning("Failed to log %s zone event", event_type, exc_info=True)
+
+    def _correction_window_id(self, *, task: Any | None) -> str | None:
+        if task is None:
+            return None
+        task_id = getattr(task, "id", None)
+        if task_id is None:
+            return None
+        stage = str(getattr(task, "current_stage", "") or "").strip()
+        workflow = getattr(task, "workflow", None)
+        workflow_phase = str(getattr(workflow, "workflow_phase", "") or "").strip()
+        if not stage or not workflow_phase:
+            return None
+        return f"task:{int(task_id)}:{workflow_phase}:{stage}"
+
+    def _observe_seq(self, *, corr: CorrectionState, pid_type: str, after_dose: bool = False) -> int | None:
+        current = corr.ec_attempt if pid_type == "ec" else corr.ph_attempt
+        observe_seq = int(current) + (1 if after_dose else 0)
+        return observe_seq if observe_seq > 0 else None
 
     def _build_sensor_mode_commands(
         self, *, plan: Any, cmd: str, params: Mapping[str, Any],

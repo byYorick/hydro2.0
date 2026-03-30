@@ -167,4 +167,52 @@ describe('ZoneEventsTab.vue', () => {
     expect(wrapper.text()).toContain('Код ошибки:')
     expect(wrapper.text()).toContain('start_cycle_zone_busy')
   })
+
+  it('показывает trace-поля для события решения коррекции', async () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(
+            5,
+            'CORRECTION_DECISION_MADE',
+            'Коррекция: решение принято',
+            {
+              correction_window_id: 'task:3:tank_filling:solution_fill_check',
+              task_id: 3,
+              workflow_phase: 'tank_filling',
+              stage: 'solution_fill_check',
+              selected_action: 'ph_down',
+              decision_reason: 'prioritize_pending_ph_after_ec_observe',
+              observe_seq: 2,
+              current_ph: 6.83,
+              current_ec: 0.52,
+              needs_ec: true,
+              needs_ph_down: true,
+              needs_ph_up: false,
+            },
+          ),
+        ],
+      },
+      global: {
+        stubs: {
+          VirtualList: {
+            props: ['items'],
+            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
+          },
+        },
+      },
+    })
+
+    await wrapper.find('.cursor-pointer').trigger('click')
+
+    expect(wrapper.text()).toContain('Окно коррекции:')
+    expect(wrapper.text()).toContain('task:3:tank_filling:solution_fill_check')
+    expect(wrapper.text()).toContain('Выбранный контур:')
+    expect(wrapper.text()).toContain('ph_down')
+    expect(wrapper.text()).toContain('Причина выбора:')
+    expect(wrapper.text()).toContain('prioritize_pending_ph_after_ec_observe')
+    expect(wrapper.text()).toContain('Наблюдение:')
+    expect(wrapper.text()).toContain('#2')
+  })
 })

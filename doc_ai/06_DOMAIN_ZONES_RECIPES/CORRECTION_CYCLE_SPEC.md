@@ -858,6 +858,7 @@ void handle_system_command(const char* cmd, cJSON* params) {
 |----------------------------------|---------------------|----------------------------------------------------------------------|
 | `EC_DOSING`                      | `corr_dose_ec`      | После успешной отправки команды насосу EC                            |
 | `PH_CORRECTED`                   | `corr_dose_ph`      | После успешной отправки команды насосу pH                            |
+| `CORRECTION_DECISION_MADE`       | `corr_check`        | Когда planner/runtime выбрал следующий correction contour в окне     |
 | `CORRECTION_COMPLETE`            | `corr_check`        | Когда `pH/EC` вошли в целевое окно                                   |
 | `CORRECTION_SKIPPED_COOLDOWN`    | `corr_check`        | Когда PID-контур ещё в `min_interval_sec` и доза откладывается       |
 | `CORRECTION_SKIPPED_DEAD_ZONE`   | `corr_check`        | Когда planner не видит допустимой дозы вне deadband                  |
@@ -866,6 +867,7 @@ void handle_system_command(const char* cmd, cJSON* params) {
 | `CORRECTION_SKIPPED_WATER_LEVEL` | `corr_check`        | Когда correction пропущен из-за низкого уровня воды                  |
 | `CORRECTION_SKIPPED_FRESHNESS`   | `corr_check`/observe| Когда decision/observe window не может использовать свежую телеметрию |
 | `CORRECTION_SKIPPED_WINDOW_NOT_READY` | `corr_check`/observe | Когда окно наблюдения ещё не прошло `window_min_samples/stability` |
+| `CORRECTION_OBSERVATION_EVALUATED` | `corr_wait_ec/ph` | Когда observe-window оценён и runtime понял, есть ли реакция         |
 | `CORRECTION_NO_EFFECT`           | `corr_wait_ec/ph`   | Когда достигнут `no_effect_consecutive_limit` и correction fail-closed |
 | `CORRECTION_EXHAUSTED`           | любой correction    | Когда исчерпаны configured attempts и runtime уходит в fail-closed   |
 
@@ -874,6 +876,12 @@ void handle_system_command(const char* cmd, cJSON* params) {
 **EC_DOSING:**
 ```json
 {
+  "task_id": 73,
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "correction_window_id": "task:73:tank_filling:solution_fill_check",
+  "corr_step": "corr_dose_ec",
+  "observe_seq": 2,
   "node_uid": "ec-node-uid",
   "channel": "ec_npk_pump",
   "amount_ml": 2.5,
@@ -890,6 +898,12 @@ void handle_system_command(const char* cmd, cJSON* params) {
 **PH_CORRECTED:**
 ```json
 {
+  "task_id": 73,
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "correction_window_id": "task:73:tank_filling:solution_fill_check",
+  "corr_step": "corr_dose_ph",
+  "observe_seq": 2,
   "node_uid": "ph-node-uid",
   "channel": "ph_base_pump",
   "amount_ml": 1.2,
@@ -901,6 +915,47 @@ void handle_system_command(const char* cmd, cJSON* params) {
   "target_ph_max": 6.5,
   "attempt": 1,
   "source": "correction_handler"
+}
+```
+
+**CORRECTION_DECISION_MADE:**
+```json
+{
+  "task_id": 73,
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "correction_window_id": "task:73:tank_filling:solution_fill_check",
+  "corr_step": "corr_dose_ph",
+  "selected_action": "ph_down",
+  "decision_reason": "prioritize_pending_ph_after_ec_observe",
+  "current_ph": 6.83,
+  "current_ec": 0.52,
+  "target_ph_min": 5.6,
+  "target_ph_max": 6.0,
+  "target_ec_min": 1.2,
+  "target_ec_max": 1.6,
+  "needs_ec": true,
+  "needs_ph_up": false,
+  "needs_ph_down": true
+}
+```
+
+**CORRECTION_OBSERVATION_EVALUATED:**
+```json
+{
+  "task_id": 73,
+  "stage": "solution_fill_check",
+  "workflow_phase": "tank_filling",
+  "correction_window_id": "task:73:tank_filling:solution_fill_check",
+  "corr_step": "corr_wait_ph",
+  "pid_type": "ph",
+  "observe_seq": 2,
+  "baseline_value": 6.916,
+  "observed_value": 6.832,
+  "expected_effect": 0.15,
+  "actual_effect": 0.084,
+  "threshold_effect": 0.0375,
+  "is_no_effect": false
 }
 ```
 

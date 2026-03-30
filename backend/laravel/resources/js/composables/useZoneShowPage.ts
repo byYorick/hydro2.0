@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
@@ -16,6 +16,8 @@ import { useZoneTelemetryChart } from '@/composables/useZoneTelemetryChart'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
+import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
+import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
 import type { CommandType } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 
@@ -127,6 +129,33 @@ export function useZoneShowPage() {
   const chart = useZoneTelemetryChart(pageState.zoneId, { fetchHistory })
 
   const { zoneId, zone, activeGrowCycle, reloadZonePageProps } = pageState
+  let stopTelemetryRealtimeSubscription: (() => void) | null = null
+
+  const handleRealtimeTelemetryBatch = (payload: unknown): void => {
+    const updates = parseNodeTelemetryBatch(payload)
+    updates.forEach((update) => {
+      pageState.applyRealtimeTelemetryPoint(update.metric_type, update.value, update.ts)
+      chart.appendRealtimePoint(update.metric_type, {
+        ts: update.ts,
+        value: update.value,
+      })
+    })
+  }
+
+  const subscribeTelemetryRealtime = (targetZoneId: number): void => {
+    if (stopTelemetryRealtimeSubscription) {
+      stopTelemetryRealtimeSubscription()
+      stopTelemetryRealtimeSubscription = null
+    }
+
+    stopTelemetryRealtimeSubscription = subscribeManagedChannelEvents({
+      channelName: `hydro.zones.${targetZoneId}`,
+      componentTag: 'Zones/Show.telemetry',
+      eventHandlers: {
+        '.telemetry.batch.updated': handleRealtimeTelemetryBatch,
+      },
+    })
+  }
 
   // ─── Zone status ──────────────────────────────────────────────────────────
 
@@ -314,6 +343,33 @@ export function useZoneShowPage() {
 
     chart.initStoredRange()
     await chart.refreshChartData(chart.chartTimeRange.value)
+
+    if (zoneId.value) {
+      subscribeTelemetryRealtime(zoneId.value)
+    }
+  })
+
+  onUnmounted(() => {
+    if (stopTelemetryRealtimeSubscription) {
+      stopTelemetryRealtimeSubscription()
+      stopTelemetryRealtimeSubscription = null
+    }
+  })
+
+  watch(zoneId, (newZoneId, oldZoneId) => {
+    if (newZoneId === oldZoneId) {
+      return
+    }
+
+    if (!newZoneId) {
+      if (stopTelemetryRealtimeSubscription) {
+        stopTelemetryRealtimeSubscription()
+        stopTelemetryRealtimeSubscription = null
+      }
+      return
+    }
+
+    subscribeTelemetryRealtime(newZoneId)
   })
 
   return {

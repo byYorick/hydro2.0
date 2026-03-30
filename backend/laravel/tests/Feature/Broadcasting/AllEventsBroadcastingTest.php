@@ -118,7 +118,7 @@ class AllEventsBroadcastingTest extends TestCase
         $commandEvent = new CommandStatusUpdated(100, 'DONE', 'Done', null, $zone->id);
         $commandData = $commandEvent->broadcastWith();
         $this->assertEquals(100, $commandData['commandId']);
-        $this->assertEquals('completed', $commandData['status']);
+        $this->assertEquals('DONE', $commandData['status']);
         $this->assertEquals($zone->id, $commandData['zoneId']);
 
         // CommandFailed
@@ -158,11 +158,16 @@ class AllEventsBroadcastingTest extends TestCase
         $this->assertEquals(['id' => 1, 'type' => 'ALERT'], $alertEvent->alert);
 
         // EventCreated
-        $eventCreated = new EventCreated(1, 'INFO', 'Test');
+        $eventCreated = new EventCreated(1, 'INFO', 'Test', 5, '2026-03-30T10:00:00Z', ['source' => 'zone']);
         $eventData = $eventCreated->broadcastWith();
         $this->assertEquals(1, $eventData['id']);
         $this->assertEquals('INFO', $eventData['kind']);
         $this->assertEquals('Test', $eventData['message']);
+        $this->assertEquals(5, $eventData['zoneId']);
+        $this->assertEquals(5, $eventData['zone_id']);
+        $this->assertEquals('2026-03-30T10:00:00Z', $eventData['occurredAt']);
+        $this->assertEquals('2026-03-30T10:00:00Z', $eventData['occurred_at']);
+        $this->assertEquals(['source' => 'zone'], $eventData['payload']);
     }
 
     /**

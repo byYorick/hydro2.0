@@ -204,6 +204,26 @@ function humanizeEventError(code?: string | null, message?: string | null): stri
   return resolveHumanErrorMessage({ code, message }, message ?? code ?? null)
 }
 
+function appendDetailRow(detailRows: ReturnType<typeof h>[], label: string, value: string): void {
+  detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, `${label}: `), h('strong', {}, value)]))
+}
+
+function appendCorrectionTraceRows(detailRows: ReturnType<typeof h>[], payload: Record<string, unknown> | null): void {
+  const windowId = readString(payload, 'correction_window_id')
+  const taskId = readNumber(payload, 'task_id')
+  const workflowPhase = readString(payload, 'workflow_phase')
+  const stage = readString(payload, 'stage')
+  const observeSeq = readNumber(payload, 'observe_seq')
+  const decisionReason = readString(payload, 'decision_reason')
+
+  if (windowId) appendDetailRow(detailRows, 'Окно коррекции', windowId)
+  if (taskId !== null) appendDetailRow(detailRows, 'Задача ID', String(taskId))
+  if (workflowPhase) appendDetailRow(detailRows, 'Фаза', workflowPhase)
+  if (stage) appendDetailRow(detailRows, 'Стадия', stage)
+  if (observeSeq !== null) appendDetailRow(detailRows, 'Наблюдение', `#${observeSeq}`)
+  if (decisionReason) appendDetailRow(detailRows, 'Причина выбора', decisionReason)
+}
+
 // IRR_STATE_SNAPSHOT: render pump/valve/level table from snapshot object
 function renderIrrSnapshot(payload: Record<string, unknown>): Array<{ label: string, value: string }> {
   const snapshot = toPayloadRecord(payload['snapshot'])
@@ -304,6 +324,7 @@ const EventRow = defineComponent({
           const nodeUid = readString(payload, 'node_uid')
           const channel = readString(payload, 'channel')
           const attempt = readNumber(payload, 'attempt')
+          appendCorrectionTraceRows(detailRows, payload)
           if (ecComponent) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Компонент: '), h('strong', {}, ecComponent)]))
           if (currentEc !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Текущий EC: '), h('strong', {}, `${currentEc.toFixed(2)} мС/см`)]))
           if (targetEcMin !== null && targetEcMax !== null) {
@@ -328,6 +349,7 @@ const EventRow = defineComponent({
           const channel = readString(payload, 'channel')
           const attempt = readNumber(payload, 'attempt')
           const dirLabel = direction === 'up' ? 'вверх ↑' : direction === 'down' ? 'вниз ↓' : direction
+          appendCorrectionTraceRows(detailRows, payload)
           if (dirLabel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Направление: '), h('strong', {}, dirLabel)]))
           if (currentPh !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Текущий pH: '), h('strong', {}, currentPh.toFixed(2))]))
           if (targetPhMin !== null && targetPhMax !== null) {
@@ -340,10 +362,41 @@ const EventRow = defineComponent({
           if (nodeUid) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Нода: '), h('strong', {}, nodeUid)]))
           if (channel) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Канал: '), h('strong', {}, channel)]))
           if (attempt !== null && attempt > 1) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытка: '), h('strong', {}, String(attempt))]))
+        } else if (item.kind === 'CORRECTION_DECISION_MADE') {
+          const selectedAction = readString(payload, 'selected_action')
+          const currentPh = readNumber(payload, 'current_ph')
+          const currentEc = readNumber(payload, 'current_ec')
+          const needsEc = payload.needs_ec === true
+          const needsPhUp = payload.needs_ph_up === true
+          const needsPhDown = payload.needs_ph_down === true
+          appendCorrectionTraceRows(detailRows, payload)
+          if (selectedAction) appendDetailRow(detailRows, 'Выбранный контур', selectedAction)
+          if (currentPh !== null) appendDetailRow(detailRows, 'Текущий pH', currentPh.toFixed(3))
+          if (currentEc !== null) appendDetailRow(detailRows, 'Текущий EC', `${currentEc.toFixed(3)} мС/см`)
+          appendDetailRow(detailRows, 'Потребность EC', needsEc ? 'да' : 'нет')
+          appendDetailRow(detailRows, 'Потребность pH+', needsPhUp ? 'да' : 'нет')
+          appendDetailRow(detailRows, 'Потребность pH-', needsPhDown ? 'да' : 'нет')
+        } else if (item.kind === 'CORRECTION_OBSERVATION_EVALUATED') {
+          const pidType = readString(payload, 'pid_type')
+          const baselineValue = readNumber(payload, 'baseline_value')
+          const observedValue = readNumber(payload, 'observed_value')
+          const actualEffect = readNumber(payload, 'actual_effect')
+          const expectedEffect = readNumber(payload, 'expected_effect')
+          const thresholdEffect = readNumber(payload, 'threshold_effect')
+          const noEffect = payload.is_no_effect === true
+          appendCorrectionTraceRows(detailRows, payload)
+          if (pidType) appendDetailRow(detailRows, 'Контур', pidType.toUpperCase())
+          if (baselineValue !== null) appendDetailRow(detailRows, 'База', baselineValue.toFixed(4))
+          if (observedValue !== null) appendDetailRow(detailRows, 'Наблюдение', observedValue.toFixed(4))
+          if (actualEffect !== null) appendDetailRow(detailRows, 'Факт. эффект', actualEffect.toFixed(4))
+          if (expectedEffect !== null) appendDetailRow(detailRows, 'Ожидаемый эффект', expectedEffect.toFixed(4))
+          if (thresholdEffect !== null) appendDetailRow(detailRows, 'Порог эффекта', thresholdEffect.toFixed(4))
+          appendDetailRow(detailRows, 'Реакция', noEffect ? 'нет эффекта' : 'эффект подтверждён')
         } else if (item.kind === 'CORRECTION_COMPLETE') {
           const currentPh = readNumber(payload, 'current_ph')
           const currentEc = readNumber(payload, 'current_ec')
           const attempt = readNumber(payload, 'attempt')
+          appendCorrectionTraceRows(detailRows, payload)
           if (currentPh !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'pH: '), h('strong', {}, currentPh.toFixed(2))]))
           if (currentEc !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'EC: '), h('strong', {}, `${currentEc.toFixed(2)} мС/см`)]))
           if (attempt !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытка: '), h('strong', {}, String(attempt))]))
@@ -353,6 +406,7 @@ const EventRow = defineComponent({
           const ecAttempt = readNumber(payload, 'ec_attempt')
           const phAttempt = readNumber(payload, 'ph_attempt')
           const stage = readString(payload, 'stage')
+          appendCorrectionTraceRows(detailRows, payload)
           if (attempt !== null && maxAttempts !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'Попытки: '), h('strong', {}, `${attempt}/${maxAttempts}`)]))
           if (ecAttempt !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'EC попыток: '), h('strong', {}, String(ecAttempt))]))
           if (phAttempt !== null) detailRows.push(h('div', {}, [h('span', { class: 'text-[color:var(--text-dim)]' }, 'pH попыток: '), h('strong', {}, String(phAttempt))]))

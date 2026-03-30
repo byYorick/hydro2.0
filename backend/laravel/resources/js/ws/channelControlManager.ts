@@ -304,7 +304,7 @@ export function createChannelControlManager(deps: ChannelControlManagerDeps) {
     deps.channelControls.forEach(control => {
       try {
         removeChannelListeners(control)
-        if (control.echoChannel && deps.isChannelDead(control.channelName)) {
+        if (control.echoChannel && isChannelDead(control.channelName)) {
           detachSharedEchoChannel(control.channelName, control.channelType, false)
           control.echoChannel = null
         }
