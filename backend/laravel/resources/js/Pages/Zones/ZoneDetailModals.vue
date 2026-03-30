@@ -154,6 +154,8 @@ import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 
+type ZoneActionType = CommandType | 'START_IRRIGATION'
+
 interface HarvestModalState {
   open: boolean
   batchLabel: string
@@ -193,7 +195,7 @@ interface Props {
   } | null
   selectedNodeId: number | null
   selectedNode: any | null
-  currentActionType: CommandType
+  currentActionType: ZoneActionType
   showActionModal: boolean
   showGrowthCycleModal: boolean
   showPumpCalibrationModal: boolean
@@ -212,7 +214,7 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'close-action'): void
-  (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
+  (e: 'submit-action', payload: { actionType: ZoneActionType; params: Record<string, unknown> }): void
   (e: 'close-pump-calibration'): void
   (e: 'start-pump-calibration', payload: { node_channel_id: number; duration_sec: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down' }): void
   (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true; run_token?: string; manual_override?: true; test_volume_l?: number; ec_before_ms?: number; ec_after_ms?: number; temperature_c?: number }): void

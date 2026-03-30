@@ -21,6 +21,8 @@ import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
 import type { CommandType } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 
+type ZoneActionType = CommandType | 'START_IRRIGATION'
+
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 interface LoadingState extends Record<string, boolean> {
@@ -81,7 +83,7 @@ export function useZoneShowPage() {
   const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
   const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
 
-  const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
+  const currentActionType = ref<ZoneActionType>('START_IRRIGATION')
   const selectedNodeId = ref<number | null>(null)
   const selectedNode = ref<any>(null)
   const growthCycleInitialData = ref<{
@@ -171,7 +173,7 @@ export function useZoneShowPage() {
 
   // ─── Action handlers ──────────────────────────────────────────────────────
 
-  const openActionModal = (actionType: CommandType): void => {
+  const openActionModal = (actionType: ZoneActionType): void => {
     currentActionType.value = actionType
     modals.open('action')
   }
@@ -187,17 +189,34 @@ export function useZoneShowPage() {
     modals.open('growthCycle')
   }
 
+  const startZoneIrrigation = async ({
+    mode,
+    durationSec,
+  }: {
+    mode: 'normal' | 'force'
+    durationSec?: number
+  }): Promise<void> => {
+    if (!zoneId.value) return
+
+    await api.post(`/api/zones/${zoneId.value}/start-irrigation`, {
+      mode,
+      source: 'frontend',
+      requested_duration_sec: durationSec ?? null,
+    })
+  }
+
   const onActionSubmit = async ({
     actionType,
     params,
   }: {
-    actionType: CommandType
+    actionType: ZoneActionType
     params: Record<string, unknown>
   }): Promise<void> => {
     if (!zoneId.value) return
     setLoading('irrigate', true)
 
-    const actionNames: Record<CommandType, string> = {
+    const actionNames: Record<string, string> = {
+      START_IRRIGATION: 'Полив',
       FORCE_IRRIGATION: 'Полив',
       FORCE_PH_CONTROL: 'Коррекция pH',
       FORCE_EC_CONTROL: 'Коррекция EC',
@@ -206,7 +225,19 @@ export function useZoneShowPage() {
     }
 
     try {
-      await sendZoneCommand(zoneId.value, actionType, params)
+      if (actionType === 'START_IRRIGATION') {
+        await startZoneIrrigation({
+          mode: 'normal',
+          durationSec: typeof params.duration_sec === 'number' ? params.duration_sec : undefined,
+        })
+      } else if (actionType === 'FORCE_IRRIGATION') {
+        await startZoneIrrigation({
+          mode: 'force',
+          durationSec: typeof params.duration_sec === 'number' ? params.duration_sec : undefined,
+        })
+      } else {
+        await sendZoneCommand(zoneId.value, actionType, params)
+      }
       const actionName = actionNames[actionType] || 'Действие'
       showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])

@@ -9,6 +9,16 @@ const authorityCommandTemplates = ref<Partial<AutomationCommandTemplatesSettings
 let authorityCommandTemplatesRequest: Promise<void> | null = null
 
 export const FALLBACK_AUTOMATION_COMMAND_TEMPLATES: AutomationCommandTemplatesSettings = {
+  irrigation_start: [
+    { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: true } },
+    { channel: 'valve_irrigation', cmd: 'set_relay', params: { state: true } },
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: true } },
+  ],
+  irrigation_stop: [
+    { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_irrigation', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: false } },
+  ],
   clean_fill_start: [
     { channel: 'valve_clean_fill', cmd: 'set_relay', params: { state: true } },
   ],
@@ -45,6 +55,7 @@ export const FALLBACK_AUTOMATION_COMMAND_TEMPLATES: AutomationCommandTemplatesSe
     { channel: 'pump_main', cmd: 'set_relay', params: { state: false } },
     { channel: 'valve_solution_fill', cmd: 'set_relay', params: { state: false } },
     { channel: 'valve_solution_supply', cmd: 'set_relay', params: { state: false } },
+    { channel: 'valve_irrigation', cmd: 'set_relay', params: { state: true } },
   ],
 }
 
@@ -84,6 +95,8 @@ export function normalizeAutomationCommandTemplates(
   raw: Partial<AutomationCommandTemplatesSettings> | null | undefined,
 ): AutomationCommandTemplatesSettings {
   return {
+    irrigation_start: normalizeTemplateSteps(raw?.irrigation_start, FALLBACK_AUTOMATION_COMMAND_TEMPLATES.irrigation_start),
+    irrigation_stop: normalizeTemplateSteps(raw?.irrigation_stop, FALLBACK_AUTOMATION_COMMAND_TEMPLATES.irrigation_stop),
     clean_fill_start: normalizeTemplateSteps(raw?.clean_fill_start, FALLBACK_AUTOMATION_COMMAND_TEMPLATES.clean_fill_start),
     clean_fill_stop: normalizeTemplateSteps(raw?.clean_fill_stop, FALLBACK_AUTOMATION_COMMAND_TEMPLATES.clean_fill_stop),
     solution_fill_start: normalizeTemplateSteps(raw?.solution_fill_start, FALLBACK_AUTOMATION_COMMAND_TEMPLATES.solution_fill_start),

@@ -70,3 +70,29 @@ async def test_control_state_hides_manual_steps_in_auto_mode() -> None:
 
     assert result["control_mode"] == "auto"
     assert result["allowed_manual_steps"] == []
+
+
+async def test_control_state_returns_irrigation_stop_for_irrigation_stage() -> None:
+    task = SimpleNamespace(
+        workflow=WorkflowState(
+            current_stage="irrigation_check",
+            workflow_phase="irrigating",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=1,
+            control_mode="manual",
+            pending_manual_step="irrigation_stop",
+        )
+    )
+
+    async def fetch_fn(_query: str, *_args: object) -> list[dict[str, object]]:
+        return [{"control_mode": "manual"}]
+
+    result = await GetZoneControlStateUseCase(
+        task_repository=_TaskRepository(task),
+        fetch_fn=fetch_fn,
+    ).run(zone_id=7)
+
+    assert result["allowed_manual_steps"] == ["irrigation_stop"]
+    assert result["pending_manual_step"] == "irrigation_stop"

@@ -129,7 +129,10 @@ class CreateTaskFromIntentUseCase:
                 created_task = await self._task_repository.create_pending(
                     zone_id=zone_id,
                     idempotency_key=normalized_key,
+                    task_type=meta.task_type,
                     topology=meta.topology,
+                    current_stage=meta.current_stage,
+                    workflow_phase=meta.workflow_phase,
                     intent_source=meta.intent_source,
                     intent_trigger=meta.intent_trigger,
                     intent_id=meta.intent_id,
@@ -137,6 +140,8 @@ class CreateTaskFromIntentUseCase:
                     scheduled_for=now,
                     due_at=now,
                     now=now,
+                    irrigation_mode=meta.irrigation_mode,
+                    irrigation_requested_duration_sec=meta.irrigation_requested_duration_sec,
                     conn=conn,
                 )
                 if created_task is not None:

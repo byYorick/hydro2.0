@@ -107,6 +107,7 @@ class ScheduleDispatcher
             taskType: $taskType,
             correlationId: $correlationId,
             triggerTime: $triggerTime,
+            payload: $payload,
         );
         if (! $intentSnapshot['ok']) {
             $writeLog($taskName, 'failed', [
@@ -128,12 +129,20 @@ class ScheduleDispatcher
             'source' => 'laravel_scheduler',
             'idempotency_key' => $correlationId,
         ];
+        $endpoint = '/start-cycle';
+        if ($taskType === 'irrigation') {
+            $endpoint = '/start-irrigation';
+            $requestPayload['mode'] = 'normal';
+            $requestPayload['requested_duration_sec'] = isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])
+                ? max(1, (int) $payload['duration_sec'])
+                : null;
+        }
 
         try {
             $response = Http::acceptJson()
                 ->timeout($cfg['timeout_sec'])
                 ->withHeaders($headers)
-                ->post($cfg['api_url'].'/zones/'.$zoneId.'/start-cycle', $requestPayload);
+                ->post($cfg['api_url'].'/zones/'.$zoneId.$endpoint, $requestPayload);
         } catch (ConnectionException $e) {
             $writeLog($taskName, 'failed', [
                 'zone_id' => $zoneId,
@@ -326,15 +335,22 @@ class ScheduleDispatcher
         string $taskType,
         string $correlationId,
         CarbonImmutable $triggerTime,
+        array $payload = [],
     ): array {
         try {
             app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
 
             $intentPayload = [
                 'source' => 'laravel_scheduler',
-                'task_type' => $taskType,
-                'workflow' => 'cycle_start',
+                'task_type' => $taskType === 'irrigation' ? 'irrigation_start' : $taskType,
+                'workflow' => $taskType === 'irrigation' ? 'irrigation_start' : 'cycle_start',
             ];
+            if ($taskType === 'irrigation') {
+                $intentPayload['mode'] = 'normal';
+                if (isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
+                    $intentPayload['requested_duration_sec'] = max(1, (int) $payload['duration_sec']);
+                }
+            }
             $intentType = $this->mapTaskTypeToIntentType($taskType);
             $now = SchedulerRuntimeHelper::nowUtc();
 

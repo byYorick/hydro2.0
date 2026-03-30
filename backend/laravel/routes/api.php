@@ -39,6 +39,7 @@ use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneAutomationControlModeController;
 use App\Http\Controllers\ZoneAutomationManualStepController;
+use App\Http\Controllers\ZoneAutomationStartIrrigationController;
 use App\Http\Controllers\ZoneAutomationStateController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
@@ -337,6 +338,8 @@ Route::middleware([
     Route::post('zones/{zone}/control-mode', [ZoneAutomationControlModeController::class, 'update'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::post('zones/{zone}/manual-step', [ZoneAutomationManualStepController::class, 'store'])
+        ->middleware('role:operator,admin,agronomist,engineer');
+    Route::post('zones/{zone}/start-irrigation', [ZoneAutomationStartIrrigationController::class, 'store'])
         ->middleware('role:operator,admin,agronomist,engineer');
     Route::get('zones/{zone}/schedule-workspace', [ScheduleWorkspaceController::class, 'show']);
     Route::get('zones/{zone}/executions/{executionId}', [ScheduleExecutionController::class, 'show']);

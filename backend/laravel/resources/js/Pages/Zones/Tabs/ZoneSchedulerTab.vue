@@ -87,6 +87,12 @@
               <Badge variant="secondary">
                 {{ controlModeLabel(automationState?.control_mode || workspace?.control?.control_mode) }}
               </Badge>
+              <Badge
+                v-if="automationState?.decision?.outcome"
+                :variant="decisionVariant(automationState.decision.outcome, automationState.decision.degraded)"
+              >
+                {{ decisionLabel(automationState.decision.outcome, automationState.decision.degraded) }}
+              </Badge>
             </div>
 
             <p class="mt-3 text-lg font-semibold text-[color:var(--text-primary)]">
@@ -97,6 +103,12 @@
             </p>
             <p class="mt-1 text-sm text-[color:var(--text-dim)]">
               Фаза: {{ automationState?.workflow_phase || activeRun?.workflow_phase || 'не передана' }}
+            </p>
+            <p
+              v-if="automationState?.decision?.reason_code"
+              class="mt-1 text-sm text-[color:var(--text-dim)]"
+            >
+              Decision: {{ automationState.decision.reason_code }}
             </p>
 
             <div
@@ -247,6 +259,20 @@
               <p class="mt-2 text-sm text-[color:var(--text-dim)]">
                 {{ activeRun ? `${laneLabel(activeRun.task_type)} · ${activeRun.current_stage || 'stage не передан'}` : 'Ожидание следующего wake-up.' }}
               </p>
+              <div
+                v-if="activeRun?.decision_outcome"
+                class="mt-2 flex flex-wrap gap-2"
+              >
+                <Badge :variant="decisionVariant(activeRun.decision_outcome, activeRun.decision_degraded)">
+                  {{ decisionLabel(activeRun.decision_outcome, activeRun.decision_degraded) }}
+                </Badge>
+                <Badge
+                  v-if="activeRun.decision_reason_code"
+                  variant="secondary"
+                >
+                  {{ activeRun.decision_reason_code }}
+                </Badge>
+              </div>
               <p
                 v-if="activeRun?.scheduled_for"
                 class="mt-1 text-xs text-[color:var(--text-muted)]"
@@ -286,6 +312,12 @@
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="font-mono text-sm font-semibold text-[color:var(--text-primary)]">#{{ run.execution_id }}</span>
                       <Badge :variant="statusVariant(run.status)">{{ run.status }}</Badge>
+                      <Badge
+                        v-if="run.decision_outcome"
+                        :variant="decisionVariant(run.decision_outcome, run.decision_degraded)"
+                      >
+                        {{ decisionLabel(run.decision_outcome, run.decision_degraded) }}
+                      </Badge>
                       <span class="text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
                         {{ laneLabel(run.task_type) }}
                       </span>
@@ -341,6 +373,20 @@
                 <p class="mt-1 text-xs text-[color:var(--text-muted)]">
                   {{ laneLabel(selectedExecution.task_type) }} · {{ selectedExecution.current_stage || 'stage не передан' }}
                 </p>
+                <div
+                  v-if="selectedExecution.decision_outcome"
+                  class="mt-2 flex flex-wrap gap-2"
+                >
+                  <Badge :variant="decisionVariant(selectedExecution.decision_outcome, selectedExecution.decision_degraded)">
+                    {{ decisionLabel(selectedExecution.decision_outcome, selectedExecution.decision_degraded) }}
+                  </Badge>
+                  <Badge
+                    v-if="selectedExecution.decision_reason_code"
+                    variant="secondary"
+                  >
+                    {{ selectedExecution.decision_reason_code }}
+                  </Badge>
+                </div>
               </div>
               <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-4">
                 <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Время</p>
@@ -349,6 +395,14 @@
                 </p>
                 <p class="mt-1 text-xs text-[color:var(--text-muted)]">
                   planned {{ formatDateTime(selectedExecution.scheduled_for || null) }}
+                </p>
+                <p
+                  v-if="selectedExecution.irrigation_mode || selectedExecution.decision_strategy"
+                  class="mt-1 text-xs text-[color:var(--text-dim)]"
+                >
+                  {{ selectedExecution.irrigation_mode ? `mode ${selectedExecution.irrigation_mode}` : '' }}
+                  {{ selectedExecution.irrigation_mode && selectedExecution.decision_strategy ? ' · ' : '' }}
+                  {{ selectedExecution.decision_strategy ? `strategy ${selectedExecution.decision_strategy}` : '' }}
                 </p>
               </div>
             </div>
@@ -603,6 +657,27 @@ function attentionCardClass(tone: 'danger' | 'warning' | 'info'): string {
   if (tone === 'danger') return 'border-red-200 bg-red-50/70'
   if (tone === 'warning') return 'border-amber-200 bg-amber-50/70'
   return 'border-sky-200 bg-sky-50/70'
+}
+
+function decisionLabel(outcome: string | null | undefined, degraded: boolean | null | undefined): string {
+  const normalized = String(outcome ?? '').trim().toLowerCase()
+  if (normalized === 'skip') return 'skip'
+  if (normalized === 'degraded_run') return degraded ? 'degraded run' : 'run'
+  if (normalized === 'run') return degraded ? 'degraded run' : 'run'
+  if (normalized === 'fail') return 'decision fail'
+  return normalized || 'decision'
+}
+
+function decisionVariant(
+  outcome: string | null | undefined,
+  degraded: boolean | null | undefined,
+): 'success' | 'warning' | 'danger' | 'info' | 'secondary' {
+  const normalized = String(outcome ?? '').trim().toLowerCase()
+  if (normalized === 'skip') return 'secondary'
+  if (normalized === 'fail') return 'danger'
+  if (degraded) return 'warning'
+  if (normalized === 'run' || normalized === 'degraded_run') return 'info'
+  return 'secondary'
 }
 
 function changeHorizon(nextHorizon: '24h' | '7d'): void {

@@ -82,6 +82,13 @@ export interface ExecutionRun {
   control_mode_snapshot?: string | null
   current_stage?: string | null
   workflow_phase?: string | null
+  irrigation_mode?: string | null
+  requested_duration_sec?: number | null
+  decision_strategy?: string | null
+  decision_outcome?: string | null
+  decision_reason_code?: string | null
+  decision_degraded?: boolean | null
+  replay_count?: number | null
   created_at?: string | null
   updated_at?: string | null
   scheduled_for?: string | null

@@ -250,6 +250,48 @@ async def test_state_marks_ph_correction_active_during_solution_fill() -> None:
     assert result["active_processes"]["ph_correction"] is True
 
 
+async def test_state_returns_irrigation_decision_metadata() -> None:
+    task = SimpleNamespace(
+        id=31,
+        status="completed",
+        error_code=None,
+        error_message=None,
+        irrigation_decision_strategy="smart_soil_v1",
+        irrigation_decision_outcome="degraded_run",
+        irrigation_decision_reason_code="smart_soil_telemetry_missing_or_stale",
+        irrigation_decision_degraded=True,
+        workflow=WorkflowState(
+            current_stage="completed_run",
+            workflow_phase="ready",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=7)
+
+    assert result["decision"] == {
+        "outcome": "degraded_run",
+        "reason_code": "smart_soil_telemetry_missing_or_stale",
+        "strategy": "smart_soil_v1",
+        "degraded": True,
+    }
+
+
 async def test_state_timeline_labels_solution_fill_self_transition_as_inflow_correction() -> None:
     task = SimpleNamespace(
         id=22,

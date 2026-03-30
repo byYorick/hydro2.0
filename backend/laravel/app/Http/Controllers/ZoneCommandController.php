@@ -9,6 +9,7 @@ use App\Models\ZoneEvent;
 use App\Models\GrowCycle;
 use App\Enums\GrowCycleStatus;
 use App\Services\PythonBridgeService;
+use App\Services\Ae3IrrigationBridgeService;
 use App\Services\ZoneLogicProfileService;
 use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
@@ -22,6 +23,7 @@ class ZoneCommandController extends Controller
 {
     public function __construct(
         private readonly ZoneLogicProfileService $automationLogicProfiles,
+        private readonly Ae3IrrigationBridgeService $ae3IrrigationBridge,
     ) {
     }
 
@@ -129,6 +131,12 @@ class ZoneCommandController extends Controller
         $user = $request->user();
 
         try {
+            if (($data['type'] ?? '') === 'FORCE_IRRIGATION') {
+                $responsePayload = $this->dispatchForceIrrigationToAe3($zone, $data, $user?->id, $user?->name);
+
+                return response()->json($responsePayload);
+            }
+
             $commandId = $bridge->sendZoneCommand($zone, $data);
 
             // Логируем запуск/коррекцию цикла выращивания и прочие команды в историю зоны
@@ -232,6 +240,32 @@ class ZoneCommandController extends Controller
         }
 
         return $exception->getMessage();
+    }
+
+    /**
+     * @param  array<string,mixed>  $data
+     * @return array<string,mixed>
+     */
+    private function dispatchForceIrrigationToAe3(Zone $zone, array $data, ?int $userId, ?string $userName): array
+    {
+        $params = is_array($data['params'] ?? null) ? $data['params'] : [];
+        $durationSec = isset($params['duration_sec']) ? (int) $params['duration_sec'] : null;
+        $ae3Payload = $this->ae3IrrigationBridge->startIrrigation($zone->id, [
+            'mode' => 'force',
+            'source' => 'zone_commands_force_irrigation',
+            'requested_duration_sec' => $durationSec,
+            'idempotency_key' => 'zone-'.$zone->id.'-force-irrigation-'.\Illuminate\Support\Str::lower((string) \Illuminate\Support\Str::uuid()),
+        ]);
+
+        $taskId = data_get($ae3Payload, 'data.task_id');
+        $syntheticCommandId = is_scalar($taskId) ? 'ae3-task-'.$taskId : null;
+        $this->logZoneCommand($zone, $data, is_string($syntheticCommandId) ? $syntheticCommandId : null, $userId, $userName);
+
+        if (is_array($ae3Payload['data'] ?? null)) {
+            $ae3Payload['data']['command_id'] = $syntheticCommandId;
+        }
+
+        return $ae3Payload;
     }
 
     private function findActiveCycle(Zone $zone): ?GrowCycle

@@ -5,6 +5,8 @@ namespace App\Support\Automation;
 class ZoneLogicProfileNormalizer
 {
     private const TWO_TANK_REQUIRED_PLAN_CHANNELS = [
+        'irrigation_start' => ['valve_solution_supply', 'valve_irrigation', 'pump_main'],
+        'irrigation_stop' => ['pump_main', 'valve_irrigation', 'valve_solution_supply'],
         'clean_fill_start' => ['valve_clean_fill'],
         'clean_fill_stop' => ['valve_clean_fill'],
         'solution_fill_start' => ['valve_clean_supply', 'valve_solution_fill', 'pump_main'],
@@ -12,7 +14,7 @@ class ZoneLogicProfileNormalizer
         'prepare_recirculation_start' => ['valve_solution_supply', 'valve_solution_fill', 'pump_main'],
         'prepare_recirculation_stop' => ['pump_main', 'valve_solution_fill', 'valve_solution_supply'],
         'irrigation_recovery_start' => ['valve_irrigation', 'valve_solution_supply', 'valve_solution_fill', 'pump_main'],
-        'irrigation_recovery_stop' => ['pump_main', 'valve_solution_fill', 'valve_solution_supply'],
+        'irrigation_recovery_stop' => ['pump_main', 'valve_solution_fill', 'valve_solution_supply', 'valve_irrigation'],
     ];
 
     /**
@@ -71,6 +73,13 @@ class ZoneLogicProfileNormalizer
 
             if ($execution !== []) {
                 $entry['execution'] = $execution;
+            }
+
+            foreach (['decision', 'recovery', 'safety', 'dosing_rules'] as $block) {
+                $value = $subsystem[$block] ?? null;
+                if (is_array($value) && ! array_is_list($value) && $value !== []) {
+                    $entry[$block] = $value;
+                }
             }
 
             if ($entry !== []) {

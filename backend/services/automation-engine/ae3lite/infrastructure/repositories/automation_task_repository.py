@@ -188,7 +188,10 @@ class PgAutomationTaskRepository:
         *,
         zone_id: int,
         idempotency_key: str,
+        task_type: str,
         topology: str,
+        current_stage: str,
+        workflow_phase: str,
         intent_source: str | None = None,
         intent_trigger: str | None = None,
         intent_id: int | None = None,
@@ -196,6 +199,8 @@ class PgAutomationTaskRepository:
         scheduled_for: datetime,
         due_at: datetime,
         now: datetime,
+        irrigation_mode: str | None = None,
+        irrigation_requested_duration_sec: int | None = None,
         conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
         normalized_scheduled_for = self._normalize_timestamp(scheduled_for)
@@ -210,23 +215,30 @@ class PgAutomationTaskRepository:
                     zone_id, task_type, status, idempotency_key,
                     topology, current_stage, workflow_phase,
                     control_mode_snapshot,
+                    irrigation_mode, irrigation_requested_duration_sec,
                     intent_source, intent_trigger, intent_id, intent_meta,
                     scheduled_for, due_at, stage_entered_at,
                     created_at, updated_at
                 )
                 VALUES (
-                    $1, 'cycle_start', 'pending', $2,
-                    $3, 'startup', 'idle',
+                    $1, $2, 'pending', $3,
+                    $4, $5, $6,
                     (SELECT control_mode FROM zones WHERE id = $1),
-                    $4, $5, $6, $7::jsonb,
-                    $8, $9, $10,
-                    $10, $10
+                    $7, $8,
+                    $9, $10, $11, $12::jsonb,
+                    $13, $14, $15,
+                    $15, $15
                 )
                 RETURNING *
                 """,
                 zone_id,
+                task_type,
                 idempotency_key,
                 topology,
+                current_stage,
+                workflow_phase,
+                irrigation_mode,
+                irrigation_requested_duration_sec,
                 intent_source,
                 intent_trigger,
                 intent_id,
@@ -239,6 +251,75 @@ class PgAutomationTaskRepository:
         except asyncpg.UniqueViolationError:
             return None
 
+        return self._task_from_row(row)
+
+    async def update_irrigation_runtime(
+        self,
+        *,
+        task_id: int,
+        owner: str,
+        now: datetime,
+        irrigation_mode: str | None = None,
+        irrigation_requested_duration_sec: int | None = None,
+        irrigation_decision_strategy: str | None = None,
+        irrigation_decision_outcome: str | None = None,
+        irrigation_decision_reason_code: str | None = None,
+        irrigation_decision_degraded: bool | None = None,
+        irrigation_replay_count: int | None = None,
+        irrigation_wait_ready_deadline_at: datetime | None = None,
+        irrigation_setup_deadline_at: datetime | None = None,
+    ) -> AutomationTask | None:
+        normalized_now = self._normalize_timestamp(now)
+        normalized_wait_ready_deadline_at = (
+            self._normalize_timestamp(irrigation_wait_ready_deadline_at)
+            if irrigation_wait_ready_deadline_at is not None
+            else None
+        )
+        normalized_setup_deadline_at = (
+            self._normalize_timestamp(irrigation_setup_deadline_at)
+            if irrigation_setup_deadline_at is not None
+            else None
+        )
+        row = await self._fetchrow(
+            """
+            UPDATE ae_tasks
+            SET irrigation_mode = COALESCE($3, irrigation_mode),
+                irrigation_requested_duration_sec = COALESCE($4, irrigation_requested_duration_sec),
+                irrigation_decision_strategy = COALESCE($5, irrigation_decision_strategy),
+                irrigation_decision_outcome = COALESCE($6, irrigation_decision_outcome),
+                irrigation_decision_reason_code = COALESCE($7, irrigation_decision_reason_code),
+                irrigation_decision_degraded = CASE
+                    WHEN $8::boolean IS NULL THEN irrigation_decision_degraded
+                    ELSE $8
+                END,
+                irrigation_replay_count = COALESCE($9, irrigation_replay_count),
+                irrigation_wait_ready_deadline_at = CASE
+                    WHEN $10::timestamptz IS NULL THEN irrigation_wait_ready_deadline_at
+                    ELSE $10
+                END,
+                irrigation_setup_deadline_at = CASE
+                    WHEN $11::timestamptz IS NULL THEN irrigation_setup_deadline_at
+                    ELSE $11
+                END,
+                updated_at = $12
+            WHERE id = $1
+              AND claimed_by = $2
+              AND status IN ('claimed', 'running', 'waiting_command')
+            RETURNING *
+            """,
+            task_id,
+            owner,
+            irrigation_mode,
+            irrigation_requested_duration_sec,
+            irrigation_decision_strategy,
+            irrigation_decision_outcome,
+            irrigation_decision_reason_code,
+            irrigation_decision_degraded,
+            irrigation_replay_count,
+            normalized_wait_ready_deadline_at,
+            normalized_setup_deadline_at,
+            normalized_now,
+        )
         return self._task_from_row(row)
 
     # ── Claim / release ─────────────────────────────────────────────

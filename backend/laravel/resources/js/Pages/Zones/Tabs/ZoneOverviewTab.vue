@@ -52,6 +52,23 @@
           <template v-if="canOperateZone">
             <Button
               size="sm"
+              :disabled="loading.irrigate"
+              class="flex-1 sm:flex-none"
+              data-testid="start-irrigation-button"
+              @click="$emit('start-irrigation')"
+            >
+              <template v-if="loading.irrigate">
+                <LoadingState
+                  loading
+                  size="sm"
+                  :container-class="'inline-flex mr-2'"
+                />
+              </template>
+              <span class="hidden sm:inline">Полить</span>
+              <span class="sm:hidden">💧</span>
+            </Button>
+            <Button
+              size="sm"
               variant="outline"
               :disabled="loading.irrigate"
               class="flex-1 sm:flex-none"
@@ -65,7 +82,7 @@
                   :container-class="'inline-flex mr-2'"
                 />
               </template>
-              <span class="hidden sm:inline">Полить сейчас</span>
+              <span class="hidden sm:inline">Принудительно</span>
               <span class="sm:hidden">💧</span>
             </Button>
           </template>
@@ -298,6 +315,7 @@ interface Props {
 }
 
 defineEmits<{
+  (e: 'start-irrigation'): void
   (e: 'force-irrigation'): void
 }>()
 

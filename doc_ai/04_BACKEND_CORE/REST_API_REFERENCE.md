@@ -7,9 +7,18 @@
 Он дополняет `API_SPEC_FRONTEND_BACKEND_FULL.md`, но сфокусирован именно на списке URL и их назначении.
 
 Актуализация authority / AE3 (2026-03-24):
-- единый запуск workflow через `POST /zones/{id}/start-cycle` (внутренний AE endpoint);
+- канонический запуск workflow через internal AE endpoints `POST /zones/{id}/start-cycle`
+  и `POST /zones/{id}/start-irrigation`;
 - legacy `POST /scheduler/task` и `GET /scheduler/task/{task_id}` удалены;
 - runtime path automation-engine использует direct SQL read-model.
+
+Актуализация AE3 irrigation runtime (2026-03-30):
+- добавлен public operator endpoint `POST /api/zones/{id}/start-irrigation`;
+- добавлен internal AE endpoint `POST /zones/{id}/start-irrigation`;
+- legacy `FORCE_IRRIGATION` сохраняет внешний контракт, но внутри маршрутизируется в AE3
+  `start-irrigation`, а не в direct device command path;
+- canonical `ae_tasks` расширены typed irrigation runtime columns и фазами
+  `irrigating|irrig_recirc`.
 
 Актуализация scheduler workspace (2026-03-27):
 - public operator-contract `scheduler-tasks` удалён;
@@ -66,6 +75,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 | POST | /api/grow-cycles/{id}/set-phase | auth:sanctum (agronomist) | Ручной переход фазы grow cycle |
 | POST | /api/grow-cycles/{id}/advance-phase | auth:sanctum (agronomist) | Переход на следующую фазу grow cycle |
 | POST | /api/zones/{id}/commands | auth:sanctum (operator/admin/agronomist/engineer) | Отправить команду зоне |
+| POST | /api/zones/{id}/start-irrigation | auth:sanctum (operator/admin/agronomist/engineer) | Канонический запуск AE3 irrigation workflow (`mode=normal|force`) |
 | GET | /api/zones/{id}/state | auth:sanctum | Текущее состояние workflow автоматики зоны (`state`, `active_processes`, `current_levels`, `timeline`, `irr_node_state`) |
 | GET | /api/zones/{id}/control-mode | auth:sanctum | Текущий режим управления автоматикой (`auto|semi|manual`) и доступные ручные шаги |
 | POST | /api/zones/{id}/control-mode | auth:sanctum (operator) | Переключить режим управления автоматикой (`auto|semi|manual`) |
@@ -108,6 +118,15 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.
 - поле `solution_tank_guard` (если присутствует) отражает последний non-blocking startup guard по solution tank: `checked`, `reset`, `reason`, `sensor_label`, `sample_ts`.
 - если `zone_workflow_state` ссылается на уже terminal `ae_task` или отстаёт от `ae_tasks.updated_at`, endpoint обязан считать такой workflow snapshot stale и возвращать состояние по последней terminal task, а не показывать ложную active phase.
+- для irrigation workflow endpoint обязан честно отражать `IRRIGATING` и `IRRIG_RECIRC`,
+  а также last decision metadata (`decision`, `reason_code`, `degraded`) при наличии canonical `ae_task`.
+
+Контракт `POST /api/zones/{id}/start-irrigation`:
+- body: `{ "mode": "normal" | "force", "duration_sec"?: number }`;
+- `mode=normal` запускает irrigation workflow через decision-controller;
+- `mode=force` bypass-ит decision-controller, но не bypass-ит AE3 runtime path;
+- response возвращает canonical `task_id` AE3 и может использоваться фронтендом для polling через execution/task status path;
+- endpoint не публикует device-команды напрямую.
 
 Контракт `GET /api/zones/{id}/schedule-workspace`:
 - используется только operator UI вкладки scheduler;
@@ -211,6 +230,7 @@ Breaking-change: legacy форматы/алиасы удалены, обратн
 - `target` валидируется относительно своего окна и должен лежать внутри `min..max`;
 - `extensions.day_night`;
 - `extensions.subsystems.irrigation.targets.system_type`.
+- `extensions.subsystems.irrigation.targets.soil_moisture.{unit,min,max,target}` для smart irrigation decision-controller.
 
 Legacy `extensions.day_target/night_target` больше не используется.
 
@@ -426,6 +446,7 @@ Preset rules:
 | Метод | Путь | Auth | Описание |
 |-------|-------------------------------|------|----------------------------------------------------|
 | POST | /zones/{id}/start-cycle | internal | Единственный внешний wake-up зоны (scheduler/manual trigger) |
+| POST | /zones/{id}/start-irrigation | internal | Wake-up irrigation workflow зоны (`normal|force|replay`) |
 | GET | /zones/{id}/state | internal | Полный runtime-state зоны для UI/интеграций |
 | GET | /zones/{id}/control-mode | internal | Текущий `control_mode`, `current_stage`, `pending_manual_step` и public manual-step список |
 | POST | /zones/{id}/control-mode | internal | Переключение режима (`auto|semi|manual`) |
@@ -434,7 +455,8 @@ Preset rules:
 
 Инварианты manual-control runtime path:
 - `GET /zones/{id}/control-mode` всегда возвращает только public/generic manual-step коды:
-  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`, `prepare_recirculation_stop`;
+  `clean_fill_start`, `solution_fill_start`, `clean_fill_stop`, `solution_fill_stop`,
+  `prepare_recirculation_stop`, `irrigation_stop`, `irrigation_recovery_stop`;
 - `semi` паузит `startup` перед входом в следующую fill-фазу, пока оператор не отправит соответствующий `manual-step`;
 - `manual` паузит `startup` и check-стадии two-tank workflow, пока оператор не отправит соответствующий `manual-step`;
 - `POST /zones/{id}/manual-step` принимает только canonical active task и возвращает canonical numeric `task_id`
@@ -465,6 +487,15 @@ Preset rules:
 - если AE3-ответ не содержит canonical numeric `task_id`, Laravel scheduler трактует submit как failed/retryable
   и не создаёт fallback snapshot с `intent-*`;
 - legacy `intent-*` task snapshots удалены; runtime обязан возвращать canonical numeric `task_id`.
+
+Инварианты `POST /zones/{id}/start-irrigation`:
+- endpoint принимает `source`, `idempotency_key`, `mode`, `requested_duration_sec`;
+- `mode=normal` проходит через configured irrigation decision strategy (`task|smart_soil_v1`);
+- `mode=force` пропускает decision-gate, но остаётся canonical `ae_task`;
+- при `decision=skip` runtime завершает task успешно без device-command publish;
+- при `solution_min` во время irrigation runtime обязан остановить irrigation path, вернуть зону в setup через `cycle_start` path и выполнить не более одного auto-replay исходного полива;
+- второй `solution_min` после replay завершает task ошибкой `irrigation_solution_min_replay_exhausted`;
+- при active task зоны endpoint возвращает `409 irrigation_zone_busy`.
 
 Контракт `POST /zones/{id}/start-relay-autotune`:
 - тело запроса: `{ "pid_type": "ph" | "ec" }`;
@@ -548,7 +579,7 @@ Response (solution tank guard failed):
 
 ### 18.3 Scheduler intents lifecycle (DB contract)
 
-`POST /zones/{id}/start-cycle` работает только как wake-up endpoint.
+`POST /zones/{id}/start-cycle` и `POST /zones/{id}/start-irrigation` работают только как wake-up endpoints.
 Фактическое выполнение берется из `zone_automation_intents`.
 
 Lifecycle intents:
@@ -560,7 +591,7 @@ Lifecycle intents:
 - `cancelled`
 
 Правила:
-- scheduler сначала пишет intent (`pending`) в БД, затем вызывает `start-cycle`;
+- scheduler сначала пишет intent (`pending`) в БД, затем вызывает `start-cycle` или `start-irrigation`;
 - `automation-engine` claim-ит intent через row lock (`FOR UPDATE SKIP LOCKED`);
 - при повторном `idempotency_key` для active intent endpoint возвращает
   `accepted=true` + `deduplicated=true` без повторного выполнения device-команд;
@@ -578,10 +609,12 @@ Lifecycle intents:
 ```json
 {
   "source": "laravel_scheduler",
-  "task_type": "diagnostics",
-  "workflow": "cycle_start",
+  "task_type": "irrigation_start",
+  "workflow": "irrigation_start",
   "topology": "two_tank_drip_substrate_trays",
-  "grow_cycle_id": 123
+  "grow_cycle_id": 123,
+  "mode": "normal",
+  "requested_duration_sec": 120
 }
 ```
 

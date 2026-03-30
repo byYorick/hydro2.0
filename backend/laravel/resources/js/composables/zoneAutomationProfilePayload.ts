@@ -39,6 +39,8 @@ function normalizeStepCount(value: unknown, fallback: number): number {
 }
 
 const MIN_TWO_TANK_COMMAND_STEPS: Record<string, number> = {
+  irrigation_start: 3,
+  irrigation_stop: 3,
   clean_fill_start: 1,
   clean_fill_stop: 1,
   solution_fill_start: 3,
@@ -46,7 +48,7 @@ const MIN_TWO_TANK_COMMAND_STEPS: Record<string, number> = {
   prepare_recirculation_start: 3,
   prepare_recirculation_stop: 3,
   irrigation_recovery_start: 4,
-  irrigation_recovery_stop: 3,
+  irrigation_recovery_stop: 4,
 }
 
 function normalizeTwoTankPlanStepCount(planName: string, value: unknown, fallback: number): number {
@@ -203,6 +205,57 @@ export function buildGrowthCycleConfigPayload(
     30,
     86400
   )
+  const irrigationDecisionLookbackSec = clamp(
+    Math.round(normalizeNumber(waterForm.irrigationDecisionLookbackSeconds, automationDefaults.water_irrigation_decision_lookback_sec)),
+    60,
+    86400
+  )
+  const irrigationDecisionMinSamples = clamp(
+    Math.round(normalizeNumber(waterForm.irrigationDecisionMinSamples, automationDefaults.water_irrigation_decision_min_samples)),
+    1,
+    100
+  )
+  const irrigationDecisionStaleAfterSec = clamp(
+    Math.round(
+      normalizeNumber(waterForm.irrigationDecisionStaleAfterSeconds, automationDefaults.water_irrigation_decision_stale_after_sec)
+    ),
+    30,
+    86400
+  )
+  const irrigationDecisionHysteresisPct = round(
+    clamp(
+      normalizeNumber(waterForm.irrigationDecisionHysteresisPct, automationDefaults.water_irrigation_decision_hysteresis_pct),
+      0,
+      100
+    ),
+    1
+  )
+  const irrigationDecisionSpreadAlertThresholdPct = round(
+    clamp(
+      normalizeNumber(
+        waterForm.irrigationDecisionSpreadAlertThresholdPct,
+        automationDefaults.water_irrigation_decision_spread_alert_threshold_pct
+      ),
+      0,
+      100
+    ),
+    1
+  )
+  const irrigationDecisionStrategy =
+    waterForm.irrigationDecisionStrategy === 'smart_soil_v1'
+      ? 'smart_soil_v1'
+      : automationDefaults.water_irrigation_decision_strategy === 'smart_soil_v1'
+        ? 'smart_soil_v1'
+        : 'task'
+  const irrigationAutoReplayAfterSetup =
+    waterForm.irrigationAutoReplayAfterSetup ?? automationDefaults.water_irrigation_auto_replay_after_setup
+  const irrigationMaxSetupReplays = clamp(
+    Math.round(normalizeNumber(waterForm.irrigationMaxSetupReplays, automationDefaults.water_irrigation_max_setup_replays)),
+    0,
+    10
+  )
+  const irrigationStopOnSolutionMin =
+    waterForm.stopOnSolutionMin ?? automationDefaults.water_irrigation_stop_on_solution_min
   const correctionMaxEcCorrectionAttempts = clamp(
     Math.round(normalizeNumber(waterForm.correctionMaxEcCorrectionAttempts, automationDefaults.water_correction_max_ec_attempts)),
     1,
@@ -239,6 +292,16 @@ export function buildGrowthCycleConfigPayload(
     3600
   )
   const twoTankCommandSteps = {
+    irrigation_start: normalizeTwoTankPlanStepCount(
+      'irrigation_start',
+      waterForm.twoTankIrrigationStartSteps,
+      automationCommandTemplates.irrigation_start.length
+    ),
+    irrigation_stop: normalizeTwoTankPlanStepCount(
+      'irrigation_stop',
+      waterForm.twoTankIrrigationStopSteps,
+      automationCommandTemplates.irrigation_stop.length
+    ),
     clean_fill_start: normalizeTwoTankPlanStepCount(
       'clean_fill_start',
       waterForm.twoTankCleanFillStartSteps,
@@ -342,6 +405,8 @@ export function buildGrowthCycleConfigPayload(
       },
     }
     diagnosticsExecution.two_tank_commands = {
+      irrigation_start: resizeCommandSteps(automationCommandTemplates.irrigation_start, twoTankCommandSteps.irrigation_start),
+      irrigation_stop: resizeCommandSteps(automationCommandTemplates.irrigation_stop, twoTankCommandSteps.irrigation_stop),
       clean_fill_start: resizeCommandSteps(automationCommandTemplates.clean_fill_start, twoTankCommandSteps.clean_fill_start),
       clean_fill_stop: resizeCommandSteps(automationCommandTemplates.clean_fill_stop, twoTankCommandSteps.clean_fill_stop),
       solution_fill_start: resizeCommandSteps(automationCommandTemplates.solution_fill_start, twoTankCommandSteps.solution_fill_start),
@@ -409,7 +474,30 @@ export function buildGrowthCycleConfigPayload(
               enabled: waterForm.tanksCount === 3 ? waterForm.enableDrainControl : false,
               target_percent: waterForm.tanksCount === 3 ? clamp(waterForm.drainTargetPercent, 0, 100) : null,
             },
-        }
+        },
+        decision: {
+          strategy: irrigationDecisionStrategy,
+          config: {
+            lookback_sec: irrigationDecisionLookbackSec,
+            min_samples: irrigationDecisionMinSamples,
+            stale_after_sec: irrigationDecisionStaleAfterSec,
+            hysteresis_pct: irrigationDecisionHysteresisPct,
+            spread_alert_threshold_pct: irrigationDecisionSpreadAlertThresholdPct,
+          },
+        },
+        recovery: {
+          max_continue_attempts: irrigationRecoveryMaxContinueAttempts,
+          timeout_sec: irrigationRecoveryTimeoutSec,
+          auto_replay_after_setup: Boolean(irrigationAutoReplayAfterSetup),
+          max_setup_replays: irrigationMaxSetupReplays,
+        },
+        safety: {
+          stop_on_solution_min: Boolean(irrigationStopOnSolutionMin),
+        },
+        dosing_rules: {
+          irrigation_allowed_components: ['calcium', 'magnesium', 'micro'],
+          irrigation_forbid_components: ['npk'],
+        },
       },
       lighting: {
         enabled: lightingForm.enabled,

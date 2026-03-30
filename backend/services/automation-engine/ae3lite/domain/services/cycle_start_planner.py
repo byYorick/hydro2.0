@@ -29,7 +29,7 @@ class CycleStartPlanner:
     _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
-        if task.task_type != "cycle_start":
+        if task.task_type not in {"cycle_start", "irrigation_start"}:
             raise PlannerConfigurationError(f"Unsupported task_type for CycleStartPlanner: {task.task_type}")
         if task.zone_id != snapshot.zone_id:
             raise PlannerConfigurationError(
@@ -118,6 +118,8 @@ class CycleStartPlanner:
         topology: str,
     ) -> CommandPlan:
         runtime = resolve_two_tank_runtime(snapshot)
+        runtime = dict(runtime)
+        runtime["zone_workflow_phase"] = str(getattr(snapshot, "workflow_phase", "") or "idle").strip().lower()
         named_plans: dict[str, tuple[PlannedCommand, ...]] = {}
 
         for plan_name, raw_steps in runtime["command_specs"].items():

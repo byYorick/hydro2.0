@@ -10,11 +10,16 @@ from typing import Any, Mapping, Optional
 class IntentMetadata:
     """Extracted intent metadata for task creation."""
 
+    task_type: str
+    current_stage: str
+    workflow_phase: str
     topology: str
     intent_source: str
     intent_trigger: str
     intent_id: Optional[int]
     intent_meta: dict[str, Any]
+    irrigation_mode: Optional[str] = None
+    irrigation_requested_duration_sec: Optional[int] = None
 
 
 class LegacyIntentMapper:
@@ -39,8 +44,25 @@ class LegacyIntentMapper:
             or intent_row.get("topology")
             or "two_tank"
         ).strip().lower()
+        requested_task_type = str(intent_payload.get("task_type") or "").strip().lower()
+        requested_mode = str(intent_payload.get("mode") or "").strip().lower()
+        requested_duration_raw = intent_payload.get("requested_duration_sec")
+        requested_duration_sec = None
+        if requested_duration_raw is not None:
+            try:
+                requested_duration_sec = max(1, int(requested_duration_raw))
+            except (TypeError, ValueError):
+                requested_duration_sec = None
+
+        is_irrigation = requested_task_type == "irrigation_start" or intent_type in {"irrigate_once", "irrigation"}
+        task_type = "irrigation_start" if is_irrigation else "cycle_start"
+        current_stage = "await_ready" if is_irrigation else "startup"
+        workflow_phase = "ready" if is_irrigation else "idle"
 
         return IntentMetadata(
+            task_type=task_type,
+            current_stage=current_stage,
+            workflow_phase=workflow_phase,
             topology=topology,
             intent_source=str(source or "").strip() or "laravel_scheduler",
             intent_trigger=intent_type or self.DEFAULT_TRIGGER,
@@ -51,6 +73,8 @@ class LegacyIntentMapper:
                 "intent_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
                 "intent_payload": intent_payload,
             },
+            irrigation_mode=requested_mode if requested_mode in {"normal", "force"} else ("normal" if is_irrigation else None),
+            irrigation_requested_duration_sec=requested_duration_sec,
         )
 
     # Backward-compat alias (used by v1 code paths until they are removed)

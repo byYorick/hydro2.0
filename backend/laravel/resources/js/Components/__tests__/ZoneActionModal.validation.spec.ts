@@ -26,6 +26,23 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     expect(wrapper.vm.error).toContain('Длительность должна быть от 1 до 3600 секунд')
   })
 
+  it('should validate duration_sec for START_IRRIGATION', async () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        ...defaultProps,
+        actionType: 'START_IRRIGATION'
+      }
+    })
+
+    ;(wrapper.vm as any).form.duration_sec = 0
+    await nextTick()
+
+    wrapper.vm.onSubmit()
+    await nextTick()
+
+    expect(wrapper.vm.error).toContain('Длительность должна быть от 1 до 3600 секунд')
+  })
+
   it('should validate target_ph for FORCE_PH_CONTROL', async () => {
     const wrapper = mount(ZoneActionModal, {
       props: {
@@ -153,4 +170,3 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     expect(wrapper.vm.form.duration_sec).toBe(10)
   })
 })
-

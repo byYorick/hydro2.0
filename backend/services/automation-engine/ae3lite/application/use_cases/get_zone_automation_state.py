@@ -34,6 +34,14 @@ _STAGE_LABELS: dict[str, str] = {
     "prepare_recirculation_start": "Запуск рециркуляции",
     "prepare_recirculation_check": "Подготовка рециркуляции",
     "complete_ready": "Готов к поливу",
+    "await_ready": "Ожидание готового раствора",
+    "decision_gate": "Принятие решения о поливе",
+    "irrigation_start": "Запуск полива",
+    "irrigation_check": "Полив",
+    "irrigation_recovery_start": "Запуск рециркуляции после полива",
+    "irrigation_recovery_check": "Рециркуляция после полива",
+    "completed_run": "Полив завершён",
+    "completed_skip": "Полив пропущен",
 }
 
 # Maps (from_stage, to_stage) → (event_code, human label)
@@ -51,6 +59,15 @@ _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("prepare_recirculation_stop_to_ready", "complete_ready"): ("READY", "Готов к поливу"),
     ("prepare_recirculation_check", "complete_ready"): ("READY", "Готов к поливу"),
     ("complete_ready", "irrigation_start"): ("IRRIGATION_STARTED", "Запуск полива"),
+    ("await_ready", "decision_gate"): ("IRRIGATION_READY", "Раствор готов для полива"),
+    ("decision_gate", "completed_skip"): ("IRRIGATION_SKIPPED", "Полив пропущен по decision-controller"),
+    ("decision_gate", "irrigation_start"): ("IRRIGATION_APPROVED", "Полив разрешён"),
+    ("irrigation_start", "irrigation_check"): ("IRRIGATION_STARTED", "Полив"),
+    ("irrigation_check", "irrigation_stop_to_recovery"): ("IRRIGATION_STOPPED", "Полив остановлен, запуск recovery"),
+    ("irrigation_check", "irrigation_stop_to_ready"): ("IRRIGATION_STOPPED", "Полив завершён"),
+    ("irrigation_check", "irrigation_stop_to_setup"): ("IRRIGATION_LOW_SOLUTION", "Остановка полива из-за низкого уровня раствора"),
+    ("irrigation_recovery_start", "irrigation_recovery_check"): ("IRRIGATION_RECOVERY_STARTED", "Запуск recovery после полива"),
+    ("irrigation_recovery_check", "irrigation_recovery_stop_to_ready"): ("IRRIGATION_RECOVERY_COMPLETED", "Recovery после полива завершён"),
 }
 
 # Telemetry sensor labels that carry pH/EC/level data
@@ -267,6 +284,7 @@ class GetZoneAutomationStateUseCase:
             "estimated_completion_sec": None,
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
+            "decision": self._build_decision(task),
         }
 
     def _build_workflow_state(
@@ -333,6 +351,7 @@ class GetZoneAutomationStateUseCase:
             "estimated_completion_sec": None,
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
+            "decision": None,
         }
 
     def _idle_state(
@@ -380,6 +399,7 @@ class GetZoneAutomationStateUseCase:
             "estimated_completion_sec": None,
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
+            "decision": None,
         }
 
     def _build_active_processes(
@@ -466,4 +486,20 @@ class GetZoneAutomationStateUseCase:
             "reason": reason,
             "sensor_label": sensor_label,
             "sample_ts": sample_ts,
+        }
+
+    def _build_decision(self, task: Any) -> dict[str, Any] | None:
+        outcome = getattr(task, "irrigation_decision_outcome", None)
+        reason_code = getattr(task, "irrigation_decision_reason_code", None)
+        strategy = getattr(task, "irrigation_decision_strategy", None)
+        degraded = getattr(task, "irrigation_decision_degraded", None)
+
+        if outcome is None and reason_code is None and strategy is None and degraded is None:
+            return None
+
+        return {
+            "outcome": str(outcome).strip().lower() if outcome is not None else None,
+            "reason_code": str(reason_code).strip() if reason_code is not None else None,
+            "strategy": str(strategy).strip().lower() if strategy is not None else None,
+            "degraded": bool(degraded) if degraded is not None else None,
         }

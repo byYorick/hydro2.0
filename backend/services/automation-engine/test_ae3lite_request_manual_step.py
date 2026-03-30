@@ -97,3 +97,19 @@ async def test_request_manual_step_rejects_invalid_stage_step_pair() -> None:
 
     assert exc_info.value.code == "manual_step_not_allowed_for_stage"
     assert exc_info.value.status_code == 422
+
+
+async def test_request_manual_step_accepts_irrigation_stop() -> None:
+    repo = _TaskRepository(_task(stage="irrigation_check"))
+
+    async def fetch_fn(_query: str, *_args: object) -> list[dict[str, object]]:
+        return [{"control_mode": "manual"}]
+
+    result = await RequestManualStepUseCase(
+        task_repository=repo,
+        fetch_fn=fetch_fn,
+    ).run(zone_id=7, manual_step="irrigation_stop", now=NOW)
+
+    assert result["task_id"] == "321"
+    assert result["pending_manual_step"] == "irrigation_stop"
+    assert repo.calls[0]["manual_step"] == "irrigation_stop"

@@ -63,6 +63,18 @@ describe('ZoneActionModal', () => {
     expect(wrapper.text()).toContain('Полив зоны')
   })
 
+  it('displays correct title for START_IRRIGATION', () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'START_IRRIGATION',
+        zoneId: 1
+      }
+    })
+
+    expect(wrapper.text()).toContain('Полив зоны')
+  })
+
   it('displays correct title for FORCE_PH_CONTROL', () => {
     const wrapper = mount(ZoneActionModal, {
       props: {
@@ -173,6 +185,30 @@ describe('ZoneActionModal', () => {
       actionType: 'FORCE_IRRIGATION',
       params: {
         duration_sec: 30
+      }
+    })
+  })
+
+  it('emits submit event with correct params for START_IRRIGATION', async () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'START_IRRIGATION',
+        zoneId: 1
+      }
+    })
+
+    const input = wrapper.find('input[type="number"]')
+    await input.setValue(45)
+
+    const form = wrapper.find('form')
+    await form.trigger('submit.prevent')
+
+    expect(wrapper.emitted('submit')).toBeTruthy()
+    expect((wrapper.emitted('submit') as any)[0][0]).toMatchObject({
+      actionType: 'START_IRRIGATION',
+      params: {
+        duration_sec: 45
       }
     })
   })

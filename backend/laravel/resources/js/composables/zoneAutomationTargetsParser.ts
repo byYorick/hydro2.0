@@ -154,6 +154,10 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const irrigationExecution = asRecord(irrigationSubsystem?.execution)
   const irrigationTargets = asRecord(irrigationSubsystem?.targets)
   const irrigationBehavior = irrigationExecution ?? irrigationTargets
+  const irrigationDecision = asRecord(irrigationSubsystem?.decision)
+  const irrigationDecisionConfig = asRecord(irrigationDecision?.config)
+  const irrigationRecoveryPolicy = asRecord(irrigationSubsystem?.recovery)
+  const irrigationSafety = asRecord(irrigationSubsystem?.safety)
   const climateSubsystem = asRecord(subsystems?.climate)
   const climateExecution = asRecord(climateSubsystem?.execution)
   const climateTargets = asRecord(climateSubsystem?.targets)
@@ -284,6 +288,42 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   )
   if (correctionDuringIrrigation !== null) {
     waterForm.correctionDuringIrrigation = correctionDuringIrrigation
+  }
+  const irrigationDecisionStrategy = readString(irrigationDecision?.strategy)
+  if (irrigationDecisionStrategy === 'task' || irrigationDecisionStrategy === 'smart_soil_v1') {
+    waterForm.irrigationDecisionStrategy = irrigationDecisionStrategy
+  }
+  const irrigationDecisionLookbackSeconds = readNumber(irrigationDecisionConfig?.lookback_sec)
+  if (irrigationDecisionLookbackSeconds !== null) {
+    waterForm.irrigationDecisionLookbackSeconds = clamp(Math.round(irrigationDecisionLookbackSeconds), 60, 86400)
+  }
+  const irrigationDecisionMinSamples = readNumber(irrigationDecisionConfig?.min_samples)
+  if (irrigationDecisionMinSamples !== null) {
+    waterForm.irrigationDecisionMinSamples = clamp(Math.round(irrigationDecisionMinSamples), 1, 100)
+  }
+  const irrigationDecisionStaleAfterSeconds = readNumber(irrigationDecisionConfig?.stale_after_sec)
+  if (irrigationDecisionStaleAfterSeconds !== null) {
+    waterForm.irrigationDecisionStaleAfterSeconds = clamp(Math.round(irrigationDecisionStaleAfterSeconds), 30, 86400)
+  }
+  const irrigationDecisionHysteresisPct = readNumber(irrigationDecisionConfig?.hysteresis_pct)
+  if (irrigationDecisionHysteresisPct !== null) {
+    waterForm.irrigationDecisionHysteresisPct = clamp(irrigationDecisionHysteresisPct, 0, 100)
+  }
+  const irrigationDecisionSpreadAlertThresholdPct = readNumber(irrigationDecisionConfig?.spread_alert_threshold_pct)
+  if (irrigationDecisionSpreadAlertThresholdPct !== null) {
+    waterForm.irrigationDecisionSpreadAlertThresholdPct = clamp(irrigationDecisionSpreadAlertThresholdPct, 0, 100)
+  }
+  const irrigationAutoReplayAfterSetup = readBoolean(irrigationRecoveryPolicy?.auto_replay_after_setup)
+  if (irrigationAutoReplayAfterSetup !== null) {
+    waterForm.irrigationAutoReplayAfterSetup = irrigationAutoReplayAfterSetup
+  }
+  const irrigationMaxSetupReplays = readNumber(irrigationRecoveryPolicy?.max_setup_replays)
+  if (irrigationMaxSetupReplays !== null) {
+    waterForm.irrigationMaxSetupReplays = clamp(Math.round(irrigationMaxSetupReplays), 0, 10)
+  }
+  const irrigationStopOnSolutionMin = readBoolean(irrigationSafety?.stop_on_solution_min)
+  if (irrigationStopOnSolutionMin !== null) {
+    waterForm.stopOnSolutionMin = irrigationStopOnSolutionMin
   }
 
   const drainControl = asRecord(irrigationBehavior?.drain_control) ?? asRecord(irrigationTargets?.drain_control)
@@ -566,6 +606,14 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   }
 
   const twoTankCommands = asRecord(diagnosticsExecutionResolved?.two_tank_commands)
+  const twoTankIrrigationStartSteps = readArrayLength(twoTankCommands?.irrigation_start)
+  if (twoTankIrrigationStartSteps !== null) {
+    waterForm.twoTankIrrigationStartSteps = clamp(twoTankIrrigationStartSteps, 1, 12)
+  }
+  const twoTankIrrigationStopSteps = readArrayLength(twoTankCommands?.irrigation_stop)
+  if (twoTankIrrigationStopSteps !== null) {
+    waterForm.twoTankIrrigationStopSteps = clamp(twoTankIrrigationStopSteps, 1, 12)
+  }
   const twoTankCleanFillStartSteps = readArrayLength(twoTankCommands?.clean_fill_start)
   if (twoTankCleanFillStartSteps !== null) {
     waterForm.twoTankCleanFillStartSteps = clamp(twoTankCleanFillStartSteps, 1, 12)

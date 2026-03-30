@@ -48,8 +48,17 @@ export interface WaterFormState {
   startupSolutionFillTimeoutSeconds?: number
   startupPrepareRecirculationTimeoutSeconds?: number
   startupCleanFillRetryCycles?: number
+  irrigationDecisionStrategy?: 'task' | 'smart_soil_v1'
+  irrigationDecisionLookbackSeconds?: number
+  irrigationDecisionMinSamples?: number
+  irrigationDecisionStaleAfterSeconds?: number
+  irrigationDecisionHysteresisPct?: number
+  irrigationDecisionSpreadAlertThresholdPct?: number
   irrigationRecoveryMaxContinueAttempts?: number
   irrigationRecoveryTimeoutSeconds?: number
+  irrigationAutoReplayAfterSetup?: boolean
+  irrigationMaxSetupReplays?: number
+  stopOnSolutionMin?: boolean
   prepareToleranceEcPct?: number
   prepareTolerancePhPct?: number
   correctionMaxEcCorrectionAttempts?: number
@@ -57,6 +66,8 @@ export interface WaterFormState {
   correctionPrepareRecirculationMaxAttempts?: number
   correctionPrepareRecirculationMaxCorrectionAttempts?: number
   correctionStabilizationSec?: number
+  twoTankIrrigationStartSteps?: number
+  twoTankIrrigationStopSteps?: number
   twoTankCleanFillStartSteps?: number
   twoTankCleanFillStopSteps?: number
   twoTankSolutionFillStartSteps?: number

@@ -13,17 +13,31 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key as _normaliz
 _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
 _MAX_CORRECTION_ATTEMPTS: int = 500
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
+    "irrigation_start": ("valve_solution_supply", "valve_irrigation", "pump_main"),
+    "irrigation_stop": ("pump_main", "valve_irrigation", "valve_solution_supply"),
     "clean_fill_start": ("valve_clean_fill",),
     "clean_fill_stop": ("valve_clean_fill",),
     "solution_fill_start": ("valve_clean_supply", "valve_solution_fill", "pump_main"),
     "solution_fill_stop": ("pump_main", "valve_solution_fill", "valve_clean_supply"),
     "prepare_recirculation_start": ("valve_solution_supply", "valve_solution_fill", "pump_main"),
     "prepare_recirculation_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply"),
+    "irrigation_recovery_start": ("valve_irrigation", "valve_solution_supply", "valve_solution_fill", "pump_main"),
+    "irrigation_recovery_stop": ("pump_main", "valve_solution_fill", "valve_solution_supply", "valve_irrigation"),
 }
 
 
 def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
     defaults: dict[str, list[dict[str, Any]]] = {
+        "irrigation_start": [
+            {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+        ],
+        "irrigation_stop": [
+            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
+        ],
         "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
         "clean_fill_stop": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": False}}],
         "solution_fill_start": [
@@ -45,6 +59,18 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
+        ],
+        "irrigation_recovery_start": [
+            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": True}},
+        ],
+        "irrigation_recovery_stop": [
+            {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
+            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
         ],
     }
     return [dict(item) for item in defaults.get(plan_name, ())]
@@ -233,16 +259,25 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "correction": dict(default_correction_cfg),
         "correction_by_phase": correction_by_phase,
         "command_specs": {},
+        "irrigation_execution": _build_irrigation_execution(snapshot),
+        "irrigation_decision": _build_irrigation_decision(snapshot),
+        "irrigation_recovery": _build_irrigation_recovery(snapshot),
+        "irrigation_safety": _build_irrigation_safety(snapshot),
+        "soil_moisture_target": _build_soil_moisture_target(snapshot),
     }
     _validate_prepare_recirculation_timing(runtime)
 
     for plan_name in (
+        "irrigation_start",
+        "irrigation_stop",
         "clean_fill_start",
         "clean_fill_stop",
         "solution_fill_start",
         "solution_fill_stop",
         "prepare_recirculation_start",
         "prepare_recirculation_stop",
+        "irrigation_recovery_start",
+        "irrigation_recovery_stop",
     ):
         runtime["command_specs"][plan_name] = _normalize_command_plan(
             commands_cfg.get(plan_name),
@@ -693,6 +728,101 @@ def _first_non_null(*values: Any) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _optional_float(raw_value: Any) -> float | None:
+    try:
+        return float(raw_value) if raw_value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
+    irrigation = snapshot.targets.get("irrigation") if isinstance(getattr(snapshot, "targets", None), Mapping) else {}
+    irrigation = irrigation if isinstance(irrigation, Mapping) else {}
+    return {
+        "duration_sec": _require_int(
+            irrigation.get("duration_sec"),
+            path="targets.irrigation.duration_sec",
+            minimum=1,
+            maximum=3600,
+        ),
+        "interval_sec": _require_int(
+            irrigation.get("interval_sec"),
+            path="targets.irrigation.interval_sec",
+            minimum=1,
+            maximum=86400,
+        ),
+        "correction_during_irrigation": bool(irrigation.get("correction_during_irrigation", True)),
+    }
+
+
+def _build_irrigation_decision(snapshot: Any) -> dict[str, Any]:
+    subsystem = _irrigation_subsystem(snapshot)
+    decision = _to_mapping(subsystem.get("decision"))
+    strategy = str(decision.get("strategy") or "task").strip().lower() or "task"
+    config = _to_mapping(decision.get("config"))
+    return {
+        "strategy": strategy if strategy in {"task", "smart_soil_v1"} else "task",
+        "config": {
+            "lookback_sec": _resolve_bounded_int(config.get("lookback_sec"), 1800, 60, 86400),
+            "min_samples": _resolve_bounded_int(config.get("min_samples"), 3, 1, 100),
+            "stale_after_sec": _resolve_bounded_int(config.get("stale_after_sec"), 600, 30, 86400),
+            "hysteresis_pct": _resolve_float(config.get("hysteresis_pct"), 2.0, 0.0, 100.0),
+            "spread_alert_threshold_pct": _resolve_float(
+                config.get("spread_alert_threshold_pct"),
+                12.0,
+                0.0,
+                100.0,
+            ),
+        },
+    }
+
+
+def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
+    subsystem = _irrigation_subsystem(snapshot)
+    recovery = _to_mapping(subsystem.get("recovery"))
+    return {
+        "max_continue_attempts": _resolve_bounded_int(recovery.get("max_continue_attempts"), 5, 1, 30),
+        "timeout_sec": _resolve_bounded_int(recovery.get("timeout_sec"), 600, 30, 86400),
+        "auto_replay_after_setup": bool(recovery.get("auto_replay_after_setup", True)),
+        "max_setup_replays": _resolve_bounded_int(recovery.get("max_setup_replays"), 1, 0, 10),
+    }
+
+
+def _build_irrigation_safety(snapshot: Any) -> dict[str, Any]:
+    subsystem = _irrigation_subsystem(snapshot)
+    safety = _to_mapping(subsystem.get("safety"))
+    return {
+        "stop_on_solution_min": bool(safety.get("stop_on_solution_min", True)),
+    }
+
+
+def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:
+    targets = getattr(snapshot, "targets", None)
+    extensions = targets.get("extensions") if isinstance(targets, Mapping) else {}
+    extensions = extensions if isinstance(extensions, Mapping) else {}
+    subsystems = extensions.get("subsystems") if isinstance(extensions.get("subsystems"), Mapping) else {}
+    irrigation = subsystems.get("irrigation") if isinstance(subsystems.get("irrigation"), Mapping) else {}
+    target = irrigation.get("targets") if isinstance(irrigation.get("targets"), Mapping) else {}
+    soil = target.get("soil_moisture") if isinstance(target.get("soil_moisture"), Mapping) else {}
+    if not soil:
+        return None
+    return {
+        "unit": str(soil.get("unit") or "pct").strip().lower() or "pct",
+        "min": _optional_float(soil.get("min")),
+        "max": _optional_float(soil.get("max")),
+        "target": _optional_float(soil.get("target")),
+    }
+
+
+def _irrigation_subsystem(snapshot: Any) -> dict[str, Any]:
+    targets = getattr(snapshot, "targets", None)
+    extensions = targets.get("extensions") if isinstance(targets, Mapping) else {}
+    extensions = extensions if isinstance(extensions, Mapping) else {}
+    subsystems = extensions.get("subsystems") if isinstance(extensions.get("subsystems"), Mapping) else {}
+    irrigation = subsystems.get("irrigation")
+    return dict(irrigation) if isinstance(irrigation, Mapping) else {}
 
 
 def _build_correction_cfg(
