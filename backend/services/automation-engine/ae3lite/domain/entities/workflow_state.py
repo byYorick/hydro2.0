@@ -54,5 +54,7 @@ class CorrectionState:
     wait_until: Optional[datetime]
     ec_component: Optional[str] = None
     ec_amount_ml: Optional[float] = None
+    ec_dose_sequence_json: Optional[str] = None
+    ec_current_seq_index: int = 0
     ph_amount_ml: Optional[float] = None
     limit_policy_logged: bool = False

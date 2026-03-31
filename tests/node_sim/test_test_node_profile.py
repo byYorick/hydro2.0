@@ -7,6 +7,7 @@ from node_sim.test_node_profile import (
     TestNodeSimulator,
     VIRTUAL_NODE_BY_UID,
 )
+from node_sim.model import NodeType
 
 
 class _DummyMqtt:
@@ -46,6 +47,24 @@ def test_build_config_report_matches_test_node_channels():
     level_clean_min = next(item for item in payload["channels"] if item["name"] == "level_clean_min")
     assert level_clean_min["metric"] == "WATER_LEVEL_SWITCH"
     assert level_clean_min["poll_interval_ms"] == 5000
+
+
+def test_build_config_report_includes_soil_node_channels():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+
+    payload = sim.build_config_report_payload(VIRTUAL_NODE_BY_UID["nd-test-soil-1"])
+
+    assert payload["node_id"] == "nd-test-soil-1"
+    assert payload["type"] == "water_sensor"
+    soil_moisture = next(item for item in payload["channels"] if item["name"] == "soil_moisture")
+    assert soil_moisture["metric"] == "SOIL_MOISTURE"
+    system = next(item for item in payload["channels"] if item["name"] == "system")
+    assert system["actuator_type"] == "RELAY"
+
+
+def test_node_type_enum_accepts_water_sensor():
+    assert NodeType("water_sensor") is NodeType.WATER_SENSOR
 
 
 def test_staged_clean_fill_min_switch_after_delay():
@@ -219,5 +238,56 @@ def test_publish_virtual_telemetry_batch_can_skip_aux_telemetry():
 
     telemetry_topics = [topic for topic, _, _, _ in mqtt.messages if topic.endswith("/telemetry")]
     assert any(topic.endswith("/level_clean_min/telemetry") for topic in telemetry_topics)
+    assert any(topic.endswith("/soil_moisture/telemetry") for topic in telemetry_topics)
     assert not any("/nd-test-climate-1/" in topic for topic in telemetry_topics)
     assert not any("/nd-test-light-1/" in topic for topic in telemetry_topics)
+
+
+def test_set_fault_mode_updates_soil_moisture_snapshot():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+
+    asyncio.run(
+        sim.execute_pending_command(
+            PendingCommand(
+                node_uid="nd-test-soil-1",
+                channel="system",
+                cmd_id="cmd-soil-fault-1",
+                cmd="set_fault_mode",
+                kind=CommandKind.ACTUATOR,
+                params={"soil_moisture_pct": 31.5},
+                execute_delay_ms=0,
+            )
+        )
+    )
+
+    _, payload, _, _ = mqtt.messages[-1]
+    assert payload["status"] == "DONE"
+    assert payload["details"]["soil_moisture_pct"] == 31.5
+    assert sim.state.soil_moisture == 31.5
+
+
+def test_set_fault_mode_updates_ph_and_ec_snapshot():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+
+    asyncio.run(
+        sim.execute_pending_command(
+            PendingCommand(
+                node_uid="nd-test-irrig-1",
+                channel="storage_state",
+                cmd_id="cmd-storage-fault-1",
+                cmd="set_fault_mode",
+                kind=CommandKind.ACTUATOR,
+                params={"ph_value": 5.8, "ec_value": 1.4},
+                execute_delay_ms=0,
+            )
+        )
+    )
+
+    _, payload, _, _ = mqtt.messages[-1]
+    assert payload["status"] == "DONE"
+    assert payload["details"]["ph_value"] == 5.8
+    assert payload["details"]["ec_value"] == 1.4
+    assert sim.state.ph_value == 5.8
+    assert sim.state.ec_value == 1.4

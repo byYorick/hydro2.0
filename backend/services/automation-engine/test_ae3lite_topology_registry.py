@@ -77,8 +77,8 @@ class TestTwoTankGraphIntegrity:
                 )
 
     def test_expected_stage_count(self):
-        assert len(TWO_TANK) == 16, (
-            f"Expected 16 stages, got {len(TWO_TANK)}"
+        assert len(TWO_TANK) == 28, (
+            f"Expected 28 stages, got {len(TWO_TANK)}"
         )
 
 
@@ -120,7 +120,7 @@ class TestTopologyRegistryLookup:
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
         stages = registry.stages("two_tank")
-        assert len(stages) == 16
+        assert len(stages) == 28
         assert "startup" in stages
         assert "complete_ready" in stages
         assert "prepare_recirculation_window_exhausted" in stages
@@ -231,7 +231,7 @@ class TestStageDefImmutability:
 class TestWorkflowPhases:
     """Validates that workflow_phase values in TWO_TANK are consistent."""
 
-    EXPECTED_PHASES = {"idle", "tank_filling", "tank_recirc", "ready"}
+    EXPECTED_PHASES = {"idle", "tank_filling", "tank_recirc", "ready", "irrigating", "irrig_recirc"}
 
     def test_all_phases_are_expected(self):
         phases = {sdef.workflow_phase for sdef in TWO_TANK.values()}

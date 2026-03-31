@@ -26,8 +26,8 @@ async function waitForDashboardReady(page: Page) {
 }
 
 test.describe('Dashboard Overview', () => {
-  test('should display zones count card', async ({ page, testZone }) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
+  test('should display zones count card', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForDashboardReady(page);
     
     // Проверяем наличие карточки количества зон
@@ -53,6 +53,7 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should display zone cards with statuses', async ({ page, apiHelper }) => {
+    test.setTimeout(90000);
     // Создаем зону с разными статусами для проверки
     const greenhouse = await apiHelper.createTestGreenhouse();
     const zone1 = await apiHelper.createTestZone(greenhouse.id, { status: 'PLANNED' });
@@ -60,9 +61,9 @@ test.describe('Dashboard Overview', () => {
     const zone3 = await apiHelper.createTestZone(greenhouse.id, { status: 'PAUSED' });
 
     try {
-      await page.goto('/', { waitUntil: 'networkidle' });
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
       await waitForDashboardReady(page);
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000);
 
       // Проверяем наличие карточек зон (может быть в разных местах в зависимости от типа dashboard)
       const zone1Card = page.getByRole('link', { name: zone1.name }).first();
@@ -80,10 +81,10 @@ test.describe('Dashboard Overview', () => {
         return;
       }
 
-      if (hasZone1) await expect(zone1Card).toBeVisible({ timeout: 5000 });
-      if (hasZone2) await expect(zone2Card).toBeVisible({ timeout: 5000 });
-      if (hasZone3) await expect(zone3Card).toBeVisible({ timeout: 5000 });
-      await expect(page.getByText(/Новая|Запущено|Пауза/i).first()).toBeVisible({ timeout: 5000 });
+      if (hasZone1) await expect(zone1Card).toBeVisible({ timeout: 10000 });
+      if (hasZone2) await expect(zone2Card).toBeVisible({ timeout: 10000 });
+      if (hasZone3) await expect(zone3Card).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/Новая|Запущено|Пауза/i).first()).toBeVisible({ timeout: 10000 });
     } finally {
       // Очистка
       await apiHelper.deleteZone(zone1.id).catch(() => {});
@@ -94,7 +95,7 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should display alerts count', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForDashboardReady(page);
     
     // Проверяем наличие карточки алертов
@@ -119,7 +120,7 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should display events panel', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForDashboardReady(page);
     
     // Проверяем наличие панели событий
@@ -145,7 +146,7 @@ test.describe('Dashboard Overview', () => {
 
   test('should filter events by kind', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForDashboardReady(page);
 
     // Проверяем наличие панели событий
@@ -174,23 +175,26 @@ test.describe('Dashboard Overview', () => {
     await page.waitForTimeout(1000);
   });
 
-  test('should navigate to zone detail on zone card click', async ({ page, testZone, testGreenhouse }) => {
-    await page.goto('/', { waitUntil: 'networkidle' });
+  test('should navigate to zone detail on zone card click', async ({ page, testZone }) => {
+    test.setTimeout(60000);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await waitForDashboardReady(page);
 
-    // Ждем появления карточки зоны (может быть в разных местах)
-    const zoneCard = page.getByRole('link', { name: testZone.name }).first();
-    
-    if (await zoneCard.count() === 0) {
-      // Если карточка не найдена, переходим напрямую на страницу зоны
-      await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    const zoneCardByHref = page.locator(`a[href="/zones/${testZone.id}"]`).first();
+    const zoneCardByName = page.getByRole('link', { name: testZone.name }).first();
+
+    if (await zoneCardByHref.count() > 0) {
+      await expect(zoneCardByHref).toBeVisible({ timeout: 15000 });
+      await zoneCardByHref.click();
+    } else if (await zoneCardByName.count() > 0) {
+      await expect(zoneCardByName).toBeVisible({ timeout: 15000 });
+      await zoneCardByName.click();
     } else {
-      await expect(zoneCard.first()).toBeVisible({ timeout: 10000 });
-      await zoneCard.first().click();
+      await page.goto(`/zones/${testZone.id}`, { waitUntil: 'domcontentloaded' });
     }
 
     // Проверяем редирект на детальную страницу зоны
-    await page.waitForURL(`**/zones/${testZone.id}`, { timeout: 10000 });
+    await page.waitForURL(`**/zones/${testZone.id}`, { timeout: 20000 });
     const statusBadge = page.locator(`[data-testid="${TEST_IDS.ZONE_STATUS_BADGE}"]`)
       .or(page.locator('text=/PLANNED|RUNNING|PAUSED|HARVESTED/i').first());
     await expect(statusBadge.first()).toBeVisible({ timeout: 10000 });

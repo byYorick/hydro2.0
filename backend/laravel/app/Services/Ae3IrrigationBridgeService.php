@@ -26,7 +26,7 @@ class Ae3IrrigationBridgeService
     public function startIrrigation(int $zoneId, array $payload): array
     {
         $cfg = $this->runtimeConfig->schedulerConfig();
-        $apiUrl = (string) ($cfg['api_url'] ?? 'http://automation-engine:9405');
+        $apiUrl = (string) ($cfg['api_url'] ?? config('services.automation_engine.api_url'));
         $timeout = (float) ($cfg['timeout_sec'] ?? 2.0);
 
         /** @var Response $response */

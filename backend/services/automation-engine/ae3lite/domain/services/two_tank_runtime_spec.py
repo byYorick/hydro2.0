@@ -740,6 +740,14 @@ def _optional_float(raw_value: Any) -> float | None:
 def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     irrigation = snapshot.targets.get("irrigation") if isinstance(getattr(snapshot, "targets", None), Mapping) else {}
     irrigation = irrigation if isinstance(irrigation, Mapping) else {}
+    if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
+        # Irrigation targets may be absent for cycle_start planning paths.
+        # They are required only when actually executing irrigation_start tasks.
+        return {
+            "duration_sec": None,
+            "interval_sec": None,
+            "correction_during_irrigation": bool(irrigation.get("correction_during_irrigation", True)),
+        }
     return {
         "duration_sec": _require_int(
             irrigation.get("duration_sec"),
@@ -907,6 +915,13 @@ def _build_correction_cfg(
         "controllers": controllers_cfg,
         "pump_calibration": dict(pump_calibration_cfg),
         "ec_component_policy": _normalize_component_policy(phase_cfg.get("ec_component_policy")),
+        "ec_dosing_mode": str(phase_cfg.get("ec_dosing_mode") or "single").strip().lower() or "single",
+        "ec_component_ratios": _to_mapping(phase_cfg.get("ec_component_ratios")),
+        "ec_excluded_components": tuple(
+            str(x).strip().lower()
+            for x in (phase_cfg.get("ec_excluded_components") or ())
+            if str(x).strip()
+        ),
         "actuators": {},
     }
 

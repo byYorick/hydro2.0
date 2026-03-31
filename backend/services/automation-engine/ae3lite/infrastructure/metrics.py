@@ -138,6 +138,45 @@ COMMAND_POLL_ITERATIONS = Counter(
     ["channel", "terminal_status"],
 )
 
+# ─── Irrigation ─────────────────────────────────────────────────────
+
+IRRIGATION_DECISION = Counter(
+    "ae3_irrigation_decision_total",
+    "Irrigation decision outcomes",
+    ["topology", "strategy", "outcome"],  # outcome: run | skip | degraded_run | fail
+)
+
+IRRIGATION_DURATION = Histogram(
+    "ae3_irrigation_duration_seconds",
+    "Actual irrigation duration from irrigation_start to irrigation_stop",
+    ["topology", "stop_reason"],  # stop_reason: ready | recovery | setup | manual
+    buckets=[30, 60, 120, 300, 600, 1200, 1800, 3600],
+)
+
+IRRIGATION_SOLUTION_MIN = Counter(
+    "ae3_irrigation_solution_min_total",
+    "Solution-min triggered during irrigation",
+    ["topology"],
+)
+
+IRRIGATION_REPLAY = Counter(
+    "ae3_irrigation_replay_total",
+    "Irrigation setup replays after solution-min",
+    ["topology"],
+)
+
+IRRIGATION_EC_COMPONENT_DOSE = Counter(
+    "ae3_irrigation_ec_component_dose_total",
+    "EC component doses during irrigation correction",
+    ["topology", "component"],
+)
+
+IRRIGATION_CORRECTION_ENTERED = Counter(
+    "ae3_irrigation_correction_entered_total",
+    "Correction cycles entered during active irrigation",
+    ["topology"],
+)
+
 # ─── Active tasks gauge ─────────────────────────────────────────────
 
 ACTIVE_TASKS = Gauge(

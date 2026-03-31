@@ -1,475 +1,282 @@
 <template>
   <AppLayout>
     <template #default>
-      <AgronomistDashboard
-        v-if="isAgronomist"
-        :dashboard="dashboard"
-      />
-      <AdminDashboard
-        v-else-if="isAdmin"
-        :dashboard="dashboard"
-      />
-      <EngineerDashboard
-        v-else-if="isEngineer"
-        :dashboard="dashboard"
-      />
-      <OperatorDashboard
-        v-else-if="isOperator"
-        :dashboard="dashboard"
-      />
-      <ViewerDashboard
-        v-else-if="isViewer"
-        :dashboard="dashboard"
-      />
-      <div
-        v-else
-        class="space-y-6"
-      >
-        <div class="glass-panel glass-panel--elevated border border-[color:var(--border-strong)] rounded-2xl p-5">
-          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div class="space-y-5">
+        <section class="ui-hero p-6">
+          <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
             <div>
               <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
-                обзор системы
+                операционный центр
               </p>
               <h1 class="text-2xl font-semibold tracking-tight mt-1">
-                Мониторинг теплиц и зон
+                Операционный центр
               </h1>
               <p class="text-sm text-[color:var(--text-muted)] mt-1">
-                Сводка по теплицам, зонам, устройствам и активным алертам.
+                Зоны, телеметрия, циклы и действия на одном экране.
               </p>
             </div>
-            <div class="flex gap-2 justify-end">
-              <Link href="/greenhouses">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                >
-                  Перейти к теплицам
-                </Button>
-              </Link>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                v-if="canConfigureCycle"
+                size="sm"
+                variant="secondary"
+                @click="router.visit('/recipes')"
+              >
+                Фазы и рецепты
+              </Button>
+              <Button
+                v-if="canManageCycle"
+                size="sm"
+                @click="router.visit('/grow-cycle-wizard')"
+              >
+                Запустить цикл
+              </Button>
             </div>
           </div>
-          <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mt-4">
-            <MetricIndicator
-              label="Теплицы"
-              :value="dashboard.greenhousesCount"
-              :status="dashboard.greenhousesCount > 0 ? 'success' : 'neutral'"
-              size="large"
-            />
-            <MetricIndicator
-              label="Зоны"
-              :value="dashboard.zonesCount"
-              :status="zonesStatusSummary?.ALARM > 0 ? 'danger' : zonesStatusSummary?.WARNING > 0 ? 'warning' : zonesStatusSummary?.RUNNING > 0 ? 'success' : 'neutral'"
-              size="large"
+          <div class="ui-kpi-grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 mt-6">
+            <div
+              class="ui-kpi-card"
               data-testid="dashboard-zones-count"
             >
-              <template
-                v-if="zonesStatusSummary"
-                #footer
-              >
-                <div class="flex flex-wrap gap-1.5 text-xs mt-2">
-                  <StatusIndicator
-                    v-if="zonesStatusSummary.RUNNING"
-                    status="RUNNING"
-                    size="small"
-                    show-label
-                  />
-                  <StatusIndicator
-                    v-if="zonesStatusSummary.PAUSED"
-                    status="PAUSED"
-                    size="small"
-                    show-label
-                  />
-                  <StatusIndicator
-                    v-if="zonesStatusSummary.ALARM"
-                    status="ALARM"
-                    size="small"
-                    show-label
-                    :pulse="true"
-                  />
-                  <StatusIndicator
-                    v-if="zonesStatusSummary.WARNING"
-                    status="WARNING"
-                    size="small"
-                    show-label
-                  />
-                </div>
-              </template>
-            </MetricIndicator>
-            <MetricIndicator
-              label="Устройства"
-              :value="dashboard.devicesCount"
-              :status="nodesStatusSummary?.offline > 0 ? 'danger' : nodesStatusSummary?.online > 0 ? 'success' : 'neutral'"
-              size="large"
-            >
-              <template
-                v-if="nodesStatusSummary"
-                #footer
-              >
-                <div class="flex flex-wrap gap-1.5 text-xs mt-2">
-                  <StatusIndicator
-                    v-if="nodesStatusSummary.online"
-                    status="ONLINE"
-                    size="small"
-                    show-label
-                  />
-                  <StatusIndicator
-                    v-if="nodesStatusSummary.offline"
-                    status="OFFLINE"
-                    size="small"
-                    show-label
-                    :pulse="true"
-                  />
-                </div>
-              </template>
-            </MetricIndicator>
-            <MetricIndicator
-              label="Активные алерты"
-              :value="dashboard.alertsCount"
-              :status="dashboard.alertsCount > 0 ? 'danger' : 'success'"
-              size="large"
-              data-testid="dashboard-alerts-count"
-            />
-          </div>
-        </div>
-        <div
-          v-if="!hasGreenhouses || dashboard.greenhousesCount === 0"
-          class="mb-6"
-        >
-          <Card class="bg-[color:var(--badge-info-bg)] border-[color:var(--badge-info-border)]">
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="text-sm font-semibold mb-1">
-                  Начать работу
-                </div>
-                <div class="text-xs text-[color:var(--text-muted)]">
-                  Создайте теплицу и зоны для начала работы с системой
-                </div>
+              <div class="ui-kpi-label">
+                Зоны (всего / в работе)
               </div>
-              <div class="flex gap-2">
-                <Link href="/greenhouses">
-                  <Button size="sm">
-                    Создать теплицу
-                  </Button>
-                </Link>
+              <div class="ui-kpi-value text-[color:var(--accent-green)]">
+                {{ summary.zones_total }} / {{ summary.zones_running }}
               </div>
             </div>
-          </Card>
-        </div>
-        <div
-          v-if="hasGreenhouses"
-          class="mb-6"
-        >
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-semibold text-[color:var(--text-primary)]">
-              Теплицы
-            </h2>
-            <Link href="/greenhouses">
-              <Button
-                size="sm"
-                variant="outline"
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Warning
+              </div>
+              <div
+                class="ui-kpi-value"
+                :class="summary.zones_warning > 0 ? 'text-[color:var(--accent-amber)]' : ''"
               >
-                Все теплицы
+                {{ summary.zones_warning }}
+              </div>
+            </div>
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Alarm
+              </div>
+              <div
+                class="ui-kpi-value"
+                :class="summary.zones_alarm > 0 ? 'text-[color:var(--accent-red)]' : ''"
+              >
+                {{ summary.zones_alarm }}
+              </div>
+            </div>
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Циклы active
+              </div>
+              <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
+                {{ summary.cycles_running }}
+              </div>
+            </div>
+            <div class="ui-kpi-card">
+              <div class="ui-kpi-label">
+                Устройства
+              </div>
+              <div class="ui-kpi-value">
+                {{ summary.devices_online }}/{{ summary.devices_total }}
+              </div>
+            </div>
+            <div
+              class="ui-kpi-card"
+              data-testid="dashboard-alerts-count"
+            >
+              <div class="ui-kpi-label">
+                Алерты
+              </div>
+              <div class="ui-kpi-value text-[color:var(--accent-red)]">
+                {{ summary.alerts_active }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
+              <input
+                v-model="query"
+                class="input-field flex-1"
+                placeholder="Поиск зоны, культуры или теплицы"
+              >
+              <select
+                v-model="statusFilter"
+                class="input-select w-full sm:w-44"
+              >
+                <option value="">
+                  Все статусы зоны
+                </option>
+                <option value="RUNNING">
+                  Активные зоны
+                </option>
+                <option value="PAUSED">
+                  Пауза
+                </option>
+                <option value="WARNING">
+                  Warning
+                </option>
+                <option value="ALARM">
+                  Alarm
+                </option>
+                <option value="NONE">
+                  Без цикла
+                </option>
+              </select>
+              <select
+                v-model="greenhouseFilter"
+                class="input-select w-full sm:w-48"
+              >
+                <option value="">
+                  Все теплицы
+                </option>
+                <option
+                  v-for="gh in greenhouses"
+                  :key="gh.id"
+                  :value="String(gh.id)"
+                >
+                  {{ gh.name }}
+                </option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="btn btn-ghost h-9 px-3 text-xs"
+                @click="showOnlyAlerts = !showOnlyAlerts"
+              >
+                {{ showOnlyAlerts ? 'Показать все' : 'Только алерты' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost h-9 px-3 text-xs"
+                @click="toggleDense"
+              >
+                {{ denseView ? 'Стандартный вид' : 'Компактный вид' }}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div
+          v-if="summary.zones_total === 0"
+          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <div class="text-sm font-semibold">
+                Создайте теплицу
+              </div>
+              <div class="text-xs text-[color:var(--text-muted)] mt-1">
+                Добавьте теплицу и зоны, чтобы видеть их в операционном центре.
+              </div>
+            </div>
+            <Link href="/greenhouses">
+              <Button size="sm">
+                Перейти к теплицам
               </Button>
             </Link>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <Card
-              v-for="gh in dashboard.greenhouses"
-              :key="gh.id"
-              v-memo="[gh.id, gh.name, gh.zones_count, gh.zones_running]"
-              class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
-            >
-              <div class="flex items-start justify-between">
-                <div>
-                  <div class="text-sm font-semibold">
-                    {{ gh.name }}
-                  </div>
-                  <div class="text-xs text-[color:var(--text-muted)] mt-1">
-                    <span v-if="gh.type">{{ gh.type }}</span>
-                    <span
-                      v-if="gh.uid"
-                      class="ml-2"
-                    >UID: {{ gh.uid }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="mt-3 text-xs text-[color:var(--text-muted)]">
-                <div>Зон: {{ gh.zones_count || 0 }}</div>
-                <div class="text-[color:var(--accent-green)]">
-                  Запущено: {{ gh.zones_running || 0 }}
-                </div>
-              </div>
-            </Card>
-          </div>
         </div>
+
         <div
-          v-if="hasProblematicZones"
-          class="mb-6"
+          v-else-if="!filteredZones.length"
+          class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6 text-sm text-[color:var(--text-muted)] text-center"
         >
-          <h2 class="text-base font-semibold text-[color:var(--text-primary)] mb-4">
-            Проблемные зоны
-          </h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <Card
-              v-for="zone in dashboard.problematicZones"
-              :key="zone.id"
-              v-memo="[zone.id, zone.status, zone.alerts_count]"
-              class="surface-card-hover hover:border-[color:var(--badge-danger-border)] transition-all duration-200 border-[color:var(--badge-danger-border)]"
-            >
-              <div class="flex items-start justify-between mb-2">
-                <div>
-                  <div class="text-sm font-semibold">
-                    {{ zone.name }}
-                  </div>
-                  <div
-                    v-if="zone.greenhouse"
-                    class="text-xs text-[color:var(--text-muted)] mt-1"
-                  >
-                    {{ zone.greenhouse.name }}
-                  </div>
-                </div>
-                <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'">
-                  {{ translateStatus(zone.status) }}
-                </Badge>
-              </div>
-              <div
-                v-if="zone.description"
-                class="text-xs text-[color:var(--text-muted)] mb-2"
-              >
-                {{ zone.description }}
-              </div>
-              <div
-                v-if="zone.alerts_count > 0"
-                class="text-xs text-[color:var(--accent-red)] mb-2"
-              >
-                Активных алертов: {{ zone.alerts_count }}
-              </div>
-              <div class="mt-3 flex items-center gap-2 flex-wrap">
-                <Link :href="`/zones/${zone.id}`">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                  >
-                    Подробнее
-                  </Button>
-                </Link>
-                <Button
-                  v-if="zone.status === 'RUNNING'"
-                  size="sm"
-                  variant="outline"
-                  class="text-xs"
-                  :disabled="isQuickActionLoading(zone.id)"
-                  @click="handleQuickAction(zone, 'PAUSE')"
-                >
-                  <template v-if="isQuickActionLoading(zone.id, 'PAUSE')">
-                    <span class="inline-flex items-center gap-1">
-                      <svg
-                        class="w-3.5 h-3.5 animate-spin text-[color:var(--text-muted)]"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          class="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          stroke-width="4"
-                        />
-                        <path
-                          class="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                        />
-                      </svg>
-                      <span>Пауза...</span>
-                    </span>
-                  </template>
-                  <template v-else>
-                    ⏸ Пауза
-                  </template>
-                </Button>
-                <Button
-                  v-if="zone.status === 'PAUSED'"
-                  size="sm"
-                  variant="outline"
-                  class="text-xs"
-                  :disabled="isQuickActionLoading(zone.id)"
-                  @click="handleQuickAction(zone, 'RESUME')"
-                >
-                  <template v-if="isQuickActionLoading(zone.id, 'RESUME')">
-                    <span class="inline-flex items-center gap-1">
-                      <svg
-                        class="w-3.5 h-3.5 animate-spin text-[color:var(--text-muted)]"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          class="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          stroke-width="4"
-                        />
-                        <path
-                          class="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                        />
-                      </svg>
-                      <span>Запуск...</span>
-                    </span>
-                  </template>
-                  <template v-else>
-                    ▶ Запустить
-                  </template>
-                </Button>
-                <Button
-                  v-if="zone.status === 'ALARM' || zone.status === 'WARNING'"
-                  size="sm"
-                  variant="outline"
-                  class="text-xs text-[color:var(--accent-green)] border-[color:var(--badge-success-border)] hover:bg-[color:var(--badge-success-bg)]"
-                  :disabled="isQuickActionLoading(zone.id)"
-                  @click="handleQuickAction(zone, 'START_IRRIGATION')"
-                >
-                  <template v-if="isQuickActionLoading(zone.id, 'START_IRRIGATION')">
-                    <span class="inline-flex items-center gap-1">
-                      <svg
-                        class="w-3.5 h-3.5 animate-spin text-[color:var(--badge-success-text)]"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          class="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          stroke-width="4"
-                        />
-                        <path
-                          class="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                        />
-                      </svg>
-                      <span>Полив...</span>
-                    </span>
-                  </template>
-                  <template v-else>
-                    💧 Полив
-                  </template>
-                </Button>
-              </div>
-            </Card>
-          </div>
+          Нет зон по текущим фильтрам.
         </div>
+
         <div
           v-else
-          class="mb-6"
+          class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
         >
-          <Card>
-            <div class="text-sm text-[color:var(--text-dim)]">
-              Нет проблемных зон
-            </div>
-          </Card>
+          <ZoneDashboardCard
+            v-for="zone in pagedZones"
+            :key="zone.id"
+            :zone="zone as UnifiedZone"
+            :can-manage-cycle="canManageCycle"
+            :can-issue-commands="canIssueZoneCommands"
+            :sparkline-data="sparklines[zone.id] ?? null"
+            :sparkline-color="sparklineColor(zone as UnifiedZone)"
+            :is-action-loading="isActionLoading"
+            :dense="denseView"
+            @pause="pauseCycle"
+            @resume="resumeCycle"
+            @irrigate="openActionModal($event, 'START_IRRIGATION')"
+            @flush="openActionModal($event, 'FORCE_IRRIGATION')"
+            @harvest="openHarvestModal"
+            @abort="openAbortModal"
+          />
         </div>
-        <div class="mb-6">
-          <template v-if="hasZonesForTelemetry">
-            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-              <div>
-                <h2 class="text-base font-semibold text-[color:var(--text-primary)]">
-                  Телеметрия
-                  <span
-                    v-if="selectedZoneLabel"
-                    class="text-[color:var(--text-muted)] font-normal"
-                  >· {{ selectedZoneLabel }}</span>
-                  <span class="text-[color:var(--text-dim)] font-normal">· {{ telemetryPeriodLabel }}</span>
-                </h2>
-                <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)] mt-1">
-                  <div class="w-2 h-2 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
-                  <span>Обновляется в реальном времени</span>
-                </div>
-              </div>
-              <div class="flex flex-wrap items-center gap-3">
-                <div
-                  v-if="telemetryZones.length > 0"
-                  class="flex items-center gap-2"
-                >
-                  <label class="text-xs text-[color:var(--text-muted)]">Зона</label>
-                  <select
-                    v-model.number="selectedZoneId"
-                    class="input-select h-8 text-xs min-w-[160px]"
-                  >
-                    <option
-                      v-for="zone in telemetryZones"
-                      :key="zone.id"
-                      :value="zone.id"
-                    >
-                      {{ zone.greenhouse?.name ? `${zone.name} · ${zone.greenhouse.name}` : zone.name }}
-                    </option>
-                  </select>
-                </div>
-                <div class="flex items-center gap-1">
-                  <button
-                    v-for="range in telemetryRangeOptions"
-                    :key="range.value"
-                    class="px-3 py-1 rounded-md text-xs border transition-colors"
-                    :class="
-                      telemetryPeriod === range.value
-                        ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--accent-cyan)]'
-                        : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'
-                    "
-                    @click="telemetryPeriod = range.value"
-                  >
-                    {{ range.label }}
-                  </button>
-                </div>
-              </div>
+
+        <Pagination
+          v-if="filteredZones.length > perPage"
+          v-model:current-page="currentPage"
+          v-model:per-page="perPage"
+          :total="filteredZones.length"
+        />
+
+        <ZoneActionModal
+          v-if="actionModal.zone"
+          :show="actionModal.open"
+          :zone-id="actionModal.zone.id"
+          :action-type="actionModal.actionType"
+          @close="closeActionModal"
+          @submit="submitAction"
+        />
+
+        <ConfirmModal
+          :open="harvestModal.open"
+          title="Зафиксировать сбор"
+          message=" "
+          confirm-text="Подтвердить"
+          :loading="isActionLoading(harvestModal.zone?.id || 0, 'harvest')"
+          @close="closeHarvestModal"
+          @confirm="confirmHarvest"
+        >
+          <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
+            <div>Зафиксировать сбор урожая и завершить цикл?</div>
+            <div>
+              <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
+              <input
+                v-model="harvestModal.batchLabel"
+                class="input-field mt-1 w-full"
+                placeholder="Например: Batch-042"
+              >
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <MiniTelemetryChart
-                v-for="metric in telemetryMetrics"
-                :key="metric.key"
-                v-memo="[metric.data, metric.currentValue, metric.loading, selectedZoneId]"
-                :label="metric.label"
-                :data="metric.data"
-                :current-value="metric.currentValue === null ? undefined : metric.currentValue"
-                :unit="metric.unit"
-                :loading="metric.loading"
-                :color="metric.color"
-                :zone-id="selectedZoneId || undefined"
-                :metric="metric.key"
-                @open-detail="handleOpenDetail"
+          </div>
+        </ConfirmModal>
+
+        <ConfirmModal
+          :open="abortModal.open"
+          title="Аварийная остановка"
+          message=" "
+          confirm-text="Остановить"
+          confirm-variant="danger"
+          :loading="isActionLoading(abortModal.zone?.id || 0, 'abort')"
+          @close="closeAbortModal"
+          @confirm="confirmAbort"
+        >
+          <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
+            <div>Остановить цикл? Это действие нельзя отменить.</div>
+            <div>
+              <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
+              <textarea
+                v-model="abortModal.notes"
+                class="input-field mt-1 w-full h-20 resize-none"
+                placeholder="Короткое описание причины"
               />
             </div>
-          </template>
-          <template v-else>
-            <Card>
-              <div class="text-sm text-[color:var(--text-dim)]">
-                Нет доступных зон с телеметрией
-              </div>
-            </Card>
-          </template>
-        </div>
-        <div
-          v-if="hasZones"
-          class="mb-6"
-        >
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-base font-semibold text-[color:var(--text-primary)]">
-              Статусы зон
-            </h2>
-            <Link
-              href="/zones"
-              class="text-xs text-[color:var(--accent-cyan)] hover:underline transition-colors"
-            >
-              Все зоны →
-            </Link>
           </div>
-          <ZonesHeatmap :zones-by-status="zonesStatusSummary" />
-        </div>
+        </ConfirmModal>
       </div>
     </template>
+
     <template #context>
       <div
         class="flex flex-col flex-1 min-h-0"
@@ -480,7 +287,7 @@
             Последние события
           </div>
           <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)]">
-            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
+            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse" />
             <span>Live</span>
           </div>
         </div>
@@ -497,7 +304,7 @@
             "
             @click="eventFilter = kind"
           >
-            {{ kind === "ALL" ? "Все" : kind }}
+            {{ kind === 'ALL' ? 'Все' : kind }}
           </button>
         </div>
         <div
@@ -552,52 +359,89 @@
     </template>
   </AppLayout>
 </template>
+
 <script setup lang="ts">
-import { computed } from "vue";
-import { Link } from "@inertiajs/vue3";
-import AppLayout from "@/Layouts/AppLayout.vue";
-import Card from "@/Components/Card.vue";
-import Badge from "@/Components/Badge.vue";
-import Button from "@/Components/Button.vue";
-import MetricIndicator from "@/Components/MetricIndicator.vue";
-import StatusIndicator from "@/Components/StatusIndicator.vue";
-import MiniTelemetryChart from "@/Components/MiniTelemetryChart.vue";
-import ZonesHeatmap from "@/Components/ZonesHeatmap.vue";
-import AgronomistDashboard from "./Dashboards/AgronomistDashboard.vue";
-import AdminDashboard from "./Dashboards/AdminDashboard.vue";
-import EngineerDashboard from "./Dashboards/EngineerDashboard.vue";
-import OperatorDashboard from "./Dashboards/OperatorDashboard.vue";
-import ViewerDashboard from "./Dashboards/ViewerDashboard.vue";
-import { translateStatus } from "@/utils/i18n";
-import { formatTime } from "@/utils/formatTime";
-import { useRole } from "@/composables/useRole";
-import { useDashboardPage, telemetryRangeOptions, type DashboardData } from "@/composables/useDashboardPage";
+import { computed, ref, toRef } from 'vue'
+import { Link, router, usePage } from '@inertiajs/vue3'
+import AppLayout from '@/Layouts/AppLayout.vue'
+import Badge from '@/Components/Badge.vue'
+import Button from '@/Components/Button.vue'
+import Pagination from '@/Components/Pagination.vue'
+import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
+import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
+import { formatTime } from '@/utils/formatTime'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { useTheme } from '@/composables/useTheme'
+import { useDashboardRealtimeFeed } from '@/composables/useDashboardRealtimeFeed'
+import {
+  useUnifiedDashboard,
+  type UnifiedSummary,
+  type UnifiedZone,
+  type Greenhouse,
+} from '@/composables/useUnifiedDashboard'
+import type { Alert } from '@/types'
 
 interface Props {
-    dashboard: DashboardData;
+  summary: UnifiedSummary
+  zones: UnifiedZone[]
+  greenhouses: Greenhouse[]
+  latestAlerts: Alert[]
 }
 
-const props = defineProps<Props>();
-const dashboard = computed(() => props.dashboard);
-const { isAgronomist, isAdmin, isEngineer, isOperator, isViewer } = useRole();
+const props = defineProps<Props>()
+const page = usePage()
+const role = computed(() => (page.props.auth as { user?: { role?: string } })?.user?.role || 'viewer')
+const canConfigureCycle = computed(() => ['admin', 'agronomist'].includes(role.value))
+const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(role.value))
+const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
 
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+const { theme } = useTheme()
+const latestAlertsRef = toRef(props, 'latestAlerts')
+const selectedZoneId = ref<number | null>(null)
+const telemetryPeriod = ref<'1h' | '24h' | '7d'>('24h')
+const { eventFilter, filteredEvents } = useDashboardRealtimeFeed({
+  theme,
+  selectedZoneId,
+  telemetryPeriod,
+  latestAlerts: latestAlertsRef,
+})
+
+const zonesRef = computed(() => props.zones)
 const {
-    zonesStatusSummary,
-    nodesStatusSummary,
-    hasGreenhouses,
-    hasProblematicZones,
-    hasZones,
-    telemetryPeriod,
-    selectedZoneId,
-    telemetryZones,
-    selectedZoneLabel,
-    telemetryPeriodLabel,
-    hasZonesForTelemetry,
-    isQuickActionLoading,
-    eventFilter,
-    filteredEvents,
-    telemetryMetrics,
-    handleOpenDetail,
-    handleQuickAction,
-} = useDashboardPage({ dashboard });
+  query,
+  statusFilter,
+  greenhouseFilter,
+  showOnlyAlerts,
+  denseView,
+  currentPage,
+  perPage,
+  filteredZones,
+  pagedZones,
+  toggleDense,
+  sparklines,
+  sparklineColor,
+  harvestModal,
+  abortModal,
+  actionModal,
+  isActionLoading,
+  pauseCycle,
+  resumeCycle,
+  openHarvestModal,
+  closeHarvestModal,
+  confirmHarvest,
+  openAbortModal,
+  closeAbortModal,
+  confirmAbort,
+  openActionModal,
+  closeActionModal,
+  submitAction,
+} = useUnifiedDashboard({
+  zones: zonesRef,
+  api,
+  showToast,
+})
 </script>

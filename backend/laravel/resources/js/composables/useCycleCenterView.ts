@@ -23,6 +23,7 @@ export interface GrowCycle {
   expected_harvest_at?: string | null
   current_stage?: CycleStage | null
   progress?: CycleProgress
+  stages?: Array<{ code: string; name: string; from: string; to?: string | null; pct: number; state: string }>
 }
 
 export interface ZoneTelemetry {
@@ -61,9 +62,11 @@ export interface Summary {
 
 interface UseCycleCenterViewOptions {
   zones: Ref<ZoneSummary[]>
+  /** 'cycle' — фильтр по статусу цикла (центр циклов); 'zone' — по статусу зоны (операционный центр) */
+  statusFilterMode?: 'cycle' | 'zone'
 }
 
-export function useCycleCenterView({ zones }: UseCycleCenterViewOptions) {
+export function useCycleCenterView({ zones, statusFilterMode = 'cycle' }: UseCycleCenterViewOptions) {
   const query = ref('')
   const statusFilter = ref('')
   const greenhouseFilter = ref('')
@@ -84,8 +87,12 @@ export function useCycleCenterView({ zones }: UseCycleCenterViewOptions) {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(search))
 
-      const cycleStatus = zone.cycle?.status || 'NONE'
-      const matchesStatus = !statusFilter.value || statusFilter.value === cycleStatus
+      const matchesStatus = !statusFilter.value
+        || (statusFilterMode === 'zone'
+          ? (statusFilter.value === 'NONE'
+              ? !zone.cycle
+              : zone.status === statusFilter.value)
+          : statusFilter.value === (zone.cycle?.status || 'NONE'))
       const matchesGreenhouse = !greenhouseFilter.value || String(zone.greenhouse?.id || '') === greenhouseFilter.value
       const matchesAlerts = !showOnlyAlerts.value || zone.alerts_count > 0
 

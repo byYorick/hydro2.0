@@ -1,0 +1,474 @@
+# E109: AE3-Lite irrigation inline correction on node-sim
+name: E109_ae3_irrigation_inline_correction_node_sim
+auth_role: admin
+description: |
+  Проверяет inline-коррекцию во время полива (без остановки основной помпы):
+  - подготавливает AE3 runtime в фазе ready на node-sim;
+  - включает correction_during_irrigation=true;
+  - засеивает pH/EC вне окна;
+  - стартует полив и проверяет, что:
+    - pump_main включен;
+    - создан zone_event IRRIGATION_CORRECTION_STARTED;
+    - опубликованы dosing команды на EC/PH насосы во время активного полива.
+
+actions:
+  - step: set_test_context
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_node_uid: nd-test-irrig-1
+    test_ph_node_uid: nd-test-ph-1
+    test_ec_node_uid: nd-test-ec-1
+    recipe_name: ae3-irrig-inline-corr-${TIMESTAMP_MS}
+    idem_inline: e109-inline-${TIMESTAMP_MS}
+
+  - step: load_zone_context
+    type: database_query
+    query: |
+      SELECT id AS zone_id, greenhouse_id, automation_runtime
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_ctx
+
+  - step: set_zone_context
+    type: set
+    zone_id: ${zone_ctx.0.zone_id}
+    greenhouse_id: ${zone_ctx.0.greenhouse_id}
+
+  - step: set_runtime_api_url
+    type: api_put
+    endpoint: /api/automation-configs/system/0/system.runtime
+    payload:
+      payload:
+        automation_engine.api_url: http://automation-engine:9505
+
+  - step: load_irrig_node
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+        AND zone_id = :zone_id
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: irrig_node_row
+
+  - step: load_ph_node
+    type: database_query
+    query: |
+      SELECT n.id AS node_id, n.uid AS node_uid
+      FROM nodes n
+      WHERE n.zone_id = :zone_id
+        AND LOWER(COALESCE(n.type, '')) = 'ph'
+        AND EXISTS (
+          SELECT 1
+          FROM node_channels nc
+          WHERE nc.node_id = n.id
+            AND nc.channel IN ('pump_acid', 'pump_base')
+        )
+      ORDER BY CASE WHEN n.uid = :node_uid THEN 0 ELSE 1 END, n.id ASC
+      LIMIT 1
+    params:
+      node_uid: ${test_ph_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: ph_node_row
+
+  - step: load_ec_node
+    type: database_query
+    query: |
+      SELECT n.id AS node_id, n.uid AS node_uid
+      FROM nodes n
+      WHERE n.zone_id = :zone_id
+        AND LOWER(COALESCE(n.type, '')) = 'ec'
+        AND EXISTS (
+          SELECT 1
+          FROM node_channels nc
+          WHERE nc.node_id = n.id
+            AND nc.channel = 'pump_a'
+        )
+      ORDER BY CASE WHEN n.uid = :node_uid THEN 0 ELSE 1 END, n.id ASC
+      LIMIT 1
+    params:
+      node_uid: ${test_ec_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: ec_node_row
+
+  - step: set_node_ids
+    type: set
+    irrig_node_id: ${irrig_node_row.0.node_id}
+    ph_node_id: ${ph_node_row.0.node_id}
+    ec_node_id: ${ec_node_row.0.node_id}
+
+  - step: cleanup_zone_ae_commands
+    type: database_execute
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id IN (
+        SELECT id
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_ae_tasks
+    type: database_execute
+    query: |
+      DELETE FROM ae_tasks
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_ae_leases
+    type: database_execute
+    query: |
+      DELETE FROM ae_zone_leases
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: complete_existing_cycles
+    type: database_execute
+    query: |
+      UPDATE grow_cycles
+      SET status = 'COMPLETED',
+          updated_at = NOW()
+      WHERE zone_id = :zone_id
+        AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+
+  - step: switch_zone_to_ae3
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET automation_runtime = 'ae3',
+          updated_at = NOW()
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: load_test_node_correction_preset
+    type: database_query
+    query: |
+      SELECT id
+      FROM zone_correction_presets
+      WHERE slug = 'test-node'
+      LIMIT 1
+    expected_rows: 1
+    save: test_node_correction_preset_row
+
+  - step: apply_test_node_correction_preset
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.correction
+    payload:
+      payload:
+        preset_id: ${test_node_correction_preset_row.0.id}
+        base_config: {}
+        phase_overrides: {}
+
+  - step: upsert_irrig_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      SELECT :node_id, channel_name, channel_type, NOW(), NOW()
+      FROM (VALUES
+        ('pump_main', 'ACTUATOR'),
+        ('valve_clean_fill', 'ACTUATOR'),
+        ('valve_clean_supply', 'ACTUATOR'),
+        ('valve_solution_fill', 'ACTUATOR'),
+        ('valve_solution_supply', 'ACTUATOR'),
+        ('valve_irrigation', 'ACTUATOR'),
+        ('storage_state', 'SERVICE')
+      ) AS items(channel_name, channel_type)
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          updated_at = NOW()
+    params:
+      node_id: ${irrig_node_id}
+
+  - step: ensure_sensor_mode_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES
+        (CAST(:ph_node_id AS bigint), 'system', 'SERVICE', NOW(), NOW()),
+        (CAST(:ec_node_id AS bigint), 'system', 'SERVICE', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = 'SERVICE',
+          updated_at = NOW()
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+
+  - step: cleanup_runtime_telemetry
+    type: database_execute
+    query: |
+      DELETE FROM telemetry_samples
+      WHERE sensor_id IN (SELECT id FROM sensors WHERE zone_id = :zone_id);
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_runtime_telemetry_last
+    type: database_execute
+    query: |
+      DELETE FROM telemetry_last
+      WHERE sensor_id IN (SELECT id FROM sensors WHERE zone_id = :zone_id);
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_runtime_sensors
+    type: database_execute
+    query: |
+      DELETE FROM sensors
+      WHERE zone_id = :zone_id
+        AND (
+          (type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH') AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min'))
+          OR (type = 'PH' AND label = 'ph_sensor')
+          OR (type = 'EC' AND label = 'ec_sensor')
+        );
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_level_sensors
+    type: database_execute
+    query: |
+      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+      SELECT :greenhouse_id, :zone_id, :node_id, 'inside', 'WATER_LEVEL', label, TRUE, NOW(), NOW()
+      FROM (VALUES
+        ('level_clean_max'),
+        ('level_clean_min'),
+        ('level_solution_max'),
+        ('level_solution_min')
+      ) AS items(label)
+    params:
+      greenhouse_id: ${greenhouse_id}
+      zone_id: ${zone_id}
+      node_id: ${irrig_node_id}
+
+  - step: insert_ph_ec_sensors
+    type: database_execute
+    query: |
+      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+      VALUES
+        (:greenhouse_id, :zone_id, :ph_node_id, 'inside', 'PH', 'ph_sensor', TRUE, NOW(), NOW()),
+        (:greenhouse_id, :zone_id, :ec_node_id, 'inside', 'EC', 'ec_sensor', TRUE, NOW(), NOW())
+    params:
+      greenhouse_id: ${greenhouse_id}
+      zone_id: ${zone_id}
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+
+  # Подготовка к ready: корректные уровни + около-target, чтобы setup дошёл до ready быстро
+  - step: set_ready_levels_and_targets
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        level_clean_min_override: false
+        level_clean_max_override: true
+        level_solution_min_override: false
+        level_solution_max_override: true
+        ph_value: 5.8
+        ec_value: 1.4
+    save: ready_levels_response
+
+  - step: wait_ready_levels_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${ready_levels_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  # Для node-sim e2e достаточно пометить workflow ready (как в E107)
+  - step: cleanup_zone_workflow_state
+    type: database_execute
+    query: |
+      DELETE FROM zone_workflow_state
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_ready_workflow_state
+    type: database_execute
+    query: |
+      INSERT INTO zone_workflow_state (zone_id, workflow_phase, version, updated_at, payload)
+      VALUES (:zone_id, 'ready', 1, NOW(), '{}'::jsonb)
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_ready_workflow_state
+    type: db.wait
+    query: |
+      SELECT zone_id, workflow_phase
+      FROM zone_workflow_state
+      WHERE zone_id = :zone_id
+        AND workflow_phase = 'ready'
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  # Включаем коррекцию во время полива (inline) через phase extensions
+  - step: enable_inline_correction_during_irrigation
+    type: database_execute
+    query: |
+      UPDATE grow_cycle_phases
+      SET extensions = COALESCE(extensions, '{}'::jsonb) || '{
+        "targets": {
+          "irrigation": {
+            "correction_during_irrigation": true
+          }
+        }
+      }'::jsonb,
+      updated_at = NOW()
+      WHERE id = (
+        SELECT current_phase_id
+        FROM grow_cycles
+        WHERE zone_id = :zone_id
+          AND status = 'RUNNING'
+        ORDER BY id DESC
+        LIMIT 1
+      )
+    params:
+      zone_id: ${zone_id}
+
+  - step: seed_off_target_for_irrigation_check
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: set_fault_mode
+      params:
+        ph_value: 6.9
+        ec_value: 0.6
+        level_clean_min_override: false
+        level_clean_max_override: true
+        level_solution_min_override: false
+        level_solution_max_override: true
+    save: seed_off_target_response
+
+  - step: wait_seed_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${seed_off_target_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: start_irrigation_inline
+    type: api_post
+    endpoint: /api/zones/${zone_id}/start-irrigation
+    payload:
+      mode: normal
+      requested_duration_sec: 10
+      idempotency_key: ${idem_inline}
+    save: irrigation_response
+
+  - step: set_irrig_task_id
+    type: set
+    task_id: ${irrigation_response.data.task_id}
+
+  - step: wait_irrigation_started_commands
+    type: db.wait
+    query: |
+      SELECT 1
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND channel = 'pump_main'
+        AND payload->>'cmd' = 'set_relay'
+        AND COALESCE(payload->'params'->>'state', 'false') = 'true'
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  - step: wait_inline_correction_started_event
+    type: wait_zone_event
+    zone_id: ${zone_id}
+    event_type: IRRIGATION_CORRECTION_STARTED
+    timeout: 60.0
+    filter:
+      task_id: ${task_id}
+    save: corr_started_event
+
+  - step: wait_ec_dose_command_during_irrigation
+    type: db.wait
+    query: |
+      SELECT 1
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND payload->>'cmd' = 'dose'
+        AND channel = 'pump_a'
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 60.0
+    expected_rows: 1
+
+  - step: wait_ph_dose_command_during_irrigation
+    type: db.wait
+    query: |
+      SELECT 1
+      FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+        AND publish_status = 'accepted'
+        AND payload->>'cmd' = 'dose'
+        AND channel IN ('pump_acid', 'pump_base')
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 60.0
+    expected_rows: 1
+
+assertions:
+  - name: inline_correction_started_event_present
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'IRRIGATION_CORRECTION_STARTED'
+        AND details->>'task_id' = CAST(:task_id AS text)
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+    expected_rows: 1
+    expected:
+      - field: cnt
+        operator: greater_than_or_equal
+        value: 1
+

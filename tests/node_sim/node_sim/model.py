@@ -21,6 +21,7 @@ class NodeType(str, Enum):
     PUMP = "pump"
     IRRIG = "irrig"
     LIGHT = "light"
+    WATER_SENSOR = "water_sensor"
     UNKNOWN = "unknown"
 
 

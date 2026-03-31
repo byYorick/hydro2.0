@@ -1069,6 +1069,21 @@ void handle_system_command(const char* cmd, cJSON* params) {
 
 Это требуется для Laravel/UI diagnostics и для безопасной отладки fail-closed веток без чтения raw `ae_tasks`.
 
+### 9.6. Коррекция во время полива (inline irrigation correction)
+
+AE3-Lite поддерживает вход в коррекцию **во время стадии** `irrigation_check` (фаза `irrigating`), без остановки гидравлики полива:
+- стадия `irrigation_check` помечена `has_correction=true` и возвращается обратно в `irrigation_check`;
+- вход в коррекцию контролируется флагом runtime `irrigation_execution.correction_during_irrigation`;
+- чтобы избежать бесконечных циклов, при исчерпании попыток коррекции в `irrigation_check` увеличивается `stage_retry_count` и новые входы в коррекцию для этой стадии блокируются.
+
+#### Multi-component EC (Ca/Mg/Micro)
+
+Для стадии `irrigation_check` поддержан режим `ec_dosing_mode=multi_sequential`:
+- EC gap вычисляется один раз (один PID выход);
+- затем EC gap распределяется по `ec_component_ratios` полного рецепта (включая NPK, сумма=1.0);
+- для полива NPK исключается через `ec_excluded_components=["npk"]`, а оставшиеся компоненты перенормируются (Ca/Mg/Micro);
+- дозирование выполняется последовательностью импульсов (Ca → Mg → Micro) в рамках одного `corr_dose_ec`.
+
 ---
 
 ## 10. Связанные документы

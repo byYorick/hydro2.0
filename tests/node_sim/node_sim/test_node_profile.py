@@ -104,6 +104,7 @@ class VirtualState:
     air_temp: float = 24.0
     air_humidity: float = 60.0
     light_level: float = 18000.0
+    soil_moisture: float = 43.0
 
     irrigation_on: bool = False
     main_pump_on: bool = False
@@ -201,12 +202,18 @@ LIGHT_CHANNELS = (
     ChannelDef("white_light", "ACTUATOR", is_actuator=True),
 )
 
+SOIL_CHANNELS = (
+    ChannelDef("soil_moisture", "SENSOR", "SOIL_MOISTURE"),
+    ChannelDef("system", "ACTUATOR", is_actuator=True),
+)
+
 VIRTUAL_NODES: tuple[VirtualNodeDef, ...] = (
     VirtualNodeDef("nd-test-irrig-1", "irrig", IRRIGATION_CHANNELS),
     VirtualNodeDef("nd-test-ph-1", "ph", PH_CORRECTION_CHANNELS),
     VirtualNodeDef("nd-test-ec-1", "ec", EC_CORRECTION_CHANNELS),
     VirtualNodeDef("nd-test-climate-1", "climate", CLIMATE_CHANNELS),
     VirtualNodeDef("nd-test-light-1", "light", LIGHT_CHANNELS),
+    VirtualNodeDef("nd-test-soil-1", "water_sensor", SOIL_CHANNELS),
 )
 VIRTUAL_NODE_BY_UID = {node.node_uid: node for node in VIRTUAL_NODES}
 
@@ -462,6 +469,8 @@ class TestNodeSimulator:
             return "Test: climate"
         if "-light-" in node_uid:
             return "Test: light"
+        if "-soil-" in node_uid:
+            return "Test: soil moisture"
         return "Test node"
 
     def publish_node_hello_for_node(self, node: VirtualNodeDef) -> bool:
@@ -974,6 +983,8 @@ class TestNodeSimulator:
             metric_type, value, unit = "HUMIDITY", self.state.air_humidity, "%"
         elif channel == "light_level":
             metric_type, value, unit = "LIGHT_INTENSITY", self.state.light_level, "lux"
+        elif channel == "soil_moisture":
+            metric_type, value, unit = "SOIL_MOISTURE", self.state.soil_moisture, "%"
         elif channel == "water_level":
             metric_type, value, unit = "WATER_LEVEL", self.state.water_level, "ratio"
         elif channel == "level_clean_min":
@@ -1025,6 +1036,9 @@ class TestNodeSimulator:
             "level_clean_max_override": self.switch_override_label(self.state.level_clean_max_override),
             "level_solution_min_override": self.switch_override_label(self.state.level_solution_min_override),
             "level_solution_max_override": self.switch_override_label(self.state.level_solution_max_override),
+            "ph_value": round(self.state.ph_value, 4),
+            "ec_value": round(self.state.ec_value, 4),
+            "soil_moisture_pct": round(self.state.soil_moisture, 2),
         }
 
     async def execute_pending_command(self, job: PendingCommand) -> None:
@@ -1356,6 +1370,9 @@ class TestNodeSimulator:
                 level_clean_max_override = self._parse_switch_override(params, "level_clean_max_override")
                 level_solution_min_override = self._parse_switch_override(params, "level_solution_min_override")
                 level_solution_max_override = self._parse_switch_override(params, "level_solution_max_override")
+                ph_value = self._param_number(params, "ph_value")
+                ec_value = self._param_number(params, "ec_value")
+                soil_moisture_pct = self._param_number(params, "soil_moisture_pct")
 
                 if clean_sensor_conflict is not None:
                     self.state.force_clean_sensor_conflict = clean_sensor_conflict
@@ -1373,6 +1390,12 @@ class TestNodeSimulator:
                     self.state.level_solution_min_override = level_solution_min_override
                 if level_solution_max_override is not None:
                     self.state.level_solution_max_override = level_solution_max_override
+                if ph_value is not None:
+                    self.state.ph_value = clamp_float(ph_value, 4.8, 7.2)
+                if ec_value is not None:
+                    self.state.ec_value = clamp_float(ec_value, 0.4, 3.2)
+                if soil_moisture_pct is not None:
+                    self.state.soil_moisture = clamp_float(soil_moisture_pct, 0.0, 100.0)
 
                 if self.state.level_clean_max_override > 0 and self.state.clean_fill_stage_active:
                     self.state.clean_fill_stage_active = False
@@ -1462,6 +1485,7 @@ class TestNodeSimulator:
         drift = ((self._telemetry_tick % 11) - 5.0) * 0.002
         ph_drift = drift
         ec_drift = drift * 2.0
+        soil_noise = ((self._telemetry_tick % 7) - 3.0) * 0.03
         clean_fill_active = self.is_clean_fill_active()
         solution_fill_active = self.is_solution_fill_active()
         irrigation_active = self.is_irrigation_active()
@@ -1526,6 +1550,12 @@ class TestNodeSimulator:
             self.state.air_temp = clamp_float(self.state.air_temp + 0.09, 18.0, 32.0)
             self.state.air_humidity = clamp_float(self.state.air_humidity - 0.04, 35.0, 90.0)
 
+        if irrigation_active:
+            self.state.soil_moisture = clamp_float(self.state.soil_moisture + 1.2 + soil_noise, 8.0, 88.0)
+        else:
+            dry_back = 0.18 + max(0.0, self.state.air_temp - 22.0) * 0.015
+            self.state.soil_moisture = clamp_float(self.state.soil_moisture - dry_back + soil_noise, 8.0, 88.0)
+
         if self.state.light_on:
             pwm_factor = self.state.light_pwm / 255.0
             if pwm_factor < 0.1:
@@ -1559,6 +1589,8 @@ class TestNodeSimulator:
             self.publish_telemetry_for_node("nd-test-ph-1", "ph_sensor", "PH", self.state.ph_value)
         if self.state.ec_sensor_mode_active:
             self.publish_telemetry_for_node("nd-test-ec-1", "ec_sensor", "EC", self.state.ec_value)
+
+        self.publish_telemetry_for_node("nd-test-soil-1", "soil_moisture", "SOIL_MOISTURE", self.state.soil_moisture)
 
         if self.publish_aux_telemetry:
             self.publish_telemetry_for_node("nd-test-climate-1", "air_temp_c", "TEMPERATURE", self.state.air_temp)

@@ -1218,6 +1218,109 @@
         "orientation": "horizontal",
         "colorMode": "background"
       }
+    },
+    {
+      "id": 200,
+      "title": "— Irrigation —",
+      "type": "text",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 200
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Irrigation"
+      }
+    },
+    {
+      "id": 201,
+      "title": "Irrigation decisions (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 201
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(ae3_irrigation_decision_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "title": "Irrigation duration p95 (s)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 201
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(ae3_irrigation_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 203,
+      "title": "Solution-min triggers (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 209
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(ae3_irrigation_solution_min_total[5m]))",
+          "legendFormat": "solution_min",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "title": "EC component doses during irrigation (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 209
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (component) (rate(ae3_irrigation_ec_component_dose_total[5m]))",
+          "legendFormat": "{{component}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          }
+        }
+      ]
     }
   ],
   "id": null,

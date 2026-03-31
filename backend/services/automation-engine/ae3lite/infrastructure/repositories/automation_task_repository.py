@@ -39,6 +39,8 @@ CORRECTION_OPTIONAL_FIELDS = (
     "wait_until",
     "ec_component",
     "ec_amount_ml",
+    "ec_dose_sequence_json",
+    "ec_current_seq_index",
     "ph_amount_ml",
 )
 
@@ -57,7 +59,15 @@ class PgAutomationTaskRepository:
 
     def _correction_values(self, correction: CorrectionState | None) -> tuple[Any, ...]:
         if correction is None:
-            return (*((None,) * len(CORRECTION_OPTIONAL_FIELDS)), False)
+            # Keep NOT NULL correction columns consistent when correction is inactive.
+            # Some DB columns (e.g. corr_ec_current_seq_index) are NOT NULL with defaults.
+            values: list[Any] = [None] * len(CORRECTION_OPTIONAL_FIELDS)
+            try:
+                idx = CORRECTION_OPTIONAL_FIELDS.index("ec_current_seq_index")
+                values[idx] = 0
+            except ValueError:
+                pass
+            return (*tuple(values), False)
 
         values = tuple(getattr(correction, field_name) for field_name in CORRECTION_OPTIONAL_FIELDS)
         return (*values, bool(correction.limit_policy_logged))
@@ -491,10 +501,12 @@ class PgAutomationTaskRepository:
                 corr_wait_until           = $32,
                 corr_ec_component         = $33,
                 corr_ec_amount_ml         = $34,
-                corr_ph_amount_ml         = $35,
-                corr_limit_policy_logged  = $36,
-                due_at     = $37,
-                updated_at = $38
+                corr_ec_dose_sequence_json = $35,
+                corr_ec_current_seq_index  = $36,
+                corr_ph_amount_ml         = $37,
+                corr_limit_policy_logged  = $38,
+                due_at     = $39,
+                updated_at = $40
             WHERE id = $1
               AND claimed_by = $2
               AND status IN ('claimed', 'running')

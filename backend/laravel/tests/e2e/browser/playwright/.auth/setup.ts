@@ -56,7 +56,7 @@ setup('authenticate', async ({ page }) => {
   }
 
   // Нормализуем URL на главную (dashboard)
-  await page.goto(`${baseURL}/`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded' });
 
   // Ждем устойчивый post-login индикатор. h1 на dashboard не гарантирован,
   // поэтому опираемся на навигацию и видимые dashboard widgets.

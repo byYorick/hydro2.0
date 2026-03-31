@@ -101,7 +101,7 @@ class ZoneAutomationStateController extends Controller
     private function fetchAutomationStateFromAutomationEngine(int $zoneId): array
     {
         $cfg = $this->runtimeConfig->schedulerConfig();
-        $apiUrl = (string) ($cfg['api_url'] ?? 'http://automation-engine:9405');
+        $apiUrl = (string) ($cfg['api_url'] ?? config('services.automation_engine.api_url'));
         $timeout = (float) ($cfg['timeout_sec'] ?? 2.0);
 
         /** @var Response $response */

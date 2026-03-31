@@ -170,6 +170,9 @@ TWO_TANK: Mapping[str, StageDef] = {
     "irrigation_check": StageDef(
         "irrigation_check", "irrigation_check",
         workflow_phase="irrigating",
+        has_correction=True,
+        on_corr_success="irrigation_check",
+        on_corr_fail="irrigation_check",
     ),
     "irrigation_stop_to_ready": StageDef(
         "irrigation_stop_to_ready", "command",

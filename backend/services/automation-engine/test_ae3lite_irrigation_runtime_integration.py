@@ -6,8 +6,11 @@ from uuid import uuid4
 
 import pytest
 
+from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
+from ae3lite.application.use_cases.workflow_router import WorkflowRouter
+from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.infrastructure.repositories import PgAutomationTaskRepository
 from common.db import execute, fetch
 from test_ae3lite_create_task_from_intent_integration import _cleanup, _insert_zone
@@ -186,5 +189,66 @@ async def test_irrigation_check_persists_replay_count_when_solution_min_is_trigg
 
         assert len(rows) == 1
         assert int(rows[0]["irrigation_replay_count"] or 0) == 1
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_router_persists_enter_correction_for_irrigation_check() -> None:
+    prefix = f"ae3-irr-corr-{uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    try:
+        zone_id, task_repository = await _create_claimed_irrigation_task(
+            prefix=prefix,
+            current_stage="irrigation_check",
+            now=now,
+        )
+        task = await task_repository.get_active_for_zone(zone_id=zone_id)
+        assert task is not None
+
+        router = WorkflowRouter(
+            task_repository=task_repository,
+            workflow_repository=None,
+            runtime_monitor=_RuntimeMonitorStub(level_triggered=False),
+            command_gateway=_CommandGatewayStub(),
+            decision_controller=_DecisionControllerStub(),
+        )
+        corr = CorrectionState(
+            corr_step="corr_check",
+            attempt=0,
+            max_attempts=3,
+            ec_attempt=0,
+            ec_max_attempts=3,
+            ph_attempt=0,
+            ph_max_attempts=3,
+            activated_here=False,
+            stabilization_sec=1,
+            return_stage_success="irrigation_check",
+            return_stage_fail="irrigation_check",
+            outcome_success=None,
+            needs_ec=False,
+            ec_node_uid=None,
+            ec_channel=None,
+            ec_duration_ms=None,
+            needs_ph_up=False,
+            needs_ph_down=False,
+            ph_node_uid=None,
+            ph_channel=None,
+            ph_duration_ms=None,
+            wait_until=None,
+            limit_policy_logged=False,
+        )
+        updated = await router._apply_outcome(
+            task=task,
+            plan=SimpleNamespace(runtime={"level_poll_interval_sec": 5}),
+            outcome=StageOutcome(kind="enter_correction", correction=corr),
+            now=now,
+        )
+        assert updated is not None
+        reloaded = await task_repository.get_active_for_zone(zone_id=zone_id)
+        assert reloaded is not None
+        assert reloaded.correction is not None
+        assert reloaded.correction.corr_step == "corr_check"
     finally:
         await _cleanup(prefix)

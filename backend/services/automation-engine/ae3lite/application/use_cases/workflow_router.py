@@ -38,6 +38,7 @@ from ae3lite.infrastructure.metrics import (
     TASK_FAILED,
     TICK_DURATION,
 )
+from common.db import create_zone_event
 
 
 class WorkflowRouter:
@@ -367,6 +368,24 @@ class WorkflowRouter:
             topology=task.topology,
             outcome="success" if success else "fail",
         ).inc()
+
+        if (
+            str(outcome.next_stage or "").strip().lower() == "irrigation_check"
+            and str(task.current_stage or "").strip().lower() == "irrigation_check"
+        ):
+            try:
+                await create_zone_event(
+                    int(task.zone_id),
+                    "IRRIGATION_CORRECTION_COMPLETED",
+                    {
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "stage": "irrigation_check",
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        "success": bool(success),
+                    },
+                )
+            except Exception:
+                pass
 
         # Delegate to normal transition
         return await self._apply_transition(

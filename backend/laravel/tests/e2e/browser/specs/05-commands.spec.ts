@@ -8,11 +8,23 @@ test.describe('Commands', () => {
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
-    // Ищем кнопку принудительного полива
+    // Ищем кнопку обычного/принудительного полива
+    const normalIrrigationBtn = page.locator(`[data-testid="start-irrigation-button"]`)
+      .or(page.locator('button:has-text("Полив")'))
+      .or(page.locator('button:has-text("Irrigation")'));
+
     const forceIrrigationBtn = page.locator(`[data-testid="force-irrigation-button"]`)
       .or(page.locator('button:has-text("Полить сейчас")'))
       .or(page.locator('text=/Полить|Irrigate/i').first());
     
+    if (await normalIrrigationBtn.count() > 0) {
+      const isVisible = await normalIrrigationBtn.first().isVisible().catch(() => false);
+      if (isVisible) {
+        await normalIrrigationBtn.first().click().catch(() => null);
+        await page.waitForTimeout(2000);
+      }
+    }
+
     // Если есть кнопка принудительного полива, используем её
     if (await forceIrrigationBtn.count() > 0) {
       const isVisible = await forceIrrigationBtn.first().isVisible().catch(() => false);

@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🚀 Запуск ПОЛНОГО E2E-НАБОРА тестов..."
 echo "Время начала: $(date)"
+SUITE_STARTED_AT_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+BASELINE_INVALID_BUNDLE_IDS=""
 
 # Подготовка Python окружения
 if [ ! -x "$SCRIPT_DIR/venv/bin/python3" ]; then
@@ -41,7 +43,16 @@ fi
 ensure_laravel_ready() {
   echo "🔎 Проверка готовности Laravel..."
 
-  "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" up -d laravel >/dev/null
+  "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" up -d \
+    laravel \
+    history-logger \
+    mqtt-bridge \
+    telemetry-aggregator \
+    automation-engine \
+    digital-twin \
+    node-sim-manager \
+    node-sim \
+    node-sim-test-node >/dev/null
 
   local attempt=1
   local max_attempts=40
@@ -60,6 +71,46 @@ ensure_laravel_ready() {
   return 1
 }
 
+normalize_runtime_overrides() {
+  echo "🧭 Сброс runtime overrides для e2e..."
+
+  "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T laravel php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+
+$app = require 'bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+$runtime = $app->make(App\Services\AutomationRuntimeConfigService::class);
+$runtime->resetOverrides();
+
+$snapshot = [
+    'api_url' => $runtime->automationEngineValue('api_url', null),
+    'laravel_scheduler_enabled' => $runtime->automationEngineValue('laravel_scheduler_enabled', null),
+    'grow_cycle_start_dispatch_enabled' => $runtime->automationEngineValue('grow_cycle_start_dispatch_enabled', null),
+];
+
+echo json_encode($snapshot, JSON_UNESCAPED_SLASHES), PHP_EOL;
+PHP
+}
+
+capture_audit_baseline() {
+  echo "🧾 Захват baseline для post-suite audit..."
+
+  BASELINE_INVALID_BUNDLE_IDS=$("${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
+    psql -U hydro -d hydro_e2e -At -c "
+      SELECT COALESCE(string_agg(id::text, ',' ORDER BY id), '')
+      FROM automation_effective_bundles
+      WHERE status <> 'valid';
+    ")
+
+  if [ -n "$BASELINE_INVALID_BUNDLE_IDS" ]; then
+    echo "  - baseline_invalid_bundle_ids=${BASELINE_INVALID_BUNDLE_IDS}"
+  else
+    echo "  - baseline_invalid_bundle_ids=<none>"
+  fi
+}
+
 # Переменные окружения для стабильности (не переопределяем уже заданные)
 : "${E2E_STABLE_RUN:=1}"
 : "${MQTT_HOST:=localhost}"
@@ -70,6 +121,8 @@ ensure_laravel_ready() {
 export E2E_STABLE_RUN MQTT_HOST MQTT_PORT LARAVEL_URL WS_URL AE_TEST_MODE
 
 cd "$SCRIPT_DIR"
+ensure_laravel_ready
+capture_audit_baseline
 
 # Функция для запуска тестов с повторными попытками
 run_test_with_retry() {
@@ -79,6 +132,7 @@ run_test_with_retry() {
 
     while [ $attempt -le $max_attempts ]; do
         ensure_laravel_ready
+        normalize_runtime_overrides
         echo "📋 Запуск $test_name (попытка $attempt/$max_attempts)"
 
         if "$PYTHON_BIN" -m runner.e2e_runner "$test_name" --verbose; then
@@ -102,6 +156,12 @@ run_test_with_retry() {
 run_post_suite_audit() {
     echo ""
     echo "=== POST-SUITE AUDIT ==="
+    echo "  - suite_started_at_utc=${SUITE_STARTED_AT_UTC}"
+
+    local invalid_bundle_filter="TRUE"
+    if [ -n "$BASELINE_INVALID_BUNDLE_IDS" ]; then
+      invalid_bundle_filter="id NOT IN (${BASELINE_INVALID_BUNDLE_IDS})"
+    fi
 
     "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
       psql -U hydro -d hydro_e2e -v ON_ERROR_STOP=1 -c "
@@ -119,15 +179,26 @@ run_post_suite_audit() {
       SELECT 'active_alerts', COUNT(*) FROM alerts WHERE status = 'ACTIVE';
       SELECT 'ae_tasks_total', COUNT(*) FROM ae_tasks;
       SELECT 'zone_automation_intents_total', COUNT(*) FROM zone_automation_intents;
-      SELECT 'invalid_bundles', COUNT(*) FROM automation_effective_bundles WHERE status <> 'valid';
-      SELECT 'commands_error_total', COUNT(*) FROM commands WHERE status = 'ERROR';
-      SELECT 'commands_empty_error', COUNT(*) FROM commands WHERE status = 'ERROR' AND COALESCE(error_message, '') = '';
+      SELECT 'invalid_bundles', COUNT(*) FROM automation_effective_bundles
+        WHERE status <> 'valid'
+          AND ${invalid_bundle_filter}
+          AND COALESCE(updated_at, created_at, compiled_at) >= TIMESTAMPTZ '${SUITE_STARTED_AT_UTC}';
+      SELECT 'commands_error_total', COUNT(*) FROM commands
+        WHERE status = 'ERROR'
+          AND COALESCE(updated_at, created_at) >= TIMESTAMPTZ '${SUITE_STARTED_AT_UTC}';
+      SELECT 'commands_empty_error', COUNT(*) FROM commands
+        WHERE status = 'ERROR'
+          AND COALESCE(error_message, '') = ''
+          AND COALESCE(updated_at, created_at) >= TIMESTAMPTZ '${SUITE_STARTED_AT_UTC}';
       SELECT 'pending_alerts_total', COUNT(*) FROM pending_alerts;
       SELECT 'unassigned_node_errors_total', COUNT(*) FROM unassigned_node_errors;
       SELECT 'jobs_total', COUNT(*) FROM jobs;
       SELECT 'failed_jobs_total', COUNT(*) FROM failed_jobs;
-      SELECT 'zone_simulations_total', COUNT(*) FROM zone_simulations;
-      SELECT 'simulation_clone_zones', COUNT(*) FROM zones WHERE uid LIKE 'sim-%' OR settings->'simulation'->>'source_zone_id' IS NOT NULL;
+      SELECT 'zone_simulations_total', COUNT(*) FROM zone_simulations
+        WHERE COALESCE(updated_at, created_at) >= TIMESTAMPTZ '${SUITE_STARTED_AT_UTC}';
+      SELECT 'simulation_clone_zones', COUNT(*) FROM zones
+        WHERE COALESCE(updated_at, created_at) >= TIMESTAMPTZ '${SUITE_STARTED_AT_UTC}'
+          AND (uid LIKE 'sim-%' OR settings->'simulation'->>'source_zone_id' IS NOT NULL);
     "
 
     local audit_output
@@ -150,6 +221,10 @@ run_post_suite_audit() {
       echo "Последние активные хвосты в БД:"
       "${DOCKER_COMPOSE[@]}" -f "$SCRIPT_DIR/docker-compose.e2e.yml" exec -T postgres \
         psql -U hydro -d hydro_e2e -P pager=off -c "
+          SELECT id, scope_type, scope_id, status, violations, created_at, updated_at
+          FROM automation_effective_bundles
+          WHERE status <> 'valid'
+          ORDER BY id;
           SELECT id, code, status, zone_id, node_uid FROM alerts ORDER BY id;
           SELECT id, status, task_type, zone_id, error_message FROM ae_tasks ORDER BY id;
           SELECT id, status, intent_type, zone_id, error_code, error_message FROM zone_automation_intents ORDER BY id;

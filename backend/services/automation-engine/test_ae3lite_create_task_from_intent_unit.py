@@ -101,7 +101,26 @@ class _TaskRepo:
         assert conn is self._conn
         return None
 
-    async def create_pending(self, *, zone_id: int, idempotency_key: str, topology: str, intent_source, intent_trigger, intent_id, intent_meta, scheduled_for, due_at, now, conn):
+    async def create_pending(
+        self,
+        *,
+        zone_id: int,
+        idempotency_key: str,
+        task_type: str,
+        topology: str,
+        current_stage: str,
+        workflow_phase: str,
+        intent_source,
+        intent_trigger,
+        intent_id,
+        intent_meta,
+        scheduled_for,
+        due_at,
+        now,
+        irrigation_mode=None,
+        irrigation_requested_duration_sec=None,
+        conn,
+    ):
         self.calls.append(("create_pending", conn))
         assert conn is self._conn
         return _task(zone_id)

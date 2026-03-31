@@ -1,0 +1,187 @@
+# E108: soil-moisture telemetry contract for smart irrigation
+name: E108_ae3_soil_moisture_telemetry_contract
+auth_role: admin
+description: |
+  Проверяет контракт новой soil-moisture node-sim ноды:
+  - сервисный `set_fault_mode` доходит до `history-logger`;
+  - node-sim auto-bind-ится на тестовую зону;
+  - `SOIL_MOISTURE` попадает в `telemetry_last` для зоны.
+
+actions:
+  - step: set_context
+    type: set
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_soil_node_uid: nd-test-soil-1
+
+  - step: load_zone
+    type: database_query
+    query: |
+      SELECT id AS zone_id, greenhouse_id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: zone_row
+
+  - step: set_zone_context
+    type: set
+    zone_id: ${zone_row.0.zone_id}
+    greenhouse_id: ${zone_row.0.greenhouse_id}
+
+  - step: upsert_soil_node
+    type: database_execute
+    query: |
+      INSERT INTO nodes (
+        zone_id,
+        uid,
+        name,
+        type,
+        fw_version,
+        status,
+        last_seen_at,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        :zone_id,
+        :node_uid,
+        'AE3 E2E Soil Moisture',
+        'water_sensor',
+        'node-sim-test-node-profile',
+        'online',
+        NOW(),
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (uid) DO UPDATE
+      SET zone_id = EXCLUDED.zone_id,
+          type = EXCLUDED.type,
+          status = 'online',
+          last_seen_at = NOW(),
+          updated_at = NOW()
+    params:
+      zone_id: ${zone_id}
+      node_uid: ${test_soil_node_uid}
+
+  - step: load_soil_node
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+        AND zone_id = :zone_id
+      LIMIT 1
+    params:
+      node_uid: ${test_soil_node_uid}
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: soil_node_row
+
+  - step: set_soil_node_id
+    type: set
+    soil_node_id: ${soil_node_row.0.node_id}
+
+  - step: upsert_soil_channels
+    type: database_execute
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES
+        (CAST(:node_id AS bigint), 'soil_moisture', 'SENSOR', NOW(), NOW()),
+        (CAST(:node_id AS bigint), 'system', 'SERVICE', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE
+      SET type = EXCLUDED.type,
+          updated_at = NOW()
+    params:
+      node_id: ${soil_node_id}
+
+  - step: cleanup_old_soil_sensor
+    type: database_execute
+    query: |
+      DELETE FROM sensors
+      WHERE zone_id = :zone_id
+        AND type = 'SOIL_MOISTURE'
+        AND label = 'soil_moisture'
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_soil_sensor
+    type: database_execute
+    query: |
+      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
+      VALUES (:greenhouse_id, :zone_id, :node_id, 'inside', 'SOIL_MOISTURE', 'soil_moisture', TRUE, NOW(), NOW())
+    params:
+      greenhouse_id: ${greenhouse_id}
+      zone_id: ${zone_id}
+      node_id: ${soil_node_id}
+
+  - step: set_soil_level
+    type: ae_test_hook
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_soil_node_uid}
+      channel: system
+      cmd: set_fault_mode
+      params:
+        soil_moisture_pct: 52.0
+    save: soil_command_response
+
+  - step: wait_soil_command_done
+    type: db.wait
+    query: |
+      SELECT id, cmd_id, status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+        AND status = 'DONE'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cmd_id: ${soil_command_response.data.cmd_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_soil_telemetry
+    type: db.wait
+    query: |
+      SELECT
+        s.id AS sensor_id,
+        tl.last_value,
+        COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+      FROM sensors s
+      JOIN telemetry_last tl ON tl.sensor_id = s.id
+      WHERE s.zone_id = :zone_id
+        AND s.type = 'SOIL_MOISTURE'
+        AND s.label = 'soil_moisture'
+        AND COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '30 seconds'
+        AND COALESCE(tl.last_value, 0) BETWEEN 50.0 AND 54.0
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: soil_telemetry_row
+
+assertions:
+  - name: soil_node_telemetry_written
+    type: database_query
+    query: |
+      SELECT
+        s.label,
+        s.type,
+        ROUND(COALESCE(tl.last_value, 0)::numeric, 1) AS last_value
+      FROM sensors s
+      JOIN telemetry_last tl ON tl.sensor_id = s.id
+      WHERE s.id = CAST(:sensor_id AS bigint)
+    params:
+      sensor_id: ${soil_telemetry_row.0.sensor_id}
+    expected_rows: 1
+    expected:
+      - field: label
+        operator: equals
+        value: soil_moisture
+      - field: type
+        operator: equals
+        value: SOIL_MOISTURE

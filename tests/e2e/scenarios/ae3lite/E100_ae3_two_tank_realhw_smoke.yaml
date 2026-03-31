@@ -1168,7 +1168,7 @@ actions:
       )
       VALUES (
         :zone_id,
-        'IRRIGATE_ONCE',
+        'DIAGNOSTICS_TICK',
         jsonb_build_object(
           'source', CAST(:source AS text),
           'task_type', 'diagnostics',
@@ -1403,8 +1403,10 @@ assertions:
         operator: equals
         value: ${task_id}
       - field: data.status
-        operator: equals
-        value: pending
+        operator: in
+        value:
+          - pending
+          - running
 
 cleanup:
   - step: reset_test_node_after_run

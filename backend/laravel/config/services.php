@@ -52,7 +52,10 @@ return [
     ],
 
     'automation_engine' => [
-        'api_url' => env('AUTOMATION_ENGINE_API_URL', 'http://automation-engine:9405'),
+        'api_url' => env(
+            'AUTOMATION_ENGINE_API_URL',
+            'http://automation-engine:'.env('AUTOMATION_ENGINE_API_PORT', 9505)
+        ),
         'timeout' => env('AUTOMATION_ENGINE_API_TIMEOUT_SEC', 2.0),
         'laravel_scheduler_enabled' => env('AUTOMATION_LARAVEL_SCHEDULER_ENABLED', false),
         'scheduler_id' => env('AUTOMATION_LARAVEL_SCHEDULER_ID', 'laravel-scheduler'),

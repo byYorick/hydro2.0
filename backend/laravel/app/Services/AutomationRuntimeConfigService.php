@@ -9,6 +9,7 @@ use Illuminate\Validation\ValidationException;
 class AutomationRuntimeConfigService
 {
     private const KNOWN_CATCHUP_POLICIES = ['replay_limited', 'skip'];
+    private const DEFAULT_AUTOMATION_ENGINE_API_URL = 'http://automation-engine:9505';
 
     /**
      * @var array<string, array<string, mixed>>
@@ -21,7 +22,7 @@ class AutomationRuntimeConfigService
             'label' => 'Automation Engine API URL',
             'description' => 'Базовый URL AE runtime API.',
             'config_path' => 'services.automation_engine.api_url',
-            'default' => 'http://automation-engine:9405',
+            'default' => self::DEFAULT_AUTOMATION_ENGINE_API_URL,
             'type' => 'string',
             'input_type' => 'text',
             'editable' => true,
@@ -405,7 +406,7 @@ class AutomationRuntimeConfigService
         }
 
         return [
-            'api_url' => rtrim($this->stringValue('automation_engine.api_url', 'http://automation-engine:9405'), '/'),
+            'api_url' => rtrim($this->stringValue('automation_engine.api_url', self::DEFAULT_AUTOMATION_ENGINE_API_URL), '/'),
             'timeout_sec' => max(1.0, $this->floatValue('automation_engine.timeout', 2.0)),
             'scheduler_id' => $this->stringValue('automation_engine.scheduler_id', 'laravel-scheduler'),
             'scheduler_version' => $this->stringValue('automation_engine.scheduler_version', '3.0.0'),

@@ -28,7 +28,16 @@ _DEFAULT_MAX_PH_DOSE_ML: float = 20.0
 
 #: Preferred order for EC components when no ec_component_policy is configured.
 #: Components not in this list are appended alphabetically after the listed ones.
-_EC_COMPONENT_DEFAULT_ORDER: tuple[str, ...] = ("npk", "a", "b", "ca", "mg", "micro", "trace")
+_EC_COMPONENT_DEFAULT_ORDER: tuple[str, ...] = ("npk", "a", "b", "calcium", "magnesium", "micro", "trace")
+
+
+@dataclass(frozen=True)
+class EcDoseStep:
+    component: str
+    node_uid: str
+    channel: str
+    amount_ml: float
+    duration_ms: int
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,7 @@ class DosePlan:
     ec_amount_ml: float = 0.0
     ec_duration_ms: int = 0
     ec_retry_after_sec: Optional[int] = None
+    ec_dose_sequence: tuple[EcDoseStep, ...] = ()
 
     needs_ph_up: bool = False
     needs_ph_down: bool = False
@@ -213,6 +223,7 @@ class CorrectionPlanner:
         ec_duration_ms = 0
         ec_discarded_reason = ""
         ec_discarded_details: Mapping[str, Any] = {}
+        ec_dose_sequence: tuple[EcDoseStep, ...] = ()
 
         ph_node_uid = ""
         ph_channel = ""
@@ -231,43 +242,228 @@ class CorrectionPlanner:
                 now=now,
             )
             if ec_retry_after is None:
-                resolved_component, resolved_ec = _resolve_ec_actuator(
-                    ec_actuator=ec_actuator,
-                    ec_actuators=ec_actuators,
-                    ec_component_policy=ec_component_policy,
-                    phase_key=phase_key,
-                    default_channel=str(correction_config.get("dose_ec_channel") or "ec_npk_pump"),
+                ec_dosing_mode = str(correction_config.get("ec_dosing_mode") or "single").strip().lower() or "single"
+                excluded = correction_config.get("ec_excluded_components") or ()
+                excluded_set = {str(x).strip().lower() for x in excluded if str(x).strip()}
+                multi_fail_closed = (
+                    ec_dosing_mode == "multi_sequential"
+                    and "npk" in excluded_set
+                    and str(workflow_phase).strip().lower() == "irrigating"
                 )
-                ec_component_name = resolved_component
-                ec_node_uid = str(resolved_ec["node_uid"])
-                ec_channel = str(resolved_ec["channel"])
-                calibration = resolved_ec.get("calibration")
-                if not isinstance(calibration, Mapping):
-                    raise PlannerConfigurationError(
-                        f"EC dosing pump calibration is required (channel={ec_channel}, node={ec_node_uid})"
+                if ec_dosing_mode == "multi_sequential" and isinstance(ec_actuators, Mapping):
+                    ec_pid_entry = _pid_entry(pid_state, "ec")
+                    ec_pid_update = _next_pid_state(
+                        kind="ec",
+                        gap=ec_gap,
+                        current_value=current_ec,
+                        controller_cfg=ec_controller_cfg,
+                        pid_entry=ec_pid_entry,
+                        now=now,
                     )
-                ec_amount_ml, ec_pid_update = _compute_amount_ml(
-                    kind="ec",
-                    gap=ec_gap,
-                    lower_bound=ec_lo,
-                    current_value=current_ec,
-                    controller_cfg=ec_controller_cfg,
-                    correction_config=correction_config,
-                    process_cfg=process_cfg,
-                    phase_key=phase_key,
-                    calibration=calibration,
-                    solution_volume_l=solution_volume_l,
-                    pid_entry=_pid_entry(pid_state, "ec"),
-                    now=now,
-                )
-                if ec_pid_update:
-                    if ec_pid_zone:
-                        ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
-                    pid_updates["ec"] = ec_pid_update
-                ec_duration_ms, ec_discarded_reason, ec_discarded_details = _dose_ml_to_ms(
-                    ec_amount_ml, calibration, correction_config,
-                )
-                ec_needs = ec_duration_ms > 0
+                    output_units = (
+                        float(ec_controller_cfg.get("kp") or 0.0) * ec_gap
+                        + float(ec_controller_cfg.get("ki") or 0.0) * float(ec_pid_update["integral"])
+                        + float(ec_controller_cfg.get("kd") or 0.0) * float(ec_pid_update["prev_derivative"])
+                    )
+
+                    ratios_raw = correction_config.get("ec_component_ratios")
+                    ratios_raw = ratios_raw if isinstance(ratios_raw, Mapping) else {}
+
+                    active: dict[str, float] = {}
+                    for k, v in ratios_raw.items():
+                        name = str(k).strip().lower()
+                        if not name or name in excluded_set:
+                            continue
+                        try:
+                            weight = float(v)
+                        except (TypeError, ValueError):
+                            continue
+                        if weight <= 0:
+                            continue
+                        active[name] = weight
+                    active_sum = sum(active.values())
+                    if multi_fail_closed and str(workflow_phase).strip().lower() == "irrigating" and active_sum <= 0:
+                        raise PlannerConfigurationError(
+                            "EC multi_sequential excludes NPK but no active EC components are configured"
+                        )
+
+                    if active_sum > 0:
+                        preferred_order = ("calcium", "magnesium", "micro")
+                        components = sorted(
+                            active.keys(),
+                            key=lambda c: (preferred_order.index(c) if c in preferred_order else 999, c),
+                        )
+
+                        seq: list[EcDoseStep] = []
+                        discarded: list[dict[str, Any]] = []
+                        total_ml = 0.0
+                        total_ms = 0
+                        contract_max = _positive_float(
+                            correction_config.get("max_ec_dose_ml"), _DEFAULT_MAX_EC_DOSE_ML
+                        )
+                        controller_max = _positive_float(ec_controller_cfg.get("max_dose_ml"), 0.0)
+                        max_ml = min(controller_max, contract_max) if controller_max > 0 else contract_max
+
+                        for component in components:
+                            ratio = float(active.get(component) or 0.0)
+                            if ratio <= 0:
+                                continue
+                            active_ratio = ratio / active_sum
+                            component_gap = ec_gap * active_ratio
+
+                            resolved_ec = _find_ec_component_actuator(
+                                ec_actuators=ec_actuators,
+                                component=component,
+                            )
+                            if resolved_ec is None:
+                                discarded.append({"component": component, "reason": "actuator_missing"})
+                                continue
+
+                            node_uid = str(resolved_ec["node_uid"])
+                            channel = str(resolved_ec["channel"])
+                            calibration = resolved_ec.get("calibration")
+                            if not isinstance(calibration, Mapping):
+                                raise PlannerConfigurationError(
+                                    f"EC dosing pump calibration is required (channel={channel}, node={node_uid})"
+                                )
+
+                            gain = _ec_component_process_gain(
+                                component=component,
+                                process_cfg=process_cfg,
+                                pid_entry=ec_pid_entry,
+                                phase_key=phase_key,
+                            )
+                            if gain is None or gain <= 0:
+                                raise PlannerConfigurationError(
+                                    f"Process gain is required for ec component {component} in multi_sequential mode"
+                                )
+
+                            dose_ml = output_units * active_ratio / gain
+                            dose_ml = min(dose_ml, component_gap / gain if component_gap > 0 else 0.0)
+                            dose_ml = min(dose_ml, max_ml * active_ratio)
+
+                            min_effective_ml = max(0.0, float(calibration.get("min_effective_ml") or 0.0))
+                            if dose_ml > 0 and min_effective_ml > 0:
+                                dose_ml = max(dose_ml, min_effective_ml)
+                                # Re-apply caps after min_effective bump to avoid exceeding PID/contract limits.
+                                dose_ml = min(dose_ml, component_gap / gain if component_gap > 0 else 0.0)
+                                dose_ml = min(dose_ml, max_ml * active_ratio)
+                                if dose_ml > 0 and dose_ml < min_effective_ml:
+                                    discarded.append(
+                                        {
+                                            "component": component,
+                                            "reason": "ec_min_effective_exceeds_caps",
+                                            "node_uid": node_uid,
+                                            "channel": channel,
+                                            "min_effective_ml": min_effective_ml,
+                                            "capped_ml": round(float(dose_ml), 4),
+                                        }
+                                    )
+                                    continue
+                            dose_ml = round(max(0.0, dose_ml), 4)
+
+                            duration_ms, reason, details = _dose_ml_to_ms(dose_ml, calibration, correction_config)
+                            if duration_ms <= 0 and dose_ml > 0:
+                                discarded.append(
+                                    {
+                                        "component": component,
+                                        "reason": reason or "ec_pulse_too_short",
+                                        "node_uid": node_uid,
+                                        "channel": channel,
+                                        "amount_ml": dose_ml,
+                                        **dict(details or {}),
+                                    }
+                                )
+                                continue
+                            if dose_ml <= 0 or duration_ms <= 0:
+                                continue
+
+                            seq.append(
+                                EcDoseStep(
+                                    component=component,
+                                    node_uid=node_uid,
+                                    channel=channel,
+                                    amount_ml=dose_ml,
+                                    duration_ms=int(duration_ms),
+                                )
+                            )
+                            total_ml += dose_ml
+                            total_ms += int(duration_ms)
+
+                        if seq:
+                            ec_component_name = "multi_sequential"
+                            ec_dose_sequence = tuple(seq)
+                            ec_node_uid = seq[0].node_uid
+                            ec_channel = seq[0].channel
+                            ec_amount_ml = round(total_ml, 4)
+                            ec_duration_ms = int(total_ms)
+                            if ec_pid_update:
+                                if ec_pid_zone:
+                                    ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
+                                pid_updates["ec"] = {**ec_pid_update, "last_dose_at": now}
+                            ec_discarded_reason = "multi_component_partial" if discarded else ""
+                            ec_discarded_details = {"discarded": discarded} if discarded else {}
+                            ec_needs = ec_duration_ms > 0
+                        else:
+                            ec_discarded_reason = "ec_multi_component_no_effective_pulses"
+                            ec_discarded_details = {"discarded": discarded}
+                            ec_needs = False
+
+                # Fail-closed: if multi_sequential is enabled and NPK is excluded during irrigation,
+                # do NOT fallback to single-dose (which would default to ec_npk_pump).
+                if multi_fail_closed and not ec_dose_sequence:
+                    discarded = ()
+                    if isinstance(ec_discarded_details, Mapping):
+                        raw_discarded = ec_discarded_details.get("discarded")
+                        if isinstance(raw_discarded, list):
+                            discarded = tuple(
+                                str(item.get("component") or "").strip().lower()
+                                for item in raw_discarded
+                                if isinstance(item, Mapping)
+                            )
+                    discarded_components = ", ".join(sorted({name for name in discarded if name})) or "none"
+                    raise PlannerConfigurationError(
+                        "EC multi_sequential produced no safe non-NPK doses during irrigation "
+                        f"(discarded={discarded_components})"
+                    )
+                if not ec_dose_sequence and not multi_fail_closed:
+                    resolved_component, resolved_ec = _resolve_ec_actuator(
+                        ec_actuator=ec_actuator,
+                        ec_actuators=ec_actuators,
+                        ec_component_policy=ec_component_policy,
+                        phase_key=phase_key,
+                        default_channel=str(correction_config.get("dose_ec_channel") or "ec_npk_pump"),
+                    )
+                    ec_component_name = resolved_component
+                    ec_node_uid = str(resolved_ec["node_uid"])
+                    ec_channel = str(resolved_ec["channel"])
+                    calibration = resolved_ec.get("calibration")
+                    if not isinstance(calibration, Mapping):
+                        raise PlannerConfigurationError(
+                            f"EC dosing pump calibration is required (channel={ec_channel}, node={ec_node_uid})"
+                        )
+                    ec_amount_ml, ec_pid_update = _compute_amount_ml(
+                        kind="ec",
+                        gap=ec_gap,
+                        lower_bound=ec_lo,
+                        current_value=current_ec,
+                        controller_cfg=ec_controller_cfg,
+                        correction_config=correction_config,
+                        process_cfg=process_cfg,
+                        phase_key=phase_key,
+                        calibration=calibration,
+                        solution_volume_l=solution_volume_l,
+                        pid_entry=_pid_entry(pid_state, "ec"),
+                        now=now,
+                    )
+                    if ec_pid_update:
+                        if ec_pid_zone:
+                            ec_pid_update = {**ec_pid_update, "current_zone": ec_pid_zone}
+                        pid_updates["ec"] = ec_pid_update
+                    ec_duration_ms, ec_discarded_reason, ec_discarded_details = _dose_ml_to_ms(
+                        ec_amount_ml, calibration, correction_config,
+                    )
+                    ec_needs = ec_duration_ms > 0
             else:
                 ec_needs = False
 
@@ -342,6 +538,7 @@ class CorrectionPlanner:
             ec_amount_ml=ec_amount_ml,
             ec_duration_ms=ec_duration_ms,
             ec_retry_after_sec=ec_retry_after,
+            ec_dose_sequence=ec_dose_sequence,
             needs_ph_up=ph_needs_up,
             needs_ph_down=ph_needs_down,
             ph_node_uid=ph_node_uid,
@@ -440,6 +637,54 @@ def _merge_pid_deadband(*, controller_cfg: Mapping[str, Any], pid_cfg: Mapping[s
     if deadband >= 0:
         merged["deadband"] = deadband
     return merged
+
+
+def _find_ec_component_actuator(
+    *,
+    ec_actuators: Mapping[str, Any],
+    component: str,
+) -> Mapping[str, Any] | None:
+    """Best-effort lookup of an EC component actuator by normalized name."""
+    want = str(component).strip().lower()
+    if not want:
+        return None
+    direct = ec_actuators.get(want)
+    if isinstance(direct, Mapping):
+        return direct
+    alt = ec_actuators.get(f"ec_{want}")
+    if isinstance(alt, Mapping):
+        return alt
+    for name, actuator in ec_actuators.items():
+        if not isinstance(actuator, Mapping):
+            continue
+        key = str(name).strip().lower()
+        key = key[3:] if key.startswith("ec_") else key
+        if key == want:
+            return actuator
+    return None
+
+
+def _ec_component_process_gain(
+    *,
+    component: str,
+    process_cfg: Mapping[str, Any],
+    pid_entry: Mapping[str, Any],
+    phase_key: str,
+) -> float | None:
+    """Resolve per-component EC gain, falling back to generic ec_gain_per_ml."""
+    gains = process_cfg.get("ec_component_gains")
+    gains = gains if isinstance(gains, Mapping) else {}
+    entry = gains.get(component) if isinstance(gains.get(component), Mapping) else None
+    if isinstance(entry, Mapping):
+        raw = entry.get("ec_gain_per_ml")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            # Do not apply adaptive EMA here yet; keep per-component gains authoritative.
+            return value
+    return _process_gain(kind="ec", process_cfg=process_cfg, pid_entry=pid_entry, phase_key=phase_key)
 
 
 def _resolve_ec_actuator(

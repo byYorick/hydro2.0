@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import json
 import logging
+import os
 import threading
 import weakref
 from datetime import datetime, timezone
@@ -94,6 +95,12 @@ async def get_pool() -> asyncpg.pool.Pool:
         s = get_settings()
         pool_min_size = max(1, int(getattr(s, "pg_pool_min_size", 1)))
         pool_max_size = max(pool_min_size, int(getattr(s, "pg_pool_max_size", 5)))
+        # В тестах Pytest может создавать несколько event loop в рамках одного прогона,
+        # а pool кешируется по loop. Чтобы не упираться в лимит соединений PostgreSQL,
+        # ограничиваем размер пула на loop.
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            pool_min_size = 1
+            pool_max_size = 1
         pg_app_name = str(getattr(s, "pg_app_name", "hydro:python-service"))
 
         pool = await asyncpg.create_pool(

@@ -668,6 +668,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
             "valve_clean_supply",
             "valve_solution_fill",
             "valve_solution_supply",
+            "valve_irrigation",
             "pump_main",
         ):
             rows = await fetch(
@@ -731,6 +732,41 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
             """,
             asset_id,
             node_channel_id,
+        )
+
+        # Provide irrigation valve actuator required by native two-tank irrigation plans.
+        valve_channel_id = node_channel_ids["valve_irrigation"]
+        rows = await fetch(
+            """
+            INSERT INTO infrastructure_instances (
+                owner_type,
+                owner_id,
+                asset_type,
+                label,
+                required,
+                created_at,
+                updated_at
+            )
+            VALUES ('zone', $1, 'PUMP', 'Irrigation Valve', TRUE, NOW(), NOW())
+            RETURNING id
+            """,
+            zone_id,
+        )
+        valve_asset_id = int(rows[0]["id"])
+        await execute(
+            """
+            INSERT INTO channel_bindings (
+                infrastructure_instance_id,
+                node_channel_id,
+                direction,
+                role,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, 'actuator', 'valve_irrigation', NOW(), NOW())
+            """,
+            valve_asset_id,
+            valve_channel_id,
         )
 
         snapshot = await read_model.load(zone_id=zone_id)

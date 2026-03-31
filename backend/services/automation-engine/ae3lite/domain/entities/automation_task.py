@@ -123,6 +123,12 @@ class AutomationTask:
                 wait_until=_naive(row.get("corr_wait_until")),
                 ec_component=str(row["corr_ec_component"]) if row.get("corr_ec_component") is not None else None,
                 ec_amount_ml=float(row["corr_ec_amount_ml"]) if row.get("corr_ec_amount_ml") is not None else None,
+                ec_dose_sequence_json=(
+                    str(row["corr_ec_dose_sequence_json"])
+                    if row.get("corr_ec_dose_sequence_json") is not None
+                    else None
+                ),
+                ec_current_seq_index=int(row.get("corr_ec_current_seq_index") or 0),
                 ph_amount_ml=float(row["corr_ph_amount_ml"]) if row.get("corr_ph_amount_ml") is not None else None,
                 limit_policy_logged=bool(row.get("corr_limit_policy_logged")),
             )

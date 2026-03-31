@@ -975,6 +975,8 @@ corr_ph_duration_ms INTEGER NULL
 corr_wait_until TIMESTAMPTZ NULL
 corr_ec_component VARCHAR(100) NULL
 corr_ec_amount_ml NUMERIC(12,3) NULL
+corr_ec_dose_sequence_json JSONB NULL
+corr_ec_current_seq_index INT NOT NULL DEFAULT 0
 corr_ph_amount_ml NUMERIC(12,3) NULL
 corr_limit_policy_logged BOOLEAN NOT NULL DEFAULT FALSE
 corr_ec_attempt SMALLINT NULL

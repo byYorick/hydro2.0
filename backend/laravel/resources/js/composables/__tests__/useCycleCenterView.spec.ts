@@ -45,6 +45,32 @@ describe('useCycleCenterView', () => {
     expect(view.filteredZones.value[0].id).toBe(2)
   })
 
+  it('в режиме zone фильтрует по статусу зоны, а не цикла', () => {
+    const zones = computed(() => [
+      baseZone({ id: 1, status: 'ALARM', cycle: { id: 31, status: 'RUNNING' } }),
+      baseZone({ id: 2, status: 'RUNNING', cycle: { id: 32, status: 'RUNNING' } }),
+    ])
+
+    const view = useCycleCenterView({ zones, statusFilterMode: 'zone' })
+    view.statusFilter.value = 'ALARM'
+
+    expect(view.filteredZones.value).toHaveLength(1)
+    expect(view.filteredZones.value[0].id).toBe(1)
+  })
+
+  it('в режиме zone NONE оставляет только зоны без активного цикла', () => {
+    const zones = computed(() => [
+      baseZone({ id: 1, cycle: null }),
+      baseZone({ id: 2, cycle: { id: 32, status: 'RUNNING' } }),
+    ])
+
+    const view = useCycleCenterView({ zones, statusFilterMode: 'zone' })
+    view.statusFilter.value = 'NONE'
+
+    expect(view.filteredZones.value).toHaveLength(1)
+    expect(view.filteredZones.value[0].id).toBe(1)
+  })
+
   it('переключает compact view и корректно форматирует метрики', () => {
     const zones = computed(() => [baseZone({})])
     const view = useCycleCenterView({ zones })

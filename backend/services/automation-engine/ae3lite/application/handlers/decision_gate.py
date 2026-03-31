@@ -8,6 +8,8 @@ from typing import Any
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.infrastructure.metrics import IRRIGATION_DECISION
+from common.biz_alerts import send_biz_alert
 
 
 class DecisionGateHandler(BaseStageHandler):
@@ -46,6 +48,68 @@ class DecisionGateHandler(BaseStageHandler):
         )
         if updated is None:
             raise TaskExecutionError("irrigation_decision_persist_failed", "Unable to persist irrigation decision")
+
+        IRRIGATION_DECISION.labels(
+            topology=str(getattr(task, "topology", "") or ""),
+            strategy=str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
+            outcome=str(decision.outcome or ""),
+        ).inc()
+
+        try:
+            if decision.outcome == "skip":
+                await send_biz_alert(
+                    code="biz_irrigation_decision_skip",
+                    alert_type="AE3 Irrigation Decision Skip",
+                    message="Irrigation decision-controller decided to skip irrigation.",
+                    severity="info",
+                    zone_id=int(task.zone_id),
+                    details={
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        "stage": "decision_gate",
+                        "strategy": str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
+                        "reason_code": str(getattr(decision, "reason_code", "") or ""),
+                        "degraded": bool(getattr(decision, "degraded", False)),
+                    },
+                    scope_parts=("stage:decision_gate",),
+                )
+            if decision.outcome == "degraded_run":
+                await send_biz_alert(
+                    code="biz_irrigation_decision_degraded",
+                    alert_type="AE3 Irrigation Decision Degraded",
+                    message="Irrigation decision-controller allowed degraded irrigation run.",
+                    severity="warning",
+                    zone_id=int(task.zone_id),
+                    details={
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        "stage": "decision_gate",
+                        "strategy": str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
+                        "reason_code": str(getattr(decision, "reason_code", "") or ""),
+                        "degraded": True,
+                    },
+                    scope_parts=("stage:decision_gate",),
+                )
+            if decision.outcome == "fail":
+                await send_biz_alert(
+                    code="biz_irrigation_decision_fail",
+                    alert_type="AE3 Irrigation Decision Fail",
+                    message="Irrigation decision-controller returned fail.",
+                    severity="error",
+                    zone_id=int(task.zone_id),
+                    details={
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        "stage": "decision_gate",
+                        "strategy": str(((plan.runtime or {}).get("irrigation_decision") or {}).get("strategy") or ""),
+                        "reason_code": str(getattr(decision, "reason_code", "") or ""),
+                        "degraded": bool(getattr(decision, "degraded", False)),
+                    },
+                    scope_parts=("stage:decision_gate",),
+                )
+        except Exception:
+            # Alerts must never block irrigation decision flow
+            pass
 
         if decision.outcome == "skip":
             return StageOutcome(kind="transition", next_stage="completed_skip")

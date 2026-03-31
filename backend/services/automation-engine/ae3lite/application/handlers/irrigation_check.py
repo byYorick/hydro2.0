@@ -7,7 +7,16 @@ from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.infrastructure.metrics import (
+    IRRIGATION_CORRECTION_ENTERED,
+    IRRIGATION_DURATION,
+    IRRIGATION_REPLAY,
+    IRRIGATION_SOLUTION_MIN,
+)
+from common.biz_alerts import send_biz_alert
+from common.db import create_zone_event
 
 
 class IrrigationCheckHandler(BaseStageHandler):
@@ -26,6 +35,13 @@ class IrrigationCheckHandler(BaseStageHandler):
         runtime = plan.runtime if hasattr(plan, "runtime") else {}
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
+        topology = str(getattr(task, "topology", "") or "")
+
+        def _observe_duration(stop_reason: str) -> None:
+            entered = getattr(task.workflow, "stage_entered_at", None)
+            if isinstance(entered, datetime):
+                duration = (now.replace(tzinfo=None) - entered.replace(tzinfo=None)).total_seconds()
+                IRRIGATION_DURATION.labels(topology=topology, stop_reason=stop_reason).observe(max(0.0, duration))
 
         await self._probe_irr_state(
             task=task,
@@ -39,6 +55,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         )
 
         if pending_manual_step == "irrigation_stop":
+            _observe_duration("manual")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
         if control_mode == "manual":
             return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
@@ -56,9 +73,57 @@ class IrrigationCheckHandler(BaseStageHandler):
                 stale_error="two_tank_solution_min_level_stale",
             )
             if solution_min["is_triggered"]:
+                IRRIGATION_SOLUTION_MIN.labels(topology=topology).inc()
+                try:
+                    await create_zone_event(
+                        int(task.zone_id),
+                        "IRRIGATION_SOLUTION_MIN_DETECTED",
+                        {
+                            "task_id": int(getattr(task, "id", 0) or 0),
+                            "stage": "irrigation_check",
+                            "topology": topology,
+                        },
+                    )
+                except Exception:
+                    pass
+                try:
+                    await send_biz_alert(
+                        code="biz_irrigation_solution_min",
+                        alert_type="AE3 Irrigation Solution Min",
+                        message="Solution min level switch triggered during irrigation.",
+                        severity="warning",
+                        zone_id=int(task.zone_id),
+                        details={
+                            "task_id": int(getattr(task, "id", 0) or 0),
+                            "topology": topology,
+                            "stage": "irrigation_check",
+                            "irrigation_replay_count": int(getattr(task, "irrigation_replay_count", 0) or 0),
+                        },
+                        scope_parts=("stage:irrigation_check",),
+                    )
+                except Exception:
+                    pass
                 max_replays = int(recovery.get("max_setup_replays") or 0)
                 next_replay_count = int(getattr(task, "irrigation_replay_count", 0) or 0) + 1
                 if next_replay_count > max_replays:
+                    try:
+                        await send_biz_alert(
+                            code="biz_irrigation_replay_exhausted",
+                            alert_type="AE3 Irrigation Replay Exhausted",
+                            message="Irrigation replay budget exhausted after repeated solution-min triggers.",
+                            severity="error",
+                            zone_id=int(task.zone_id),
+                            details={
+                                "task_id": int(getattr(task, "id", 0) or 0),
+                                "topology": topology,
+                                "stage": "irrigation_check",
+                                "next_replay_count": next_replay_count,
+                                "max_setup_replays": max_replays,
+                            },
+                            scope_parts=("stage:irrigation_check",),
+                        )
+                    except Exception:
+                        pass
                     return StageOutcome(
                         kind="fail",
                         error_code="irrigation_solution_min_replay_exhausted",
@@ -72,13 +137,69 @@ class IrrigationCheckHandler(BaseStageHandler):
                 )
                 if updated is None:
                     raise TaskExecutionError("irrigation_replay_persist_failed", "Unable to persist irrigation replay count")
+                IRRIGATION_REPLAY.labels(topology=topology).inc()
+                _observe_duration("setup")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_setup")
 
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             if await self._targets_reached(task=task, plan=plan, now=now):
+                _observe_duration("ready")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
+            _observe_duration("recovery")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
+
+        execution = (
+            runtime.get("irrigation_execution")
+            if isinstance(runtime.get("irrigation_execution"), dict)
+            else {}
+        )
+        correction_enabled = bool(execution.get("correction_during_irrigation", True))
+        if correction_enabled:
+            stage_retry_count = int(getattr(task.workflow, "stage_retry_count", 0) or 0)
+            if stage_retry_count <= 0 and not await self._targets_reached(task=task, plan=plan, now=now):
+                correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+                ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
+                ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
+                corr = CorrectionState(
+                    corr_step="corr_check",
+                    attempt=0,
+                    max_attempts=max(ec_max_attempts, ph_max_attempts),
+                    ec_attempt=0,
+                    ec_max_attempts=ec_max_attempts,
+                    ph_attempt=0,
+                    ph_max_attempts=ph_max_attempts,
+                    activated_here=False,  # irrigation_start already ran sensor_mode_activate
+                    stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
+                    return_stage_success=stage_def.on_corr_success or "irrigation_check",
+                    return_stage_fail=stage_def.on_corr_fail or "irrigation_check",
+                    outcome_success=None,
+                    needs_ec=False,
+                    ec_node_uid=None,
+                    ec_channel=None,
+                    ec_duration_ms=None,
+                    needs_ph_up=False,
+                    needs_ph_down=False,
+                    ph_node_uid=None,
+                    ph_channel=None,
+                    ph_duration_ms=None,
+                    wait_until=None,
+                    limit_policy_logged=False,
+                )
+                IRRIGATION_CORRECTION_ENTERED.labels(topology=topology).inc()
+                try:
+                    await create_zone_event(
+                        int(task.zone_id),
+                        "IRRIGATION_CORRECTION_STARTED",
+                        {
+                            "task_id": int(getattr(task, "id", 0) or 0),
+                            "stage": "irrigation_check",
+                            "topology": topology,
+                        },
+                    )
+                except Exception:
+                    pass
+                return StageOutcome(kind="enter_correction", correction=corr)
 
         return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
 

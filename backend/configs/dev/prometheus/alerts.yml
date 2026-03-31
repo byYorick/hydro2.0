@@ -339,3 +339,33 @@ groups:
         annotations:
           summary: "AE3 worker tick errors above threshold"
           description: "Worker tick error rate is {{ $value }} errors/sec (error_type={{ $labels.error_type }}). Check automation-engine logs."
+
+  - name: ae3_irrigation_alerts
+    interval: 30s
+    rules:
+      - alert: AE3IrrigationSolutionMinFrequent
+        expr: increase(ae3_irrigation_solution_min_total[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 irrigation: frequent solution-min triggers"
+          description: "Solution-min triggered {{ $value }} times in last 15m. Check solution tank, supply valve, and pump."
+
+      - alert: AE3IrrigationReplayFrequent
+        expr: increase(ae3_irrigation_replay_total[30m]) > 2
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 irrigation: frequent setup replays"
+          description: "Irrigation setup replay occurred {{ $value }} times in last 30m. Possible unstable supply or level sensor flapping."
+
+      - alert: AE3IrrigationInlineCorrectionExcessive
+        expr: increase(ae3_irrigation_correction_entered_total[30m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 irrigation: excessive inline corrections"
+          description: "Inline correction entered {{ $value }} times in last 30m during irrigation. Check dosing calibration and sensor stability."

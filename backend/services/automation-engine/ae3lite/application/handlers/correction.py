@@ -16,6 +16,7 @@ Protocol (per CORRECTION_CYCLE_SPEC.md):
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from dataclasses import replace
@@ -30,6 +31,7 @@ from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.domain.services.correction_planner import CorrectionPlanner
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
+from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
 from common.db import create_zone_event
 from common.biz_alerts import send_biz_alert
 from common.water_flow import check_water_level
@@ -570,6 +572,21 @@ class CorrectionHandler(BaseStageHandler):
                 )
 
         # Save dose plan into correction state
+        ec_dose_sequence_json: str | None = None
+        if dose_plan.ec_dose_sequence:
+            ec_dose_sequence_json = json.dumps(
+                [
+                    {
+                        "component": s.component,
+                        "node_uid": s.node_uid,
+                        "channel": s.channel,
+                        "amount_ml": s.amount_ml,
+                        "duration_ms": s.duration_ms,
+                    }
+                    for s in dose_plan.ec_dose_sequence
+                ],
+                separators=(",", ":"),
+            )
         next_corr = replace(
             corr,
             needs_ec=dose_plan.needs_ec,
@@ -578,6 +595,8 @@ class CorrectionHandler(BaseStageHandler):
             ec_duration_ms=dose_plan.ec_duration_ms,
             ec_component=dose_plan.ec_component or None,
             ec_amount_ml=dose_plan.ec_amount_ml if dose_plan.ec_amount_ml else None,
+            ec_dose_sequence_json=ec_dose_sequence_json,
+            ec_current_seq_index=0,
             needs_ph_up=dose_plan.needs_ph_up,
             needs_ph_down=dose_plan.needs_ph_down,
             ph_node_uid=dose_plan.ph_node_uid,
@@ -643,31 +662,93 @@ class CorrectionHandler(BaseStageHandler):
     async def _run_dose_ec(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
-        if (
-            not corr.ec_node_uid
-            or not corr.ec_channel
-            or not corr.ec_duration_ms
-            or corr.ec_amount_ml is None
-            or corr.ec_amount_ml <= 0.0
-        ):
-            raise TaskExecutionError(
-                "corr_dose_ec_missing_plan",
-                (
-                    "EC dose plan missing "
-                    f"(node={corr.ec_node_uid}, ch={corr.ec_channel}, ms={corr.ec_duration_ms}, "
-                    f"ml={corr.ec_amount_ml})"
-                ),
-            )
+        seq: list[dict[str, Any]] = []
+        if corr.ec_dose_sequence_json:
+            try:
+                raw = json.loads(corr.ec_dose_sequence_json)
+                seq = list(raw) if isinstance(raw, list) else []
+            except Exception:
+                seq = []
+        if seq:
+            for item in seq:
+                if not isinstance(item, dict):
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence item must be object")
+                if not str(item.get("node_uid") or "").strip():
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence missing node_uid")
+                if not str(item.get("channel") or "").strip():
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence missing channel")
+                try:
+                    ml = float(item.get("amount_ml"))
+                except (TypeError, ValueError):
+                    ml = 0.0
+                if ml <= 0:
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence amount_ml must be > 0")
+        else:
+            if (
+                not corr.ec_node_uid
+                or not corr.ec_channel
+                or not corr.ec_duration_ms
+                or corr.ec_amount_ml is None
+                or corr.ec_amount_ml <= 0.0
+            ):
+                raise TaskExecutionError(
+                    "corr_dose_ec_missing_plan",
+                    (
+                        "EC dose plan missing "
+                        f"(node={corr.ec_node_uid}, ch={corr.ec_channel}, ms={corr.ec_duration_ms}, "
+                        f"ml={corr.ec_amount_ml})"
+                    ),
+                )
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step="corr_dose_ec").inc()
-        cmd = PlannedCommand(
-            step_no=1,
-            node_uid=corr.ec_node_uid,
-            channel=corr.ec_channel,
-            payload={"cmd": "dose", "params": {"ml": corr.ec_amount_ml}},
-        )
-        result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
-        if not result["success"]:
-            raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+        # Multi-component EC dosing must be idempotent on partial failures.
+        # SequentialCommandGateway executes commands one-by-one and may fail after some successes,
+        # so we dispatch at most ONE component per invocation and resume using ec_current_seq_index.
+        if seq:
+            start_idx = int(getattr(corr, "ec_current_seq_index", 0) or 0)
+            if start_idx < 0:
+                start_idx = 0
+            if start_idx >= len(seq):
+                start_idx = len(seq)
+
+            if start_idx < len(seq):
+                item = seq[start_idx]
+                comp = str(item.get("component") or "").strip().lower()
+                if comp:
+                    IRRIGATION_EC_COMPONENT_DOSE.labels(topology=task.topology, component=comp).inc()
+                cmd = PlannedCommand(
+                    step_no=start_idx + 1,
+                    node_uid=str(item["node_uid"]),
+                    channel=str(item["channel"]),
+                    payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
+                )
+                result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
+                if not result["success"]:
+                    raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+
+                next_idx = start_idx + 1
+                if next_idx < len(seq):
+                    # Persist progress and immediately continue with the next component.
+                    return StageOutcome(
+                        kind="enter_correction",
+                        correction=replace(corr, ec_current_seq_index=next_idx),
+                        due_delay_sec=0,
+                    )
+
+                # Sequence complete; continue with standard post-dose hold window below.
+                corr = replace(corr, ec_current_seq_index=next_idx)
+            else:
+                # Already complete (resume after crash) — treat as done and proceed.
+                corr = replace(corr, ec_current_seq_index=start_idx)
+        else:
+            cmd = PlannedCommand(
+                step_no=1,
+                node_uid=corr.ec_node_uid,
+                channel=corr.ec_channel,
+                payload={"cmd": "dose", "params": {"ml": corr.ec_amount_ml}},
+            )
+            result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
+            if not result["success"]:
+                raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
@@ -690,6 +771,8 @@ class CorrectionHandler(BaseStageHandler):
                 "channel": corr.ec_channel,
                 "duration_ms": corr.ec_duration_ms,
                 "amount_ml": corr.ec_amount_ml,
+                "dose_sequence": seq or None,
+                "seq_index": int(getattr(corr, "ec_current_seq_index", 0) or 0) if seq else None,
                 "observe_seq": self._observe_seq(corr=corr, pid_type="ec", after_dose=True),
                 "ec_component": corr.ec_component,
                 "current_ec": current_ec,
@@ -699,6 +782,20 @@ class CorrectionHandler(BaseStageHandler):
                 "source": "correction_handler",
             },
         )
+        if seq and str(getattr(task.workflow, "workflow_phase", "") or "").strip().lower() == "irrigating":
+            try:
+                await create_zone_event(
+                    int(task.zone_id),
+                    "IRRIGATION_EC_MULTI_DOSE",
+                    {
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "stage": "irrigation_check",
+                        "topology": str(getattr(task, "topology", "") or ""),
+                        "dose_sequence": seq,
+                    },
+                )
+            except Exception:
+                _logger.debug("Failed to create IRRIGATION_EC_MULTI_DOSE zone event", exc_info=True)
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
@@ -1044,6 +1141,34 @@ class CorrectionHandler(BaseStageHandler):
             )
         except Exception:
             _logger.warning("Failed to send CORRECTION_EXHAUSTED infra alert zone_id=%s", task.zone_id)
+        if str(task.current_stage).strip().lower() == "irrigation_check":
+            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+            try:
+                await send_biz_alert(
+                    code="biz_irrigation_correction_exhausted",
+                    alert_type="AE3 Irrigation Correction Exhausted",
+                    message="Correction during irrigation exhausted all configured attempts.",
+                    severity="error",
+                    zone_id=int(task.zone_id),
+                    details={
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "stage": stage,
+                        "topology": topology,
+                        "component": f"correction:{stage}",
+                        "attempt": corr.attempt,
+                        "max_attempts": corr.max_attempts,
+                        "message": "Irrigation correction exhausted — irrigation will continue without further correction attempts in this stage.",
+                    },
+                    scope_parts=(f"stage:{stage}", f"topology:{topology}"),
+                )
+            except Exception:
+                _logger.warning("Failed to send irrigation_correction_exhausted alert zone_id=%s", task.zone_id)
+            return StageOutcome(
+                kind="transition",
+                next_stage="irrigation_check",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+            )
         if str(task.current_stage).strip().lower() == "prepare_recirculation_check":
             return StageOutcome(
                 kind="transition",
