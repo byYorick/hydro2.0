@@ -441,21 +441,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       { key: 'lighting', type: 'LIGHTING', required: false, recipeTargets: phaseTargets.lighting || null, activeTargets: active.lighting?.targets || null, enabled: active.lighting?.enabled ?? false, strategy: serverCycles.LIGHTING?.strategy || 'periodic', interval: serverCycles.LIGHTING?.interval ?? null, last_run: serverCycles.LIGHTING?.last_run || null, next_run: serverCycles.LIGHTING?.next_run || null },
       { key: 'climate', type: 'CLIMATE', required: false, recipeTargets: phaseTargets.climate || null, activeTargets: active.climate?.targets || null, enabled: active.climate?.enabled ?? false, strategy: serverCycles.CLIMATE?.strategy || 'periodic', interval: serverCycles.CLIMATE?.interval ?? 300, last_run: serverCycles.CLIMATE?.last_run || null, next_run: serverCycles.CLIMATE?.next_run || null },
     ]
-
-    return base as Array<
-      {
-        key: string
-        type: string
-        required: boolean
-        recipeTargets: any
-        activeTargets: any
-        enabled: boolean
-      } & Cycle & {
-        last_run?: string | null
-        next_run?: string | null
-        interval?: number | null
-      }
-    >
+    return base as unknown as import('@/types/Cycle').SubsystemCycle[]
   })
 
   // ─── Realtime / page reload ────────────────────────────────────────────────

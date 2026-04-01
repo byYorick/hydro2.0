@@ -85,13 +85,13 @@ actions:
 
   - step: send_timeout_command
     type: api_post
-    endpoint: /api/zones/${test_zone_id}/commands
+    endpoint: /api/nodes/${test_node_id}/commands
     payload:
-      type: FORCE_IRRIGATION
-      node_uid: ${test_node_uid}
+      cmd: set_relay
       channel: main_pump
       params:
-        duration_sec: 30
+        channel: main_pump
+        state: true
       timeout_sec: 3  # Очень короткий таймаут
     expected_status: [200, 422]
     save: timeout_command_response
@@ -107,12 +107,15 @@ actions:
       SELECT cmd_id
       FROM commands
       WHERE zone_id = :zone_id
-        AND cmd = 'FORCE_IRRIGATION'
+        AND node_id = :node_id
+        AND cmd = 'set_relay'
+        AND channel = 'main_pump'
         AND created_at >= to_timestamp(:test_started_at)
       ORDER BY created_at DESC
       LIMIT 1
     params:
       zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
       test_started_at: ${test_started_at}
     save: timeout_command_row
     condition: ${!timeout_command_id || timeout_command_id == '' || timeout_command_id == null}
@@ -161,7 +164,7 @@ assertions:
 
   - name: db_timeout_status_matches_mode
     type: custom_assert
-    condition: "(int(context.get('real_hw', 0)) == 1 and (context.get('timeout_status', [{}])[0].get('status') in ['DONE', 'ERROR', 'TIMEOUT', 'SENT', 'SEND_FAILED'])) or (int(context.get('real_hw', 0)) != 1 and (context.get('timeout_status', [{}])[0].get('status') in ['TIMEOUT', 'SENT']))"
+    condition: "(lambda rows: len(rows) > 0 and ((int(context.get('real_hw', 0)) == 1 and rows[0].get('status') in ['DONE', 'ERROR', 'TIMEOUT', 'SENT', 'SEND_FAILED']) or (int(context.get('real_hw', 0)) != 1 and rows[0].get('status') in ['TIMEOUT', 'SENT'])))(context.get('timeout_status') or [])"
 
   # Проверка 3: Команда не зависла в SENT состоянии
   - name: no_stuck_commands

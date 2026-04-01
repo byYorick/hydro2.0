@@ -69,13 +69,13 @@ class TestSensorCalibrationCreateCancelRealHwContract(_ScenarioMixin, unittest.T
         self.assertIn("status NOT IN ('completed', 'failed', 'cancelled')", query)
 
 
-class TestSensorCalibrationUnsupportedCommandRealHwContract(_ScenarioMixin, unittest.TestCase):
+class TestSensorCalibrationPointSubmissionRealHwContract(_ScenarioMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         with UNSUPPORTED_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
             cls.scenario = yaml.safe_load(fh)
 
-    def test_waits_for_terminal_invalid_or_error_commands(self) -> None:
+    def test_waits_for_terminal_done_commands(self) -> None:
         ph_step = self._find_step("actions", "wait_ph_command_terminal")
         ec_step = self._find_step("actions", "wait_ec_command_terminal")
 
@@ -83,26 +83,26 @@ class TestSensorCalibrationUnsupportedCommandRealHwContract(_ScenarioMixin, unit
             self.assertEqual(step.get("type"), "db.wait")
             query = str(step.get("query") or "")
             self.assertIn("FROM commands", query)
-            self.assertIn("status IN ('INVALID', 'ERROR')", query)
+            self.assertIn("status = 'DONE'", query)
 
-    def test_waits_for_failed_calibration_sessions(self) -> None:
-        ph_step = self._find_step("actions", "wait_ph_calibration_failed")
-        ec_step = self._find_step("actions", "wait_ec_calibration_failed")
+    def test_waits_for_point_1_done_calibration_sessions(self) -> None:
+        ph_step = self._find_step("actions", "wait_ph_calibration_point_1_done")
+        ec_step = self._find_step("actions", "wait_ec_calibration_point_1_done")
 
         for step in (ph_step, ec_step):
             self.assertEqual(step.get("type"), "db.wait")
             query = str(step.get("query") or "")
             self.assertIn("FROM sensor_calibrations", query)
-            self.assertIn("status = 'failed'", query)
-            self.assertIn("point_1_result IN ('INVALID', 'ERROR')", query)
+            self.assertIn("status = 'point_1_done'", query)
+            self.assertIn("point_1_result = 'DONE'", query)
 
     def test_asserts_calibrate_command_contract_for_both_sensors(self) -> None:
         assertion_names = {item.get("name") for item in self.scenario.get("assertions", [])}
 
         self.assertIn("ph_command_terminal_uses_calibrate_on_ph_sensor", assertion_names)
         self.assertIn("ec_command_terminal_uses_calibrate_on_ec_sensor", assertion_names)
-        self.assertIn("ph_history_contains_failed_session", assertion_names)
-        self.assertIn("ec_history_contains_failed_session", assertion_names)
+        self.assertIn("ph_history_contains_point_1_done_session", assertion_names)
+        self.assertIn("ec_history_contains_point_1_done_session", assertion_names)
 
 
 if __name__ == "__main__":

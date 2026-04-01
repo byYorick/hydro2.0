@@ -30,9 +30,49 @@ RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH = (
 HOT_RELOAD_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E104_ae3_two_tank_realhw_hot_reload_correction_config.yaml"
 )
+FAIL_CLOSED_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
+)
 PIGGYBACK_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
 )
+START_IRRIGATION_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E107_ae3_start_irrigation_api_smoke.yaml"
+)
+INLINE_CORRECTION_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E109_ae3_irrigation_inline_correction_node_sim.yaml"
+)
+REALHW_CYCLE_START_SCENARIOS = [
+    SCENARIO_PATH,
+    READY_DURING_FILL_SCENARIO_PATH,
+    SETUP_READY_SCENARIO_PATH,
+    RETRY_LIMIT_SCENARIO_PATH,
+    RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+    HOT_RELOAD_SCENARIO_PATH,
+    PIGGYBACK_SCENARIO_PATH,
+]
+AE3_RUNTIME_DRAIN_SCENARIOS = [
+    SCENARIO_PATH,
+    READY_DURING_FILL_SCENARIO_PATH,
+    SETUP_READY_SCENARIO_PATH,
+    RETRY_LIMIT_SCENARIO_PATH,
+    RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+    HOT_RELOAD_SCENARIO_PATH,
+    PIGGYBACK_SCENARIO_PATH,
+    START_IRRIGATION_SCENARIO_PATH,
+    INLINE_CORRECTION_SCENARIO_PATH,
+]
+LOGIC_PROFILE_SCENARIOS = [
+    SCENARIO_PATH,
+    READY_DURING_FILL_SCENARIO_PATH,
+    SETUP_READY_SCENARIO_PATH,
+    RETRY_LIMIT_SCENARIO_PATH,
+    RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+    HOT_RELOAD_SCENARIO_PATH,
+    FAIL_CLOSED_SCENARIO_PATH,
+    PIGGYBACK_SCENARIO_PATH,
+    INLINE_CORRECTION_SCENARIO_PATH,
+]
 
 
 class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
@@ -106,6 +146,34 @@ class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
         query = str(step.get("query") or "")
         self.assertIn("DELETE FROM zone_workflow_state", query)
         self.assertIn("WHERE zone_id = :zone_id", query)
+
+    def test_realhw_cycle_start_scenarios_do_not_use_irrigate_once_intent_type(self) -> None:
+        for scenario_path in REALHW_CYCLE_START_SCENARIOS:
+            text = scenario_path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "'IRRIGATE_ONCE'",
+                text,
+                msg=f"{scenario_path.name} still uses IRRIGATE_ONCE for start-cycle flow",
+            )
+
+    def test_runtime_cleanup_waits_for_idle_worker_before_deleting_zone_state(self) -> None:
+        for scenario_path in AE3_RUNTIME_DRAIN_SCENARIOS:
+            text = scenario_path.read_text(encoding="utf-8")
+            self.assertIn(
+                "wait_zone_ae_runtime_idle_before_cleanup",
+                text,
+                msg=f"{scenario_path.name} does not wait for runtime idle before cleanup",
+            )
+            self.assertIn("status IN ('pending', 'claimed', 'running', 'waiting_command')", text)
+            self.assertIn("FROM ae_zone_leases", text)
+            self.assertIn("FROM zone_automation_intents", text)
+
+    def test_logic_profile_mutating_scenarios_cleanup_zone_logic_profile_document(self) -> None:
+        for scenario_path in LOGIC_PROFILE_SCENARIOS:
+            text = scenario_path.read_text(encoding="utf-8")
+            self.assertIn("/api/automation-configs/zone/${zone_id}/zone.logic_profile", text)
+            self.assertIn("DELETE FROM automation_config_documents", text)
+            self.assertIn("namespace = 'zone.logic_profile'", text)
 
 class TestAe3LiteRetryLimitRealHwScenarioContract(unittest.TestCase):
     @classmethod
@@ -181,6 +249,35 @@ class TestAe3LiteRetryLimitRealHwScenarioContract(unittest.TestCase):
         self.assertEqual(wait_step.get("type"), "db.wait")
         self.assertIn("automation_effective_bundles", str(wait_step.get("query") or ""))
 
+    def test_retry_limit_scenario_counts_any_recirc_correction_not_fixed_triplets(self) -> None:
+        first_assertion = next(
+            item
+            for item in self.scenario.get("assertions", [])
+            if item.get("name") == "first_recirc_commands_attempted_three_times"
+        )
+        second_assertion = next(
+            item
+            for item in self.scenario.get("assertions", [])
+            if item.get("name") == "second_recirc_commands_attempted_three_times"
+        )
+
+        first_condition = str(first_assertion.get("condition") or "")
+        second_condition = str(second_assertion.get("condition") or "")
+
+        self.assertIn("recirc_ec_cnt", first_condition)
+        self.assertIn("recirc_ph_cnt", first_condition)
+        self.assertIn(">= 1", first_condition)
+        self.assertNotIn(">= 3 and", first_condition)
+
+        self.assertIn("recirc_ec_cnt", second_condition)
+        self.assertIn("recirc_ph_cnt", second_condition)
+        self.assertIn(">= 1", second_condition)
+        self.assertNotIn(">= 3 and", second_condition)
+
+    def test_retry_limit_second_run_waits_for_idle_before_cleanup(self) -> None:
+        text = RETRY_LIMIT_SCENARIO_PATH.read_text(encoding="utf-8")
+        self.assertIn("wait_zone_ae_runtime_idle_before_second_cleanup", text)
+
 
 class TestAe3LiteReadyDuringFillRealHwScenarioContract(unittest.TestCase):
     @classmethod
@@ -218,6 +315,15 @@ class TestAe3LiteReadyDuringFillRealHwScenarioContract(unittest.TestCase):
             stabilize_window_step.get("params", {}).get("after_stabilize_at"),
             "${stabilize_ph_ec_done_row.0.created_at}",
         )
+
+        stabilize_window_query = str(stabilize_window_step.get("query") or "")
+        self.assertIn("ph_samples", stabilize_window_query)
+        self.assertIn("ec_samples", stabilize_window_query)
+        self.assertIn("ABS(EXTRACT(EPOCH FROM (ph.ts - ec.ts))) <= 10", stabilize_window_query)
+        self.assertIn("tsamp.value BETWEEN 6.88 AND 6.92", stabilize_window_query)
+        self.assertIn("tsamp.value BETWEEN 0.64 AND 0.66", stabilize_window_query)
+        self.assertNotIn("ph.cnt = 3", stabilize_window_query)
+        self.assertNotIn("ec.cnt = 3", stabilize_window_query)
 
         self.assertEqual(post_fill_step.get("type"), "database_query")
         post_fill_query = str(post_fill_step.get("query") or "")
@@ -275,6 +381,10 @@ class TestAe3LiteRetryLimitResolveReadyRealHwScenarioContract(unittest.TestCase)
             "snapshot'->>'valve_irrigation",
         ]:
             self.assertIn(fragment, snapshot_query)
+
+    def test_second_run_waits_for_idle_before_cleanup(self) -> None:
+        text = RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH.read_text(encoding="utf-8")
+        self.assertIn("wait_zone_ae_runtime_idle_before_second_cleanup", text)
 
 
 class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
@@ -444,6 +554,80 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
             get_step.get("endpoint"),
             "/api/automation-configs/zone/${zone_id}/zone.correction",
         )
+
+
+class TestAe3LiteFailClosedRealHwScenarioContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        with FAIL_CLOSED_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
+            cls.scenario = yaml.safe_load(fh)
+
+    def _find_assertion(self, name: str) -> dict:
+        for item in self.scenario.get("assertions", []):
+            if item.get("name") == name:
+                return item
+        self.fail(f"Assertion '{name}' is missing")
+
+    def test_fail_closed_expects_planner_validation_error_for_missing_channel(self) -> None:
+        code_assertion = self._find_assertion("runtime_task_failed_with_planner_config_code")
+        message_assertion = self._find_assertion("runtime_task_error_mentions_missing_required_channel")
+        no_probe_assertion = self._find_assertion("startup_state_probe_not_written_before_fail_closed")
+
+        code_condition = str(code_assertion.get("condition") or "")
+        message_condition = str(message_assertion.get("condition") or "")
+        no_probe_condition = str(no_probe_assertion.get("condition") or "")
+
+        self.assertIn("ae3_task_execution_failed", code_condition)
+        self.assertIn("clean_fill_start", message_condition)
+        self.assertIn("missing required channels", message_condition)
+        self.assertIn("valve_clean_fill", message_condition)
+        self.assertIn("state_probe_cnt", no_probe_condition)
+        self.assertIn("== 0", no_probe_condition)
+
+
+class TestAe3LiteInlineCorrectionNodeSimScenarioContract(unittest.TestCase):
+    def test_inline_irrigation_scenario_provisions_active_grow_cycle_bundle(self) -> None:
+        text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
+
+        for fragment in [
+            "create_grow_cycle",
+            "create_phase",
+            "activate_grow_cycle",
+            "/api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.start_snapshot",
+            "wait_grow_cycle_bundle_ready",
+        ]:
+            self.assertIn(fragment, text)
+
+    def test_inline_irrigation_scenario_waits_for_dual_gap_decision_not_legacy_event(self) -> None:
+        text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
+
+        self.assertNotIn("IRRIGATION_CORRECTION_STARTED", text)
+        self.assertNotIn("wait_zone_event", text)
+        self.assertIn("wait_correction_decision_for_dual_gap", text)
+        self.assertIn("type = 'CORRECTION_DECISION_MADE'", text)
+        self.assertIn("details->>'selected_action' = 'ec'", text)
+        self.assertIn("details->>'needs_ec' = 'true'", text)
+        self.assertIn("details->>'needs_ph_down' = 'true'", text)
+        self.assertIn("details->>'workflow_phase' IN ('irrigating', 'irrig_recirc')", text)
+
+    def test_inline_irrigation_scenario_asserts_ec_dose_with_active_main_pump(self) -> None:
+        text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("type = 'EC_DOSING'", text)
+        self.assertIn("details->>'channel' = 'pump_a'", text)
+        self.assertIn("wait_main_pump_snapshot_before_ec_dose", text)
+        self.assertIn("type = 'IRR_STATE_SNAPSHOT'", text)
+        self.assertIn("snapshot'->>'pump_main", text)
+        self.assertIn("created_at <= CAST(:ec_dose_created_at AS timestamptz)", text)
+
+    def test_inline_irrigation_scenario_asserts_ec_first_for_dual_gap(self) -> None:
+        text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("inline_correction_decision_keeps_dual_gap_and_ec_first", text)
+        self.assertIn("decision_reason", text)
+        self.assertIn("ec_first_in_window", text)
+        self.assertIn("needs_ph_down", text)
+        self.assertNotIn("wait_ph_dose_command_during_irrigation", text)
 
 
 class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):

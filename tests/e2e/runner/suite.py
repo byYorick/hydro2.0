@@ -254,10 +254,16 @@ class TestSuite:
         # Scan all subdirectories for YAML files
         for pattern in ["**/*.yaml", "**/*.yml"]:
             for yaml_file in base_path.glob(pattern):
-                if yaml_file.is_file():
+                if yaml_file.is_file() and self._is_full_suite_candidate(yaml_file):
                     scenarios.append(str(yaml_file))
 
         return sorted(scenarios)
+
+    @staticmethod
+    def _is_full_suite_candidate(yaml_file: Path) -> bool:
+        """Exclude debug-only scenarios from aggregate full runs."""
+        stem = yaml_file.stem.lower()
+        return "debug" not in stem and "no_cleanup" not in stem
 
     def discover_scenarios(self, paths: List[str] = None) -> List[str]:
         """

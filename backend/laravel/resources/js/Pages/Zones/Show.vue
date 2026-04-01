@@ -38,7 +38,6 @@
       <ZoneCycleTab
         v-else-if="activeTab === 'cycle'"
         :active-grow-cycle="activeGrowCycle"
-        :current-phase="currentPhase"
         :zone-status="zone.status"
         :cycles-list="cyclesList"
         :computed-phase-progress="computedPhaseProgress"

@@ -2041,6 +2041,26 @@ async def test_corr_check_ok_water_level_allows_correction(monkeypatch):
     assert not (outcome.kind == "enter_correction" and outcome.due_delay_sec == 60.0)
 
 
+async def test_corr_check_passes_irrigation_workflow_phase_to_water_level_check(monkeypatch):
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr, current_stage="irrigation_check", workflow_phase="irrigating")
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)
+    handler = _make_handler(monitor=monitor)
+    water_level_mock = AsyncMock(return_value=(True, 1.0))
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.check_water_level",
+        water_level_mock,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    water_level_mock.assert_awaited_once_with(task.zone_id, workflow_phase="irrigating")
+
+
 # ---------------------------------------------------------------------------
 # Attempt reset on reaction / accumulation on no-reaction
 # ---------------------------------------------------------------------------

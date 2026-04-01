@@ -502,7 +502,7 @@ actions:
       )
       VALUES (
         :zone_id,
-        'IRRIGATE_ONCE',
+        'start_cycle',
         jsonb_build_object(
           'source', CAST(:source AS text),
           'task_type', 'diagnostics',

@@ -125,6 +125,31 @@ actions:
   ec_pump_channel_id: ${ec_pump_channel_row.0.node_channel_id}
   ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
   ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
+- step: wait_zone_ae_runtime_idle_before_cleanup
+  type: db.wait
+  query: |
+    SELECT 1 AS ready
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM ae_tasks
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+    )
+      AND NOT EXISTS (
+      SELECT 1
+      FROM ae_zone_leases
+      WHERE zone_id = :zone_id
+    )
+      AND NOT EXISTS (
+      SELECT 1
+      FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running')
+    )
+  params:
+    zone_id: ${zone_id}
+  timeout: 120.0
+  expected_rows: 1
 - step: cleanup_zone_ae_commands
   type: database_execute
   query: "DELETE FROM ae_commands\nWHERE task_id IN (\n  SELECT id\n  FROM ae_tasks\n\
@@ -895,7 +920,7 @@ actions:
   type: database_execute
   query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\
     \  idempotency_key,\n  status,\n  not_before,\n  retry_count,\n  max_retries,\n\
-    \  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n  'IRRIGATE_ONCE',\n \
+    \  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n  'start_cycle',\n \
     \ jsonb_build_object(\n    'source', CAST(:source AS text),\n    'task_type',\
     \ 'diagnostics',\n    'workflow', 'cycle_start',\n    'topology', 'two_tank_drip_substrate_trays'\n\
     \  ),\n  :idempotency_key,\n  'pending',\n  NOW() - INTERVAL '1 second',\n  0,\n\
@@ -1483,6 +1508,31 @@ actions:
     WHERE zone_id = :zone_id\n  AND status IN ('PLANNED', 'RUNNING', 'PAUSED')\n"
   params:
     zone_id: ${zone_id}
+- step: wait_zone_ae_runtime_idle_before_second_cleanup
+  type: db.wait
+  query: |
+    SELECT 1 AS ready
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM ae_tasks
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+    )
+      AND NOT EXISTS (
+      SELECT 1
+      FROM ae_zone_leases
+      WHERE zone_id = :zone_id
+    )
+      AND NOT EXISTS (
+      SELECT 1
+      FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+        AND status IN ('pending', 'claimed', 'running')
+    )
+  params:
+    zone_id: ${zone_id}
+  timeout: 120.0
+  expected_rows: 1
 - step: cleanup_zone_ae_commands_second_run
   type: database_execute
   query: "\nDELETE FROM ae_commands\nWHERE task_id IN (\n  SELECT id\n  FROM ae_tasks\n\
@@ -1632,7 +1682,7 @@ actions:
   type: database_execute
   query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\
     \  idempotency_key,\n  status,\n  not_before,\n  retry_count,\n  max_retries,\n\
-    \  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n  'IRRIGATE_ONCE',\n \
+    \  created_at,\n  updated_at\n)\nVALUES (\n  :zone_id,\n  'start_cycle',\n \
     \ jsonb_build_object(\n    'source', CAST(:source AS text),\n    'task_type',\
     \ 'diagnostics',\n    'workflow', 'cycle_start',\n    'topology', 'two_tank_drip_substrate_trays'\n\
     \  ),\n  :idempotency_key,\n  'pending',\n  NOW() - INTERVAL '1 second',\n  0,\n\
@@ -2023,7 +2073,13 @@ cleanup:
 - step: cleanup_created_profile
   type: database_execute
   optional: true
-  query: 'SELECT 1;'
+  query: |
+    DELETE FROM automation_config_documents
+    WHERE namespace = 'zone.logic_profile'
+      AND scope_type = 'zone'
+      AND scope_id = :zone_id
+  params:
+    zone_id: ${zone_id}
 - step: cleanup_e2e_ph_ec_sensors
   type: database_execute
   optional: true

@@ -1,9 +1,9 @@
 # E105: AE3-Lite fail-closed on missing two_tank command plan
 # DoD:
 # - start-cycle принимает intent и создаёт canonical task
-# - planner/runtime проходит обязательные correction prechecks и стартовый `irr_state_probe`
-# - command stage fail-closed завершается на пустом `clean_fill_start`
-# - task уходит в failed с доменным `ae3_empty_command_plan`
+# - planner fail-closed срабатывает до любых runtime dispatch-команд
+# - planner fail-closed завершается на missing required channel в `clean_fill_start`
+# - task уходит в failed с доменным `ae3_task_execution_failed`
 # - на реальную ноду не публикуется ни одной actuator activation/runtime-команды
 
 name: E105_ae3_two_tank_fail_closed_missing_command_plan_realhw
@@ -12,8 +12,8 @@ description: |
   Сценарий готовит test-zone под AE3 two-tank topology, делает reset через protected
   command pipeline, подготавливает обязательные correction calibrations и затем подсовывает
   profile с пустым `diagnostics.execution.two_tank_commands.clean_fill_start`.
-  AE должен пройти обязательный startup `irr_state_probe`, после чего остановиться fail-closed
-  на command-stage contract check, не публикуя actuator activation/runtime-команды на ноду.
+  AE должен остановиться fail-closed на planner contract check для `clean_fill_start`
+  ещё до runtime dispatch, не публикуя actuator activation/runtime-команды на ноду.
   Fail-safe stop-команды (`set_relay=false`) после падения допустимы и не считаются регрессией.
 
 actions:
@@ -162,6 +162,32 @@ actions:
     ec_pump_channel_id: ${ec_pump_channel_row.0.node_channel_id}
     ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
     ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
+
+  - step: wait_zone_ae_runtime_idle_before_cleanup
+    type: db.wait
+    query: |
+      SELECT 1 AS ready
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM ae_zone_leases
+        WHERE zone_id = :zone_id
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM zone_automation_intents
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running')
+      )
+    params:
+      zone_id: ${zone_id}
+    timeout: 120.0
+    expected_rows: 1
 
   - step: cleanup_zone_ae_commands
     type: database_execute
@@ -761,7 +787,7 @@ actions:
       )
       VALUES (
         :zone_id,
-        'IRRIGATE_ONCE',
+        'start_cycle',
         jsonb_build_object(
           'source', CAST(:source AS text),
           'task_type', 'diagnostics',
@@ -911,17 +937,17 @@ assertions:
     type: custom_assert
     condition: "str(context.get('failed_task_row', [{}])[0].get('status', '')).lower() == 'failed'"
 
-  - name: runtime_task_failed_with_empty_plan_code
+  - name: runtime_task_failed_with_planner_config_code
     type: custom_assert
-    condition: "str(context.get('failed_task_row', [{}])[0].get('error_code', '')).lower() == 'ae3_empty_command_plan'"
+    condition: "str(context.get('failed_task_row', [{}])[0].get('error_code', '')).lower() == 'ae3_task_execution_failed'"
 
-  - name: runtime_task_error_mentions_missing_plan
+  - name: runtime_task_error_mentions_missing_required_channel
     type: custom_assert
-    condition: "'clean_fill_start' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower()"
+    condition: "'clean_fill_start' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() and 'missing required channels' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower() and 'valve_clean_fill' in str(context.get('failed_task_row', [{}])[0].get('error_message', '')).lower()"
 
-  - name: startup_state_probe_written_before_fail_closed
+  - name: startup_state_probe_not_written_before_fail_closed
     type: custom_assert
-    condition: "int(context.get('task_command_count_row', [{}])[0].get('state_probe_cnt', 0)) >= 1"
+    condition: "int(context.get('task_command_count_row', [{}])[0].get('state_probe_cnt', 0)) == 0"
 
   - name: no_runtime_activation_publish_path_for_failed_plan
     type: custom_assert
@@ -1087,7 +1113,12 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      SELECT 1;
+      DELETE FROM automation_config_documents
+      WHERE namespace = 'zone.logic_profile'
+        AND scope_type = 'zone'
+        AND scope_id = :zone_id
+    params:
+      zone_id: ${zone_id}
 
   - step: restore_previous_profile_state
     type: database_execute

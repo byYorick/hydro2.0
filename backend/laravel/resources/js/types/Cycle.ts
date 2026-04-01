@@ -21,3 +21,25 @@ export interface Cycle {
   updated_at?: string
 }
 
+export interface RecipeTargets {
+  min?: number
+  max?: number
+  temperature?: number
+  humidity?: number
+  hours_on?: number
+  hours_off?: number
+  interval_minutes?: number
+  duration_seconds?: number
+  [key: string]: unknown
+}
+
+export interface SubsystemCycle {
+  type: CycleType
+  required: boolean
+  strategy?: CycleStrategy | string
+  interval?: number | null
+  last_run?: string | null
+  next_run?: string | null
+  recipeTargets?: RecipeTargets | null
+}
+

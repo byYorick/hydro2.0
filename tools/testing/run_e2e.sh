@@ -29,6 +29,10 @@ log_warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
+compose_up() {
+    ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml up -d --build
+}
+
 # Проверка наличия Docker Compose (v1 или v2)
 if command -v ${DOCKER_COMPOSE[@]} &> /dev/null; then
     DOCKER_COMPOSE=(docker-compose)
@@ -294,7 +298,7 @@ main() {
     case "$ACTION" in
         "up"|"start")
             log_info "Запуск E2E инфраструктуры..."
-            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml up -d
+            compose_up
             log_info "Ожидание готовности сервисов..."
             sleep 10
             check_services_health
@@ -308,7 +312,7 @@ main() {
         "restart")
             log_info "Перезапуск E2E инфраструктуры..."
             ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down
-            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml up -d
+            compose_up
             sleep 10
             check_services_health
             ;;
@@ -480,7 +484,7 @@ main() {
         "smoke")
             log_info "Запуск smoke тестов (API + UI без 500 ошибок)"
             log_info "Запуск инфраструктуры..."
-            ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" up -d
+            compose_up
             if ! check_services_health; then
                 log_error "Не удалось запустить инфраструктуру"
                 exit 1
@@ -517,6 +521,7 @@ main() {
         "all")
             log_info "Полный цикл: запуск инфраструктуры + smoke тесты (YAML + UI)"
             log_info "Запуск инфраструктуры..."
+            compose_up
             if ! check_services_health; then
                 log_error "Не удалось запустить инфраструктуру"
                 exit 1

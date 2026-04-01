@@ -1,15 +1,14 @@
-# E111: Sensor calibration unsupported calibrate command on real test_node
+# E111: Sensor calibration point submission contract on real test_node
 # DoD:
 # - PH and EC calibration point submission publishes calibrate command through history-logger
-# - real test_node rejects unsupported calibrate command with terminal INVALID/ERROR
-# - Laravel ingest marks corresponding calibration sessions as failed
+# - real test_node accepts calibrate command with terminal DONE
+# - Laravel ingest advances corresponding calibration sessions to point_1_done
 
 name: E111_sensor_calibration_realhw_unsupported_command
 description: |
-  Реальный negative-path контракт для sensor calibration на `firmware/test_node`.
-  Поскольку test_node не реализует `calibrate`, backend должен пройти полный protected
-  command pipeline и завершить calibration session статусом `failed` после terminal
-  ACK (`INVALID` или `ERROR`) от реальной ноды.
+  Реальный контракт point-submission для sensor calibration на `firmware/test_node`.
+  Backend должен пройти полный protected command pipeline, получить terminal `DONE`
+  от реальной ноды и перевести calibration session в `point_1_done` для `ph` и `ec`.
 
 tags:
   - calibration
@@ -200,7 +199,7 @@ actions:
       SELECT cmd_id, cmd, channel, status, error_code, error_message
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status IN ('INVALID', 'ERROR')
+        AND status = 'DONE'
       LIMIT 1
     params:
       cmd_id: ${ph_command_id}
@@ -208,26 +207,25 @@ actions:
     timeout: 45
     save: ph_command_terminal_row
 
-  - step: wait_ph_calibration_failed
+  - step: wait_ph_calibration_point_1_done
     type: db.wait
     query: |
       SELECT id, status, point_1_command_id, point_1_result, point_1_error, completed_at
       FROM sensor_calibrations
       WHERE id = :calibration_id
-        AND status = 'failed'
-        AND point_1_result IN ('INVALID', 'ERROR')
-        AND completed_at IS NOT NULL
+        AND status = 'point_1_done'
+        AND point_1_result = 'DONE'
       LIMIT 1
     params:
       calibration_id: ${ph_calibration_id}
     expected_rows: 1
     timeout: 45
-    save: ph_failed_row
+    save: ph_point_1_done_row
 
-  - step: fetch_ph_history_after_failed_point
+  - step: fetch_ph_history_after_done_point
     type: api_get
     endpoint: /api/zones/${zone_id}/sensor-calibrations?sensor_type=ph&node_channel_id=${ph_node_channel_id}&limit=10
-    save: ph_history_after_failure
+    save: ph_history_after_done
 
   - step: create_ec_calibration
     type: api_post
@@ -256,7 +254,7 @@ actions:
       SELECT cmd_id, cmd, channel, status, error_code, error_message
       FROM commands
       WHERE cmd_id = :cmd_id
-        AND status IN ('INVALID', 'ERROR')
+        AND status = 'DONE'
       LIMIT 1
     params:
       cmd_id: ${ec_command_id}
@@ -264,26 +262,25 @@ actions:
     timeout: 45
     save: ec_command_terminal_row
 
-  - step: wait_ec_calibration_failed
+  - step: wait_ec_calibration_point_1_done
     type: db.wait
     query: |
       SELECT id, status, point_1_command_id, point_1_result, point_1_error, completed_at
       FROM sensor_calibrations
       WHERE id = :calibration_id
-        AND status = 'failed'
-        AND point_1_result IN ('INVALID', 'ERROR')
-        AND completed_at IS NOT NULL
+        AND status = 'point_1_done'
+        AND point_1_result = 'DONE'
       LIMIT 1
     params:
       calibration_id: ${ec_calibration_id}
     expected_rows: 1
     timeout: 45
-    save: ec_failed_row
+    save: ec_point_1_done_row
 
-  - step: fetch_ec_history_after_failed_point
+  - step: fetch_ec_history_after_done_point
     type: api_get
     endpoint: /api/zones/${zone_id}/sensor-calibrations?sensor_type=ec&node_channel_id=${ec_node_channel_id}&limit=10
-    save: ec_history_after_failure
+    save: ec_history_after_done
 
 assertions:
   - name: ph_create_returns_started
@@ -296,11 +293,11 @@ assertions:
 
   - name: ph_command_terminal_uses_calibrate_on_ph_sensor
     type: custom_assert
-    condition: str(context.get('ph_command_terminal_row', [{}])[0].get('cmd', '')) == 'calibrate' and str(context.get('ph_command_terminal_row', [{}])[0].get('channel', '')) == 'ph_sensor' and str(context.get('ph_command_terminal_row', [{}])[0].get('status', '')) in ['INVALID', 'ERROR']
+    condition: str(context.get('ph_command_terminal_row', [{}])[0].get('cmd', '')) == 'calibrate' and str(context.get('ph_command_terminal_row', [{}])[0].get('channel', '')) == 'ph_sensor' and str(context.get('ph_command_terminal_row', [{}])[0].get('status', '')) == 'DONE'
 
-  - name: ph_history_contains_failed_session
+  - name: ph_history_contains_point_1_done_session
     type: custom_assert
-    condition: any(int(item.get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str(item.get('status', '')) == 'failed' and str(item.get('point_1_result', '')) in ['INVALID', 'ERROR'] for item in (context.get('ph_history_after_failure', {}).get('data') or []))
+    condition: any(int(item.get('id', 0)) == int(context.get('ph_calibration_id', 0)) and str(item.get('status', '')) == 'point_1_done' and str(item.get('point_1_result', '')) == 'DONE' for item in (context.get('ph_history_after_done', {}).get('data') or []))
 
   - name: ec_create_returns_started
     type: custom_assert
@@ -312,11 +309,11 @@ assertions:
 
   - name: ec_command_terminal_uses_calibrate_on_ec_sensor
     type: custom_assert
-    condition: str(context.get('ec_command_terminal_row', [{}])[0].get('cmd', '')) == 'calibrate' and str(context.get('ec_command_terminal_row', [{}])[0].get('channel', '')) == 'ec_sensor' and str(context.get('ec_command_terminal_row', [{}])[0].get('status', '')) in ['INVALID', 'ERROR']
+    condition: str(context.get('ec_command_terminal_row', [{}])[0].get('cmd', '')) == 'calibrate' and str(context.get('ec_command_terminal_row', [{}])[0].get('channel', '')) == 'ec_sensor' and str(context.get('ec_command_terminal_row', [{}])[0].get('status', '')) == 'DONE'
 
-  - name: ec_history_contains_failed_session
+  - name: ec_history_contains_point_1_done_session
     type: custom_assert
-    condition: any(int(item.get('id', 0)) == int(context.get('ec_calibration_id', 0)) and str(item.get('status', '')) == 'failed' and str(item.get('point_1_result', '')) in ['INVALID', 'ERROR'] for item in (context.get('ec_history_after_failure', {}).get('data') or []))
+    condition: any(int(item.get('id', 0)) == int(context.get('ec_calibration_id', 0)) and str(item.get('status', '')) == 'point_1_done' and str(item.get('point_1_result', '')) == 'DONE' for item in (context.get('ec_history_after_done', {}).get('data') or []))
 
 cleanup:
   - step: cancel_non_terminal_sensor_calibrations

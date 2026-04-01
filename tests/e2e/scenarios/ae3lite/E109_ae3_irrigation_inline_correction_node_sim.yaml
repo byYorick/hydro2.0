@@ -8,8 +8,8 @@ description: |
   - засеивает pH/EC вне окна;
   - стартует полив и проверяет, что:
     - pump_main включен;
-    - создан zone_event IRRIGATION_CORRECTION_STARTED;
-    - опубликованы dosing команды на EC/PH насосы во время активного полива.
+    - runtime видит одновременно EC и pH отклонения и выбирает первый EC-dose;
+    - EC dosing происходит при активной основной помпе.
 
 actions:
   - step: set_test_context
@@ -37,6 +37,7 @@ actions:
     type: set
     zone_id: ${zone_ctx.0.zone_id}
     greenhouse_id: ${zone_ctx.0.greenhouse_id}
+    previous_automation_runtime: ${zone_ctx.0.automation_runtime}
 
   - step: set_runtime_api_url
     type: api_put
@@ -106,6 +107,32 @@ actions:
     irrig_node_id: ${irrig_node_row.0.node_id}
     ph_node_id: ${ph_node_row.0.node_id}
     ec_node_id: ${ec_node_row.0.node_id}
+
+  - step: wait_zone_ae_runtime_idle_before_cleanup
+    type: db.wait
+    query: |
+      SELECT 1 AS ready
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM ae_zone_leases
+        WHERE zone_id = :zone_id
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM zone_automation_intents
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running')
+      )
+    params:
+      zone_id: ${zone_id}
+    timeout: 120.0
+    expected_rows: 1
 
   - step: cleanup_zone_ae_commands
     type: database_execute
@@ -267,6 +294,223 @@ actions:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
 
+  - step: apply_task_logic_profile
+    type: api_put
+    endpoint: /api/automation-configs/zone/${zone_id}/zone.logic_profile
+    payload:
+      payload:
+        active_mode: working
+        profiles:
+          working:
+            mode: working
+            is_active: true
+            subsystems:
+              diagnostics:
+                execution:
+                  workflow: cycle_start
+                  topology: two_tank_drip_substrate_trays
+                  required_node_types:
+                    - irrig
+              irrigation:
+                decision:
+                  strategy: task
+                  config:
+                    lookback_sec: 300
+                    min_samples: 2
+                    stale_after_sec: 120
+                    hysteresis_pct: 2.0
+                    spread_alert_threshold_pct: 12.0
+                recovery:
+                  max_continue_attempts: 2
+                  timeout_sec: 90
+                  auto_replay_after_setup: false
+                  max_setup_replays: 0
+                safety:
+                  stop_on_solution_min: true
+
+  - step: create_recipe
+    type: database_execute
+    query: |
+      INSERT INTO recipes (name, metadata, created_at, updated_at)
+      VALUES (:recipe_name, '{}'::jsonb, NOW(), NOW())
+    params:
+      recipe_name: ${recipe_name}
+
+  - step: load_recipe
+    type: database_query
+    query: |
+      SELECT id
+      FROM recipes
+      WHERE name = :recipe_name
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      recipe_name: ${recipe_name}
+    expected_rows: 1
+    save: recipe_row
+
+  - step: set_recipe_id
+    type: set
+    recipe_id: ${recipe_row.0.id}
+
+  - step: create_recipe_revision
+    type: database_execute
+    query: |
+      INSERT INTO recipe_revisions (recipe_id, revision_number, status, created_at, updated_at)
+      VALUES (:recipe_id, 1, 'PUBLISHED', NOW(), NOW())
+    params:
+      recipe_id: ${recipe_id}
+
+  - step: load_recipe_revision
+    type: database_query
+    query: |
+      SELECT id
+      FROM recipe_revisions
+      WHERE recipe_id = :recipe_id
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      recipe_id: ${recipe_id}
+    expected_rows: 1
+    save: recipe_revision_row
+
+  - step: set_recipe_revision_id
+    type: set
+    recipe_revision_id: ${recipe_revision_row.0.id}
+
+  - step: create_grow_cycle
+    type: database_execute
+    query: |
+      INSERT INTO grow_cycles (greenhouse_id, zone_id, recipe_revision_id, status, created_at, updated_at)
+      VALUES (:greenhouse_id, :zone_id, :recipe_revision_id, 'RUNNING', NOW(), NOW())
+    params:
+      greenhouse_id: ${greenhouse_id}
+      zone_id: ${zone_id}
+      recipe_revision_id: ${recipe_revision_id}
+
+  - step: load_grow_cycle
+    type: database_query
+    query: |
+      SELECT id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+        AND recipe_revision_id = :recipe_revision_id
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      recipe_revision_id: ${recipe_revision_id}
+    expected_rows: 1
+    save: grow_cycle_row
+
+  - step: set_grow_cycle_id
+    type: set
+    grow_cycle_id: ${grow_cycle_row.0.id}
+
+  - step: create_phase
+    type: database_execute
+    query: |
+      INSERT INTO grow_cycle_phases (
+        grow_cycle_id,
+        phase_index,
+        name,
+        ph_target,
+        ph_min,
+        ph_max,
+        ec_target,
+        ec_min,
+        ec_max,
+        irrigation_mode,
+        irrigation_interval_sec,
+        irrigation_duration_sec,
+        extensions,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        :grow_cycle_id,
+        0,
+        'VEG',
+        5.80,
+        5.60,
+        6.00,
+        1.40,
+        1.20,
+        1.60,
+        'SUBSTRATE',
+        600,
+        10,
+        '{
+          "targets": {
+            "irrigation": {
+              "correction_during_irrigation": true
+            }
+          }
+        }'::jsonb,
+        NOW(),
+        NOW()
+      )
+    params:
+      grow_cycle_id: ${grow_cycle_id}
+
+  - step: load_phase
+    type: database_query
+    query: |
+      SELECT id
+      FROM grow_cycle_phases
+      WHERE grow_cycle_id = :grow_cycle_id
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      grow_cycle_id: ${grow_cycle_id}
+    expected_rows: 1
+    save: phase_row
+
+  - step: set_phase_id
+    type: set
+    phase_id: ${phase_row.0.id}
+
+  - step: activate_grow_cycle
+    type: database_execute
+    query: |
+      UPDATE grow_cycles
+      SET current_phase_id = :phase_id,
+          started_at = NOW(),
+          recipe_started_at = NOW(),
+          updated_at = NOW()
+      WHERE id = :grow_cycle_id
+    params:
+      phase_id: ${phase_id}
+      grow_cycle_id: ${grow_cycle_id}
+
+  - step: apply_cycle_start_snapshot
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.start_snapshot
+    payload:
+      payload:
+        cycle_id: ${grow_cycle_id}
+        zone_id: ${zone_id}
+
+  - step: apply_cycle_phase_overrides
+    type: api_put
+    endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
+    payload:
+      payload: {}
+
+  - step: wait_grow_cycle_bundle_ready
+    type: db.wait
+    query: |
+      SELECT scope_type, scope_id, status
+      FROM automation_effective_bundles
+      WHERE scope_type = 'grow_cycle'
+        AND scope_id = CAST(:grow_cycle_id AS bigint)
+        AND status = 'valid'
+      LIMIT 1
+    params:
+      grow_cycle_id: ${grow_cycle_id}
+    timeout: 30.0
+    expected_rows: 1
+
   # Подготовка к ready: корректные уровни + около-target, чтобы setup дошёл до ready быстро
   - step: set_ready_levels_and_targets
     type: ae_test_hook
@@ -415,60 +659,171 @@ actions:
     timeout: 30.0
     expected_rows: 1
 
-  - step: wait_inline_correction_started_event
-    type: wait_zone_event
-    zone_id: ${zone_id}
-    event_type: IRRIGATION_CORRECTION_STARTED
-    timeout: 60.0
-    filter:
+  - step: wait_correction_decision_for_dual_gap
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        type,
+        details->>'selected_action' AS selected_action,
+        details->>'decision_reason' AS decision_reason,
+        details->>'needs_ec' AS needs_ec,
+        details->>'needs_ph_down' AS needs_ph_down,
+        details->>'workflow_phase' AS workflow_phase,
+        created_at
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'CORRECTION_DECISION_MADE'
+        AND details->>'task_id' = CAST(:task_id AS text)
+        AND details->>'selected_action' = 'ec'
+        AND details->>'needs_ec' = 'true'
+        AND details->>'needs_ph_down' = 'true'
+        AND details->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
       task_id: ${task_id}
-    save: corr_started_event
+    timeout: 60.0
+    expected_rows: 1
+    save: correction_decision_row
 
   - step: wait_ec_dose_command_during_irrigation
     type: db.wait
     query: |
-      SELECT 1
-      FROM ae_commands
-      WHERE task_id = CAST(:task_id AS bigint)
-        AND publish_status = 'accepted'
-        AND payload->>'cmd' = 'dose'
-        AND channel = 'pump_a'
-      LIMIT 1
-    params:
-      task_id: ${task_id}
-    timeout: 60.0
-    expected_rows: 1
-
-  - step: wait_ph_dose_command_during_irrigation
-    type: db.wait
-    query: |
-      SELECT 1
-      FROM ae_commands
-      WHERE task_id = CAST(:task_id AS bigint)
-        AND publish_status = 'accepted'
-        AND payload->>'cmd' = 'dose'
-        AND channel IN ('pump_acid', 'pump_base')
-      LIMIT 1
-    params:
-      task_id: ${task_id}
-    timeout: 60.0
-    expected_rows: 1
-
-assertions:
-  - name: inline_correction_started_event_present
-    type: database_query
-    query: |
-      SELECT COUNT(*)::int AS cnt
+      SELECT id, created_at
       FROM zone_events
       WHERE zone_id = :zone_id
-        AND type = 'IRRIGATION_CORRECTION_STARTED'
+        AND type = 'EC_DOSING'
         AND details->>'task_id' = CAST(:task_id AS text)
+        AND details->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
+        AND details->>'channel' = 'pump_a'
+      ORDER BY created_at DESC
+      LIMIT 1
     params:
       zone_id: ${zone_id}
       task_id: ${task_id}
+    timeout: 60.0
+    expected_rows: 1
+    save: ec_dose_event_row
+
+  - step: wait_main_pump_snapshot_before_ec_dose
+    type: db.wait
+    query: |
+      SELECT snap.id, snap.created_at
+      FROM zone_events snap
+      WHERE snap.zone_id = :zone_id
+        AND snap.type = 'IRR_STATE_SNAPSHOT'
+        AND COALESCE(snap.details->'snapshot'->>'pump_main', 'false') = 'true'
+        AND snap.created_at <= CAST(:ec_dose_created_at AS timestamptz)
+      ORDER BY snap.created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      ec_dose_created_at: ${ec_dose_event_row.0.created_at}
+    timeout: 60.0
+    expected_rows: 1
+    save: pump_main_snapshot_row
+
+assertions:
+  - name: inline_correction_decision_keeps_dual_gap_and_ec_first
+    type: database_query
+    query: |
+      SELECT
+        details->>'selected_action' AS selected_action,
+        details->>'decision_reason' AS decision_reason,
+        COALESCE((details->>'needs_ec')::boolean, false) AS needs_ec,
+        COALESCE((details->>'needs_ph_down')::boolean, false) AS needs_ph_down,
+        details->>'workflow_phase' AS workflow_phase
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'CORRECTION_DECISION_MADE'
+        AND details->>'task_id' = CAST(:task_id AS text)
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+    expected_rows: 1
+    expected:
+      - field: selected_action
+        operator: equals
+        value: ec
+      - field: decision_reason
+        operator: equals
+        value: ec_first_in_window
+      - field: needs_ec
+        operator: equals
+        value: true
+      - field: needs_ph_down
+        operator: equals
+        value: true
+
+  - name: inline_correction_keeps_main_pump_active_at_ec_dose
+    type: database_query
+    query: |
+      SELECT COUNT(*)::int AS cnt
+      FROM zone_events snap
+      WHERE snap.zone_id = :zone_id
+        AND snap.type = 'IRR_STATE_SNAPSHOT'
+        AND COALESCE(snap.details->'snapshot'->>'pump_main', 'false') = 'true'
+        AND snap.created_at <= CAST(:ec_dose_created_at AS timestamptz)
+    params:
+      zone_id: ${zone_id}
+      ec_dose_created_at: ${ec_dose_event_row.0.created_at}
     expected_rows: 1
     expected:
       - field: cnt
         operator: greater_than_or_equal
         value: 1
 
+cleanup:
+  - step: cleanup_runtime_ae_commands
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM ae_commands
+      WHERE task_id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+
+  - step: cleanup_runtime_ae_task
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+    params:
+      task_id: ${task_id}
+
+  - step: cleanup_zone_intents
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_automation_intents
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_created_profile
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM automation_config_documents
+      WHERE namespace = 'zone.logic_profile'
+        AND scope_type = 'zone'
+        AND scope_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: restore_previous_zone_runtime
+    type: database_execute
+    optional: true
+    query: |
+      UPDATE zones
+      SET automation_runtime = :automation_runtime,
+          updated_at = NOW()
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+      automation_runtime: ${previous_automation_runtime}

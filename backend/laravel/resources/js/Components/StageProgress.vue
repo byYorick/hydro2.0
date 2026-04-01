@@ -194,17 +194,17 @@ const props = withDefaults(defineProps<Props>(), {
   startedAt: null,
 })
 
-const growCycle = computed(() => normalizeGrowCycle(props.growCycle))
+const normalizedCycle = computed(() => normalizeGrowCycle(props.growCycle))
 
-// Используем growCycle если доступен, иначе fallback на recipeInstance
+// Используем normalizedCycle если доступен, иначе fallback на recipeInstance
 const phaseTemplates = computed(() => {
-  if (growCycle.value?.recipeRevision?.phases?.length) {
-    return growCycle.value.recipeRevision.phases
+  if (normalizedCycle.value?.recipeRevision?.phases?.length) {
+    return normalizedCycle.value.recipeRevision.phases
   }
   return props.recipeInstance?.recipe?.phases || []
 })
 
-const phaseSnapshots = computed(() => growCycle.value?.phases || [])
+const phaseSnapshots = computed(() => normalizedCycle.value?.phases || [])
 
 const phasesForProgress = computed(() => {
   if (phaseTemplates.value.length > 0) {
@@ -219,15 +219,15 @@ const phasesForProgress = computed(() => {
 })
 
 const currentPhaseIndex = computed(() => {
-  if (growCycle.value?.currentPhase) {
-    return growCycle.value.currentPhase.phase_index ?? -1
+  if (normalizedCycle.value?.currentPhase) {
+    return normalizedCycle.value.currentPhase.phase_index ?? -1
   }
   return props.recipeInstance?.current_phase_index ?? -1
 })
 
 const currentPhaseName = computed(() => {
-  if (growCycle.value?.currentPhase) {
-    return growCycle.value.currentPhase.name || null
+  if (normalizedCycle.value?.currentPhase) {
+    return normalizedCycle.value.currentPhase.name || null
   }
   const phase = phaseTemplates.value.find(
     (p: any) => p.phase_index === currentPhaseIndex.value
@@ -250,15 +250,15 @@ const currentPhaseStageCode = computed(() => {
 const totalPhases = computed(() => phasesForProgress.value.length || 0)
 
 const recipeName = computed(() => {
-  if (growCycle.value?.recipeRevision?.recipe) {
-    return growCycle.value.recipeRevision.recipe.name
+  if (normalizedCycle.value?.recipeRevision?.recipe) {
+    return normalizedCycle.value.recipeRevision.recipe.name
   }
   return props.recipeInstance?.recipe?.name || null
 })
 
 const recipeId = computed(() => {
-  if (growCycle.value?.recipeRevision?.recipe) {
-    return growCycle.value.recipeRevision.recipe.id
+  if (normalizedCycle.value?.recipeRevision?.recipe) {
+    return normalizedCycle.value.recipeRevision.recipe.id
   }
   return props.recipeInstance?.recipe?.id || null
 })
@@ -319,7 +319,7 @@ const stageDates = computed<(string | null)[]>(() => {
 // Общий прогресс цикла
 const overallProgress = computed(() => {
   const phases = phasesForProgress.value
-  const startedAt = props.startedAt || growCycle.value?.started_at
+  const startedAt = props.startedAt || normalizedCycle.value?.started_at
   
   if (!phases || !startedAt) {
     return 0
@@ -405,9 +405,11 @@ const progressVariant = computed<'primary' | 'success' | 'warning' | 'danger'>((
 })
 
 function getPhaseBarClass(phaseIndex: number): string {
-  if (phaseIndex < currentPhaseIndex.value) {
+  // v-for="idx in totalPhases" даёт 1-based индексы, currentPhaseIndex — 0-based
+  const zeroIdx = phaseIndex - 1
+  if (zeroIdx < currentPhaseIndex.value) {
     return 'bg-[color:var(--accent-green)]'
-  } else if (phaseIndex === currentPhaseIndex.value) {
+  } else if (zeroIdx === currentPhaseIndex.value) {
     return 'bg-[color:var(--accent-cyan)]'
   } else {
     return 'bg-[color:var(--border-muted)]'

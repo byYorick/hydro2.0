@@ -131,6 +131,18 @@ class TestSuiteCatalog(unittest.TestCase):
             "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml",
         )
 
+    def test_full_suite_excludes_debug_scenarios(self) -> None:
+        scenarios = self.suite._get_suite_scenarios("full")
+        self.assertFalse(
+            any(
+                Path(item).as_posix().endswith(
+                    "scenarios/ae3lite/E106_debug_no_cleanup.yaml"
+                )
+                for item in scenarios
+            ),
+            msg=f"Debug scenario leaked into full suite: {scenarios}",
+        )
+
     def test_scheduler_tags_are_inferred_from_path(self) -> None:
         scenario_path = E2E_ROOT / "scenarios" / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"
         tags = self.suite._get_scenario_tags(str(scenario_path))

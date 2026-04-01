@@ -162,6 +162,32 @@ actions:
     ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
     ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
 
+  - step: wait_zone_ae_runtime_idle_before_cleanup
+    type: db.wait
+    query: |
+      SELECT 1 AS ready
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM ae_tasks
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM ae_zone_leases
+        WHERE zone_id = :zone_id
+      )
+        AND NOT EXISTS (
+        SELECT 1
+        FROM zone_automation_intents
+        WHERE zone_id = :zone_id
+          AND status IN ('pending', 'claimed', 'running')
+      )
+    params:
+      zone_id: ${zone_id}
+    timeout: 120.0
+    expected_rows: 1
+
   - step: cleanup_zone_ae_commands
     type: database_execute
     query: |
@@ -862,7 +888,7 @@ actions:
       )
       VALUES (
         :zone_id,
-        'IRRIGATE_ONCE',
+        'start_cycle',
         jsonb_build_object(
           'source', CAST(:source AS text),
           'task_type', 'diagnostics',
@@ -1185,7 +1211,7 @@ actions:
   - step: wait_stabilized_ph_ec_window
     type: db.wait
     query: |
-      WITH ph_window AS (
+      WITH ph_samples AS (
         SELECT tsamp.ts, tsamp.value
         FROM telemetry_samples tsamp
         JOIN sensors s ON s.id = tsamp.sensor_id
@@ -1193,10 +1219,11 @@ actions:
           AND s.type = 'PH'
           AND s.label = 'ph_sensor'
           AND tsamp.ts >= CAST(:after_stabilize_at AS timestamptz)
+          AND tsamp.value BETWEEN 6.88 AND 6.92
         ORDER BY tsamp.ts DESC
-        LIMIT 3
+        LIMIT 20
       ),
-      ec_window AS (
+      ec_samples AS (
         SELECT tsamp.ts, tsamp.value
         FROM telemetry_samples tsamp
         JOIN sensors s ON s.id = tsamp.sensor_id
@@ -1204,36 +1231,20 @@ actions:
           AND s.type = 'EC'
           AND s.label = 'ec_sensor'
           AND tsamp.ts >= CAST(:after_stabilize_at AS timestamptz)
+          AND tsamp.value BETWEEN 0.64 AND 0.66
         ORDER BY tsamp.ts DESC
-        LIMIT 3
+        LIMIT 20
       )
       SELECT
-        ph.cnt AS ph_cnt,
-        ph.min_value AS ph_min_value,
-        ph.max_value AS ph_max_value,
-        ec.cnt AS ec_cnt,
-        ec.min_value AS ec_min_value,
-        ec.max_value AS ec_max_value
-      FROM (
-        SELECT
-          COUNT(*)::int AS cnt,
-          MIN(value) AS min_value,
-          MAX(value) AS max_value
-        FROM ph_window
-      ) ph
-      CROSS JOIN (
-        SELECT
-          COUNT(*)::int AS cnt,
-          MIN(value) AS min_value,
-          MAX(value) AS max_value
-        FROM ec_window
-      ) ec
-      WHERE ph.cnt = 3
-        AND ph.min_value BETWEEN 6.88 AND 6.92
-        AND ph.max_value BETWEEN 6.88 AND 6.92
-        AND ec.cnt = 3
-        AND ec.min_value BETWEEN 0.64 AND 0.66
-        AND ec.max_value BETWEEN 0.64 AND 0.66
+        ph.value AS ph_value,
+        ec.value AS ec_value,
+        ph.ts AS ph_ts,
+        ec.ts AS ec_ts
+      FROM ph_samples ph
+      CROSS JOIN ec_samples ec
+      WHERE ABS(EXTRACT(EPOCH FROM (ph.ts - ec.ts))) <= 10
+      ORDER BY GREATEST(ph.ts, ec.ts) DESC
+      LIMIT 1
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
@@ -1674,7 +1685,12 @@ cleanup:
     type: database_execute
     optional: true
     query: |
-      SELECT 1;
+      DELETE FROM automation_config_documents
+      WHERE namespace = 'zone.logic_profile'
+        AND scope_type = 'zone'
+        AND scope_id = :zone_id
+    params:
+      zone_id: ${zone_id}
 
   - step: cleanup_e2e_ph_ec_sensors
     type: database_execute

@@ -252,6 +252,7 @@ class E2ERunner:
             SELECT
               n.uid,
               COALESCE(LOWER(n.type), '') AS node_type,
+              COALESCE(LOWER(n.status), '') AS node_status,
               COALESCE(n.hardware_id, '') AS hardware_id
             FROM nodes n
             JOIN zones z ON z.id = n.zone_id
@@ -263,7 +264,18 @@ class E2ERunner:
                 WHEN LOWER(COALESCE(n.type, '')) = 'ec' THEN 2
                 ELSE 9
               END,
-              n.uid
+              CASE
+                WHEN LOWER(COALESCE(n.status, '')) = 'online' THEN 0
+                ELSE 1
+              END,
+              CASE
+                WHEN n.uid = 'nd-test-irrig-1' THEN 0
+                WHEN n.uid = 'nd-test-ph-1' THEN 0
+                WHEN n.uid = 'nd-test-ec-1' THEN 0
+                WHEN n.uid = 'nd-ph-esp32una' THEN 1
+                ELSE 9
+              END,
+              n.id
             """,
             {"zone_uid": zone_uid},
         )
@@ -271,6 +283,14 @@ class E2ERunner:
             return
 
         def _pick(node_type: str) -> Optional[Dict[str, Any]]:
+            online_rows = [
+                row for row in rows
+                if str(row.get("node_status") or "").strip().lower() == "online"
+            ]
+
+            for row in online_rows:
+                if str(row.get("node_type") or "").strip().lower() == node_type:
+                    return row
             for row in rows:
                 if str(row.get("node_type") or "").strip().lower() == node_type:
                     return row

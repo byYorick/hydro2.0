@@ -363,7 +363,8 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=retry_delay_sec,
             )
 
-        wl_ok, wl_level = await check_water_level(task.zone_id)
+        workflow_phase = str(getattr(task.workflow, "workflow_phase", "") or "").strip().lower() or None
+        wl_ok, wl_level = await check_water_level(task.zone_id, workflow_phase=workflow_phase)
         if not wl_ok:
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
