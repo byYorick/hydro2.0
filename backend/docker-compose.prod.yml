@@ -158,6 +158,7 @@ services:
       - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN or PY_INGEST_TOKEN must be set}}
       - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH:-500}
+      - AUTOMATION_ENGINE_API_PORT=9405
       - REVERB_HOST=0.0.0.0
       - REVERB_PORT=6001
       - REVERB_SCHEME=http
@@ -268,7 +269,7 @@ services:
       - db
       - laravel
     ports:
-      - "9401:9401"
+      - "9405:9405"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/ready', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
       interval: 30s

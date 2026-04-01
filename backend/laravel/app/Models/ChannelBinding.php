@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class ChannelBinding extends Model
 {
@@ -63,6 +64,27 @@ class ChannelBinding extends Model
     public function scopeWithRole($query, string $role)
     {
         return $query->where('role', $role);
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(function (ChannelBinding $binding): void {
+            $role = strtolower((string) ($binding->role ?? ''));
+            if ($role !== 'soil_moisture_sensor') {
+                return;
+            }
+
+            DB::afterCommit(function () use ($binding): void {
+                try {
+                    app(\App\Services\SoilMoistureSensorBindingService::class)->provisionSensorForBinding($binding->fresh());
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::error('ChannelBinding: failed to provision soil moisture sensor', [
+                        'binding_id' => $binding->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            });
+        });
     }
 }
 

@@ -24,6 +24,9 @@ SETUP_READY_SCENARIO_PATH = (
 RETRY_LIMIT_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E102_ae3_recirculation_retry_limit_alert_reset_realhw.yaml"
 )
+READY_DURING_RECIRC_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E102_ae3_two_tank_realhw_ready_during_recirculation.yaml"
+)
 RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E103_ae3_recirculation_retry_limit_alert_resolve_ready_realhw.yaml"
 )
@@ -49,8 +52,10 @@ REALHW_CYCLE_START_SCENARIOS = [
     SCENARIO_PATH,
     READY_DURING_FILL_SCENARIO_PATH,
     SETUP_READY_SCENARIO_PATH,
+    READY_DURING_RECIRC_SCENARIO_PATH,
     RETRY_LIMIT_SCENARIO_PATH,
     RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+    FAIL_CLOSED_SCENARIO_PATH,
     HOT_RELOAD_SCENARIO_PATH,
     PIGGYBACK_SCENARIO_PATH,
 ]
@@ -58,8 +63,10 @@ AE3_RUNTIME_DRAIN_SCENARIOS = [
     SCENARIO_PATH,
     READY_DURING_FILL_SCENARIO_PATH,
     SETUP_READY_SCENARIO_PATH,
+    READY_DURING_RECIRC_SCENARIO_PATH,
     RETRY_LIMIT_SCENARIO_PATH,
     RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+    FAIL_CLOSED_SCENARIO_PATH,
     HOT_RELOAD_SCENARIO_PATH,
     PIGGYBACK_SCENARIO_PATH,
     START_IRRIGATION_SCENARIO_PATH,
@@ -69,12 +76,24 @@ LOGIC_PROFILE_SCENARIOS = [
     SCENARIO_PATH,
     READY_DURING_FILL_SCENARIO_PATH,
     SETUP_READY_SCENARIO_PATH,
+    READY_DURING_RECIRC_SCENARIO_PATH,
     RETRY_LIMIT_SCENARIO_PATH,
     RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
     HOT_RELOAD_SCENARIO_PATH,
     FAIL_CLOSED_SCENARIO_PATH,
     PIGGYBACK_SCENARIO_PATH,
     INLINE_CORRECTION_SCENARIO_PATH,
+]
+REALHW_SEEDED_TOPOLOGY_SCENARIOS = [
+    SCENARIO_PATH,
+    READY_DURING_FILL_SCENARIO_PATH,
+    SETUP_READY_SCENARIO_PATH,
+    READY_DURING_RECIRC_SCENARIO_PATH,
+    RETRY_LIMIT_SCENARIO_PATH,
+    RETRY_LIMIT_RESOLVE_READY_SCENARIO_PATH,
+    HOT_RELOAD_SCENARIO_PATH,
+    FAIL_CLOSED_SCENARIO_PATH,
+    PIGGYBACK_SCENARIO_PATH,
 ]
 
 
@@ -192,6 +211,23 @@ class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
         self.assertIn("DELETE FROM telemetry_samples", text)
         self.assertIn("DELETE FROM telemetry_last", text)
         self.assertIn("JOIN telemetry_last tl ON tl.sensor_id = s.id", text)
+
+    def test_realhw_scenarios_use_seeded_topology_and_live_config_publish(self) -> None:
+        for scenario_path in REALHW_SEEDED_TOPOLOGY_SCENARIOS:
+            with self.subTest(path=scenario_path.name):
+                text = scenario_path.read_text(encoding="utf-8")
+                self.assertNotIn("INSERT INTO nodes", text)
+                self.assertNotIn("INSERT INTO sensors", text)
+                self.assertNotIn("upsert_irrig_channels", text)
+                self.assertNotIn("delete_old_level_sensors", text)
+                self.assertNotIn("insert_level_sensors", text)
+                self.assertNotIn("cleanup_ph_ec_sensors", text)
+                self.assertNotIn("insert_ph_ec_sensors", text)
+                self.assertNotIn("upsert_sensor_mode_channels", text)
+                self.assertIn("/api/nodes/${irrig_node_id}/config/publish", text)
+                self.assertIn("/api/nodes/${ph_node_id}/config/publish", text)
+                self.assertIn("/api/nodes/${ec_node_id}/config/publish", text)
+                self.assertIn("wait_irrigation_level_sensors_registered", text)
 
 class TestAe3LiteRetryLimitRealHwScenarioContract(unittest.TestCase):
     @classmethod

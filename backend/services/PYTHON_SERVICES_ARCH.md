@@ -171,8 +171,7 @@ history-logger/
 **Назначение:** AE3 рантайм автоматизации зон и scheduler wake-up оркестрация.
 
 **Порты:** 
-- 9401 (Prometheus metrics)
-- 9405 (REST API для Laravel scheduler-dispatch)
+- 9405 (REST API для Laravel scheduler-dispatch и встроенный Prometheus `/metrics/`)
 
 **Функционал:**
 - Периодическая загрузка конфигурации из Laravel
@@ -411,7 +410,7 @@ backend/services/
 Все сервисы экспортируют Prometheus metrics:
 
 - `mqtt-bridge`: порт 9000 (`/metrics`)
-- `automation-engine`: порт 9401 (`/metrics`)
+- `automation-engine`: порт 9405 (`/metrics/`)
 
 **Метрики:**
 
@@ -514,7 +513,7 @@ pytest --cov=backend/services/history-logger backend/services/history-logger/
 **Порты:**
 - `mqtt-bridge`: 9000 (REST API + metrics)
 - `history-logger`: 9300 (REST API), 9301 (metrics)
-- `automation-engine`: 9401 (metrics), 9405 (REST API)
+- `automation-engine`: 9405 (REST API + metrics `/metrics/`)
 
 ---
 

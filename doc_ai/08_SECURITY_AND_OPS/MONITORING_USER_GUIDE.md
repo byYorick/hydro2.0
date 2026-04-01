@@ -248,7 +248,7 @@ curl http://localhost:9300/metrics
 
 #### Automation Engine
 ```bash
-curl http://localhost:9401/metrics
+curl http://localhost:9405/metrics/
 ```
 
 ---

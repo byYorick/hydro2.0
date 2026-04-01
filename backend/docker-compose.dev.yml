@@ -150,6 +150,7 @@ services:
       - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
       - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH:-500}
+      - AUTOMATION_ENGINE_API_PORT=9405
       # MQTT configuration
       # MQTT_EXTERNAL_HOST - host для внешних подключений (ESP32 ноды)
       # Если не указан, будет использоваться MQTT_HOST (имя сервиса для внутренних подключений)
@@ -315,8 +316,7 @@ services:
       laravel:
         condition: service_healthy
     ports:
-      - "9401:9401"  # Prometheus metrics
-      - "9405:9405"  # FastAPI REST API
+      - "9405:9405"  # FastAPI REST API + Prometheus metrics (/metrics/)
     volumes:
       - ./services/automation-engine:/app
       - ./services/common:/app/common

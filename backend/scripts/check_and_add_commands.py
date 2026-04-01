@@ -29,7 +29,7 @@ if cmd_lines:
 # Проверяем через /metrics endpoint
 print("\nПроверяю /metrics endpoint...")
 try:
-    r = httpx.get('http://localhost:9401/metrics', timeout=5)
+    r = httpx.get('http://localhost:9405/metrics/', timeout=5)
     if r.status_code == 200:
         endpoint_lines = [l for l in r.text.split('\n') if 'automation_commands_sent_total' in l and not l.startswith('#') and l.strip()]
         print(f"В /metrics endpoint: {len(endpoint_lines)} строк с данными")

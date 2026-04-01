@@ -9,7 +9,7 @@ use Illuminate\Validation\ValidationException;
 class AutomationRuntimeConfigService
 {
     private const KNOWN_CATCHUP_POLICIES = ['replay_limited', 'skip'];
-    private const DEFAULT_AUTOMATION_ENGINE_API_URL = 'http://automation-engine:9505';
+    private const DEFAULT_AUTOMATION_ENGINE_API_URL = 'http://automation-engine:9405';
 
     /**
      * @var array<string, array<string, mixed>>

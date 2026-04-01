@@ -190,7 +190,7 @@ services:
      - db
      - laravel
    ports:
-     - "9401:9401"
+     - "9405:9405"
 
 volumes:
  postgres_data:
@@ -254,7 +254,7 @@ CMD ["python", "main.py"]
 **Сервисы:**
 - `mqtt-bridge` - FastAPI сервис на порту `9000`
 - `history-logger` - подписка на MQTT, запись телеметрии (`9301` metrics)
-- `automation-engine` - контроллер зон, порт `9401` (Prometheus metrics)
+- `automation-engine` - контроллер зон, порт `9405` (REST API + встроенный `/metrics/`)
 - расписания и dispatch — в **Laravel** (метрики при необходимости: `GET /api/system/scheduler/metrics` на `8080`)
 
 ---

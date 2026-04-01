@@ -96,6 +96,33 @@ actions:
   ec_node_id: ${ec_node_row.0.node_id}
   resolved_ph_node_uid: ${ph_node_row.0.node_uid}
   resolved_ec_node_uid: ${ec_node_row.0.node_uid}
+- step: publish_irrig_node_config
+  type: api_post
+  endpoint: /api/nodes/${irrig_node_id}/config/publish
+  payload: {}
+- step: publish_ph_node_config
+  type: api_post
+  endpoint: /api/nodes/${ph_node_id}/config/publish
+  payload: {}
+- step: publish_ec_node_config
+  type: api_post
+  endpoint: /api/nodes/${ec_node_id}/config/publish
+  payload: {}
+- step: wait_irrigation_level_sensors_registered
+  type: db.wait
+  query: |
+    SELECT COUNT(*)::int AS sensor_count
+    FROM sensors
+    WHERE zone_id = :zone_id
+      AND node_id = CAST(:irrig_node_id AS bigint)
+      AND type IN ('WATER_LEVEL', 'WATER_LEVEL_SWITCH')
+      AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')
+    HAVING COUNT(*) = 4
+  params:
+    zone_id: ${zone_id}
+    irrig_node_id: ${irrig_node_id}
+  timeout: 60.0
+  expected_rows: 1
 - step: load_ec_pump_channel
   type: database_query
   query: "SELECT id AS node_channel_id\nFROM node_channels\nWHERE node_id = :node_id\n\
@@ -422,62 +449,6 @@ actions:
             safe_mode_on_no_effect: true
             block_on_active_no_effect_alert: true
   save: correction_config_update_response
-- step: upsert_irrig_channels
-  type: database_execute
-  query: "INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)\n\
-    SELECT :node_id, channel_name, channel_type, NOW(), NOW()\nFROM (VALUES\n  ('pump_main',\
-    \ 'ACTUATOR'),\n  ('valve_clean_fill', 'ACTUATOR'),\n  ('valve_clean_supply',\
-    \ 'ACTUATOR'),\n  ('valve_solution_fill', 'ACTUATOR'),\n  ('valve_solution_supply',\
-    \ 'ACTUATOR'),\n  ('valve_irrigation', 'ACTUATOR')\n) AS items(channel_name, channel_type)\n\
-    ON CONFLICT (node_id, channel) DO UPDATE\nSET type = EXCLUDED.type,\n    updated_at\
-    \ = NOW()\n"
-  params:
-    node_id: ${irrig_node_id}
-- step: delete_old_level_sensors
-  type: database_execute
-  query: "DELETE FROM sensors\nWHERE zone_id = :zone_id\n  AND type = 'WATER_LEVEL'\n\
-    \  AND label IN ('level_clean_max', 'level_clean_min', 'level_solution_max', 'level_solution_min')\n"
-  params:
-    zone_id: ${zone_id}
-- step: insert_level_sensors
-  type: database_execute
-  query: "INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label,\
-    \ is_active, created_at, updated_at)\nSELECT :greenhouse_id, :zone_id, :node_id,\
-    \ 'inside', 'WATER_LEVEL', label, TRUE, NOW(), NOW()\nFROM (VALUES\n  ('level_clean_max'),\n\
-    \  ('level_clean_min'),\n  ('level_solution_max'),\n  ('level_solution_min')\n\
-    ) AS items(label)\n"
-  params:
-    greenhouse_id: ${greenhouse_id}
-    zone_id: ${zone_id}
-    node_id: ${irrig_node_id}
-- step: cleanup_ph_ec_sensors
-  type: database_execute
-  query: "DELETE FROM sensors\nWHERE (node_id = CAST(:ph_node_id AS bigint) AND type\
-    \ = 'PH' AND label = 'ph_sensor')\n   OR (node_id = CAST(:ec_node_id AS bigint)\
-    \ AND type = 'EC' AND label = 'ec_sensor')\n"
-  params:
-    ph_node_id: ${ph_node_id}
-    ec_node_id: ${ec_node_id}
-- step: insert_ph_ec_sensors
-  type: database_execute
-  query: "INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label,\
-    \ is_active, created_at, updated_at)\nVALUES\n  (:greenhouse_id, :zone_id, :ph_node_id,\
-    \ 'inside', 'PH', 'ph_sensor', TRUE, NOW(), NOW()),\n  (:greenhouse_id, :zone_id,\
-    \ :ec_node_id, 'inside', 'EC', 'ec_sensor', TRUE, NOW(), NOW())\n"
-  params:
-    greenhouse_id: ${greenhouse_id}
-    zone_id: ${zone_id}
-    ph_node_id: ${ph_node_id}
-    ec_node_id: ${ec_node_id}
-- step: upsert_sensor_mode_channels
-  type: database_execute
-  query: "INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)\n\
-    SELECT node_id, 'system', 'SERVICE', NOW(), NOW()\nFROM (VALUES (CAST(:ph_node_id\
-    \ AS bigint)), (CAST(:ec_node_id AS bigint))) AS nodes(node_id)\nON CONFLICT (node_id,\
-    \ channel) DO UPDATE\nSET type = 'SERVICE',\n    updated_at = NOW()\n"
-  params:
-    ph_node_id: ${ph_node_id}
-    ec_node_id: ${ec_node_id}
 - step: cleanup_existing_correction_bindings
   type: database_execute
   query: "DELETE FROM channel_bindings\nWHERE role IN ('dose_ec_a', 'dose_ph_up',\

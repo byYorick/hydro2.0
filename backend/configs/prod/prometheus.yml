@@ -17,8 +17,8 @@ scrape_configs:
   # Automation Engine
   - job_name: 'automation-engine'
     static_configs:
-      - targets: ['automation-engine:9401']
-    metrics_path: '/metrics'
+      - targets: ['automation-engine:9405']
+    metrics_path: '/metrics/'
     scrape_interval: 30s
 
   # MQTT Bridge

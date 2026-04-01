@@ -50,7 +50,7 @@ docker-compose ps
 # Проверка здоровья сервисов
 curl http://localhost:8080/api/system/health
 curl http://localhost:9000/metrics  # MQTT bridge
-curl http://localhost:9401/metrics  # Automation engine
+curl http://localhost:9405/metrics/  # Automation engine
 curl http://localhost:8080/api/system/scheduler/metrics  # метрики Laravel scheduler-dispatch (Prometheus text)
 
 # Проверка Grafana (если доступна)

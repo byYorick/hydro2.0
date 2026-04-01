@@ -540,7 +540,7 @@ pytest automation-engine/ --cov=automation-engine --cov-report=html
 
 ## 📊 Метрики Prometheus
 
-Метрики доступны на порту 9401 (настраивается в `config/settings.py`):
+Метрики доступны через встроенный ASGI endpoint `http://localhost:9405/metrics/`:
 
 - `automation_loop_errors_total` - ошибки в главном цикле
 - `config_fetch_errors_total` - ошибки получения конфигурации

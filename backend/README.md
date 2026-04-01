@@ -29,7 +29,7 @@ Laravel выполняет роль API Gateway и предоставляет:
 ### Python-сервисы
 - `mqtt-bridge` — FastAPI мост REST→MQTT (порт 9000)
 - `history-logger` — подписка на MQTT, запись телеметрии в PostgreSQL; **единственная** публикация команд в MQTT (REST **9300**, метрики **9301**)
-- `automation-engine` (AE3) — автоматизация зон, коррекции; device-команды только через REST `history-logger` (REST **9405**, метрики **9401**)
+- `automation-engine` (AE3) — автоматизация зон, коррекции; device-команды только через REST `history-logger` (REST **9405**, метрики `http://...:9405/metrics/`)
 - расписания поливов/света из фаз рецепта — **Laravel** (`automation:dispatch-schedules`, см. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`)
 - `device-registry` — реестр устройств (статус: PLANNED)
 

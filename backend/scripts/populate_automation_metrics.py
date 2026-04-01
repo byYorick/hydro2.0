@@ -9,8 +9,8 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest
 import requests
 import sys
 
-# URL automation-engine metrics endpoint
-AUTOMATION_ENGINE_URL = "http://automation-engine:9401"
+# URL automation-engine API/metrics endpoint
+AUTOMATION_ENGINE_URL = "http://automation-engine:9405"
 
 def populate_metrics():
     """Заполнение метрик через HTTP запросы к automation-engine."""
@@ -20,7 +20,7 @@ def populate_metrics():
     
     # Проверка доступности сервиса
     try:
-        response = requests.get(f"{AUTOMATION_ENGINE_URL}/health", timeout=5)
+        response = requests.get(f"{AUTOMATION_ENGINE_URL}/health/live", timeout=5)
         if response.status_code != 200:
             print(f"Ошибка: сервис недоступен (status {response.status_code})")
             return False
@@ -39,7 +39,7 @@ def populate_metrics():
     print("\nТекущие метрики:")
     
     try:
-        response = requests.get(f"{AUTOMATION_ENGINE_URL}/metrics", timeout=10)
+        response = requests.get(f"{AUTOMATION_ENGINE_URL}/metrics/", timeout=10)
         if response.status_code == 200:
             metrics = response.text
             # Показываем ключевые метрики
@@ -69,4 +69,3 @@ def populate_metrics_direct():
 if __name__ == "__main__":
     success = populate_metrics()
     sys.exit(0 if success else 1)
-

@@ -150,7 +150,7 @@ Breaking-change: обратная совместимость со старыми
 ### Статус сервиса
 
 **Видимость статуса:**
-- **Prometheus endpoint**: `http://service:9401/metrics` — все метрики сервиса
+- **Prometheus endpoint**: `http://service:9405/metrics/` — все метрики сервиса
 - **Метрика**: `zone_checks_total` (Counter) — общее количество проверок зон
 - **Метрика**: `zone_check_seconds` (Histogram) — время проверки зон
 

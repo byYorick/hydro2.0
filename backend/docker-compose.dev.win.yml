@@ -117,6 +117,7 @@ services:
       - AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
       - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_RETENTION_DAYS:-60}
       - AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH=${AUTOMATION_LARAVEL_SCHEDULER_ACTIVE_TASK_CLEANUP_BATCH:-500}
+      - AUTOMATION_ENGINE_API_PORT=9405
       - NODE_SIM_MANAGER_URL=${NODE_SIM_MANAGER_URL:-http://node-sim-manager:9100}
       - NODE_SIM_MANAGER_TOKEN=${NODE_SIM_MANAGER_TOKEN:-}
       # PHP opcache settings for development (disable caching)
@@ -240,9 +241,9 @@ services:
       - db
       - laravel
     ports:
-      - "9401:9401"
+      - "9405:9405"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:9405/health/live', timeout=3); sys.exit(0 if r.getcode()==200 else 1)\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
