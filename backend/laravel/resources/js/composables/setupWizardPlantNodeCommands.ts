@@ -67,6 +67,7 @@ const DEVICE_ROLE_LABELS: Record<keyof SetupWizardDeviceAssignments, string> = {
   accumulation: 'накопительный узел',
   climate: 'климат',
   light: 'свет',
+  soil_moisture_sensor: 'датчик влажности субстрата',
   co2_sensor: 'датчик CO2',
   co2_actuator: 'CO2 actuator',
   root_vent_actuator: 'прикорневая вентиляция',

@@ -333,6 +333,147 @@
           v-else-if="automationTab === 2"
           class="space-y-3"
         >
+          <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-4 space-y-3">
+            <div class="text-sm font-semibold">
+              Режим полива
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label class="text-xs text-[color:var(--text-muted)]">
+                Как принимать решение о запуске полива
+                <select
+                  v-model="waterForm.irrigationDecisionStrategy"
+                  class="input-select mt-1 w-full"
+                >
+                  <option value="task">По времени (по расписанию)</option>
+                  <option value="smart_soil_v1">Умный полив (smart_soil_v1)</option>
+                </select>
+              </label>
+              <div class="text-xs text-[color:var(--text-dim)] md:pt-5">
+                <span v-if="waterForm.irrigationDecisionStrategy === 'task'">
+                  Полив выполняется по плану (интервал/длительность) без оценки влажности.
+                </span>
+                <span v-else>
+                  Перед запуском оценивается `SOIL_MOISTURE` и качество телеметрии (degraded режим при нехватке данных).
+                </span>
+              </div>
+            </div>
+
+            <div
+              v-if="waterForm.irrigationDecisionStrategy === 'smart_soil_v1'"
+              class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 space-y-3"
+            >
+              <div class="text-xs font-semibold text-[color:var(--text-primary)]">
+                Умный полив — конфигурация и привязка датчиков
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Lookback (сек)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionLookbackSeconds"
+                    type="number"
+                    min="60"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Min samples
+                  <input
+                    v-model.number="waterForm.irrigationDecisionMinSamples"
+                    type="number"
+                    min="1"
+                    max="100"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Stale after (сек)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionStaleAfterSeconds"
+                    type="number"
+                    min="30"
+                    max="86400"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Hysteresis (%)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionHysteresisPct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Spread alert (%)
+                  <input
+                    v-model.number="waterForm.irrigationDecisionSpreadAlertThresholdPct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    class="input-field mt-1 w-full"
+                  />
+                </label>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                <label class="text-xs text-[color:var(--text-muted)]">
+                  Датчик влажности субстрата (канал)
+                  <select
+                    v-model.number="soilMoistureSelectedNodeChannelId"
+                    class="input-select mt-1 w-full"
+                    data-testid="growth-wizard-soil-moisture-channel"
+                  >
+                    <option :value="null">
+                      — выберите канал `soil_moisture` —
+                    </option>
+                    <option
+                      v-for="item in soilMoistureChannelCandidates"
+                      :key="item.id"
+                      :value="item.id"
+                    >
+                      {{ item.label }}
+                    </option>
+                  </select>
+                </label>
+
+                <Button
+                  size="sm"
+                  :disabled="soilMoistureBindingLoading || !soilMoistureSelectedNodeChannelId"
+                  @click="saveSoilMoistureBinding"
+                >
+                  {{ soilMoistureBindingLoading ? 'Сохранение...' : 'Сохранить привязку' }}
+                </Button>
+              </div>
+
+              <div
+                v-if="soilMoistureBoundNodeChannelId"
+                class="text-xs text-[color:var(--text-muted)]"
+              >
+                Текущая привязка (node_channel_id): <span class="font-mono">{{ soilMoistureBoundNodeChannelId }}</span>
+                <span v-if="soilMoistureBindingSavedAt"> · сохранено: {{ formatDateTime(soilMoistureBindingSavedAt) }}</span>
+              </div>
+              <div
+                v-else
+                class="text-xs text-[color:var(--badge-warning-text)]"
+              >
+                Привязка датчика влажности ещё не задана — умный полив не сможет корректно оценивать `SOIL_MOISTURE`.
+              </div>
+
+              <div
+                v-if="soilMoistureBindingError"
+                class="text-xs text-red-500"
+              >
+                {{ soilMoistureBindingError }}
+              </div>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label class="text-xs text-[color:var(--text-muted)]">
               Тип системы
@@ -978,6 +1119,12 @@ const {
   zoneDevicesError,
   zoneReadiness,
   zoneReadinessLoading,
+  soilMoistureChannelCandidates,
+  soilMoistureBindingLoading,
+  soilMoistureBindingError,
+  soilMoistureBindingSavedAt,
+  soilMoistureSelectedNodeChannelId,
+  soilMoistureBoundNodeChannelId,
   formatDateTime,
   formatDate,
   onZoneSelected,
@@ -985,6 +1132,7 @@ const {
   onRecipeCreated,
   fetchZoneDevices,
   loadZoneReadiness,
+  saveSoilMoistureBinding,
   nextStep,
   prevStep,
   onSubmit,

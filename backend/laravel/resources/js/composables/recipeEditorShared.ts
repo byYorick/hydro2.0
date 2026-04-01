@@ -9,6 +9,7 @@ export interface RecipePhaseDayNightState {
   ec: { day: number | null; night: number | null }
   temperature: { day: number | null; night: number | null }
   humidity: { day: number | null; night: number | null }
+  soil_moisture: { day: number | null; night: number | null }
   lighting: { day_start_time: string; day_hours: number | null }
 }
 
@@ -128,6 +129,7 @@ function emptyDayNight(baseLightHours: number | null, baseStartTime: string): Re
     ec: { day: 1.4, night: 1.4 },
     temperature: { day: 23, night: 21 },
     humidity: { day: 60, night: 65 },
+    soil_moisture: { day: 45, night: 45 },
     lighting: {
       day_start_time: baseStartTime,
       day_hours: baseLightHours,
@@ -177,6 +179,7 @@ export function createDefaultRecipePhase(phaseIndex: number): RecipePhaseFormSta
       ec: { day: 1.6, night: 1.4 },
       temperature: { day: 23, night: 20 },
       humidity: { day: 62, night: 66 },
+      soil_moisture: { day: 45, night: 45 },
       lighting: {
         day_start_time: '06:00:00',
         day_hours: 16,
@@ -190,6 +193,7 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
   const extensions = asRecord(phase?.extensions)
   const dayNight = asRecord(extensions?.day_night)
   const lighting = asRecord(dayNight?.lighting)
+  const soilMoisture = asRecord(dayNight?.soil_moisture)
   const systemType = resolveRecipePhaseSystemType(phase ?? null, base.irrigation_system_type)
   const phMin = toNullableNumber(phase?.ph_min ?? phase?.targets?.ph?.min, base.ph_min) ?? base.ph_min
   const phMax = toNullableNumber(phase?.ph_max ?? phase?.targets?.ph?.max, base.ph_max) ?? base.ph_max
@@ -261,6 +265,8 @@ export function hydrateRecipePhaseForm(phase: Partial<RecipePhase> | null | unde
   result.day_night.temperature.night = toNullableNumber(asRecord(dayNight?.temperature)?.night, result.temp_air_target)
   result.day_night.humidity.day = toNullableNumber(asRecord(dayNight?.humidity)?.day, result.humidity_target)
   result.day_night.humidity.night = toNullableNumber(asRecord(dayNight?.humidity)?.night, result.humidity_target)
+  result.day_night.soil_moisture.day = toNullableNumber(soilMoisture?.day, result.day_night.soil_moisture.day)
+  result.day_night.soil_moisture.night = toNullableNumber(soilMoisture?.night, result.day_night.soil_moisture.night)
   result.day_night.lighting.day_start_time = normalizeTimeString(lighting?.day_start_time ?? result.lighting_start_time, result.lighting_start_time)
   result.day_night.lighting.day_hours = toNullableNumber(lighting?.day_hours, result.lighting_photoperiod_hours)
 
@@ -386,6 +392,10 @@ export function buildRecipePhasePayload(phase: RecipePhaseFormState): Record<str
         humidity: {
           day: toNullableNumber(phase.day_night.humidity.day),
           night: toNullableNumber(phase.day_night.humidity.night),
+        },
+        soil_moisture: {
+          day: toNullableNumber(phase.day_night.soil_moisture.day),
+          night: toNullableNumber(phase.day_night.soil_moisture.night),
         },
         lighting: {
           day_start_time: normalizeTimeString(phase.day_night.lighting.day_start_time, phase.lighting_start_time),

@@ -128,6 +128,32 @@ interface ZoneHealthPayload {
   readiness?: ZoneLaunchReadiness | null;
 }
 
+interface InfrastructureInstanceDto {
+  id: number;
+  owner_type?: string;
+  owner_id?: number;
+  asset_type?: string;
+  label?: string;
+  required?: boolean;
+  channel_bindings?: Array<{
+    id?: number;
+    role?: string;
+    direction?: string;
+    node_channel_id?: number;
+    node_channel?: {
+      id?: number;
+      channel?: string;
+      type?: string;
+      node_id?: number;
+      node?: {
+        id?: number;
+        uid?: string;
+        name?: string;
+      };
+    } | null;
+  }>;
+}
+
 interface PaginatedCollectionPayload<T> {
   items: T[];
   currentPage: number | null;
@@ -339,6 +365,14 @@ export function useGrowthCycleWizard({
   const zoneReadiness = ref<ZoneLaunchReadiness | null>(null);
   const zoneReadinessLoading = ref(false);
 
+  const soilMoistureBindingLoading = ref(false);
+  const soilMoistureBindingError = ref<string | null>(null);
+  const soilMoistureBindingSavedAt = ref<string | null>(null);
+  const soilMoistureSelectedNodeChannelId = ref<number | null>(null);
+  const soilMoistureBoundNodeChannelId = ref<number | null>(null);
+  const soilMoistureBoundBindingId = ref<number | null>(null);
+  const soilMoistureInfrastructureInstanceId = ref<number | null>(null);
+
   const availableRevisions = computed(() => {
     if (!selectedRecipe.value || !selectedRevisionId.value) {
       return [];
@@ -364,6 +398,30 @@ export function useGrowthCycleWizard({
     return selectedRevisionData.value.id === selectedRevisionId.value
       ? selectedRevisionData.value
       : null;
+  });
+
+  const soilMoistureChannelCandidates = computed(() => {
+    const candidates = new Map<number, { label: string }>();
+    for (const device of zoneDevices.value) {
+      const deviceName = String(device.name ?? device.uid ?? `#${device.id ?? ''}`).trim();
+      const channels = Array.isArray(device.channels) ? device.channels : [];
+      for (const channel of channels) {
+        const id = typeof channel.id === "number" ? channel.id : null;
+        if (!id) continue;
+        const channelName = String(channel.channel ?? "").toLowerCase();
+        const direction = String(channel.type ?? "").toLowerCase();
+        if (direction && direction !== "sensor") continue;
+        if (!["soil_moisture", "soil_moisture_pct", "substrate_moisture"].includes(channelName)) {
+          continue;
+        }
+        const label = `${deviceName} · ${channelName}`;
+        candidates.set(id, { label });
+      }
+    }
+
+    return Array.from(candidates.entries())
+      .map(([id, meta]) => ({ id, label: meta.label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   });
 
   const selectedLaunchPhase = computed<WizardRecipePhase | null>(() => {
@@ -1133,6 +1191,131 @@ export function useGrowthCycleWizard({
     }
   }
 
+  async function loadSoilMoistureBinding(zoneId: number): Promise<void> {
+    soilMoistureBindingLoading.value = true;
+    soilMoistureBindingError.value = null;
+    soilMoistureBoundNodeChannelId.value = null;
+    soilMoistureBoundBindingId.value = null;
+    soilMoistureInfrastructureInstanceId.value = null;
+
+    try {
+      const response = await api.get(`/api/zones/${zoneId}/infrastructure-instances`);
+      const instances = (response.data?.data || []) as InfrastructureInstanceDto[] | null;
+      if (!Array.isArray(instances)) {
+        return;
+      }
+
+      for (const instance of instances) {
+        const bindings = Array.isArray(instance.channel_bindings) ? instance.channel_bindings : [];
+        const match = bindings.find((binding) => String(binding.role ?? "").toLowerCase() === "soil_moisture_sensor");
+        if (!match) continue;
+
+        soilMoistureInfrastructureInstanceId.value = typeof instance.id === "number" ? instance.id : null;
+        soilMoistureBoundNodeChannelId.value = typeof match.node_channel_id === "number" ? match.node_channel_id : null;
+        soilMoistureBoundBindingId.value = typeof match.id === "number" ? match.id : null;
+        return;
+      }
+    } catch (err) {
+      logger.error("[GrowthCycleWizard] Failed to load soil moisture binding", err);
+      soilMoistureBindingError.value = "Не удалось загрузить привязку датчика влажности";
+    } finally {
+      soilMoistureBindingLoading.value = false;
+    }
+  }
+
+  async function ensureSoilMoistureInfrastructureInstance(zoneId: number): Promise<number | null> {
+    if (typeof soilMoistureInfrastructureInstanceId.value === "number") {
+      return soilMoistureInfrastructureInstanceId.value;
+    }
+
+    const existing = await api.get(`/api/zones/${zoneId}/infrastructure-instances`).catch(() => null);
+    const instances = (existing?.data?.data || []) as InfrastructureInstanceDto[] | null;
+    if (Array.isArray(instances)) {
+      const match = instances.find((item) => String(item.label ?? "").includes("soil moisture"));
+      if (match?.id) {
+        soilMoistureInfrastructureInstanceId.value = match.id;
+        return match.id;
+      }
+    }
+
+    try {
+      const response = await api.post("/api/infrastructure-instances", {
+        owner_type: "zone",
+        owner_id: zoneId,
+        asset_type: "OTHER",
+        label: "Датчик влажности субстрата (soil moisture)",
+        required: false,
+      });
+      const createdId = typeof response.data?.data?.id === "number" ? response.data.data.id : null;
+      soilMoistureInfrastructureInstanceId.value = createdId;
+      return createdId;
+    } catch (err) {
+      logger.error("[GrowthCycleWizard] Failed to create soil moisture infrastructure instance", err);
+      return null;
+    }
+  }
+
+  async function saveSoilMoistureBinding(): Promise<boolean> {
+    const zoneId = form.value.zoneId;
+    if (!zoneId) {
+      showToast("Сначала выберите зону.", "warning");
+      return false;
+    }
+
+    if (waterForm.value.irrigationDecisionStrategy !== "smart_soil_v1") {
+      showToast("Привязка датчика влажности нужна только для режима «Умный полив».", "warning");
+      return false;
+    }
+
+    const nodeChannelId = soilMoistureSelectedNodeChannelId.value;
+    if (!nodeChannelId) {
+      showToast("Выберите канал датчика влажности.", "warning");
+      return false;
+    }
+
+    soilMoistureBindingLoading.value = true;
+    soilMoistureBindingError.value = null;
+    soilMoistureBindingSavedAt.value = null;
+    try {
+      await loadSoilMoistureBinding(zoneId);
+      const instanceId = await ensureSoilMoistureInfrastructureInstance(zoneId);
+      if (!instanceId) {
+        soilMoistureBindingError.value = "Не удалось создать инфраструктуру для датчика влажности";
+        return false;
+      }
+
+      if (
+        soilMoistureBoundBindingId.value
+        && soilMoistureBoundNodeChannelId.value
+        && soilMoistureBoundNodeChannelId.value !== nodeChannelId
+      ) {
+        try {
+          await api.delete(`/api/channel-bindings/${soilMoistureBoundBindingId.value}`);
+        } catch (err) {
+          logger.warn("[GrowthCycleWizard] Failed to delete previous soil moisture binding", err);
+        }
+      }
+
+      await api.post("/api/channel-bindings", {
+        infrastructure_instance_id: instanceId,
+        node_channel_id: nodeChannelId,
+        direction: "sensor",
+        role: "soil_moisture_sensor",
+      });
+
+      soilMoistureBindingSavedAt.value = new Date().toISOString();
+      await loadSoilMoistureBinding(zoneId);
+      showToast("Привязка датчика влажности сохранена.", "success");
+      return true;
+    } catch (err) {
+      logger.error("[GrowthCycleWizard] Failed to save soil moisture binding", err);
+      soilMoistureBindingError.value = "Не удалось сохранить привязку датчика влажности";
+      return false;
+    } finally {
+      soilMoistureBindingLoading.value = false;
+    }
+  }
+
   async function loadZoneReadiness(zoneId: number): Promise<void> {
     zoneReadinessLoading.value = true;
 
@@ -1341,6 +1524,7 @@ export function useGrowthCycleWizard({
         }
         if (props.show) {
           void fetchZoneDevices(true);
+          void loadSoilMoistureBinding(newZoneId);
           void loadZoneReadiness(newZoneId);
         }
       }
@@ -1364,6 +1548,7 @@ export function useGrowthCycleWizard({
       }
 
       void fetchZoneDevices(true);
+      void loadSoilMoistureBinding(zoneId);
       void loadZoneReadiness(zoneId);
     },
   );
@@ -1457,6 +1642,7 @@ export function useGrowthCycleWizard({
 
       void fetchZoneDevices(true);
       void loadAutomationProfile(zoneId);
+      void loadSoilMoistureBinding(zoneId);
       void loadZoneReadiness(zoneId);
     },
   );
@@ -1521,6 +1707,12 @@ export function useGrowthCycleWizard({
     zoneReadiness,
     zoneReadinessLoading,
     zoneReadinessErrors,
+    soilMoistureChannelCandidates,
+    soilMoistureBindingLoading,
+    soilMoistureBindingError,
+    soilMoistureBindingSavedAt,
+    soilMoistureSelectedNodeChannelId,
+    soilMoistureBoundNodeChannelId,
     formatDateTime,
     formatDate,
     onZoneSelected,
@@ -1528,6 +1720,8 @@ export function useGrowthCycleWizard({
     onRecipeCreated,
     fetchZoneDevices,
     loadZoneReadiness,
+    loadSoilMoistureBinding,
+    saveSoilMoistureBinding,
     nextStep,
     prevStep,
     onSubmit,

@@ -20,7 +20,7 @@ vi.mock('@/Components/Button.vue', () => ({
 vi.mock('@/Components/ZoneAutomationProfileSections.vue', () => ({
   default: {
     name: 'ZoneAutomationProfileSections',
-    props: ['waterForm', 'lightingForm', 'zoneClimateForm', 'isSystemTypeLocked'],
+    props: ['waterForm', 'lightingForm', 'zoneClimateForm', 'isSystemTypeLocked', 'currentRecipePhase'],
     template: `
       <div>
         <div>Полив и накопление</div>

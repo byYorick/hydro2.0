@@ -115,6 +115,12 @@ class DatabaseSeeder extends Seeder
             return;
         }
 
+        if ($seedProfile === 'smart-irrigation') {
+            $this->runSmartIrrigationSeeders($isTesting);
+
+            return;
+        }
+
         // Выполняем группы сидеров
         $totalSeeders = 0;
         $executedSeeders = 0;
@@ -195,6 +201,27 @@ class DatabaseSeeder extends Seeder
         $this->call(AccessControlBootstrapSeeder::class);
 
         $this->command->info('✅ Облегченный набор сидеров выполнен');
+    }
+
+    private function runSmartIrrigationSeeders(bool $isTesting): void
+    {
+        $this->command->info('⚡ Запуск smart-irrigation набора сидеров');
+
+        $seeders = [
+            SmartIrrigationE2ESeeder::class,
+        ];
+
+        foreach ($seeders as $seederClass) {
+            $this->call($seederClass);
+        }
+
+        if ($isTesting) {
+            // Профиль already provisions the canonical E2E topology for smart irrigation.
+        }
+
+        $this->call(AccessControlBootstrapSeeder::class);
+
+        $this->command->info('✅ Smart-irrigation набор сидеров выполнен');
     }
 
     /**

@@ -2,10 +2,10 @@
 name: E108_ae3_soil_moisture_telemetry_contract
 auth_role: admin
 description: |
-  Проверяет контракт новой soil-moisture node-sim ноды:
+  Проверяет канонический soil-moisture ingest для smart irrigation:
   - сервисный `set_fault_mode` доходит до `history-logger`;
-  - node-sim auto-bind-ится на тестовую зону;
-  - `SOIL_MOISTURE` попадает в `telemetry_last` для зоны.
+  - привязанная soil-нода публикует telemetry через MQTT/history-logger;
+  - `history-logger` сам создает `SOIL_MOISTURE` sensor и пишет `telemetry_last`.
 
 actions:
   - step: set_context
@@ -30,41 +30,6 @@ actions:
     zone_id: ${zone_row.0.zone_id}
     greenhouse_id: ${zone_row.0.greenhouse_id}
 
-  - step: upsert_soil_node
-    type: database_execute
-    query: |
-      INSERT INTO nodes (
-        zone_id,
-        uid,
-        name,
-        type,
-        fw_version,
-        status,
-        last_seen_at,
-        created_at,
-        updated_at
-      )
-      VALUES (
-        :zone_id,
-        :node_uid,
-        'AE3 E2E Soil Moisture',
-        'water_sensor',
-        'node-sim-test-node-profile',
-        'online',
-        NOW(),
-        NOW(),
-        NOW()
-      )
-      ON CONFLICT (uid) DO UPDATE
-      SET zone_id = EXCLUDED.zone_id,
-          type = EXCLUDED.type,
-          status = 'online',
-          last_seen_at = NOW(),
-          updated_at = NOW()
-    params:
-      zone_id: ${zone_id}
-      node_uid: ${test_soil_node_uid}
-
   - step: load_soil_node
     type: database_query
     query: |
@@ -83,38 +48,37 @@ actions:
     type: set
     soil_node_id: ${soil_node_row.0.node_id}
 
-  - step: upsert_soil_channels
+  - step: cleanup_old_soil_telemetry_samples
     type: database_execute
     query: |
-      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
-      VALUES
-        (CAST(:node_id AS bigint), 'soil_moisture', 'SENSOR', NOW(), NOW()),
-        (CAST(:node_id AS bigint), 'system', 'SERVICE', NOW(), NOW())
-      ON CONFLICT (node_id, channel) DO UPDATE
-      SET type = EXCLUDED.type,
-          updated_at = NOW()
+      DELETE FROM telemetry_samples
+      WHERE sensor_id IN (
+        SELECT id
+        FROM sensors
+        WHERE zone_id = :zone_id
+          AND node_id = CAST(:node_id AS bigint)
+          AND type = 'SOIL_MOISTURE'
+          AND label = 'soil_moisture'
+      )
     params:
       node_id: ${soil_node_id}
-
-  - step: cleanup_old_soil_sensor
-    type: database_execute
-    query: |
-      DELETE FROM sensors
-      WHERE zone_id = :zone_id
-        AND type = 'SOIL_MOISTURE'
-        AND label = 'soil_moisture'
-    params:
       zone_id: ${zone_id}
 
-  - step: insert_soil_sensor
+  - step: cleanup_old_soil_telemetry_last
     type: database_execute
     query: |
-      INSERT INTO sensors (greenhouse_id, zone_id, node_id, scope, type, label, is_active, created_at, updated_at)
-      VALUES (:greenhouse_id, :zone_id, :node_id, 'inside', 'SOIL_MOISTURE', 'soil_moisture', TRUE, NOW(), NOW())
+      DELETE FROM telemetry_last
+      WHERE sensor_id IN (
+        SELECT id
+        FROM sensors
+        WHERE zone_id = :zone_id
+          AND node_id = CAST(:node_id AS bigint)
+          AND type = 'SOIL_MOISTURE'
+          AND label = 'soil_moisture'
+      )
     params:
-      greenhouse_id: ${greenhouse_id}
-      zone_id: ${zone_id}
       node_id: ${soil_node_id}
+      zone_id: ${zone_id}
 
   - step: set_soil_level
     type: ae_test_hook

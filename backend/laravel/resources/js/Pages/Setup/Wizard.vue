@@ -969,7 +969,7 @@ async function saveZoneAutomationBlock(section: ZoneAutomationSectionSaveKey): P
   savingAutomationSection.value = section
   try {
     if (section === 'water_contour') {
-      const bindingsSaved = await saveZoneDeviceBindingsSection(['irrigation', 'ph_correction', 'ec_correction'])
+      const bindingsSaved = await saveZoneDeviceBindingsSection(['irrigation', 'ph_correction', 'ec_correction', 'soil_moisture_sensor'])
       if (!bindingsSaved) {
         return
       }

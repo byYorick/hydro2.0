@@ -109,6 +109,62 @@ async def test_smart_soil_returns_degraded_run_when_samples_missing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_smart_soil_accepts_day_night_curve_target() -> None:
+    controller = IrrigationDecisionController()
+    runtime = {
+        "irrigation_decision": {
+            "strategy": "smart_soil_v1",
+            "config": {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600, "hysteresis_pct": 0.0},
+        },
+        "soil_moisture_target": {"day": 40.0, "night": 55.0, "day_start_time": "06:00:00", "day_hours": 16},
+    }
+    monitor = _RuntimeMonitor((
+        {"sensor_label": "soil-1", "samples": ({"value": 30.0}, {"value": 31.0})},
+        {"sensor_label": "soil-2", "samples": ({"value": 32.0}, {"value": 33.0})},
+    ))
+
+    result = await controller.evaluate(
+        zone_id=7,
+        runtime_monitor=monitor,
+        runtime=runtime,
+        mode="normal",
+        requested_duration_sec=120,
+        now=NOW,
+    )
+
+    assert result.outcome == "run"
+    assert result.reason_code in ("smart_soil_below_min", "smart_soil_degraded_below_min")
+
+
+@pytest.mark.asyncio
+async def test_smart_soil_works_with_single_sensor_and_low_sample_count() -> None:
+    controller = IrrigationDecisionController()
+    runtime = {
+        "irrigation_decision": {
+            "strategy": "smart_soil_v1",
+            "config": {"lookback_sec": 1800, "min_samples": 3, "stale_after_sec": 600, "hysteresis_pct": 0.0},
+        },
+        "soil_moisture_target": {"min": 40.0, "max": 50.0, "target": 45.0},
+    }
+    monitor = _RuntimeMonitor((
+        {"sensor_label": "soil-1", "samples": ({"value": 30.0},)},
+    ))
+
+    result = await controller.evaluate(
+        zone_id=7,
+        runtime_monitor=monitor,
+        runtime=runtime,
+        mode="normal",
+        requested_duration_sec=120,
+        now=NOW,
+    )
+
+    assert result.outcome == "run"
+    assert result.degraded is True
+    assert result.reason_code == "smart_soil_degraded_below_min"
+
+
+@pytest.mark.asyncio
 async def test_force_mode_bypasses_decision_strategy() -> None:
     controller = IrrigationDecisionController()
 

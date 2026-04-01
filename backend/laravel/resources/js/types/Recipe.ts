@@ -42,6 +42,7 @@ export interface RecipePhaseDayNightExtensions {
   ec?: { day?: number | null; night?: number | null } | null
   temperature?: { day?: number | null; night?: number | null } | null
   humidity?: { day?: number | null; night?: number | null } | null
+  soil_moisture?: { day?: number | null; night?: number | null } | null
   lighting?: { day_start_time?: string | null; day_hours?: number | null } | null
 }
 

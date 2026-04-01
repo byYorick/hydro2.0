@@ -277,6 +277,39 @@
               />
             </div>
           </div>
+
+          <div class="mt-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 space-y-3">
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
+              Умный полив (soil moisture target)
+            </div>
+            <p class="text-xs text-[color:var(--text-dim)]">
+              Эти цели используются decision-controller’ом `smart_soil_v1` в автоматизации зоны. Единицы: % (0..100).
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Soil moisture day (%)</label>
+                <input
+                  v-model.number="phase.day_night.soil_moisture.day"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  class="input-field"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Soil moisture night (%)</label>
+                <input
+                  v-model.number="phase.day_night.soil_moisture.night"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  class="input-field"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         <details class="rounded-lg border border-[color:var(--border-muted)] p-3">

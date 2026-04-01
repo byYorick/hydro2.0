@@ -396,6 +396,10 @@ static void ui_make_short_name(const char *node_uid, char *out, size_t out_size)
         snprintf(out, out_size, "EC");
         return;
     }
+    if (strstr(node_uid, "-soil-") != NULL) {
+        snprintf(out, out_size, "SML");
+        return;
+    }
     if (strstr(node_uid, "-tank-") != NULL) {
         snprintf(out, out_size, "TNK");
         return;

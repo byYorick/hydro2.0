@@ -449,10 +449,10 @@
             NFT пока не включен в основной сценарий мастера. Для агронома доступны drip и substrate_trays.
           </div>
 
-          <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
-            <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
-              Расширенные настройки
-            </summary>
+            <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
+              <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
+                Расширенные настройки
+              </summary>
 
             <div class="mt-3 space-y-4">
               <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -721,12 +721,38 @@
 
             <details class="mt-3 rounded-xl border border-[color:var(--border-muted)] p-3">
               <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
-                Decision, recovery и safety
+                Умный полив (decision, recovery, safety)
               </summary>
 
               <p class="mt-2 text-xs text-[color:var(--text-dim)]">
-                Настройки decision-controller для штатного полива, replay после setup и fail-closed guard по уровню раствора.
+                Настройки decision-controller штатного полива (`smart_soil_v1`) и recovery/safety политики. Цели влажности (day/night) задаются в фазе рецепта.
               </p>
+
+              <div
+                v-if="waterForm.irrigationDecisionStrategy === 'smart_soil_v1' && waterForm.systemType === 'drip'"
+                class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs"
+                data-test="smart-irrigation-recipe-targets"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="font-semibold text-[color:var(--text-primary)]">
+                    Цели из текущей фазы (soil moisture, %)
+                  </div>
+                  <div class="text-[color:var(--text-dim)]">
+                    read-only
+                  </div>
+                </div>
+                <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[color:var(--text-muted)]">
+                  <div>
+                    День: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeSoilMoistureTargets.day ?? '—' }}</span>
+                  </div>
+                  <div>
+                    Ночь: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeSoilMoistureTargets.night ?? '—' }}</span>
+                  </div>
+                </div>
+                <p class="mt-2 text-[color:var(--text-dim)]">
+                  Если значения пустые — открой рецепт и заполни «Умный полив (soil moisture target)» в фазе.
+                </p>
+              </div>
 
               <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <label
@@ -744,6 +770,55 @@
                     <option value="smart_soil_v1">smart_soil_v1</option>
                   </select>
                 </label>
+
+                <label
+                  v-if="showNodeBindings && assignments"
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('device.soil_moisture_sensor')"
+                >
+                  Soil moisture sensor
+                  <select
+                    v-model.number="assignments.soil_moisture_sensor"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                    data-test="soil-moisture-sensor-select"
+                  >
+                    <option :value="null">
+                      Выберите датчик влажности
+                    </option>
+                    <option
+                      v-for="node in soilMoistureCandidates"
+                      :key="node.id"
+                      :value="node.id"
+                    >
+                      {{ nodeLabel(node) }}
+                    </option>
+                  </select>
+                  <div
+                    v-if="showBindButtons || showRefreshButtons"
+                    class="mt-2 flex items-center gap-2"
+                  >
+                    <Button
+                      v-if="showBindButtons"
+                      size="sm"
+                      variant="secondary"
+                      :disabled="!canBindSelected(assignments?.soil_moisture_sensor)"
+                      @click="emit('bind-devices', ['soil_moisture_sensor'])"
+                    >
+                      {{ bindingInProgress ? 'Привязка...' : 'Привязать' }}
+                    </Button>
+                    <Button
+                      v-if="showRefreshButtons"
+                      size="sm"
+                      variant="ghost"
+                      :disabled="!canRefreshNodes"
+                      @click="emit('refresh-nodes')"
+                    >
+                      {{ refreshingNodes ? 'Обновление...' : 'Обновить' }}
+                    </Button>
+                  </div>
+                </label>
+
                 <label
                   class="text-xs text-[color:var(--text-muted)]"
                   :title="fieldHelp('water.irrigationDecisionLookbackSeconds')"
@@ -1192,11 +1267,37 @@
             <div class="mt-3 space-y-4">
               <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
                 <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
-                  Decision, recovery и safety
+                  Умный полив (decision, recovery, safety)
                 </h5>
                 <p class="mt-1 text-xs text-[color:var(--text-dim)]">
-                  Strategy обычного полива, требования к телеметрии и replay-policy после setup/recovery.
+                  Strategy обычного полива, требования к телеметрии и replay-policy после setup/recovery. Цели влажности (day/night) задаются в фазе рецепта.
                 </p>
+
+                <div
+                  v-if="waterForm.irrigationDecisionStrategy === 'smart_soil_v1' && waterForm.systemType === 'drip'"
+                  class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs"
+                  data-test="smart-irrigation-recipe-targets"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div class="font-semibold text-[color:var(--text-primary)]">
+                      Цели из текущей фазы (soil moisture, %)
+                    </div>
+                    <div class="text-[color:var(--text-dim)]">
+                      read-only
+                    </div>
+                  </div>
+                  <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-[color:var(--text-muted)]">
+                    <div>
+                      День: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeSoilMoistureTargets.day ?? '—' }}</span>
+                    </div>
+                    <div>
+                      Ночь: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeSoilMoistureTargets.night ?? '—' }}</span>
+                    </div>
+                  </div>
+                  <p class="mt-2 text-[color:var(--text-dim)]">
+                    Если значения пустые — открой рецепт и заполни «Умный полив (soil moisture target)» в фазе.
+                  </p>
+                </div>
                 <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <label
                     class="text-xs text-[color:var(--text-muted)]"
@@ -2141,6 +2242,7 @@
                   v-model.number="assignments.co2_sensor"
                   class="input-select mt-1 w-full"
                   :disabled="!canConfigure"
+                  data-test="co2-sensor-select"
                 >
                   <option :value="null">
                     Выберите датчик CO2
@@ -2315,6 +2417,7 @@ export interface ZoneAutomationSectionAssignments {
   ph_correction: number | null
   ec_correction: number | null
   light: number | null
+  soil_moisture_sensor: number | null
   co2_sensor: number | null
   co2_actuator: number | null
   root_vent_actuator: number | null
@@ -2325,6 +2428,7 @@ export type ZoneAutomationBindRole =
   | 'ph_correction'
   | 'ec_correction'
   | 'light'
+  | 'soil_moisture_sensor'
   | 'co2_sensor'
   | 'co2_actuator'
   | 'root_vent_actuator'
@@ -2345,6 +2449,7 @@ const props = withDefaults(defineProps<{
   waterForm: WaterFormState
   lightingForm: LightingFormState
   zoneClimateForm: ZoneClimateFormState
+  currentRecipePhase?: unknown | null
   layoutMode?: 'legacy' | 'zone_blocks'
   canConfigure?: boolean
   isSystemTypeLocked?: boolean
@@ -2377,6 +2482,7 @@ const props = withDefaults(defineProps<{
   layoutMode: 'legacy',
   canConfigure: true,
   isSystemTypeLocked: false,
+  currentRecipePhase: null,
   showNodeBindings: false,
   showBindButtons: false,
   showRefreshButtons: false,
@@ -2404,6 +2510,34 @@ const props = withDefaults(defineProps<{
   showZoneClimateConfigFields: true,
 })
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  return value as Record<string, unknown>
+}
+
+function toNullablePercent(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const recipeSoilMoistureTargets = computed(() => {
+  const phase = asRecord(props.currentRecipePhase)
+  const extensions = asRecord(phase?.extensions)
+  const dayNight = asRecord(extensions?.day_night)
+  const soil = asRecord(dayNight?.soil_moisture)
+
+  return {
+    day: toNullablePercent(soil?.day),
+    night: toNullablePercent(soil?.night),
+  }
+})
+
 const emit = defineEmits<{
   (e: 'bind-devices', roles: ZoneAutomationBindRole[]): void
   (e: 'refresh-nodes'): void
@@ -2417,6 +2551,7 @@ const FIELD_HELP: Record<string, string> = {
   'device.ph_correction': 'Нода pH-коррекции. Должна содержать pH sensor и/или dosing channels для кислотной или щелочной коррекции.',
   'device.ec_correction': 'Нода EC-коррекции. Используется для EC sensor и дозирующих насосов удобрений в контуре correction runtime.',
   'device.light': 'Нода освещения, к которой будут привязаны команды досветки и ручного lighting override.',
+  'device.soil_moisture_sensor': 'Источник телеметрии влажности субстрата (SOIL_MOISTURE). Нужен для стратегии smart_soil_v1 (умный полив).',
   'device.co2_sensor': 'Источник телеметрии CO2 для zonal climate. От этой ноды зависит измерение ppm внутри зоны.',
   'device.co2_actuator': 'Исполнитель подачи CO2. Нужен, если zonal climate должен управлять инжекцией CO2 в этой зоне.',
   'device.root_vent_actuator': 'Исполнитель прикорневой вентиляции или локального airflow для zonal climate зоны.',
@@ -2578,6 +2713,16 @@ const lightCandidates = computed(() => {
     return type === 'light'
       || matchesAnyBindingRole(node, ['light'])
       || matchesAnyChannel(node, ['light', 'light_main', 'white_light', 'uv_light'])
+  })
+})
+
+const soilMoistureCandidates = computed(() => {
+  return props.availableNodes.filter((node) => {
+    const type = String(node.type ?? '').toLowerCase()
+    return type === 'soil'
+      || type === 'substrate'
+      || matchesAnyBindingRole(node, ['soil_moisture_sensor'])
+      || matchesAnyChannel(node, ['soil_moisture', 'soil_moisture_pct', 'substrate_moisture'])
   })
 })
 

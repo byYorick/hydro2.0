@@ -16,6 +16,7 @@
         :zone-climate-form="draftZoneClimateForm"
         :can-configure="true"
         :is-system-type-locked="isSystemTypeLocked"
+        :current-recipe-phase="props.currentRecipePhase ?? null"
       />
 
       <p
@@ -72,6 +73,7 @@ interface Props {
   zoneClimateForm?: ZoneClimateFormState
   isApplying: boolean
   isSystemTypeLocked: boolean
+  currentRecipePhase?: unknown | null
 }
 
 interface ZoneAutomationWizardApplyPayload {

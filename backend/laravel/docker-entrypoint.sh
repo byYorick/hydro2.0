@@ -170,25 +170,30 @@ if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testi
 
         # В testing окружении всегда прогоняем E2E сидер (он идемпотентный)
         if [ "${APP_ENV:-production}" = "testing" ] || [ "${APP_ENV:-production}" = "e2e" ]; then
-            echo "Ensuring AutomationEngineE2ESeeder data..."
+            E2E_SEEDER_CLASS="AutomationEngineE2ESeeder"
+            if [ "${HYDRO_SEED_PROFILE:-lite}" = "smart-irrigation" ]; then
+                E2E_SEEDER_CLASS="SmartIrrigationE2ESeeder"
+            fi
+
+            echo "Ensuring ${E2E_SEEDER_CLASS} data..."
             seeder_attempts=10
             seeder_try=0
             seeder_ok=0
 
             while [ $seeder_try -lt $seeder_attempts ]; do
-                if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --class=AutomationEngineE2ESeeder --force >/dev/null 2>&1; then
-                    echo "✓ AutomationEngineE2ESeeder completed"
+                if BROADCAST_CONNECTION=log BROADCAST_DRIVER=log BROADCAST_CONNECTION_TESTING=log BROADCAST_DRIVER_TESTING=log php artisan db:seed --class="${E2E_SEEDER_CLASS}" --force >/dev/null 2>&1; then
+                    echo "✓ ${E2E_SEEDER_CLASS} completed"
                     seeder_ok=1
                     break
                 fi
 
                 seeder_try=$((seeder_try + 1))
-                echo "  AutomationEngineE2ESeeder attempt $seeder_try/$seeder_attempts failed, retrying..."
+                echo "  ${E2E_SEEDER_CLASS} attempt $seeder_try/$seeder_attempts failed, retrying..."
                 sleep 2
             done
 
             if [ "$seeder_ok" != "1" ]; then
-                echo "⚠ Failed to provision AutomationEngineE2ESeeder data after $seeder_attempts attempts"
+                echo "⚠ Failed to provision ${E2E_SEEDER_CLASS} data after $seeder_attempts attempts"
                 echo "  Checking if required E2E data already exists..."
 
                 E2E_DATA_OK=$(php artisan tinker --execute="

@@ -61,6 +61,7 @@ type ZoneAssignmentRole =
   | 'ph_correction'
   | 'ec_correction'
   | 'light'
+  | 'soil_moisture_sensor'
   | 'co2_sensor'
   | 'co2_actuator'
   | 'root_vent_actuator'
@@ -70,6 +71,7 @@ const ZONE_ASSIGNMENT_ROLES: ZoneAssignmentRole[] = [
   'ph_correction',
   'ec_correction',
   'light',
+  'soil_moisture_sensor',
   'co2_sensor',
   'co2_actuator',
   'root_vent_actuator',
@@ -80,6 +82,7 @@ const ZONE_ASSIGNMENT_BINDING_ROLES: Record<ZoneAssignmentRole, string[]> = {
   ph_correction: ['ph_acid_pump', 'ph_base_pump'],
   ec_correction: ['ec_npk_pump', 'ec_calcium_pump', 'ec_magnesium_pump', 'ec_micro_pump'],
   light: ['light'],
+  soil_moisture_sensor: ['soil_moisture_sensor'],
   co2_sensor: ['co2_sensor'],
   co2_actuator: ['co2_actuator'],
   root_vent_actuator: ['root_vent_actuator'],
@@ -154,6 +157,10 @@ function matchesZoneAssignmentRole(node: Node, role: ZoneAssignmentRole): boolea
 
   if (role === 'light') {
     return type === 'light' || hasAnyChannel(node, ['light', 'light_main', 'white_light', 'uv_light', 'light_level', 'lux_main'])
+  }
+
+  if (role === 'soil_moisture_sensor') {
+    return type === 'soil' || type === 'substrate' || hasAnyChannel(node, ['soil_moisture', 'soil_moisture_pct', 'substrate_moisture'])
   }
 
   if (role === 'co2_sensor') {
@@ -360,6 +367,7 @@ export function useSetupWizard() {
     accumulation: null,
     climate: null,
     light: null,
+    soil_moisture_sensor: null,
     co2_sensor: null,
     co2_actuator: null,
     root_vent_actuator: null,
@@ -387,6 +395,7 @@ export function useSetupWizard() {
       deviceAssignments.ph_correction,
       deviceAssignments.ec_correction,
       automationLightingForm.enabled ? deviceAssignments.light : null,
+      deviceAssignments.soil_moisture_sensor,
       zoneClimateForm.enabled ? deviceAssignments.co2_sensor : null,
       zoneClimateForm.enabled ? deviceAssignments.co2_actuator : null,
       zoneClimateForm.enabled ? deviceAssignments.root_vent_actuator : null,
@@ -688,6 +697,7 @@ export function useSetupWizard() {
     deviceAssignments.accumulation = null
     deviceAssignments.climate = null
     deviceAssignments.light = null
+    deviceAssignments.soil_moisture_sensor = null
     deviceAssignments.co2_sensor = null
     deviceAssignments.co2_actuator = null
     deviceAssignments.root_vent_actuator = null
@@ -856,6 +866,7 @@ export function useSetupWizard() {
       accumulation: null,
       climate: null,
       light: null,
+      soil_moisture_sensor: null,
       co2_sensor: null,
       co2_actuator: null,
       root_vent_actuator: null,

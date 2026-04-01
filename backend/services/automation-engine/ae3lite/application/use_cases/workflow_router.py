@@ -435,6 +435,15 @@ class WorkflowRouter:
             if requested_duration_sec is None:
                 return None
             return now + timedelta(seconds=int(requested_duration_sec))
+        if stage_def.name == "irrigation_recovery_check":
+            recovery_runtime = runtime.get("irrigation_recovery")
+            recovery_runtime = recovery_runtime if isinstance(recovery_runtime, Mapping) else {}
+            timeout_sec = recovery_runtime.get("timeout_sec")
+            if timeout_sec is None and stage_def.timeout_key is not None:
+                timeout_sec = runtime.get(stage_def.timeout_key)
+            if timeout_sec is None:
+                return None
+            return now + timedelta(seconds=int(timeout_sec))
         if stage_def.timeout_key is None:
             return None
         timeout_sec = runtime.get(stage_def.timeout_key)

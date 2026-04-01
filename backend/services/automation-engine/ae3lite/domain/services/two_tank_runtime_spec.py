@@ -815,7 +815,34 @@ def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:
     target = irrigation.get("targets") if isinstance(irrigation.get("targets"), Mapping) else {}
     soil = target.get("soil_moisture") if isinstance(target.get("soil_moisture"), Mapping) else {}
     if not soil:
-        return None
+        # Fallback: day/night curve stored in recipe phase extensions.
+        day_night = extensions.get("day_night") if isinstance(extensions.get("day_night"), Mapping) else {}
+        day_night = day_night if isinstance(day_night, Mapping) else {}
+        soil_curve = day_night.get("soil_moisture") if isinstance(day_night.get("soil_moisture"), Mapping) else {}
+        soil_curve = soil_curve if isinstance(soil_curve, Mapping) else {}
+        day = _optional_float(soil_curve.get("day"))
+        night = _optional_float(soil_curve.get("night"))
+        if day is None and night is None:
+            return None
+
+        lighting = day_night.get("lighting") if isinstance(day_night.get("lighting"), Mapping) else {}
+        lighting = lighting if isinstance(lighting, Mapping) else {}
+        lighting_targets = targets.get("lighting") if isinstance(targets, Mapping) else {}
+        lighting_targets = lighting_targets if isinstance(lighting_targets, Mapping) else {}
+        day_start_time = str(
+            (lighting.get("day_start_time") or lighting_targets.get("start_time") or "")
+        ).strip() or None
+        day_hours = _optional_float(lighting.get("day_hours"))
+        if day_hours is None:
+            day_hours = _optional_float(lighting_targets.get("photoperiod_hours"))
+
+        return {
+            "unit": "pct",
+            "day": day,
+            "night": night,
+            "day_start_time": day_start_time,
+            "day_hours": day_hours,
+        }
     return {
         "unit": str(soil.get("unit") or "pct").strip().lower() or "pct",
         "min": _optional_float(soil.get("min")),

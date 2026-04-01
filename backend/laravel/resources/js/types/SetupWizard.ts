@@ -100,6 +100,7 @@ export interface SetupWizardDeviceAssignments {
   accumulation: number | null
   climate: number | null
   light: number | null
+  soil_moisture_sensor: number | null
   co2_sensor: number | null
   co2_actuator: number | null
   root_vent_actuator: number | null

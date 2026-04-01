@@ -124,6 +124,9 @@ class TestSuite:
             str(base_path / "ae3lite" / "E97_ae3_restart_waiting_command_recovered.yaml"),
             str(base_path / "ae3lite" / "E98_ae3_runtime_switch_denied_busy_zone.yaml"),
             str(base_path / "ae3lite" / "E99_ae3_double_execution_guard.yaml"),
+            str(base_path / "ae3lite" / "E107_ae3_start_irrigation_api_smoke.yaml"),
+            str(base_path / "ae3lite" / "E108_ae3_irrigation_inline_correction_contract.yaml"),
+            str(base_path / "ae3lite" / "E109_ae3_irrigation_inline_correction_node_sim.yaml"),
         ]
         ae3lite_realhw = [
             str(base_path / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"),

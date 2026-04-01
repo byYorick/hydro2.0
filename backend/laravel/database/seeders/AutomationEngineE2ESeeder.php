@@ -194,6 +194,18 @@ class AutomationEngineE2ESeeder extends Seeder
                     ['channel' => 'white_light', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'white_light'],
                 ],
             ],
+            [
+                'uid' => 'nd-test-soil-1',
+                'hardware_id' => 'nd-test-soil-1',
+                'type' => 'water_sensor',
+                'name' => 'E2E Test Soil Moisture Node',
+                'sensors' => [
+                    ['channel' => 'soil_moisture', 'metric' => 'SOIL_MOISTURE', 'unit' => '%'],
+                ],
+                'actuators' => [
+                    ['channel' => 'system', 'metric' => 'RELAY', 'unit' => 'bool', 'zone_role' => 'system'],
+                ],
+            ],
         ];
 
         $seedNodeChannels = static function (DeviceNode $seededNode, array $sensorChannels, array $actuatorChannels): void {

@@ -572,6 +572,30 @@ async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallb
     assert wf.stage_deadline_at == NOW + timedelta(seconds=120)
 
 
+async def test_router_transition_to_irrigation_recovery_check_uses_recovery_timeout():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_recovery_check")
+    task = _make_task(
+        stage="irrigation_recovery_start",
+        phase="irrig_recirc",
+        task_type="irrigation_start",
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={
+            "prepare_recirculation_timeout_sec": 600,
+            "irrigation_recovery": {"timeout_sec": 90},
+        }),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_recovery_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=90)
+
+
 async def test_router_transition_upsert_payload_uses_next_stage_not_old():
     """Regression: upsert_phase payload must contain the NEW stage, not the old one.
 

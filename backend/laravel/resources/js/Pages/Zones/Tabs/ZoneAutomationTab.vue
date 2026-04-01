@@ -215,6 +215,7 @@
         :zone-climate-form="zoneClimateForm"
         :is-applying="isApplyingProfile"
         :is-system-type-locked="isSystemTypeLocked"
+        :current-recipe-phase="props.currentRecipePhase ?? null"
         @close="showEditWizard = false"
         @apply="onApplyFromWizard"
       />

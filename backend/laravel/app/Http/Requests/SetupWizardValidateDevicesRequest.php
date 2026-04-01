@@ -22,6 +22,7 @@ class SetupWizardValidateDevicesRequest extends FormRequest
             'assignments.accumulation' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.climate' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.light' => ['nullable', 'integer', 'exists:nodes,id'],
+            'assignments.soil_moisture_sensor' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.co2_sensor' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.co2_actuator' => ['nullable', 'integer', 'exists:nodes,id'],
             'assignments.root_vent_actuator' => ['nullable', 'integer', 'exists:nodes,id'],

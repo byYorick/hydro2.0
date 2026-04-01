@@ -31,6 +31,7 @@ class SetupWizardController extends Controller
         'accumulation',
         'climate',
         'light',
+        'soil_moisture_sensor',
         'co2_sensor',
         'co2_actuator',
         'root_vent_actuator',
@@ -508,6 +509,15 @@ class SetupWizardController extends Controller
                 'direction' => 'actuator',
             ],
             [
+                'assignment_role' => 'soil_moisture_sensor',
+                'binding_role' => 'soil_moisture_sensor',
+                'label' => 'Датчик влажности субстрата (soil moisture)',
+                'asset_type' => 'OTHER',
+                'required' => false,
+                'channel_candidates' => ['soil_moisture', 'soil_moisture_pct', 'substrate_moisture'],
+                'direction' => 'sensor',
+            ],
+            [
                 'assignment_role' => 'co2_sensor',
                 'binding_role' => 'co2_sensor',
                 'label' => 'Датчик CO2 зоны',
@@ -715,6 +725,11 @@ class SetupWizardController extends Controller
                 || $this->hasAnyChannel($channels, ['white_light', 'uv_light', 'light_main', 'light_level', 'lux_main']);
         }
 
+        if ($role === 'soil_moisture_sensor') {
+            return in_array($type, ['soil', 'substrate', 'climate'], true)
+                || $this->hasAnyChannel($channels, ['soil_moisture', 'soil_moisture_pct', 'substrate_moisture']);
+        }
+
         if ($role === 'co2_sensor') {
             return $type === 'climate'
                 || $this->hasAnyChannel($channels, ['co2_ppm']);
@@ -778,6 +793,7 @@ class SetupWizardController extends Controller
             'accumulation' => 'накопительный узел (общий с поливом)',
             'climate' => 'климат',
             'light' => 'свет',
+            'soil_moisture_sensor' => 'датчик влажности субстрата (soil moisture)',
             'co2_sensor' => 'датчик CO2 зоны',
             'co2_actuator' => 'CO2 инжектор зоны',
             'root_vent_actuator' => 'прикорневая вентиляция',

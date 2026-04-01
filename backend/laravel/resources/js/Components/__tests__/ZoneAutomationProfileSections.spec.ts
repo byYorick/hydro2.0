@@ -151,7 +151,7 @@ describe('ZoneAutomationProfileSections', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('Decision, recovery и safety')
+    expect(wrapper.text()).toContain('Умный полив (decision, recovery, safety)')
     expect(wrapper.find('[data-test="irrigation-decision-strategy"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="irrigation-stop-on-solution-min"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Auto replay after setup')

@@ -39,6 +39,9 @@ PIGGYBACK_SCENARIO_PATH = (
 START_IRRIGATION_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E107_ae3_start_irrigation_api_smoke.yaml"
 )
+SOIL_TELEMETRY_CONTRACT_SCENARIO_PATH = (
+    E2E_ROOT / "scenarios" / "ae3lite" / "E108_ae3_irrigation_inline_correction_contract.yaml"
+)
 INLINE_CORRECTION_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E109_ae3_irrigation_inline_correction_node_sim.yaml"
 )
@@ -174,6 +177,21 @@ class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
             self.assertIn("/api/automation-configs/zone/${zone_id}/zone.logic_profile", text)
             self.assertIn("DELETE FROM automation_config_documents", text)
             self.assertIn("namespace = 'zone.logic_profile'", text)
+
+    def test_smart_irrigation_scenarios_do_not_upsert_nodes_or_sensors_manually(self) -> None:
+        for scenario_path in [
+            START_IRRIGATION_SCENARIO_PATH,
+            SOIL_TELEMETRY_CONTRACT_SCENARIO_PATH,
+        ]:
+            text = scenario_path.read_text(encoding="utf-8")
+            self.assertNotIn("INSERT INTO nodes", text, msg=f"{scenario_path.name} still inserts nodes directly")
+            self.assertNotIn("INSERT INTO sensors", text, msg=f"{scenario_path.name} still inserts sensors directly")
+
+    def test_smart_irrigation_contract_waits_for_canonical_sensor_ingest(self) -> None:
+        text = SOIL_TELEMETRY_CONTRACT_SCENARIO_PATH.read_text(encoding="utf-8")
+        self.assertIn("DELETE FROM telemetry_samples", text)
+        self.assertIn("DELETE FROM telemetry_last", text)
+        self.assertIn("JOIN telemetry_last tl ON tl.sensor_id = s.id", text)
 
 class TestAe3LiteRetryLimitRealHwScenarioContract(unittest.TestCase):
     @classmethod
