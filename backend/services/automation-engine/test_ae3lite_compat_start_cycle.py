@@ -136,6 +136,24 @@ async def test_compat_start_cycle_returns_terminal_payload_for_terminal_ae3_task
 
 
 @pytest.mark.asyncio
+async def test_compat_start_cycle_returns_accepted_duplicate_for_deduplicated_intent() -> None:
+    endpoint, _captured = _bind_test_route(
+        creation_result=TaskCreationResult(task=_task(task_id=654, zone_id=7, status="running"), created=False),
+        decision="deduplicated",
+    )
+
+    response = await endpoint(
+        zone_id=7,
+        request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-dedup"}),
+        req=StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:test"),
+    )
+
+    assert response["data"]["accepted"] is True
+    assert response["data"]["is_duplicate"] is True
+    assert response["data"]["task_id"] == "654"
+
+
+@pytest.mark.asyncio
 async def test_compat_start_cycle_translates_ae3_busy_error_to_409() -> None:
     app = FastAPI()
 
@@ -233,4 +251,24 @@ async def test_compat_start_cycle_guard_failure_returns_503_before_claiming_inte
     assert exc.value.status_code == 503
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_cycle_solution_tank_guard_failed"
+    assert detail["zone_id"] == 7
+
+
+@pytest.mark.asyncio
+async def test_compat_start_cycle_wraps_unexpected_create_error_into_structured_503() -> None:
+    endpoint, _captured = _bind_test_route(
+        creation_result=None,
+        create_error=RuntimeError("db is unavailable"),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-raw-create-error"}),
+            req=StartCycleRequest(source="laravel_scheduler", idempotency_key="sch:z7:raw"),
+        )
+
+    assert exc.value.status_code == 503
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "ae3_task_create_failed"
     assert detail["zone_id"] == 7

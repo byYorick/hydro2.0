@@ -331,6 +331,20 @@ def test_build_pid_state_normalizes_aware_datetimes_to_naive_utc() -> None:
     assert result["ec"]["updated_at"] == ts.replace(tzinfo=None)
 
 
+def test_build_telemetry_last_fails_closed_for_duplicate_critical_sensor_type() -> None:
+    read_model = PgZoneSnapshotReadModel()
+
+    with pytest.raises(SnapshotBuildError) as exc_info:
+        read_model._build_telemetry_last(
+            [
+                {"sensor_type": "ph", "sensor_id": 1, "sensor_label": "ph-1", "last_value": 5.8, "sample_ts": None, "last_quality": "good"},
+                {"sensor_type": "ph", "sensor_id": 2, "sensor_label": "ph-2", "last_value": 5.7, "sample_ts": None, "last_quality": "good"},
+            ]
+        )
+
+    assert exc_info.value.code == ErrorCodes.AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES
+
+
 def test_build_correction_config_preserves_runtime_contract_fields() -> None:
     read_model = PgZoneSnapshotReadModel()
     row = {

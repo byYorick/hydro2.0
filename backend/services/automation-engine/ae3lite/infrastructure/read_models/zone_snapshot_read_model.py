@@ -10,6 +10,7 @@ from ae3lite.application.dto import ZoneActuatorRef, ZoneSnapshot
 from ae3lite.domain.errors import ErrorCodes, SnapshotBuildError
 from ae3lite.domain.services.phase_utils import normalize_phase_key
 from common.db import get_pool
+from .active_grow_cycle_order_sql import SQL_ACTIVE_GROW_CYCLE_ORDER_BY
 from .effective_targets_sql_utils import (
     build_base_targets,
     clean_null_values,
@@ -32,7 +33,7 @@ class PgZoneSnapshotReadModel:
         async with pool.acquire() as conn:
             async with conn.transaction():
                 zone_row = await conn.fetchrow(
-                    """
+                    f"""
                     SELECT
                         z.id AS zone_id,
                         z.greenhouse_id,
@@ -70,7 +71,7 @@ class PgZoneSnapshotReadModel:
                     LEFT JOIN zone_workflow_state zws
                         ON zws.zone_id = z.id
                     WHERE z.id = $1
-                    ORDER BY gc.id DESC NULLS LAST
+                    {SQL_ACTIVE_GROW_CYCLE_ORDER_BY.strip()}
                     LIMIT 1
                     """,
                     zone_id,
@@ -107,6 +108,19 @@ class PgZoneSnapshotReadModel:
                     raise SnapshotBuildError(
                         f"Grow cycle {grow_cycle_id} has no automation_effective_bundle",
                         code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_MISSING,
+                    )
+
+                cycle_settings = zone_row.get("cycle_settings")
+                cycle_settings = cycle_settings if isinstance(cycle_settings, Mapping) else {}
+                expected_bundle_revision = str(cycle_settings.get("bundle_revision") or "").strip()
+                actual_bundle_revision = str(bundle_row.get("bundle_revision") or "").strip()
+                if expected_bundle_revision and expected_bundle_revision != actual_bundle_revision:
+                    raise SnapshotBuildError(
+                        (
+                            f"Grow cycle {grow_cycle_id} bundle revision mismatch: "
+                            f"expected={expected_bundle_revision} actual={actual_bundle_revision or 'empty'}"
+                        ),
+                        code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_INVALID,
                     )
 
                 bundle_config = bundle_row.get("config")
@@ -156,7 +170,7 @@ class PgZoneSnapshotReadModel:
 
                 telemetry_rows = await conn.fetch(
                     """
-                    SELECT DISTINCT ON (LOWER(COALESCE(s.type, '')))
+                    SELECT
                         LOWER(COALESCE(s.type, '')) AS sensor_type,
                         s.id AS sensor_id,
                         s.label AS sensor_label,
@@ -169,7 +183,6 @@ class PgZoneSnapshotReadModel:
                     WHERE s.zone_id = $1
                       AND s.is_active = TRUE
                     ORDER BY
-                        LOWER(COALESCE(s.type, '')),
                         COALESCE(tl.last_ts, tl.updated_at) DESC NULLS LAST,
                         s.id DESC
                     """,
@@ -635,9 +648,18 @@ class PgZoneSnapshotReadModel:
 
     def _build_telemetry_last(self, rows: List[Mapping[str, Any]]) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
+        seen_sensor_types: dict[str, int] = {}
         for row in rows:
             sensor_type = str(row.get("sensor_type") or "").strip().lower()
             if not sensor_type:
+                continue
+            seen_sensor_types[sensor_type] = seen_sensor_types.get(sensor_type, 0) + 1
+            if sensor_type in {"ph", "ec"} and seen_sensor_types[sensor_type] > 1:
+                raise SnapshotBuildError(
+                    f"Zone snapshot has multiple active telemetry sensors for critical type={sensor_type}",
+                    code=ErrorCodes.AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES,
+                )
+            if sensor_type in result:
                 continue
             result[sensor_type] = {
                 "sensor_id": row.get("sensor_id"),

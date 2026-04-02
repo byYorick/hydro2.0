@@ -10,6 +10,7 @@ from ae3lite.api import bind_start_irrigation_route
 from ae3lite.api.contracts import StartIrrigationRequest
 from ae3lite.application.dto import TaskCreationResult
 from ae3lite.domain.entities import AutomationTask
+from ae3lite.domain.errors import TaskCreateError
 
 
 def _task(*, task_id: int, zone_id: int, status: str) -> AutomationTask:
@@ -71,6 +72,10 @@ def _bind_test_route(*, creation_result: TaskCreationResult, decision: str = "cl
         app,
         validate_scheduler_zone_fn=validate_zone,
         validate_scheduler_security_baseline_fn=validate_security,
+        is_start_irrigation_rate_limit_enabled_fn=lambda: False,
+        start_irrigation_rate_limit_check_fn=lambda _zone_id: True,
+        start_irrigation_rate_limit_window_sec_fn=lambda: 10,
+        start_irrigation_rate_limit_max_requests_fn=lambda: 30,
         claim_start_irrigation_intent_fn=claim_intent,
         create_task_from_intent_fn=create_task_from_intent,
         kick_worker_fn=lambda: captured.__setitem__("worker_kicked", int(captured["worker_kicked"]) + 1),
@@ -118,3 +123,155 @@ async def test_compat_start_irrigation_translates_zone_busy_to_409() -> None:
     assert exc.value.status_code == 409
     detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
     assert detail["error"] == "start_irrigation_zone_busy"
+
+
+@pytest.mark.asyncio
+async def test_compat_start_irrigation_translates_create_task_busy_error_to_409() -> None:
+    app = FastAPI()
+
+    async def validate_zone(_zone_id: int):
+        return None
+
+    async def validate_security(_request):
+        return None
+
+    async def claim_intent(*, zone_id: int, req, now):
+        return {"decision": "claimed", "intent": {"id": 88, "zone_id": zone_id, "status": "claimed"}}
+
+    async def create_task_from_intent(**kwargs):
+        raise TaskCreateError("start_cycle_zone_busy", "busy", details={"active_task_id": 99})
+
+    async def mark_intent_terminal(**kwargs):
+        return None
+
+    bind_start_irrigation_route(
+        app,
+        validate_scheduler_zone_fn=validate_zone,
+        validate_scheduler_security_baseline_fn=validate_security,
+        is_start_irrigation_rate_limit_enabled_fn=lambda: False,
+        start_irrigation_rate_limit_check_fn=lambda _zone_id: True,
+        start_irrigation_rate_limit_window_sec_fn=lambda: 10,
+        start_irrigation_rate_limit_max_requests_fn=lambda: 30,
+        claim_start_irrigation_intent_fn=claim_intent,
+        create_task_from_intent_fn=create_task_from_intent,
+        kick_worker_fn=lambda: None,
+        build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
+        mark_intent_terminal_fn=mark_intent_terminal,
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+    )
+    endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-irrigation")
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-irrigation"}),
+            req=StartIrrigationRequest(source="laravel_scheduler", idempotency_key="sch:z7:irrigation"),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_irrigation_zone_busy"
+    assert detail["active_task_id"] == 99
+
+
+@pytest.mark.asyncio
+async def test_compat_start_irrigation_translates_intent_terminal_task_create_error_to_409() -> None:
+    app = FastAPI()
+
+    async def validate_zone(_zone_id: int):
+        return None
+
+    async def validate_security(_request):
+        return None
+
+    async def claim_intent(*, zone_id: int, req, now):
+        return {"decision": "claimed", "intent": {"id": 88, "zone_id": zone_id, "status": "claimed"}}
+
+    async def create_task_from_intent(**kwargs):
+        raise TaskCreateError(
+            "start_cycle_intent_terminal",
+            "intent is terminal",
+            details={"hint": "already_done"},
+        )
+
+    async def mark_intent_terminal(**kwargs):
+        return None
+
+    bind_start_irrigation_route(
+        app,
+        validate_scheduler_zone_fn=validate_zone,
+        validate_scheduler_security_baseline_fn=validate_security,
+        is_start_irrigation_rate_limit_enabled_fn=lambda: False,
+        start_irrigation_rate_limit_check_fn=lambda _zone_id: True,
+        start_irrigation_rate_limit_window_sec_fn=lambda: 10,
+        start_irrigation_rate_limit_max_requests_fn=lambda: 30,
+        claim_start_irrigation_intent_fn=claim_intent,
+        create_task_from_intent_fn=create_task_from_intent,
+        kick_worker_fn=lambda: None,
+        build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
+        mark_intent_terminal_fn=mark_intent_terminal,
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+    )
+    endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-irrigation")
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-terminal"}),
+            req=StartIrrigationRequest(source="laravel_scheduler", idempotency_key="sch:z7:irrigation-term"),
+        )
+
+    assert exc.value.status_code == 409
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_irrigation_intent_terminal"
+    assert detail["zone_id"] == 7
+    assert detail["idempotency_key"] == "sch:z7:irrigation-term"
+    assert detail["hint"] == "already_done"
+
+
+@pytest.mark.asyncio
+async def test_compat_start_irrigation_rate_limit_returns_429() -> None:
+    app = FastAPI()
+
+    async def validate_zone(_zone_id: int):
+        return None
+
+    async def validate_security(_request):
+        return None
+
+    async def claim_intent(*, zone_id: int, req, now):
+        return {"decision": "claimed", "intent": {"id": 88, "zone_id": zone_id, "status": "claimed"}}
+
+    async def create_task_from_intent(**kwargs):
+        raise AssertionError("create_task_from_intent must not be called when rate-limited")
+
+    async def mark_intent_terminal(**kwargs):
+        return None
+
+    bind_start_irrigation_route(
+        app,
+        validate_scheduler_zone_fn=validate_zone,
+        validate_scheduler_security_baseline_fn=validate_security,
+        is_start_irrigation_rate_limit_enabled_fn=lambda: True,
+        start_irrigation_rate_limit_check_fn=lambda _zone_id: False,
+        start_irrigation_rate_limit_window_sec_fn=lambda: 12,
+        start_irrigation_rate_limit_max_requests_fn=lambda: 3,
+        claim_start_irrigation_intent_fn=claim_intent,
+        create_task_from_intent_fn=create_task_from_intent,
+        kick_worker_fn=lambda: None,
+        build_start_cycle_response_fn=lambda **kwargs: {"status": "ok", "data": kwargs},
+        mark_intent_terminal_fn=mark_intent_terminal,
+        logger=SimpleNamespace(warning=lambda *args, **kwargs: None),
+    )
+    endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/start-irrigation")
+
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            zone_id=7,
+            request=SimpleNamespace(headers={"authorization": "Bearer test", "x-trace-id": "trace-irrigation"}),
+            req=StartIrrigationRequest(source="laravel_scheduler", idempotency_key="sch:z7:irrigation"),
+        )
+
+    assert exc.value.status_code == 429
+    detail = exc.value.detail if isinstance(exc.value.detail, dict) else {}
+    assert detail["error"] == "start_irrigation_rate_limited"

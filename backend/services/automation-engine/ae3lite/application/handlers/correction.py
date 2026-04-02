@@ -667,9 +667,13 @@ class CorrectionHandler(BaseStageHandler):
         if corr.ec_dose_sequence_json:
             try:
                 raw = json.loads(corr.ec_dose_sequence_json)
-                seq = list(raw) if isinstance(raw, list) else []
-            except Exception:
-                seq = []
+                if not isinstance(raw, list):
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON must be a list")
+                seq = list(raw)
+            except Exception as exc:
+                if isinstance(exc, TaskExecutionError):
+                    raise
+                raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON is invalid")
         if seq:
             for item in seq:
                 if not isinstance(item, dict):
@@ -2005,9 +2009,9 @@ class CorrectionHandler(BaseStageHandler):
                 ],
             )
         except Exception:
-            _logger.warning(
-                "Failed to persist PID state for zone %s; controller memory not updated",
-                zone_id, exc_info=True,
+            raise TaskExecutionError(
+                "corr_pid_state_persist_failed",
+                f"Failed to persist PID state for zone {zone_id}",
             )
 
     def _normalize_timestamp(self, value: datetime | None) -> datetime | None:

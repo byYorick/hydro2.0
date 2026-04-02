@@ -9,7 +9,7 @@ from common.db import get_pool
 
 
 class PgTaskStatusReadModel:
-    """Loads canonical AE3 task status only for zones routed to AE3."""
+    """Loads canonical AE3 task status even if the zone routing changed later."""
 
     async def get_by_task_id(self, *, task_id: int) -> Optional[TaskStatusView]:
         pool = await get_pool()
@@ -27,10 +27,7 @@ class PgTaskStatusReadModel:
                     tasks.updated_at,
                     tasks.completed_at
                 FROM ae_tasks tasks
-                JOIN zones z
-                    ON z.id = tasks.zone_id
                 WHERE tasks.id = $1
-                  AND z.automation_runtime = 'ae3'
                 LIMIT 1
                 """,
                 task_id,

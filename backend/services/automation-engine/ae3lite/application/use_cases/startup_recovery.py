@@ -238,14 +238,13 @@ class StartupRecoveryUseCase:
         # Terminal error stage
         if stage_def.terminal_error is not None:
             error_code, error_message = stage_def.terminal_error
-            if self._workflow_repository is not None:
-                await self._workflow_repository.upsert_phase(
-                    zone_id=task.zone_id,
-                    workflow_phase="idle",
-                    payload={"ae3_cycle_start_stage": "failed"},
-                    scheduler_task_id=str(task.id),
-                    now=now,
-                )
+            await self._safe_upsert_workflow_phase(
+                zone_id=task.zone_id,
+                workflow_phase="idle",
+                payload={"ae3_cycle_start_stage": "failed"},
+                scheduler_task_id=str(task.id),
+                now=now,
+            )
             failed = await self._task_repository.fail_for_recovery(
                 task_id=task.id,
                 error_code=error_code,
@@ -275,14 +274,13 @@ class StartupRecoveryUseCase:
 
             next_phase = next_def.workflow_phase if next_def else "idle"
 
-            if self._workflow_repository is not None:
-                await self._workflow_repository.upsert_phase(
-                    zone_id=task.zone_id,
-                    workflow_phase=next_phase,
-                    payload={"ae3_cycle_start_stage": next_stage},
-                    scheduler_task_id=str(task.id),
-                    now=now,
-                )
+            await self._safe_upsert_workflow_phase(
+                zone_id=task.zone_id,
+                workflow_phase=next_phase,
+                payload={"ae3_cycle_start_stage": next_stage},
+                scheduler_task_id=str(task.id),
+                now=now,
+            )
 
             # Record transition in audit trail
             await self._task_repository.record_transition(
@@ -320,14 +318,13 @@ class StartupRecoveryUseCase:
             return requeued
 
         # No next_stage, no terminal_error → complete
-        if self._workflow_repository is not None:
-            await self._workflow_repository.upsert_phase(
-                zone_id=task.zone_id,
-                workflow_phase="ready",
-                payload={"ae3_cycle_start_stage": "complete_ready"},
-                scheduler_task_id=str(task.id),
-                now=now,
-            )
+        await self._safe_upsert_workflow_phase(
+            zone_id=task.zone_id,
+            workflow_phase="ready",
+            payload={"ae3_cycle_start_stage": "complete_ready"},
+            scheduler_task_id=str(task.id),
+            now=now,
+        )
         completed = await self._task_repository.mark_completed(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
@@ -387,19 +384,39 @@ class StartupRecoveryUseCase:
         return failed_task
 
     async def _sync_workflow_failure_state(self, *, task: AutomationTask, now: datetime) -> None:
+        await self._safe_upsert_workflow_phase(
+            zone_id=task.zone_id,
+            workflow_phase="idle",
+            payload={"ae3_cycle_start_stage": "failed"},
+            scheduler_task_id=str(task.id),
+            now=now,
+        )
+
+    async def _safe_upsert_workflow_phase(
+        self,
+        *,
+        zone_id: int,
+        workflow_phase: str,
+        payload: dict[str, Any],
+        scheduler_task_id: str,
+        now: datetime,
+    ) -> None:
+        if self._workflow_repository is None:
+            return
         try:
             await self._workflow_repository.upsert_phase(
-                zone_id=task.zone_id,
-                workflow_phase="idle",
-                payload={"ae3_cycle_start_stage": "failed"},
-                scheduler_task_id=str(task.id),
+                zone_id=zone_id,
+                workflow_phase=workflow_phase,
+                payload=payload,
+                scheduler_task_id=scheduler_task_id,
                 now=now,
             )
         except Exception:
             logger.warning(
-                "Startup recovery: failed to sync zone_workflow_state on recovery fail zone_id=%s task_id=%s",
-                task.zone_id,
-                task.id,
+                "Startup recovery: failed to sync zone_workflow_state zone_id=%s task_id=%s phase=%s",
+                zone_id,
+                scheduler_task_id,
+                workflow_phase,
                 exc_info=True,
             )
 

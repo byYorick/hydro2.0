@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 
 from ae3lite.application.use_cases.guard_solution_tank_startup_reset import GuardSolutionTankStartupResetUseCase
@@ -142,3 +143,9 @@ async def test_guard_handles_non_mapping_payload_without_crashing():
     assert result["reset"] is False
     assert result["reason"] == "solution_tank_has_solution"
     assert len(monitor.calls) == 1
+
+
+def test_guard_solution_min_sensor_cfg_query_uses_shared_active_grow_cycle_order_sql() -> None:
+    """Regression: guard must stay aligned with snapshot read-model grow_cycle ordering."""
+    src = inspect.getsource(GuardSolutionTankStartupResetUseCase._load_solution_min_sensor_cfg)
+    assert "SQL_ACTIVE_GROW_CYCLE_ORDER_BY" in src

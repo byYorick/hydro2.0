@@ -153,6 +153,7 @@ def build_ae3_runtime_bundle(
     get_zone_control_state_use_case = GetZoneControlStateUseCase(
         task_repository=task_repository,
         fetch_fn=fetch,
+        workflow_repository=workflow_repository,
     )
     request_manual_step_use_case = RequestManualStepUseCase(
         task_repository=task_repository,

@@ -7,14 +7,14 @@ for intent metadata, workflow state, and correction state.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 
 def _naive(dt: Any) -> Any:
-    """Strip timezone from a datetime if present, return None as-is."""
+    """Normalize to naive UTC for mixed aware/naive DB timestamps."""
     if isinstance(dt, datetime) and dt.tzinfo is not None:
-        return dt.replace(tzinfo=None)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState

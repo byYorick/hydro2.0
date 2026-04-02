@@ -9,7 +9,17 @@ from typing import Any, Awaitable, Callable, Mapping
 from fastapi import Body, FastAPI, HTTPException, Request
 
 from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest
+from ae3lite.domain.errors import TaskCreateError
 from common.utils.time import utcnow_naive as _utcnow
+
+
+def _optional_int(value: Any) -> int | None:
+    return int(value) if value is not None else None
+
+
+def _normalized_status(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    return normalized or None
 
 
 def bind_start_cycle_route(
@@ -65,7 +75,7 @@ def bind_start_cycle_route(
         requested_intent = requested if isinstance(requested, Mapping) else {}
         requested_intent_id = int(requested_intent.get("id") or 0)
         requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed"}:
+        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
             return
         try:
             await mark_intent_terminal_fn(
@@ -132,13 +142,14 @@ def bind_start_cycle_route(
 
         if decision == "zone_busy":
             await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+            active_status = _normalized_status(intent_row.get("status"))
             raise HTTPException(
                 status_code=409,
                 detail={
                     "error": "start_cycle_zone_busy",
                     "zone_id": zone_id,
-                    "active_intent_id": (lambda v: int(v) if v is not None else None)(intent_row.get("id")),
-                    "active_status": str(intent_row.get("status") or "").strip().lower() or "running",
+                    "active_intent_id": _optional_int(intent_row.get("id")),
+                    "active_status": active_status,
                 },
             )
         if decision == "missing":
@@ -189,7 +200,16 @@ def bind_start_cycle_route(
                         **(details if isinstance(details, dict) else {}),
                     },
                 ) from exc
-            raise
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": code,
+                    "zone_id": zone_id,
+                    "idempotency_key": req.idempotency_key,
+                    "message": str(exc),
+                    **(details if isinstance(details, dict) else {}),
+                },
+            ) from exc
 
         task = creation.task
         _log_debug(
@@ -224,6 +244,10 @@ def bind_start_irrigation_route(
     *,
     validate_scheduler_zone_fn: Callable[[int], Awaitable[None]],
     validate_scheduler_security_baseline_fn: Callable[[Request], Awaitable[None]],
+    is_start_irrigation_rate_limit_enabled_fn: Callable[[], bool],
+    start_irrigation_rate_limit_check_fn: Callable[[int], bool],
+    start_irrigation_rate_limit_window_sec_fn: Callable[[], int],
+    start_irrigation_rate_limit_max_requests_fn: Callable[[], int],
     claim_start_irrigation_intent_fn: Callable[..., Awaitable[dict[str, Any]]],
     create_task_from_intent_fn: Callable[..., Awaitable[Any]],
     kick_worker_fn: Callable[[], Any],
@@ -231,12 +255,38 @@ def bind_start_irrigation_route(
     mark_intent_terminal_fn: Callable[..., Awaitable[None]],
     logger: Any,
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
+    async def _mark_current_intent_terminal(
+        *,
+        intent_row: Mapping[str, Any],
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        intent_id = int(intent_row.get("id") or 0)
+        if intent_id <= 0:
+            return
+        try:
+            await mark_intent_terminal_fn(
+                intent_id=intent_id,
+                now=_utcnow(),
+                success=False,
+                error_code=error_code,
+                error_message=error_message,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "AE3 compat start-irrigation failed to mark current intent terminal: intent_id=%s",
+                intent_id,
+                exc_info=True,
+            )
+
     async def _mark_requested_intent_terminal_zone_busy(intent_claim: Mapping[str, Any], zone_id: int) -> None:
         requested = intent_claim.get("requested_intent")
         requested_intent = requested if isinstance(requested, Mapping) else {}
         requested_intent_id = int(requested_intent.get("id") or 0)
         requested_status = str(requested_intent.get("status") or "").strip().lower()
-        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed"}:
+        if requested_intent_id <= 0 or requested_status not in {"pending", "claimed", "failed", "running"}:
             return
         try:
             await mark_intent_terminal_fn(
@@ -264,6 +314,16 @@ def bind_start_irrigation_route(
     ) -> dict[str, Any]:
         await validate_scheduler_zone_fn(zone_id)
         await validate_scheduler_security_baseline_fn(request)
+        if is_start_irrigation_rate_limit_enabled_fn() and not start_irrigation_rate_limit_check_fn(zone_id):
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "start_irrigation_rate_limited",
+                    "zone_id": zone_id,
+                    "window_sec": start_irrigation_rate_limit_window_sec_fn(),
+                    "max_requests": start_irrigation_rate_limit_max_requests_fn(),
+                },
+            )
 
         now = _utcnow()
         intent_claim = await claim_start_irrigation_intent_fn(zone_id=zone_id, req=req, now=now)
@@ -273,13 +333,14 @@ def bind_start_irrigation_route(
 
         if decision == "zone_busy":
             await _mark_requested_intent_terminal_zone_busy(intent_claim, zone_id)
+            active_status = _normalized_status(intent_row.get("status"))
             raise HTTPException(
                 status_code=409,
                 detail={
                     "error": "start_irrigation_zone_busy",
                     "zone_id": zone_id,
-                    "active_intent_id": (lambda v: int(v) if v is not None else None)(intent_row.get("id")),
-                    "active_status": str(intent_row.get("status") or "").strip().lower() or "running",
+                    "active_intent_id": _optional_int(intent_row.get("id")),
+                    "active_status": active_status,
                 },
             )
         if decision == "missing":
@@ -294,14 +355,58 @@ def bind_start_irrigation_route(
         if decision not in {"claimed", "deduplicated", "terminal"}:
             raise HTTPException(status_code=503, detail={"error": "start_irrigation_intent_claim_unavailable", "zone_id": zone_id})
 
-        creation = await create_task_from_intent_fn(
-            zone_id=zone_id,
-            source=req.source,
-            idempotency_key=req.idempotency_key,
-            intent_row=intent_row,
-            now=now,
-            allow_create=decision != "terminal",
-        )
+        try:
+            creation = await create_task_from_intent_fn(
+                zone_id=zone_id,
+                source=req.source,
+                idempotency_key=req.idempotency_key,
+                intent_row=intent_row,
+                now=now,
+                allow_create=decision != "terminal",
+            )
+        except Exception as exc:
+            raw_code = str(getattr(exc, "code", "ae3_task_create_failed")).strip() or "ae3_task_create_failed"
+            details = getattr(exc, "details", {})
+            code = raw_code
+            if raw_code == "start_cycle_zone_busy":
+                code = "start_irrigation_zone_busy"
+            elif raw_code == "start_cycle_intent_terminal":
+                code = "start_irrigation_intent_terminal"
+
+            if raw_code == "start_cycle_zone_busy":
+                await _mark_current_intent_terminal(
+                    intent_row=intent_row,
+                    error_code=code,
+                    error_message=str(exc),
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": code,
+                        "zone_id": zone_id,
+                        **(details if isinstance(details, dict) else {}),
+                    },
+                ) from exc
+            if raw_code == "start_cycle_intent_terminal":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": code,
+                        "zone_id": zone_id,
+                        "idempotency_key": req.idempotency_key,
+                        **(details if isinstance(details, dict) else {}),
+                    },
+                ) from exc
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": code,
+                    "zone_id": zone_id,
+                    "idempotency_key": req.idempotency_key,
+                    "message": str(exc),
+                    **(details if isinstance(details, dict) else {}),
+                },
+            ) from exc
         task = creation.task
         if task.status in {"pending", "claimed", "running", "waiting_command"}:
             kick_worker_fn()

@@ -40,13 +40,13 @@ PIGGYBACK_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
 )
 START_IRRIGATION_SCENARIO_PATH = (
-    E2E_ROOT / "scenarios" / "ae3lite" / "E107_ae3_start_irrigation_api_smoke.yaml"
+    E2E_ROOT / "scenarios" / "ae3lite" / "E107_ae3_irrigation_runtime_test_node.yaml"
 )
 SOIL_TELEMETRY_CONTRACT_SCENARIO_PATH = (
     E2E_ROOT / "scenarios" / "ae3lite" / "E108_ae3_irrigation_inline_correction_contract.yaml"
 )
 INLINE_CORRECTION_SCENARIO_PATH = (
-    E2E_ROOT / "scenarios" / "ae3lite" / "E109_ae3_irrigation_inline_correction_node_sim.yaml"
+    E2E_ROOT / "scenarios" / "ae3lite" / "E109_ae3_irrigation_inline_correction_test_node.yaml"
 )
 REALHW_CYCLE_START_SCENARIOS = [
     SCENARIO_PATH,
@@ -211,6 +211,28 @@ class TestAe3LiteRealHwScenarioContract(unittest.TestCase):
         self.assertIn("DELETE FROM telemetry_samples", text)
         self.assertIn("DELETE FROM telemetry_last", text)
         self.assertIn("JOIN telemetry_last tl ON tl.sensor_id = s.id", text)
+
+    def test_smart_irrigation_scenarios_use_named_hardware_harness_steps(self) -> None:
+        expectations = {
+            START_IRRIGATION_SCENARIO_PATH: [
+                "type: hardware_activate_sensor_mode",
+                "type: hardware_reset_state",
+                "type: hardware_set_fault_mode",
+            ],
+            SOIL_TELEMETRY_CONTRACT_SCENARIO_PATH: [
+                "type: hardware_set_fault_mode",
+            ],
+            INLINE_CORRECTION_SCENARIO_PATH: [
+                "type: hardware_activate_sensor_mode",
+                "type: hardware_set_fault_mode",
+            ],
+        }
+
+        for scenario_path, required_fragments in expectations.items():
+            text = scenario_path.read_text(encoding="utf-8")
+            self.assertNotIn("type: ae_test_hook", text, msg=f"{scenario_path.name} still uses raw ae_test_hook")
+            for fragment in required_fragments:
+                self.assertIn(fragment, text, msg=f"{scenario_path.name} missing {fragment}")
 
     def test_realhw_scenarios_use_seeded_topology_and_live_config_publish(self) -> None:
         for scenario_path in REALHW_SEEDED_TOPOLOGY_SCENARIOS:
@@ -494,16 +516,72 @@ class TestAe3LiteSetupReadyRealHwScenarioContract(unittest.TestCase):
 
     def test_ready_targets_wait_uses_phase_windows(self) -> None:
         step = self._find_step("actions", "wait_targets_reached_on_node")
+        snapshot_step = self._find_step("actions", "load_task_snapshot_after_target_wait")
+        snapshot_assertion = next(
+            item
+            for item in self.scenario.get("assertions", [])
+            if item.get("name") == "task_snapshot_captured_before_cleanup"
+        )
+        completed_step = self._find_step("actions", "wait_task_completed")
+        workflow_ready_step = self._find_step("actions", "wait_workflow_ready")
+        targets_after_completion_step = self._find_step("actions", "load_targets_reached_from_samples")
+        targets_assertion = next(
+            item
+            for item in self.scenario.get("assertions", [])
+            if item.get("name") == "targets_reached_near_completion"
+        )
 
         self.assertEqual(step.get("type"), "db.wait")
+        self.assertTrue(step.get("optional"))
         query = str(step.get("query") or "")
         self.assertIn("ph.last_value BETWEEN 4.80 AND 5.20", query)
         self.assertIn("ec.last_value BETWEEN 2.20 AND 2.60", query)
+        self.assertIn("'targets_reached'::text AS wait_outcome", query)
+        self.assertIn("'task_failed'::text AS wait_outcome", query)
+        self.assertIn("t.status = 'failed'", query)
         self.assertNotIn("OR EXISTS", query)
         self.assertNotIn("status = 'completed'", query)
         self.assertNotIn("ABS(ph.last_value - 5.0)", query)
         self.assertNotIn("ABS(ec.last_value - 2.4)", query)
-        self.assertGreaterEqual(float(step.get("timeout", 0.0)), 600.0)
+        self.assertEqual(step.get("params", {}).get("task_id"), "${task_id}")
+        self.assertEqual(float(step.get("timeout", 0.0)), 330.0)
+
+        self.assertEqual(snapshot_step.get("type"), "database_query")
+        snapshot_query = str(snapshot_step.get("query") or "")
+        self.assertIn("SELECT", snapshot_query)
+        self.assertIn("current_stage", snapshot_query)
+        self.assertIn("error_code", snapshot_query)
+        self.assertIn("error_message", snapshot_query)
+        self.assertEqual(snapshot_step.get("params", {}).get("task_id"), "${task_id}")
+
+        completed_query = str(completed_step.get("query") or "")
+        self.assertIn("status = 'completed'", completed_query)
+        self.assertEqual(float(completed_step.get("timeout", 0.0)), 1020.0)
+
+        workflow_ready_query = str(workflow_ready_step.get("query") or "")
+        self.assertIn("workflow_phase = 'ready'", workflow_ready_query)
+        self.assertNotIn("task_failed", workflow_ready_query)
+
+        targets_after_completion_query = str(targets_after_completion_step.get("query") or "")
+        self.assertIn("completed_at", targets_after_completion_query)
+        self.assertIn("telemetry_samples", targets_after_completion_query)
+        self.assertEqual(
+            targets_after_completion_step.get("params", {}).get("completed_at"),
+            "${completed_task_row.0.completed_at}",
+        )
+
+        snapshot_condition = str(snapshot_assertion.get("condition") or "")
+        self.assertIn("task_snapshot_after_target_wait_row", snapshot_condition)
+        targets_condition = str(targets_assertion.get("condition") or "")
+        self.assertIn("targets_reached_completed_row", targets_condition)
+
+    def test_setup_ready_cleanup_removes_zone_workflow_state(self) -> None:
+        step = self._find_step("cleanup", "cleanup_zone_workflow_state_after_run")
+
+        self.assertEqual(step.get("type"), "database_execute")
+        query = str(step.get("query") or "")
+        self.assertIn("DELETE FROM zone_workflow_state", query)
+        self.assertIn("WHERE zone_id = :zone_id", query)
 
 
 class TestAe3LiteDoseCommandContract(unittest.TestCase):

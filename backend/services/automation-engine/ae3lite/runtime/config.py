@@ -84,11 +84,29 @@ class Ae3RuntimeConfig:
 
     def validate(self) -> None:
         """Raise ValueError if required config is missing."""
-        if not self.history_logger_api_token:
+        history_logger_api_token = str(self.history_logger_api_token or "").strip()
+        scheduler_api_token = str(self.scheduler_api_token or "").strip()
+        if not history_logger_api_token:
             raise ValueError(
                 "history_logger_api_token is required. "
                 "Set HISTORY_LOGGER_API_TOKEN (or AE_API_TOKEN / PY_API_TOKEN)."
             )
+        if self.scheduler_security_baseline_enforce and not scheduler_api_token:
+            raise ValueError(
+                "scheduler_api_token is required when scheduler security baseline is enforced. "
+                "Set AE_API_TOKEN (or SCHEDULER_API_TOKEN / PY_API_TOKEN)."
+            )
+        if self.start_cycle_rate_limit_enabled:
+            if int(self.start_cycle_rate_limit_max_requests) <= 0:
+                raise ValueError(
+                    "start_cycle_rate_limit_max_requests must be > 0 when rate limiting is enabled. "
+                    "Set AE_START_CYCLE_RATE_LIMIT_MAX_REQUESTS to a positive integer."
+                )
+            if int(self.start_cycle_rate_limit_window_sec) <= 0:
+                raise ValueError(
+                    "start_cycle_rate_limit_window_sec must be > 0 when rate limiting is enabled. "
+                    "Set AE_START_CYCLE_RATE_LIMIT_WINDOW_SEC to a positive integer."
+                )
 
 
 __all__ = ["Ae3RuntimeConfig"]

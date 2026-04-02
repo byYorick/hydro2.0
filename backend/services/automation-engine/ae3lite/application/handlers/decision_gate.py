@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,9 @@ from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import IRRIGATION_DECISION
 from common.biz_alerts import send_biz_alert
+
+
+_logger = logging.getLogger(__name__)
 
 
 class DecisionGateHandler(BaseStageHandler):
@@ -108,8 +112,13 @@ class DecisionGateHandler(BaseStageHandler):
                     scope_parts=("stage:decision_gate",),
                 )
         except Exception:
-            # Alerts must never block irrigation decision flow
-            pass
+            _logger.warning(
+                "AE3 failed to emit irrigation decision alert zone_id=%s task_id=%s outcome=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                str(getattr(decision, "outcome", "") or ""),
+                exc_info=True,
+            )
 
         if decision.outcome == "skip":
             return StageOutcome(kind="transition", next_stage="completed_skip")
@@ -120,4 +129,3 @@ class DecisionGateHandler(BaseStageHandler):
                 error_message="Irrigation decision-controller returned fail",
             )
         return StageOutcome(kind="transition", next_stage="irrigation_start")
-

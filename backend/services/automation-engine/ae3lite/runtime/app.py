@@ -179,11 +179,43 @@ def _build_intent_listener_callback(*, worker: Any, logger: logging.Logger) -> A
     return _on_terminal_intent
 
 
+def _validate_runtime_config(runtime_config: Any) -> None:
+    validate = getattr(runtime_config, "validate", None)
+    if callable(validate):
+        validate()
+
+
+def _critical_background_tasks_health(background_tasks: Mapping[str, Any]) -> tuple[bool, str]:
+    if not background_tasks:
+        return True, "ok"
+    for task_name, task in background_tasks.items():
+        if task is None:
+            return False, f"{task_name}:missing"
+        done = getattr(task, "done", None)
+        if not callable(done):
+            return False, f"{task_name}:invalid"
+        if not done():
+            continue
+        cancelled = getattr(task, "cancelled", None)
+        if callable(cancelled) and cancelled():
+            return False, f"{task_name}:cancelled"
+        exception = getattr(task, "exception", None)
+        if callable(exception):
+            try:
+                exc = exception()
+            except Exception:
+                return False, f"{task_name}:exception_unknown"
+            if exc is not None:
+                return False, f"{task_name}:crashed:{type(exc).__name__}"
+        return False, f"{task_name}:stopped"
+    return True, "ok"
+
+
 def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     runtime_config = config or Ae3RuntimeConfig.from_env()
-    if config is None:
-        runtime_config.validate()
+    _validate_runtime_config(runtime_config)
     background_tasks: set[asyncio.Task] = set()
+    critical_background_tasks: dict[str, asyncio.Task] = {}
     rate_limiter = SlidingWindowRateLimiter(
         max_requests=runtime_config.start_cycle_rate_limit_max_requests,
         window_sec=float(runtime_config.start_cycle_rate_limit_window_sec),
@@ -210,6 +242,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         bundle.worker.kick()
         app.state.ae3_runtime_bundle = bundle
         app.state.ae3_runtime_config = runtime_config
+        app.state.ae3_critical_background_tasks = critical_background_tasks
 
         # Start intent status listener if DB DSN is available.
         intent_listener_task: Optional[asyncio.Task] = None
@@ -224,6 +257,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 background_tasks=background_tasks,
                 task_name="ae3-intent-status-listener",
             )
+            critical_background_tasks["ae3-intent-status-listener"] = intent_listener_task
 
         try:
             yield
@@ -236,6 +270,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     app = FastAPI(title="Automation Engine API", lifespan=_app_lifespan)
     app.state.ae3_runtime_bundle = bundle
     app.state.ae3_runtime_config = runtime_config
+    app.state.ae3_critical_background_tasks = critical_background_tasks
     app.mount("/metrics", make_asgi_app())
 
     @app.middleware("http")
@@ -369,6 +404,10 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         app,
         validate_scheduler_zone_fn=_validate_scheduler_zone,
         validate_scheduler_security_baseline_fn=_validate_scheduler_security_baseline,
+        is_start_irrigation_rate_limit_enabled_fn=lambda: runtime_config.start_cycle_rate_limit_enabled,
+        start_irrigation_rate_limit_check_fn=lambda zone_id: rate_limiter.check(zone_id=zone_id),
+        start_irrigation_rate_limit_window_sec_fn=lambda: runtime_config.start_cycle_rate_limit_window_sec,
+        start_irrigation_rate_limit_max_requests_fn=lambda: runtime_config.start_cycle_rate_limit_max_requests,
         claim_start_irrigation_intent_fn=lambda *, zone_id, req, now: bundle.zone_intent_repository.claim_start_irrigation(
             zone_id=zone_id,
             req=req,
@@ -401,11 +440,13 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
     @app.get("/zones/{zone_id}/state")
     async def get_zone_state(zone_id: int) -> dict[str, Any]:
         """Return full automation state for a zone (tasks, phases, errors)."""
+        await _validate_scheduler_zone(zone_id)
         return await bundle.get_zone_automation_state_use_case.run(zone_id=zone_id)
 
     @app.get("/zones/{zone_id}/control-mode")
     async def get_zone_control_mode(zone_id: int) -> dict[str, Any]:
         """Return current control_mode and allowed manual steps for a zone."""
+        await _validate_scheduler_zone(zone_id)
         result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
         return {"status": "ok", "data": {**result, "zone_id": zone_id}}
 
@@ -463,7 +504,10 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             logger.warning("AE3 readiness DB probe failed: %s", exc, exc_info=True)
 
         worker_ok, worker_reason = bundle.worker.drain_health()
-        all_ok = db_ready and worker_ok
+        critical_ok, critical_reason = _critical_background_tasks_health(
+            getattr(app.state, "ae3_critical_background_tasks", {}),
+        )
+        all_ok = db_ready and worker_ok and critical_ok
         payload = {
             "status": "ok" if all_ok else "degraded",
             "service": "automation-engine",
@@ -471,6 +515,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
             "checks": {
                 "db": {"ok": db_ready, "reason": db_reason},
                 "worker": {"ok": worker_ok, "reason": worker_reason},
+                "critical_background_tasks": {"ok": critical_ok, "reason": critical_reason},
             },
         }
         return payload if all_ok else JSONResponse(status_code=503, content=payload)

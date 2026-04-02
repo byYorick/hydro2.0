@@ -15,7 +15,10 @@ from ae3lite.application.use_cases import (
     StartupRecoveryUseCase,
     WorkflowRouter,
 )
-from ae3lite.application.use_cases.execute_task import TASK_EXECUTION_TIMEOUT_CANCEL_MSG
+from ae3lite.application.use_cases.execute_task import (
+    TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
+    TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+)
 from ae3lite.domain.services import CycleStartPlanner, TopologyRegistry
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
 from ae3lite.infrastructure.read_models import PgZoneRuntimeMonitor, PgZoneSnapshotReadModel
@@ -792,6 +795,93 @@ async def test_runtime_worker_continues_draining_after_timeout_without_extra_kic
     assert len(terminal_calls) == 1
     assert terminal_calls[0]["intent_id"] == 1991
     assert worker.drain_health() == (True, "idle")
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_cancels_execution_when_lease_is_lost() -> None:
+    cancel_args: list[tuple[object, ...]] = []
+    terminal_calls: list[dict[str, object]] = []
+    released: list[tuple[int, str]] = []
+
+    task = SimpleNamespace(
+        id=851,
+        zone_id=95,
+        topology="generic_cycle_start",
+        intent_id=2991,
+        status="claimed",
+        error_code=None,
+        error_message=None,
+        is_active=True,
+    )
+
+    class _ClaimOnce:
+        def __init__(self) -> None:
+            self._used = False
+
+        async def run(self, **kwargs):
+            if self._used:
+                return None
+            self._used = True
+            return task, None
+
+    class _ExecuteLeaseAware:
+        async def run(self, *, task, now):
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError as exc:
+                cancel_args.append(exc.args)
+                return SimpleNamespace(
+                    id=task.id,
+                    zone_id=task.zone_id,
+                    topology=task.topology,
+                    intent_id=task.intent_id,
+                    status="failed",
+                    error_code=TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
+                    error_message="Zone lease was lost during task execution",
+                    is_active=False,
+                )
+
+    async def _release(*, zone_id, owner):
+        released.append((zone_id, owner))
+        return True
+
+    async def _noop(**kwargs):
+        return None
+
+    worker = Ae3RuntimeWorker(
+        owner="worker-lease-lost-test",
+        claim_next_task_use_case=_ClaimOnce(),
+        idle_poll_interval_sec=0.05,
+        execute_task_use_case=_ExecuteLeaseAware(),
+        startup_recovery_use_case=type("StartupRecoveryUseCaseStub", (), {"run": staticmethod(_noop)})(),
+        zone_lease_repository=type("ZoneLeaseRepositoryStub", (), {"release": staticmethod(_release)})(),
+        zone_intent_repository=_MockIntentRepository(mark_terminal_calls=terminal_calls),
+        spawn_background_task_fn=lambda coro, **kwargs: asyncio.create_task(coro, name=str(kwargs.get("task_name") or "ae3-test")),
+        now_fn=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        logger=type(
+            "Logger",
+            (),
+            {
+                "debug": staticmethod(lambda *args, **kwargs: None),
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "error": staticmethod(lambda *args, **kwargs: None),
+            },
+        )(),
+        max_task_execution_sec=5.0,
+    )
+
+    async def _force_lease_loss(*, zone_id, lease_lost_event):
+        lease_lost_event.set()
+
+    worker._lease_heartbeat = _force_lease_loss  # type: ignore[method-assign]
+
+    await worker._drain_pending_tasks()
+
+    assert cancel_args == [(TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,)]
+    assert released == [(95, "worker-lease-lost-test")]
+    assert len(terminal_calls) == 1
+    assert terminal_calls[0]["intent_id"] == 2991
+    assert terminal_calls[0]["error_code"] == TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
 
 
 @pytest.mark.asyncio

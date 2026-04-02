@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from statistics import median
 from time import monotonic
 from typing import Any, Mapping, Optional, Sequence
@@ -13,9 +14,12 @@ from ae3lite.domain.errors import TaskExecutionError
 from common.db import create_zone_event
 
 
-def _naive_dt(dt: datetime) -> datetime:
-    """Return datetime with tzinfo stripped (naive). Works on both aware and naive inputs."""
-    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
+_logger = logging.getLogger(__name__)
+
+
+def _utc_naive_dt(dt: datetime) -> datetime:
+    """Normalize datetimes to UTC-naive before comparisons."""
+    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
 class BaseStageHandler:
@@ -46,7 +50,7 @@ class BaseStageHandler:
     def _deadline_reached(self, *, now: datetime, deadline: datetime | None) -> bool:
         if deadline is None:
             return False
-        return _naive_dt(now) >= _naive_dt(deadline)
+        return _utc_naive_dt(now) >= _utc_naive_dt(deadline)
 
     # ── Probe IRR state (hardware safety check) ─────────────────────
 
@@ -61,7 +65,10 @@ class BaseStageHandler:
         """Send probe command and assert hardware state matches expectations."""
         probe_cmds = plan.named_plans.get("irr_state_probe", ())
         if not probe_cmds:
-            return
+            raise TaskExecutionError(
+                "irr_state_probe_plan_missing",
+                f"IRR state probe command plan is missing for stage={getattr(task, 'current_stage', None)}",
+            )
         result = await self._command_gateway.run_batch(
             task=task, commands=probe_cmds, now=now,
         )
@@ -214,7 +221,13 @@ class BaseStageHandler:
                 },
             )
         except Exception:
-            return
+            _logger.warning(
+                "AE3 failed to log IRR_STATE_PROBE_FAILED zone_id=%s task_id=%s stage=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                str(getattr(task, "current_stage", "") or ""),
+                exc_info=True,
+            )
 
     # ── Level switch reading ────────────────────────────────────────
 
@@ -371,7 +384,16 @@ class BaseStageHandler:
             return {}
         phase_key = self._runtime_phase_key(task=task)
         process_cfg = process_calibrations.get(phase_key)
-        return process_cfg if isinstance(process_cfg, Mapping) else {}
+        if isinstance(process_cfg, Mapping):
+            return process_cfg
+        generic_cfg = process_calibrations.get("generic")
+        if isinstance(generic_cfg, Mapping):
+            return generic_cfg
+        if phase_key == "irrigation":
+            solution_fill_cfg = process_calibrations.get("solution_fill")
+            if isinstance(solution_fill_cfg, Mapping):
+                return solution_fill_cfg
+        return {}
 
     def _observation_config(
         self,

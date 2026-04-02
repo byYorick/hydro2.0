@@ -7,8 +7,9 @@ transitions in the audit trail, and updates the zone workflow phase.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
@@ -39,6 +40,9 @@ from ae3lite.infrastructure.metrics import (
     TICK_DURATION,
 )
 from common.db import create_zone_event
+
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowRouter:
@@ -204,9 +208,6 @@ class WorkflowRouter:
         workflow = task.workflow
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
 
-        await self._upsert_workflow_phase(
-            task=task, workflow_phase=workflow.workflow_phase, now=now,
-        )
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
             owner=str(task.claimed_by or ""),
@@ -215,12 +216,18 @@ class WorkflowRouter:
             due_at=due_at,
             now=now,
         )
-        return await self._resolve_inactive_terminal_task(
+        resolved_task = await self._resolve_inactive_terminal_task(
             task_id=task.id,
             updated_task=updated_task,
             error_code="ae3_poll_apply_failed",
             error_message=f"Task {task.id} could not persist poll outcome",
         )
+        await self._safe_upsert_workflow_phase(
+            task=resolved_task,
+            workflow_phase=workflow.workflow_phase,
+            now=now,
+        )
+        return resolved_task
 
     async def _apply_transition(
         self,
@@ -279,20 +286,6 @@ class WorkflowRouter:
             pending_manual_step=None,
         )
 
-        # Record transition in audit trail
-        await self._task_repo.record_transition(
-            task_id=task.id,
-            from_stage=task.current_stage,
-            to_stage=next_stage,
-            workflow_phase=next_def.workflow_phase,
-            now=now,
-        )
-
-        # Update zone workflow phase (pass next_stage explicitly so payload reflects new stage)
-        await self._upsert_workflow_phase(
-            task=task, workflow_phase=next_def.workflow_phase, stage=next_stage, now=now,
-        )
-
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
@@ -302,12 +295,26 @@ class WorkflowRouter:
             due_at=due_at,
             now=now,
         )
-        return await self._resolve_inactive_terminal_task(
+        resolved_task = await self._resolve_inactive_terminal_task(
             task_id=task.id,
             updated_task=updated_task,
             error_code="ae3_transition_apply_failed",
             error_message=f"Task {task.id} could not transition to {next_stage}",
         )
+        await self._safe_record_transition(
+            task_id=task.id,
+            from_stage=task.current_stage,
+            to_stage=next_stage,
+            workflow_phase=next_def.workflow_phase,
+            now=now,
+        )
+        await self._safe_upsert_workflow_phase(
+            task=resolved_task,
+            workflow_phase=next_def.workflow_phase,
+            stage=next_stage,
+            now=now,
+        )
+        return resolved_task
 
     async def _apply_enter_correction(
         self,
@@ -329,10 +336,6 @@ class WorkflowRouter:
             CORRECTION_STARTED.labels(topology=task.topology).inc()
 
         workflow = task.workflow
-        await self._upsert_workflow_phase(
-            task=task, workflow_phase=workflow.workflow_phase, now=now,
-        )
-
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
         updated_task = await self._task_repo.update_stage(
             task_id=task.id,
@@ -342,12 +345,18 @@ class WorkflowRouter:
             due_at=due_at,
             now=now,
         )
-        return await self._resolve_inactive_terminal_task(
+        resolved_task = await self._resolve_inactive_terminal_task(
             task_id=task.id,
             updated_task=updated_task,
             error_code="ae3_correction_apply_failed",
             error_message=f"Task {task.id} could not persist correction state",
         )
+        await self._safe_upsert_workflow_phase(
+            task=resolved_task,
+            workflow_phase=workflow.workflow_phase,
+            now=now,
+        )
+        return resolved_task
 
     async def _apply_exit_correction(
         self,
@@ -385,7 +394,12 @@ class WorkflowRouter:
                     },
                 )
             except Exception:
-                pass
+                logger.warning(
+                    "AE3 failed to log IRRIGATION_CORRECTION_COMPLETED zone_id=%s task_id=%s",
+                    int(getattr(task, "zone_id", 0) or 0),
+                    int(getattr(task, "id", 0) or 0),
+                    exc_info=True,
+                )
 
         # Delegate to normal transition
         return await self._apply_transition(
@@ -395,26 +409,24 @@ class WorkflowRouter:
     # ── Terminal states ─────────────────────────────────────────────
 
     async def _complete_task(self, *, task: Any, now: datetime) -> Any:
-        await self._upsert_workflow_phase(
-            task=task, workflow_phase="ready", now=now,
-        )
         TASK_COMPLETED.labels(topology=task.topology).inc()
         completed = await self._task_repo.mark_completed(
             task_id=task.id, owner=str(task.claimed_by or ""), now=now,
         )
-        return await self._resolve_inactive_terminal_task(
+        resolved_task = await self._resolve_inactive_terminal_task(
             task_id=task.id,
             updated_task=completed,
             error_code="ae3_complete_transition_failed",
             error_message=f"Task {task.id} could not transition to completed",
         )
+        await self._safe_upsert_workflow_phase(
+            task=resolved_task, workflow_phase="ready", now=now,
+        )
+        return resolved_task
 
     async def _fail_task(
         self, *, task: Any, now: datetime, error_code: str, error_message: str,
     ) -> Any:
-        await self._upsert_workflow_phase(
-            task=task, workflow_phase="idle", now=now,
-        )
         TASK_FAILED.labels(topology=task.topology, error_code=error_code).inc()
         raise TaskExecutionError(error_code, error_message)
 
@@ -427,6 +439,12 @@ class WorkflowRouter:
         if stage_def.name == "irrigation_check":
             irrigation_runtime = runtime.get("irrigation_execution")
             irrigation_runtime = irrigation_runtime if isinstance(irrigation_runtime, Mapping) else {}
+            explicit_timeout = irrigation_runtime.get("stage_timeout_sec")
+            if explicit_timeout is not None:
+                try:
+                    return now + timedelta(seconds=max(1, int(explicit_timeout)))
+                except (TypeError, ValueError):
+                    pass
             requested_duration_sec = getattr(task, "irrigation_requested_duration_sec", None)
             if requested_duration_sec is None:
                 requested_duration_sec = runtime.get("irrigation_requested_duration_sec")
@@ -434,7 +452,21 @@ class WorkflowRouter:
                 requested_duration_sec = irrigation_runtime.get("duration_sec")
             if requested_duration_sec is None:
                 return None
-            return now + timedelta(seconds=int(requested_duration_sec))
+            slack_raw = irrigation_runtime.get("correction_slack_sec")
+            if slack_raw is None:
+                slack = (
+                    900
+                    if bool(irrigation_runtime.get("correction_during_irrigation", True))
+                    else 0
+                )
+            else:
+                try:
+                    slack = max(0, min(7200, int(slack_raw)))
+                except (TypeError, ValueError):
+                    slack = 900 if bool(irrigation_runtime.get("correction_during_irrigation", True)) else 0
+            total_sec = int(requested_duration_sec) + slack
+            total_sec = min(max(1, total_sec), 86400)
+            return now + timedelta(seconds=total_sec)
         if stage_def.name == "irrigation_recovery_check":
             recovery_runtime = runtime.get("irrigation_recovery")
             recovery_runtime = recovery_runtime if isinstance(recovery_runtime, Mapping) else {}
@@ -454,12 +486,15 @@ class WorkflowRouter:
     def _record_stage_duration(self, *, task: Any, now: datetime) -> None:
         entered = task.workflow.stage_entered_at
         if entered is not None:
-            now_cmp = now.replace(tzinfo=None) if now.tzinfo is not None else now
-            entered_cmp = entered.replace(tzinfo=None) if entered.tzinfo is not None else entered
+            now_cmp = self._normalize_utc_naive(now)
+            entered_cmp = self._normalize_utc_naive(entered)
             duration = (now_cmp - entered_cmp).total_seconds()
             STAGE_DURATION.labels(
                 topology=task.topology, stage=task.current_stage,
             ).observe(max(0, duration))
+
+    def _normalize_utc_naive(self, value: datetime) -> datetime:
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
 
     async def _upsert_workflow_phase(
         self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
@@ -476,6 +511,54 @@ class WorkflowRouter:
                 payload={"ae3_cycle_start_stage": stage if stage is not None else task.current_stage},
                 scheduler_task_id=str(task.id),
                 now=now,
+            )
+
+    async def _safe_upsert_workflow_phase(
+        self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
+    ) -> None:
+        try:
+            await self._upsert_workflow_phase(
+                task=task,
+                workflow_phase=workflow_phase,
+                stage=stage,
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 failed to sync zone_workflow_state zone_id=%s task_id=%s phase=%s stage=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                workflow_phase,
+                stage if stage is not None else str(getattr(task, "current_stage", "") or ""),
+                exc_info=True,
+            )
+
+    async def _safe_record_transition(
+        self,
+        *,
+        task_id: int,
+        from_stage: str | None,
+        to_stage: str,
+        workflow_phase: str | None,
+        now: datetime,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        try:
+            await self._task_repo.record_transition(
+                task_id=task_id,
+                from_stage=from_stage,
+                to_stage=to_stage,
+                workflow_phase=workflow_phase,
+                metadata=metadata,
+                now=now,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 failed to record stage transition task_id=%s from=%s to=%s",
+                task_id,
+                from_stage,
+                to_stage,
+                exc_info=True,
             )
 
     async def _resolve_inactive_terminal_task(

@@ -41,6 +41,7 @@ fi
 : "${TEST_WORKFLOW_NODE_UID:=auto}"
 : "${TEST_PH_NODE_UID:=auto}"
 : "${TEST_EC_NODE_UID:=auto}"
+: "${TEST_SOIL_NODE_UID:=auto}"
 : "${TEST_NODE_HW_ID:=auto}"
 : "${REAL_HW_USE_NODE_SIM_SESSION:=0}"
 : "${REAL_HW_REBOOT_CMD:=restart}"
@@ -55,7 +56,7 @@ fi
 
 export E2E_REAL_HARDWARE=1
 export REAL_HW_USE_NODE_SIM_SESSION=0
-export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_NODE_HW_ID
+export TEST_NODE_GH_UID TEST_NODE_ZONE_UID TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_SOIL_NODE_UID TEST_NODE_HW_ID
 LARAVEL_URL="${LARAVEL_URL:-http://localhost:8081}"
 AUTOMATION_ENGINE_URL="${AUTOMATION_ENGINE_URL:-http://localhost:9505}"
 HISTORY_LOGGER_URL="${HISTORY_LOGGER_URL:-http://localhost:${HISTORY_LOGGER_PORT:-9302}}"
@@ -164,6 +165,11 @@ AE3LITE_SCENARIOS=(
   "scenarios/ae3lite/E105_ae3_two_tank_fail_closed_missing_command_plan_realhw.yaml"
   "scenarios/ae3lite/E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml"
 )
+SMART_IRRIGATION_SCENARIOS=(
+  "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"
+  "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml"
+  "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
+)
 CALIBRATION_SCENARIOS=(
   "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"
   "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"
@@ -172,11 +178,11 @@ CALIBRATION_SCENARIOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|calibration|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|smart_irrigation|calibration|full] [--list]
 
 Env:
-  SCENARIO_SET=automation|workflow|ae3lite|calibration|full   # default: full
-  TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID=auto|<uid>
+  SCENARIO_SET=automation|workflow|ae3lite|smart_irrigation|calibration|full   # default: full
+  TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID/TEST_SOIL_NODE_UID=auto|<uid>
   REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
   E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
   E2E_SCENARIO_INCLUDE_REGEX=<regex>      # optional include filter
@@ -189,8 +195,19 @@ collect_full_scenarios() {
     "${AUTOMATION_SCENARIOS[@]}" \
     "${WORKFLOW_SCENARIOS[@]}" \
     "${AE3LITE_SCENARIOS[@]}" \
+    "${SMART_IRRIGATION_SCENARIOS[@]}" \
     "${CALIBRATION_SCENARIOS[@]}" \
     | LC_ALL=C sort -u
+}
+
+_scenario_line_matches_re() {
+  local line="$1"
+  local re="$2"
+  if command -v rg >/dev/null 2>&1; then
+    printf '%s\n' "$line" | rg -q "$re"
+  else
+    printf '%s\n' "$line" | grep -Eq "$re"
+  fi
 }
 
 apply_scenario_filters() {
@@ -200,10 +217,10 @@ apply_scenario_filters() {
   local item
 
   for item in "${SCENARIOS[@]}"; do
-    if [ -n "$include_re" ] && ! printf '%s\n' "$item" | rg -q "$include_re"; then
+    if [ -n "$include_re" ] && ! _scenario_line_matches_re "$item" "$include_re"; then
       continue
     fi
-    if [ -n "$exclude_re" ] && printf '%s\n' "$item" | rg -q "$exclude_re"; then
+    if [ -n "$exclude_re" ] && _scenario_line_matches_re "$item" "$exclude_re"; then
       continue
     fi
     filtered+=("$item")
@@ -221,6 +238,9 @@ resolve_scenarios() {
       ;;
     ae3lite)
       SCENARIOS=("${AE3LITE_SCENARIOS[@]}")
+      ;;
+    smart_irrigation)
+      SCENARIOS=("${SMART_IRRIGATION_SCENARIOS[@]}")
       ;;
     calibration)
       SCENARIOS=("${CALIBRATION_SCENARIOS[@]}")
@@ -261,7 +281,7 @@ for arg in "$@"; do
       SCENARIO_SET="${arg#--set=}"
       ;;
     --set)
-      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|calibration|full>"
+      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|smart_irrigation|calibration|full>"
       exit 1
       ;;
     --list)
@@ -1519,21 +1539,48 @@ prepare_real_hardware_node() {
     fi
   fi
 
+  local soil_uid=""
+  if ! is_auto_uid "${TEST_SOIL_NODE_UID:-}" && uid_in_list "$TEST_SOIL_NODE_UID" "${bind_uids[@]}"; then
+    soil_uid="$TEST_SOIL_NODE_UID"
+  else
+    for uid in "${bind_uids[@]}"; do
+      if [ "${bound_node_types[$uid]:-}" = "water_sensor" ] && [ "$uid" != "$primary_uid" ]; then
+        soil_uid="$uid"
+        break
+      fi
+    done
+    if [ -z "$soil_uid" ]; then
+      soil_uid="$(first_uid_matching_pattern '(^|[-_])soil([-_]|$)|(^|[-_])moisture([-_]|$)|(^|[-_])water_sensor([-_]|$)' "${bind_uids[@]}" || true)"
+    fi
+    if [ -z "$soil_uid" ]; then
+      for uid in "${bind_uids[@]}"; do
+        if [ "$uid" != "$primary_uid" ] && [ "$uid" != "$ph_uid" ] && [ "$uid" != "$ec_uid" ]; then
+          soil_uid="$uid"
+          break
+        fi
+      done
+    fi
+    if [ -z "$soil_uid" ]; then
+      soil_uid="$primary_uid"
+    fi
+  fi
+
   IFS='|' read -r TEST_NODE_UID primary_hw_id TEST_NODE_ZONE_UID TEST_NODE_GH_UID <<<"$primary_row"
   TEST_NODE_HW_ID="$primary_hw_id"
   TEST_WORKFLOW_NODE_UID="$workflow_uid"
   TEST_PH_NODE_UID="$ph_uid"
   TEST_EC_NODE_UID="$ec_uid"
-  export TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID
+  TEST_SOIL_NODE_UID="$soil_uid"
+  export TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_SOIL_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID
 
-  echo "✅ Ноды готовы: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID primary_node=$TEST_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID hw=$TEST_NODE_HW_ID"
+  echo "✅ Ноды готовы: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID primary_node=$TEST_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID soil_node=$TEST_SOIL_NODE_UID hw=$TEST_NODE_HW_ID"
   rm -f "$live_topics_file"
   return 0
 }
 
 echo "🚀 Запуск E2E на реальном железе (set=$SCENARIO_SET, scenarios=${#SCENARIOS[@]})"
 prepare_real_hardware_node
-echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID workflow_node=$TEST_WORKFLOW_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID hw=$TEST_NODE_HW_ID"
+echo "Node: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID node=$TEST_NODE_UID workflow_node=$TEST_WORKFLOW_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID soil_node=$TEST_SOIL_NODE_UID hw=$TEST_NODE_HW_ID"
 
 for scenario in "${SCENARIOS[@]}"; do
   echo "\n=== $scenario ==="

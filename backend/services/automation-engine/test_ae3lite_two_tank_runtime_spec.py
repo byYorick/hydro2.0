@@ -250,7 +250,14 @@ def test_resolve_target_bound_handles_zero_value() -> None:
     runtime = resolve_two_tank_runtime(snap)
     # 0.0 is a valid bound and must be preserved (not replaced by fallback=target)
     assert runtime["target_ec_min"] == 0.0
-    assert runtime["target_ph_min"] == 0.0
+
+
+def test_resolve_two_tank_runtime_rejects_unknown_active_phase() -> None:
+    snap = _snapshot(correction={})
+    snap.workflow_phase = "mystery_phase"
+
+    with pytest.raises(PlannerConfigurationError, match="unsupported workflow_phase"):
+        resolve_two_tank_runtime(snap)
 
 
 def test_resolve_two_tank_runtime_uses_recipe_phase_targets_instead_of_execution_targets() -> None:

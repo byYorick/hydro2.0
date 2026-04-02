@@ -17,15 +17,12 @@ class TestSmartIrrigationLauncherContract(unittest.TestCase):
 
     def test_launcher_enables_smart_irrigation_seed_profile(self) -> None:
         self.assertIn('HYDRO_SEED_PROFILE="${HYDRO_SEED_PROFILE:-smart-irrigation}"', self.script)
-        self.assertIn("docker-compose.e2e.yml", self.script)
+        self.assertIn('SCENARIO_SET="${SCENARIO_SET:-smart_irrigation}"', self.script)
+        self.assertIn("run_automation_engine_real_hardware.sh", self.script)
 
-    def test_launcher_runs_canonical_smart_irrigation_pipeline_scenarios(self) -> None:
-        for scenario_name in [
-            "E108_ae3_irrigation_inline_correction_contract.yaml",
-            "E107_ae3_start_irrigation_api_smoke.yaml",
-            "E109_ae3_irrigation_inline_correction_node_sim.yaml",
-        ]:
-            self.assertIn(scenario_name, self.script)
+    def test_launcher_delegates_to_real_hardware_harness(self) -> None:
+        self.assertIn('exec "$REAL_HW_LAUNCHER" "$@"', self.script)
+        self.assertNotIn("-m runner.suite", self.script)
 
 
 if __name__ == "__main__":

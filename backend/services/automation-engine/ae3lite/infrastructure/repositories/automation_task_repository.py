@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Mapping
@@ -11,6 +12,8 @@ import asyncpg
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import CorrectionState, WorkflowState
 from common.db import get_pool
+
+logger = logging.getLogger(__name__)
 
 ACTIVE_TASK_STATUSES = ("pending", "claimed", "running", "waiting_command")
 RUNNING_TASK_STATUSES = ("claimed", "running", "waiting_command")
@@ -560,34 +563,29 @@ class PgAutomationTaskRepository:
         now: datetime,
     ) -> AutomationTask | None:
         normalized_now = self._normalize_timestamp(now)
-        async with self._connection() as conn:
-            async with conn.transaction():
-                row = await conn.fetchrow(
-                    """
-                    WITH candidate AS (
-                        SELECT id
-                        FROM ae_tasks
-                        WHERE zone_id = $1
-                          AND status IN ('pending', 'claimed', 'running', 'waiting_command')
-                        ORDER BY updated_at DESC, id DESC
-                        FOR UPDATE
-                        LIMIT 1
-                    )
-                    UPDATE ae_tasks tasks
-                    SET control_mode_snapshot = $2,
-                        pending_manual_step = CASE
-                            WHEN $2 = 'auto' THEN NULL
-                            ELSE tasks.pending_manual_step
-                        END,
-                        updated_at = $3
-                    FROM candidate
-                    WHERE tasks.id = candidate.id
-                    RETURNING tasks.*
-                    """,
-                    zone_id,
-                    control_mode,
-                    normalized_now,
-                )
+        row = await self._fetchrow(
+            """
+            WITH updated AS (
+                UPDATE ae_tasks
+                SET control_mode_snapshot = $2,
+                    pending_manual_step = CASE
+                        WHEN $2 = 'auto' THEN NULL
+                        ELSE pending_manual_step
+                    END,
+                    updated_at = $3
+                WHERE zone_id = $1
+                  AND status IN ('pending', 'claimed', 'running', 'waiting_command')
+                RETURNING *
+            )
+            SELECT *
+            FROM updated
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            zone_id,
+            control_mode,
+            normalized_now,
+        )
         return self._task_from_row(row)
 
     # ── Terminal transitions ────────────────────────────────────────
@@ -682,7 +680,7 @@ class PgAutomationTaskRepository:
         """
         normalized_now = self._normalize_timestamp(now)
         normalized_meta = self._normalize_meta(metadata)
-        await self._execute(
+        result = await self._execute(
             """
             INSERT INTO ae_stage_transitions (
                 task_id, from_stage, to_stage, workflow_phase,
@@ -700,6 +698,13 @@ class PgAutomationTaskRepository:
             normalized_now,
             normalized_meta,
         )
+        if str(result).strip().endswith("0 0"):
+            logger.warning(
+                "AE3 record_transition skipped because task row was missing: task_id=%s from=%s to=%s",
+                task_id,
+                from_stage,
+                to_stage,
+            )
 
     async def _update_task_status(
         self,

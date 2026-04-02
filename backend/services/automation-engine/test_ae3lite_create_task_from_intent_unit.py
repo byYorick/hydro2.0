@@ -175,6 +175,7 @@ async def test_create_task_from_intent_uses_shared_locked_connection_for_checks_
                     "workflow": "cycle_start",
                     "task_type": "diagnostics",
                     "source": "laravel_scheduler",
+                    "topology": "two_tank",
                 },
                 "idempotency_key": "idem-1",
             },

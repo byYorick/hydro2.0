@@ -137,6 +137,18 @@ class _MockWorkflowRepo:
         self.upsert_calls.append({"zone_id": zone_id, "phase": workflow_phase, "payload": payload})
 
 
+class _MockWorkflowRepoRaises(_MockWorkflowRepo):
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+        await super().upsert_phase(
+            zone_id=zone_id,
+            workflow_phase=workflow_phase,
+            payload=payload,
+            scheduler_task_id=scheduler_task_id,
+            now=now,
+        )
+        raise RuntimeError("workflow repo unavailable")
+
+
 class _MockRuntimeMonitor:
     pass
 
@@ -542,7 +554,14 @@ async def test_router_transition_to_irrigation_check_uses_requested_duration_for
 
     await router.run(
         task=task,
-        plan=_MockPlan(runtime={"irrigation_execution": {"duration_sec": 120}}),
+        plan=_MockPlan(
+            runtime={
+                "irrigation_execution": {
+                    "duration_sec": 120,
+                    "correction_slack_sec": 0,
+                },
+            },
+        ),
         now=NOW,
     )
 
@@ -563,13 +582,71 @@ async def test_router_transition_to_irrigation_check_uses_runtime_duration_fallb
 
     await router.run(
         task=task,
-        plan=_MockPlan(runtime={"irrigation_execution": {"duration_sec": 120}}),
+        plan=_MockPlan(
+            runtime={
+                "irrigation_execution": {
+                    "duration_sec": 120,
+                    "correction_slack_sec": 0,
+                },
+            },
+        ),
         now=NOW,
     )
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.current_stage == "irrigation_check"
     assert wf.stage_deadline_at == NOW + timedelta(seconds=120)
+
+
+async def test_router_irrigation_check_deadline_includes_default_correction_slack():
+    """Stage budget must exceed pump duration so inline corrections can finish."""
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+        irrigation_requested_duration_sec=8,
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"irrigation_execution": {"duration_sec": 60}}),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "irrigation_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=8 + 900)
+
+
+async def test_router_irrigation_check_deadline_respects_explicit_stage_timeout():
+    outcome = StageOutcome(kind="transition", next_stage="irrigation_check")
+    task = _make_task(
+        stage="irrigation_start",
+        phase="irrigating",
+        task_type="irrigation_start",
+        irrigation_requested_duration_sec=8,
+    )
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(
+            runtime={
+                "irrigation_execution": {
+                    "duration_sec": 60,
+                    "stage_timeout_sec": 2400,
+                },
+            },
+        ),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=2400)
 
 
 async def test_router_transition_to_irrigation_recovery_check_uses_recovery_timeout():
@@ -616,3 +693,34 @@ async def test_router_transition_upsert_payload_uses_next_stage_not_old():
         f"Expected 'clean_fill_start' but got {payload['ae3_cycle_start_stage']!r}. "
         "The payload must use next_stage, not task.current_stage (old stage)."
     )
+
+
+async def test_router_does_not_publish_workflow_phase_if_transition_persist_fails():
+    outcome = StageOutcome(kind="transition", next_stage="clean_fill_start")
+    task = _make_task(stage="startup")
+    router, _tr, wr = _make_router(
+        startup_outcome=outcome,
+        task_repo=_MockTaskRepo(return_task=None, current_task=None),
+    )
+
+    with pytest.raises(TaskExecutionError, match="transition to clean_fill_start"):
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert wr.upsert_calls == []
+
+
+async def test_router_tolerates_workflow_repo_failure_after_transition_persist():
+    outcome = StageOutcome(kind="transition", next_stage="clean_fill_start")
+    task = _make_task(stage="startup")
+    wr = _MockWorkflowRepoRaises()
+    router, tr, _ = _make_router(
+        startup_outcome=outcome,
+        return_task=task,
+        workflow_repo=wr,
+    )
+
+    result = await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert result is task
+    assert len(tr.update_stage_calls) == 1
+    assert len(wr.upsert_calls) == 1

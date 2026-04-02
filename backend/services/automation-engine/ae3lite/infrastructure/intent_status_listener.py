@@ -88,7 +88,11 @@ class IntentStatusListener:
             try:
                 await conn.remove_listener(_CHANNEL, self._notify_handler)
             except Exception:
-                pass
+                logger.warning(
+                    "IntentStatusListener: failed to remove listener for channel=%s",
+                    _CHANNEL,
+                    exc_info=True,
+                )
             await conn.close()
             logger.info("IntentStatusListener: disconnected")
 

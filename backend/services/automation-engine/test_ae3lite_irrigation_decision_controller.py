@@ -179,3 +179,32 @@ async def test_force_mode_bypasses_decision_strategy() -> None:
 
     assert result.outcome == "run"
     assert result.reason_code == "irrigation_force_mode"
+
+
+@pytest.mark.asyncio
+async def test_smart_soil_marks_invalid_day_schedule_as_degraded() -> None:
+    controller = IrrigationDecisionController()
+    runtime = {
+        "irrigation_decision": {
+            "strategy": "smart_soil_v1",
+            "config": {"lookback_sec": 1800, "min_samples": 1, "stale_after_sec": 600, "hysteresis_pct": 0.0},
+        },
+        "soil_moisture_target": {"day": 40.0, "night": 55.0, "day_start_time": "bad", "day_hours": 16},
+    }
+    monitor = _RuntimeMonitor((
+        {"sensor_label": "soil-1", "samples": ({"value": 30.0},)},
+    ))
+
+    result = await controller.evaluate(
+        zone_id=7,
+        runtime_monitor=monitor,
+        runtime=runtime,
+        mode="normal",
+        requested_duration_sec=120,
+        now=NOW,
+    )
+
+    assert result.outcome == "run"
+    assert result.degraded is True
+    assert result.details is not None
+    assert result.details["schedule_invalid"] is True

@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any, Mapping, Optional
+
+from ae3lite.domain.errors import TaskCreateError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -39,11 +44,20 @@ class LegacyIntentMapper:
         _raw_id = intent_row.get("id")
         intent_id = int(_raw_id) if _raw_id is not None else None
         intent_type = str(intent_row.get("intent_type") or "").strip().lower() or None
-        topology = str(
-            intent_payload.get("topology")
-            or intent_row.get("topology")
-            or "two_tank"
-        ).strip().lower()
+        raw_topology = intent_payload.get("topology")
+        if raw_topology is None:
+            raw_topology = intent_row.get("topology")
+        topology = str(raw_topology or "").strip().lower()
+        if not topology:
+            logger.error(
+                "AE3 legacy intent mapper rejected intent without topology: intent_id=%s",
+                intent_id,
+            )
+            raise TaskCreateError(
+                "start_cycle_intent_topology_missing",
+                f"Intent {intent_id if intent_id is not None else '<unknown>'} is missing topology",
+                details={"intent_id": intent_id},
+            )
         requested_task_type = str(intent_payload.get("task_type") or "").strip().lower()
         requested_mode = str(intent_payload.get("mode") or "").strip().lower()
         requested_duration_raw = intent_payload.get("requested_duration_sec")

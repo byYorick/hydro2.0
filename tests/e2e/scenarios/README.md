@@ -23,7 +23,7 @@
 - `infrastructure/` — readiness и bindings
 - `grow_cycle/` — циклы выращивания
 - `automation_engine/` — архив сценариев до AE3, не входит в поддерживаемые AE3-suite'ы
-- `ae3lite/` — standalone AE3-Lite start-cycle и real-hardware smoke
+- `ae3lite/` — standalone AE3-Lite start-cycle, two-tank real-hardware core и smart-irrigation real-hardware
 - `simulation/` — симуляции (live, digital twin)
 - `chaos/` — хаос‑тесты
 - `workflow/` — архив two-tank workflow сценариев до AE3, не входит в поддерживаемые AE3-suite'ы
@@ -43,6 +43,9 @@
 - `ae3lite/E98_ae3_runtime_switch_denied_busy_zone.yaml` — runtime switch guard
 - `ae3lite/E99_ae3_double_execution_guard.yaml` — защита от двойного исполнения
 - `ae3lite/E100_ae3_two_tank_realhw_smoke.yaml` — AE3-Lite two-tank smoke на реальной test-node
+- `ae3lite/E107_ae3_irrigation_runtime_test_node.yaml` — smart-irrigation runtime path на реальной test-node
+- `ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml` — soil-moisture ingest-contract для smart-irrigation
+- `ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml` — inline correction во время irrigation на реальной test-node
 
 ## Архив прежних сценариев
 
@@ -53,10 +56,13 @@
 compatibility alias'ами на актуальные AE3-сценарии.
 
 Текущее соответствие:
-- `automation_engine` -> `scheduler/E93` + `ae3lite/E95..E99`
-- `automation_engine_realhw` -> `ae3lite/E100`
-- `workflow` -> `ae3lite/E95`, `E97`, `E99`, `E100`
-- `prod_readiness_realhw` -> `scheduler/E93` + `ae3lite/E100`
+- `ae3lite_contract` -> `ae3lite/E95..E99`
+- `ae3lite_testnode_realhw_core` -> `ae3lite/E100..E106`
+- `ae3lite_testnode_realhw_irrigation` -> `ae3lite/E107..E109`
+- `ae3lite_realhw` -> `ae3lite/E100..E109`
+- `automation_engine` -> исторический compatibility alias на поддерживаемые entrypoints
+- `workflow` -> исторический compatibility alias на поддерживаемые entrypoints
+- `prod_readiness_realhw` -> compatibility aggregate real-hardware набор
 
 ## Формат действий
 

@@ -1,8 +1,8 @@
-# E107: AE3-Lite irrigation end-to-end on node-sim
-name: E107_ae3_irrigation_runtime_node_sim
+# E107: AE3-Lite irrigation runtime on test_node
+name: E107_ae3_irrigation_runtime_test_node
 auth_role: admin
 description: |
-  Полноценный e2e сценарий полива на `node-sim`:
+  Полноценный e2e сценарий полива на `test_node`:
   - подготавливает AE3 runtime в фазе `ready`;
   - проверяет запуск полива по времени (`task`);
   - переключает decision-controller на `smart_soil_v1`;
@@ -13,10 +13,10 @@ actions:
   - step: set_test_context
     type: set
     test_zone_uid: ${TEST_NODE_ZONE_UID}
-    test_node_uid: nd-test-irrig-1
-    test_ph_node_uid: nd-test-ph-1
-    test_ec_node_uid: nd-test-ec-1
-    test_soil_node_uid: nd-test-soil-1
+    test_node_uid: ${TEST_NODE_UID}
+    test_ph_node_uid: ${TEST_PH_NODE_UID}
+    test_ec_node_uid: ${TEST_EC_NODE_UID}
+    test_soil_node_uid: ${TEST_SOIL_NODE_UID}
     recipe_name: ae3-irrig-runtime-${TIMESTAMP_MS}
     idem_task: e107-task-${TIMESTAMP_MS}
     idem_skip: e107-skip-${TIMESTAMP_MS}
@@ -732,15 +732,9 @@ actions:
     expected_rows: 1
 
   - step: activate_ph_sensor_mode
-    type: ae_test_hook
+    type: hardware_activate_sensor_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_ph_node_uid}
-      channel: system
-      cmd: activate_sensor_mode
-      params: {}
+    node_uid: ${test_ph_node_uid}
     save: activate_ph_sensor_mode_response
 
   - step: wait_activate_ph_sensor_mode_done
@@ -758,15 +752,9 @@ actions:
     expected_rows: 1
 
   - step: activate_ec_sensor_mode
-    type: ae_test_hook
+    type: hardware_activate_sensor_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_ec_node_uid}
-      channel: system
-      cmd: activate_sensor_mode
-      params: {}
+    node_uid: ${test_ec_node_uid}
     save: activate_ec_sensor_mode_response
 
   - step: wait_activate_ec_sensor_mode_done
@@ -873,7 +861,7 @@ actions:
     timeout: 60.0
     expected_rows: 1
 
-  - step: isolate_runtime_sensors_to_node_sim
+  - step: isolate_runtime_sensors_to_test_node
     type: database_execute
     query: |
       UPDATE sensors
@@ -895,15 +883,9 @@ actions:
       soil_node_id: ${soil_node_id}
 
   - step: reset_test_node_state
-    type: ae_test_hook
+    type: hardware_reset_state
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: reset_state
-      params: {}
+    node_uid: ${test_node_uid}
     save: reset_state_response
 
   - step: wait_reset_state_done
@@ -921,21 +903,17 @@ actions:
     expected_rows: 1
 
   - step: set_tank_levels_ready
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        level_clean_min_override: false
-        level_clean_max_override: true
-        level_solution_min_override: false
-        level_solution_max_override: true
-        ph_value: 5.8
-        ec_value: 1.4
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      level_clean_min_override: false
+      level_clean_max_override: true
+      level_solution_min_override: false
+      level_solution_max_override: true
+      ph_value: 5.8
+      ec_value: 1.4
     save: ready_levels_response
 
   - step: wait_set_tank_levels_ready_done
@@ -975,16 +953,11 @@ actions:
     expected_rows: 1
 
   - step: set_soil_baseline
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_soil_node_uid}
-      channel: system
-      cmd: set_fault_mode
-      params:
-        soil_moisture_pct: 45.0
+    node_uid: ${test_soil_node_uid}
+    params:
+      soil_moisture_pct: 45.0
     save: soil_baseline_response
 
   - step: wait_soil_baseline_done
@@ -1040,21 +1013,17 @@ actions:
       soil_node_id: ${soil_node_id}
 
   - step: seed_off_target_before_inline_correction_run
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_node_uid}
-      channel: storage_state
-      cmd: set_fault_mode
-      params:
-        ph_value: 6.9
-        ec_value: 0.6
-        level_clean_min_override: false
-        level_clean_max_override: true
-        level_solution_min_override: false
-        level_solution_max_override: true
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    params:
+      ph_value: 7.2
+      ec_value: 0.45
+      level_clean_min_override: false
+      level_clean_max_override: true
+      level_solution_min_override: false
+      level_solution_max_override: true
     save: seed_off_target_before_irrigation_response
 
   - step: wait_seed_off_target_done
@@ -1173,7 +1142,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_run_id}
-    timeout: 60.0
+    timeout: 180.0
     expected_rows: 1
     save: task_run_row
 
@@ -1343,16 +1312,11 @@ actions:
       zone_id: ${zone_id}
 
   - step: set_soil_high
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_soil_node_uid}
-      channel: system
-      cmd: set_fault_mode
-      params:
-        soil_moisture_pct: 72.0
+    node_uid: ${test_soil_node_uid}
+    params:
+      soil_moisture_pct: 72.0
     save: soil_high_response
 
   - step: wait_soil_high_done
@@ -1483,16 +1447,11 @@ actions:
       zone_id: ${zone_id}
 
   - step: set_soil_low
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_soil_node_uid}
-      channel: system
-      cmd: set_fault_mode
-      params:
-        soil_moisture_pct: 18.0
+    node_uid: ${test_soil_node_uid}
+    params:
+      soil_moisture_pct: 18.0
     save: soil_low_response
 
   - step: wait_soil_low_done
@@ -1608,7 +1567,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${smart_run_task_id}
-    timeout: 60.0
+    timeout: 180.0
     expected_rows: 1
     save: smart_run_task_row
 

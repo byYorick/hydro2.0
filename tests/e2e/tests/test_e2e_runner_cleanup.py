@@ -28,6 +28,7 @@ class TestE2ERunnerCleanupConditions(unittest.IsolatedAsyncioTestCase):
 
     async def test_cleanup_step_skipped_when_condition_false(self) -> None:
         self.runner._execute_action_step = AsyncMock()
+        self.runner.context["missing_flag"] = 0
 
         scenario = {
             "actions": [],
@@ -47,6 +48,24 @@ class TestE2ERunnerCleanupConditions(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
         self.runner._execute_action_step.assert_not_awaited()
+
+    async def test_cleanup_unknown_condition_variable_raises(self) -> None:
+        scenario = {
+            "actions": [],
+            "assertions": [],
+            "cleanup": [
+                {
+                    "step": "dangerous_cleanup",
+                    "type": "database_execute",
+                    "query": "DELETE FROM zones WHERE id = :zone_id",
+                    "params": {"zone_id": "${zone_id}"},
+                    "condition": "${undefined_flag == 1}",
+                }
+            ],
+        }
+
+        with self.assertRaises(ValueError):
+            await self.runner._run_actions_scenario(scenario, "cleanup_condition_unknown_variable")
 
     async def test_cleanup_step_runs_and_strips_meta_fields(self) -> None:
         self.runner.context["run_cleanup"] = 1

@@ -204,13 +204,22 @@ TWO_TANK: Mapping[str, StageDef] = {
         timeout_key="prepare_recirculation_timeout_sec",
         has_correction=True,
         on_corr_success="irrigation_recovery_stop_to_ready",
-        on_corr_fail="irrigation_recovery_stop_to_ready",
+        on_corr_fail="irrigation_recovery_stop_failed",
     ),
     "irrigation_recovery_stop_to_ready": StageDef(
         "irrigation_recovery_stop_to_ready", "command",
         workflow_phase="ready",
         command_plans=("irrigation_recovery_stop", "sensor_mode_deactivate"),
         next_stage="completed_run",
+    ),
+    "irrigation_recovery_stop_failed": StageDef(
+        "irrigation_recovery_stop_failed", "command",
+        workflow_phase="irrig_recirc",
+        command_plans=("irrigation_recovery_stop", "sensor_mode_deactivate"),
+        terminal_error=(
+            "irrigation_recovery_targets_not_restored",
+            "Irrigation recovery correction failed to restore targets",
+        ),
     ),
     # === Terminal ===
     "complete_ready": StageDef("complete_ready", "ready", workflow_phase="ready"),

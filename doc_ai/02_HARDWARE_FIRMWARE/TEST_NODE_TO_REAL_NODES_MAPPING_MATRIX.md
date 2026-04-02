@@ -98,7 +98,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `pump_d` | `ec_node/pump_d` | `Direct` | Совпадает по имени и роли. |
 | `system` (sensor-mode service) | `ec_node` | `Missing` | Команды `activate/deactivate_sensor_mode` в боевой `ec_node` не зарегистрированы. |
 
-## 4.4. `nd-test-climate-1` (`type=climate`)
+## 4.4. `nd-test-soil-1` (`type=water_sensor`)
+
+| Канал в test_node | Реальная нода | Совместимость | Детали migration |
+|---|---|---|---|
+| `soil_moisture` | отдельная soil/water-sensor node | `Missing` | В текущей матрице боевых прошивок нет канонической отдельной `soil`-ноды с тем же runtime-контрактом, поэтому smart-irrigation real-hardware E2E пока привязан к `test_node`. |
+| `system` (`set_fault_mode` для soil seed) | real soil-node | `Missing` | Сервисный seed/fault канал специфичен для `test_node`; для боевой soil-ноды нужен другой deterministic harness path. |
+
+## 4.5. `nd-test-climate-1` (`type=climate`)
 
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
@@ -109,7 +116,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `heater` | `climate_node` actuator channel из NodeConfig | `Partial` | Поддержка через `set_relay` при наличии канала в NodeConfig. |
 | `co2` | `climate_node/co2` | `Missing` в test-node | В real-node есть `co2`, а в test-node виртуальной климат-ноде его нет. |
 
-## 4.5. `nd-test-light-1` (`type=light`)
+## 4.6. `nd-test-light-1` (`type=light`)
 
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Final
+
+logger = logging.getLogger(__name__)
 
 
 AVAILABLE_CONTROL_MODES: Final[tuple[str, ...]] = ("auto", "semi", "manual")
@@ -21,6 +24,8 @@ def normalize_control_mode(value: object) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in AVAILABLE_CONTROL_MODES:
         return normalized
+    if normalized:
+        logger.warning("AE3 unknown control_mode=%s; falling back to auto", normalized)
     return "auto"
 
 

@@ -65,15 +65,24 @@ logger = logging.getLogger(__name__)
 class _DotDict(dict):
     """Dictionary wrapper with attribute access used in condition eval."""
 
-    def __getattr__(self, key):
-        return self.get(key)
+    def __getattr__(self, key: str):
+        if key.startswith("_"):
+            raise AttributeError(key)
+        if key in self:
+            return self[key]
+        if os.getenv("E2E_STRICT_CONDITION_ATTRS", "").strip().lower() in {"1", "true", "yes", "on"}:
+            raise AttributeError(
+                f"E2E condition references missing key or attribute {key!r}; "
+                "fix the YAML expression or disable E2E_STRICT_CONDITION_ATTRS"
+            )
+        return None
 
 
 class _ConditionEvalContext(dict):
-    """Eval context that returns None for unknown variables."""
+    """Eval context that fails on unknown variables."""
 
     def __missing__(self, key):
-        return None
+        raise KeyError(key)
 
 
 class E2ERunner:
@@ -169,6 +178,7 @@ class E2ERunner:
             "TEST_NODE_UID": default_test_node_uid,
             "TEST_PH_NODE_UID": os.getenv("TEST_PH_NODE_UID", default_test_node_uid),
             "TEST_EC_NODE_UID": os.getenv("TEST_EC_NODE_UID", default_test_node_uid),
+            "TEST_SOIL_NODE_UID": os.getenv("TEST_SOIL_NODE_UID", default_test_node_uid),
             "TEST_WORKFLOW_NODE_UID": os.getenv("TEST_WORKFLOW_NODE_UID", "auto"),
             "TEST_NODE_HW_ID": os.getenv("TEST_NODE_HW_ID", "auto"),
             "E2E_REAL_HARDWARE": real_hw_flag,
@@ -243,7 +253,13 @@ class E2ERunner:
 
         if not any(
             _needs_resolution(key)
-            for key in ("TEST_NODE_UID", "TEST_WORKFLOW_NODE_UID", "TEST_PH_NODE_UID", "TEST_EC_NODE_UID")
+            for key in (
+                "TEST_NODE_UID",
+                "TEST_WORKFLOW_NODE_UID",
+                "TEST_PH_NODE_UID",
+                "TEST_EC_NODE_UID",
+                "TEST_SOIL_NODE_UID",
+            )
         ):
             return
 
@@ -299,6 +315,7 @@ class E2ERunner:
         irrig = _pick("irrig") or rows[0]
         ph = _pick("ph") or irrig
         ec = _pick("ec") or (ph if ph is not irrig else irrig)
+        soil = _pick("water_sensor") or _pick("soil") or irrig
 
         if _needs_resolution("TEST_NODE_UID"):
             self.context["TEST_NODE_UID"] = irrig["uid"]
@@ -308,6 +325,8 @@ class E2ERunner:
             self.context["TEST_PH_NODE_UID"] = ph["uid"]
         if _needs_resolution("TEST_EC_NODE_UID"):
             self.context["TEST_EC_NODE_UID"] = ec["uid"]
+        if _needs_resolution("TEST_SOIL_NODE_UID"):
+            self.context["TEST_SOIL_NODE_UID"] = soil["uid"]
         if str(self.context.get("TEST_NODE_HW_ID") or "").strip().lower() in {"", "auto", "esp32-test-001"}:
             self.context["TEST_NODE_HW_ID"] = str(irrig.get("hardware_id") or "")
 
@@ -360,6 +379,14 @@ class E2ERunner:
 
     def _resolve_container_name(self, compose_service: str) -> str:
         project = self._compose_project()
+        fallback = f"{project}-{compose_service}-1"
+        strict = os.getenv("E2E_STRICT_DOCKER_CONTAINER_RESOLVE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        resolved: Optional[str] = None
         try:
             result = subprocess.run(
                 [
@@ -378,12 +405,39 @@ class E2ERunner:
                 timeout=5,
             )
             if result.returncode == 0:
-                name = result.stdout.strip().splitlines()
-                if name:
-                    return name[0]
-        except Exception:
-            pass
-        return f"{project}-{compose_service}-1"
+                lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
+                if lines:
+                    resolved = lines[0]
+            if resolved is None:
+                logger.warning(
+                    "docker ps did not resolve container for service=%s project=%s rc=%s stdout=%r stderr=%s; %s",
+                    compose_service,
+                    project,
+                    result.returncode,
+                    result.stdout.strip(),
+                    result.stderr.strip(),
+                    "raising" if strict else f"using fallback {fallback!r}",
+                )
+        except Exception as exc:
+            logger.warning(
+                "Failed to resolve container name for service=%s project=%s; %s",
+                compose_service,
+                project,
+                "raising" if strict else f"using fallback {fallback!r}",
+                exc_info=True,
+            )
+            if strict:
+                raise RuntimeError(
+                    f"E2E strict container resolve: docker CLI failed for service={compose_service!r}: {exc}"
+                ) from exc
+        if resolved is not None:
+            return resolved
+        if strict:
+            raise RuntimeError(
+                f"E2E strict container resolve: no running container for compose "
+                f"service={compose_service!r} project={project!r} (fallback would be {fallback!r})"
+            )
+        return fallback
 
     def _wait_laravel_health_simple(self, timeout: float = 60.0):
         """Wait for Laravel health without docker-compose (container-safe)."""
@@ -956,6 +1010,205 @@ class E2ERunner:
             return self.variable_resolver.resolve_variables(value, required_vars)
         return value
 
+    async def _publish_history_logger_command(
+        self,
+        cfg: Dict[str, Any],
+        cmd_payload: Dict[str, Any],
+        *,
+        error_label: str = "ae_test_hook",
+    ) -> Dict[str, Any]:
+        import httpx
+
+        resolved_payload = self._resolve_variables(cmd_payload or {})
+        if not isinstance(resolved_payload, dict):
+            raise ValueError(f"{error_label} requires command payload mapping")
+
+        payload = dict(resolved_payload)
+        zone_id = payload.get("zone_id") or cfg.get("zone_id") or self.context.get("zone_id")
+        if not zone_id:
+            raise ValueError(f"{error_label} requires zone_id")
+
+        payload["zone_id"] = int(zone_id)
+        payload["greenhouse_uid"] = str(
+            payload.get("greenhouse_uid")
+            or cfg.get("greenhouse_uid")
+            or os.getenv("TEST_NODE_GH_UID")
+            or os.getenv("E2E_GH_UID")
+            or "gh-test-1"
+        ).strip()
+        payload["source"] = str(
+            payload.get("source")
+            or cfg.get("source")
+            or "e2e_runner"
+        ).strip() or "e2e_runner"
+
+        required = ("node_uid", "channel", "cmd")
+        for key in required:
+            if not str(payload.get(key) or "").strip():
+                raise ValueError(f"{error_label} missing required field: {key}")
+
+        if "cmd_id" not in payload or not str(payload.get("cmd_id") or "").strip():
+            import uuid
+            payload["cmd_id"] = f"e2e:{uuid.uuid4().hex[:24]}"
+
+        history_logger_urls: List[str] = []
+
+        def _add_history_logger_url(candidate: Optional[str]) -> None:
+            if not candidate:
+                return
+            resolved = str(self._resolve_variables(candidate)).strip().rstrip("/")
+            if not resolved:
+                return
+            if resolved not in history_logger_urls:
+                history_logger_urls.append(resolved)
+
+        _add_history_logger_url(cfg.get("history_logger_url"))
+        _add_history_logger_url(os.getenv("HISTORY_LOGGER_URL"))
+
+        in_container = self._use_docker_cli()
+        host = os.getenv("HISTORY_LOGGER_HOST")
+        if not host:
+            host = "history-logger" if in_container else "localhost"
+        default_port = "9300" if in_container else "9302"
+        port = os.getenv("HISTORY_LOGGER_PORT", default_port)
+        _add_history_logger_url(f"http://{host}:{port}")
+
+        if in_container:
+            _add_history_logger_url("http://history-logger:9300")
+        else:
+            _add_history_logger_url("http://localhost:9302")
+            _add_history_logger_url("http://127.0.0.1:9302")
+
+        if not history_logger_urls:
+            raise ValueError(f"Unable to resolve history-logger URL for {error_label}")
+
+        history_logger_token = str(
+            cfg.get("history_logger_token")
+            or os.getenv("HISTORY_LOGGER_API_TOKEN")
+            or os.getenv("PY_INGEST_TOKEN")
+            or "dev-token-12345"
+        ).strip()
+        headers: Dict[str, str] = {}
+        if history_logger_token:
+            headers["Authorization"] = f"Bearer {history_logger_token}"
+
+        retries = max(0, int(cfg.get("retries", 0) or 0))
+        retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
+        resp = None
+        last_error = None
+        last_endpoint = None
+
+        for history_logger_url in history_logger_urls:
+            endpoint = f"{history_logger_url}/commands"
+            last_endpoint = endpoint
+            for attempt in range(retries + 1):
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.post(
+                            endpoint,
+                            json=payload,
+                            headers=headers,
+                        )
+                    break
+                except Exception as e:
+                    last_error = e
+                    if attempt >= retries:
+                        break
+                    logger.warning(
+                        "%s failed for %s (attempt %d/%d): %s; retrying in %.1fs",
+                        error_label,
+                        endpoint,
+                        attempt + 1,
+                        retries + 1,
+                        str(e),
+                        retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+            if resp is not None:
+                break
+
+        if resp is None:
+            if last_error:
+                raise RuntimeError(
+                    f"{error_label} failed for endpoints={history_logger_urls}, "
+                    f"last_endpoint={last_endpoint}, error={last_error}"
+                ) from last_error
+            raise RuntimeError(
+                f"{error_label} failed: no response from history-logger (endpoints={history_logger_urls})"
+            )
+
+        upstream = resp.json() if resp.text else {}
+        command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
+
+        if 400 <= resp.status_code < 500:
+            result = {
+                "status": "ok",
+                "data": {
+                    "published": False,
+                    "cmd_id": command_id or None,
+                    "zone_id": payload["zone_id"],
+                    "node_uid": payload["node_uid"],
+                    "channel": payload["channel"],
+                    "http_status": int(resp.status_code),
+                    "error": upstream.get("detail"),
+                },
+            }
+            if "save" in cfg:
+                self.context[cfg["save"]] = result
+            return result
+
+        if resp.status_code != 200:
+            raise RuntimeError(f"History-logger /commands failed: {resp.status_code} - {resp.text}")
+
+        result = {
+            "status": "ok",
+            "data": {
+                "published": bool(command_id),
+                "cmd_id": command_id,
+                "zone_id": payload["zone_id"],
+                "node_uid": payload["node_uid"],
+                "channel": payload["channel"],
+                "http_status": int(resp.status_code),
+            },
+        }
+        if "save" in cfg:
+            self.context[cfg["save"]] = result
+        return result
+
+    async def _execute_hardware_command_step(
+        self,
+        cfg: Dict[str, Any],
+        *,
+        cmd_name: str,
+        default_channel: str,
+    ) -> Dict[str, Any]:
+        node_uid = self._resolve_variables(cfg.get("node_uid"))
+        if not str(node_uid or "").strip():
+            raise ValueError(f"{cmd_name} requires node_uid")
+
+        channel = self._resolve_variables(cfg.get("channel") or default_channel)
+        params = self._resolve_variables(cfg.get("params", {}))
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            raise ValueError(f"{cmd_name} requires params mapping")
+
+        payload: Dict[str, Any] = {
+            "node_uid": str(node_uid).strip(),
+            "channel": str(channel).strip(),
+            "cmd": cmd_name,
+            "params": params,
+        }
+        for key in ("zone_id", "greenhouse_uid", "source", "cmd_id"):
+            if key in cfg:
+                payload[key] = cfg[key]
+
+        return await self._publish_history_logger_command(
+            cfg,
+            payload,
+            error_label=f"hardware_{cmd_name}",
+        )
+
     def _normalize_expected_status(self, expected_status: Any) -> Optional[List[int]]:
         """Normalize expected_status into a list of ints for flexible comparisons."""
         if expected_status is None:
@@ -1057,7 +1310,7 @@ class E2ERunner:
 
         eval_context = _ConditionEvalContext(
             {
-                "context": self.context,
+                "context": self._wrap_condition_value(dict(self.context)),
                 "len": self._safe_len,
                 "safe_len": self._safe_len,
                 "str": str,
@@ -2553,16 +2806,39 @@ class E2ERunner:
                     return None
                 raise
 
+        if step_type == "hardware_reset_state":
+            return await self._execute_hardware_command_step(
+                cfg,
+                cmd_name="reset_state",
+                default_channel="storage_state",
+            )
+
+        if step_type == "hardware_set_fault_mode":
+            return await self._execute_hardware_command_step(
+                cfg,
+                cmd_name="set_fault_mode",
+                default_channel="system",
+            )
+
+        if step_type == "hardware_activate_sensor_mode":
+            return await self._execute_hardware_command_step(
+                cfg,
+                cmd_name="activate_sensor_mode",
+                default_channel="system",
+            )
+
+        if step_type == "hardware_deactivate_sensor_mode":
+            return await self._execute_hardware_command_step(
+                cfg,
+                cmd_name="deactivate_sensor_mode",
+                default_channel="system",
+            )
+
         # Automation Engine test hook
         if step_type == "ae_test_hook":
-            import httpx
-
-            zone_id = cfg.get("zone_id") or self.context.get("zone_id")
             action = cfg.get("action")
             command = cfg.get("command")
-            
-            if not zone_id:
-                raise ValueError("ae_test_hook requires zone_id")
+
             if not action:
                 raise ValueError("ae_test_hook requires action")
             if action != "publish_command":
@@ -2572,149 +2848,11 @@ class E2ERunner:
             if not isinstance(resolved_command, dict):
                 raise ValueError("ae_test_hook publish_command requires command object")
 
-            cmd_payload = dict(resolved_command)
-            cmd_payload["zone_id"] = int(cmd_payload.get("zone_id") or zone_id)
-            cmd_payload["greenhouse_uid"] = str(
-                cmd_payload.get("greenhouse_uid")
-                or os.getenv("TEST_NODE_GH_UID")
-                or os.getenv("E2E_GH_UID")
-                or "gh-test-1"
-            ).strip()
-            cmd_payload["source"] = str(cmd_payload.get("source") or "e2e_runner").strip() or "e2e_runner"
-
-            required = ("node_uid", "channel", "cmd")
-            for key in required:
-                if not str(cmd_payload.get(key) or "").strip():
-                    raise ValueError(f"ae_test_hook publish_command missing required field: {key}")
-
-            if "cmd_id" not in cmd_payload or not str(cmd_payload.get("cmd_id") or "").strip():
-                import uuid
-                cmd_payload["cmd_id"] = f"e2e:{uuid.uuid4().hex[:24]}"
-
-            history_logger_urls: List[str] = []
-
-            def _add_history_logger_url(candidate: Optional[str]) -> None:
-                if not candidate:
-                    return
-                resolved = str(self._resolve_variables(candidate)).strip().rstrip("/")
-                if not resolved:
-                    return
-                if resolved not in history_logger_urls:
-                    history_logger_urls.append(resolved)
-
-            _add_history_logger_url(cfg.get("history_logger_url"))
-            _add_history_logger_url(os.getenv("HISTORY_LOGGER_URL"))
-
-            in_container = self._use_docker_cli()
-            host = os.getenv("HISTORY_LOGGER_HOST")
-            if not host:
-                host = "history-logger" if in_container else "localhost"
-            default_port = "9300" if in_container else "9302"
-            port = os.getenv("HISTORY_LOGGER_PORT", default_port)
-            _add_history_logger_url(f"http://{host}:{port}")
-
-            if in_container:
-                _add_history_logger_url("http://history-logger:9300")
-            else:
-                _add_history_logger_url("http://localhost:9302")
-                _add_history_logger_url("http://127.0.0.1:9302")
-
-            if not history_logger_urls:
-                raise ValueError("Unable to resolve history-logger URL for ae_test_hook")
-
-            history_logger_token = str(
-                cfg.get("history_logger_token")
-                or os.getenv("HISTORY_LOGGER_API_TOKEN")
-                or os.getenv("PY_INGEST_TOKEN")
-                or "dev-token-12345"
-            ).strip()
-            headers: Dict[str, str] = {}
-            if history_logger_token:
-                headers["Authorization"] = f"Bearer {history_logger_token}"
-
-            retries = max(0, int(cfg.get("retries", 0) or 0))
-            retry_delay = float(cfg.get("retry_delay_seconds", cfg.get("retry_delay", 1.0)) or 1.0)
-            resp = None
-            last_error = None
-            last_endpoint = None
-
-            for history_logger_url in history_logger_urls:
-                endpoint = f"{history_logger_url}/commands"
-                last_endpoint = endpoint
-                for attempt in range(retries + 1):
-                    try:
-                        async with httpx.AsyncClient(timeout=10.0) as client:
-                            resp = await client.post(
-                                endpoint,
-                                json=cmd_payload,
-                                headers=headers,
-                            )
-                        break
-                    except Exception as e:
-                        last_error = e
-                        if attempt >= retries:
-                            break
-                        logger.warning(
-                            "ae_test_hook failed for %s (attempt %d/%d): %s; retrying in %.1fs",
-                            endpoint,
-                            attempt + 1,
-                            retries + 1,
-                            str(e),
-                            retry_delay,
-                        )
-                        await asyncio.sleep(retry_delay)
-                if resp is not None:
-                    break
-
-            if resp is None:
-                if last_error:
-                    raise RuntimeError(
-                        f"ae_test_hook failed for endpoints={history_logger_urls}, "
-                        f"last_endpoint={last_endpoint}, error={last_error}"
-                    ) from last_error
-                raise RuntimeError(
-                    f"ae_test_hook failed: no response from history-logger (endpoints={history_logger_urls})"
-                )
-
-            upstream = resp.json() if resp.text else {}
-            command_id = str(((upstream.get("data") or {}).get("command_id")) or "").strip()
-
-            # Для guard-сценариев 4xx является ожидаемым бизнес-результатом
-            # и должен возвращаться как published=false, а не runtime exception.
-            if 400 <= resp.status_code < 500:
-                result = {
-                    "status": "ok",
-                    "data": {
-                        "published": False,
-                        "cmd_id": command_id or None,
-                        "zone_id": cmd_payload["zone_id"],
-                        "node_uid": cmd_payload["node_uid"],
-                        "channel": cmd_payload["channel"],
-                        "http_status": int(resp.status_code),
-                        "error": upstream.get("detail"),
-                    },
-                }
-                if "save" in cfg:
-                    self.context[cfg["save"]] = result
-                return result
-
-            if resp.status_code != 200:
-                raise RuntimeError(f"History-logger /commands failed: {resp.status_code} - {resp.text}")
-
-            result = {
-                "status": "ok",
-                "data": {
-                    "published": bool(command_id),
-                    "cmd_id": command_id,
-                    "zone_id": cmd_payload["zone_id"],
-                    "node_uid": cmd_payload["node_uid"],
-                    "channel": cmd_payload["channel"],
-                    "http_status": int(resp.status_code),
-                },
-            }
-            if "save" in cfg:
-                self.context[cfg["save"]] = result
-            return result
+            return await self._publish_history_logger_command(
+                cfg,
+                resolved_command,
+                error_label="ae_test_hook",
+            )
 
         # Node-sim fault modes
         if step_type == "node_sim_fault_mode":

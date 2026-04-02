@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
 from common.db import get_pool
+
+logger = logging.getLogger(__name__)
 
 
 class PgZoneRuntimeMonitor:
@@ -36,6 +39,11 @@ class PgZoneRuntimeMonitor:
             value = row.get(field_name)
             if isinstance(value, Mapping):
                 return value
+        logger.warning(
+            "AE3 zone runtime monitor: zone_event payload is not a mapping row_id=%s event_type=%s",
+            row.get("id"),
+            row.get("event_type"),
+        )
         return {}
 
     async def _read_metric_sensor(self, *, zone_id: int, sensor_type: str) -> Mapping[str, Any] | None:

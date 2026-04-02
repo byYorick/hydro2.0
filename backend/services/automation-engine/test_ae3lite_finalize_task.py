@@ -44,7 +44,7 @@ async def test_finalize_task_complete_uses_repository_transition() -> None:
 
 
 @pytest.mark.asyncio
-async def test_finalize_task_fail_closed_returns_synthetic_terminal_when_row_missing() -> None:
+async def test_finalize_task_fail_closed_returns_synthetic_when_row_missing() -> None:
     task = _build_task()
 
     class _Repo:
@@ -66,6 +66,34 @@ async def test_finalize_task_fail_closed_returns_synthetic_terminal_when_row_mis
         now=task.updated_at,
     )
 
-    assert result.status == "failed"
+    assert result.id == task.id
+    assert str(result.status).lower() == "failed"
     assert result.error_code == "ae3_task_execution_failed"
     assert result.error_message == "boom"
+    assert result.completed_at is not None
+    assert not result.is_active
+
+
+@pytest.mark.asyncio
+async def test_finalize_task_complete_returns_synthetic_when_row_missing() -> None:
+    task = _build_task()
+
+    class _Repo:
+        async def mark_completed(self, **kwargs):
+            assert kwargs["task_id"] == task.id
+            return None
+
+        async def get_by_id(self, **kwargs):
+            assert kwargs["task_id"] == task.id
+            return None
+
+    use_case = FinalizeTaskUseCase(task_repository=_Repo())
+
+    result = await use_case.complete(task=task, owner="worker-a", now=task.updated_at)
+
+    assert result.id == task.id
+    assert str(result.status).lower() == "completed"
+    assert result.error_code is None
+    assert result.error_message is None
+    assert result.completed_at is not None
+    assert not result.is_active

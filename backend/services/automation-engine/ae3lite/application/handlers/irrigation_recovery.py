@@ -68,7 +68,7 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
             activated_here=False,
             stabilization_sec=int(correction_cfg.get("stabilization_sec", 60)),
             return_stage_success=stage_def.on_corr_success or "irrigation_recovery_stop_to_ready",
-            return_stage_fail=stage_def.on_corr_fail or "irrigation_recovery_stop_to_ready",
+            return_stage_fail=stage_def.on_corr_fail or "irrigation_recovery_stop_failed",
             outcome_success=None,
             needs_ec=False,
             ec_node_uid=None,

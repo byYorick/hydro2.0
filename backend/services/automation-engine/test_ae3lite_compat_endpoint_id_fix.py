@@ -129,7 +129,7 @@ class TestZoneBusyActiveIntentId:
 
         assert exc.value.detail["zone_id"] == 7
 
-    async def test_active_status_defaults_to_running_when_status_absent(self) -> None:
+    async def test_active_status_is_none_when_status_absent(self) -> None:
         endpoint = _bind_with_claim(
             {"decision": "zone_busy", "intent": {"id": 5}}
         )
@@ -138,7 +138,7 @@ class TestZoneBusyActiveIntentId:
         with pytest.raises(HTTPException) as exc:
             await endpoint(zone_id=7, request=_FAKE_REQUEST, req=req)
 
-        assert exc.value.detail["active_status"] == "running"
+        assert exc.value.detail["active_status"] is None
 
 
 # ---------------------------------------------------------------------------

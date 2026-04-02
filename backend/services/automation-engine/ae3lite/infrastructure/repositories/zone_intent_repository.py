@@ -79,6 +79,7 @@ class PgZoneIntentRepository:
                   AND (
                         status IN ('pending', 'failed')
                         OR (status = 'claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4)
+                        OR (status = 'running' AND updated_at IS NOT NULL AND updated_at <= $5)
                   )
                   AND NOT EXISTS (
                         SELECT 1
@@ -109,7 +110,7 @@ class PgZoneIntentRepository:
             SET status = 'claimed',
                 claimed_at = $3,
                 retry_count = CASE
-                    WHEN intents.status IN ('failed', 'claimed') THEN intents.retry_count + 1
+                    WHEN intents.status IN ('failed', 'claimed', 'running') THEN intents.retry_count + 1
                     ELSE intents.retry_count
                 END,
                 updated_at = $3
@@ -127,7 +128,7 @@ class PgZoneIntentRepository:
             intent = dict(rows[0])
             source_status = str(intent.pop("previous_status", "") or "").strip().lower() or "unknown"
             INTENT_CLAIMED.labels(source_status=source_status).inc()
-            if source_status == "claimed":
+            if source_status in {"claimed", "running"}:
                 INTENT_STALE_RECLAIMED.inc()
             return {"decision": "claimed", "intent": intent}
 
@@ -144,13 +145,23 @@ class PgZoneIntentRepository:
             idempotency_key,
         )
         requested_intent: dict[str, Any] = {}
+        stale_same_key_running_intent: dict[str, Any] = {}
         if existing_rows:
             existing = dict(existing_rows[0])
             status = str(existing.get("status") or "").strip().lower()
             if status in {"pending", "failed"}:
                 requested_intent = existing
             if status in _ACTIVE_STATUSES:
-                return {"decision": "deduplicated", "intent": existing}
+                is_stale_running = (
+                    status == "running"
+                    and existing.get("updated_at") is not None
+                    and existing["updated_at"] <= stale_running_before
+                )
+                if is_stale_running:
+                    requested_intent = existing
+                    stale_same_key_running_intent = existing
+                else:
+                    return {"decision": "deduplicated", "intent": existing}
             if status in _TERMINAL_STATUSES:
                 return {"decision": "terminal", "intent": existing}
 
@@ -181,6 +192,9 @@ class PgZoneIntentRepository:
                 "intent": dict(active_zone_rows[0]),
                 "requested_intent": requested_intent,
             }
+
+        if stale_same_key_running_intent:
+            return {"decision": "deduplicated", "intent": stale_same_key_running_intent}
 
         return {"decision": "missing", "intent": {}}
 

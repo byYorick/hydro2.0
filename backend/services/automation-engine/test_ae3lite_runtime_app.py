@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from contextlib import suppress
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from starlette.responses import JSONResponse
 
 os.environ.setdefault("HISTORY_LOGGER_API_TOKEN", "test-token")
 
@@ -55,3 +59,170 @@ async def test_intent_listener_callback_kicks_worker() -> None:
     await callback({"intent_id": 11, "zone_id": 22, "status": "completed"})
 
     assert kicks == ["kick"]
+
+
+def test_critical_background_tasks_health_reports_crashed_task() -> None:
+    loop = asyncio.new_event_loop()
+    try:
+        async def _boom() -> None:
+            raise RuntimeError("boom")
+
+        task = loop.create_task(_boom())
+        with suppress(RuntimeError):
+            loop.run_until_complete(task)
+
+        ok, reason = runtime_app_module._critical_background_tasks_health(
+            {"ae3-intent-status-listener": task}
+        )
+        assert ok is False
+        assert reason == "ae3-intent-status-listener:crashed:RuntimeError"
+    finally:
+        loop.close()
+
+
+def test_create_app_validates_explicit_runtime_config() -> None:
+    class _Config(SimpleNamespace):
+        def __init__(self) -> None:
+            super().__init__(
+                start_cycle_rate_limit_max_requests=30,
+                start_cycle_rate_limit_window_sec=10,
+                start_cycle_claim_stale_sec=60,
+                start_cycle_running_stale_sec=300,
+                db_dsn="",
+                scheduler_security_baseline_enforce=False,
+                scheduler_api_token="test-token",
+                scheduler_require_trace_id=False,
+            )
+            self.validated = 0
+
+        def validate(self) -> None:
+            self.validated += 1
+
+    cfg = _Config()
+    bundle = SimpleNamespace(
+        create_task_from_intent_use_case=None,
+        solution_tank_startup_guard_use_case=None,
+        get_zone_control_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        request_manual_step_use_case=None,
+        set_control_mode_use_case=None,
+        get_zone_automation_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        task_status_read_model=SimpleNamespace(get_by_task_id=lambda **kwargs: None),
+        zone_intent_repository=SimpleNamespace(
+            claim_start_cycle=lambda **kwargs: None,
+            claim_start_irrigation=lambda **kwargs: None,
+            mark_terminal=lambda **kwargs: None,
+        ),
+        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        http_client=SimpleNamespace(aclose=lambda: None),
+    )
+    original_build = runtime_app_module.build_ae3_runtime_bundle
+    runtime_app_module.build_ae3_runtime_bundle = lambda **_kwargs: bundle
+    app = runtime_app_module.create_app(cfg)
+    try:
+        assert app is not None
+        assert cfg.validated == 1
+    finally:
+        runtime_app_module.build_ae3_runtime_bundle = original_build
+
+
+@pytest.mark.asyncio
+async def test_runtime_get_routes_validate_zone_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    bundle = SimpleNamespace(
+        create_task_from_intent_use_case=None,
+        solution_tank_startup_guard_use_case=None,
+        get_zone_control_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        request_manual_step_use_case=None,
+        set_control_mode_use_case=None,
+        get_zone_automation_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        task_status_read_model=None,
+        zone_intent_repository=None,
+        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        http_client=SimpleNamespace(aclose=lambda: None),
+    )
+    monkeypatch.setattr(runtime_app_module, "build_ae3_runtime_bundle", lambda **_kwargs: bundle)
+
+    async def fetch_fn(query: str, *args: object):
+        return []
+
+    monkeypatch.setattr(runtime_app_module, "fetch", fetch_fn)
+    app = runtime_app_module.create_app(
+        SimpleNamespace(
+            start_cycle_rate_limit_max_requests=30,
+            start_cycle_rate_limit_window_sec=10,
+            start_cycle_claim_stale_sec=60,
+            start_cycle_running_stale_sec=300,
+            db_dsn="",
+            scheduler_security_baseline_enforce=False,
+            scheduler_api_token="test-token",
+            scheduler_require_trace_id=False,
+        )
+    )
+
+    state_endpoint = next(route.endpoint for route in app.routes if route.path == "/zones/{zone_id}/state")
+    control_endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if route.path == "/zones/{zone_id}/control-mode" and "GET" in route.methods
+    )
+
+    with pytest.raises(HTTPException) as state_exc:
+        await state_endpoint(zone_id=404)
+    with pytest.raises(HTTPException) as control_exc:
+        await control_endpoint(zone_id=404)
+
+    assert state_exc.value.status_code == 404
+    assert control_exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_health_ready_returns_503_when_critical_background_task_crashed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = SimpleNamespace(
+        create_task_from_intent_use_case=None,
+        solution_tank_startup_guard_use_case=None,
+        get_zone_control_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        request_manual_step_use_case=None,
+        set_control_mode_use_case=None,
+        get_zone_automation_state_use_case=SimpleNamespace(run=lambda **kwargs: None),
+        task_status_read_model=None,
+        zone_intent_repository=None,
+        worker=SimpleNamespace(kick=lambda: None, recover_on_startup=lambda: None, drain_health=lambda: (True, "ok")),
+        http_client=SimpleNamespace(aclose=lambda: None),
+    )
+    monkeypatch.setattr(runtime_app_module, "build_ae3_runtime_bundle", lambda **_kwargs: bundle)
+
+    async def fetch_fn(query: str, *args: object):
+        return [{"ready": 1}]
+
+    monkeypatch.setattr(runtime_app_module, "fetch", fetch_fn)
+    app = runtime_app_module.create_app(
+        SimpleNamespace(
+            start_cycle_rate_limit_max_requests=30,
+            start_cycle_rate_limit_window_sec=10,
+            start_cycle_claim_stale_sec=60,
+            start_cycle_running_stale_sec=300,
+            db_dsn="",
+            scheduler_security_baseline_enforce=False,
+            scheduler_api_token="test-token",
+            scheduler_require_trace_id=False,
+        )
+    )
+
+    health_ready = next(route.endpoint for route in app.routes if route.path == "/health/ready")
+
+    async def _boom() -> None:
+        raise RuntimeError("listener boom")
+
+    crashed = asyncio.create_task(_boom())
+    with suppress(RuntimeError):
+        await crashed
+    app.state.ae3_critical_background_tasks = {"ae3-intent-status-listener": crashed}
+
+    resp = await health_ready()
+    assert isinstance(resp, JSONResponse)
+    assert resp.status_code == 503
+    payload = json.loads(resp.body.decode())
+    assert payload["ready"] is False
+    assert payload["checks"]["critical_background_tasks"]["ok"] is False
+    assert "crashed" in payload["checks"]["critical_background_tasks"]["reason"]

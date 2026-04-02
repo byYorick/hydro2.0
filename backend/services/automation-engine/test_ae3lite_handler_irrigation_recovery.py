@@ -63,6 +63,7 @@ async def test_recovery_enters_correction_when_targets_not_met(monkeypatch) -> N
     assert out.correction is not None
     assert out.correction.corr_step == "corr_check"
     assert out.correction.return_stage_success == "irrigation_recovery_stop_to_ready"
+    assert out.correction.return_stage_fail == "irrigation_recovery_stop_failed"
 
 
 @pytest.mark.asyncio
@@ -86,4 +87,3 @@ async def test_recovery_fails_on_timeout(monkeypatch) -> None:
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(on_corr_success=None, on_corr_fail=None), now=now)
     assert out.kind == "fail"
     assert out.error_code == "irrigation_recovery_timeout"
-

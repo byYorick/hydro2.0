@@ -613,7 +613,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         await execute(
             """
             INSERT INTO zone_workflow_state (zone_id, workflow_phase, version, updated_at, payload)
-            VALUES ($1, 'waiting_command', 7, NOW(), '{}'::jsonb)
+            VALUES ($1, 'idle', 7, NOW(), '{}'::jsonb)
             """,
             zone_id,
         )
@@ -775,7 +775,7 @@ async def test_zone_snapshot_read_model_and_planner_build_cycle_start_plan() -> 
         assert snapshot.zone_id == zone_id
         assert snapshot.greenhouse_id == greenhouse_id
         assert snapshot.grow_cycle_id == grow_cycle_id
-        assert snapshot.workflow_phase == "waiting_command"
+        assert snapshot.workflow_phase == "idle"
         assert snapshot.workflow_version == 7
         assert snapshot.targets["ph"]["target"] == 5.8
         assert snapshot.phase_targets["ph"]["target"] == 5.8

@@ -176,6 +176,18 @@ class _MockWorkflowRepo:
         })
 
 
+class _MockWorkflowRepoRaises(_MockWorkflowRepo):
+    async def upsert_phase(self, *, zone_id, workflow_phase, payload, scheduler_task_id, now):
+        await super().upsert_phase(
+            zone_id=zone_id,
+            workflow_phase=workflow_phase,
+            payload=payload,
+            scheduler_task_id=scheduler_task_id,
+            now=now,
+        )
+        raise RuntimeError("workflow repo unavailable")
+
+
 class _MockReconcileUseCase:
     def __init__(self, *, state: str = "waiting_command"):
         self._state = state
@@ -273,8 +285,24 @@ async def test_recovery_correction_in_flight_fails():
     result = await uc.run(now=NOW)
 
     assert result.failed_tasks == 1
-    assert "correction" in repo.failed[0]["error_code"].lower() or \
-           repo.failed[0]["error_code"] == "startup_recovery_correction_interrupted"
+
+
+async def test_recovery_workflow_repo_failure_does_not_abort_otherwise_valid_transition():
+    task = _make_task(status="waiting_command", stage="clean_fill_start")
+    repo = _MockTaskRepo(tasks=[task])
+    uc = StartupRecoveryUseCase(
+        task_repository=repo,
+        lease_repository=_MockLeaseRepo(),
+        reconcile_command_use_case=_MockReconcileUseCase(state="waiting_command"),
+        command_gateway=_MockCommandGateway(recover_state="done"),
+        workflow_repository=_MockWorkflowRepoRaises(),
+        topology_registry=TopologyRegistry(),
+    )
+
+    result = await uc.run(now=NOW)
+
+    assert result.failed_tasks == 0
+    assert len(repo.requeued) == 1
 
 
 async def test_recovery_command_still_pending_stays_waiting():

@@ -10,6 +10,7 @@ from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.decision_gate import DecisionGateHandler
 from ae3lite.application.handlers.irrigation_check import IrrigationCheckHandler
 from ae3lite.application.use_cases.workflow_router import WorkflowRouter
+from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.infrastructure.repositories import PgAutomationTaskRepository
 from common.db import execute, fetch
@@ -36,10 +37,29 @@ class _RuntimeMonitorStub:
             "is_triggered": self._level_triggered,
         }
 
+    async def read_latest_irr_state(
+        self,
+        *,
+        zone_id: int,
+        max_age_sec: int,
+        expected_cmd_id: str | None = None,
+        **_kwargs: object,
+    ):
+        return {
+            "has_snapshot": True,
+            "is_stale": False,
+            "snapshot": {
+                "valve_solution_supply": True,
+                "valve_irrigation": True,
+                "pump_main": True,
+            },
+            "cmd_id": expected_cmd_id,
+        }
+
 
 class _CommandGatewayStub:
     async def run_batch(self, **_kwargs):
-        return {"success": True, "command_statuses": []}
+        return {"success": True, "command_statuses": [{"legacy_cmd_id": "irr-probe-stub"}]}
 
 
 async def _create_claimed_irrigation_task(
@@ -159,6 +179,14 @@ async def test_irrigation_check_persists_replay_count_when_solution_min_is_trigg
             task_repository=task_repository,
         )
 
+        probe = (
+            PlannedCommand(
+                step_no=1,
+                node_uid="stub-node",
+                channel="irrig",
+                payload={"cmd": "irr_state_probe", "params": {}},
+            ),
+        )
         outcome = await handler.run(
             task=task,
             plan=SimpleNamespace(
@@ -169,7 +197,7 @@ async def test_irrigation_check_persists_replay_count_when_solution_min_is_trigg
                     "level_switch_on_threshold": 0.5,
                     "telemetry_max_age_sec": 60,
                 },
-                named_plans={},
+                named_plans={"irr_state_probe": probe},
             ),
             stage_def=SimpleNamespace(),
             now=now,

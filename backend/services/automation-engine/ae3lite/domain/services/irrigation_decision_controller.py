@@ -49,46 +49,46 @@ class TaskDecisionStrategy:
 
 class SmartSoilDecisionStrategy:
     @staticmethod
-    def _is_day(*, now: datetime, day_start_time: str | None, day_hours: float | None) -> bool:
+    def _resolve_day_profile(*, now: datetime, day_start_time: str | None, day_hours: float | None) -> tuple[bool, bool]:
         if not day_start_time or day_hours is None:
-            return True
+            return True, False
 
         raw = str(day_start_time).strip()
         if not raw:
-            return True
+            return True, False
 
         parts = raw.split(":")
         if len(parts) < 2:
-            return True
+            return False, True
 
         try:
             start_h = int(parts[0])
             start_m = int(parts[1])
         except ValueError:
-            return True
+            return False, True
 
         if start_h < 0 or start_h > 23 or start_m < 0 or start_m > 59:
-            return True
+            return False, True
 
         try:
             hours = float(day_hours)
         except (TypeError, ValueError):
-            return True
+            return False, True
 
         if hours <= 0:
-            return False
+            return False, False
         if hours >= 24:
-            return True
+            return True, False
 
         start_min = start_h * 60 + start_m
         end_min = (start_min + int(round(hours * 60))) % (24 * 60)
         now_min = now.hour * 60 + now.minute
 
         if start_min == end_min:
-            return True
+            return False, True
         if start_min < end_min:
-            return start_min <= now_min < end_min
-        return now_min >= start_min or now_min < end_min
+            return start_min <= now_min < end_min, False
+        return now_min >= start_min or now_min < end_min, False
 
     @staticmethod
     def _resolve_target_band(
@@ -108,7 +108,12 @@ class SmartSoilDecisionStrategy:
 
         day_start_time = str(soil_target.get("day_start_time") or "").strip() or None
         day_hours = _to_float(soil_target.get("day_hours"))
-        active_profile = "day" if SmartSoilDecisionStrategy._is_day(now=now, day_start_time=day_start_time, day_hours=day_hours) else "night"
+        is_day, invalid_schedule = SmartSoilDecisionStrategy._resolve_day_profile(
+            now=now,
+            day_start_time=day_start_time,
+            day_hours=day_hours,
+        )
+        active_profile = "day" if is_day else "night"
         active_target = day if active_profile == "day" else night
         if active_target is None:
             active_target = night if active_profile == "day" else day
@@ -121,6 +126,7 @@ class SmartSoilDecisionStrategy:
                 "active_profile": active_profile,
                 "day_start_time": day_start_time,
                 "day_hours": day_hours,
+                "schedule_invalid": invalid_schedule,
             },
         )
 
@@ -159,7 +165,7 @@ class SmartSoilDecisionStrategy:
         sensor_windows = sensor_data.get("sensor_windows") if isinstance(sensor_data.get("sensor_windows"), Sequence) else ()
         per_sensor_values: list[float] = []
         total_samples = 0
-        stale = False
+        stale = bool(sensor_data.get("is_stale"))
         for sensor in sensor_windows:
             if not isinstance(sensor, Mapping):
                 continue
@@ -181,7 +187,7 @@ class SmartSoilDecisionStrategy:
 
         zone_average = float(mean(per_sensor_values))
         spread_pct = max(per_sensor_values) - min(per_sensor_values) if len(per_sensor_values) > 1 else 0.0
-        degraded = bool(total_samples < min_samples)
+        degraded = bool(total_samples < min_samples or target_meta.get("schedule_invalid"))
         details = {
             "zone_average_pct": zone_average,
             "sensor_count": len(per_sensor_values),
@@ -193,6 +199,7 @@ class SmartSoilDecisionStrategy:
             "target_profile": target_meta.get("active_profile"),
             "min_samples_required": min_samples,
             "insufficient_samples": degraded,
+            "schedule_invalid": bool(target_meta.get("schedule_invalid")),
         }
 
         # Even with insufficient samples we still decide run/skip, but mark degraded.
@@ -270,4 +277,3 @@ def _to_float(raw_value: Any) -> float | None:
         return float(raw_value) if raw_value is not None else None
     except (TypeError, ValueError):
         return None
-

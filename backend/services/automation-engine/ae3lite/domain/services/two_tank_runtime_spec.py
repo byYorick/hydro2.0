@@ -110,11 +110,20 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     _require_zone_correction_contract(zone_id=zone_id, config=tank_recirc_cfg, config_name="phases.tank_recirc")
     _require_zone_correction_contract(zone_id=zone_id, config=irrigation_cfg, config_name="phases.irrigation")
     active_phase_key = _normalize_phase_key(getattr(snapshot, "workflow_phase", None))
-    active_phase_cfg = {
+    active_phase_map = {
         "solution_fill": solution_fill_cfg,
         "tank_recirc": tank_recirc_cfg,
         "irrigation": irrigation_cfg,
-    }.get(active_phase_key, solution_fill_cfg if solution_fill_cfg else resolved_base_cfg)
+    }
+    if active_phase_key in active_phase_map:
+        active_phase_cfg = active_phase_map[active_phase_key]
+    elif active_phase_key in {"generic", "idle", "ready", ""}:
+        active_phase_cfg = solution_fill_cfg if solution_fill_cfg else resolved_base_cfg
+    else:
+        raise PlannerConfigurationError(
+            f"Zone {zone_id} has unsupported workflow_phase={active_phase_key!r} for two_tank runtime",
+            code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
+        )
 
     base_runtime_cfg = _to_mapping(resolved_base_cfg.get("runtime"))
     base_timing_cfg = _to_mapping(resolved_base_cfg.get("timing"))
@@ -740,28 +749,57 @@ def _optional_float(raw_value: Any) -> float | None:
 def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     irrigation = snapshot.targets.get("irrigation") if isinstance(getattr(snapshot, "targets", None), Mapping) else {}
     irrigation = irrigation if isinstance(irrigation, Mapping) else {}
+    corr_during = bool(irrigation.get("correction_during_irrigation", True))
     if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
         # Irrigation targets may be absent for cycle_start planning paths.
         # They are required only when actually executing irrigation_start tasks.
         return {
             "duration_sec": None,
             "interval_sec": None,
-            "correction_during_irrigation": bool(irrigation.get("correction_during_irrigation", True)),
+            "correction_during_irrigation": corr_during,
+            "correction_slack_sec": _resolve_bounded_int(
+                irrigation.get("correction_slack_sec"),
+                900 if corr_during else 0,
+                0,
+                7200,
+            ),
+            "stage_timeout_sec": (
+                _resolve_bounded_int(irrigation.get("stage_timeout_sec"), 3600, 1, 86400)
+                if irrigation.get("stage_timeout_sec") is not None
+                else None
+            ),
         }
+    duration_sec = _require_int(
+        irrigation.get("duration_sec"),
+        path="targets.irrigation.duration_sec",
+        minimum=1,
+        maximum=3600,
+    )
+    correction_slack_sec = _resolve_bounded_int(
+        irrigation.get("correction_slack_sec"),
+        900 if corr_during else 0,
+        0,
+        7200,
+    )
+    stage_timeout_sec = None
+    if irrigation.get("stage_timeout_sec") is not None:
+        stage_timeout_sec = _resolve_bounded_int(
+            irrigation.get("stage_timeout_sec"),
+            max(1, duration_sec + correction_slack_sec),
+            1,
+            86400,
+        )
     return {
-        "duration_sec": _require_int(
-            irrigation.get("duration_sec"),
-            path="targets.irrigation.duration_sec",
-            minimum=1,
-            maximum=3600,
-        ),
+        "duration_sec": duration_sec,
         "interval_sec": _require_int(
             irrigation.get("interval_sec"),
             path="targets.irrigation.interval_sec",
             minimum=1,
             maximum=86400,
         ),
-        "correction_during_irrigation": bool(irrigation.get("correction_during_irrigation", True)),
+        "correction_during_irrigation": corr_during,
+        "correction_slack_sec": correction_slack_sec,
+        "stage_timeout_sec": stage_timeout_sec,
     }
 
 

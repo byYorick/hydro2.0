@@ -12,6 +12,7 @@ from ae3lite.application.use_cases.execute_task import (
     ExecuteTaskUseCase,
     SNAPSHOT_RETRY_EXHAUSTED_CODE,
     SNAPSHOT_TRANSIENT_RETRY_SEC,
+    TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
     TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
 )
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -271,6 +272,11 @@ class _WorkflowRouterRaises:
 class _WorkflowRouterCancelledByTimeout:
     async def run(self, *, task, plan, now):
         raise asyncio.CancelledError(TASK_EXECUTION_TIMEOUT_CANCEL_MSG)
+
+
+class _WorkflowRouterCancelledByLeaseLoss:
+    async def run(self, *, task, plan, now):
+        raise asyncio.CancelledError(TASK_EXECUTION_LEASE_LOST_CANCEL_MSG)
 
 
 class _WorkflowRouterTerminalTask:
@@ -1132,6 +1138,28 @@ async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe
         "valve_irrigation",
         "pump_main",
     ]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_lease_lost_cancellation_fails_closed_and_runs_fail_safe_shutdown() -> None:
+    task = _make_task(stage="solution_fill_check", topology="two_tank")
+    finalize = _FinalizeTaskUseCase()
+    gateway = _GatewayRecorder()
+    use_case = ExecuteTaskUseCase(
+        task_repository=_TaskRepoRunning(running_task=task),
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerTwoTankOk(),
+        command_gateway=gateway,
+        workflow_router=_WorkflowRouterCancelledByLeaseLoss(),
+        finalize_task_use_case=finalize,
+    )
+
+    await use_case.run(task=task, now=NOW)
+
+    assert finalize.calls[0]["error_code"] == TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
+    assert finalize.calls[0]["error_message"] == "Zone lease was lost during task execution"
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
 
 
 @pytest.mark.asyncio

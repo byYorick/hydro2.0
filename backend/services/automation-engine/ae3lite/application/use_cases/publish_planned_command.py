@@ -74,13 +74,17 @@ class PublishPlannedCommandUseCase:
                 now=now,
             )
             if task.claimed_by:
-                await self._task_repository.mark_failed(
+                failed_task = await self._task_repository.mark_failed(
                     task_id=task.id,
                     owner=task.claimed_by,
                     error_code="command_send_failed",
                     error_message=str(exc),
                     now=now,
                 )
+                if failed_task is None:
+                    raise CommandPublishError(
+                        f"Unable to fail task_id={task.id} after publish error"
+                    ) from exc
             if isinstance(exc, CommandPublishError):
                 raise
             raise CommandPublishError(str(exc)) from exc

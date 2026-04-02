@@ -8,6 +8,7 @@ from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.domain.errors import TaskExecutionError
 
 
 _WAIT_READY_TIMEOUT_SEC = max(30, int(os.getenv("AE_IRRIGATION_WAIT_READY_SEC", "1800")))
@@ -33,13 +34,24 @@ class AwaitReadyHandler(BaseStageHandler):
             return StageOutcome(kind="transition", next_stage="decision_gate")
 
         deadline = task.irrigation_wait_ready_deadline_at
-        if deadline is None and getattr(task, "claimed_by", None):
-            await self._task_repository.update_irrigation_runtime(
+        if deadline is None:
+            owner = str(getattr(task, "claimed_by", "") or "").strip()
+            if owner == "":
+                raise TaskExecutionError(
+                    "irrigation_wait_ready_missing_owner",
+                    f"Task {getattr(task, 'id', None)} has no owner in await_ready",
+                )
+            updated = await self._task_repository.update_irrigation_runtime(
                 task_id=int(task.id),
-                owner=str(task.claimed_by or ""),
+                owner=owner,
                 now=now,
                 irrigation_wait_ready_deadline_at=now.replace(microsecond=0) + timedelta(seconds=_WAIT_READY_TIMEOUT_SEC),
             )
+            if updated is None:
+                raise TaskExecutionError(
+                    "irrigation_wait_ready_deadline_persist_failed",
+                    f"Unable to persist wait_ready deadline for task {getattr(task, 'id', None)}",
+                )
             return StageOutcome(kind="poll", due_delay_sec=_WAIT_READY_POLL_SEC)
 
         if self._deadline_reached(now=now, deadline=deadline):

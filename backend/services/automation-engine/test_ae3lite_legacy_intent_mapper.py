@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from ae3lite.application.adapters.legacy_intent_mapper import LegacyIntentMapper
+from ae3lite.domain.errors import TaskCreateError
 
 
 @pytest.fixture()
@@ -17,13 +18,19 @@ def mapper() -> LegacyIntentMapper:
     return LegacyIntentMapper()
 
 
+def _intent_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {"topology": "two_tank"}
+    row.update(overrides)
+    return row
+
+
 class TestExtractIntentMetadata:
     def test_intent_id_none_when_missing(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row())
         assert meta.intent_id is None
 
     def test_intent_id_preserved_as_int(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={"id": 42})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row(id=42))
         assert meta.intent_id == 42
 
     def test_intent_id_zero_preserved(self, mapper: LegacyIntentMapper) -> None:
@@ -32,19 +39,19 @@ class TestExtractIntentMetadata:
         Regression guard: the fix uses ``int(_raw_id) if _raw_id is not None else None``
         so that 0 (falsy but valid) is kept as 0, not discarded.
         """
-        meta = mapper.extract_intent_metadata(source="test", intent_row={"id": 0})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row(id=0))
         assert meta.intent_id == 0
 
     def test_intent_id_string_numeric_coerced(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={"id": "77"})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row(id="77"))
         assert meta.intent_id == 77
 
     def test_intent_zone_id_none_when_missing(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row())
         assert meta.intent_meta["intent_zone_id"] is None
 
     def test_intent_zone_id_preserved(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={"zone_id": 99})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row(zone_id=99))
         assert meta.intent_meta["intent_zone_id"] == 99
 
     def test_intent_zone_id_zero_preserved(self, mapper: LegacyIntentMapper) -> None:
@@ -53,12 +60,14 @@ class TestExtractIntentMetadata:
         Regression guard: uses the same ``int(v) if v is not None else None``
         lambda so that 0 is kept, not fallen back to None.
         """
-        meta = mapper.extract_intent_metadata(source="test", intent_row={"zone_id": 0})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row(zone_id=0))
         assert meta.intent_meta["intent_zone_id"] == 0
 
-    def test_topology_defaults_to_two_tank(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
-        assert meta.topology == "two_tank"
+    def test_topology_missing_fails_closed(self, mapper: LegacyIntentMapper) -> None:
+        with pytest.raises(TaskCreateError) as exc:
+            mapper.extract_intent_metadata(source="test", intent_row={})
+
+        assert exc.value.code == "start_cycle_intent_topology_missing"
 
     def test_topology_from_payload(self, mapper: LegacyIntentMapper) -> None:
         meta = mapper.extract_intent_metadata(
@@ -75,49 +84,49 @@ class TestExtractIntentMetadata:
         assert meta.topology == "single_tank"
 
     def test_source_defaults_to_laravel_scheduler(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="", intent_row={})
+        meta = mapper.extract_intent_metadata(source="", intent_row=_intent_row())
         assert meta.intent_source == "laravel_scheduler"
 
     def test_source_none_defaults_to_laravel_scheduler(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source=None, intent_row={})  # type: ignore[arg-type]
+        meta = mapper.extract_intent_metadata(source=None, intent_row=_intent_row())  # type: ignore[arg-type]
         assert meta.intent_source == "laravel_scheduler"
 
     def test_source_preserved_when_given(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="cron", intent_row={})
+        meta = mapper.extract_intent_metadata(source="cron", intent_row=_intent_row())
         assert meta.intent_source == "cron"
 
     def test_trigger_defaults_to_start_cycle_api_when_intent_type_missing(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row())
         assert meta.intent_trigger == "start_cycle_api"
 
     def test_trigger_uses_real_intent_type_when_present(self, mapper: LegacyIntentMapper) -> None:
         meta = mapper.extract_intent_metadata(
             source="test",
-            intent_row={"intent_type": "VENTILATION_TICK"},
+            intent_row=_intent_row(intent_type="VENTILATION_TICK"),
         )
         assert meta.intent_trigger == "ventilation_tick"
 
     def test_retry_count_defaults_to_zero(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row())
         assert meta.intent_meta["intent_retry_count"] == 0
 
     def test_retry_count_from_row(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={"retry_count": 3})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row(retry_count=3))
         assert meta.intent_meta["intent_retry_count"] == 3
 
     def test_intent_type_lowercased(self, mapper: LegacyIntentMapper) -> None:
         meta = mapper.extract_intent_metadata(
             source="test",
-            intent_row={"intent_type": "IRRIGATE_ONCE"},
+            intent_row=_intent_row(intent_type="IRRIGATE_ONCE"),
         )
         assert meta.intent_meta["intent_type"] == "irrigate_once"
 
     def test_intent_type_none_when_missing(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row())
         assert meta.intent_meta["intent_type"] is None
 
     def test_intent_payload_empty_dict_when_no_payload(self, mapper: LegacyIntentMapper) -> None:
-        meta = mapper.extract_intent_metadata(source="test", intent_row={})
+        meta = mapper.extract_intent_metadata(source="test", intent_row=_intent_row())
         assert meta.intent_meta["intent_payload"] == {}
 
     def test_intent_payload_extracted_from_mapping(self, mapper: LegacyIntentMapper) -> None:

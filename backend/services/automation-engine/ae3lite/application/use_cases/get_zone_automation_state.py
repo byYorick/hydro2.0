@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
+
+logger = logging.getLogger(__name__)
 
 
 _WORKFLOW_PHASE_TO_STATE: dict[str, str] = {
@@ -114,11 +118,20 @@ class GetZoneAutomationStateUseCase:
                     guard_result
                 )
             except Exception:
-                pass
+                logger.warning(
+                    "AE3 automation state: startup reset guard failed for zone_id=%s",
+                    zone_id,
+                    exc_info=True,
+                )
         if task is None and self._workflow_repository is not None:
             try:
                 workflow_state = await self._workflow_repository.get(zone_id=zone_id)
             except Exception:
+                logger.warning(
+                    "AE3 automation state: workflow read failed for zone_id=%s",
+                    zone_id,
+                    exc_info=True,
+                )
                 workflow_state = None
         if task is None:
             last_task = await self._task_repository.get_last_for_zone(zone_id=zone_id)
@@ -129,9 +142,14 @@ class GetZoneAutomationStateUseCase:
             try:
                 transitions = await self._task_repository.get_transitions_for_task(task_id=task.id)
             except Exception:
-                pass
+                logger.warning(
+                    "AE3 automation state: transition read failed for zone_id=%s task_id=%s",
+                    zone_id,
+                    getattr(task, "id", None),
+                    exc_info=True,
+                )
 
-        telemetry = await self._fetch_zone_telemetry(zone_id=zone_id)
+        telemetry, telemetry_fetch_ok = await self._fetch_zone_telemetry(zone_id=zone_id)
         if task is None and self._should_prefer_workflow_state(workflow_state) and not self._workflow_state_is_stale(
             workflow_state=workflow_state,
             last_task=last_task,
@@ -140,6 +158,7 @@ class GetZoneAutomationStateUseCase:
                 zone_id=zone_id,
                 workflow_state=workflow_state,
                 telemetry=telemetry,
+                telemetry_fetch_ok=telemetry_fetch_ok,
                 solution_tank_guard=solution_tank_guard,
             )
         if task is None:
@@ -150,11 +169,15 @@ class GetZoneAutomationStateUseCase:
             task=task,
             transitions=transitions,
             telemetry=telemetry,
+            telemetry_fetch_ok=telemetry_fetch_ok,
             solution_tank_guard=solution_tank_guard,
         )
 
-    async def _fetch_zone_telemetry(self, *, zone_id: int) -> dict[str, Any]:
-        """Query telemetry_last for pH, EC and water level sensors of this zone."""
+    async def _fetch_zone_telemetry(self, *, zone_id: int) -> tuple[dict[str, Any], bool]:
+        """Query telemetry_last for pH, EC and water level sensors of this zone.
+
+        Returns ``(levels_dict, ok)`` where ``ok`` is False if the SQL read failed.
+        """
         try:
             rows = await self._fetch_fn(
                 """
@@ -169,7 +192,12 @@ class GetZoneAutomationStateUseCase:
                 zone_id,
             )
         except Exception:
-            return {}
+            logger.warning(
+                "AE3 automation state: telemetry fetch failed for zone_id=%s",
+                zone_id,
+                exc_info=True,
+            )
+            return {}, False
 
         result: dict[str, Any] = {}
         clean_max_triggered: bool | None = None
@@ -196,7 +224,7 @@ class GetZoneAutomationStateUseCase:
             result["nutrient_tank_level_percent"] = 0
         elif solution_max_triggered is not None:
             result["nutrient_tank_level_percent"] = 0
-        return result
+        return result, True
 
     def _build_timeline(self, transitions: list[dict]) -> list[dict]:
         events = []
@@ -224,10 +252,15 @@ class GetZoneAutomationStateUseCase:
         task: Optional[Any],
         transitions: list[dict],
         telemetry: dict[str, Any],
+        telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if task is None:
-            return self._idle_state(zone_id=zone_id, solution_tank_guard=solution_tank_guard)
+            return self._idle_state(
+                zone_id=zone_id,
+                telemetry_fetch_ok=telemetry_fetch_ok,
+                solution_tank_guard=solution_tank_guard,
+            )
 
         status = str(getattr(task, "status", "") or "").strip().lower()
         wf = getattr(task, "workflow", None)
@@ -285,6 +318,7 @@ class GetZoneAutomationStateUseCase:
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
             "decision": self._build_decision(task),
+            "telemetry_fetch_ok": telemetry_fetch_ok,
         }
 
     def _build_workflow_state(
@@ -293,6 +327,7 @@ class GetZoneAutomationStateUseCase:
         zone_id: int,
         workflow_state: Any,
         telemetry: dict[str, Any],
+        telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         workflow_phase = str(getattr(workflow_state, "workflow_phase", None) or "idle").strip().lower()
@@ -352,12 +387,14 @@ class GetZoneAutomationStateUseCase:
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
             "decision": None,
+            "telemetry_fetch_ok": telemetry_fetch_ok,
         }
 
     def _idle_state(
         self,
         *,
         zone_id: int,
+        telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
@@ -400,6 +437,7 @@ class GetZoneAutomationStateUseCase:
             "irr_node_state": None,
             "solution_tank_guard": solution_tank_guard,
             "decision": None,
+            "telemetry_fetch_ok": telemetry_fetch_ok,
         }
 
     def _build_active_processes(
@@ -441,14 +479,19 @@ class GetZoneAutomationStateUseCase:
         if workflow_updated_at is None or task_updated_at is None:
             return False
 
-        workflow_cmp = workflow_updated_at.replace(tzinfo=None) if getattr(workflow_updated_at, "tzinfo", None) is not None else workflow_updated_at
-        task_cmp = task_updated_at.replace(tzinfo=None) if getattr(task_updated_at, "tzinfo", None) is not None else task_updated_at
+        workflow_cmp = self._normalize_utc_naive(workflow_updated_at)
+        task_cmp = self._normalize_utc_naive(task_updated_at)
         return task_cmp >= workflow_cmp
 
     def _now(self) -> Any:
         from common.utils.time import utcnow_naive
 
         return utcnow_naive()
+
+    def _normalize_utc_naive(self, value: Any) -> Any:
+        if not isinstance(value, datetime):
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
 
     def _normalize_solution_tank_guard(self, guard_result: Any) -> dict[str, Any] | None:
         if not isinstance(guard_result, Mapping):

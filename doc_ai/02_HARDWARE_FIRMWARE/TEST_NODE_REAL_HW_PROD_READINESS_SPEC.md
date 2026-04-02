@@ -27,13 +27,14 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 ## 2. Модель узла
 
-Один ESP32 (`test_node`) эмулирует 5 виртуальных нод:
+Один ESP32 (`test_node`) эмулирует 6 виртуальных нод:
 
 1. `nd-test-irrig-1` (`type=irrig`)
 2. `nd-test-ph-1` (`type=ph`)
 3. `nd-test-ec-1` (`type=ec`)
-4. `nd-test-climate-1` (`type=climate`)
-5. `nd-test-light-1` (`type=light`)
+4. `nd-test-soil-1` (`type=water_sensor`)
+5. `nd-test-climate-1` (`type=climate`)
+6. `nd-test-light-1` (`type=light`)
 
 ### 2.1. Каналы из `config_report`
 
@@ -62,6 +63,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `pump_c`
 - `pump_d`
 - `system` (service-channel для sensor-mode)
+
+`nd-test-soil-1`:
+- `soil_moisture`
+- `system` (service-channel для test fault/seed команд)
 
 `nd-test-climate-1`:
 - `air_temp_c`
@@ -213,6 +218,11 @@ Pipeline:
 - `ec_value` -> принудительное текущее значение `ec_sensor` в диапазоне `0.4..3.2`
 
 При изменении `*_override`, `ph_value` или `ec_value` test-node публикует immediate telemetry snapshot, чтобы real-hardware E2E не зависели от следующего periodic telemetry tick.
+
+`soil_moisture_pct`:
+
+- принудительно устанавливает текущее значение `soil_moisture` в диапазоне `0..100`;
+- при изменении test-node также публикует immediate telemetry snapshot.
 
 ---
 

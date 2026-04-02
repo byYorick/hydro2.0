@@ -64,8 +64,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define IRR_STATE_MAX_AGE_SEC 30
 #define PH_DRIFT_BIAS_PER_TICK 0.0002f
 #define EC_DRIFT_BIAS_PER_TICK -0.0010f
-#define PH_REACTION_BASE_DELTA 0.10f
-#define EC_REACTION_BASE_DELTA 0.055f
+#define PH_REACTION_BASE_DELTA 0.12f
+#define EC_REACTION_BASE_DELTA 0.068f
 #define PH_REACTION_NOMINAL_ML 8.0f
 #define EC_REACTION_NOMINAL_ML 12.0f
 #define PH_VALUE_MIN 4.0f
@@ -81,12 +81,15 @@ static const char *CMD_TAG = "test_node_cmd";
 #define SOIL_MOISTURE_DRYBACK_BASE 0.18f
 #define SOIL_MOISTURE_DRYBACK_TEMP_FACTOR 0.015f
 #define SOIL_MOISTURE_NOISE_AMPLITUDE 0.03f
-#define CORRECTION_FILL_PHASE_FACTOR 0.50f
+#define CORRECTION_FILL_PH_PHASE_FACTOR 2.20f
+#define CORRECTION_FILL_EC_PHASE_FACTOR 2.90f
 #define CORRECTION_RECIRC_PH_PHASE_FACTOR 2.50f
 #define CORRECTION_RECIRC_EC_PHASE_FACTOR 3.20f
+#define CORRECTION_IRRIGATION_PH_PHASE_FACTOR 2.85f
+#define CORRECTION_IRRIGATION_EC_PHASE_FACTOR 3.75f
 #define CORRECTION_RESPONSE_DELAY_TICKS 2
 #define CORRECTION_DECAY_TICKS 4
-#define CORRECTION_TRANSIENT_RATIO 0.60f
+#define CORRECTION_TRANSIENT_RATIO 0.48f
 #define TELEMETRY_DRIFT_WAVE_AMPLITUDE 0.0009f
 #define CORRECTION_REACTION_SCALE_MIN 0.5f
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
@@ -838,6 +841,8 @@ static float clamp_soil_moisture_param(float value) {
     return clamp_float(value, SOIL_MOISTURE_PARAM_MIN, SOIL_MOISTURE_PARAM_MAX);
 }
 
+static bool is_irrigation_active(void);
+
 static float resolve_correction_reaction_scale(const pending_command_t *job, float nominal_ml) {
     float commanded_ml = nominal_ml;
     float scale;
@@ -869,7 +874,10 @@ static float resolve_correction_phase_factor(bool ec_channel) {
         return ec_channel ? CORRECTION_RECIRC_EC_PHASE_FACTOR : CORRECTION_RECIRC_PH_PHASE_FACTOR;
     }
     if (solution_fill_path) {
-        return CORRECTION_FILL_PHASE_FACTOR;
+        return ec_channel ? CORRECTION_FILL_EC_PHASE_FACTOR : CORRECTION_FILL_PH_PHASE_FACTOR;
+    }
+    if (is_irrigation_active()) {
+        return ec_channel ? CORRECTION_IRRIGATION_EC_PHASE_FACTOR : CORRECTION_IRRIGATION_PH_PHASE_FACTOR;
     }
     return 1.0f;
 }

@@ -55,14 +55,10 @@ class TestAe3RuntimeConfigValidate:
             cfg.validate()
 
     def test_whitespace_only_token_raises(self) -> None:
-        """A token with only whitespace is falsy after strip and must be rejected."""
+        """A token with only whitespace must be rejected."""
         cfg = _config(history_logger_api_token="   ")
-        # The config value is already stripped by from_env, but direct construction
-        # passes it as-is.  Validate checks ``not self.history_logger_api_token``
-        # which is truthy for whitespace strings, so this will NOT raise.
-        # We verify the actual behavior: whitespace is NOT caught by validate().
-        # This documents the known limitation; only from_env strips it.
-        cfg.validate()  # whitespace string is truthy — passes validate()
+        with pytest.raises(ValueError, match="history_logger_api_token"):
+            cfg.validate()
 
     def test_validate_called_twice_is_idempotent(self) -> None:
         cfg = _config()
@@ -73,6 +69,20 @@ class TestAe3RuntimeConfigValidate:
         for token in ("x", "dev-token-12345", "Bearer abc", "a" * 256):
             cfg = _config(history_logger_api_token=token)
             cfg.validate()  # should not raise
+
+    def test_scheduler_api_token_required_when_security_enforced(self) -> None:
+        cfg = _config(scheduler_security_baseline_enforce=True, scheduler_api_token="")
+        with pytest.raises(ValueError, match="scheduler_api_token"):
+            cfg.validate()
+
+    def test_scheduler_api_token_not_required_when_security_disabled(self) -> None:
+        cfg = _config(scheduler_security_baseline_enforce=False, scheduler_api_token="")
+        cfg.validate()
+
+    def test_rate_limit_requires_positive_max_requests_when_enabled(self) -> None:
+        cfg = _config(start_cycle_rate_limit_enabled=True, start_cycle_rate_limit_max_requests=0)
+        with pytest.raises(ValueError, match="start_cycle_rate_limit_max_requests"):
+            cfg.validate()
 
 
 class TestAe3RuntimeConfigFromEnvClamps:

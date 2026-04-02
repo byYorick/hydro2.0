@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 TASK_EXECUTION_TIMEOUT_CANCEL_MSG = "ae3_task_execution_timeout"
+TASK_EXECUTION_LEASE_LOST_CANCEL_MSG = "ae3_zone_lease_lost"
 NODE_STALE_ONLINE_THRESHOLD_SEC = max(1, int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120")))
 SNAPSHOT_TRANSIENT_RETRY_SEC = max(1, int(os.getenv("AE3_SNAPSHOT_TRANSIENT_RETRY_SEC", "10")))
 SNAPSHOT_TRANSIENT_MAX_STAGE_AGE_SEC = max(
@@ -171,16 +172,24 @@ class ExecuteTaskUseCase:
                 return terminal_task
             raise
         except asyncio.CancelledError as exc:
-            if not self._is_timeout_cancellation(exc):
+            timeout_cancelled = self._is_timeout_cancellation(exc)
+            lease_lost_cancelled = self._is_lease_lost_cancellation(exc)
+            if not timeout_cancelled and not lease_lost_cancelled:
                 raise
 
             timeout_now = datetime.now(timezone.utc)
+            error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG if timeout_cancelled else TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
+            error_message = (
+                "Task execution exceeded runtime timeout"
+                if timeout_cancelled
+                else "Zone lease was lost during task execution"
+            )
             logger.error(
-                "AE3 task execution cancelled by runtime timeout: zone_id=%s task_id=%s stage=%s error_code=%s",
+                "AE3 task execution cancelled by runtime guard: zone_id=%s task_id=%s stage=%s error_code=%s",
                 running_task.zone_id,
                 running_task.id,
                 getattr(running_task, "current_stage", None),
-                TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
+                error_code,
             )
             await self._attempt_fail_safe_shutdown(
                 task=running_task,
@@ -191,8 +200,8 @@ class ExecuteTaskUseCase:
             return await self._fail_closed(
                 task=running_task,
                 owner=owner,
-                error_code=TASK_EXECUTION_TIMEOUT_CANCEL_MSG,
-                error_message="Task execution exceeded runtime timeout",
+                error_code=error_code,
+                error_message=error_message,
                 now=timeout_now,
             )
         except SnapshotBuildError as exc:
@@ -1065,6 +1074,9 @@ class ExecuteTaskUseCase:
 
     def _is_timeout_cancellation(self, exc: asyncio.CancelledError) -> bool:
         return any(str(arg) == TASK_EXECUTION_TIMEOUT_CANCEL_MSG for arg in getattr(exc, "args", ()))
+
+    def _is_lease_lost_cancellation(self, exc: asyncio.CancelledError) -> bool:
+        return any(str(arg) == TASK_EXECUTION_LEASE_LOST_CANCEL_MSG for arg in getattr(exc, "args", ()))
 
     async def _load_terminal_task_or_none(self, *, task_id: int, fallback_task: Any) -> Any | None:
         if task_id <= 0:

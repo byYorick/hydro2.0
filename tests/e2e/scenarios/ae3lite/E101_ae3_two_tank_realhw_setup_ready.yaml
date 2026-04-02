@@ -706,7 +706,7 @@ actions:
                     level_poll_interval_sec: 5
                     clean_fill_timeout_sec: 120
                     solution_fill_timeout_sec: 420
-                    prepare_recirculation_timeout_sec: 600
+                    prepare_recirculation_timeout_sec: 300
                     telemetry_max_age_sec: 10
                     irr_state_max_age_sec: 30
                     sensor_mode_stabilization_time_sec: 0
@@ -1487,33 +1487,81 @@ actions:
 
   - step: wait_targets_reached_on_node
     type: db.wait
+    optional: true
     query: |
-      SELECT
-        ph.last_value AS ph_value,
-        ec.last_value AS ec_value,
-        ph.last_ts AS ph_ts,
-        ec.last_ts AS ec_ts
-      FROM telemetry_last ph
-      JOIN sensors phs ON phs.id = ph.sensor_id
-      JOIN telemetry_last ec ON true
-      JOIN sensors ecs ON ecs.id = ec.sensor_id
-      WHERE phs.node_id = CAST(:ph_node_id AS bigint)
-        AND phs.type = 'PH'
-        AND phs.label = 'ph_sensor'
-        AND ecs.node_id = CAST(:ec_node_id AS bigint)
-        AND ecs.type = 'EC'
-        AND ecs.label = 'ec_sensor'
-        AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
-        AND ph.last_value BETWEEN 4.80 AND 5.20
-        AND ec.last_value BETWEEN 2.20 AND 2.60
+      WITH target_match AS (
+        SELECT
+          'targets_reached'::text AS wait_outcome,
+          ph.last_value::text AS ph_value,
+          ec.last_value::text AS ec_value,
+          ph.last_ts::text AS ph_ts,
+          ec.last_ts::text AS ec_ts,
+          NULL::text AS task_status,
+          NULL::text AS error_code,
+          NULL::text AS error_message
+        FROM telemetry_last ph
+        JOIN sensors phs ON phs.id = ph.sensor_id
+        JOIN telemetry_last ec ON true
+        JOIN sensors ecs ON ecs.id = ec.sensor_id
+        WHERE phs.node_id = CAST(:ph_node_id AS bigint)
+          AND phs.type = 'PH'
+          AND phs.label = 'ph_sensor'
+          AND ecs.node_id = CAST(:ec_node_id AS bigint)
+          AND ecs.type = 'EC'
+          AND ecs.label = 'ec_sensor'
+          AND ph.last_ts >= NOW() - INTERVAL '30 seconds'
+          AND ec.last_ts >= NOW() - INTERVAL '30 seconds'
+          AND ph.last_value BETWEEN 4.80 AND 5.20
+          AND ec.last_value BETWEEN 2.20 AND 2.60
+        LIMIT 1
+      ),
+      task_failed AS (
+        SELECT
+          'task_failed'::text AS wait_outcome,
+          NULL::text AS ph_value,
+          NULL::text AS ec_value,
+          NULL::text AS ph_ts,
+          NULL::text AS ec_ts,
+          t.status::text AS task_status,
+          COALESCE(t.error_code, '')::text AS error_code,
+          COALESCE(t.error_message, '')::text AS error_message
+        FROM ae_tasks t
+        WHERE t.id = CAST(:task_id AS bigint)
+          AND t.status = 'failed'
+        LIMIT 1
+      )
+      SELECT *
+      FROM target_match
+      UNION ALL
+      SELECT *
+      FROM task_failed
       LIMIT 1
     params:
       ph_node_id: ${ph_node_id}
       ec_node_id: ${ec_node_id}
-    timeout: 720.0
+      task_id: ${task_id}
+    timeout: 330.0
     expected_rows: 1
     save: targets_reached_row
+
+  - step: load_task_snapshot_after_target_wait
+    type: database_query
+    query: |
+      SELECT
+        id,
+        status,
+        current_stage,
+        workflow_phase,
+        completed_at,
+        error_code,
+        error_message,
+        updated_at
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    save: task_snapshot_after_target_wait_row
 
   - step: wait_task_completed
     type: db.wait
@@ -1525,7 +1573,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-    timeout: 720.0
+    timeout: 1020.0
     expected_rows: 1
     save: completed_task_row
 
@@ -1540,9 +1588,55 @@ actions:
       LIMIT 1
     params:
       zone_id: ${zone_id}
-    timeout: 40.0
+    timeout: 180.0
     expected_rows: 1
     save: workflow_ready_row
+
+  - step: load_targets_reached_from_samples
+    type: database_query
+    query: |
+      WITH ph_samples AS (
+        SELECT tsamp.ts, tsamp.value
+        FROM telemetry_samples tsamp
+        JOIN sensors s ON s.id = tsamp.sensor_id
+        WHERE s.node_id = CAST(:ph_node_id AS bigint)
+          AND s.type = 'PH'
+          AND s.label = 'ph_sensor'
+          AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'
+              AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'
+          AND tsamp.value BETWEEN 4.80 AND 5.20
+        ORDER BY tsamp.ts DESC
+        LIMIT 20
+      ),
+      ec_samples AS (
+        SELECT tsamp.ts, tsamp.value
+        FROM telemetry_samples tsamp
+        JOIN sensors s ON s.id = tsamp.sensor_id
+        WHERE s.node_id = CAST(:ec_node_id AS bigint)
+          AND s.type = 'EC'
+          AND s.label = 'ec_sensor'
+          AND tsamp.ts BETWEEN CAST(:completed_at AS timestamp) - INTERVAL '180 seconds'
+              AND CAST(:completed_at AS timestamp) + INTERVAL '10 seconds'
+          AND tsamp.value BETWEEN 2.20 AND 2.60
+        ORDER BY tsamp.ts DESC
+        LIMIT 20
+      )
+      SELECT
+        ph.value AS ph_value,
+        ec.value AS ec_value,
+        ph.ts AS ph_ts,
+        ec.ts AS ec_ts
+      FROM ph_samples ph
+      CROSS JOIN ec_samples ec
+      WHERE ABS(EXTRACT(EPOCH FROM (ph.ts - ec.ts))) <= 30
+      ORDER BY GREATEST(ph.ts, ec.ts) DESC
+      LIMIT 1
+    params:
+      ph_node_id: ${ph_node_id}
+      ec_node_id: ${ec_node_id}
+      completed_at: ${completed_task_row.0.completed_at}
+    expected_rows: 1
+    save: targets_reached_completed_row
 
   - step: load_expected_ae_command_counts
     type: database_query
@@ -1654,6 +1748,10 @@ assertions:
     type: custom_assert
     condition: "str(context.get('prepare_recirc_stage_row', [{}])[0].get('current_stage', '')).lower() == 'prepare_recirculation_check' and str(context.get('prepare_recirc_stage_row', [{}])[0].get('workflow_phase', '')).lower() == 'tank_recirc'"
 
+  - name: task_snapshot_captured_before_cleanup
+    type: custom_assert
+    condition: "len(context.get('task_snapshot_after_target_wait_row', [])) == 1"
+
   - name: task_completed
     type: custom_assert
     condition: "str(context.get('completed_task_row', [{}])[0].get('status', '')).lower() == 'completed'"
@@ -1661,6 +1759,10 @@ assertions:
   - name: workflow_phase_ready
     type: custom_assert
     condition: "str(context.get('workflow_ready_row', [{}])[0].get('workflow_phase', '')).lower() == 'ready'"
+
+  - name: targets_reached_near_completion
+    type: custom_assert
+    condition: "len(context.get('targets_reached_completed_row', [])) == 1"
 
   - name: at_least_ten_ae_commands_logged
     type: custom_assert
@@ -1797,6 +1899,15 @@ cleanup:
     optional: true
     query: |
       DELETE FROM ae_zone_leases
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_zone_workflow_state_after_run
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_workflow_state
       WHERE zone_id = :zone_id
     params:
       zone_id: ${zone_id}

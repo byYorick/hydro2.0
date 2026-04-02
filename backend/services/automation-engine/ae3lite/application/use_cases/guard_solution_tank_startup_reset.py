@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Mapping, Sequence
 
+from ae3lite.infrastructure.read_models.active_grow_cycle_order_sql import SQL_ACTIVE_GROW_CYCLE_ORDER_BY
+
 
 _DEFAULT_SOLUTION_MIN_LABELS: tuple[str, ...] = (
     "level_solution_min",
@@ -84,11 +86,15 @@ class GuardSolutionTankStartupResetUseCase:
 
     async def _load_solution_min_sensor_cfg(self, *, zone_id: int) -> dict[str, Any]:
         rows = await self._fetch_fn(
-            """
-            SELECT config
-            FROM automation_effective_bundles
-            WHERE scope_type = 'zone'
-              AND scope_id = $1
+            f"""
+            SELECT aeb.config
+            FROM grow_cycles gc
+            JOIN automation_effective_bundles aeb
+              ON aeb.scope_type = 'grow_cycle'
+             AND aeb.scope_id = gc.id
+            WHERE gc.zone_id = $1
+              AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
+            {SQL_ACTIVE_GROW_CYCLE_ORDER_BY.strip()}
             LIMIT 1
             """,
             zone_id,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from ae3lite.application.use_cases.get_zone_automation_state import GetZoneAutomationStateUseCase
@@ -98,6 +98,45 @@ async def test_state_prefers_startup_workflow_snapshot_without_active_task():
         "sample_ts": NOW.isoformat(),
     }
     assert len(guard.calls) == 1
+
+
+async def test_telemetry_sql_failure_exposes_telemetry_fetch_ok_false() -> None:
+    async def fetch_fn_boom(_query: str, *_args: object):
+        raise RuntimeError("telemetry db unavailable")
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=None,
+        fetch_fn=fetch_fn_boom,
+        startup_reset_guard_use_case=None,
+    )
+    result = await use_case.run(zone_id=42)
+    assert result.get("telemetry_fetch_ok") is False
+    assert result.get("zone_id") == 42
+
+
+async def test_workflow_state_stale_check_normalizes_aware_timestamps_to_utc() -> None:
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=None,
+        fetch_fn=lambda *_args, **_kwargs: [],
+    )
+    workflow_state = ZoneWorkflow(
+        zone_id=7,
+        workflow_phase="ready",
+        version=5,
+        scheduler_task_id="21",
+        started_at=NOW.replace(tzinfo=None),
+        updated_at=datetime(2026, 3, 14, 12, 0, 0, tzinfo=timezone.utc),
+        payload={"ae3_cycle_start_stage": "complete_ready"},
+    )
+    last_task = SimpleNamespace(
+        id=99,
+        is_active=False,
+        updated_at=datetime(2026, 3, 14, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))),
+    )
+
+    assert use_case._workflow_state_is_stale(workflow_state=workflow_state, last_task=last_task) is True
 
 
 async def test_idle_state_includes_non_blocking_solution_tank_guard_reason() -> None:

@@ -83,9 +83,7 @@ def extract_subsystem_targets(subsystems: Dict[str, Any], subsystem: str) -> Opt
     execution = section.get("execution")
     if not isinstance(execution, dict):
         return None
-    merged = dict(execution)
-    merged["execution"] = dict(execution)
-    return merged
+    return dict(execution)
 
 
 def merge_task_execution(task_config: Dict[str, Any], execution_patch: Dict[str, Any]) -> Dict[str, Any]:
@@ -147,8 +145,7 @@ def _merge_irrigation(targets: Dict[str, Any], subsystems: Dict[str, Any]) -> Di
         system_type = sub_targets.get("system_type")
         if isinstance(system_type, str) and system_type.strip():
             irrigation["system_type"] = system_type.strip()
-        if isinstance(sub_targets.get("execution"), dict):
-            irrigation = merge_task_execution(irrigation, sub_targets["execution"])
+        irrigation = merge_task_execution(irrigation, sub_targets)
     if enabled is False:
         irrigation = merge_task_execution(irrigation, {"force_skip": True})
     elif enabled is True:
@@ -178,8 +175,7 @@ def _merge_lighting(targets: Dict[str, Any], subsystems: Dict[str, Any]) -> Dict
         interval_sec = resolve_interval_seconds(sub_targets)
         if interval_sec is not None:
             lighting["interval_sec"] = interval_sec
-        if isinstance(sub_targets.get("execution"), dict):
-            lighting = merge_task_execution(lighting, sub_targets["execution"])
+        lighting = merge_task_execution(lighting, sub_targets)
     if enabled is False:
         lighting = merge_task_execution(lighting, {"force_skip": True})
     elif enabled is True:
@@ -209,8 +205,7 @@ def _merge_climate(targets: Dict[str, Any], subsystems: Dict[str, Any]) -> Dict[
         interval_sec = resolve_interval_seconds(sub_targets)
         if interval_sec is not None:
             ventilation["interval_sec"] = interval_sec
-        if isinstance(sub_targets.get("execution"), dict):
-            ventilation = merge_task_execution(ventilation, sub_targets["execution"])
+        ventilation = merge_task_execution(ventilation, sub_targets)
     if enabled is False:
         ventilation = merge_task_execution(ventilation, {"force_skip": True})
     elif enabled is True:

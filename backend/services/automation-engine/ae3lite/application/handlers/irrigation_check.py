@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
@@ -17,6 +18,9 @@ from ae3lite.infrastructure.metrics import (
 )
 from common.biz_alerts import send_biz_alert
 from common.db import create_zone_event
+
+
+_logger = logging.getLogger(__name__)
 
 
 class IrrigationCheckHandler(BaseStageHandler):
@@ -40,7 +44,9 @@ class IrrigationCheckHandler(BaseStageHandler):
         def _observe_duration(stop_reason: str) -> None:
             entered = getattr(task.workflow, "stage_entered_at", None)
             if isinstance(entered, datetime):
-                duration = (now.replace(tzinfo=None) - entered.replace(tzinfo=None)).total_seconds()
+                now_cmp = now.astimezone(timezone.utc).replace(tzinfo=None) if now.tzinfo is not None else now
+                entered_cmp = entered.astimezone(timezone.utc).replace(tzinfo=None) if entered.tzinfo is not None else entered
+                duration = (now_cmp - entered_cmp).total_seconds()
                 IRRIGATION_DURATION.labels(topology=topology, stop_reason=stop_reason).observe(max(0.0, duration))
 
         await self._probe_irr_state(
@@ -85,7 +91,12 @@ class IrrigationCheckHandler(BaseStageHandler):
                         },
                     )
                 except Exception:
-                    pass
+                    _logger.warning(
+                        "AE3 failed to log IRRIGATION_SOLUTION_MIN_DETECTED zone_id=%s task_id=%s",
+                        int(getattr(task, "zone_id", 0) or 0),
+                        int(getattr(task, "id", 0) or 0),
+                        exc_info=True,
+                    )
                 try:
                     await send_biz_alert(
                         code="biz_irrigation_solution_min",
@@ -102,7 +113,12 @@ class IrrigationCheckHandler(BaseStageHandler):
                         scope_parts=("stage:irrigation_check",),
                     )
                 except Exception:
-                    pass
+                    _logger.warning(
+                        "AE3 failed to emit biz_irrigation_solution_min alert zone_id=%s task_id=%s",
+                        int(getattr(task, "zone_id", 0) or 0),
+                        int(getattr(task, "id", 0) or 0),
+                        exc_info=True,
+                    )
                 max_replays = int(recovery.get("max_setup_replays") or 0)
                 next_replay_count = int(getattr(task, "irrigation_replay_count", 0) or 0) + 1
                 if next_replay_count > max_replays:
@@ -123,7 +139,12 @@ class IrrigationCheckHandler(BaseStageHandler):
                             scope_parts=("stage:irrigation_check",),
                         )
                     except Exception:
-                        pass
+                        _logger.warning(
+                            "AE3 failed to emit biz_irrigation_replay_exhausted alert zone_id=%s task_id=%s",
+                            int(getattr(task, "zone_id", 0) or 0),
+                            int(getattr(task, "id", 0) or 0),
+                            exc_info=True,
+                        )
                     return StageOutcome(
                         kind="fail",
                         error_code="irrigation_solution_min_replay_exhausted",
@@ -198,8 +219,12 @@ class IrrigationCheckHandler(BaseStageHandler):
                         },
                     )
                 except Exception:
-                    pass
+                    _logger.warning(
+                        "AE3 failed to log IRRIGATION_CORRECTION_STARTED zone_id=%s task_id=%s",
+                        int(getattr(task, "zone_id", 0) or 0),
+                        int(getattr(task, "id", 0) or 0),
+                        exc_info=True,
+                    )
                 return StageOutcome(kind="enter_correction", correction=corr)
 
         return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
-

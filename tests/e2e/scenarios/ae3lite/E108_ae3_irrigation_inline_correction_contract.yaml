@@ -11,7 +11,7 @@ actions:
   - step: set_context
     type: set
     test_zone_uid: ${TEST_NODE_ZONE_UID}
-    test_soil_node_uid: nd-test-soil-1
+    test_soil_node_uid: ${TEST_SOIL_NODE_UID}
 
   - step: load_zone
     type: database_query
@@ -81,16 +81,11 @@ actions:
       zone_id: ${zone_id}
 
   - step: set_soil_level
-    type: ae_test_hook
+    type: hardware_set_fault_mode
     zone_id: ${zone_id}
-    action: publish_command
-    history_logger_url: http://history-logger:9300
-    command:
-      node_uid: ${test_soil_node_uid}
-      channel: system
-      cmd: set_fault_mode
-      params:
-        soil_moisture_pct: 52.0
+    node_uid: ${test_soil_node_uid}
+    params:
+      soil_moisture_pct: 52.0
     save: soil_command_response
 
   - step: wait_soil_command_done

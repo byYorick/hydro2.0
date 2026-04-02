@@ -50,6 +50,7 @@ def _intent_row(zone_id: int, prefix: str) -> dict[str, object]:
             "workflow": "cycle_start",
             "task_type": "diagnostics",
             "source": "laravel_scheduler",
+            "topology": "two_tank",
         },
         "idempotency_key": f"{prefix}-idem",
     }
@@ -65,6 +66,7 @@ def _irrigation_intent_row(zone_id: int, prefix: str) -> dict[str, object]:
             "workflow": "cycle_start",
             "task_type": "irrigation_start",
             "source": "zone_ui",
+            "topology": "two_tank",
             "mode": "normal",
             "requested_duration_sec": 180,
         },
@@ -334,5 +336,44 @@ async def test_create_task_from_intent_terminal_mode_fails_closed_when_task_miss
 
         assert exc.value.code == "start_cycle_intent_terminal"
         assert exc.value.details["idempotency_key"] == f"{prefix}-idem"
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_create_task_from_intent_rejects_missing_topology() -> None:
+    prefix = f"ae3-create-task-topology-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=PgAutomationTaskRepository(),
+        zone_lease_repository=PgZoneLeaseRepository(),
+        legacy_intent_mapper=LegacyIntentMapper(),
+    )
+
+    try:
+        zone_id = await _insert_zone(prefix)
+
+        with pytest.raises(TaskCreateError) as exc:
+            await use_case.run(
+                zone_id=zone_id,
+                source="laravel_scheduler",
+                idempotency_key=f"{prefix}-idem",
+                intent_row={
+                    "id": 991,
+                    "zone_id": zone_id,
+                    "intent_type": "diagnostics_tick",
+                    "retry_count": 0,
+                    "payload": {
+                        "workflow": "cycle_start",
+                        "task_type": "diagnostics",
+                        "source": "laravel_scheduler",
+                    },
+                    "idempotency_key": f"{prefix}-idem",
+                },
+                now=now,
+            )
+
+        assert exc.value.code == "start_cycle_intent_topology_missing"
+        assert exc.value.details["intent_id"] == 991
     finally:
         await _cleanup(prefix)

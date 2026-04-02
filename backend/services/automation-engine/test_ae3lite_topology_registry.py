@@ -77,8 +77,8 @@ class TestTwoTankGraphIntegrity:
                 )
 
     def test_expected_stage_count(self):
-        assert len(TWO_TANK) == 28, (
-            f"Expected 28 stages, got {len(TWO_TANK)}"
+        assert len(TWO_TANK) == 29, (
+            f"Expected 29 stages, got {len(TWO_TANK)}"
         )
 
 
@@ -104,6 +104,12 @@ class TestTopologyRegistryLookup:
         assert sdef.on_corr_success == "solution_fill_check"
         assert sdef.on_corr_fail == "solution_fill_check"
 
+    def test_irrigation_recovery_correction_fail_is_fail_closed(self, registry: TopologyRegistry):
+        sdef = registry.get("two_tank", "irrigation_recovery_check")
+        assert sdef.has_correction is True
+        assert sdef.on_corr_success == "irrigation_recovery_stop_to_ready"
+        assert sdef.on_corr_fail == "irrigation_recovery_stop_failed"
+
     def test_get_terminal_stage(self, registry: TopologyRegistry):
         sdef = registry.get("two_tank", "clean_fill_timeout_stop")
         assert sdef.terminal_error is not None
@@ -120,10 +126,11 @@ class TestTopologyRegistryLookup:
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
         stages = registry.stages("two_tank")
-        assert len(stages) == 28
+        assert len(stages) == 29
         assert "startup" in stages
         assert "complete_ready" in stages
         assert "prepare_recirculation_window_exhausted" in stages
+        assert "irrigation_recovery_stop_failed" in stages
         assert "prepare_recirculation_timeout_stop" not in stages
 
     def test_stages_unknown_topology_raises(self, registry: TopologyRegistry):

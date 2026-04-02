@@ -33,6 +33,15 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
         self.assertIn("real-hardware harness видел только реальную test_node", self.script)
 
     def test_real_hardware_launcher_exposes_calibration_suite(self) -> None:
+        self.assertIn('SMART_IRRIGATION_SCENARIOS=(', self.script)
+        self.assertIn(
+            '"scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"',
+            self.script,
+        )
         self.assertIn('CALIBRATION_SCENARIOS=(', self.script)
         self.assertIn(
             '"scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"',
@@ -42,7 +51,7 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             '"scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"',
             self.script,
         )
-        self.assertIn("--set=<automation|workflow|ae3lite|calibration|full>", self.script)
+        self.assertIn("--set=<automation|workflow|ae3lite|smart_irrigation|calibration|full>", self.script)
 
     def test_real_hardware_launcher_cleans_stale_blocking_ae3_alerts(self) -> None:
         self.assertIn("Удаляю stale AE3 blocking alerts для тестовой зоны", self.script)

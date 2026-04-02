@@ -163,6 +163,8 @@ def _make_task(
         "corr_wait_until": corr.wait_until,
         "corr_ec_component": corr.ec_component,
         "corr_ec_amount_ml": corr.ec_amount_ml,
+        "corr_ec_dose_sequence_json": corr.ec_dose_sequence_json,
+        "corr_ec_current_seq_index": corr.ec_current_seq_index,
         "corr_ph_amount_ml": corr.ph_amount_ml,
         "corr_limit_policy_logged": corr.limit_policy_logged,
     })
@@ -205,7 +207,7 @@ class _MockPlan:
         ph: float = 6.0,
         ec: float = 2.0,
         runtime: dict | None = None,
-        include_irr_state_probe: bool = False,
+        include_irr_state_probe: bool = True,
     ):
         self.runtime = runtime or RUNTIME
         self.named_plans = {
@@ -252,7 +254,15 @@ class _MockRuntimeMonitor:
         self._solution_min_triggered = solution_min_triggered
         self._has_level = has_level
         self._level_stale = level_stale
-        self._irr_snapshot = dict(irr_snapshot or {})
+        self._irr_snapshot = dict(
+            irr_snapshot
+            or {
+                "valve_clean_supply": True,
+                "valve_solution_fill": True,
+                "valve_solution_supply": True,
+                "pump_main": True,
+            }
+        )
         self._irr_has_snapshot = irr_has_snapshot
         self._irr_is_stale = irr_is_stale
         self._ph_samples = list(ph_samples) if ph_samples is not None else [
@@ -661,8 +671,8 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert outcome.correction.ec_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
-    assert len(gateway.calls) == 1
-    commands = gateway.calls[0]["commands"]
+    assert len(gateway.calls) == 2
+    commands = gateway.calls[1]["commands"]
     assert len(commands) == 1
     assert commands[0].payload == {
         "cmd": "dose",
@@ -707,8 +717,8 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     assert outcome.correction.ph_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
-    assert len(gateway.calls) == 1
-    commands = gateway.calls[0]["commands"]
+    assert len(gateway.calls) == 2
+    commands = gateway.calls[1]["commands"]
     assert len(commands) == 1
     assert commands[0].payload == {
         "cmd": "dose",
@@ -991,8 +1001,8 @@ async def test_corr_check_zero_sample_window_reactivates_stage_owned_sensor_mode
     assert outcome.correction.corr_step == "corr_wait_stable"
     assert outcome.correction.activated_here is False
     assert outcome.due_delay_sec == 45
-    assert len(gateway.calls) == 1
-    commands = gateway.calls[0]["commands"]
+    assert len(gateway.calls) == 2
+    commands = gateway.calls[1]["commands"]
     assert len(commands) == 1
     assert commands[0].payload["cmd"] == "activate_sensor_mode"
     assert create_event.await_args.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
@@ -1480,7 +1490,7 @@ async def test_corr_check_persists_pid_state_updates_when_dose_needed():
     }
 
     class _PlanWithCalib:
-        named_plans = {}
+        named_plans = _MockPlan().named_plans
 
     _PlanWithCalib.runtime = runtime
 
@@ -1566,7 +1576,7 @@ async def test_corr_check_logs_discarded_dose_with_runtime_details(monkeypatch: 
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
 
     class _PlanWithDiscard:
-        named_plans = {}
+        named_plans = _MockPlan().named_plans
 
     _PlanWithDiscard.runtime = runtime
 
@@ -2059,6 +2069,93 @@ async def test_corr_check_passes_irrigation_workflow_phase_to_water_level_check(
     await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
     water_level_mock.assert_awaited_once_with(task.zone_id, workflow_phase="irrigating")
+
+
+async def test_corr_check_irrigation_phase_falls_back_to_solution_fill_process_calibration(monkeypatch):
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr, current_stage="irrigation_check", workflow_phase="irrigating")
+    runtime = deepcopy(RUNTIME)
+    runtime["process_calibrations"] = {
+        "solution_fill": deepcopy(RUNTIME["process_calibrations"]["solution_fill"]),
+    }
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)
+    handler = _make_handler(monitor=monitor)
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind in {"enter_correction", "exit_correction"}
+
+
+async def test_corr_dose_ec_invalid_sequence_json_fails_closed() -> None:
+    corr = _base_corr(corr_step="corr_dose_ec", ec_dose_sequence_json="{bad-json")
+    task = _make_task(corr=corr)
+    handler = _make_handler()
+
+    with pytest.raises(TaskExecutionError, match="invalid"):
+        await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+
+async def test_corr_check_fails_when_pid_state_persist_fails() -> None:
+    class _FailingPidRepo(_MockPidStateRepository):
+        async def upsert_states(self, *, zone_id, now, updates):
+            raise RuntimeError("db down")
+
+    pid_repo = _FailingPidRepo()
+    corr = _base_corr(corr_step="corr_check")
+    task = _make_task(corr=corr)
+    runtime = dict(RUNTIME)
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0,
+            "ki": 0.1,
+            "kd": 0.0,
+            "deadband": 0.0,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {"decision_window_sec": 6, "window_min_samples": 3, "telemetry_period_sec": 2},
+        },
+        "ph": {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.05,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+            "observe": {"decision_window_sec": 6, "window_min_samples": 3, "telemetry_period_sec": 2},
+        },
+    }
+    runtime["correction"]["actuators"] = {
+        "ec": {"node_uid": "ec-node", "channel": "ec_pump", "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0}},
+        "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 200,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+
+    class _PlanWithCalib:
+        named_plans = _MockPlan().named_plans
+
+    _PlanWithCalib.runtime = runtime
+
+    monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
+    handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
+
+    with pytest.raises(TaskExecutionError, match="persist PID state"):
+        await handler.run(task=task, plan=_PlanWithCalib(), stage_def=None, now=NOW)
 
 
 # ---------------------------------------------------------------------------

@@ -750,12 +750,7 @@ class AutomationRuntimeConfigService
 
         $string = trim((string) $value);
         if ($key === 'automation_engine.api_url') {
-            $normalized = rtrim($string, '/');
-            if ($normalized === 'http://automation-engine:9505') {
-                return self::DEFAULT_AUTOMATION_ENGINE_API_URL;
-            }
-
-            return $normalized;
+            return rtrim($string, '/');
         }
 
         return $string !== '' || $fromOverride ? $string : (string) $fallback;
