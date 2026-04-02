@@ -31,6 +31,7 @@ class ZoneAutomationStartIrrigationControllerTest extends TestCase
 
     public function test_start_irrigation_proxies_payload_to_automation_engine(): void
     {
+        config()->set('services.automation_engine.api_url', 'http://automation-engine:9405');
         config()->set('services.automation_engine.scheduler_api_token', 'test-scheduler-token');
 
         $user = User::factory()->create(['role' => 'operator']);
@@ -75,6 +76,7 @@ class ZoneAutomationStartIrrigationControllerTest extends TestCase
         $this->assertSame('irrigation_start', $intentPayload['workflow'] ?? null);
         $this->assertSame('force', $intentPayload['mode'] ?? null);
         $this->assertSame(120, $intentPayload['requested_duration_sec'] ?? null);
+        $this->assertSame('two_tank_drip_substrate_trays', $intentPayload['topology'] ?? null);
 
         Http::assertSent(function (HttpRequest $request) use ($zone): bool {
             $body = $request->data();

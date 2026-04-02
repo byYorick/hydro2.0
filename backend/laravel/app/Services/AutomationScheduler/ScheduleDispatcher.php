@@ -3,6 +3,7 @@
 namespace App\Services\AutomationScheduler;
 
 use App\Services\AutomationConfigDocumentService;
+use App\Services\ZoneAutomationIntentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -344,6 +345,7 @@ class ScheduleDispatcher
                 'source' => 'laravel_scheduler',
                 'task_type' => $taskType === 'irrigation' ? 'irrigation_start' : $taskType,
                 'workflow' => $taskType === 'irrigation' ? 'irrigation_start' : 'cycle_start',
+                'topology' => app(ZoneAutomationIntentService::class)->resolveAe3TopologyForZone($zoneId),
             ];
             if ($taskType === 'irrigation') {
                 $intentPayload['mode'] = 'normal';

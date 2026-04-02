@@ -48,7 +48,10 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($request->method() === 'POST' && (
+                str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')
+                || str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation')
+            )) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
@@ -105,9 +108,9 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
             : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
         $this->assertIsArray($intentPayload);
         $this->assertSame('laravel_scheduler', $intentPayload['source'] ?? null);
-        $this->assertSame('irrigation', $intentPayload['task_type'] ?? null);
-        $this->assertArrayNotHasKey('topology', $intentPayload);
-        $this->assertSame('cycle_start', $intentPayload['workflow'] ?? null);
+        $this->assertSame('irrigation_start', $intentPayload['task_type'] ?? null);
+        $this->assertSame('two_tank_drip_substrate_trays', $intentPayload['topology'] ?? null);
+        $this->assertSame('irrigation_start', $intentPayload['workflow'] ?? null);
         $this->assertArrayNotHasKey('task_payload', $intentPayload);
         $this->assertArrayNotHasKey('schedule_payload', $intentPayload);
 
@@ -120,7 +123,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertArrayHasKey('schedule_key', $task->details ?? []);
 
         Http::assertSent(function (Request $request) use ($zone): bool {
-            if (! ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle'))) {
+            if (! ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-irrigation'))) {
                 return false;
             }
 

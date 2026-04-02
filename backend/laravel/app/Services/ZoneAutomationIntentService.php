@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -10,7 +11,30 @@ class ZoneAutomationIntentService
 {
     public function __construct(
         private readonly AutomationConfigDocumentService $documents,
+        private readonly ZoneLogicProfileService $logicProfiles,
     ) {
+    }
+
+    /**
+     * Топология для AE3 intent payload (обязательна для LegacyIntentMapper).
+     */
+    public function resolveAe3TopologyForZone(int $zoneId): string
+    {
+        try {
+            $profile = $this->logicProfiles->resolveActiveProfileForZone($zoneId);
+            $subsystems = $profile?->subsystems ?? [];
+            $topology = Arr::get($subsystems, 'diagnostics.execution.topology');
+            if (is_string($topology) && trim($topology) !== '') {
+                return strtolower(trim($topology));
+            }
+        } catch (\Throwable $e) {
+            Log::debug('Could not resolve AE3 topology from zone logic profile', [
+                'zone_id' => $zoneId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return 'two_tank_drip_substrate_trays';
     }
 
     public function upsertStartIrrigationIntent(
@@ -28,6 +52,7 @@ class ZoneAutomationIntentService
             'task_type' => 'irrigation_start',
             'workflow' => 'irrigation_start',
             'mode' => $mode === 'force' ? 'force' : 'normal',
+            'topology' => $this->resolveAe3TopologyForZone($zoneId),
         ];
         if ($requestedDurationSec !== null) {
             $intentPayload['requested_duration_sec'] = max(1, $requestedDurationSec);

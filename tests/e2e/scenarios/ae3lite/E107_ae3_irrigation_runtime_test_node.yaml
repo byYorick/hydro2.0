@@ -1142,7 +1142,8 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_run_id}
-    timeout: 180.0
+    # Inline correction (EC→observe→pH) может занять существенно дольше длительности полива
+    timeout: 600.0
     expected_rows: 1
     save: task_run_row
 
