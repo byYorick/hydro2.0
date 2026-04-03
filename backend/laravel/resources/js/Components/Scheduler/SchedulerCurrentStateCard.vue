@@ -56,6 +56,18 @@
               {{ decisionReasonLabel(decisionReasonCode) || decisionReasonCode }}
             </span>
           </span>
+          <span
+            v-if="decisionStrategy"
+            class="metric-pill"
+          >
+            Strategy: <span class="text-[color:var(--text-primary)]">{{ decisionStrategy }}</span>
+          </span>
+          <span
+            v-if="decisionBundleRevision"
+            class="metric-pill"
+          >
+            Bundle: <span class="text-[color:var(--text-primary)]">{{ shortRevision(decisionBundleRevision) }}</span>
+          </span>
         </div>
       </div>
 
@@ -102,6 +114,8 @@ type AutomationStateLike = {
     outcome?: string | null
     degraded?: boolean | null
     reason_code?: string | null
+    strategy?: string | null
+    bundle_revision?: string | null
   } | null
 }
 
@@ -128,6 +142,8 @@ const controlModeResolved = computed(() => props.automationState?.control_mode |
 const decisionOutcome = computed(() => props.automationState?.decision?.outcome || null)
 const decisionDegraded = computed(() => props.automationState?.decision?.degraded || null)
 const decisionReasonCode = computed(() => props.automationState?.decision?.reason_code || null)
+const decisionStrategy = computed(() => props.automationState?.decision?.strategy || null)
+const decisionBundleRevision = computed(() => props.automationState?.decision?.bundle_revision || null)
 
 const stageResolved = computed(() => props.automationState?.current_stage || props.activeRun?.current_stage || 'не передан')
 const phaseResolved = computed(() => props.automationState?.workflow_phase || props.activeRun?.workflow_phase || 'не передана')
@@ -147,5 +163,10 @@ const statusDotColor = computed(() => {
   if (status.includes('SKIP') || status.includes('SUPPRESS')) return 'text-[color:var(--text-dim)]'
   return 'text-[color:var(--text-muted)]'
 })
-</script>
 
+function shortRevision(value: string | null | undefined): string {
+  const normalized = String(value ?? '').trim()
+  if (normalized === '') return '—'
+  return normalized.slice(0, 12)
+}
+</script>

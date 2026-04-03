@@ -38,6 +38,7 @@ class ZoneSnapshot:
     pid_state: Mapping[str, Any]
     pid_configs: Mapping[str, Any]
     actuators: Tuple[ZoneActuatorRef, ...]
+    bundle_revision: Optional[str] = None
     process_calibrations: Optional[Mapping[str, Any]] = None
     correction_config: Optional[Mapping[str, Any]] = None
     phase_targets: Optional[Mapping[str, Any]] = None

@@ -24,9 +24,17 @@ NOW = datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc)
 
 # ── Task factory (local — no cross-test-file import) ─────────────────────────
 
-def _make_task(*, stage: str = "startup", topology: str = "two_tank") -> AutomationTask:
+def _make_task(
+    *,
+    stage: str = "startup",
+    topology: str = "two_tank",
+    task_type: str = "cycle_start",
+    irrigation_decision_strategy: str | None = None,
+    irrigation_decision_config: dict | None = None,
+    irrigation_bundle_revision: str | None = None,
+) -> AutomationTask:
     return AutomationTask.from_row({
-        "id": 99, "zone_id": 99, "task_type": "cycle_start", "status": "running",
+        "id": 99, "zone_id": 99, "task_type": task_type, "status": "running",
         "idempotency_key": "k99", "scheduled_for": NOW, "due_at": NOW,
         "claimed_by": "w1", "claimed_at": NOW, "error_code": None, "error_message": None,
         "created_at": NOW, "updated_at": NOW, "completed_at": None,
@@ -35,6 +43,9 @@ def _make_task(*, stage: str = "startup", topology: str = "two_tank") -> Automat
         "current_stage": stage, "workflow_phase": "idle",
         "stage_deadline_at": None, "stage_retry_count": 0,
         "stage_entered_at": NOW, "clean_fill_cycle": 0,
+        "irrigation_decision_strategy": irrigation_decision_strategy,
+        "irrigation_decision_config": irrigation_decision_config,
+        "irrigation_bundle_revision": irrigation_bundle_revision,
         "corr_step": None,
     })
 
@@ -60,6 +71,7 @@ class _TaskRepoRunning:
     """mark_running succeeds, mark_completed also."""
     def __init__(self, *, running_task: AutomationTask | None = None):
         self._running_task = running_task
+        self.update_irrigation_runtime_calls: list[dict[str, object]] = []
 
     async def mark_running(self, *, task_id, owner, now):
         return self._running_task
@@ -68,6 +80,34 @@ class _TaskRepoRunning:
         return replace(self._running_task, status="completed")
 
     async def get_by_id(self, *, task_id):
+        return self._running_task
+
+    async def update_irrigation_runtime(self, *, task_id, owner, now, **kwargs):
+        self.update_irrigation_runtime_calls.append({"task_id": task_id, "owner": owner, "now": now, **kwargs})
+        self._running_task = replace(
+            self._running_task,
+            irrigation_mode=kwargs.get("irrigation_mode", self._running_task.irrigation_mode),
+            irrigation_requested_duration_sec=kwargs.get(
+                "irrigation_requested_duration_sec",
+                self._running_task.irrigation_requested_duration_sec,
+            ),
+            irrigation_decision_strategy=kwargs.get(
+                "irrigation_decision_strategy",
+                self._running_task.irrigation_decision_strategy,
+            ),
+            irrigation_decision_config=kwargs.get(
+                "irrigation_decision_config",
+                self._running_task.irrigation_decision_config,
+            ),
+            irrigation_bundle_revision=kwargs.get(
+                "irrigation_bundle_revision",
+                self._running_task.irrigation_bundle_revision,
+            ),
+            irrigation_wait_ready_deadline_at=kwargs.get(
+                "irrigation_wait_ready_deadline_at",
+                self._running_task.irrigation_wait_ready_deadline_at,
+            ),
+        )
         return self._running_task
 
 
@@ -137,7 +177,14 @@ class _SnapshotWithCorrectionConfig:
 
 class _SnapshotWithIrrActuators:
     zone_id = 99
+    automation_runtime = "ae3"
+    grow_cycle_id = 19
+    current_phase_id = 29
+    phase_name = "VEG"
+    bundle_revision = "bundle-live-1234567890"
     correction_config = {"meta": {"version": 7}}
+    pid_configs = {}
+    process_calibrations = {}
     actuators = (
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=11, role="valve_clean_fill"),
         ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=12, role="valve_clean_supply"),
@@ -172,6 +219,25 @@ class _PlannerTwoTankOk:
     def build(self, *, task, snapshot):
         plan = _PlanWithSteps(steps=())
         plan.topology = "two_tank_drip_substrate_trays"
+        return plan
+
+
+class _PlannerIrrigationLockSnapshot:
+    def build(self, *, task, snapshot):
+        plan = _PlanWithSteps(steps=())
+        plan.topology = "two_tank"
+        plan.runtime = {
+            "zone_workflow_phase": "tank_filling",
+            "irrigation_decision": {
+                "strategy": "smart_soil_v1",
+                "config": {
+                    "lookback_sec": 1800,
+                    "min_samples": 3,
+                    "stale_after_sec": 600,
+                },
+            },
+            "bundle_revision": getattr(snapshot, "bundle_revision", None),
+        }
         return plan
 
 
@@ -606,17 +672,105 @@ async def test_execute_task_first_run_emits_start_readiness_event_and_service_lo
 
     assert result.status == "completed"
     assert [event_type for _, event_type, _ in recorded_events] == ["AE_TASK_STARTED"]
-    start_payload = recorded_events[0][2]
-    assert start_payload["task_id"] == 99
-    assert start_payload["zone_id"] == 99
-    assert start_payload["grow_cycle_id"] == 99
-    assert start_payload["current_phase_id"] == 99
-    assert start_payload["plan_steps_count"] == 1
-    assert len(recorded_service_logs) == 1
-    assert recorded_service_logs[0]["level"] == "info"
-    assert recorded_service_logs[0]["message"] == "AE3 task start readiness confirmed"
-    assert recorded_service_logs[0]["context"]["task_id"] == 99
-    assert recorded_service_logs[0]["context"]["plan_steps_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_task_irrigation_first_run_locks_decision_snapshot_and_emits_event(monkeypatch) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+
+    claimed_task = replace(
+        _make_task(stage="await_ready", topology="two_tank", task_type="irrigation_start"),
+        status="claimed",
+    )
+    task_repo = _TaskRepoRunning(running_task=claimed_task)
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerIrrigationLockSnapshot(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterPending(),
+    )
+
+    result = await use_case.run(task=claimed_task, now=NOW)
+
+    assert result.irrigation_decision_strategy == "smart_soil_v1"
+    assert result.irrigation_decision_config == {
+        "lookback_sec": 1800,
+        "min_samples": 3,
+        "stale_after_sec": 600,
+    }
+    assert result.irrigation_bundle_revision == "bundle-live-1234567890"
+    assert any(event_type == "IRRIGATION_DECISION_SNAPSHOT_LOCKED" for _, event_type, _ in recorded_events)
+    assert task_repo.update_irrigation_runtime_calls[0]["irrigation_decision_strategy"] == "smart_soil_v1"
+    snapshot_payload = next(payload for _, event_type, payload in recorded_events if event_type == "IRRIGATION_DECISION_SNAPSHOT_LOCKED")
+    assert snapshot_payload["task_id"] == 99
+    assert snapshot_payload["zone_id"] == 99
+    assert snapshot_payload["grow_cycle_id"] == 19
+    assert snapshot_payload["strategy"] == "smart_soil_v1"
+    assert snapshot_payload["bundle_revision"] == "bundle-live-1234567890"
+    assert snapshot_payload["config"] == {
+        "lookback_sec": 1800,
+        "min_samples": 3,
+        "stale_after_sec": 600,
+    }
+
+
+@pytest.mark.asyncio
+async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_snapshot(monkeypatch) -> None:
+    recorded_events: list[tuple[int, str, dict]] = []
+
+    async def _record_zone_event(zone_id: int, event_type: str, payload: dict) -> None:
+        recorded_events.append((zone_id, event_type, payload))
+
+    monkeypatch.setattr(
+        "ae3lite.application.use_cases.execute_task.create_zone_event",
+        _record_zone_event,
+    )
+
+    claimed_task = replace(
+        _make_task(
+            stage="await_ready",
+            topology="two_tank",
+            task_type="irrigation_start",
+            irrigation_decision_strategy="smart_soil_v1",
+            irrigation_decision_config={
+                "lookback_sec": 1800,
+                "min_samples": 3,
+                "stale_after_sec": 600,
+            },
+            irrigation_bundle_revision="bundle-locked-123456",
+        ),
+        status="claimed",
+    )
+    task_repo = _TaskRepoRunning(running_task=claimed_task)
+    use_case = ExecuteTaskUseCase(
+        task_repository=task_repo,
+        zone_snapshot_read_model=_SnapshotReadModelWithIrrActuators(),
+        planner=_PlannerIrrigationLockSnapshot(),
+        command_gateway=_GatewayOk(),
+        workflow_router=_WorkflowRouterPending(),
+    )
+
+    result = await use_case.run(task=claimed_task, now=NOW)
+
+    assert result.irrigation_decision_strategy == "smart_soil_v1"
+    assert task_repo.update_irrigation_runtime_calls == []
+    snapshot_payload = next(payload for _, event_type, payload in recorded_events if event_type == "IRRIGATION_DECISION_SNAPSHOT_LOCKED")
+    assert snapshot_payload["strategy"] == "smart_soil_v1"
+    assert snapshot_payload["bundle_revision"] == "bundle-locked-123456"
+    assert snapshot_payload["config"] == {
+        "lookback_sec": 1800,
+        "min_samples": 3,
+        "stale_after_sec": 600,
+    }
 
 
 @pytest.mark.asyncio

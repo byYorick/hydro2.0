@@ -296,6 +296,8 @@ async def test_state_returns_irrigation_decision_metadata() -> None:
         error_code=None,
         error_message=None,
         irrigation_decision_strategy="smart_soil_v1",
+        irrigation_decision_config={"lookback_sec": 1800, "min_samples": 3},
+        irrigation_bundle_revision="bundle-abc123456789",
         irrigation_decision_outcome="degraded_run",
         irrigation_decision_reason_code="smart_soil_telemetry_missing_or_stale",
         irrigation_decision_degraded=True,
@@ -327,6 +329,8 @@ async def test_state_returns_irrigation_decision_metadata() -> None:
         "outcome": "degraded_run",
         "reason_code": "smart_soil_telemetry_missing_or_stale",
         "strategy": "smart_soil_v1",
+        "config": {"lookback_sec": 1800, "min_samples": 3},
+        "bundle_revision": "bundle-abc123456789",
         "degraded": True,
     }
 

@@ -260,6 +260,25 @@ def test_resolve_two_tank_runtime_rejects_unknown_active_phase() -> None:
         resolve_two_tank_runtime(snap)
 
 
+def test_resolve_two_tank_runtime_preserves_unknown_irrigation_strategy_for_fail_closed_runtime() -> None:
+    snap = _snapshot(correction={})
+    snap.targets = {
+        "extensions": {
+            "subsystems": {
+                "irrigation": {
+                    "decision": {
+                        "strategy": "smart_soil_v9",
+                    },
+                },
+            },
+        },
+    }
+
+    runtime = resolve_two_tank_runtime(snap)
+
+    assert runtime["irrigation_decision"]["strategy"] == "smart_soil_v9"
+
+
 def test_resolve_two_tank_runtime_uses_recipe_phase_targets_instead_of_execution_targets() -> None:
     snap = _snapshot(correction={})
     snap.phase_targets = {
@@ -443,6 +462,21 @@ def test_resolve_two_tank_runtime_prefers_process_hold_window_for_prepare_recirc
     )
 
     assert runtime["prepare_recirculation_timeout_sec"] == 55
+
+
+def test_resolve_two_tank_runtime_prepare_recirculation_slack_defaults_to_900() -> None:
+    runtime = resolve_two_tank_runtime(_snapshot(correction={}))
+    assert runtime["prepare_recirculation_correction_slack_sec"] == 900
+
+
+def test_resolve_two_tank_runtime_prepare_recirculation_slack_from_tank_recirc_retry() -> None:
+    snap = _snapshot(correction={})
+    snap.correction_config = _merge_recursive(
+        _minimal_zone_correction_config(),
+        {"phases": {"tank_recirc": {"retry": {"prepare_recirculation_correction_slack_sec": 0}}}},
+    )
+    runtime = resolve_two_tank_runtime(snap)
+    assert runtime["prepare_recirculation_correction_slack_sec"] == 0
 
 
 def test_resolve_two_tank_runtime_raises_when_timeout_less_than_process_hold_window() -> None:

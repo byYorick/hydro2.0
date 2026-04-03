@@ -118,6 +118,7 @@ class CycleStartPlanner:
         topology: str,
     ) -> CommandPlan:
         runtime = resolve_two_tank_runtime(snapshot)
+        runtime = self._apply_irrigation_decision_snapshot(task=task, runtime=runtime)
         runtime = dict(runtime)
         runtime["zone_workflow_phase"] = str(getattr(snapshot, "workflow_phase", "") or "idle").strip().lower()
         named_plans: dict[str, tuple[PlannedCommand, ...]] = {}
@@ -193,6 +194,36 @@ class CycleStartPlanner:
             named_plans=named_plans,
             runtime=runtime,
         )
+
+    def _apply_irrigation_decision_snapshot(
+        self,
+        *,
+        task: AutomationTask,
+        runtime: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if str(getattr(task, "task_type", "") or "").strip().lower() != "irrigation_start":
+            return dict(runtime)
+
+        locked_strategy = str(getattr(task, "irrigation_decision_strategy", "") or "").strip().lower()
+        locked_config = getattr(task, "irrigation_decision_config", None)
+        locked_bundle_revision = str(getattr(task, "irrigation_bundle_revision", "") or "").strip()
+        if locked_strategy == "" and not isinstance(locked_config, Mapping) and locked_bundle_revision == "":
+            return dict(runtime)
+
+        runtime_copy = dict(runtime)
+        decision = runtime_copy.get("irrigation_decision")
+        decision_mapping = dict(decision) if isinstance(decision, Mapping) else {}
+        config = decision_mapping.get("config")
+        config_mapping = dict(config) if isinstance(config, Mapping) else {}
+        if isinstance(locked_config, Mapping):
+            config_mapping.update(dict(locked_config))
+        if locked_strategy != "":
+            decision_mapping["strategy"] = locked_strategy
+        decision_mapping["config"] = config_mapping
+        runtime_copy["irrigation_decision"] = decision_mapping
+        if locked_bundle_revision != "":
+            runtime_copy["bundle_revision"] = locked_bundle_revision
+        return runtime_copy
 
     def _build_named_step(
         self,

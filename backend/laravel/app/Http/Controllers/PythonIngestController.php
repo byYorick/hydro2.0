@@ -19,8 +19,7 @@ class PythonIngestController extends Controller
 {
     public function __construct(
         private readonly NodeConfigReportObserverService $nodeConfigReportObserverService,
-    ) {
-    }
+    ) {}
 
     private function ensureToken(Request $request): void
     {
@@ -42,7 +41,7 @@ class PythonIngestController extends Controller
 
         if (! $given || ! hash_equals($expected, (string) $given)) {
             Log::warning('Python ingest token validation failed', [
-                'has_given' => !empty($given),
+                'has_given' => ! empty($given),
             ]);
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
@@ -127,7 +126,7 @@ class PythonIngestController extends Controller
         }
         $tsValue = $data['ts'] ?? null;
         $timestamp = $tsValue ? Carbon::parse($tsValue) : now();
-        
+
         // Проверка на искаженное время: если timestamp отклоняется от серверного более чем на 5 минут,
         // используем серверное время для обеспечения единой временной линии
         if ($tsValue) {
@@ -135,7 +134,7 @@ class PythonIngestController extends Controller
             $deviceTime = $timestamp;
             $driftSeconds = abs($serverTime->diffInSeconds($deviceTime, false));
             $maxDriftSeconds = 300; // 5 минут
-            
+
             if ($driftSeconds > $maxDriftSeconds) {
                 Log::warning('PythonIngestController: Device timestamp is skewed, using server time', [
                     'device_ts' => $deviceTime->toIso8601String(),
@@ -225,7 +224,7 @@ class PythonIngestController extends Controller
             ]);
             throw $e;
         }
-        
+
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
             'status' => ['required', 'string', 'in:SENT,ACK,DONE,NO_EFFECT,ERROR,INVALID,BUSY,TIMEOUT,SEND_FAILED'],
@@ -273,6 +272,7 @@ class PythonIngestController extends Controller
                     'attempted_status' => $newStatus,
                 ]);
                 $skipMessage = 'Command already in final status';
+
                 return;
             }
 
@@ -299,10 +299,27 @@ class PythonIngestController extends Controller
                 ];
                 if ($this->isBenignLateSentAck(currentStatus: $currentStatus, newStatus: $newStatus)) {
                     Log::info('commandAck: Late SENT ignored after ACK', $context);
+                    $lateTimeline = [];
+                    if (! $command->sent_at) {
+                        $lateSent = $this->parseOptionalCommandTimelineFromDetails($details, 'sent_at', 'sent_at_ms')
+                            ?? (($command->ack_at !== null) ? $command->ack_at->copy() : now());
+                        $lateTimeline['sent_at'] = $lateSent;
+                    }
+                    if ($lateTimeline !== []) {
+                        if (isset($lateTimeline['sent_at']) && $command->ack_at !== null
+                            && $lateTimeline['sent_at']->gt($command->ack_at)) {
+                            $lateTimeline['sent_at'] = $command->ack_at->copy();
+                        }
+                        $command->fill($lateTimeline);
+                        if ($command->isDirty()) {
+                            $command->save();
+                        }
+                    }
                 } else {
                     Log::warning('commandAck: Status rollback prevented by state machine guard', $context);
                 }
                 $skipMessage = 'Status rollback prevented';
+
                 return;
             }
 
@@ -322,11 +339,21 @@ class PythonIngestController extends Controller
             }
 
             if ($normalizedStatus === Command::STATUS_SENT && ! $command->sent_at) {
-                $updates['sent_at'] = now();
+                $updates['sent_at'] = $this->parseOptionalCommandTimelineFromDetails($details, 'sent_at', 'sent_at_ms')
+                    ?? now();
             }
 
-            if ($normalizedStatus === Command::STATUS_ACK && ! $command->ack_at) {
-                $updates['ack_at'] = now();
+            if ($normalizedStatus === Command::STATUS_ACK) {
+                if (! $command->ack_at) {
+                    $updates['ack_at'] = $this->parseOptionalCommandTimelineFromDetails($details, 'ack_at', 'ack_at_ms')
+                        ?? now();
+                }
+                if (! $command->sent_at) {
+                    $sentFromDetails = $this->parseOptionalCommandTimelineFromDetails($details, 'sent_at', 'sent_at_ms');
+                    if ($sentFromDetails !== null) {
+                        $updates['sent_at'] = $sentFromDetails;
+                    }
+                }
             }
 
             if (in_array($normalizedStatus, [
@@ -345,6 +372,9 @@ class PythonIngestController extends Controller
             ], true) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
+
+            $this->applyCommandTerminalTimelineBackfill($command, $updates, $normalizedStatus);
+            $this->clampCommandSentNotAfterAck($command, $updates);
 
             $command->fill($updates);
             if ($command->isDirty()) {
@@ -407,12 +437,68 @@ class PythonIngestController extends Controller
                 zoneId: $zoneId
             ));
         }
+
         return Response::json(['status' => 'ok']);
     }
 
     private function isBenignLateSentAck(string $currentStatus, string $newStatus): bool
     {
         return $currentStatus === Command::STATUS_ACK && $newStatus === Command::STATUS_SENT;
+    }
+
+    /**
+     * @param  array<string, mixed>  $details
+     */
+    private function parseOptionalCommandTimelineFromDetails(array $details, string $isoKey, string $msKey): ?Carbon
+    {
+        if (isset($details[$msKey]) && is_numeric($details[$msKey])) {
+            $ms = (int) $details[$msKey];
+
+            return Carbon::createFromTimestampMs($ms);
+        }
+
+        if (! empty($details[$isoKey]) && is_string($details[$isoKey])) {
+            return Carbon::parse($details[$isoKey]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Если команда уже в ACK/DONE на стороне HL раньше, чем пришёл SENT, в БД может не быть sent_at.
+     * При переходе в терминальный статус подставляем sent_at из ack_at или now().
+     *
+     * @param  array<string, mixed>  $updates
+     */
+    private function applyCommandTerminalTimelineBackfill(Command $command, array &$updates, string $normalizedStatus): void
+    {
+        if (! in_array($normalizedStatus, Command::FINAL_STATUSES, true)) {
+            return;
+        }
+
+        $ack = array_key_exists('ack_at', $updates) ? $updates['ack_at'] : $command->ack_at;
+        $sent = array_key_exists('sent_at', $updates) ? $updates['sent_at'] : $command->sent_at;
+
+        if ($sent === null) {
+            $updates['sent_at'] = $ack instanceof Carbon ? $ack->copy() : ($ack !== null ? Carbon::parse($ack) : now());
+        }
+    }
+
+    /**
+     * Инвариант временной линии: sent_at не позже ack_at, если оба заданы.
+     *
+     * @param  array<string, mixed>  $updates
+     */
+    private function clampCommandSentNotAfterAck(Command $command, array &$updates): void
+    {
+        $ack = array_key_exists('ack_at', $updates) ? $updates['ack_at'] : $command->ack_at;
+        $sent = array_key_exists('sent_at', $updates) ? $updates['sent_at'] : $command->sent_at;
+        if (! ($sent instanceof Carbon) || ! ($ack instanceof Carbon)) {
+            return;
+        }
+        if ($sent->gt($ack)) {
+            $updates['sent_at'] = $ack->copy();
+        }
     }
 
     /**
@@ -581,7 +667,7 @@ class PythonIngestController extends Controller
                     ],
                 ]);
             }
-            
+
             // Используем createOrUpdateActive для дедупликации
             $result = $alertService->createOrUpdateActive([
                 'zone_id' => $data['zone_id'] ?? null,
@@ -664,6 +750,7 @@ class PythonIngestController extends Controller
                     $calibration->completed_at = now();
                 }
                 $calibration->save();
+
                 continue;
             }
 

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated_at": "2026-03-29T00:00:00Z",
+  "updated_at": "2026-04-03T00:00:00Z",
   "codes": [
     {
       "code": "unauthenticated",
@@ -171,6 +171,11 @@
       "code": "ae3_task_create_conflict",
       "title": "Конфликт создания задачи AE3",
       "message": "Параллельный worker уже создал задачу для этого запуска."
+    },
+    {
+      "code": "irrigation_decision_strategy_unknown",
+      "title": "Неизвестная стратегия полива",
+      "message": "Для зоны указана неизвестная стратегия decision-controller полива. Проверьте automation profile и logic profile зоны."
     },
     {
       "code": "ae3_snapshot_build_failed",

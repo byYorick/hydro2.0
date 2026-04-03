@@ -109,6 +109,8 @@ class ErrorCodes:
     AE3_COMMAND_POLL_DEADLINE_EXCEEDED = "ae3_command_poll_deadline_exceeded"
     AE3_INVALID_PLANNED_COMMAND = "ae3_invalid_planned_command"
     COMMAND_SEND_FAILED = "command_send_failed"
+    # Concurrent cleanup removed ae_tasks while publish pipeline was in flight (symmetric to finalize_task miss).
+    AE3_TASK_MISSING_DURING_PUBLISH = "task_missing_during_publish"
 
     # IRR state
     IRR_STATE_UNAVAILABLE = "irr_state_unavailable"

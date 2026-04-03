@@ -115,6 +115,13 @@ function buildExecutionDetail(overrides: Record<string, unknown> = {}) {
         decision_reason_code: 'smart_soil_telemetry_missing_or_stale',
         decision_degraded: true,
         decision_strategy: 'smart_soil_v1',
+        decision_bundle_revision: 'bundle-live-1234567890',
+        decision_config: {
+          lookback_sec: 1800,
+          min_samples: 3,
+          stale_after_sec: 600,
+          hysteresis_pct: 2,
+        },
         replay_count: 1,
         lifecycle: [
           { status: 'accepted', at: '2026-02-10T08:00:00Z', source: 'ae_tasks' },
@@ -351,6 +358,8 @@ describe('ZoneSchedulerTab.vue', () => {
     expect(wrapper.text()).toContain('Деградированный запуск')
     expect(wrapper.text()).toContain('Нет свежей soil telemetry, поэтому используется degraded path.')
     expect(wrapper.text()).toContain('Setup replay: 1')
+    expect(wrapper.text()).toContain('locked bundle bundle-live-')
+    expect(wrapper.text()).toContain('locked config lookback 1800s · min_samples 3 · stale 600s · hysteresis 2%')
     expect(wrapper.text()).toContain('running')
     expect(wrapper.text()).toContain('Lifecycle')
     expect(wrapper.text()).toContain('AE_TASK_STARTED')

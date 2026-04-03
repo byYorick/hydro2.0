@@ -513,7 +513,7 @@ async def test_router_upsert_workflow_phase_called_on_poll():
 
 
 async def test_router_computes_deadline_on_transition_to_check_stage():
-    """Transition to a stage with timeout_key → stage_deadline_at computed from runtime."""
+    """solution_fill_check: base timeout from runtime plus default correction slack."""
     outcome = StageOutcome(kind="transition", next_stage="solution_fill_check")
     task = _make_task(stage="solution_fill_start")
     router, tr, _ = _make_router(return_task=task)
@@ -526,7 +526,7 @@ async def test_router_computes_deadline_on_transition_to_check_stage():
     )
 
     wf = tr.update_stage_calls[0]["workflow"]
-    assert wf.stage_deadline_at == NOW + timedelta(seconds=7200)
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=7200 + 900)
 
 
 async def test_router_transition_no_deadline_for_command_stage():
@@ -647,6 +647,62 @@ async def test_router_irrigation_check_deadline_respects_explicit_stage_timeout(
 
     wf = tr.update_stage_calls[0]["workflow"]
     assert wf.stage_deadline_at == NOW + timedelta(seconds=2400)
+
+
+async def test_router_prepare_recirculation_check_deadline_includes_correction_slack():
+    outcome = StageOutcome(kind="transition", next_stage="prepare_recirculation_check")
+    task = _make_task(stage="prepare_recirculation_start", phase="tank_recirc")
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"prepare_recirculation_timeout_sec": 600}),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "prepare_recirculation_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=600 + 900)
+
+
+async def test_router_prepare_recirculation_check_deadline_respects_zero_slack():
+    outcome = StageOutcome(kind="transition", next_stage="prepare_recirculation_check")
+    task = _make_task(stage="prepare_recirculation_start", phase="tank_recirc")
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(
+            runtime={
+                "prepare_recirculation_timeout_sec": 45,
+                "prepare_recirculation_correction_slack_sec": 0,
+            },
+        ),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "prepare_recirculation_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=45)
+
+
+async def test_router_solution_fill_check_deadline_includes_correction_slack():
+    outcome = StageOutcome(kind="transition", next_stage="solution_fill_check")
+    task = _make_task(stage="solution_fill_start", phase="tank_filling")
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(
+        task=task,
+        plan=_MockPlan(runtime={"solution_fill_timeout_sec": 600}),
+        now=NOW,
+    )
+
+    wf = tr.update_stage_calls[0]["workflow"]
+    assert wf.current_stage == "solution_fill_check"
+    assert wf.stage_deadline_at == NOW + timedelta(seconds=600 + 900)
 
 
 async def test_router_transition_to_irrigation_recovery_check_uses_recovery_timeout():

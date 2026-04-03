@@ -7,6 +7,7 @@ import {
   validateForms,
   type ZoneAutomationForms,
 } from '@/composables/zoneAutomationFormLogic'
+import { FALLBACK_AUTOMATION_DEFAULTS } from '@/composables/useAutomationDefaults'
 
 function createForms(): ZoneAutomationForms {
   return {
@@ -425,6 +426,20 @@ describe('zoneAutomationFormLogic', () => {
     )
     expect(payload.subsystems.solution_change.execution.duration_sec).toBe(120)
     expect(payload.subsystems.lighting.execution.photoperiod.hours_on).toBe(24)
+  })
+
+  it('сохраняет явный выбор task даже если системный дефолт smart_soil_v1', () => {
+    const forms = createForms()
+    const automationDefaults = {
+      ...FALLBACK_AUTOMATION_DEFAULTS,
+      water_irrigation_decision_strategy: 'smart_soil_v1' as const,
+    }
+
+    forms.waterForm.irrigationDecisionStrategy = 'task'
+
+    const payload = buildGrowthCycleConfigPayload(forms, { automationDefaults }) as any
+
+    expect(payload.subsystems.irrigation.decision.strategy).toBe('task')
   })
 
   it('не даёт урезать критические two-tank command plans ниже безопасного минимума', () => {

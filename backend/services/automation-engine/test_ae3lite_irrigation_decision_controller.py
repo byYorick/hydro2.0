@@ -182,6 +182,24 @@ async def test_force_mode_bypasses_decision_strategy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_unknown_strategy_fails_closed() -> None:
+    controller = IrrigationDecisionController()
+
+    result = await controller.evaluate(
+        zone_id=7,
+        runtime_monitor=_RuntimeMonitor(()),
+        runtime={"irrigation_decision": {"strategy": "smart_soil_v9"}},
+        mode="normal",
+        requested_duration_sec=120,
+        now=NOW,
+    )
+
+    assert result.outcome == "fail"
+    assert result.reason_code == "irrigation_decision_strategy_unknown"
+    assert result.details == {"strategy": "smart_soil_v9"}
+
+
+@pytest.mark.asyncio
 async def test_smart_soil_marks_invalid_day_schedule_as_degraded() -> None:
     controller = IrrigationDecisionController()
     runtime = {

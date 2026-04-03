@@ -215,6 +215,7 @@ export function translateEventKind(kind) {
 
     // Irrigation / AE workflow events
     'IRR_STATE_SNAPSHOT': 'Снимок состояния ирригации',
+    'IRRIGATION_DECISION_SNAPSHOT_LOCKED': 'Снимок decision-controller полива зафиксирован',
     'COMMAND_TIMEOUT': 'Таймаут команды',
     'PUMP_CALIBRATION_FINISHED': 'Калибровка насоса завершена',
     'PUMP_CALIBRATION_RUN_SKIPPED': 'Калибровка насоса пропущена',

@@ -242,8 +242,8 @@ export function buildGrowthCycleConfigPayload(
     1
   )
   const irrigationDecisionStrategy =
-    waterForm.irrigationDecisionStrategy === 'smart_soil_v1'
-      ? 'smart_soil_v1'
+    waterForm.irrigationDecisionStrategy === 'smart_soil_v1' || waterForm.irrigationDecisionStrategy === 'task'
+      ? waterForm.irrigationDecisionStrategy
       : automationDefaults.water_irrigation_decision_strategy === 'smart_soil_v1'
         ? 'smart_soil_v1'
         : 'task'

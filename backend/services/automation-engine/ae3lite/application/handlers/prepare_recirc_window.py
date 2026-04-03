@@ -37,8 +37,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         await self._run_commands(task=task, plan=plan, plan_names=("prepare_recirculation_stop", "sensor_mode_deactivate"), now=now)
 
         retry_count = int(task.workflow.stage_retry_count)
-        correction_cfg = self._correction_config(plan=plan, task=task)
-        attempt_limit = int(correction_cfg.get("prepare_recirculation_max_attempts", 3))
+        attempt_limit = self._prepare_recirculation_max_attempts(plan=plan, task=task)
         if retry_count >= attempt_limit:
             _logger.warning(
                 "prepare_recirc_window: retry limit reached retry_count=%s/%s zone_id=%s",
@@ -66,6 +65,21 @@ class PrepareRecircWindowHandler(BaseStageHandler):
             next_stage="prepare_recirculation_check",
             stage_retry_count=retry_count + 1,
         )
+
+    def _prepare_recirculation_max_attempts(self, *, plan: Any, task: Any) -> int:
+        """Read limit from phase correction bundle (``retry.*`` or top-level)."""
+        correction_cfg = self._correction_config(plan=plan, task=task)
+        if not isinstance(correction_cfg, Mapping):
+            return 3
+        retry = correction_cfg.get("retry")
+        if isinstance(retry, Mapping):
+            raw = retry.get("prepare_recirculation_max_attempts")
+            if raw is not None:
+                return max(1, int(raw))
+        raw = correction_cfg.get("prepare_recirculation_max_attempts")
+        if raw is not None:
+            return max(1, int(raw))
+        return 3
 
     async def _emit_retry_limit_alert(
         self,

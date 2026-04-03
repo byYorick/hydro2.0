@@ -85,6 +85,8 @@ export interface ExecutionRun {
   irrigation_mode?: string | null
   requested_duration_sec?: number | null
   decision_strategy?: string | null
+  decision_config?: Record<string, unknown> | null
+  decision_bundle_revision?: string | null
   decision_outcome?: string | null
   decision_reason_code?: string | null
   decision_degraded?: boolean | null

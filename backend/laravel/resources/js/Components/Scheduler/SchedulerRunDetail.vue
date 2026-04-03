@@ -74,6 +74,18 @@
             {{ selectedExecution.irrigation_mode && selectedExecution.decision_strategy ? ' · ' : '' }}
             {{ selectedExecution.decision_strategy ? `strategy ${selectedExecution.decision_strategy}` : '' }}
           </p>
+          <p
+            v-if="selectedExecution.decision_bundle_revision"
+            class="mt-1 text-xs text-[color:var(--text-dim)]"
+          >
+            locked bundle {{ shortRevision(selectedExecution.decision_bundle_revision) }}
+          </p>
+          <p
+            v-if="selectedExecutionDecisionConfigSummary"
+            class="mt-1 text-xs text-[color:var(--text-dim)]"
+          >
+            locked config {{ selectedExecutionDecisionConfigSummary }}
+          </p>
         </div>
       </div>
 
@@ -167,6 +179,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import Badge from '@/Components/Badge.vue'
 
 type LifecycleItem = {
@@ -195,13 +208,15 @@ type ExecutionDetail = {
   created_at?: string | null
   irrigation_mode?: string | null
   decision_strategy?: string | null
+  decision_config?: Record<string, unknown> | null
+  decision_bundle_revision?: string | null
   decision_outcome?: string | null
   decision_degraded?: boolean | null
   decision_reason_code?: string | null
   lifecycle?: LifecycleItem[] | null
 }
 
-defineProps<{
+const props = defineProps<{
   detailLoading: boolean
   selectedExecution: ExecutionDetail | null
   condensedTimeline: TimelineItem[]
@@ -215,6 +230,10 @@ defineProps<{
   formatDateTime: (value: string | null) => string
 }>()
 
+const selectedExecutionDecisionConfigSummary = computed(() =>
+  formatDecisionConfigSummary(props.selectedExecution?.decision_config),
+)
+
 function timelineDotClass(item: TimelineItem): string {
   const normalizedType = String(item.event_type ?? '').trim().toUpperCase()
   const normalizedLabel = String(item.label ?? '').trim().toLowerCase()
@@ -227,5 +246,33 @@ function timelineDotClass(item: TimelineItem): string {
 
   return 'bg-[color:var(--text-muted)]'
 }
-</script>
 
+function shortRevision(value: string | null | undefined): string {
+  const normalized = String(value ?? '').trim()
+  if (normalized === '') return '—'
+  return normalized.slice(0, 12)
+}
+
+function formatDecisionConfigSummary(config: Record<string, unknown> | null | undefined): string | null {
+  if (!config || typeof config !== 'object') return null
+
+  const parts: string[] = []
+  const lookbackSec = asFiniteNumber(config.lookback_sec)
+  const minSamples = asFiniteNumber(config.min_samples)
+  const staleAfterSec = asFiniteNumber(config.stale_after_sec)
+  const hysteresisPct = asFiniteNumber(config.hysteresis_pct)
+  const spreadThresholdPct = asFiniteNumber(config.spread_alert_threshold_pct)
+
+  if (lookbackSec !== null) parts.push(`lookback ${lookbackSec}s`)
+  if (minSamples !== null) parts.push(`min_samples ${minSamples}`)
+  if (staleAfterSec !== null) parts.push(`stale ${staleAfterSec}s`)
+  if (hysteresisPct !== null) parts.push(`hysteresis ${hysteresisPct}%`)
+  if (spreadThresholdPct !== null) parts.push(`spread ${spreadThresholdPct}%`)
+
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+</script>

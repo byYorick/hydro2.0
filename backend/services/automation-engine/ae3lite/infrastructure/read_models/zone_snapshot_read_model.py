@@ -316,6 +316,7 @@ class PgZoneSnapshotReadModel:
             zone_id=int(zone_row["zone_id"]),
             greenhouse_id=int(zone_row["greenhouse_id"]) if zone_row.get("greenhouse_id") is not None else None,
             automation_runtime=str(zone_row.get("automation_runtime") or "").strip().lower(),
+            bundle_revision=actual_bundle_revision or None,
             grow_cycle_id=int(grow_cycle_id),
             current_phase_id=int(zone_row["current_phase_id"]),
             phase_name=str(zone_row["phase_name"]) if zone_row.get("phase_name") is not None else None,

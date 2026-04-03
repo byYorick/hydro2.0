@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 from ae3lite.domain.entities import PlannedCommand
-from ae3lite.domain.errors import CommandPublishError, TaskExecutionError, TaskTerminalStateReached
+from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.metrics import (
     COMMAND_DISPATCH_DURATION,
     COMMAND_DISPATCHED,
@@ -46,6 +46,22 @@ class SequentialCommandGateway:
         self._poll_interval_sec = max(0.05, float(poll_interval_sec))
         self._poll_backoff_factor = max(1.0, float(poll_backoff_factor))
         self._poll_max_interval_sec = max(self._poll_interval_sec, float(poll_max_interval_sec))
+
+    def _cleanup_race_batch_result(self, *, task: Any, message: str) -> dict[str, Any]:
+        return {
+            "success": False,
+            "task": task,
+            "command_statuses": [],
+            "error_code": ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH,
+            "error_message": message,
+        }
+
+    async def _task_row_missing(self, *, task_id: int) -> bool:
+        get_by_id = getattr(self._task_repository, "get_by_id", None)
+        if not callable(get_by_id):
+            return False
+        current = await get_by_id(task_id=task_id)
+        return current is None
 
     async def run_batch(
         self,
@@ -128,6 +144,20 @@ class SequentialCommandGateway:
             payload=command_payload,
             now=now,
         )
+        if ae_command_id is None:
+            logger.info(
+                "AE3 command publish: task row missing at create_pending "
+                "(likely concurrent cleanup) task_id=%s zone_id=%s",
+                task.id,
+                task.zone_id,
+            )
+            return self._cleanup_race_batch_result(
+                task=task,
+                message=(
+                    f"Task {task.id} missing during ae_commands insert "
+                    f"(likely concurrent cleanup)"
+                ),
+            )
         try:
             greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
             if not greenhouse_uid:
@@ -152,11 +182,30 @@ class SequentialCommandGateway:
                 raise CommandPublishError(
                     f"Legacy commands.id not found for zone_id={task.zone_id} cmd_id={published_cmd_id}"
                 )
-            await self._command_repository.mark_publish_accepted(
+            accepted_ok = await self._command_repository.mark_publish_accepted(
                 ae_command_id=ae_command_id,
                 external_id=str(legacy_command_id),
                 now=now,
             )
+            if not accepted_ok:
+                if await self._task_row_missing(task_id=task.id):
+                    logger.warning(
+                        "AE3 command publish: mark_publish_accepted missed row and task gone "
+                        "(likely concurrent cleanup / cascade) task_id=%s zone_id=%s cmd_id=%s",
+                        task.id,
+                        task.zone_id,
+                        cmd_id,
+                    )
+                    return self._cleanup_race_batch_result(
+                        task=task,
+                        message=(
+                            f"Task {task.id} missing after HL publish while linking ae_commands "
+                            f"(likely concurrent cleanup); cmd_id={cmd_id}"
+                        ),
+                    )
+                raise CommandPublishError(
+                    f"ae_commands.id={ae_command_id} not updated after publish (task still present)"
+                )
             status_entry = {
                 "ae_command_id": int(ae_command_id),
                 "node_uid": planned.node_uid,
@@ -178,9 +227,51 @@ class SequentialCommandGateway:
                 now=now,
             )
             if waiting_task is None:
-                raise TaskExecutionError("ae3_waiting_command_transition_failed", f"Task {task.id} could not enter waiting_command")
+                if await self._task_row_missing(task_id=task.id):
+                    logger.warning(
+                        "AE3 command publish: mark_waiting_command failed and task row absent "
+                        "(likely concurrent cleanup) task_id=%s zone_id=%s cmd_id=%s",
+                        task.id,
+                        task.zone_id,
+                        cmd_id,
+                    )
+                    return self._cleanup_race_batch_result(
+                        task=task,
+                        message=(
+                            f"Task {task.id} missing before waiting_command transition "
+                            f"(likely concurrent cleanup); cmd_id={cmd_id}"
+                        ),
+                    )
+                raise TaskExecutionError(
+                    "ae3_waiting_command_transition_failed",
+                    f"Task {task.id} could not enter waiting_command",
+                )
         except Exception as exc:
-            await self._command_repository.mark_publish_failed(ae_command_id=ae_command_id, last_error=str(exc), now=now)
+            try:
+                await self._command_repository.mark_publish_failed(
+                    ae_command_id=ae_command_id, last_error=str(exc), now=now
+                )
+            except Exception:
+                logger.debug(
+                    "AE3 mark_publish_failed skipped (row may be gone) ae_command_id=%s",
+                    ae_command_id,
+                    exc_info=True,
+                )
+            if await self._task_row_missing(task_id=task.id):
+                logger.info(
+                    "AE3 command publish: exception after create_pending but task row gone "
+                    "task_id=%s zone_id=%s exc=%s",
+                    task.id,
+                    task.zone_id,
+                    exc,
+                )
+                return self._cleanup_race_batch_result(
+                    task=task,
+                    message=(
+                        f"Task {task.id} missing during publish pipeline "
+                        f"(likely concurrent cleanup): {exc}"
+                    ),
+                )
             raise TaskExecutionError("command_send_failed", str(exc)) from exc
 
         _poll_deadline = (

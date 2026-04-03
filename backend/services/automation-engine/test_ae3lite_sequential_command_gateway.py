@@ -20,7 +20,7 @@ import pytest
 from prometheus_client import REGISTRY
 
 from ae3lite.domain.entities.planned_command import PlannedCommand
-from ae3lite.domain.errors import CommandPublishError, TaskExecutionError, TaskTerminalStateReached
+from ae3lite.domain.errors import CommandPublishError, ErrorCodes, TaskExecutionError, TaskTerminalStateReached
 from ae3lite.infrastructure.gateways import sequential_command_gateway as sequential_command_gateway_module
 from ae3lite.infrastructure.gateways.sequential_command_gateway import SequentialCommandGateway
 from ae3lite.infrastructure.metrics import COMMAND_POLL_ITERATIONS
@@ -54,13 +54,22 @@ def _planned(*, channel="pump_main", step_no=1):
 
 
 class _FakeCommandRepo:
-    def __init__(self, *, legacy_row=_DONE_ROW, ae_command_row=_MISSING):
+    def __init__(
+        self,
+        *,
+        legacy_row=_DONE_ROW,
+        ae_command_row=_MISSING,
+        create_pending_returns_none: bool = False,
+        accept_publish_ok: bool = True,
+    ):
         self._legacy_row = legacy_row
         self._ae_command_row = (
             {"id": 9, "external_id": None, "payload": {"cmd_id": "ae3-t1-z1-s1"}}
             if ae_command_row is _MISSING
             else ae_command_row
         )
+        self._create_pending_returns_none = create_pending_returns_none
+        self._accept_publish_ok = accept_publish_ok
         self.step_no = 0
         self.created_ids: list[int] = []
         self.updated: list[dict] = []
@@ -72,6 +81,8 @@ class _FakeCommandRepo:
         return self.step_no
 
     async def create_pending(self, *, task_id, step_no, node_uid, channel, payload, now):
+        if self._create_pending_returns_none:
+            return None
         ae_id = 100 + step_no
         self.created_ids.append(ae_id)
         return ae_id
@@ -86,6 +97,7 @@ class _FakeCommandRepo:
         self.publish_accepted_calls.append(
             {"ae_command_id": ae_command_id, "external_id": external_id, "now": now}
         )
+        return self._accept_publish_ok
 
     async def mark_publish_failed(self, *, ae_command_id, last_error, now):
         self.publish_failed_calls.append(
@@ -132,7 +144,14 @@ def _mock_task(task_id=1, **kwargs):
 
 
 class _FakeTaskRepo:
-    def __init__(self, *, resumed_task=_MISSING, failed_task=_MISSING, current_task=None):
+    def __init__(
+        self,
+        *,
+        resumed_task=_MISSING,
+        failed_task=_MISSING,
+        current_task=_MISSING,
+        waiting_command_result=_MISSING,
+    ):
         self._resumed = (
             _mock_task(error_code=None, error_message=None)
             if resumed_task is _MISSING
@@ -143,9 +162,15 @@ class _FakeTaskRepo:
             if failed_task is _MISSING
             else failed_task
         )
-        self._current = current_task
+        if current_task is _MISSING:
+            self._current = _mock_task(status="running")
+        else:
+            self._current = current_task
+        self._waiting_command_result = waiting_command_result
 
     async def mark_waiting_command(self, *, task_id, owner, now):
+        if self._waiting_command_result is not _MISSING:
+            return self._waiting_command_result
         return _mock_task(task_id=task_id, claimed_by=owner)
 
     async def resume_after_waiting_command(self, *, task_id, owner, now):
@@ -251,6 +276,60 @@ async def test_run_batch_publish_failure_raises():
     with pytest.raises(TaskExecutionError) as exc_info:
         await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
     assert exc_info.value.code == "command_send_failed"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_create_pending_task_missing_returns_fail_closed():
+    cmd_repo = _FakeCommandRepo(create_pending_returns_none=True)
+    gw = _make_gw(command_repo=cmd_repo)
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert result["success"] is False
+    assert result["error_code"] == ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH
+    assert result["commands_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_batch_mark_accept_miss_task_missing_returns_fail_closed():
+    cmd_repo = _FakeCommandRepo(accept_publish_ok=False)
+    task_repo = _FakeTaskRepo(current_task=None)
+    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo)
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert result["success"] is False
+    assert result["error_code"] == ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH
+
+
+@pytest.mark.asyncio
+async def test_run_batch_mark_accept_miss_task_still_present_raises():
+    cmd_repo = _FakeCommandRepo(accept_publish_ok=False)
+    task_repo = _FakeTaskRepo(current_task=_mock_task(status="running"))
+    gw = _make_gw(command_repo=cmd_repo, task_repo=task_repo)
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert exc_info.value.code == "command_send_failed"
+
+
+@pytest.mark.asyncio
+async def test_run_batch_waiting_command_miss_task_missing_returns_fail_closed():
+    task_repo = _FakeTaskRepo(waiting_command_result=None, current_task=None)
+    gw = _make_gw(task_repo=task_repo)
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert result["success"] is False
+    assert result["error_code"] == ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH
+
+
+@pytest.mark.asyncio
+async def test_run_batch_publish_exception_task_missing_returns_fail_closed():
+    cmd_repo = _FakeCommandRepo()
+    task_repo = _FakeTaskRepo(current_task=None)
+    gw = _make_gw(
+        command_repo=cmd_repo,
+        history_logger=_FakeHistoryLogger(fail=True),
+        task_repo=task_repo,
+    )
+    result = await gw.run_batch(task=_make_task(), commands=[_planned()], now=NOW)
+    assert result["success"] is False
+    assert result["error_code"] == ErrorCodes.AE3_TASK_MISSING_DURING_PUBLISH
+    assert len(cmd_repo.publish_failed_calls) == 1
 
 
 @pytest.mark.asyncio

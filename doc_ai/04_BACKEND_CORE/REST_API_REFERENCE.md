@@ -119,11 +119,12 @@ Breaking-change: обратная совместимость со старыми
 - поле `solution_tank_guard` (если присутствует) отражает последний non-blocking startup guard по solution tank: `checked`, `reset`, `reason`, `sensor_label`, `sample_ts`.
 - если `zone_workflow_state` ссылается на уже terminal `ae_task` или отстаёт от `ae_tasks.updated_at`, endpoint обязан считать такой workflow snapshot stale и возвращать состояние по последней terminal task, а не показывать ложную active phase.
 - для irrigation workflow endpoint обязан честно отражать `IRRIGATING` и `IRRIG_RECIRC`,
-  а также last decision metadata (`decision`, `reason_code`, `degraded`) при наличии canonical `ae_task`.
+  а также last decision metadata (`strategy`, `config`, `bundle_revision`, `reason_code`, `degraded`) при наличии canonical `ae_task`.
 
 Контракт `POST /api/zones/{id}/start-irrigation`:
-- body: `{ "mode": "normal" | "force", "duration_sec"?: number }`;
+- body: `{ "mode": "normal" | "force", "requested_duration_sec"?: number }`;
 - `mode=normal` запускает irrigation workflow через decision-controller;
+- active irrigation task фиксирует decision snapshot (`strategy/config/bundle_revision`) при создании canonical task под zone advisory lock; первый runtime pass только эмитит observability event, а последующие изменения `zone.logic_profile` применяются только к следующему irrigation task;
 - `mode=force` bypass-ит decision-controller, но не bypass-ит AE3 runtime path;
 - response возвращает canonical `task_id` AE3 и может использоваться фронтендом для polling через execution/task status path;
 - endpoint не публикует device-команды напрямую.
@@ -132,6 +133,7 @@ Breaking-change: обратная совместимость со старыми
 - используется только operator UI вкладки scheduler;
 - `plan.windows[]` строятся planner-ом из runtime authority path, а не из history snapshots;
 - `execution.active_run` / `recent_runs[]` строятся из `ae_tasks` и могут дополняться `zone_events`;
+- `execution.active_run` / `recent_runs[]` для irrigation могут содержать locked decision snapshot (`decision_strategy`, `decision_config`, `decision_bundle_revision`) текущего task;
 - `execution.counters.failed_24h` и `execution.latest_failure` учитывают failed/cancelled `zone_automation_intents`, если для них не было `ae_task`;
 - `horizon` принимает только `24h` и `7d`, остальные значения приводятся к `24h`;
 - `capabilities.executable_task_types` честно отражает runtime-ready lanes; в canonical v1 это `irrigation`.
@@ -491,6 +493,7 @@ Preset rules:
 Инварианты `POST /zones/{id}/start-irrigation`:
 - endpoint принимает `source`, `idempotency_key`, `mode`, `requested_duration_sec`;
 - `mode=normal` проходит через configured irrigation decision strategy (`task|smart_soil_v1`);
+- неизвестная irrigation decision strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает `biz_irrigation_decision_fail`;
 - `mode=force` пропускает decision-gate, но остаётся canonical `ae_task`;
 - при `decision=skip` runtime завершает task успешно без device-command publish;
 - при `solution_min` во время irrigation runtime обязан остановить irrigation path, вернуть зону в setup через `cycle_start` path и выполнить не более одного auto-replay исходного полива;

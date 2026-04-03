@@ -57,6 +57,9 @@ class PgAutomationTaskRepository:
     def _normalize_meta(self, value: Mapping[str, Any] | None) -> dict[str, Any]:
         return dict(value) if isinstance(value, Mapping) else {}
 
+    def _normalize_json_mapping(self, value: Mapping[str, Any] | None) -> dict[str, Any] | None:
+        return dict(value) if isinstance(value, Mapping) else None
+
     def _task_from_row(self, row: asyncpg.Record | None) -> AutomationTask | None:
         return AutomationTask.from_row(row) if row is not None else None
 
@@ -214,12 +217,16 @@ class PgAutomationTaskRepository:
         now: datetime,
         irrigation_mode: str | None = None,
         irrigation_requested_duration_sec: int | None = None,
+        irrigation_decision_strategy: str | None = None,
+        irrigation_decision_config: Mapping[str, Any] | None = None,
+        irrigation_bundle_revision: str | None = None,
         conn: asyncpg.Connection | None = None,
     ) -> AutomationTask | None:
         normalized_scheduled_for = self._normalize_timestamp(scheduled_for)
         normalized_due_at = self._normalize_timestamp(due_at)
         normalized_now = self._normalize_timestamp(now)
         normalized_meta = self._normalize_meta(intent_meta)
+        normalized_decision_config = self._normalize_json_mapping(irrigation_decision_config)
 
         try:
             row = await self._fetchrow(
@@ -229,6 +236,7 @@ class PgAutomationTaskRepository:
                     topology, current_stage, workflow_phase,
                     control_mode_snapshot,
                     irrigation_mode, irrigation_requested_duration_sec,
+                    irrigation_decision_strategy, irrigation_decision_config, irrigation_bundle_revision,
                     intent_source, intent_trigger, intent_id, intent_meta,
                     scheduled_for, due_at, stage_entered_at,
                     created_at, updated_at
@@ -237,10 +245,10 @@ class PgAutomationTaskRepository:
                     $1, $2, 'pending', $3,
                     $4, $5, $6,
                     (SELECT control_mode FROM zones WHERE id = $1),
-                    $7, $8,
-                    $9, $10, $11, $12::jsonb,
-                    $13, $14, $15,
-                    $15, $15
+                    $7, $8, $9, $10::jsonb, $11,
+                    $12, $13, $14, $15::jsonb,
+                    $16, $17, $18,
+                    $18, $18
                 )
                 RETURNING *
                 """,
@@ -252,6 +260,9 @@ class PgAutomationTaskRepository:
                 workflow_phase,
                 irrigation_mode,
                 irrigation_requested_duration_sec,
+                irrigation_decision_strategy,
+                normalized_decision_config,
+                irrigation_bundle_revision,
                 intent_source,
                 intent_trigger,
                 intent_id,
@@ -275,6 +286,8 @@ class PgAutomationTaskRepository:
         irrigation_mode: str | None = None,
         irrigation_requested_duration_sec: int | None = None,
         irrigation_decision_strategy: str | None = None,
+        irrigation_decision_config: Mapping[str, Any] | None = None,
+        irrigation_bundle_revision: str | None = None,
         irrigation_decision_outcome: str | None = None,
         irrigation_decision_reason_code: str | None = None,
         irrigation_decision_degraded: bool | None = None,
@@ -293,28 +306,31 @@ class PgAutomationTaskRepository:
             if irrigation_setup_deadline_at is not None
             else None
         )
+        normalized_decision_config = self._normalize_json_mapping(irrigation_decision_config)
         row = await self._fetchrow(
             """
             UPDATE ae_tasks
             SET irrigation_mode = COALESCE($3, irrigation_mode),
                 irrigation_requested_duration_sec = COALESCE($4, irrigation_requested_duration_sec),
                 irrigation_decision_strategy = COALESCE($5, irrigation_decision_strategy),
-                irrigation_decision_outcome = COALESCE($6, irrigation_decision_outcome),
-                irrigation_decision_reason_code = COALESCE($7, irrigation_decision_reason_code),
+                irrigation_decision_config = COALESCE($6::jsonb, irrigation_decision_config),
+                irrigation_bundle_revision = COALESCE($7, irrigation_bundle_revision),
+                irrigation_decision_outcome = COALESCE($8, irrigation_decision_outcome),
+                irrigation_decision_reason_code = COALESCE($9, irrigation_decision_reason_code),
                 irrigation_decision_degraded = CASE
-                    WHEN $8::boolean IS NULL THEN irrigation_decision_degraded
-                    ELSE $8
-                END,
-                irrigation_replay_count = COALESCE($9, irrigation_replay_count),
-                irrigation_wait_ready_deadline_at = CASE
-                    WHEN $10::timestamptz IS NULL THEN irrigation_wait_ready_deadline_at
+                    WHEN $10::boolean IS NULL THEN irrigation_decision_degraded
                     ELSE $10
                 END,
-                irrigation_setup_deadline_at = CASE
-                    WHEN $11::timestamptz IS NULL THEN irrigation_setup_deadline_at
-                    ELSE $11
+                irrigation_replay_count = COALESCE($11, irrigation_replay_count),
+                irrigation_wait_ready_deadline_at = CASE
+                    WHEN $12::timestamptz IS NULL THEN irrigation_wait_ready_deadline_at
+                    ELSE $12
                 END,
-                updated_at = $12
+                irrigation_setup_deadline_at = CASE
+                    WHEN $13::timestamptz IS NULL THEN irrigation_setup_deadline_at
+                    ELSE $13
+                END,
+                updated_at = $14
             WHERE id = $1
               AND claimed_by = $2
               AND status IN ('claimed', 'running', 'waiting_command')
@@ -325,6 +341,8 @@ class PgAutomationTaskRepository:
             irrigation_mode,
             irrigation_requested_duration_sec,
             irrigation_decision_strategy,
+            normalized_decision_config,
+            irrigation_bundle_revision,
             irrigation_decision_outcome,
             irrigation_decision_reason_code,
             irrigation_decision_degraded,

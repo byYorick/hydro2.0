@@ -1223,6 +1223,12 @@ class CorrectionHandler(BaseStageHandler):
         # recirculation windows; fill stops only by no-effect or stage timeout.
         return current_stage != "solution_fill_check"
 
+    def _should_reset_attempt_counters_on_reaction(self, *, task: Any) -> bool:
+        current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+        # prepare_recirculation windows must preserve successful dose counters
+        # so impossible targets can roll over into window_exhausted/retry.
+        return current_stage != "prepare_recirculation_check"
+
     def _should_log_limit_policy(self, *, task: Any, corr: CorrectionState) -> bool:
         if self._enforce_attempt_caps(task=task):
             return False
@@ -1574,18 +1580,21 @@ class CorrectionHandler(BaseStageHandler):
                 no_effect_limit=int(observe_cfg["no_effect_limit"]),
             )
 
-        # When the dose had a measurable effect, reset all attempt counters so
-        # the correction cycle can continue indefinitely as long as the dosing
-        # hardware keeps responding.  Only consecutive no-reaction doses count
-        # toward exhaustion (tracked via no_effect_count → no_effect_limit).
+        # solution_fill keeps one long-lived correction window and can reset
+        # counters on reaction; bounded prepare_recirculation windows must
+        # retain successful dose counters so retry/exhaustion semantics work.
         if is_no_effect:
             next_attempt = corr.attempt + 1
             next_ec_attempt = corr.ec_attempt
             next_ph_attempt = corr.ph_attempt
-        else:
+        elif self._should_reset_attempt_counters_on_reaction(task=task):
             next_attempt = 0
             next_ec_attempt = 0
             next_ph_attempt = 0
+        else:
+            next_attempt = corr.attempt
+            next_ec_attempt = corr.ec_attempt
+            next_ph_attempt = corr.ph_attempt
 
         preserve_ec_pending = pid_type != "ec" and bool(corr.needs_ec)
         preserve_ph_up_pending = pid_type != "ph" and bool(corr.needs_ph_up)

@@ -201,6 +201,8 @@ class ExecutionRunReadModel
         $select[] = $this->optionalTaskColumnSelect('irrigation_mode');
         $select[] = $this->optionalTaskColumnSelect('irrigation_requested_duration_sec');
         $select[] = $this->optionalTaskColumnSelect('irrigation_decision_strategy');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_decision_config');
+        $select[] = $this->optionalTaskColumnSelect('irrigation_bundle_revision');
         $select[] = $this->optionalTaskColumnSelect('irrigation_decision_outcome');
         $select[] = $this->optionalTaskColumnSelect('irrigation_decision_reason_code');
         $select[] = $this->optionalTaskColumnSelect('irrigation_decision_degraded');
@@ -279,6 +281,8 @@ class ExecutionRunReadModel
                     ? (int) $row->irrigation_requested_duration_sec
                     : null,
                 'decision_strategy' => $this->resolveString($row->irrigation_decision_strategy ?? null),
+                'decision_config' => $this->normalizeJson($row->irrigation_decision_config ?? null),
+                'decision_bundle_revision' => $this->resolveString($row->irrigation_bundle_revision ?? null),
                 'decision_outcome' => $this->resolveString($row->irrigation_decision_outcome ?? null),
                 'decision_reason_code' => $this->resolveString($row->irrigation_decision_reason_code ?? null),
                 'decision_degraded' => $this->normalizeOptionalBool($row->irrigation_decision_degraded ?? null),

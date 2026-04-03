@@ -481,6 +481,25 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
         assert params[2] == 1
 
 
+def test_effective_anomaly_throttle_sec_long_for_infra_codes_in_testing(monkeypatch):
+    import telemetry_processing as tp
+
+    monkeypatch.setenv("APP_ENV", "testing")
+    monkeypatch.setenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "30")
+    monkeypatch.delenv("TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC", raising=False)
+    assert tp._effective_anomaly_throttle_sec("infra_telemetry_node_not_found") == 86400.0
+    assert tp._effective_anomaly_throttle_sec("infra_telemetry_zone_not_found") == 30.0
+
+
+def test_effective_anomaly_throttle_sec_respects_explicit_override(monkeypatch):
+    import telemetry_processing as tp
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "60")
+    monkeypatch.setenv("TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC", "120")
+    assert tp._effective_anomaly_throttle_sec("infra_telemetry_invalid_timestamp") == 120.0
+
+
 @pytest.mark.asyncio
 async def test_handle_telemetry_invalid_timestamp_emits_throttled_alert():
     """Invalid firmware timestamp should emit one throttled telemetry anomaly alert."""

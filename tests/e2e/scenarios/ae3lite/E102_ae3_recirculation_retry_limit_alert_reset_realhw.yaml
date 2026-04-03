@@ -365,9 +365,11 @@ actions:
             solution_max_sensor_label: level_solution_max
             solution_min_sensor_label: level_solution_min
           retry:
-            max_ec_correction_attempts: 10
-            max_ph_correction_attempts: 10
+            max_ec_correction_attempts: 1
+            max_ph_correction_attempts: 1
             prepare_recirculation_timeout_sec: 45
+            # Без нуля AE добавляет +900s к окну (workflow_router) — коррекция успевает достичь таргетов; retry-limit не срабатывает.
+            prepare_recirculation_correction_slack_sec: 0
             prepare_recirculation_max_attempts: 3
             prepare_recirculation_max_correction_attempts: 20
             telemetry_stale_retry_sec: 30
@@ -775,10 +777,18 @@ actions:
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
     \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
-    )\nVALUES (\n  :grow_cycle_id,\n  0,\n  'VEG',\n  5.00,\n  4.80,\n  5.20,\n  2.40,\n\
-    \  2.20,\n  2.60,\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n)\n"
+    )\nVALUES (\n  :grow_cycle_id,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
+    \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n\
+    \  45,\n  NOW(),\n  NOW()\n)\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
+    ph_target: ${impossible_ph_target}
+    ph_min: ${impossible_ph_min}
+    ph_max: ${impossible_ph_max}
+    ec_target: ${impossible_ec_target}
+    ec_min: ${impossible_ec_min}
+    ec_max: ${impossible_ec_max}
 - step: load_phase
   type: database_query
   query: 'SELECT id
@@ -1086,19 +1096,18 @@ actions:
     \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id: ${task_id}
-  timeout: 40.0
+  timeout: 120.0
   expected_rows: 1
   save: fill_ec_correction_row
-- step: wait_fill_ph_correction_command
-  type: db.wait
+- step: load_fill_ph_correction_commands_if_any
+  type: database_query
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ = 'pump_acid'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
+    \ IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\n"
   params:
     task_id: ${task_id}
-  timeout: 40.0
-  expected_rows: 1
-  save: fill_ph_correction_row
+  expected_rows: 0
+  save: fill_ph_correction_rows
 - step: wait_prepare_recirculation_stage
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
@@ -1132,7 +1141,10 @@ actions:
     \ error_code = 'prepare_recirculation_attempt_limit_reached'\nLIMIT 1\n"
   params:
     task_id: ${task_id}
-  timeout: 240.0
+  # Audit (test_node + AE): prepare_recirc_window fails after attempt_limit rollovers; each window is
+  # capped by prepare_recirculation_timeout_sec (45–120s in this suite). With max_attempts=3 need
+  # up to 4 timeouts (~480s) + correction/MQTT slack — 720s достаточно (ранее 5400s был запас от старых багов).
+  timeout: 720.0
   expected_rows: 1
   save: failed_task_first_row
 - step: load_retry_limit_alert_first
@@ -1150,13 +1162,12 @@ actions:
   query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n\
     \      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND\
     \ payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER\
-    \ (\n    WHERE id > CAST(:after_ph_id AS bigint)\n      AND publish_status = 'accepted'\n\
-    \      AND channel = 'pump_acid'\n      AND payload->>'cmd' = 'dose'\n  )::int\
+    \ (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n\
+    \      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int\
     \ AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
   params:
     task_id: ${task_id}
     after_ec_id: ${fill_ec_correction_row.0.id}
-    after_ph_id: ${fill_ph_correction_row.0.id}
   expected_rows: 1
   save: recirc_command_counts_first_row
 - step: restore_normal_targets_after_first_failure
@@ -1301,11 +1312,18 @@ actions:
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
     \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
-    )\nVALUES (\n  :grow_cycle_id_2,\n  0,\n  'VEG',\n  5.00,\n  4.80,\n  5.20,\n\
-    \  2.40,\n  2.20,\n  2.60,\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n\
-    )\n"
+    )\nVALUES (\n  :grow_cycle_id_2,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
+    \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n\
+    \  45,\n  NOW(),\n  NOW()\n)\n"
   params:
     grow_cycle_id_2: ${grow_cycle_id_2}
+    ph_target: ${impossible_ph_target}
+    ph_min: ${impossible_ph_min}
+    ph_max: ${impossible_ph_max}
+    ec_target: ${impossible_ec_target}
+    ec_min: ${impossible_ec_min}
+    ec_max: ${impossible_ec_max}
 - step: load_phase_second
   type: database_query
   query: 'SELECT id
@@ -1498,16 +1516,15 @@ actions:
   timeout: 60.0
   expected_rows: 1
   save: fill_ec_correction_second_row
-- step: wait_fill_ph_correction_command_second
-  type: db.wait
+- step: load_fill_ph_correction_commands_if_any_second
+  type: database_query
   query: "SELECT id, channel, payload->>'cmd' AS cmd\nFROM ae_commands\nWHERE task_id\
     \ = CAST(:task_id_2 AS bigint)\n  AND publish_status = 'accepted'\n  AND channel\
-    \ = 'pump_acid'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
+    \ IN ('pump_acid', 'pump_base')\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\n"
   params:
     task_id_2: ${task_id_2}
-  timeout: 60.0
-  expected_rows: 1
-  save: fill_ph_correction_second_row
+  expected_rows: 0
+  save: fill_ph_correction_second_rows
 - step: wait_prepare_recirculation_stage_second
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
@@ -1525,7 +1542,7 @@ actions:
     \ error_code = 'prepare_recirculation_attempt_limit_reached'\nLIMIT 1\n"
   params:
     task_id: ${task_id_2}
-  timeout: 240.0
+  timeout: 720.0
   expected_rows: 1
   save: failed_task_second_row
 - step: load_retry_limit_alert_second
@@ -1543,13 +1560,12 @@ actions:
   query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n\
     \      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND\
     \ payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER\
-    \ (\n    WHERE id > CAST(:after_ph_id AS bigint)\n      AND publish_status = 'accepted'\n\
-    \      AND channel = 'pump_acid'\n      AND payload->>'cmd' = 'dose'\n  )::int\
+    \ (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n\
+    \      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int\
     \ AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
   params:
     task_id: ${task_id_2}
     after_ec_id: ${fill_ec_correction_second_row.0.id}
-    after_ph_id: ${fill_ph_correction_second_row.0.id}
   expected_rows: 1
   save: recirc_command_counts_second_row
 assertions:
@@ -1616,18 +1632,8 @@ cleanup:
   query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code = 'biz_prepare_recirculation_retry_exhausted'\n"
   params:
     zone_id: ${zone_id}
-- step: cleanup_retry_limit_overrides_final
-  type: api_put
-  optional: true
-  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id}/cycle.phase_overrides
-  payload:
-    payload: {}
-- step: cleanup_retry_limit_overrides_final_second
-  type: api_put
-  optional: true
-  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id_2}/cycle.phase_overrides
-  payload:
-    payload: {}
+# phase_overrides сбрасываются при удалении grow_cycle (cleanup_created_cycle); отдельный api_put
+# убираем — при раннем фейле ${grow_cycle_id}/${grow_cycle_id_2} могут быть пустыми → 404 и STRICT log scan.
 - step: reset_test_node_after_run
   type: ae_test_hook
   optional: true

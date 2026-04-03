@@ -91,6 +91,8 @@ export interface AutomationState {
     outcome?: string | null
     reason_code?: string | null
     strategy?: string | null
+    config?: Record<string, unknown> | null
+    bundle_revision?: string | null
     degraded?: boolean | null
   } | null
 }

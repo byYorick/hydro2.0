@@ -274,10 +274,47 @@ async def _prepare_runtime_zone(prefix: str, now: datetime) -> tuple[int, int]:
     return greenhouse_id, zone_id
 
 
-def _build_worker(*, terminal_status: str, error_message: str | None = None) -> Ae3RuntimeWorker:
+class _DeleteTaskBeforeFirstAeInsertRepo(PgAeCommandRepository):
+    """Simulates concurrent cleanup: ae_tasks removed immediately before first ae_commands INSERT."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._armed = True
+
+    async def create_pending(  # type: ignore[override]
+        self,
+        *,
+        task_id: int,
+        step_no: int,
+        node_uid: str,
+        channel: str,
+        payload,
+        now: datetime,
+        stage_name=None,
+    ):
+        if self._armed:
+            self._armed = False
+            await execute("DELETE FROM ae_tasks WHERE id = $1", task_id)
+        return await super().create_pending(
+            task_id=task_id,
+            step_no=step_no,
+            node_uid=node_uid,
+            channel=channel,
+            payload=payload,
+            now=now,
+            stage_name=stage_name,
+        )
+
+
+def _build_worker(
+    *,
+    terminal_status: str,
+    error_message: str | None = None,
+    command_repository: PgAeCommandRepository | None = None,
+) -> Ae3RuntimeWorker:
     task_repository = PgAutomationTaskRepository()
     lease_repository = PgZoneLeaseRepository()
-    command_repository = PgAeCommandRepository()
+    command_repository = command_repository or PgAeCommandRepository()
     workflow_repository = PgZoneWorkflowRepository()
     command_gateway = SequentialCommandGateway(
         task_repository=task_repository,
@@ -565,6 +602,34 @@ async def test_runtime_worker_wakes_itself_for_delayed_pending_task() -> None:
             wake_task.cancel()
             with suppress(asyncio.CancelledError):
                 await wake_task
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_runtime_worker_survives_task_delete_before_ae_command_insert() -> None:
+    """Regression: FK failure on ae_commands insert must not crash the worker loop."""
+    prefix = f"ae3-worker-preinsert-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    try:
+        _greenhouse_id, zone_id = await _prepare_runtime_zone(prefix, now)
+        task_id = await _insert_pending_task(zone_id, prefix=prefix, now=now)
+        worker = _build_worker(
+            terminal_status="DONE",
+            command_repository=_DeleteTaskBeforeFirstAeInsertRepo(),
+        )
+
+        drain_task = asyncio.create_task(worker._drain_pending_tasks())
+
+        await asyncio.wait_for(drain_task, timeout=10.0)
+
+        lease_rows = await fetch("SELECT zone_id FROM ae_zone_leases WHERE zone_id = $1", zone_id)
+        assert lease_rows == []
+        assert drain_task.exception() is None
+
+        gone = await fetch("SELECT id FROM ae_tasks WHERE id = $1", task_id)
+        assert gone == []
+    finally:
         await _cleanup(prefix)
 
 

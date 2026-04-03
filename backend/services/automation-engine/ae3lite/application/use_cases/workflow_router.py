@@ -467,6 +467,43 @@ class WorkflowRouter:
             total_sec = int(requested_duration_sec) + slack
             total_sec = min(max(1, total_sec), 86400)
             return now + timedelta(seconds=total_sec)
+        if stage_def.name == "solution_fill_check":
+            base_raw = runtime.get("solution_fill_timeout_sec")
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(1, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            slack_raw = runtime.get("solution_fill_correction_slack_sec")
+            if slack_raw is None:
+                slack = 900
+            else:
+                try:
+                    slack = max(0, min(7200, int(slack_raw)))
+                except (TypeError, ValueError):
+                    slack = 900
+            total_sec = min(base_sec + slack, 86400)
+            return now + timedelta(seconds=total_sec)
+        if stage_def.name == "prepare_recirculation_check":
+            # Base window from retry config; inline EC/pH corrections need extra wall time on real HL→MQTT→node.
+            base_raw = runtime.get("prepare_recirculation_timeout_sec")
+            if base_raw is None:
+                return None
+            try:
+                base_sec = max(1, int(base_raw))
+            except (TypeError, ValueError):
+                return None
+            slack_raw = runtime.get("prepare_recirculation_correction_slack_sec")
+            if slack_raw is None:
+                slack = 900
+            else:
+                try:
+                    slack = max(0, min(7200, int(slack_raw)))
+                except (TypeError, ValueError):
+                    slack = 900
+            total_sec = min(base_sec + slack, 86400)
+            return now + timedelta(seconds=total_sec)
         if stage_def.name == "irrigation_recovery_check":
             recovery_runtime = runtime.get("irrigation_recovery")
             recovery_runtime = recovery_runtime if isinstance(recovery_runtime, Mapping) else {}

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
+import asyncpg
+
 from common.db import get_pool
 
 
@@ -27,34 +29,38 @@ class PgAeCommandRepository:
         payload: Mapping[str, Any],
         now: datetime,
         stage_name: Optional[str] = None,
-    ) -> int:
+    ) -> Optional[int]:
         pool = await get_pool()
         normalized_now = self._normalize_timestamp(now)
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO ae_commands (
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO ae_commands (
+                        task_id,
+                        step_no,
+                        node_uid,
+                        channel,
+                        payload,
+                        stage_name,
+                        publish_status,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5::jsonb, $6, 'pending', $7, $7)
+                    RETURNING id
+                    """,
                     task_id,
                     step_no,
                     node_uid,
                     channel,
-                    payload,
-                    stage_name,
-                    publish_status,
-                    created_at,
-                    updated_at
+                    dict(payload),
+                    stage_name or None,
+                    normalized_now,
                 )
-                VALUES ($1, $2, $3, $4, $5::jsonb, $6, 'pending', $7, $7)
-                RETURNING id
-                """,
-                task_id,
-                step_no,
-                node_uid,
-                channel,
-                dict(payload),
-                stage_name or None,
-                normalized_now,
-            )
+        except asyncpg.exceptions.ForeignKeyViolationError:
+            # Parent ae_tasks row removed between plan step and insert (e.g. raw DELETE in e2e / admin).
+            return None
         return int(row["id"])
 
     async def mark_publish_accepted(

@@ -635,11 +635,13 @@ authority-документ `zone.logic_profile` через API `/api/automation-
 ```json
 {
   "mode": "normal",
-  "duration_sec": 120
+  "requested_duration_sec": 120
 }
 ```
 - **Семантика:**
   - `mode=normal` проходит через decision-controller (`task|smart_soil_v1`);
+  - active irrigation task фиксирует decision snapshot (`strategy/config/bundle_revision`) при создании canonical task под zone advisory lock; первый runtime pass только эмитит observability event, а последующие изменения `zone.logic_profile` применяются только к следующему irrigation task;
+  - неизвестная irrigation strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает `biz_irrigation_decision_fail`;
   - `mode=force` bypass-ит decision-controller, но не bypass-ит AE3 task/runtime path;
   - response возвращает canonical numeric `task_id` AE3.
 

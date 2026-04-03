@@ -36,4 +36,11 @@ describe('errorCatalog', () => {
       message: 'Unknown failure',
     })).toBe('Внутренняя ошибка системы (код: some_unknown_error).')
   })
+
+  it('локализует unknown irrigation strategy через каталог кодов', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'irrigation_decision_strategy_unknown',
+      message: 'Irrigation decision-controller returned fail.',
+    })).toBe('Для зоны указана неизвестная стратегия decision-controller полива. Проверьте automation profile и logic profile зоны.')
+  })
 })

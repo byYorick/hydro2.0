@@ -8,6 +8,11 @@ RESET_DB_SEEDER_CLASS ?= $(REFRESH_SEEDER_CLASS)
 RESET_DB_APP_ENV ?= local
 RESET_DB_DATABASE ?= hydro_dev
 
+# Laravel PHPUnit: изолированная БД и APP_ENV=testing (иначе guard в tests/RefreshDatabase.php и env контейнера ломают прогон).
+LARAVEL_TEST_DB ?= hydro_test
+# Пример: make test-laravel LARAVEL_TEST_ARGS="tests/Feature/PythonIngestControllerTest.php"
+LARAVEL_TEST_ARGS ?=
+
 DOCKER_COMPOSE ?= $(shell if command -v docker-compose >/dev/null 2>&1; then echo docker-compose; else echo "docker compose"; fi)
 
 .PHONY: help
@@ -68,9 +73,21 @@ reset-db: up
 		-e DB_DATABASE=$(RESET_DB_DATABASE) \
 		laravel php artisan migrate:fresh --seed --seeder=$(RESET_DB_SEEDER_CLASS)
 
-.PHONY: test
-test: up
-	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T laravel php artisan test
+.PHONY: test test-laravel
+test-laravel: up
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='$(LARAVEL_TEST_DB)'" | grep -q 1 \
+		|| $(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T db psql -U hydro -d postgres -c "CREATE DATABASE $(LARAVEL_TEST_DB);"
+	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T \
+		-e APP_ENV=testing \
+		-e DB_DATABASE=$(LARAVEL_TEST_DB) \
+		-e DB_CONNECTION=pgsql \
+		-e DB_HOST=db \
+		-e DB_PORT=5432 \
+		-e DB_USERNAME=hydro \
+		-e DB_PASSWORD=hydro \
+		laravel php artisan test $(LARAVEL_TEST_ARGS)
+
+test: test-laravel
 	@$(DOCKER_COMPOSE) -f $(BACKEND_COMPOSE_FILE) exec -T mqtt-bridge pytest
 
 .PHONY: lint

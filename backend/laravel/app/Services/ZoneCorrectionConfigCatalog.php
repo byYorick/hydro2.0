@@ -228,6 +228,13 @@ class ZoneCorrectionConfigCatalog
                     self::field('retry.max_ec_correction_attempts', 'Max EC attempts', 'Лимит EC-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 500]),
                     self::field('retry.max_ph_correction_attempts', 'Max pH attempts', 'Лимит pH-дозировок в correction cycle.', 'integer', ['min' => 1, 'max' => 500]),
                     self::field('retry.prepare_recirculation_timeout_sec', 'Recirculation timeout', 'Длительность одного окна recirculation before retry.', 'integer', ['min' => 30, 'max' => 7200]),
+                    self::field(
+                        'retry.prepare_recirculation_correction_slack_sec',
+                        'Recirculation correction slack',
+                        'Доп. секунды к дедлайну prepare_recirculation_check для inline-коррекции (AE по умолчанию 900; 0 = жёстко по timeout).',
+                        'integer',
+                        ['min' => 0, 'max' => 7200, 'advanced_only' => true]
+                    ),
                     self::field('retry.prepare_recirculation_max_attempts', 'Recirculation max windows', 'Сколько timeout-window допускается до alert/stop.', 'integer', ['min' => 1, 'max' => 10]),
                     self::field(
                         'retry.prepare_recirculation_max_correction_attempts',

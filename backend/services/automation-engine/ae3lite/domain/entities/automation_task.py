@@ -68,6 +68,8 @@ class AutomationTask:
     irrigation_mode: Optional[str] = None
     irrigation_requested_duration_sec: Optional[int] = None
     irrigation_decision_strategy: Optional[str] = None
+    irrigation_decision_config: Optional[Mapping[str, Any]] = None
+    irrigation_bundle_revision: Optional[str] = None
     irrigation_decision_outcome: Optional[str] = None
     irrigation_decision_reason_code: Optional[str] = None
     irrigation_decision_degraded: Optional[bool] = None
@@ -166,6 +168,16 @@ class AutomationTask:
             irrigation_decision_strategy=(
                 str(row["irrigation_decision_strategy"])
                 if row.get("irrigation_decision_strategy") is not None
+                else None
+            ),
+            irrigation_decision_config=(
+                row["irrigation_decision_config"]
+                if isinstance(row.get("irrigation_decision_config"), Mapping)
+                else None
+            ),
+            irrigation_bundle_revision=(
+                str(row["irrigation_bundle_revision"])
+                if row.get("irrigation_bundle_revision") is not None
                 else None
             ),
             irrigation_decision_outcome=(

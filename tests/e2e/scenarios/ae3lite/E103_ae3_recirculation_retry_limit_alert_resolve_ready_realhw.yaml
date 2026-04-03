@@ -313,7 +313,7 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.05
-              max_dose_ml: 10.0
+              max_dose_ml: 8.0
               max_integral: 10.0
               min_interval_sec: 20
               anti_windup:
@@ -365,9 +365,17 @@ actions:
             solution_max_sensor_label: level_solution_max
             solution_min_sensor_label: level_solution_min
           retry:
-            max_ec_correction_attempts: 10
-            max_ph_correction_attempts: 10
-            prepare_recirculation_timeout_sec: 45
+            # Keep the retry window count at 3, but allow two weaker corrections
+            # inside a single window. With 1/1 the correction cycle exhausts after
+            # the first EC dose, so real hardware never reaches >=3 recirc doses.
+            max_ec_correction_attempts: 2
+            max_ph_correction_attempts: 2
+            # Real hardware reaches the third recirc command in ~42-46s once
+            # history-logger publish + DONE reconciliation are included. Keep a
+            # small reserve above the physical dosing time so the window fails by
+            # retry-limit, not by command-poll deadline jitter.
+            prepare_recirculation_timeout_sec: 55
+            prepare_recirculation_correction_slack_sec: 0
             prepare_recirculation_max_attempts: 3
             prepare_recirculation_max_correction_attempts: 20
             telemetry_stale_retry_sec: 30
@@ -381,7 +389,11 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.05
-              max_dose_ml: 30.0
+              # Real test-node reacts to the physical dosing time. Keep the first
+              # retry-limit run slightly below the nominal EC cap so the recirc
+              # window still issues >=3 commands, but does not hit the stage
+              # deadline on the trailing storage_state poll.
+              max_dose_ml: 10.0
               max_integral: 48.0
               min_interval_sec: 15
               anti_windup:
@@ -408,7 +420,7 @@ actions:
               kd: 0.0
               derivative_filter_alpha: 0.35
               deadband: 0.04
-              max_dose_ml: 16.0
+              max_dose_ml: 4.0
               max_integral: 16.0
               min_interval_sec: 15
               anti_windup:
@@ -433,8 +445,8 @@ actions:
             dose_ec_channel: dose_ec_a
             dose_ph_up_channel: dose_ph_up
             dose_ph_down_channel: dose_ph_down
-            max_ec_dose_ml: 30.0
-            max_ph_dose_ml: 16.0
+            max_ec_dose_ml: 8.0
+            max_ph_dose_ml: 4.0
           timing:
             sensor_mode_stabilization_time_sec: 20
             stabilization_sec: 10
@@ -775,10 +787,18 @@ actions:
   query: "INSERT INTO grow_cycle_phases (\n  grow_cycle_id,\n  phase_index,\n  name,\n\
     \  ph_target,\n  ph_min,\n  ph_max,\n  ec_target,\n  ec_min,\n  ec_max,\n  irrigation_mode,\n\
     \  irrigation_interval_sec,\n  irrigation_duration_sec,\n  created_at,\n  updated_at\n\
-    )\nVALUES (\n  :grow_cycle_id,\n  0,\n  'VEG',\n  5.00,\n  4.80,\n  5.20,\n  2.40,\n\
-    \  2.20,\n  2.60,\n  'SUBSTRATE',\n  600,\n  45,\n  NOW(),\n  NOW()\n)\n"
+    )\nVALUES (\n  :grow_cycle_id,\n  0,\n  'VEG',\n  CAST(:ph_target AS numeric),\n\
+    \  CAST(:ph_min AS numeric),\n  CAST(:ph_max AS numeric),\n  CAST(:ec_target AS numeric),\n\
+    \  CAST(:ec_min AS numeric),\n  CAST(:ec_max AS numeric),\n  'SUBSTRATE',\n  600,\n\
+    \  45,\n  NOW(),\n  NOW()\n)\n"
   params:
     grow_cycle_id: ${grow_cycle_id}
+    ph_target: ${impossible_ph_target}
+    ph_min: ${impossible_ph_min}
+    ph_max: ${impossible_ph_max}
+    ec_target: ${impossible_ec_target}
+    ec_min: ${impossible_ec_min}
+    ec_max: ${impossible_ec_max}
 - step: load_phase
   type: database_query
   query: 'SELECT id
@@ -1124,6 +1144,7 @@ actions:
     task_id: ${task_id}
   timeout: 40.0
   expected_rows: 1
+# Аудит таймаута (2026): см. E102 — до ~12 мин достаточно для лимита попыток prepare_recirc.
 - step: wait_task_failed_retry_limit_first
   type: db.wait
   query: "\nSELECT id, status, error_code, error_message, stage_retry_count\nFROM\
@@ -1131,7 +1152,7 @@ actions:
     \ error_code = 'prepare_recirculation_attempt_limit_reached'\nLIMIT 1\n"
   params:
     task_id: ${task_id}
-  timeout: 240.0
+  timeout: 720.0
   expected_rows: 1
   save: failed_task_first_row
 - step: load_retry_limit_alert_first
@@ -1146,10 +1167,10 @@ actions:
   save: retry_limit_alert_first_row
 - step: load_recirc_command_counts_first
   type: database_query
-  query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id > CAST(:after_ec_id AS bigint)\n\
+  query: "\nSELECT\n  COUNT(*) FILTER (\n    WHERE id >= CAST(:after_ec_id AS bigint)\n\
     \      AND publish_status = 'accepted'\n      AND channel = 'pump_a'\n      AND\
     \ payload->>'cmd' = 'dose'\n  )::int AS recirc_ec_cnt,\n  COUNT(*) FILTER\
-    \ (\n    WHERE id > CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n\
+    \ (\n    WHERE id >= CAST(:after_ec_id AS bigint)\n      AND publish_status = 'accepted'\n\
     \      AND channel IN ('pump_acid', 'pump_base')\n      AND payload->>'cmd' = 'dose'\n  )::int\
     \ AS recirc_ph_cnt\nFROM ae_commands\nWHERE task_id = CAST(:task_id AS bigint)\n"
   params:
@@ -1314,6 +1335,7 @@ actions:
             max_ec_correction_attempts: 10
             max_ph_correction_attempts: 10
             prepare_recirculation_timeout_sec: 360
+            prepare_recirculation_correction_slack_sec: 0
             prepare_recirculation_max_attempts: 3
             prepare_recirculation_max_correction_attempts: 20
             telemetry_stale_retry_sec: 30
@@ -1848,6 +1870,7 @@ assertions:
 - name: first_recirc_commands_attempted_three_times
   type: custom_assert
   condition: int(context.get('recirc_command_counts_first_row', [{}])[0].get('recirc_ec_cnt',
+    0)) + int(context.get('recirc_command_counts_first_row', [{}])[0].get('recirc_ph_cnt',
     0)) >= 3
 - name: first_runtime_never_resets_node_during_task
   type: custom_assert

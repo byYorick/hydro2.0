@@ -212,6 +212,44 @@ async def test_custom_attempt_limit_respected() -> None:
     assert outcome2.kind == "transition"
 
 
+class _PlanNestedRetry:
+    """Bundle shape from effective targets: phase has nested ``retry``."""
+
+    def __init__(self, *, limit: int) -> None:
+        self.runtime = {
+            "correction_by_phase": {
+                "tank_recirc": {
+                    "retry": {"prepare_recirculation_max_attempts": limit},
+                },
+            },
+        }
+        self.named_plans = {
+            "prepare_recirculation_stop": (_CMD,),
+            "sensor_mode_deactivate": (_CMD,),
+            "sensor_mode_activate": (_CMD,),
+            "prepare_recirculation_start": (_CMD,),
+        }
+
+
+@pytest.mark.asyncio
+async def test_attempt_limit_read_from_nested_retry_mapping() -> None:
+    outcome = await _handler().run(
+        task=_make_task(retry_count=1),
+        plan=_PlanNestedRetry(limit=1),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome.kind == "fail"
+
+    outcome2 = await _handler().run(
+        task=_make_task(retry_count=1),
+        plan=_PlanNestedRetry(limit=5),
+        stage_def=None,
+        now=NOW,
+    )
+    assert outcome2.kind == "transition"
+
+
 # ── empty command plan ────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

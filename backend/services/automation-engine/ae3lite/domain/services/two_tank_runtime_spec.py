@@ -188,6 +188,13 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_timeout_sec",
             minimum=30,
         ),
+        # Matches workflow_router.prepare_recirculation_check deadline: base + slack (default 900s if omitted).
+        "prepare_recirculation_correction_slack_sec": _resolve_bounded_int(
+            recirc_retry_cfg.get("prepare_recirculation_correction_slack_sec"),
+            default=900,
+            minimum=0,
+            maximum=7200,
+        ),
         "level_poll_interval_sec": _require_int(
             fill_timing_cfg.get("level_poll_interval_sec"),
             path="correction_config.base/phases.solution_fill.timing.level_poll_interval_sec",
@@ -443,20 +450,6 @@ def _collect_missing_paths(*, config: Mapping[str, Any], template: Mapping[str, 
                 continue
             missing.extend(_collect_missing_paths(config=actual, template=expected, prefix=path))
     return missing
-
-    missing_types: list[str] = []
-    for pid_type in ("ph", "ec"):
-        entry = pid_configs.get(pid_type)
-        config = entry.get("config") if isinstance(entry, Mapping) else None
-        if not isinstance(config, Mapping) or not config:
-            missing_types.append(pid_type)
-
-    if missing_types:
-        raise PlannerConfigurationError(
-            f"Zone {zone_id} missing required pid authority documents for pid_type={', '.join(sorted(missing_types))}; "
-            "fail-closed for critical correction parameters",
-            code=ErrorCodes.ZONE_PID_CONFIG_MISSING_CRITICAL,
-        )
 
 
 def _validate_prepare_recirculation_timing(runtime: dict[str, Any]) -> None:
@@ -809,7 +802,7 @@ def _build_irrigation_decision(snapshot: Any) -> dict[str, Any]:
     strategy = str(decision.get("strategy") or "task").strip().lower() or "task"
     config = _to_mapping(decision.get("config"))
     return {
-        "strategy": strategy if strategy in {"task", "smart_soil_v1"} else "task",
+        "strategy": strategy,
         "config": {
             "lookback_sec": _resolve_bounded_int(config.get("lookback_sec"), 1800, 60, 86400),
             "min_samples": _resolve_bounded_int(config.get("min_samples"), 3, 1, 100),

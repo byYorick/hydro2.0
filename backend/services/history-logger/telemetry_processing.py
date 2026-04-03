@@ -63,7 +63,29 @@ _sensor_cache_max_size = int(os.getenv("SENSOR_CACHE_MAX_SIZE", "5000"))
 _cache_last_update = 0.0
 _cache_ttl = 60.0
 _anomaly_alert_last_sent: dict[str, float] = {}
-_anomaly_alert_throttle_sec = float(os.getenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "300"))
+
+# «Шумные» infra-коды: в dev/e2e (APP_ENV=local|testing) увеличиваем интервал,
+# либо задаётся TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC (секунды).
+_INFRA_TELEMETRY_LONG_THROTTLE_CODES = frozenset(
+    {
+        "infra_telemetry_node_not_found",
+        "infra_telemetry_sample_dropped_node_not_found",
+        "infra_telemetry_invalid_timestamp",
+    }
+)
+
+
+def _effective_anomaly_throttle_sec(code: str) -> float:
+    base = float(os.getenv("TELEMETRY_ANOMALY_ALERT_THROTTLE_SEC", "300"))
+    if code not in _INFRA_TELEMETRY_LONG_THROTTLE_CODES:
+        return base
+    override = float(os.getenv("TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC", "0") or 0)
+    if override > 0:
+        return override
+    app_env = (os.getenv("APP_ENV", "") or "").strip().lower()
+    if app_env in ("testing", "local"):
+        return max(base, 86400.0)
+    return base
 _anomaly_resolved_last_sent: dict[str, float] = {}
 _anomaly_resolved_throttle_sec = float(
     os.getenv("TELEMETRY_ANOMALY_RESOLVED_THROTTLE_SEC", "300")
@@ -324,9 +346,10 @@ async def _emit_telemetry_anomaly_alert(
         node_uid=node_uid,
         channel=channel,
     )
+    throttle_sec = _effective_anomaly_throttle_sec(code)
     now = time.time()
     last_sent = _anomaly_alert_last_sent.get(throttle_key)
-    if last_sent and (now - last_sent) < _anomaly_alert_throttle_sec:
+    if last_sent and (now - last_sent) < throttle_sec:
         return
 
     payload_details = dict(details) if isinstance(details, dict) else {}
@@ -338,7 +361,7 @@ async def _emit_telemetry_anomaly_alert(
             "channel": channel,
             "metric_type": metric_type,
             "throttle_key": throttle_key,
-            "throttle_sec": _anomaly_alert_throttle_sec,
+            "throttle_sec": throttle_sec,
         }
     )
     payload_details = {k: v for k, v in payload_details.items() if v is not None}

@@ -311,6 +311,65 @@ def test_cycle_start_planner_builds_native_two_tank_with_short_alias() -> None:
     assert plan.named_plans["irr_state_probe"][0].channel == "storage_state"
 
 
+def test_cycle_start_planner_uses_locked_irrigation_decision_snapshot_for_active_task() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    task = AutomationTask.from_row({
+        "id": 72, "zone_id": 9, "task_type": "irrigation_start", "status": "running",
+        "idempotency_key": "planner-irrigation-lock", "scheduled_for": now, "due_at": now,
+        "claimed_by": "worker-a", "claimed_at": now, "error_code": None, "error_message": None,
+        "created_at": now, "updated_at": now, "completed_at": None,
+        "topology": "two_tank", "intent_source": None, "intent_trigger": None,
+        "intent_id": None, "intent_meta": {},
+        "current_stage": "await_ready", "workflow_phase": "idle",
+        "stage_deadline_at": None, "stage_retry_count": 0, "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "irrigation_decision_strategy": "task",
+        "irrigation_decision_config": {
+            "lookback_sec": 900,
+            "min_samples": 2,
+        },
+        "irrigation_bundle_revision": "bundle-locked-1234567890",
+        "corr_step": None,
+    })
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank_drip_substrate_trays",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "bundle_revision": "bundle-live-9999999999",
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+
+    plan = planner.build(task=task, snapshot=snapshot)
+
+    assert plan.runtime["irrigation_decision"]["strategy"] == "task"
+    assert plan.runtime["irrigation_decision"]["config"]["lookback_sec"] == 900
+    assert plan.runtime["irrigation_decision"]["config"]["min_samples"] == 2
+    assert plan.runtime["bundle_revision"] == "bundle-locked-1234567890"
+
+
 def test_cycle_start_planner_rejects_incomplete_solution_fill_start_contract() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()

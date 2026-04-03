@@ -535,14 +535,18 @@ class GetZoneAutomationStateUseCase:
         outcome = getattr(task, "irrigation_decision_outcome", None)
         reason_code = getattr(task, "irrigation_decision_reason_code", None)
         strategy = getattr(task, "irrigation_decision_strategy", None)
+        config = getattr(task, "irrigation_decision_config", None)
+        bundle_revision = getattr(task, "irrigation_bundle_revision", None)
         degraded = getattr(task, "irrigation_decision_degraded", None)
 
-        if outcome is None and reason_code is None and strategy is None and degraded is None:
+        if outcome is None and reason_code is None and strategy is None and config is None and bundle_revision is None and degraded is None:
             return None
 
         return {
             "outcome": str(outcome).strip().lower() if outcome is not None else None,
             "reason_code": str(reason_code).strip() if reason_code is not None else None,
             "strategy": str(strategy).strip().lower() if strategy is not None else None,
+            "config": dict(config) if isinstance(config, Mapping) else None,
+            "bundle_revision": str(bundle_revision).strip() if bundle_revision is not None else None,
             "degraded": bool(degraded) if degraded is not None else None,
         }

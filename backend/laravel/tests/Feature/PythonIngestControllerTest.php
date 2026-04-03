@@ -3,21 +3,22 @@
 namespace Tests\Feature;
 
 use App\Jobs\PublishNodeConfigJob;
+use App\Models\Alert;
+use App\Models\Command;
+use App\Models\DeviceNode;
+use App\Models\TelemetryLast;
+use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\DeviceNode;
-use App\Models\Command;
-use App\Models\TelemetrySample;
-use App\Models\TelemetryLast;
-use App\Models\Alert;
 use App\Services\AlertPolicyService;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
-use Tests\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class PythonIngestControllerTest extends TestCase
@@ -57,7 +58,7 @@ class PythonIngestControllerTest extends TestCase
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
         $this->token();
-        
+
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone->id,
@@ -179,7 +180,7 @@ class PythonIngestControllerTest extends TestCase
         $zone1 = Zone::factory()->create();
         $zone2 = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone1->id]);
-        
+
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
                 'zone_id' => $zone2->id, // Другая зона
@@ -416,6 +417,7 @@ class PythonIngestControllerTest extends TestCase
 
         $command->refresh();
         $this->assertEquals(Command::STATUS_ACK, $command->status);
+        $this->assertNotNull($command->sent_at);
 
         Log::shouldHaveReceived('info')
             ->once()
@@ -431,12 +433,93 @@ class PythonIngestControllerTest extends TestCase
         ]);
     }
 
+    public function test_command_ack_backfills_sent_at_on_terminal_from_ack_at(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $ackAt = Carbon::parse('2024-05-01 10:00:00', 'UTC');
+        $command = Command::create([
+            'cmd_id' => 'cmd-backfill-sent-001',
+            'status' => Command::STATUS_ACK,
+            'cmd' => 'test_command',
+            'ack_at' => $ackAt,
+            'sent_at' => null,
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-backfill-sent-001',
+                'status' => 'DONE',
+            ])
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_DONE, $command->status);
+        $this->assertNotNull($command->sent_at);
+        $this->assertTrue($command->sent_at->equalTo($ackAt));
+    }
+
+    public function test_command_ack_uses_sent_at_from_details_ms(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $command = Command::create([
+            'cmd_id' => 'cmd-sent-ms-001',
+            'status' => Command::STATUS_QUEUED,
+            'cmd' => 'test_command',
+        ]);
+
+        $ms = 1_700_000_000_000;
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-sent-ms-001',
+                'status' => 'SENT',
+                'details' => [
+                    'sent_at_ms' => $ms,
+                ],
+            ])
+            ->assertOk();
+
+        $command->refresh();
+        $this->assertEquals(Command::STATUS_SENT, $command->status);
+        $this->assertNotNull($command->sent_at);
+        $this->assertSame($ms, (int) ($command->sent_at->getTimestamp() * 1000));
+    }
+
+    public function test_command_ack_clamps_sent_at_after_ack_when_details_sent_is_late(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+
+        $ackAt = Carbon::parse('2024-05-01 10:00:00', 'UTC');
+        $command = Command::create([
+            'cmd_id' => 'cmd-clamp-sent-001',
+            'status' => Command::STATUS_QUEUED,
+            'cmd' => 'test_command',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/commands/ack', [
+                'cmd_id' => 'cmd-clamp-sent-001',
+                'status' => 'ACK',
+                'details' => [
+                    'ack_at' => $ackAt->toIso8601String(),
+                    'sent_at' => '2024-05-01 11:00:00+00:00',
+                ],
+            ])
+            ->assertOk();
+
+        $command->refresh();
+        $this->assertTrue($command->sent_at->equalTo($ackAt));
+        $this->assertTrue($command->ack_at->equalTo($ackAt));
+    }
+
     public function test_command_ack_endpoint_requires_auth(): void
     {
         // Убеждаемся, что токен не настроен для этого теста
         Config::set('services.python_bridge.ingest_token', null);
         Config::set('services.python_bridge.token', null);
-        
+
         $this->postJson('/api/python/commands/ack', [
             'cmd_id' => 'cmd-test-123',
             'status' => 'DONE',

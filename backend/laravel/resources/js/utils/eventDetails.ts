@@ -42,6 +42,23 @@ function appendCorrectionTrace(rows: DetailRow[], payload: Payload): void {
   if (decisionReason) rows.push(row('Причина выбора', decisionReason))
 }
 
+function appendIrrigationDecisionConfigRows(rows: DetailRow[], payload: Payload): void {
+  const config = toPayloadRecord(payload['config']) ?? toPayloadRecord(payload['decision_config'])
+  if (!config) return
+
+  const lookbackSec = readNumber(config, 'lookback_sec')
+  const minSamples = readNumber(config, 'min_samples')
+  const staleAfterSec = readNumber(config, 'stale_after_sec')
+  const hysteresisPct = readNumber(config, 'hysteresis_pct')
+  const spreadThresholdPct = readNumber(config, 'spread_alert_threshold_pct')
+
+  if (lookbackSec !== null) rows.push(row('Lookback', `${lookbackSec} с`))
+  if (minSamples !== null) rows.push(row('Min samples', String(minSamples)))
+  if (staleAfterSec !== null) rows.push(row('Stale after', `${staleAfterSec} с`))
+  if (hysteresisPct !== null) rows.push(row('Hysteresis', `${hysteresisPct}%`))
+  if (spreadThresholdPct !== null) rows.push(row('Spread alert', `${spreadThresholdPct}%`))
+}
+
 function buildIrrSnapshot(payload: Payload): Array<{ label: string, value: string }> {
   const snapshot = toPayloadRecord(payload['snapshot'])
   if (!snapshot) return []
@@ -277,10 +294,28 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     const topology = readString(payload, 'topology')
     const stage = readString(payload, 'stage')
     const trigger = readString(payload, 'intent_trigger')
+    const bundleRevision = readString(payload, 'bundle_revision') ?? readString(payload, 'irrigation_bundle_revision')
+    const decisionStrategy = readString(payload, 'irrigation_decision_strategy')
     if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
     if (topology) rows.push(row('Топология', topology))
     if (stage) rows.push(row('Стадия', stage))
     if (trigger) rows.push(row('Триггер', trigger))
+    if (decisionStrategy) rows.push(row('Strategy', decisionStrategy))
+    if (bundleRevision) rows.push(row('Bundle', bundleRevision.slice(0, 12)))
+    appendIrrigationDecisionConfigRows(rows, payload)
+  }
+  else if (event.kind === 'IRRIGATION_DECISION_SNAPSHOT_LOCKED') {
+    const taskId = readNumber(payload, 'task_id')
+    const strategy = readString(payload, 'strategy')
+    const bundleRevision = readString(payload, 'bundle_revision')
+    const growCycleId = readNumber(payload, 'grow_cycle_id')
+    const phaseName = readString(payload, 'phase_name')
+    if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
+    if (strategy) rows.push(row('Strategy', strategy))
+    if (bundleRevision) rows.push(row('Bundle', bundleRevision.slice(0, 12)))
+    if (growCycleId !== null) rows.push(row('Cycle ID', String(growCycleId)))
+    if (phaseName) rows.push(row('Фаза', phaseName))
+    appendIrrigationDecisionConfigRows(rows, payload)
   }
   else if (event.kind === 'AE_TASK_FAILED') {
     const taskId = readNumber(payload, 'task_id')

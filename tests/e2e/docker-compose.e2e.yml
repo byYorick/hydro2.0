@@ -228,6 +228,8 @@ services:
     - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
     - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
     - TELEMETRY_MAX_AGE_MINUTES=${TELEMETRY_MAX_AGE_MINUTES:-5}
+    # Меньше шума infra_telemetry_* в e2e (дубли при nd-* / TRUNCATE); override для production-like окружений
+    - TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC=${TELEMETRY_INFRA_ANOMALY_THROTTLE_SEC:-86400}
     - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
     - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     - REDIS_HOST=redis

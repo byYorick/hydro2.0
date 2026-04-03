@@ -32,6 +32,10 @@ class PublishPlannedCommandUseCase:
             now=now,
             stage_name=str(getattr(task, "current_stage", "") or "") or None,
         )
+        if ae_command_id is None:
+            raise CommandPublishError(
+                f"Task {task.id} missing during ae_commands insert (likely concurrent cleanup)",
+            )
 
         try:
             greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)

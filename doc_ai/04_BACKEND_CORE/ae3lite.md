@@ -479,8 +479,10 @@ CAS update по `version` обязателен для workflow mutation.
 3. принимает `requested_duration_sec`
 4. создаёт canonical task `task_type='irrigation_start'`
 5. при `mode=normal` проходит через decision-controller strategy registry
-6. при `mode=force` bypass-ит decision-controller, но не bypass-ит canonical task/runtime path
-7. при active task или active lease возвращает controlled error
+6. неизвестная irrigation strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает business alert через `decision_gate`
+7. active irrigation task фиксирует decision snapshot (`strategy/config/bundle_revision`) при создании canonical task под zone advisory lock; первый runtime pass только эмитит observability event, а последующие изменения `zone.logic_profile` применяются только к следующему irrigation task
+8. при `mode=force` bypass-ит decision-controller, но не bypass-ит canonical task/runtime path
+9. при active task или active lease возвращает controlled error
 
 ### 7.3 `GET /internal/tasks/{task_id}`
 
@@ -551,6 +553,10 @@ Prometheus runtime минимум для lifecycle intents:
 2. `ae3_command_dispatch_duration_seconds`
 3. `ae3_command_terminal_total`
 4. `ae3_tick_duration_seconds`
+
+Минимальные event/log точки для irrigation observability:
+1. `AE_TASK_STARTED` включает `bundle_revision` и locked irrigation decision strategy при наличии
+2. `IRRIGATION_DECISION_SNAPSHOT_LOCKED` фиксирует strategy/config/bundle_revision для текущего irrigation task; на первом run event эмитится даже если snapshot уже был записан в `ae_tasks` на create-path
 
 ---
 

@@ -92,6 +92,14 @@ class ExecuteTaskUseCase:
         try:
             snapshot = await self._zone_snapshot_read_model.load(zone_id=running_task.zone_id)
             plan = self._planner.build(task=running_task, snapshot=snapshot)
+            running_task = await self._lock_irrigation_decision_snapshot_if_needed(
+                task=running_task,
+                snapshot=snapshot,
+                plan=plan,
+                owner=owner,
+                now=now,
+                emit_observability=first_run,
+            )
             if first_run:
                 await self._emit_start_readiness_confirmed(
                     task=running_task,
@@ -524,6 +532,111 @@ class ExecuteTaskUseCase:
             context=details,
         )
 
+    async def _lock_irrigation_decision_snapshot_if_needed(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        plan: Any,
+        owner: str,
+        now: datetime,
+        emit_observability: bool = False,
+    ) -> Any:
+        if str(getattr(task, "task_type", "") or "").strip().lower() != "irrigation_start":
+            return task
+
+        has_persisted_snapshot = (
+            str(getattr(task, "irrigation_decision_strategy", "") or "").strip() != ""
+            and isinstance(getattr(task, "irrigation_decision_config", None), Mapping)
+        )
+        if has_persisted_snapshot:
+            if emit_observability:
+                await self._emit_irrigation_decision_snapshot_locked(
+                    task=task,
+                    snapshot=snapshot,
+                    strategy=str(getattr(task, "irrigation_decision_strategy", "") or "").strip().lower() or None,
+                    bundle_revision=str(getattr(task, "irrigation_bundle_revision", "") or "").strip() or None,
+                    config_mapping=dict(getattr(task, "irrigation_decision_config", {}) or {}),
+                )
+            return task
+
+        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), Mapping) else {}
+        decision = runtime.get("irrigation_decision")
+        decision_mapping = dict(decision) if isinstance(decision, Mapping) else {}
+        strategy = str(decision_mapping.get("strategy") or "").strip().lower()
+        config = decision_mapping.get("config")
+        config_mapping = dict(config) if isinstance(config, Mapping) else {}
+        bundle_revision = str(getattr(snapshot, "bundle_revision", "") or "").strip() or None
+
+        if strategy == "" and config_mapping == {} and bundle_revision is None:
+            return task
+
+        updated = await self._task_repository.update_irrigation_runtime(
+            task_id=int(getattr(task, "id", 0) or 0),
+            owner=owner,
+            now=now,
+            irrigation_decision_strategy=strategy or None,
+            irrigation_decision_config=config_mapping or None,
+            irrigation_bundle_revision=bundle_revision,
+        )
+        if updated is None:
+            raise TaskExecutionError(
+                "irrigation_decision_snapshot_persist_failed",
+                f"Unable to persist irrigation decision snapshot for task {getattr(task, 'id', None)}",
+            )
+
+        await self._emit_irrigation_decision_snapshot_locked(
+            task=updated,
+            snapshot=snapshot,
+            strategy=strategy or None,
+            bundle_revision=bundle_revision,
+            config_mapping=config_mapping,
+        )
+        return updated
+
+    async def _emit_irrigation_decision_snapshot_locked(
+        self,
+        *,
+        task: Any,
+        snapshot: Any,
+        strategy: str | None,
+        bundle_revision: str | None,
+        config_mapping: Mapping[str, Any] | None,
+    ) -> None:
+        details = {
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "zone_id": int(getattr(task, "zone_id", 0) or 0),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
+            "strategy": strategy,
+            "bundle_revision": bundle_revision,
+            "config": dict(config_mapping) if isinstance(config_mapping, Mapping) and dict(config_mapping) else None,
+            "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
+            "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
+        }
+        details = {key: value for key, value in details.items() if value is not None}
+
+        try:
+            await create_zone_event(
+                int(getattr(task, "zone_id", 0) or 0),
+                "IRRIGATION_DECISION_SNAPSHOT_LOCKED",
+                details,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 failed to log IRRIGATION_DECISION_SNAPSHOT_LOCKED zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+
+        send_service_log(
+            service="automation-engine",
+            level="info",
+            message="AE3 irrigation decision snapshot locked",
+            context=details,
+        )
+
     def _emit_start_readiness_failed(
         self,
         *,
@@ -564,6 +677,7 @@ class ExecuteTaskUseCase:
             "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
             "intent_trigger": str(getattr(task, "intent_trigger", "") or "") or None,
             "automation_runtime": str(getattr(snapshot, "automation_runtime", "") or ""),
+            "bundle_revision": str(getattr(snapshot, "bundle_revision", "") or "") or None,
             "grow_cycle_id": int(getattr(snapshot, "grow_cycle_id", 0) or 0) or None,
             "current_phase_id": int(getattr(snapshot, "current_phase_id", 0) or 0) or None,
             "phase_name": str(getattr(snapshot, "phase_name", "") or "") or None,
@@ -583,6 +697,8 @@ class ExecuteTaskUseCase:
                 if isinstance(correction_meta, Mapping)
                 else None
             ),
+            "irrigation_decision_strategy": str(getattr(task, "irrigation_decision_strategy", "") or "") or None,
+            "irrigation_bundle_revision": str(getattr(task, "irrigation_bundle_revision", "") or "") or None,
         }
         return {key: value for key, value in details.items() if value is not None}
 

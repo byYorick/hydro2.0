@@ -195,6 +195,12 @@ const ALERT_CODE_MAP: Record<string, AlertCodeMeta> = {
     recommendation: 'Проверьте дозирующие каналы и параметры рецепта EC/pH.',
     severity: 'warning',
   },
+  biz_irrigation_decision_fail: {
+    title: 'Decision-controller полива завершился ошибкой',
+    description: 'AE3 остановил запуск полива на этапе принятия решения.',
+    recommendation: 'Проверьте strategy/reason_code в деталях алерта и конфигурацию automation profile зоны.',
+    severity: 'error',
+  },
 }
 
 function normalizeCode(code?: string): string {

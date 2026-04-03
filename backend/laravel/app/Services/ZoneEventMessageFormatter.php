@@ -74,6 +74,7 @@ class ZoneEventMessageFormatter
             'PUMP_CALIBRATION_RUN_SKIPPED' => $this->formatPumpCalibrationRunSkipped($payload),
             'PROCESS_CALIBRATION_SAVED' => $this->formatProcessCalibrationSaved($payload),
             'IRR_STATE_SNAPSHOT' => $this->formatIrrStateSnapshot($payload),
+            'IRRIGATION_DECISION_SNAPSHOT_LOCKED' => $this->formatIrrigationDecisionSnapshotLocked($payload),
             'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
             'AE_STARTUP_PROBE_TIMEOUT' => $this->formatAeStartupProbeTimeout($payload),
             'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
@@ -201,6 +202,21 @@ class ZoneEventMessageFormatter
         $suffix = $parts !== [] ? ' ('.implode(', ', $parts).')' : '';
 
         return "Создан алерт {$code}{$suffix}";
+    }
+
+    private function formatIrrigationDecisionSnapshotLocked(array $details): string
+    {
+        $strategy = $this->toStringOrNull($details['strategy'] ?? null) ?? 'task'
+        $bundleRevision = $this->toStringOrNull($details['bundle_revision'] ?? null);
+        if ($bundleRevision !== null) {
+            return sprintf(
+                'Снимок decision-controller полива зафиксирован: %s (%s)',
+                $strategy,
+                substr($bundleRevision, 0, 12)
+            );
+        }
+
+        return sprintf('Снимок decision-controller полива зафиксирован: %s', $strategy);
     }
 
     private function formatAlertUpdated(array $details): string

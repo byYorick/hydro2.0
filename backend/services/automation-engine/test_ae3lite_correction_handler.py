@@ -2162,8 +2162,8 @@ async def test_corr_check_fails_when_pid_state_persist_fails() -> None:
 # Attempt reset on reaction / accumulation on no-reaction
 # ---------------------------------------------------------------------------
 
-async def test_corr_wait_ec_reaction_detected_resets_all_attempt_counters():
-    """После дозы EC с измеримой реакцией все счётчики попыток должны сброситься в 0.
+async def test_corr_wait_ec_solution_fill_reaction_detected_resets_all_attempt_counters():
+    """В solution_fill после дозы EC с измеримой реакцией счётчики сбрасываются в 0.
 
     Это позволяет циклу коррекции работать неограниченно долго, пока дозирующее
     оборудование даёт отклик. Счётчик no_effect_count (отдельный) накапливается
@@ -2206,6 +2206,90 @@ async def test_corr_wait_ec_reaction_detected_resets_all_attempt_counters():
     assert c.attempt == 0     # сброшен
     assert c.ec_attempt == 0  # сброшен
     assert c.ph_attempt == 0  # сброшен
+
+
+async def test_corr_wait_ec_prepare_recirc_reaction_preserves_attempt_counters_and_next_check_exhausts():
+    class _PlannerNeedsEcOnly:
+        def is_within_tolerance(self, **kwargs):
+            return False
+
+        def build_dose_plan(self, **kwargs):
+            return DosePlan(
+                needs_ec=True,
+                ec_node_uid="ec-node",
+                ec_channel="ec_pump",
+                ec_amount_ml=2.0,
+                ec_duration_ms=1000,
+            )
+
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=1,
+        max_attempts=5,
+        ec_attempt=1,
+        ec_max_attempts=1,
+        ph_attempt=0,
+        ph_max_attempts=1,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 0,
+        }
+    }
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_retry_count=2,
+    )
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=1.4,
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+            {"ts": NOW - timedelta(seconds=2), "value": 1.4},
+            {"ts": NOW, "value": 1.45},
+        ],
+    )
+    handler = _make_handler(
+        monitor=monitor,
+        pid_repo=_MockPidStateRepository(),
+        planner=_PlannerNeedsEcOnly(),
+    )
+
+    observe_outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert observe_outcome.kind == "enter_correction"
+    assert observe_outcome.correction is not None
+    assert observe_outcome.correction.corr_step == "corr_check"
+    assert observe_outcome.correction.attempt == 1
+    assert observe_outcome.correction.ec_attempt == 1
+    assert observe_outcome.correction.ph_attempt == 0
+
+    check_outcome = await handler.run(
+        task=_make_task(
+            corr=observe_outcome.correction,
+            current_stage="prepare_recirculation_check",
+            workflow_phase="tank_recirc",
+            stage_retry_count=2,
+        ),
+        plan=_MockPlan(runtime=runtime),
+        stage_def=None,
+        now=NOW,
+    )
+
+    assert check_outcome.kind == "transition"
+    assert check_outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert check_outcome.stage_retry_count == 3
 
 
 async def test_corr_wait_ec_no_reaction_increments_attempt_counter():

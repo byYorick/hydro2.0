@@ -126,6 +126,11 @@ class CreateTaskFromIntentUseCase:
                     source=source,
                     intent_row=intent_row,
                 )
+                irrigation_snapshot = await self._resolve_irrigation_decision_snapshot(
+                    zone_id=zone_id,
+                    meta=meta,
+                    conn=conn,
+                )
                 created_task = await self._task_repository.create_pending(
                     zone_id=zone_id,
                     idempotency_key=normalized_key,
@@ -142,6 +147,9 @@ class CreateTaskFromIntentUseCase:
                     now=now,
                     irrigation_mode=meta.irrigation_mode,
                     irrigation_requested_duration_sec=meta.irrigation_requested_duration_sec,
+                    irrigation_decision_strategy=irrigation_snapshot.get("irrigation_decision_strategy"),
+                    irrigation_decision_config=irrigation_snapshot.get("irrigation_decision_config"),
+                    irrigation_bundle_revision=irrigation_snapshot.get("irrigation_bundle_revision"),
                     conn=conn,
                 )
                 if created_task is not None:
@@ -173,6 +181,100 @@ class CreateTaskFromIntentUseCase:
         else:
             alert = await finder(zone_id=zone_id, codes=self.HARD_BLOCKING_ALERT_CODES)
         return dict(alert) if isinstance(alert, Mapping) else None
+
+    async def _resolve_irrigation_decision_snapshot(
+        self,
+        *,
+        zone_id: int,
+        meta: Any,
+        conn: Any,
+    ) -> dict[str, Any]:
+        if str(getattr(meta, "task_type", "") or "").strip().lower() != "irrigation_start":
+            return {}
+
+        grow_cycle_row = await conn.fetchrow(
+            """
+            SELECT
+                gc.id AS grow_cycle_id,
+                gc.settings AS cycle_settings
+            FROM grow_cycles gc
+            WHERE gc.zone_id = $1
+              AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
+            ORDER BY
+                CASE gc.status
+                    WHEN 'RUNNING' THEN 0
+                    WHEN 'PAUSED' THEN 1
+                    ELSE 2
+                END,
+                gc.updated_at DESC,
+                gc.id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+        if grow_cycle_row is None:
+            return {}
+
+        cycle_settings = grow_cycle_row.get("cycle_settings")
+        cycle_settings = cycle_settings if isinstance(cycle_settings, Mapping) else {}
+        expected_bundle_revision = str(cycle_settings.get("bundle_revision") or "").strip()
+        grow_cycle_id = int(grow_cycle_row.get("grow_cycle_id") or 0)
+        if grow_cycle_id <= 0:
+            return {}
+
+        bundle_row = await conn.fetchrow(
+            """
+            SELECT bundle_revision, config
+            FROM automation_effective_bundles
+            WHERE scope_type = 'grow_cycle'
+              AND scope_id = $1
+            LIMIT 1
+            """,
+            grow_cycle_id,
+        )
+        if bundle_row is None:
+            return {}
+
+        actual_bundle_revision = str(bundle_row.get("bundle_revision") or "").strip()
+        if expected_bundle_revision and actual_bundle_revision and expected_bundle_revision != actual_bundle_revision:
+            return {}
+
+        bundle_config = bundle_row.get("config")
+        if not isinstance(bundle_config, Mapping):
+            return {}
+
+        zone_bundle = bundle_config.get("zone")
+        if not isinstance(zone_bundle, Mapping):
+            return {}
+
+        logic_profile = zone_bundle.get("logic_profile")
+        if not isinstance(logic_profile, Mapping):
+            return {}
+
+        active_profile = logic_profile.get("active_profile")
+        if not isinstance(active_profile, Mapping):
+            return {}
+
+        subsystems = active_profile.get("subsystems")
+        if not isinstance(subsystems, Mapping):
+            return {}
+
+        irrigation = subsystems.get("irrigation")
+        if not isinstance(irrigation, Mapping):
+            return {}
+
+        decision = irrigation.get("decision")
+        if not isinstance(decision, Mapping):
+            return {}
+
+        strategy = str(decision.get("strategy") or "task").strip().lower() or "task"
+        config = decision.get("config")
+        config_mapping = dict(config) if isinstance(config, Mapping) else {}
+        return {
+            "irrigation_decision_strategy": strategy,
+            "irrigation_decision_config": config_mapping or None,
+            "irrigation_bundle_revision": actual_bundle_revision or expected_bundle_revision or None,
+        }
 
     def _normalize_utc(self, value: datetime) -> datetime:
         if value.tzinfo is None:
