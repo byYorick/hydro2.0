@@ -265,6 +265,10 @@ interface IrrigationTarget {
   duration_sec?: number;      // Длительность полива (сек)
   volume_ml?: number;         // Объем полива (мл)
 
+  // Примечание (AE3-Lite): `volume_ml` в effective targets остаётся доменным полем;
+  // автоматический перевод «мл → длительность насоса» в runtime AE3-Lite не реализован
+  // (используйте `duration_sec` и калибровки насоса; см. также Laravel scheduler payload `duration_sec`).
+
   // Для режима SUBSTRATE (по влажности субстрата)
   soil_moisture_min?: number;  // Минимальная влажность (%)
   soil_moisture_max?: number;  // Максимальная влажность (%)

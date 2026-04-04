@@ -107,6 +107,7 @@ Breaking-change: обратная совместимость со старыми
 - `06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` — спецификация effective-targets для контроллеров
 - `06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md` — зоны и пресеты культур
 - `06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md` — планировщик
+- `06_DOMAIN_ZONES_RECIPES/SCHEDULER_AE3_NON_IRRIGATION_DISPATCH_TBD.md` — черновик ТЗ: dispatch не-полива для AE3 (C1)
 - `06_DOMAIN_ZONES_RECIPES/EVENTS_AND_ALERTS_ENGINE.md` — события и алерты
 
 **См. также:** [README](06_DOMAIN_ZONES_RECIPES/README.md)

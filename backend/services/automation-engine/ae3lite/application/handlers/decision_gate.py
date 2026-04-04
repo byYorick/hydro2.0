@@ -16,6 +16,12 @@ from common.biz_alerts import send_biz_alert
 _logger = logging.getLogger(__name__)
 
 
+def _irrigation_decision_alert_dedupe_key(*, outcome: str, zone_id: int, reason_code: str) -> str:
+    """Стабильный dedupe_key без task_id, чтобы Laravel/alert ingest не плодил дубли на частых skip/degraded."""
+    rc = str(reason_code or "").strip() or "unknown"
+    return f"ae3_irrigation_decision|{outcome}|z{int(zone_id)}|{rc}"
+
+
 class DecisionGateHandler(BaseStageHandler):
     def __init__(self, *, runtime_monitor: Any, command_gateway: Any, task_repository: Any, decision_controller: Any) -> None:
         super().__init__(runtime_monitor=runtime_monitor, command_gateway=command_gateway)
@@ -67,6 +73,11 @@ class DecisionGateHandler(BaseStageHandler):
                     message="Irrigation decision-controller decided to skip irrigation.",
                     severity="info",
                     zone_id=int(task.zone_id),
+                    dedupe_key=_irrigation_decision_alert_dedupe_key(
+                        outcome="skip",
+                        zone_id=int(task.zone_id),
+                        reason_code=str(getattr(decision, "reason_code", "") or ""),
+                    ),
                     details={
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "topology": str(getattr(task, "topology", "") or ""),
@@ -85,6 +96,11 @@ class DecisionGateHandler(BaseStageHandler):
                     message="Irrigation decision-controller allowed degraded irrigation run.",
                     severity="warning",
                     zone_id=int(task.zone_id),
+                    dedupe_key=_irrigation_decision_alert_dedupe_key(
+                        outcome="degraded_run",
+                        zone_id=int(task.zone_id),
+                        reason_code=str(getattr(decision, "reason_code", "") or ""),
+                    ),
                     details={
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "topology": str(getattr(task, "topology", "") or ""),
@@ -103,6 +119,11 @@ class DecisionGateHandler(BaseStageHandler):
                     message="Irrigation decision-controller returned fail.",
                     severity="error",
                     zone_id=int(task.zone_id),
+                    dedupe_key=_irrigation_decision_alert_dedupe_key(
+                        outcome="fail",
+                        zone_id=int(task.zone_id),
+                        reason_code=str(getattr(decision, "reason_code", "") or ""),
+                    ),
                     details={
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "topology": str(getattr(task, "topology", "") or ""),

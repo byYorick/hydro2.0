@@ -106,6 +106,26 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
       })
     }
 
+    const runtime = String(workspace.value?.control?.automation_runtime ?? '').trim().toLowerCase()
+    if (runtime === 'ae3') {
+      const caps = workspace.value?.capabilities
+      const nonExecRaw = caps?.non_executable_planned_task_types
+      const hasTypedList = Array.isArray(nonExecRaw)
+      const nonExec = hasTypedList ? nonExecRaw : []
+      const showLimit = (hasTypedList && nonExec.length > 0) || (!hasTypedList && configOnlyLanes.value.length > 0)
+
+      if (showLimit) {
+        const typesHint = nonExec.length > 0 ? nonExec.join(', ') : null
+        items.push({
+          tone: 'warning',
+          title: 'Планировщик Laravel для AE3 запускает только полив',
+          detail: typesHint
+            ? `Не диспатчатся из scheduler: ${typesHint}. Окна в графике отражают конфигурацию effective targets.`
+            : 'Дорожки света, климата и других подсистем в графике показаны по конфигурации, но автоматический dispatch для них из scheduler не выполняется.',
+        })
+      }
+    }
+
     if (executionCounters.value.failed_24h > 0) {
       const latestFailureCode = asNonEmptyString(latestFailure.value?.error_code)
       items.push({
@@ -125,7 +145,7 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
       })
     }
 
-    return items.slice(0, 3)
+    return items.slice(0, 4)
   })
   const condensedTimeline = computed<TimelineDisplayItem[]>(() => collapseTimeline(selectedExecution.value?.timeline ?? []))
 

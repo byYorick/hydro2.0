@@ -264,11 +264,7 @@ class ScheduleWorkspaceService
         )));
         $plannedTaskTypes = array_values(array_filter($plannedTaskTypes, static fn (string $value): bool => $value !== ''));
 
-        return [
-            'executable_task_types' => $zone->automation_runtime === 'ae3' ? ['irrigation'] : $plannedTaskTypes,
-            'planned_task_types' => $plannedTaskTypes,
-            'diagnostics_available' => true,
-        ];
+        return ScheduleWorkspaceCapabilities::build($zone, $plannedTaskTypes);
     }
 
     /**

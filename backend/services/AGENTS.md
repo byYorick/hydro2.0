@@ -1,7 +1,7 @@
 # AGENTS.md
 # Правила для ИИ-агентов (backend/services)
 
-**Дата обновления:** 2026-03-30
+**Дата обновления:** 2026-04-04
 **Область:** `backend/services/*`
 
 ## 1) Общие правила
@@ -16,7 +16,7 @@
 - `laravel` scheduler-dispatch:
   - формирует расписания;
   - пишет intent в БД (`zone_automation_intents`);
-  - будит `automation-engine` только через `POST /zones/{id}/start-cycle`;
+  - будит `automation-engine`: для **полива** — `POST /zones/{id}/start-irrigation`; для остальных типов расписаний (если dispatch включён для runtime зоны) — `POST /zones/{id}/start-cycle`;
   - отслеживает lifecycle intents (`pending/claimed/running/completed/failed/cancelled`).
 - `automation-engine`:
   - подхватывает intents из БД и исполняет workflow зоны;
@@ -27,7 +27,7 @@
 
 ## 3) Контракты и совместимость
 
-- Runtime-контракт запуска цикла: только `POST /zones/{id}/start-cycle`.
+- Runtime-контракт: `POST /zones/{id}/start-cycle` (диагностика / cycle_start); отдельно штатный полив по расписанию — `POST /zones/{id}/start-irrigation` (см. `doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md`).
 - Runtime источник данных AE3: direct SQL read-model (PostgreSQL), без runtime-зависимости от Laravel effective-targets API.
 - Для intent lifecycle использовать контракт из:
   - `doc_ai/04_BACKEND_CORE/ae3lite.md`

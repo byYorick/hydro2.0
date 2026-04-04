@@ -11,7 +11,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 - сопоставить **расписания полива/света/климата** из рецепта и фаз зоны с моментами запуска;
 - создать **намерения (intents)** автоматизации в PostgreSQL;
-- **разбудить** `automation-engine` только через канонический вызов `POST /zones/{id}/start-cycle`;
+- **разбудить** `automation-engine` HTTP-вызовом к совместимому endpoint (см. §2);
 - отследить lifecycle задач в таблицах scheduler-dispatch (например `laravel_scheduler_active_tasks`, `zone_automation_intents`).
 
 Исполнение workflow зоны (команды на узлы, ожидание терминальных статусов, коррекции) остаётся в **automation-engine** и **history-logger** — см. `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `doc_ai/04_BACKEND_CORE/ae3lite.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
@@ -23,9 +23,16 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 ```
 Laravel (cron / schedule:work / automation:dispatch-schedules)
   → запись intent + dispatch state в БД
-  → POST /zones/{id}/start-cycle → automation-engine
+  → POST к automation-engine (endpoint зависит от типа задачи — см. ниже)
   → … → history-logger → MQTT → ESP32
 ```
+
+**Wake-up endpoint по типу задачи (фактическая реализация Laravel `ScheduleDispatcher`):**
+
+| Тип расписания (`task_type`) | HTTP endpoint AE3 | Примечание |
+|------------------------------|-------------------|------------|
+| `irrigation` | `POST /zones/{id}/start-irrigation` | intent/task `irrigation_start`, опционально `requested_duration_sec` из payload расписания |
+| прочие (`lighting`, `climate`, …) | `POST /zones/{id}/start-cycle` | diagnostics / cycle_start; на зонах с `automation_runtime=ae3` dispatch этих типов **не выполняется** планировщиком (поддерживается только полив) |
 
 - Публикация команд в MQTT **только** через history-logger.
 - HTTP-транспорт `POST /scheduler/task` и `GET /scheduler/task/{task_id}` **удалён** из runtime.
@@ -37,6 +44,7 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 - Конфигурация и флаги cutover: переменные `AUTOMATION_LARAVEL_SCHEDULER_*`, синхронизация токенов с `automation-engine` (см. `doc_ai/08_SECURITY_AND_OPS/RUNBOOKS.md`, раздел про планировщик).
 - Метрики dispatch: при необходимости — публичный endpoint Laravel `GET /api/system/scheduler/metrics` (см. `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`).
 - UI оператора: schedule workspace и timeline строятся из канонического состояния автоматизации, а не из удалённого Python task API.
+- Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1).
 
 ---
 

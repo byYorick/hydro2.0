@@ -600,9 +600,9 @@ actions:
         updated_at
       )
       VALUES
-        (CAST(:ec_pump_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
-        (CAST(:ph_up_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
-        (CAST(:ph_down_channel_id AS bigint), 10.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
+        (CAST(:ec_pump_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, 'e2e_realhw_setup_ready', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
     params:
       ec_pump_channel_id: ${ec_pump_channel_id}
       ph_up_channel_id: ${ph_up_channel_id}

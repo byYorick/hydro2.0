@@ -68,11 +68,17 @@ class ZoneScheduleItemBuilder
     ): array {
         $schedules = [];
 
+        $taskPayload = $taskType === 'irrigation' ? $this->irrigationSchedulePayload($config) : [];
+
         foreach (ScheduleSpecHelper::extractTimeSpecs($scheduleSpec) as $timeSpec) {
             $schedules[] = new ScheduleItem(
                 zoneId: $zoneId,
                 taskType: $taskType,
                 time: $timeSpec,
+                startTime: null,
+                endTime: null,
+                intervalSec: 0,
+                payload: $taskPayload,
             );
         }
 
@@ -84,6 +90,7 @@ class ZoneScheduleItemBuilder
                 zoneId: $zoneId,
                 taskType: $taskType,
                 intervalSec: $intervalSec,
+                payload: $taskPayload,
             );
         }
 
@@ -120,6 +127,23 @@ class ZoneScheduleItemBuilder
         }
 
         return true;
+    }
+
+    /**
+     * Payload для dispatch полива: `duration_sec` из effective targets передаётся в `ScheduleDispatcher`
+     * как `requested_duration_sec` в `POST .../start-irrigation` (если задано положительное число).
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function irrigationSchedulePayload(array $config): array
+    {
+        $durationSec = ScheduleSpecHelper::safePositiveInt($config['duration_sec'] ?? null);
+        if ($durationSec > 0) {
+            return ['duration_sec' => $durationSec];
+        }
+
+        return [];
     }
 
     /**

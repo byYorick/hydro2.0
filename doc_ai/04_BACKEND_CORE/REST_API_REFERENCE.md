@@ -136,7 +136,8 @@ Breaking-change: обратная совместимость со старыми
 - `execution.active_run` / `recent_runs[]` для irrigation могут содержать locked decision snapshot (`decision_strategy`, `decision_config`, `decision_bundle_revision`) текущего task;
 - `execution.counters.failed_24h` и `execution.latest_failure` учитывают failed/cancelled `zone_automation_intents`, если для них не было `ae_task`;
 - `horizon` принимает только `24h` и `7d`, остальные значения приводятся к `24h`;
-- `capabilities.executable_task_types` честно отражает runtime-ready lanes; в canonical v1 это `irrigation`.
+- `capabilities.executable_task_types` честно отражает runtime-ready lanes; в canonical v1 для AE3 это `irrigation`;
+- `capabilities.ae3_irrigation_only_dispatch` и `capabilities.non_executable_planned_task_types` объясняют, какие окна плана не получают Laravel dispatch при AE3.
 
 Контракт `GET /api/zones/{id}/executions/{executionId}`:
 - `executionId` принимает только numeric `ae_tasks.id`;

@@ -10,6 +10,10 @@ export interface ScheduleWorkspaceControl {
 export interface ScheduleWorkspaceCapabilities {
   executable_task_types: string[]
   planned_task_types: string[]
+  /** true, если зона на AE3: Laravel scheduler диспатчит только полив */
+  ae3_irrigation_only_dispatch?: boolean
+  /** Типы окон в плане, для которых нет автоматического dispatch при текущем runtime */
+  non_executable_planned_task_types?: string[]
   diagnostics_available: boolean
 }
 

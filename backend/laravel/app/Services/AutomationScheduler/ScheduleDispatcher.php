@@ -43,7 +43,7 @@ class ScheduleDispatcher
             ];
         }
 
-        if (! $this->supportsAe3StartCycleTaskType($zoneId, $taskType)) {
+        if (! $this->isSchedulerTaskTypeDispatchableForAe3($zoneId, $taskType)) {
             $writeLog(
                 SchedulerRuntimeHelper::scheduleTaskLogName($zoneId, $taskType),
                 'skipped',
@@ -551,7 +551,11 @@ class ScheduleDispatcher
         return in_array($status, SchedulerConstants::TERMINAL_STATUSES, true);
     }
 
-    private function supportsAe3StartCycleTaskType(int $zoneId, string $taskType): bool
+    /**
+     * AE3: Laravel scheduler диспатчит только задачи полива; остальные типы расписаний пропускаются
+     * (см. doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md).
+     */
+    private function isSchedulerTaskTypeDispatchableForAe3(int $zoneId, string $taskType): bool
     {
         $automationRuntime = $this->resolveAutomationRuntime($zoneId, 'laravel scheduler dispatch');
         if ($automationRuntime !== 'ae3') {

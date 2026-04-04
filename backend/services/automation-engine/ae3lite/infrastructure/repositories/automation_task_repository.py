@@ -530,7 +530,7 @@ class PgAutomationTaskRepository:
                 updated_at = $40
             WHERE id = $1
               AND claimed_by = $2
-              AND status IN ('claimed', 'running')
+              AND status IN ('claimed', 'running', 'waiting_command')
             RETURNING *
             """,
             task_id,
