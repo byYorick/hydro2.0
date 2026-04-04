@@ -82,6 +82,8 @@ light = telemetry_last["LIGHT"]
 - активные алерты
 - ограничения безопасности (cooldown, max doses)
 
+**AE3-Lite (полив):** для задач `irrigation_start` в runtime плана используется **`zone_workflow_phase`** — это то же значение, что **`workflow_phase`** в read-model snapshot (SQL: `COALESCE(zone_workflow_state.workflow_phase, 'idle')`). Оно попадает в `plan.runtime["zone_workflow_phase"]` в `CycleStartPlanner` и читается стадией **`await_ready`**. После успешного завершения подготовительного workflow (например, `cycle_start`) `WorkflowRouter` приводит `zone_workflow_state` к фазе **`ready`**; пока в snapshot не `ready`, **`await_ready`** только опрашивает состояние (poll) в пределах дедлайна. Так согласуются «запуск цикла / подготовка ёмкостей» и фактический вход в решения по поливу (`decision_gate`).
+
 ---
 
 ## 2.3. Controllers Loop (каждые 5–10 сек)

@@ -410,8 +410,15 @@ scenario_db_metrics_since_epoch() {
   db_query_line "
     SELECT 'alerts_open_total=' || COUNT(*)
     FROM alerts
-    WHERE UPPER(COALESCE(status, '')) = 'ACTIVE'
-       OR LOWER(COALESCE(status, '')) = 'open';
+    WHERE (UPPER(COALESCE(status, '')) = 'ACTIVE'
+       OR LOWER(COALESCE(status, '')) = 'open')
+      AND LOWER(COALESCE(severity, '')) <> 'info';
+
+    SELECT 'alerts_info_total=' || COUNT(*)
+    FROM alerts
+    WHERE (UPPER(COALESCE(status, '')) = 'ACTIVE'
+       OR LOWER(COALESCE(status, '')) = 'open')
+      AND LOWER(COALESCE(severity, '')) = 'info';
   " || true
 }
 
@@ -1291,6 +1298,24 @@ prepare_real_hardware_node() {
       AND code IN (
         'biz_zone_correction_config_missing',
         'biz_zone_dosing_calibration_missing',
+        'biz_solution_fill_timeout',
+        'biz_prepare_recirculation_retry_exhausted',
+        'biz_ae3_task_failed',
+        'biz_correction_exhausted',
+        'biz_irrigation_correction_exhausted',
+        'biz_irrigation_decision_skip'
+      );
+  " >/dev/null
+
+  echo "🧹 Удаляю orphan AE3 alerts от удалённых временных зон..."
+  db_query_line "
+    DELETE FROM alerts
+    WHERE zone_id IS NULL
+      AND COALESCE(details->>'zone_validation', '') = 'zone_not_found'
+      AND code IN (
+        'biz_zone_correction_config_missing',
+        'biz_zone_dosing_calibration_missing',
+        'biz_solution_fill_timeout',
         'biz_prepare_recirculation_retry_exhausted',
         'biz_ae3_task_failed',
         'biz_correction_exhausted',

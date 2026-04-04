@@ -69,6 +69,27 @@ class LegacyIntentMapper:
                 requested_duration_sec = None
 
         is_irrigation = requested_task_type == "irrigation_start" or intent_type in {"irrigate_once", "irrigation"}
+        is_lighting_tick = requested_task_type == "lighting_tick" or intent_type in {"lighting_tick", "lighting"}
+
+        if is_lighting_tick:
+            return IntentMetadata(
+                task_type="lighting_tick",
+                current_stage="apply",
+                workflow_phase="ready",
+                topology="lighting_tick",
+                intent_source=str(source or "").strip() or "laravel_scheduler",
+                intent_trigger=intent_type or self.DEFAULT_TRIGGER,
+                intent_id=intent_id,
+                intent_meta={
+                    "intent_type": intent_type,
+                    "intent_retry_count": int(intent_row.get("retry_count") or 0),
+                    "intent_zone_id": (lambda v: int(v) if v is not None else None)(intent_row.get("zone_id")),
+                    "intent_payload": intent_payload,
+                },
+                irrigation_mode=None,
+                irrigation_requested_duration_sec=None,
+            )
+
         task_type = "irrigation_start" if is_irrigation else "cycle_start"
         current_stage = "await_ready" if is_irrigation else "startup"
         workflow_phase = "ready" if is_irrigation else "idle"

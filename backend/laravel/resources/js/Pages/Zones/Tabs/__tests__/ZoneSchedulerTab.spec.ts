@@ -171,15 +171,17 @@ function buildWorkspaceResponse(overrides: Record<string, unknown> = {}) {
           generated_at: '2026-02-10T08:00:30Z',
         },
         capabilities: {
-          executable_task_types: ['irrigation'],
+          executable_task_types: ['irrigation', 'lighting'],
           planned_task_types: ['irrigation', 'lighting'],
+          non_executable_planned_task_types: [],
+          ae3_irrigation_only_dispatch: true,
           diagnostics_available: true,
         },
         plan: {
           horizon: '24h',
           lanes: [
             { task_type: 'irrigation', label: 'Полив', mode: 'interval', executable: true },
-            { task_type: 'lighting', label: 'Свет', mode: 'schedule', executable: false },
+            { task_type: 'lighting', label: 'Свет', mode: 'schedule', executable: true },
           ],
           windows: [
             {
@@ -193,9 +195,20 @@ function buildWorkspaceResponse(overrides: Record<string, unknown> = {}) {
               state: 'planned',
               mode: 'interval',
             },
+            {
+              plan_window_id: 'pw-2',
+              zone_id: 42,
+              task_type: 'lighting',
+              label: 'Свет',
+              schedule_key: 'zone:42|type:lighting|photoperiod',
+              trigger_at: '2026-02-10T10:00:00Z',
+              origin: 'effective_targets',
+              state: 'planned',
+              mode: 'schedule',
+            },
           ],
           summary: {
-            planned_total: 1,
+            planned_total: 2,
             suppressed_total: 0,
             missed_total: 0,
           },

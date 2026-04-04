@@ -228,6 +228,7 @@ class TestSuite:
                 str(base_path / "scheduler" / "E81_water_change_schedule.yaml"),
                 str(base_path / "scheduler" / "E82_dry_run_protection.yaml"),
                 str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
+                str(base_path / "scheduler" / "E94_start_lighting_tick_intent_executor_path.yaml"),
             ],
             "ae3lite": ae3lite_contract + ae3lite_realhw,
             "ae3lite_contract": ae3lite_contract,
@@ -248,6 +249,7 @@ class TestSuite:
             ],
             "prod_readiness_realhw": [
                 str(base_path / "scheduler" / "E93_start_cycle_intent_executor_path.yaml"),
+                str(base_path / "scheduler" / "E94_start_lighting_tick_intent_executor_path.yaml"),
                 str(base_path / "automation_engine" / "E66_full_prod_path_zone_recipe_bind_and_run.yaml"),
                 str(base_path / "automation_engine" / "E68_full_prod_path_strict_ec_ph_corrections.yaml"),
                 str(base_path / "workflow" / "E83_clean_water_fill.yaml"),

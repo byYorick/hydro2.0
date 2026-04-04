@@ -1,18 +1,20 @@
 # SCHEDULER_AE3_NON_IRRIGATION_DISPATCH_TBD.md
 # Будущий dispatch света/климата/пр. для AE3 (C1) — черновик ТЗ
 
-**Статус:** черновик для реализации (не в runtime).  
-**Связано с:** `SCHEDULER_ENGINE.md`, `ScheduleDispatcher.php`, `ae3lite` API.
+**Статус:** реализовано для **lighting** (C1): Laravel scheduler → `POST .../start-lighting-tick` → AE3 task `lighting_tick` → history-logger → MQTT. Климат/прочие типы по-прежнему вне dispatch.  
+**Связано с:** `SCHEDULER_ENGINE.md`, `ScheduleDispatcher.php`, `ae3lite.md`.
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
 
 ---
 
-## 1. Проблема
+## 1. Проблема (историческая / остаточная)
 
-При `zones.automation_runtime = 'ae3'` Laravel `automation:dispatch-schedules` вызывает `POST .../start-irrigation` только для задач типа `irrigation`. Расписания `lighting`, `climate`, `mist` и т.д. **не диспатчатся** (`isSchedulerTaskTypeDispatchableForAe3`).
+Ранее при `zones.automation_runtime = 'ae3'` планировщик диспатчил только **полив** (`start-irrigation`); свет/климат из расписания не запускались автоматически.
 
-План в `schedule-workspace` по-прежнему показывает окна из effective targets; оператор видит предупреждение через `capabilities.non_executable_planned_task_types`.
+**Текущее состояние:** для **lighting** добавлен канонический путь `POST .../start-lighting-tick` → задача `lighting_tick` (C1). Расписания **`climate`**, **`mist`**, **`ventilation`** и т.п. на AE3 по-прежнему **не диспатчатся** до появления отдельных compat-endpoint-ов и task type в AE3.
+
+План в `schedule-workspace` показывает окна из effective targets; типы без автодиспатча перечисляются в `capabilities.non_executable_planned_task_types`.
 
 ---
 

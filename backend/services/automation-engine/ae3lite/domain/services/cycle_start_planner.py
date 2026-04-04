@@ -29,6 +29,8 @@ class CycleStartPlanner:
     _CORRECTION_PRECHECK_KEYS = ("ec", "ph_up", "ph_down")
 
     def build(self, *, task: AutomationTask, snapshot: ZoneSnapshot) -> CommandPlan:
+        if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
+            return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:
             raise PlannerConfigurationError(f"Unsupported task_type for CycleStartPlanner: {task.task_type}")
         if task.zone_id != snapshot.zone_id:
@@ -194,6 +196,83 @@ class CycleStartPlanner:
             named_plans=named_plans,
             runtime=runtime,
         )
+
+    def _build_lighting_tick_plan(
+        self,
+        *,
+        task: AutomationTask,
+        snapshot: ZoneSnapshot,
+    ) -> CommandPlan:
+        """Single MQTT command batch for scheduler-driven lighting (AE3 C1)."""
+        if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
+            raise PlannerConfigurationError("lighting_tick requires zone.automation_runtime='ae3'")
+        if task.zone_id != snapshot.zone_id:
+            raise PlannerConfigurationError(
+                f"AutomationTask.zone_id={task.zone_id} does not match ZoneSnapshot.zone_id={snapshot.zone_id}"
+            )
+        actuators = snapshot.actuators
+        if not actuators:
+            raise PlannerConfigurationError(
+                "lighting_tick requires at least one online actuator mapping in zone snapshot",
+            )
+        ref = self._pick_lighting_actuator(actuators)
+        if ref is None:
+            raise PlannerConfigurationError(
+                "lighting_tick: no lighting actuator channel found (e.g. light_main)",
+            )
+
+        targets = snapshot.targets if isinstance(snapshot.targets, Mapping) else {}
+        lighting_targets = targets.get("lighting") if isinstance(targets.get("lighting"), Mapping) else {}
+        duty = self._resolve_lighting_pwm_duty(lighting_targets)
+        cmd, params = self._lighting_cmd_for_channel(channel=str(ref.channel or "").strip().lower(), duty=duty)
+        planned = PlannedCommand(
+            step_no=1,
+            node_uid=ref.node_uid,
+            channel=ref.channel,
+            payload={
+                "name": "lighting_tick",
+                "cmd": cmd,
+                "params": params,
+                "complete_on_ack": True,
+            },
+        )
+        wf_phase = str(getattr(snapshot, "workflow_phase", "") or "idle").strip().lower()
+        return CommandPlan(
+            task_type=task.task_type,
+            workflow="lighting_tick",
+            topology="lighting_tick",
+            steps=(planned,),
+            targets=dict(targets),
+            named_plans={},
+            runtime={"zone_workflow_phase": wf_phase},
+        )
+
+    def _pick_lighting_actuator(self, actuators: Sequence[ZoneActuatorRef]) -> ZoneActuatorRef | None:
+        preferred = ("light_main", "main_light", "pwm_light", "light_pwm")
+        for name in preferred:
+            for a in actuators:
+                if str(a.channel or "").strip().lower() == name:
+                    return a
+        for a in actuators:
+            ch = str(a.channel or "").strip().lower()
+            if "light" in ch:
+                return a
+        return None
+
+    def _resolve_lighting_pwm_duty(self, lighting_targets: Mapping[str, Any]) -> int:
+        raw = lighting_targets.get("pwm_duty") if isinstance(lighting_targets, Mapping) else None
+        if raw is None:
+            raw = lighting_targets.get("brightness_pct") if isinstance(lighting_targets, Mapping) else None
+        try:
+            v = int(float(raw))
+        except (TypeError, ValueError):
+            return 100
+        return max(0, min(100, v))
+
+    def _lighting_cmd_for_channel(self, *, channel: str, duty: int) -> tuple[str, dict[str, Any]]:
+        if "pwm" in channel or channel in {"light_main", "main_light"}:
+            return "set_pwm", {"duty": duty}
+        return "set_relay", {"state": True}
 
     def _apply_irrigation_decision_snapshot(
         self,

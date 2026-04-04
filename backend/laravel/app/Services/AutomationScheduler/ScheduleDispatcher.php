@@ -137,6 +137,8 @@ class ScheduleDispatcher
             $requestPayload['requested_duration_sec'] = isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])
                 ? max(1, (int) $payload['duration_sec'])
                 : null;
+        } elseif ($taskType === 'lighting') {
+            $endpoint = '/start-lighting-tick';
         }
 
         try {
@@ -164,15 +166,21 @@ class ScheduleDispatcher
         if (! $response->successful()) {
             $responseBody = $response->json();
             $detail = is_array($responseBody) ? ($responseBody['detail'] ?? null) : null;
+            $terminalIntentErrors = [
+                'start_cycle_intent_terminal',
+                'start_irrigation_intent_terminal',
+                'start_lighting_tick_intent_terminal',
+            ];
             if (
                 $response->status() === 409
                 && is_array($detail)
-                && (($detail['error'] ?? null) === 'start_cycle_intent_terminal')
+                && in_array($detail['error'] ?? null, $terminalIntentErrors, true)
             ) {
+                $err = (string) ($detail['error'] ?? 'start_cycle_intent_terminal');
                 $writeLog($taskName, 'failed', [
                     'zone_id' => $zoneId,
                     'task_type' => $taskType,
-                    'error' => 'start_cycle_intent_terminal',
+                    'error' => $err,
                     'status_code' => $response->status(),
                     'response' => $responseBody,
                     'schedule_key' => $scheduleKey,
@@ -182,7 +190,7 @@ class ScheduleDispatcher
                 return [
                     'dispatched' => false,
                     'retryable' => false,
-                    'reason' => 'start_cycle_intent_terminal',
+                    'reason' => $err,
                 ];
             }
             $writeLog($taskName, 'failed', [
@@ -341,17 +349,30 @@ class ScheduleDispatcher
         try {
             app(AutomationConfigDocumentService::class)->ensureZoneDefaults($zoneId);
 
-            $intentPayload = [
-                'source' => 'laravel_scheduler',
-                'task_type' => $taskType === 'irrigation' ? 'irrigation_start' : $taskType,
-                'workflow' => $taskType === 'irrigation' ? 'irrigation_start' : 'cycle_start',
-                'topology' => app(ZoneAutomationIntentService::class)->resolveAe3TopologyForZone($zoneId),
-            ];
-            if ($taskType === 'irrigation') {
-                $intentPayload['mode'] = 'normal';
-                if (isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
-                    $intentPayload['requested_duration_sec'] = max(1, (int) $payload['duration_sec']);
-                }
+            $topology = app(ZoneAutomationIntentService::class)->resolveAe3TopologyForZone($zoneId);
+            $intentPayload = match ($taskType) {
+                'irrigation' => [
+                    'source' => 'laravel_scheduler',
+                    'task_type' => 'irrigation_start',
+                    'workflow' => 'irrigation_start',
+                    'topology' => $topology,
+                    'mode' => 'normal',
+                ],
+                'lighting' => [
+                    'source' => 'laravel_scheduler',
+                    'task_type' => 'lighting_tick',
+                    'workflow' => 'lighting_tick',
+                    'topology' => 'lighting_tick',
+                ],
+                default => [
+                    'source' => 'laravel_scheduler',
+                    'task_type' => $taskType,
+                    'workflow' => 'cycle_start',
+                    'topology' => $topology,
+                ],
+            };
+            if ($taskType === 'irrigation' && isset($payload['duration_sec']) && is_numeric($payload['duration_sec'])) {
+                $intentPayload['requested_duration_sec'] = max(1, (int) $payload['duration_sec']);
             }
             $intentType = $this->mapTaskTypeToIntentType($taskType);
             $now = SchedulerRuntimeHelper::nowUtc();
@@ -562,7 +583,7 @@ class ScheduleDispatcher
             return true;
         }
 
-        return $taskType === 'irrigation';
+        return in_array($taskType, ['irrigation', 'lighting'], true);
     }
 
     private function parseIsoDateTime(?string $value): ?CarbonImmutable

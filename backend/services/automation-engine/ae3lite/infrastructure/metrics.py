@@ -177,6 +177,31 @@ IRRIGATION_CORRECTION_ENTERED = Counter(
     ["topology"],
 )
 
+IRRIGATION_WAIT_READY_POLL = Counter(
+    "ae3_irrigation_wait_ready_poll_total",
+    "Poll iterations in await_ready while zone_workflow_phase is not ready",
+    ["topology"],
+)
+
+IRRIGATION_WAIT_READY_RESOLVED = Counter(
+    "ae3_irrigation_wait_ready_resolved_total",
+    "Transitions from await_ready to decision_gate (snapshot workflow_phase became ready)",
+    ["topology"],
+)
+
+IRRIGATION_WAIT_READY_TIMEOUT = Counter(
+    "ae3_irrigation_wait_ready_timeout_total",
+    "Failures: irrigation_wait_ready_timeout (deadline exceeded)",
+    ["topology"],
+)
+
+IRRIGATION_WAIT_READY_DURATION_SECONDS = Histogram(
+    "ae3_irrigation_wait_ready_duration_seconds",
+    "Wall time spent in await_ready until transition to decision_gate",
+    ["topology"],
+    buckets=[1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600],
+)
+
 # ─── Active tasks gauge ─────────────────────────────────────────────
 
 ACTIVE_TASKS = Gauge(

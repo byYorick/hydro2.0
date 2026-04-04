@@ -83,6 +83,25 @@ class TestExtractIntentMetadata:
         )
         assert meta.topology == "single_tank"
 
+    def test_lighting_tick_intent_maps_to_lighting_topology_and_task(self, mapper: LegacyIntentMapper) -> None:
+        meta = mapper.extract_intent_metadata(
+            source="laravel_scheduler",
+            intent_row={
+                "id": 5,
+                "zone_id": 1,
+                "intent_type": "LIGHTING_TICK",
+                "payload": {
+                    "source": "laravel_scheduler",
+                    "task_type": "lighting_tick",
+                    "workflow": "lighting_tick",
+                    "topology": "lighting_tick",
+                },
+            },
+        )
+        assert meta.task_type == "lighting_tick"
+        assert meta.topology == "lighting_tick"
+        assert meta.current_stage == "apply"
+
     def test_source_defaults_to_laravel_scheduler(self, mapper: LegacyIntentMapper) -> None:
         meta = mapper.extract_intent_metadata(source="", intent_row=_intent_row())
         assert meta.intent_source == "laravel_scheduler"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest
+from ae3lite.api.contracts import StartCycleRequest, StartIrrigationRequest, StartLightingTickRequest
 from ae3lite.infrastructure.metrics import INTENT_CLAIMED, INTENT_STALE_RECLAIMED, INTENT_TERMINAL
 from common.db import execute, fetch
 
@@ -46,6 +46,23 @@ class PgZoneIntentRepository:
         *,
         zone_id: int,
         req: StartIrrigationRequest,
+        now: datetime,
+        claimed_stale_after_sec: int = 180,
+        running_stale_after_sec: int = 1800,
+    ) -> dict[str, Any]:
+        return await self._claim_by_idempotency_key(
+            zone_id=zone_id,
+            idempotency_key=req.idempotency_key,
+            now=now,
+            claimed_stale_after_sec=claimed_stale_after_sec,
+            running_stale_after_sec=running_stale_after_sec,
+        )
+
+    async def claim_start_lighting_tick(
+        self,
+        *,
+        zone_id: int,
+        req: StartLightingTickRequest,
         now: datetime,
         claimed_stale_after_sec: int = 180,
         running_stale_after_sec: int = 1800,

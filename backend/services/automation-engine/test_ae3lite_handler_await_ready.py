@@ -84,3 +84,50 @@ async def test_await_ready_fails_on_deadline_exceeded() -> None:
     out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
     assert out.kind == "fail"
     assert out.error_code == "irrigation_wait_ready_timeout"
+
+
+@pytest.mark.asyncio
+async def test_await_ready_timeout_emits_zone_event_and_biz_alert(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[int, str, dict | None]] = []
+
+    async def fake_create_zone_event(zone_id: int, event_type: str, details=None):
+        events.append((zone_id, event_type, details))
+
+    alerts: list[dict] = []
+
+    async def fake_send_biz_alert(**kwargs):
+        alerts.append(dict(kwargs))
+        return True
+
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.await_ready.create_zone_event",
+        fake_create_zone_event,
+    )
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.await_ready.send_biz_alert",
+        fake_send_biz_alert,
+    )
+
+    handler = AwaitReadyHandler(runtime_monitor=object(), command_gateway=object(), task_repository=_TaskRepoStub())
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    task = SimpleNamespace(
+        id=42,
+        zone_id=7,
+        claimed_by="worker",
+        irrigation_wait_ready_deadline_at=now - timedelta(seconds=1),
+        topology="two_tank",
+    )
+    plan = SimpleNamespace(runtime={"zone_workflow_phase": "startup", "grow_cycle_id": 99})
+    out = await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
+    assert out.kind == "fail"
+    assert len(events) == 1
+    assert events[0][0] == 7
+    assert events[0][1] == "IRRIGATION_WAIT_READY_TIMEOUT"
+    assert events[0][2] is not None
+    assert events[0][2]["task_id"] == 42
+    assert events[0][2]["workflow_phase"] == "startup"
+    assert events[0][2]["grow_cycle_id"] == 99
+    assert len(alerts) == 1
+    assert alerts[0]["code"] == "biz_irrigation_wait_ready_timeout"
+    assert alerts[0]["zone_id"] == 7
+    assert "ae3_irr_wait_ready_timeout|z7|t42" in (alerts[0].get("dedupe_key") or "")

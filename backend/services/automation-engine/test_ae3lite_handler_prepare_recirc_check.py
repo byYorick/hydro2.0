@@ -160,15 +160,21 @@ class _Monitor:
 
 
 class _MockGateway:
-    async def run_batch(self, *, task: Any, commands: Any, now: Any) -> dict:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def run_batch(self, *, task: Any, commands: Any, now: Any, track_task_state: bool = True) -> dict:
+        self.calls.append({"task": task, "commands": commands, "now": now, "track_task_state": track_task_state})
         return {"success": True, "error_code": None, "error_message": None}
 
 
 class _ProbeGateway(_MockGateway):
     def __init__(self, *, probe_cmd_id: str) -> None:
+        super().__init__()
         self._probe_cmd_id = probe_cmd_id
 
-    async def run_batch(self, *, task: Any, commands: Any, now: Any) -> dict:
+    async def run_batch(self, *, task: Any, commands: Any, now: Any, track_task_state: bool = True) -> dict:
+        self.calls.append({"task": task, "commands": commands, "now": now, "track_task_state": track_task_state})
         return {
             "success": True,
             "error_code": None,
@@ -412,6 +418,63 @@ async def test_irr_state_waits_for_matching_probe_cmd_id() -> None:
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
     assert monitor.irr_reads >= 2
+    assert handler._command_gateway.calls[0]["track_task_state"] is False
+
+
+@pytest.mark.asyncio
+async def test_irr_state_republishes_probe_after_transient_loss() -> None:
+    runtime = {**RUNTIME, "irr_state_wait_timeout_sec": 0.01, "irr_state_wait_poll_interval_sec": 0.005}
+
+    class _RepublishMonitor(_Monitor):
+        async def read_latest_irr_state(self, *, expected_cmd_id: str | None = None, **_kw: Any) -> dict:
+            self.irr_reads += 1
+            if expected_cmd_id == "probe-cmd-02":
+                return {**dict(_IRR_MATCH), "cmd_id": "probe-cmd-02"}
+            return {"has_snapshot": False, "is_stale": False, "snapshot": None, "cmd_id": "older-probe"}
+
+    class _MultiProbeGateway(_MockGateway):
+        def __init__(self) -> None:
+            super().__init__()
+            self._cmd_ids = iter(("probe-cmd-01", "probe-cmd-02"))
+
+        async def run_batch(self, *, task: Any, commands: Any, now: Any, track_task_state: bool = True) -> dict:
+            self.calls.append({"task": task, "commands": commands, "now": now, "track_task_state": track_task_state})
+            return {
+                "success": True,
+                "error_code": None,
+                "error_message": None,
+                "command_statuses": [{"legacy_cmd_id": next(self._cmd_ids)}],
+            }
+
+    gateway = _MultiProbeGateway()
+    monitor = _RepublishMonitor(ph=5.8, ec=1.4)
+    handler = _make_handler(monitor=monitor, gateway=gateway)
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+    assert len(gateway.calls) == 2
+    assert all(call["track_task_state"] is False for call in gateway.calls)
+
+
+@pytest.mark.asyncio
+async def test_irr_state_cmd_id_mismatch_after_republish_fails_closed() -> None:
+    runtime = {**RUNTIME, "irr_state_wait_timeout_sec": 0.01, "irr_state_wait_poll_interval_sec": 0.005}
+
+    class _MismatchMonitor(_Monitor):
+        async def read_latest_irr_state(self, *, expected_cmd_id: str | None = None, **_kw: Any) -> dict:
+            self.irr_reads += 1
+            return {**dict(_IRR_MATCH), "cmd_id": "older-probe"}
+
+    gateway = _ProbeGateway(probe_cmd_id="probe-cmd-99")
+    handler = _make_handler(monitor=_MismatchMonitor(), gateway=gateway)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=_make_task(), plan=_MockPlan(runtime), stage_def=_StageDef(), now=NOW)
+
+    assert exc_info.value.code == "irr_state_unavailable"
+    assert len(gateway.calls) == 2
 
 
 # ── 6. IRR state stale after wait → fail-closed ───────────────────────────────

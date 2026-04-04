@@ -311,6 +311,44 @@ def test_cycle_start_planner_builds_native_two_tank_with_short_alias() -> None:
     assert plan.named_plans["irr_state_probe"][0].channel == "storage_state"
 
 
+def test_two_tank_plan_runtime_zone_workflow_phase_matches_snapshot_workflow_phase() -> None:
+    """Block A: plan.runtime.zone_workflow_phase is the bridge await_ready uses (see ae3lite.md §2.1)."""
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    snapshot = ZoneSnapshot(
+        **{
+            **_snapshot().__dict__,
+            "workflow_phase": "ready",
+            "targets": {"ph": {"target": 5.9}, "ec": {"target": 1.4}},
+            "diagnostics_execution": {
+                "workflow": "cycle_start",
+                "topology": "two_tank",
+                "required_node_types": ["irrig"],
+                "startup": {
+                    "clean_fill_timeout_sec": 30,
+                    "solution_fill_timeout_sec": 45,
+                    "prepare_recirculation_timeout_sec": 240,
+                },
+                "two_tank_commands": {
+                    "clean_fill_start": [{"channel": "valve_clean_fill", "cmd": "set_relay", "params": {"state": True}}],
+                },
+            },
+            "actuators": (
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_fill", node_channel_id=41, role="valve_clean_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_clean_supply", node_channel_id=42, role="valve_clean_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_fill", node_channel_id=43, role="valve_solution_fill"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_solution_supply", node_channel_id=44, role="valve_solution_supply"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="valve_irrigation", node_channel_id=445, role="valve_irrigation"),
+                ZoneActuatorRef(node_uid="nd-irrig-1", node_type="irrig", channel="pump_main", node_channel_id=45, role="pump_main"),
+                ZoneActuatorRef(node_uid="nd-ph-1", node_type="ph", channel="system", node_channel_id=46, role="system", channel_type="SERVICE"),
+                ZoneActuatorRef(node_uid="nd-ec-1", node_type="ec", channel="system", node_channel_id=47, role="system", channel_type="SERVICE"),
+            ),
+        }
+    )
+    plan = planner.build(task=_task(now), snapshot=snapshot)
+    assert plan.runtime.get("zone_workflow_phase") == "ready"
+
+
 def test_cycle_start_planner_uses_locked_irrigation_decision_snapshot_for_active_task() -> None:
     now = datetime.now(timezone.utc)
     planner = CycleStartPlanner()
@@ -807,3 +845,59 @@ def test_cycle_start_planner_fails_closed_on_ambiguous_actuator_resolution() -> 
 
     with pytest.raises(PlannerConfigurationError):
         planner.build(task=_task(now), snapshot=ambiguous_snapshot)
+
+
+def test_planner_builds_lighting_tick_single_pwm_command() -> None:
+    now = datetime.now(timezone.utc)
+    planner = CycleStartPlanner()
+    task = AutomationTask.from_row({
+        "id": 81,
+        "zone_id": 9,
+        "task_type": "lighting_tick",
+        "status": "claimed",
+        "idempotency_key": "lt-test",
+        "scheduled_for": now,
+        "due_at": now,
+        "claimed_by": "w",
+        "claimed_at": now,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+        "topology": "lighting_tick",
+        "intent_source": "laravel_scheduler",
+        "intent_trigger": "lighting_tick",
+        "intent_id": 1,
+        "intent_meta": {},
+        "current_stage": "apply",
+        "workflow_phase": "ready",
+        "stage_deadline_at": None,
+        "stage_retry_count": 0,
+        "stage_entered_at": None,
+        "clean_fill_cycle": 0,
+        "corr_step": None,
+    })
+    base = _snapshot()
+    snapshot = ZoneSnapshot(
+        **{
+            **base.__dict__,
+            "targets": {"lighting": {"pwm_duty": 73}},
+            "actuators": (
+                ZoneActuatorRef(
+                    node_uid="nd-light-1",
+                    node_type="light",
+                    channel="light_main",
+                    node_channel_id=501,
+                    role="main",
+                ),
+            ),
+        }
+    )
+    plan = planner.build(task=task, snapshot=snapshot)
+    assert plan.workflow == "lighting_tick"
+    assert plan.topology == "lighting_tick"
+    assert len(plan.steps) == 1
+    assert plan.steps[0].channel == "light_main"
+    assert plan.steps[0].payload["cmd"] == "set_pwm"
+    assert plan.steps[0].payload["params"]["duty"] == 73

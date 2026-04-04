@@ -28,6 +28,9 @@ class BaseStageHandler:
     Subclasses implement ``run()`` and return :class:`StageOutcome`.
     """
 
+    _IRR_STATE_PROBE_RETRY_COUNT = 1
+    _IRR_STATE_PROBE_RETRY_DELAY_SEC = 0.5
+
     def __init__(
         self,
         *,
@@ -63,9 +66,14 @@ class BaseStageHandler:
         # If we start a fresh IRR probe too close to the stage deadline, the command
         # can fail in polling after deadline instead of taking the intended stage path.
         wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
+        attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
         # Budget must cover both the storage_state command roundtrip and the follow-up
-        # snapshot wait. On real hardware the combined path can easily exceed 5s.
-        base_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0
+        # snapshot wait. On real hardware the combined path can easily exceed 5s,
+        # and a single republish is allowed for transient MQTT probe loss.
+        single_attempt_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0
+        base_budget = (single_attempt_budget * attempts) + (
+            self._IRR_STATE_PROBE_RETRY_DELAY_SEC * self._IRR_STATE_PROBE_RETRY_COUNT
+        )
         return max(8.0, base_budget)
 
     def _deadline_too_close_for_irr_probe(
@@ -97,57 +105,88 @@ class BaseStageHandler:
                 "irr_state_probe_plan_missing",
                 f"IRR state probe command plan is missing for stage={getattr(task, 'current_stage', None)}",
             )
-        result = await self._command_gateway.run_batch(
-            task=task, commands=probe_cmds, now=now,
-        )
-        if not result["success"]:
-            raise TaskExecutionError(
-                str(result["error_code"]), str(result["error_message"]),
-            )
-        probe_cmd_id = self._extract_probe_cmd_id(result=result)
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
-        state = await self._read_probe_state_with_retry(
-            task=task,
-            runtime=runtime,
+        last_state: Mapping[str, Any] = {}
+        last_probe_cmd_id: str | None = None
+        total_attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
+
+        for attempt_index in range(total_attempts):
+            result = await self._command_gateway.run_batch(
+                task=task,
+                commands=probe_cmds,
+                now=now,
+                track_task_state=False,
+            )
+            if not result["success"]:
+                raise TaskExecutionError(
+                    str(result["error_code"]), str(result["error_message"]),
+                )
+            probe_cmd_id = self._extract_probe_cmd_id(result=result)
+            state = await self._read_probe_state_with_retry(
+                task=task,
+                runtime=runtime,
+                expected=expected,
+                expected_cmd_id=probe_cmd_id,
+            )
+            last_state = state
+            last_probe_cmd_id = probe_cmd_id
+            if not self._probe_state_needs_retry(
+                state=state,
+                expected=expected,
+                expected_cmd_id=probe_cmd_id,
+            ):
+                return
+            if attempt_index + 1 < total_attempts:
+                await asyncio.sleep(self._IRR_STATE_PROBE_RETRY_DELAY_SEC)
+
+        reason = self._classify_probe_failure_reason(
+            state=last_state,
             expected=expected,
-            expected_cmd_id=probe_cmd_id,
+            expected_cmd_id=last_probe_cmd_id,
         )
-        if not state["has_snapshot"]:
-            await self._log_probe_failure_event(
-                task=task,
-                expected=expected,
-                expected_cmd_id=probe_cmd_id,
-                state=state,
-                reason="unavailable",
-            )
-            raise TaskExecutionError(
-                "irr_state_unavailable", "IRR state snapshot unavailable",
-            )
-        if state["is_stale"]:
-            await self._log_probe_failure_event(
-                task=task,
-                expected=expected,
-                expected_cmd_id=probe_cmd_id,
-                state=state,
-                reason="stale",
-            )
+        await self._log_probe_failure_event(
+            task=task,
+            expected=expected,
+            expected_cmd_id=last_probe_cmd_id,
+            state=last_state,
+            reason=reason,
+        )
+        if reason == "stale":
             raise TaskExecutionError(
                 "irr_state_stale", "IRR state snapshot stale",
             )
-        snapshot = state["snapshot"] if isinstance(state["snapshot"], Mapping) else {}
+        if reason == "mismatch":
+            snapshot = last_state["snapshot"] if isinstance(last_state["snapshot"], Mapping) else {}
+            for key, value in expected.items():
+                if bool(snapshot.get(key)) != bool(value):
+                    raise TaskExecutionError(
+                        "irr_state_mismatch",
+                        f"IRR state mismatch for {key}: expected={value}, got={snapshot.get(key)}",
+                    )
+        raise TaskExecutionError(
+            "irr_state_unavailable", "IRR state snapshot unavailable",
+        )
+
+    def _classify_probe_failure_reason(
+        self,
+        *,
+        state: Mapping[str, Any],
+        expected: Mapping[str, bool],
+        expected_cmd_id: str | None = None,
+    ) -> str:
+        if not state.get("has_snapshot"):
+            return "unavailable"
+        if state.get("is_stale"):
+            return "stale"
+        if expected_cmd_id is not None and str(state.get("cmd_id") or "").strip() != expected_cmd_id:
+            return "cmd_id_mismatch"
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, Mapping):
+            return "unavailable"
         for key, value in expected.items():
             if bool(snapshot.get(key)) != bool(value):
-                await self._log_probe_failure_event(
-                    task=task,
-                    expected=expected,
-                    expected_cmd_id=probe_cmd_id,
-                    state=state,
-                    reason="mismatch",
-                )
-                raise TaskExecutionError(
-                    "irr_state_mismatch",
-                    f"IRR state mismatch for {key}: expected={value}, got={snapshot.get(key)}",
-                )
+                return "mismatch"
+        return "unavailable"
 
     async def _read_probe_state_with_retry(
         self,

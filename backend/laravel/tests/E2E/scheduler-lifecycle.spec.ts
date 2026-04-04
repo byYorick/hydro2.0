@@ -203,15 +203,16 @@ test.describe('Scheduler workspace lifecycle на вкладке Планиро�
               timezone: 'Europe/Simferopol',
             },
             capabilities: {
-              executable_task_types: ['irrigation'],
+              executable_task_types: ['irrigation', 'lighting'],
               planned_task_types: ['irrigation', 'lighting'],
+              non_executable_planned_task_types: [],
               diagnostics_available: false,
             },
             plan: {
               horizon: '24h',
               lanes: [
                 { task_type: 'irrigation', label: 'Полив', mode: 'interval', executable: true },
-                { task_type: 'lighting', label: 'Свет', mode: 'config', executable: false },
+                { task_type: 'lighting', label: 'Свет', mode: 'config', executable: true },
               ],
               windows: [
                 {

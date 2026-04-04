@@ -116,12 +116,15 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
 
       if (showLimit) {
         const typesHint = nonExec.length > 0 ? nonExec.join(', ') : null
+        const autoHint = executableTaskTypes.value.length > 0
+          ? `Сейчас автодиспатч scheduler покрывает: ${executableTaskTypes.value.join(', ')}.`
+          : ''
         items.push({
           tone: 'warning',
-          title: 'Планировщик Laravel для AE3 запускает только полив',
+          title: 'Не все типы расписания запускаются автоматически (AE3)',
           detail: typesHint
-            ? `Не диспатчатся из scheduler: ${typesHint}. Окна в графике отражают конфигурацию effective targets.`
-            : 'Дорожки света, климата и других подсистем в графике показаны по конфигурации, но автоматический dispatch для них из scheduler не выполняется.',
+            ? `${autoHint ? `${autoHint} ` : ''}Не диспатчатся из scheduler: ${typesHint}. Окна в графике отражают конфигурацию effective targets.`.trim()
+            : `${autoHint ? `${autoHint} ` : ''}Часть дорожек в графике относится к подсистемам без автоматического dispatch из этого планировщика (см. подписи дорожек).`.trim(),
         })
       }
     }

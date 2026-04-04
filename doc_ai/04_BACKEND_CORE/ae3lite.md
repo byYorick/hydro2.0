@@ -1,7 +1,7 @@
 # AE3-Lite: Minimal Canonical Spec
 
-**Версия:** 3.4-canonical
-**Дата:** 2026-03-30
+**Версия:** 3.5-canonical
+**Дата:** 2026-04-04
 **Статус:** CANONICAL MINIMAL SPEC
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -27,8 +27,9 @@ AE3-Lite v1 это:
 1. DB-backed executor для `cycle_start` и `irrigation_start`.
 2. Protected command pipeline без изменений:
    `Laravel scheduler-dispatch -> Automation-Engine -> history-logger -> MQTT -> ESP32`.
-3. Два внешних ingress:
-   `POST /zones/{id}/start-cycle` и `POST /zones/{id}/start-irrigation`.
+3. Внешние ingress (scheduler/API compat):
+   `POST /zones/{id}/start-cycle`, `POST /zones/{id}/start-irrigation`,
+   `POST /zones/{id}/start-lighting-tick` (dispatch света для `zones.automation_runtime='ae3'`, см. C1).
 4. Один canonical status endpoint:
    `GET /internal/tasks/{task_id}`.
 5. Ручной rollout по зоне через `zones.automation_runtime='ae3'`.
@@ -55,8 +56,8 @@ AE3-Lite v1 не включает:
 
 1. Команды на узлы публикуются только через `history-logger` (`POST /commands`).
 2. Прямой MQTT publish из AE и Laravel запрещён.
-3. До полного cutover внешние ingress runtime ограничены `POST /zones/{id}/start-cycle` и
-   `POST /zones/{id}/start-irrigation`.
+3. До полного cutover внешние ingress runtime ограничены `POST /zones/{id}/start-cycle`,
+   `POST /zones/{id}/start-irrigation` и `POST /zones/{id}/start-lighting-tick` (см. §1 scope).
 4. В production v1 допускается только одна активная реплика AE3-Lite.
 5. На одну зону допускается не более одной активной execution task.
 6. Успешный terminal outcome mutating-команды только `DONE`.
@@ -68,6 +69,18 @@ AE3-Lite v1 не включает:
 12. Переключение зоны на `ae3` запрещено при активной task или активной lease.
 13. План выполняется одним ИИ-агентом, строго последовательно, без параллельных веток работ.
 14. Любое отклонение от этого документа считается defect, а не “допустимой импровизацией”.
+
+### 2.1 Фаза зоны `ready` и стадия `await_ready` (полив)
+
+Источник истины для «зона готова к поливу» в runtime плана — поле **`zone_workflow_phase`** в snapshot зоны (read-model), которое AE3-Lite кладёт в `plan.runtime` при планировании (`CycleStartPlanner` / аналог). Значение **`ready`** означает: workflow зоны в PostgreSQL (`zone_workflow_state.workflow_phase`) приведён в состояние готовности после завершения подготовительных шагов (например, после успешного `cycle_start` / завершения связанной задачи в `WorkflowRouter`).
+
+Стадия **`await_ready`** в задаче `irrigation_start`:
+
+1. Пока `zone_workflow_phase != ready`, исполнитель возвращает **poll** с интервалом `AE_IRRIGATION_WAIT_READY_POLL_SEC` и при первом заходе фиксирует дедлайн `irrigation_wait_ready_deadline_at` (окно `AE_IRRIGATION_WAIT_READY_SEC`).
+2. Когда snapshot даёт **`ready`**, стадия переходит в **`decision_gate`** (дальнейшие решения по поливу).
+3. Если дедлайн истёк, задача завершается с ошибкой **`irrigation_wait_ready_timeout`**; при этом пишется structured log, zone event `IRRIGATION_WAIT_READY_TIMEOUT`, опционально business alert `biz_irrigation_wait_ready_timeout` (dedupe по зоне/задаче), инкрементируются метрики `ae3_irrigation_wait_ready_*`.
+
+Связка «цикл → готовность → полив» не должна обходить этот контракт: нельзя полагаться на устаревший snapshot без poll/reconcile.
 
 ---
 
@@ -87,9 +100,9 @@ AE3-Lite `v1` реализует один ИИ-агент.
 
 Агенту запрещено:
 1. вести параллельные реализации нескольких подсистем
-2. добавлять новые task types вне `cycle_start|irrigation_start`
+2. добавлять новые task types вне `cycle_start|irrigation_start|lighting_tick`
 3. добавлять новые API вне `POST /zones/{id}/start-cycle`,
-   `POST /zones/{id}/start-irrigation` и `GET /internal/tasks/{task_id}`
+   `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick` и `GET /internal/tasks/{task_id}`
 4. вносить “временные” обходные решения вне spec
 5. оправдывать отклонение словами `temporary`, `later`, `for now`, `quick fix`, если это нарушает инвариант
 

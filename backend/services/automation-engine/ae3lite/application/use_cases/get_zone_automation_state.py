@@ -46,6 +46,7 @@ _STAGE_LABELS: dict[str, str] = {
     "irrigation_recovery_check": "Рециркуляция после полива",
     "completed_run": "Полив завершён",
     "completed_skip": "Полив пропущен",
+    "apply": "Свет (scheduler tick)",
 }
 
 # Maps (from_stage, to_stage) → (event_code, human label)

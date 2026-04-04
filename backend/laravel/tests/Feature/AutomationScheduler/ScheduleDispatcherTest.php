@@ -139,4 +139,89 @@ class ScheduleDispatcherTest extends TestCase
         $this->assertSame('skipped', $logs[0]['status']);
         $this->assertSame('ae3_task_type_not_supported', $logs[0]['context']['reason']);
     }
+
+    public function test_dispatch_posts_start_lighting_tick_for_ae3_lighting_task(): void
+    {
+        $zone = Zone::factory()->create([
+            'status' => 'online',
+            'automation_runtime' => 'ae3',
+        ]);
+
+        Http::fake([
+            'http://automation-engine:9405/zones/'.$zone->id.'/start-lighting-tick' => Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => '5001',
+                    'zone_id' => $zone->id,
+                    'accepted' => true,
+                    'runner_state' => 'active',
+                    'deduplicated' => false,
+                ],
+            ], 200),
+        ]);
+
+        /** @var ScheduleDispatcher $dispatcher */
+        $dispatcher = $this->app->make(ScheduleDispatcher::class);
+        $triggerTime = CarbonImmutable::parse('2026-04-04 08:00:00', 'UTC');
+        $schedule = new ScheduleItem(
+            zoneId: $zone->id,
+            taskType: 'lighting',
+            intervalSec: 3600,
+        );
+        $context = new ScheduleCycleContext(
+            cfg: [
+                'timeout_sec' => 2.0,
+                'api_url' => 'http://automation-engine:9405',
+                'due_grace_sec' => 15,
+                'expires_after_sec' => 600,
+                'active_task_ttl_sec' => 600,
+            ],
+            headers: [
+                'Accept' => 'application/json',
+                'Authorization' => 'Bearer dev-token-12345',
+                'X-Trace-Id' => 'test-trace-id',
+            ],
+            traceId: 'test-trace-id',
+            cycleNow: $triggerTime,
+            lastRunByTaskName: [],
+            reconciledBusyness: [],
+        );
+        $logs = [];
+
+        $result = $dispatcher->dispatch(
+            zoneId: $zone->id,
+            schedule: $schedule,
+            triggerTime: $triggerTime,
+            scheduleKey: $schedule->scheduleKey,
+            context: $context,
+            writeLog: function (string $taskName, string $status, array $context) use (&$logs): void {
+                $logs[] = compact('taskName', 'status', 'context');
+            },
+        );
+
+        $this->assertSame([
+            'dispatched' => true,
+            'retryable' => false,
+            'reason' => 'accepted',
+        ], $result);
+
+        Http::assertSent(function (\Illuminate\Http\Client\Request $request) use ($zone): bool {
+            if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-lighting-tick')) {
+                return false;
+            }
+            $payload = $request->data();
+
+            return ($payload['source'] ?? null) === 'laravel_scheduler'
+                && str_starts_with((string) ($payload['idempotency_key'] ?? ''), 'sch:z'.$zone->id.':lighting:');
+        });
+
+        $row = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($row);
+        $payload = json_decode((string) $row->payload, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('lighting_tick', $payload['task_type'] ?? null);
+        $this->assertSame('lighting_tick', $payload['topology'] ?? null);
+    }
 }

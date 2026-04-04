@@ -680,7 +680,7 @@ actions:
           "targets": {
             "irrigation": {
               "correction_during_irrigation": true,
-              "correction_slack_sec": 150
+              "correction_slack_sec": 300
             }
           },
           "subsystems": {
