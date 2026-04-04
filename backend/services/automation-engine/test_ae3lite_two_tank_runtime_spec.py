@@ -5,7 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from ae3lite.domain.errors import PlannerConfigurationError
-from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runtime
+from ae3lite.domain.services.two_tank_runtime_spec import (
+    default_two_tank_command_plan,
+    resolve_two_tank_runtime,
+)
 
 
 def _minimal_zone_correction_config() -> dict[str, object]:
@@ -258,6 +261,16 @@ def test_resolve_two_tank_runtime_rejects_unknown_active_phase() -> None:
 
     with pytest.raises(PlannerConfigurationError, match="unsupported workflow_phase"):
         resolve_two_tank_runtime(snap)
+
+
+def test_default_irrigation_recovery_stop_closes_irrigation_valve() -> None:
+    plan = default_two_tank_command_plan("irrigation_recovery_stop")
+
+    assert plan[-1] == {
+        "channel": "valve_irrigation",
+        "cmd": "set_relay",
+        "params": {"state": False},
+    }
 
 
 def test_resolve_two_tank_runtime_preserves_unknown_irrigation_strategy_for_fail_closed_runtime() -> None:

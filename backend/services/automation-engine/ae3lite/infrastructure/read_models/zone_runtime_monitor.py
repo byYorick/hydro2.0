@@ -17,7 +17,8 @@ class PgZoneRuntimeMonitor:
     def _normalize_timestamp(self, value: Optional[datetime]) -> Optional[datetime]:
         if value is None:
             return None
-        return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+        normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+        return normalized.replace(microsecond=0)
 
     def _normalize_labels(self, labels: Sequence[str]) -> list[str]:
         result: list[str] = []

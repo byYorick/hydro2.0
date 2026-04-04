@@ -230,7 +230,7 @@ actions:
     zone_id: ${zone_id}
 - step: cleanup_retry_limit_alerts
   type: database_execute
-  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code = 'biz_prepare_recirculation_retry_exhausted'\n"
+  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code IN (\n    'biz_prepare_recirculation_retry_exhausted',\n    'biz_ae3_task_failed'\n  )\n"
   params:
     zone_id: ${zone_id}
 - step: complete_existing_cycles
@@ -622,6 +622,7 @@ actions:
                   prepare_recirculation_timeout_sec: 45
                   telemetry_max_age_sec: 10
                   irr_state_max_age_sec: 30
+                  irr_state_wait_timeout_sec: 12
                   sensor_mode_stabilization_time_sec: 0
                 prepare_tolerance:
                   ph_pct: 5
@@ -1039,7 +1040,8 @@ actions:
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
     FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status = 'pending'\n\
-    \  AND current_stage = 'solution_fill_check'\nLIMIT 1\n"
+    \  AND current_stage IN (\n    'solution_fill_check',\n    'prepare_recirculation_start',\n\
+    \    'prepare_recirculation_check'\n  )\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 40.0
@@ -1788,6 +1790,17 @@ actions:
     after_command_id: ${fill_ec_correction_second_row.0.id}
   expected_rows: 1
   save: recirc_ph_correction_second_count_row
+- step: wait_recirculation_window_back_to_check_second
+  type: db.wait
+  query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
+    FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status = 'pending'\n\
+    \  AND current_stage = 'prepare_recirculation_check'\n  AND corr_step = 'corr_check'\n\
+    LIMIT 1\n"
+  params:
+    task_id_2: ${task_id_2}
+  timeout: 120.0
+  expected_rows: 1
+  save: recirc_corr_check_second_row
 - step: force_recirculation_near_target_band_second
   type: ae_test_hook
   zone_id: ${zone_id}
@@ -1920,7 +1933,7 @@ cleanup:
 - step: cleanup_retry_limit_alerts_final
   type: database_execute
   optional: true
-  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code = 'biz_prepare_recirculation_retry_exhausted'\n"
+  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code IN (\n    'biz_prepare_recirculation_retry_exhausted',\n    'biz_ae3_task_failed'\n  )\n"
   params:
     zone_id: ${zone_id}
 - step: cleanup_retry_limit_overrides_final

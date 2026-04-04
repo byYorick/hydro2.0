@@ -70,7 +70,7 @@ def default_two_tank_command_plan(plan_name: str) -> list[dict[str, Any]]:
             {"channel": "pump_main", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_fill", "cmd": "set_relay", "params": {"state": False}},
             {"channel": "valve_solution_supply", "cmd": "set_relay", "params": {"state": False}},
-            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": True}},
+            {"channel": "valve_irrigation", "cmd": "set_relay", "params": {"state": False}},
         ],
     }
     return [dict(item) for item in defaults.get(plan_name, ())]

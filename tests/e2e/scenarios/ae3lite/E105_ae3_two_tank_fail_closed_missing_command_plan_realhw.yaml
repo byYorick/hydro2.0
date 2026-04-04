@@ -992,6 +992,18 @@ cleanup:
     params:
       zone_id: ${zone_id}
 
+  - step: cleanup_runtime_alerts
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM alerts
+      WHERE zone_id = :zone_id
+        AND code = 'biz_ae3_task_failed'
+        AND COALESCE(details->>'task_id', '') = CAST(:task_id AS text)
+    params:
+      zone_id: ${zone_id}
+      task_id: ${task_id}
+
   - step: cleanup_runtime_intent
     type: database_execute
     optional: true

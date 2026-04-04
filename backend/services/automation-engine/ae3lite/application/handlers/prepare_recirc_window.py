@@ -34,11 +34,30 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         stage_def: Any,
         now: datetime,
     ) -> StageOutcome:
-        await self._run_commands(task=task, plan=plan, plan_names=("prepare_recirculation_stop", "sensor_mode_deactivate"), now=now)
-
         retry_count = int(task.workflow.stage_retry_count)
         attempt_limit = self._prepare_recirculation_max_attempts(plan=plan, task=task)
-        if retry_count >= attempt_limit:
+        limit_reached = retry_count >= attempt_limit
+
+        try:
+            await self._run_commands(
+                task=task,
+                plan=plan,
+                plan_names=("prepare_recirculation_stop", "sensor_mode_deactivate"),
+                now=now,
+            )
+        except TaskExecutionError as exc:
+            if not limit_reached or exc.code not in {"command_timeout", "ae3_command_poll_deadline_exceeded"}:
+                raise
+            _logger.warning(
+                "prepare_recirc_window: stop commands failed after retry limit reached; "
+                "keeping primary limit-exhausted failure zone_id=%s retry=%s/%s code=%s",
+                task.zone_id,
+                retry_count,
+                attempt_limit,
+                exc.code,
+            )
+
+        if limit_reached:
             _logger.warning(
                 "prepare_recirc_window: retry limit reached retry_count=%s/%s zone_id=%s",
                 retry_count, attempt_limit, task.zone_id,

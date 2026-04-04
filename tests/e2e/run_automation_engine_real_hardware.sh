@@ -410,7 +410,8 @@ scenario_db_metrics_since_epoch() {
   db_query_line "
     SELECT 'alerts_open_total=' || COUNT(*)
     FROM alerts
-    WHERE status = 'open';
+    WHERE UPPER(COALESCE(status, '')) = 'ACTIVE'
+       OR LOWER(COALESCE(status, '')) = 'open';
   " || true
 }
 
@@ -1289,7 +1290,11 @@ prepare_real_hardware_node() {
     WHERE zone_id = ${zone_id}
       AND code IN (
         'biz_zone_correction_config_missing',
-        'biz_zone_dosing_calibration_missing'
+        'biz_zone_dosing_calibration_missing',
+        'biz_prepare_recirculation_retry_exhausted',
+        'biz_ae3_task_failed',
+        'biz_correction_exhausted',
+        'biz_irrigation_correction_exhausted'
       );
   " >/dev/null
 
@@ -1572,6 +1577,15 @@ prepare_real_hardware_node() {
   TEST_EC_NODE_UID="$ec_uid"
   TEST_SOIL_NODE_UID="$soil_uid"
   export TEST_NODE_UID TEST_WORKFLOW_NODE_UID TEST_PH_NODE_UID TEST_EC_NODE_UID TEST_SOIL_NODE_UID TEST_NODE_HW_ID TEST_NODE_ZONE_UID TEST_NODE_GH_UID
+
+  echo "🧹 Удаляю ложные infra alerts после controlled node re-registration..."
+  db_query_line "
+    DELETE FROM alerts
+    WHERE code IN (
+      'infra_telemetry_node_not_found',
+      'infra_telemetry_sample_dropped_node_not_found'
+    );
+  " >/dev/null
 
   echo "✅ Ноды готовы: gh=$TEST_NODE_GH_UID zone=$TEST_NODE_ZONE_UID primary_node=$TEST_NODE_UID ph_node=$TEST_PH_NODE_UID ec_node=$TEST_EC_NODE_UID soil_node=$TEST_SOIL_NODE_UID hw=$TEST_NODE_HW_ID"
   rm -f "$live_topics_file"

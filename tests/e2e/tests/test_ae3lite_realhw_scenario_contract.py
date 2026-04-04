@@ -688,6 +688,59 @@ class TestAe3LiteHotReloadRealHwScenarioContract(unittest.TestCase):
         )
 
 
+class TestAe3LiteReadyDuringRecirculationRealHwScenarioContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        with READY_DURING_RECIRC_SCENARIO_PATH.open("r", encoding="utf-8") as fh:
+            cls.scenario = yaml.safe_load(fh)
+
+    def _find_step(self, section: str, step_name: str) -> dict:
+        for item in self.scenario.get(section, []):
+            if item.get("step") == step_name:
+                return item
+        self.fail(f"Step '{step_name}' is missing in section '{section}'")
+
+    def _find_assertion(self, name: str) -> dict:
+        for item in self.scenario.get("assertions", []):
+            if item.get("name") == name:
+                return item
+        self.fail(f"Assertion '{name}' is missing")
+
+    def test_recirculation_waits_anchor_to_stage_start_not_fill_dose(self) -> None:
+        stage_step = self._find_step("actions", "wait_prepare_recirculation_stage")
+        ec_step = self._find_step("actions", "wait_recirculation_ec_correction_command")
+        ph_step = self._find_step("actions", "load_recirculation_ph_correction_command_count")
+
+        stage_query = str(stage_step.get("query") or "")
+        self.assertIn("updated_at AS stage_started_at", stage_query)
+
+        ec_query = str(ec_step.get("query") or "")
+        self.assertIn("created_at >= CAST(:after_stage_started_at AS timestamptz)", ec_query)
+        self.assertEqual(
+            ec_step.get("params", {}).get("after_stage_started_at"),
+            "${prepare_recirc_stage_row.0.stage_started_at}",
+        )
+
+        ph_query = str(ph_step.get("query") or "")
+        self.assertIn("created_at >= CAST(:after_stage_started_at AS timestamptz)", ph_query)
+        self.assertEqual(
+            ph_step.get("params", {}).get("after_stage_started_at"),
+            "${prepare_recirc_stage_row.0.stage_started_at}",
+        )
+
+    def test_recirculation_contract_does_not_require_second_ec_dose_count(self) -> None:
+        load_fill_step = self._find_step("actions", "load_fill_ec_correction_commands_if_any")
+        ec_assertion = self._find_assertion("recirculation_ec_correction_logged")
+        recirc_ec_step = self._find_step("actions", "wait_recirculation_ec_correction_command")
+
+        self.assertEqual(load_fill_step.get("type"), "database_query")
+        self.assertNotIn("after_command_id", str(recirc_ec_step.get("params", {})))
+
+        condition = str(ec_assertion.get("condition") or "")
+        self.assertIn("recirc_ec_correction_row", condition)
+        self.assertNotIn("ec_correction_cnt", condition)
+
+
 class TestAe3LiteFailClosedRealHwScenarioContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -803,6 +856,15 @@ class TestAe3LitePiggybackRealHwScenarioContract(unittest.TestCase):
             recirc_ph_step.get("params", {}).get("after_seeded_at"),
             "${seed_recirculation_command_row.0.created_at}",
         )
+
+    def test_piggyback_uses_sample_history_for_ec_peak_and_decay_before_ph(self) -> None:
+        observe_step = self._find_step("actions", "wait_recirculation_ec_peak_decay_pair")
+
+        query = str(observe_step.get("query") or "")
+        self.assertIn("FROM telemetry_samples", query)
+        self.assertIn("channel IN ('pump_acid', 'pump_base')", query)
+        self.assertIn("decay.value <= peak.value - 0.003", query)
+        self.assertIn("decay.ts < ph.ph_created_at", query)
 
 
 if __name__ == "__main__":

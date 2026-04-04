@@ -81,17 +81,24 @@ class CorrectionHandler(BaseStageHandler):
         if solution_fill_completion_outcome is not None:
             return solution_fill_completion_outcome
 
-        deadline_outcome = self._interrupt_for_stage_deadline(task=task, corr=corr, now=now)
+        deadline_outcome = await self._interrupt_for_stage_deadline(task=task, plan=plan, corr=corr, now=now)
         if deadline_outcome is not None:
             return deadline_outcome
 
         step = corr.corr_step
         if step not in {"corr_activate", "corr_wait_stable", "corr_deactivate", "corr_done"}:
+            imminent_probe_outcome = self._interrupt_for_imminent_flow_probe_deadline(
+                task=task,
+                plan=plan,
+                now=now,
+            )
+            if imminent_probe_outcome is not None:
+                return imminent_probe_outcome
             await self._assert_flow_path_active(task=task, plan=plan, now=now)
         if step == "corr_activate":
             return await self._run_activate(task=task, plan=plan, corr=corr, now=now)
         if step == "corr_wait_stable":
-            return self._run_wait_stable(corr=corr)
+            return self._run_wait_stable(task=task, plan=plan, corr=corr, now=now)
         if step == "corr_check":
             return await self._run_check(task=task, plan=plan, corr=corr, now=now)
         if step == "corr_dose_ec":
@@ -135,9 +142,22 @@ class CorrectionHandler(BaseStageHandler):
             due_delay_sec=corr.stabilization_sec,
         )
 
-    def _run_wait_stable(self, *, corr: CorrectionState) -> StageOutcome:
+    def _run_wait_stable(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+    ) -> StageOutcome:
         next_corr = replace(corr, corr_step="corr_check")
-        return StageOutcome(kind="enter_correction", correction=next_corr)
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
+            due_delay_sec=0.0,
+        )
 
     async def _interrupt_for_solution_fill_completion(
         self,
@@ -232,9 +252,11 @@ class CorrectionHandler(BaseStageHandler):
         corr_wait_until = self._normalize_timestamp(corr.wait_until)
         normalized_now = self._normalize_timestamp(now)
         if corr_wait_until is not None and normalized_now < corr_wait_until:
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=max(1.0, (corr_wait_until - normalized_now).total_seconds()),
             )
 
@@ -290,9 +312,11 @@ class CorrectionHandler(BaseStageHandler):
                 task.zone_id,
                 retry_delay_sec,
             )
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=retry_delay_sec,
             )
         if not ph["ready"] or not ec["ready"]:
@@ -338,9 +362,11 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             _logger.warning("zone %s: %s — retrying in %.1fs", task.zone_id, msg, retry_delay_sec)
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=retry_delay_sec,
             )
 
@@ -357,9 +383,11 @@ class CorrectionHandler(BaseStageHandler):
                 "zone %s: non-finite telemetry value (ph=%s, ec=%s); retrying in %.1fs",
                 task.zone_id, current_ph, current_ec, retry_delay_sec,
             )
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=retry_delay_sec,
             )
 
@@ -393,9 +421,11 @@ class CorrectionHandler(BaseStageHandler):
                 "zone %s: water level %.0f%% is below threshold; skipping correction for %.1fs",
                 task.zone_id, (wl_level or 0.0) * 100, retry_delay_sec,
             )
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=retry_delay_sec,
             )
 
@@ -508,9 +538,11 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             next_corr = replace(corr, corr_step="corr_check")
-            return StageOutcome(
-                kind="enter_correction",
-                correction=next_corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=next_corr,
+                now=now,
                 due_delay_sec=dose_plan.retry_after_sec,
             )
 
@@ -658,7 +690,13 @@ class CorrectionHandler(BaseStageHandler):
                 ),
             },
         )
-        return StageOutcome(kind="enter_correction", correction=next_corr)
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
+            due_delay_sec=0.0,
+        )
 
     async def _run_dose_ec(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
@@ -705,6 +743,15 @@ class CorrectionHandler(BaseStageHandler):
                     ),
                 )
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step="corr_dose_ec").inc()
+        await self._ensure_sensor_mode_active_for_dosing(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+            failed_node_uid=corr.ec_node_uid,
+            failed_channel=corr.ec_channel,
+            retry_cmd="dose",
+        )
         # Multi-component EC dosing must be idempotent on partial failures.
         # SequentialCommandGateway executes commands one-by-one and may fail after some successes,
         # so we dispatch at most ONE component per invocation and resume using ec_current_seq_index.
@@ -834,9 +881,11 @@ class CorrectionHandler(BaseStageHandler):
             ec_attempt=corr.ec_attempt + 1,
             wait_until=wait_until,
         )
-        return StageOutcome(
-            kind="enter_correction",
-            correction=next_corr,
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
             due_delay_sec=int(observe_cfg["hold_window_sec"]),
         )
 
@@ -872,6 +921,15 @@ class CorrectionHandler(BaseStageHandler):
             )
         ph_step = "corr_dose_ph_up" if corr.needs_ph_up else "corr_dose_ph_down"
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step=ph_step).inc()
+        await self._ensure_sensor_mode_active_for_dosing(
+            task=task,
+            plan=plan,
+            corr=corr,
+            now=now,
+            failed_node_uid=corr.ph_node_uid,
+            failed_channel=corr.ph_channel,
+            retry_cmd="dose",
+        )
         cmd = PlannedCommand(
             step_no=1,
             node_uid=corr.ph_node_uid,
@@ -936,9 +994,11 @@ class CorrectionHandler(BaseStageHandler):
             },
         )
         next_corr = replace(corr, corr_step="corr_wait_ph", ph_attempt=corr.ph_attempt + 1, wait_until=wait_until)
-        return StageOutcome(
-            kind="enter_correction",
-            correction=next_corr,
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
             due_delay_sec=int(observe_cfg["hold_window_sec"]),
         )
 
@@ -971,7 +1031,13 @@ class CorrectionHandler(BaseStageHandler):
                     )
 
         next_corr = replace(corr, corr_step="corr_done")
-        return StageOutcome(kind="enter_correction", correction=next_corr)
+        return self._enter_correction_after_delay_or_interrupt(
+            task=task,
+            plan=plan,
+            corr=next_corr,
+            now=now,
+            due_delay_sec=0.0,
+        )
 
     def _run_done(self, *, corr: CorrectionState) -> StageOutcome:
         success = corr.outcome_success if corr.outcome_success is not None else False
@@ -979,6 +1045,49 @@ class CorrectionHandler(BaseStageHandler):
         return StageOutcome(kind="exit_correction", next_stage=next_stage, correction=corr)
 
     # ── Helpers ─────────────────────────────────────────────────────
+
+    async def _ensure_sensor_mode_active_for_dosing(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+        failed_node_uid: str | None,
+        failed_channel: str | None,
+        retry_cmd: str,
+    ) -> None:
+        sensor_cmds = self._build_sensor_mode_commands(
+            plan=plan,
+            cmd="activate_sensor_mode",
+            params={"stabilization_time_sec": corr.stabilization_sec},
+        )
+        if not sensor_cmds:
+            return
+        result = await self._command_gateway.run_batch(
+            task=task,
+            commands=sensor_cmds,
+            now=now,
+        )
+        if not result["success"]:
+            raise TaskExecutionError(
+                str(result["error_code"]),
+                str(result["error_message"]),
+            )
+
+        await self._log_correction_event(
+            zone_id=task.zone_id,
+            event_type="CORRECTION_SENSOR_MODE_REACTIVATED",
+            task=task,
+            corr=corr,
+            payload={
+                "reason": "pre_dose_reactivation",
+                "failed_node_uid": failed_node_uid,
+                "failed_channel": failed_channel,
+                "retry_cmd": retry_cmd,
+                "stabilization_sec": corr.stabilization_sec,
+            },
+        )
 
     async def _assert_flow_path_active(
         self,
@@ -1024,6 +1133,8 @@ class CorrectionHandler(BaseStageHandler):
         ec: Mapping[str, Any],
     ) -> StageOutcome | None:
         if corr.activated_here:
+            return None
+        if self._stage_keeps_sensor_mode_active(task=task):
             return None
         if not (
             self._window_empty_for_sensor_reactivation(metric=ph)
@@ -1087,6 +1198,12 @@ class CorrectionHandler(BaseStageHandler):
             return int(sample_count) <= 0
         except (TypeError, ValueError):
             return False
+
+    def _stage_keeps_sensor_mode_active(self, *, task: Any) -> bool:
+        return str(getattr(task, "current_stage", "") or "").strip().lower() in {
+            "irrigation_check",
+            "irrigation_recovery_check",
+        }
 
     def _transition_to_deactivate_or_return(
         self, *, corr: CorrectionState, success: bool,
@@ -1190,10 +1307,11 @@ class CorrectionHandler(BaseStageHandler):
             )
         return self._transition_to_deactivate_or_return(corr=corr, success=False)
 
-    def _interrupt_for_stage_deadline(
+    async def _interrupt_for_stage_deadline(
         self,
         *,
         task: Any,
+        plan: Any,
         corr: CorrectionState,
         now: datetime,
     ) -> StageOutcome | None:
@@ -1203,6 +1321,105 @@ class CorrectionHandler(BaseStageHandler):
             return None
 
         current_stage = str(task.current_stage).strip().lower()
+        if current_stage == "prepare_recirculation_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+        if current_stage == "solution_fill_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="solution_fill_timeout_stop",
+            )
+        if current_stage == "irrigation_check":
+            if await self._targets_reached(task=task, plan=plan, now=now):
+                return StageOutcome(
+                    kind="transition",
+                    next_stage="irrigation_stop_to_ready",
+                )
+            return StageOutcome(
+                kind="transition",
+                next_stage="irrigation_stop_to_recovery",
+            )
+        return None
+
+    def _interrupt_for_imminent_flow_probe_deadline(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+    ) -> StageOutcome | None:
+        current_stage = str(task.current_stage).strip().lower()
+        if self._expected_flow_path_state(current_stage=current_stage) is None:
+            return None
+
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        if not self._deadline_too_close_for_irr_probe(
+            now=now,
+            deadline=task.workflow.stage_deadline_at,
+            runtime=runtime,
+        ):
+            return None
+
+        if current_stage == "prepare_recirculation_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+        if current_stage == "solution_fill_check":
+            return StageOutcome(
+                kind="transition",
+                next_stage="solution_fill_timeout_stop",
+            )
+        return None
+
+    def _enter_correction_after_delay_or_interrupt(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        corr: CorrectionState,
+        now: datetime,
+        due_delay_sec: float,
+    ) -> StageOutcome:
+        retry_deadline_outcome = self._interrupt_for_imminent_retry_then_probe_deadline(
+            task=task,
+            plan=plan,
+            now=now,
+            due_delay_sec=due_delay_sec,
+        )
+        if retry_deadline_outcome is not None:
+            return retry_deadline_outcome
+        return StageOutcome(
+            kind="enter_correction",
+            correction=corr,
+            due_delay_sec=due_delay_sec,
+        )
+
+    def _interrupt_for_imminent_retry_then_probe_deadline(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        due_delay_sec: float,
+    ) -> StageOutcome | None:
+        current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
+        if self._expected_flow_path_state(current_stage=current_stage) is None:
+            return None
+
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        remaining = self._remaining_stage_time_sec(now=now, deadline=task.workflow.stage_deadline_at)
+        if remaining is None:
+            return None
+
+        required_budget = max(0.0, float(due_delay_sec)) + self._irr_probe_deadline_budget_sec(runtime=runtime)
+        if remaining > required_budget:
+            return None
+
         if current_stage == "prepare_recirculation_check":
             return StageOutcome(
                 kind="transition",
@@ -1393,9 +1610,11 @@ class CorrectionHandler(BaseStageHandler):
         corr_wait_until = self._normalize_timestamp(corr.wait_until)
         normalized_now = self._normalize_timestamp(now)
         if corr_wait_until is not None and normalized_now < corr_wait_until:
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=max(1.0, (corr_wait_until - normalized_now).total_seconds()),
             )
 
@@ -1451,9 +1670,11 @@ class CorrectionHandler(BaseStageHandler):
                 sensor_type,
                 retry_delay_sec,
             )
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=retry_delay_sec,
             )
 
@@ -1480,9 +1701,11 @@ class CorrectionHandler(BaseStageHandler):
                     "stability_max_slope": float(observe_cfg["stability_max_slope"]),
                 },
             )
-            return StageOutcome(
-                kind="enter_correction",
-                correction=corr,
+            return self._enter_correction_after_delay_or_interrupt(
+                task=task,
+                plan=plan,
+                corr=corr,
+                now=now,
                 due_delay_sec=int(observe_cfg["observe_poll_sec"]),
             )
 

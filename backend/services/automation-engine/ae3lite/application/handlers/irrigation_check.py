@@ -40,6 +40,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
         topology = str(getattr(task, "topology", "") or "")
+        deadline = task.workflow.stage_deadline_at
 
         def _observe_duration(stop_reason: str) -> None:
             entered = getattr(task.workflow, "stage_entered_at", None)
@@ -48,6 +49,17 @@ class IrrigationCheckHandler(BaseStageHandler):
                 entered_cmp = entered.astimezone(timezone.utc).replace(tzinfo=None) if entered.tzinfo is not None else entered
                 duration = (now_cmp - entered_cmp).total_seconds()
                 IRRIGATION_DURATION.labels(topology=topology, stop_reason=stop_reason).observe(max(0.0, duration))
+
+        if pending_manual_step == "irrigation_stop":
+            _observe_duration("manual")
+            return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
+
+        if self._deadline_reached(now=now, deadline=deadline):
+            if await self._targets_reached(task=task, plan=plan, now=now):
+                _observe_duration("ready")
+                return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
+            _observe_duration("recovery")
+            return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
 
         await self._probe_irr_state(
             task=task,
@@ -60,9 +72,6 @@ class IrrigationCheckHandler(BaseStageHandler):
             },
         )
 
-        if pending_manual_step == "irrigation_stop":
-            _observe_duration("manual")
-            return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
         if control_mode == "manual":
             return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
 
@@ -161,14 +170,6 @@ class IrrigationCheckHandler(BaseStageHandler):
                 IRRIGATION_REPLAY.labels(topology=topology).inc()
                 _observe_duration("setup")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_setup")
-
-        deadline = task.workflow.stage_deadline_at
-        if self._deadline_reached(now=now, deadline=deadline):
-            if await self._targets_reached(task=task, plan=plan, now=now):
-                _observe_duration("ready")
-                return StageOutcome(kind="transition", next_stage="irrigation_stop_to_ready")
-            _observe_duration("recovery")
-            return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
 
         execution = (
             runtime.get("irrigation_execution")

@@ -52,6 +52,34 @@ class BaseStageHandler:
             return False
         return _utc_naive_dt(now) >= _utc_naive_dt(deadline)
 
+    def _remaining_stage_time_sec(self, *, now: datetime, deadline: datetime | None) -> float | None:
+        if deadline is None:
+            return None
+        remaining = (_utc_naive_dt(deadline) - _utc_naive_dt(now)).total_seconds()
+        return max(0.0, remaining)
+
+    def _irr_probe_deadline_budget_sec(self, *, runtime: Mapping[str, Any]) -> float:
+        # Real test-node command/state roundtrip can legitimately take a few seconds.
+        # If we start a fresh IRR probe too close to the stage deadline, the command
+        # can fail in polling after deadline instead of taking the intended stage path.
+        wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
+        # Budget must cover both the storage_state command roundtrip and the follow-up
+        # snapshot wait. On real hardware the combined path can easily exceed 5s.
+        base_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0
+        return max(8.0, base_budget)
+
+    def _deadline_too_close_for_irr_probe(
+        self,
+        *,
+        now: datetime,
+        deadline: datetime | None,
+        runtime: Mapping[str, Any],
+    ) -> bool:
+        remaining = self._remaining_stage_time_sec(now=now, deadline=deadline)
+        if remaining is None:
+            return False
+        return remaining <= self._irr_probe_deadline_budget_sec(runtime=runtime)
+
     # ── Probe IRR state (hardware safety check) ─────────────────────
 
     async def _probe_irr_state(

@@ -230,7 +230,7 @@ actions:
     zone_id: ${zone_id}
 - step: cleanup_retry_limit_alerts
   type: database_execute
-  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code = 'biz_prepare_recirculation_retry_exhausted'\n"
+  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code IN (\n    'biz_prepare_recirculation_retry_exhausted',\n    'biz_ae3_task_failed'\n  )\n"
   params:
     zone_id: ${zone_id}
 - step: complete_existing_cycles
@@ -1029,7 +1029,8 @@ actions:
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
     FROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n  AND status = 'pending'\n\
-    \  AND current_stage = 'solution_fill_check'\nLIMIT 1\n"
+    \  AND current_stage IN (\n    'solution_fill_check',\n    'prepare_recirculation_start',\n\
+    \    'prepare_recirculation_check'\n  )\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 40.0
@@ -1477,7 +1478,8 @@ actions:
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
     FROM ae_tasks\nWHERE id = CAST(:task_id_2 AS bigint)\n  AND status = 'pending'\n\
-    \  AND current_stage = 'solution_fill_check'\nLIMIT 1\n"
+    \  AND current_stage IN (\n    'solution_fill_check',\n    'prepare_recirculation_start',\n\
+    \    'prepare_recirculation_check'\n  )\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
   timeout: 60.0
@@ -1629,7 +1631,7 @@ cleanup:
 - step: cleanup_retry_limit_alerts_final
   type: database_execute
   optional: true
-  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code = 'biz_prepare_recirculation_retry_exhausted'\n"
+  query: "\nDELETE FROM alerts\nWHERE zone_id = :zone_id\n  AND code IN (\n    'biz_prepare_recirculation_retry_exhausted',\n    'biz_ae3_task_failed'\n  )\n"
   params:
     zone_id: ${zone_id}
 # phase_overrides сбрасываются при удалении grow_cycle (cleanup_created_cycle); отдельный api_put

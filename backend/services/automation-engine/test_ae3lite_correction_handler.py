@@ -265,6 +265,7 @@ class _MockRuntimeMonitor:
         )
         self._irr_has_snapshot = irr_has_snapshot
         self._irr_is_stale = irr_is_stale
+        self.irr_reads = 0
         self._ph_samples = list(ph_samples) if ph_samples is not None else [
             {"ts": NOW - timedelta(seconds=4), "value": ph},
             {"ts": NOW - timedelta(seconds=2), "value": ph},
@@ -306,6 +307,7 @@ class _MockRuntimeMonitor:
         }
 
     async def read_latest_irr_state(self, *, zone_id, max_age_sec, expected_cmd_id=None):
+        self.irr_reads += 1
         return {
             "has_snapshot": self._irr_has_snapshot,
             "is_stale": self._irr_is_stale,
@@ -671,16 +673,27 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert outcome.correction.ec_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
-    assert len(gateway.calls) == 2
-    commands = gateway.calls[1]["commands"]
-    assert len(commands) == 1
-    assert commands[0].payload == {
+    assert len(gateway.calls) == 3
+    reactivate_commands = gateway.calls[1]["commands"]
+    assert len(reactivate_commands) == 1
+    assert reactivate_commands[0].payload["cmd"] == "activate_sensor_mode"
+    dose_commands = gateway.calls[2]["commands"]
+    assert len(dose_commands) == 1
+    assert dose_commands[0].payload == {
         "cmd": "dose",
         "params": {"ml": 2.0},
     }
-    create_event.assert_awaited_once()
-    assert create_event.await_args.args[1] == "EC_DOSING"
-    payload = create_event.await_args.args[2]
+    assert create_event.await_count == 2
+    reactivate_call = create_event.await_args_list[0]
+    assert reactivate_call.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
+    reactivate_payload = reactivate_call.args[2]
+    assert reactivate_payload["reason"] == "pre_dose_reactivation"
+    assert reactivate_payload["failed_node_uid"] == "ec-node"
+    assert reactivate_payload["failed_channel"] == "ec_pump"
+    assert reactivate_payload["retry_cmd"] == "dose"
+    dose_call = create_event.await_args_list[1]
+    assert dose_call.args[1] == "EC_DOSING"
+    payload = dose_call.args[2]
     assert payload["task_id"] == 6
     assert payload["stage"] == "solution_fill_check"
     assert payload["workflow_phase"] == "tank_filling"
@@ -717,16 +730,27 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     assert outcome.correction.ph_attempt == 1
     assert outcome.due_delay_sec == 10
     assert outcome.correction.wait_until == NOW + timedelta(seconds=10)
-    assert len(gateway.calls) == 2
-    commands = gateway.calls[1]["commands"]
-    assert len(commands) == 1
-    assert commands[0].payload == {
+    assert len(gateway.calls) == 3
+    reactivate_commands = gateway.calls[1]["commands"]
+    assert len(reactivate_commands) == 1
+    assert reactivate_commands[0].payload["cmd"] == "activate_sensor_mode"
+    dose_commands = gateway.calls[2]["commands"]
+    assert len(dose_commands) == 1
+    assert dose_commands[0].payload == {
         "cmd": "dose",
         "params": {"ml": 1.5},
     }
-    create_event.assert_awaited_once()
-    assert create_event.await_args.args[1] == "PH_CORRECTED"
-    payload = create_event.await_args.args[2]
+    assert create_event.await_count == 2
+    reactivate_call = create_event.await_args_list[0]
+    assert reactivate_call.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
+    reactivate_payload = reactivate_call.args[2]
+    assert reactivate_payload["reason"] == "pre_dose_reactivation"
+    assert reactivate_payload["failed_node_uid"] == "ph-node"
+    assert reactivate_payload["failed_channel"] == "ph_up_pump"
+    assert reactivate_payload["retry_cmd"] == "dose"
+    dose_call = create_event.await_args_list[1]
+    assert dose_call.args[1] == "PH_CORRECTED"
+    payload = dose_call.args[2]
     assert payload["task_id"] == 6
     assert payload["stage"] == "solution_fill_check"
     assert payload["workflow_phase"] == "tank_filling"
@@ -1006,6 +1030,29 @@ async def test_corr_check_zero_sample_window_reactivates_stage_owned_sensor_mode
     assert len(commands) == 1
     assert commands[0].payload["cmd"] == "activate_sensor_mode"
     assert create_event.await_args.args[1] == "CORRECTION_SENSOR_MODE_REACTIVATED"
+
+
+async def test_corr_check_irrigation_stage_does_not_reactivate_already_active_sensor_mode() -> None:
+    corr = _base_corr(corr_step="corr_check", attempt=1, activated_here=False, stabilization_sec=45)
+    task = _make_task(corr=corr, current_stage="irrigation_check", workflow_phase="irrigating")
+    monitor = _MockRuntimeMonitor(ph_samples=[], ec_samples=[])
+    gateway = _MockGateway()
+    handler = _make_handler(monitor=monitor, gateway=gateway, pid_repo=_MockPidStateRepository())
+
+    create_event = AsyncMock(return_value=None)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    try:
+        outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction.corr_step == "corr_check"
+    assert outcome.due_delay_sec == 6.0
+    assert len(gateway.calls) == 0
+    create_event.assert_awaited_once()
+    assert create_event.await_args.args[1] == "CORRECTION_SKIPPED_WINDOW_NOT_READY"
 
 
 async def test_corr_check_low_water_logs_skip_event(monkeypatch: pytest.MonkeyPatch):
@@ -1385,6 +1432,85 @@ async def test_corr_prepare_recirc_deadline_preempts_active_correction_window():
     assert outcome.stage_retry_count == 2
 
 
+async def test_corr_prepare_recirc_imminent_deadline_skips_probe_and_exhausts_window():
+    corr = _base_corr(corr_step="corr_check", attempt=4, ec_attempt=2, ph_attempt=1)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_deadline_at=NOW + timedelta(seconds=4),
+        stage_retry_count=1,
+    )
+    monitor = _MockRuntimeMonitor(ph=6.4, ec=1.2)
+    gateway = _MockGateway()
+    handler = _make_handler(monitor=monitor, gateway=gateway)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 2
+    assert gateway.calls == []
+    assert monitor.irr_reads == 0
+
+
+async def test_corr_prepare_recirc_six_seconds_to_deadline_still_skips_probe():
+    corr = _base_corr(corr_step="corr_check", attempt=4, ec_attempt=2, ph_attempt=1)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_deadline_at=NOW + timedelta(seconds=6),
+        stage_retry_count=1,
+    )
+    monitor = _MockRuntimeMonitor(ph=6.4, ec=1.2)
+    gateway = _MockGateway()
+    handler = _make_handler(monitor=monitor, gateway=gateway)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 2
+    assert gateway.calls == []
+    assert monitor.irr_reads == 0
+
+
+async def test_corr_prepare_recirc_late_cooldown_retry_exhausts_window_before_next_probe():
+    class _PlannerCooldownStub:
+        def is_within_tolerance(self, **kwargs):
+            return False
+
+        def build_dose_plan(self, **kwargs):
+            return DosePlan(retry_after_sec=2.0)
+
+    corr = _base_corr(corr_step="corr_check", attempt=1, ec_attempt=2, ph_attempt=1)
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_deadline_at=NOW + timedelta(seconds=9),
+        stage_retry_count=2,
+    )
+    monitor = _MockRuntimeMonitor(ph=6.8, ec=0.7)
+    gateway = _MockGateway()
+    handler = _make_handler(
+        monitor=monitor,
+        gateway=gateway,
+        pid_repo=_MockPidStateRepository(),
+        planner=_PlannerCooldownStub(),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=dict(RUNTIME)), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 3
+    assert len(gateway.calls) == 1
+    assert gateway.calls[0]["commands"][0].channel == "storage_state"
+    assert monitor.irr_reads == 1
+
+
 async def test_corr_solution_fill_deadline_preempts_active_correction_window():
     corr = _base_corr(corr_step="corr_wait_ph", attempt=4, ec_attempt=3, ph_attempt=3)
     task = _make_task(
@@ -1399,6 +1525,38 @@ async def test_corr_solution_fill_deadline_preempts_active_correction_window():
 
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_timeout_stop"
+
+
+async def test_corr_irrigation_deadline_preempts_to_ready_when_targets_reached():
+    corr = _base_corr(corr_step="corr_wait_ph", attempt=4, ec_attempt=3, ph_attempt=3)
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=NOW - timedelta(seconds=1),
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.0, ec=2.0))
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_stop_to_ready"
+
+
+async def test_corr_irrigation_deadline_preempts_to_recovery_when_targets_not_reached():
+    corr = _base_corr(corr_step="corr_wait_ec", attempt=4, ec_attempt=3, ph_attempt=3)
+    task = _make_task(
+        corr=corr,
+        current_stage="irrigation_check",
+        workflow_phase="irrigating",
+        stage_deadline_at=NOW - timedelta(seconds=1),
+    )
+    handler = _make_handler(monitor=_MockRuntimeMonitor(ph=6.4, ec=1.2))
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "irrigation_stop_to_recovery"
 
 
 async def test_corr_deactivate_sets_done_and_exits():
@@ -2290,6 +2448,62 @@ async def test_corr_wait_ec_prepare_recirc_reaction_preserves_attempt_counters_a
     assert check_outcome.kind == "transition"
     assert check_outcome.next_stage == "prepare_recirculation_window_exhausted"
     assert check_outcome.stage_retry_count == 3
+
+
+async def test_corr_wait_ec_prepare_recirc_late_reaction_exhausts_window_before_next_check():
+    corr = _base_corr(
+        corr_step="corr_wait_ec",
+        attempt=1,
+        max_attempts=5,
+        ec_attempt=1,
+        ec_max_attempts=3,
+        ph_attempt=0,
+        ph_max_attempts=3,
+        needs_ec=True,
+        ec_amount_ml=2.0,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_duration_ms=1000,
+        wait_until=NOW - timedelta(seconds=1),
+    )
+    runtime = dict(RUNTIME)
+    runtime["pid_state"] = {
+        "ec": {
+            "last_dose_at": NOW - timedelta(seconds=12),
+            "last_measured_value": 1.0,
+            "no_effect_count": 0,
+        }
+    }
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+        stage_deadline_at=NOW + timedelta(seconds=8),
+        stage_retry_count=2,
+    )
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=1.4,
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=4), "value": 1.35},
+            {"ts": NOW - timedelta(seconds=2), "value": 1.4},
+            {"ts": NOW, "value": 1.45},
+        ],
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+
+    outcome = await handler._run_wait_observe(
+        task=task,
+        plan=_MockPlan(runtime=runtime),
+        corr=corr,
+        now=NOW,
+        pid_type="ec",
+        sensor_type="EC",
+    )
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 3
 
 
 async def test_corr_wait_ec_no_reaction_increments_attempt_counter():

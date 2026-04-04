@@ -200,12 +200,14 @@ def _make_handler(monitor: _Monitor | None = None, gateway: _MockGateway | None 
 @pytest.mark.asyncio
 async def test_deadline_exceeded_returns_window_exhausted() -> None:
     """Deadline passed → prepare_recirculation_window_exhausted with retry_count+1."""
-    handler = _make_handler()
+    monitor = _Monitor()
+    handler = _make_handler(monitor=monitor)
     task = _make_task(deadline=PAST, retry_count=2)
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "prepare_recirculation_window_exhausted"
     assert outcome.stage_retry_count == 3
+    assert monitor.irr_reads == 0
 
 
 @pytest.mark.asyncio
@@ -216,6 +218,34 @@ async def test_deadline_exceeded_increments_retry_count() -> None:
         task = _make_task(deadline=PAST, retry_count=initial_retry)
         outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
         assert outcome.stage_retry_count == initial_retry + 1
+
+
+@pytest.mark.asyncio
+async def test_deadline_too_close_for_probe_exhausts_window_without_probe() -> None:
+    monitor = _Monitor()
+    handler = _make_handler(monitor=monitor)
+    task = _make_task(deadline=NOW + timedelta(seconds=4), retry_count=1)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 2
+    assert monitor.irr_reads == 0
+
+
+@pytest.mark.asyncio
+async def test_deadline_six_seconds_away_still_skips_probe_on_realhw_budget() -> None:
+    monitor = _Monitor()
+    handler = _make_handler(monitor=monitor)
+    task = _make_task(deadline=NOW + timedelta(seconds=6), retry_count=2)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
+    assert outcome.stage_retry_count == 3
+    assert monitor.irr_reads == 0
 
 
 # ── 2. Targets reached ────────────────────────────────────────────────────────

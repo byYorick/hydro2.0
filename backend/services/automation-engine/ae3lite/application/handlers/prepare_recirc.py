@@ -34,6 +34,33 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
+        # Fail-fast before issuing another probe command. Otherwise a stage that is
+        # already out of time can publish a fresh storage_state request and then fail
+        # on command polling instead of taking the intended window-exhausted path.
+        deadline = task.workflow.stage_deadline_at
+        if self._deadline_reached(now=now, deadline=deadline):
+            _logger.info(
+                "prepare_recirculation_check: deadline exceeded, exhausting window zone_id=%s retry=%s",
+                task.zone_id, task.workflow.stage_retry_count + 1,
+            )
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+        if self._deadline_too_close_for_irr_probe(now=now, deadline=deadline, runtime=runtime):
+            _logger.info(
+                "prepare_recirculation_check: remaining stage time is below IRR probe budget, "
+                "exhausting window zone_id=%s retry=%s",
+                task.zone_id,
+                task.workflow.stage_retry_count + 1,
+            )
+            return StageOutcome(
+                kind="transition",
+                next_stage="prepare_recirculation_window_exhausted",
+                stage_retry_count=task.workflow.stage_retry_count + 1,
+            )
+
         await self._probe_irr_state(
             task=task, plan=plan, now=now,
             expected={
@@ -53,19 +80,6 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             return StageOutcome(
                 kind="poll",
                 due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
-            )
-
-        # Check deadline first (fail-fast)
-        deadline = task.workflow.stage_deadline_at
-        if self._deadline_reached(now=now, deadline=deadline):
-            _logger.info(
-                "prepare_recirculation_check: deadline exceeded, exhausting window zone_id=%s retry=%s",
-                task.zone_id, task.workflow.stage_retry_count + 1,
-            )
-            return StageOutcome(
-                kind="transition",
-                next_stage="prepare_recirculation_window_exhausted",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
             )
 
         if await self._targets_reached(task=task, plan=plan, now=now):

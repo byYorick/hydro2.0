@@ -1360,22 +1360,20 @@ actions:
     timeout: 20.0
     expected_rows: 1
 
-  - step: wait_fill_ec_correction_command
-    type: db.wait
+  - step: load_fill_ec_correction_commands_if_any
+    type: database_query
     query: |
-      SELECT id, channel, payload->>'cmd' AS cmd
+      SELECT id, channel, payload->>'cmd' AS cmd, created_at
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
         AND publish_status = 'accepted'
         AND channel = 'pump_a'
         AND payload->>'cmd' = 'dose'
       ORDER BY id DESC
-      LIMIT 1
+      LIMIT 5
     params:
       task_id: ${task_id}
-    timeout: 40.0
-    expected_rows: 1
-    save: fill_ec_correction_row
+    save: fill_ec_correction_rows
 
   - step: load_fill_ph_correction_commands_if_any
     type: database_query
@@ -1401,7 +1399,8 @@ actions:
         status,
         current_stage,
         workflow_phase,
-        corr_step
+        corr_step,
+        updated_at AS stage_started_at
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
         AND status = 'pending'
@@ -1449,7 +1448,7 @@ actions:
       SELECT id, channel, payload->>'cmd' AS cmd
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
-        AND id > CAST(:after_command_id AS bigint)
+        AND created_at >= CAST(:after_stage_started_at AS timestamptz)
         AND publish_status = 'accepted'
         AND channel = 'pump_a'
         AND payload->>'cmd' = 'dose'
@@ -1457,7 +1456,7 @@ actions:
       LIMIT 1
     params:
       task_id: ${task_id}
-      after_command_id: ${fill_ec_correction_row.0.id}
+      after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
     timeout: 120.0
     expected_rows: 1
     save: recirc_ec_correction_row
@@ -1468,15 +1467,36 @@ actions:
       SELECT COUNT(*)::int AS recirc_ph_cnt
       FROM ae_commands
       WHERE task_id = CAST(:task_id AS bigint)
-        AND id > CAST(:after_command_id AS bigint)
+        AND created_at >= CAST(:after_stage_started_at AS timestamptz)
         AND publish_status = 'accepted'
         AND channel IN ('pump_acid', 'pump_base')
         AND payload->>'cmd' = 'dose'
     params:
       task_id: ${task_id}
-      after_command_id: ${fill_ec_correction_row.0.id}
+      after_stage_started_at: ${prepare_recirc_stage_row.0.stage_started_at}
     expected_rows: 1
     save: recirc_ph_correction_count_row
+
+  - step: wait_recirculation_window_back_to_check
+    type: db.wait
+    query: |
+      SELECT
+        id,
+        status,
+        current_stage,
+        workflow_phase,
+        corr_step
+      FROM ae_tasks
+      WHERE id = CAST(:task_id AS bigint)
+        AND status = 'pending'
+        AND current_stage = 'prepare_recirculation_check'
+        AND corr_step = 'corr_check'
+      LIMIT 1
+    params:
+      task_id: ${task_id}
+    timeout: 120.0
+    expected_rows: 1
+    save: recirc_corr_check_row
 
   - step: force_recirculation_near_target_band
     type: ae_test_hook
@@ -1714,9 +1734,9 @@ assertions:
     type: custom_assert
     condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('prepare_recirculation_start_cnt', 0)) >= 1"
 
-  - name: ec_correction_logged_twice
+  - name: recirculation_ec_correction_logged
     type: custom_assert
-    condition: "int(context.get('expected_ae_command_counts_row', [{}])[0].get('ec_correction_cnt', 0)) >= 2"
+    condition: "len(context.get('recirc_ec_correction_row', [])) == 1"
 
   - name: ph_correction_optional
     type: custom_assert

@@ -227,3 +227,68 @@ async def test_read_metric_window_keeps_latest_samples_when_limit_exceeded() -> 
         assert round(result["samples"][-1]["value"], 1) == 8.0
     finally:
         await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_metric_window_includes_boundary_second_when_since_ts_has_microseconds() -> None:
+    prefix = f"ae3-metric-window-boundary-{uuid4().hex[:8]}"
+    monitor = PgZoneRuntimeMonitor()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+
+        sensor_rows = await fetch(
+            """
+            INSERT INTO sensors (
+                greenhouse_id, zone_id, scope, type, label, unit, is_active, created_at, updated_at
+            )
+            VALUES ($1, $2, 'inside', 'SOIL_MOISTURE', 'soil', '%', TRUE, NOW(), NOW())
+            RETURNING id
+            """,
+            greenhouse_id,
+            zone_id,
+        )
+        sensor_id = int(sensor_rows[0]["id"])
+        anchor = datetime.now(timezone.utc).replace(microsecond=0)
+
+        await execute(
+            """
+            INSERT INTO telemetry_samples (sensor_id, ts, zone_id, value, quality, created_at)
+            VALUES
+                ($1, $2, $3, 17.0, 'GOOD', NOW()),
+                ($1, $4, $3, 16.5, 'GOOD', NOW())
+            """,
+            sensor_id,
+            anchor - timedelta(seconds=4),
+            zone_id,
+            anchor - timedelta(seconds=2),
+        )
+        await execute(
+            """
+            INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+            VALUES ($1, 16.5, $2, 'GOOD', NOW())
+            ON CONFLICT (sensor_id)
+            DO UPDATE SET
+                last_value = EXCLUDED.last_value,
+                last_ts = EXCLUDED.last_ts,
+                last_quality = EXCLUDED.last_quality,
+                updated_at = EXCLUDED.updated_at
+            """,
+            sensor_id,
+            anchor - timedelta(seconds=2),
+        )
+
+        result = await monitor.read_metric_window(
+            zone_id=zone_id,
+            sensor_type="SOIL_MOISTURE",
+            since_ts=anchor - timedelta(seconds=4) + timedelta(microseconds=900_000),
+            telemetry_max_age_sec=10,
+        )
+
+        assert result["has_sensor"] is True
+        assert result["has_samples"] is True
+        assert [round(sample["value"], 1) for sample in result["samples"]] == [17.0, 16.5]
+    finally:
+        await _cleanup(prefix)

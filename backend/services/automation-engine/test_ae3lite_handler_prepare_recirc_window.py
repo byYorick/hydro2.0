@@ -111,6 +111,22 @@ async def test_limit_exceeded_also_returns_fail() -> None:
     assert outcome.kind == "fail"
 
 
+@pytest.mark.asyncio
+async def test_limit_reached_keeps_primary_failure_when_stop_commands_timeout() -> None:
+    gw = _Gateway(fail_on_call=1, error_code="command_timeout")
+
+    outcome = await _handler(gw).run(
+        task=_make_task(retry_count=3),
+        plan=_Plan(attempt_limit=3),
+        stage_def=None,
+        now=NOW,
+    )
+
+    assert outcome.kind == "fail"
+    assert outcome.error_code == "prepare_recirculation_attempt_limit_reached"
+    assert gw.call_count == 1
+
+
 # ── 2. retry_count < attempt_limit → rollover ────────────────────────────────
 
 @pytest.mark.asyncio

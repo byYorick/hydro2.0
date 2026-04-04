@@ -1,0 +1,21 @@
+scenario_ref: ./E106_ae3_two_tank_realhw_piggyback_ec_ph_cycle.yaml
+
+name: E106_debug_preserve_state
+description: |
+  Debug wrapper over the current real-hardware E106 scenario.
+  Keeps runtime DB artifacts in place after completion so failed sequential
+  correction loops can be inspected without losing ae_tasks, ae_commands,
+  zone_events and alerts.
+
+cleanup:
+  - step: reset_test_node_after_run
+    type: ae_test_hook
+    optional: true
+    zone_id: ${zone_id}
+    action: publish_command
+    history_logger_url: http://history-logger:9300
+    command:
+      node_uid: ${test_node_uid}
+      channel: storage_state
+      cmd: reset_state
+      params: {}

@@ -108,6 +108,51 @@ actions:
     ph_node_id: ${ph_node_row.0.node_id}
     ec_node_id: ${ec_node_row.0.node_id}
 
+  - step: load_ec_pump_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_a'
+      LIMIT 1
+    params:
+      node_id: ${ec_node_id}
+    expected_rows: 1
+    save: ec_pump_channel_row
+
+  - step: load_ph_up_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_base'
+      LIMIT 1
+    params:
+      node_id: ${ph_node_id}
+    expected_rows: 1
+    save: ph_up_channel_row
+
+  - step: load_ph_down_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'pump_acid'
+      LIMIT 1
+    params:
+      node_id: ${ph_node_id}
+    expected_rows: 1
+    save: ph_down_channel_row
+
+  - step: set_correction_channel_ids
+    type: set
+    ec_pump_channel_id: ${ec_pump_channel_row.0.node_channel_id}
+    ph_up_channel_id: ${ph_up_channel_row.0.node_channel_id}
+    ph_down_channel_id: ${ph_down_channel_row.0.node_channel_id}
+
   - step: publish_irrig_node_config
     type: api_post
     endpoint: /api/nodes/${irrig_node_id}/config/publish
@@ -215,7 +260,212 @@ actions:
       payload:
         preset_id: ${test_node_correction_preset_row.0.id}
         base_config: {}
-        phase_overrides: {}
+        phase_overrides:
+          irrigation:
+            runtime:
+              required_node_type: irrig
+              clean_fill_timeout_sec: 600
+              solution_fill_timeout_sec: 900
+              clean_fill_retry_cycles: 1
+              level_switch_on_threshold: 0.5
+              clean_max_sensor_label: level_clean_max
+              clean_min_sensor_label: level_clean_min
+              solution_max_sensor_label: level_solution_max
+              solution_min_sensor_label: level_solution_min
+            retry:
+              max_ec_correction_attempts: 6
+              max_ph_correction_attempts: 6
+              prepare_recirculation_timeout_sec: 600
+              prepare_recirculation_max_attempts: 3
+              prepare_recirculation_max_correction_attempts: 20
+              telemetry_stale_retry_sec: 30
+              decision_window_retry_sec: 10
+              low_water_retry_sec: 60
+            timing:
+              sensor_mode_stabilization_time_sec: 20
+              stabilization_sec: 20
+              telemetry_max_age_sec: 180
+              irr_state_max_age_sec: 15
+              level_poll_interval_sec: 20
+            tolerance:
+              prepare_tolerance:
+                ph_pct: 10.0
+                ec_pct: 16.0
+            safety:
+              safe_mode_on_no_effect: true
+              block_on_active_no_effect_alert: true
+            controllers:
+              ec:
+                mode: supervisory_allocator
+                kp: 8.0
+                ki: 0.08
+                kd: 0.0
+                derivative_filter_alpha: 0.35
+                deadband: 0.08
+                max_dose_ml: 14.0
+                min_interval_sec: 12
+                max_integral: 16.0
+                anti_windup:
+                  enabled: true
+                overshoot_guard:
+                  enabled: true
+                  hard_min: 0.0
+                  hard_max: 4.0
+                no_effect:
+                  enabled: true
+                  max_count: 2
+                observe:
+                  telemetry_period_sec: 2
+                  window_min_samples: 3
+                  decision_window_sec: 6
+                  observe_poll_sec: 2
+                  min_effect_fraction: 0.15
+                  stability_max_slope: 0.08
+                  no_effect_consecutive_limit: 4
+              ph:
+                mode: cross_coupled_pi_d
+                kp: 2.4
+                ki: 0.02
+                kd: 0.0
+                derivative_filter_alpha: 0.35
+                deadband: 0.05
+                max_dose_ml: 10.0
+                min_interval_sec: 12
+                max_integral: 8.0
+                anti_windup:
+                  enabled: true
+                overshoot_guard:
+                  enabled: true
+                  hard_min: 4.0
+                  hard_max: 8.5
+                no_effect:
+                  enabled: true
+                  max_count: 2
+                observe:
+                  telemetry_period_sec: 2
+                  window_min_samples: 3
+                  decision_window_sec: 6
+                  observe_poll_sec: 2
+                  min_effect_fraction: 0.15
+                  stability_max_slope: 0.04
+                  no_effect_consecutive_limit: 4
+            dosing:
+              solution_volume_l: 20.0
+              dose_ec_channel: dose_ec_a
+              dose_ph_up_channel: dose_ph_up
+              dose_ph_down_channel: dose_ph_down
+              max_ec_dose_ml: 14.0
+              max_ph_dose_ml: 10.0
+
+  - step: cleanup_existing_correction_bindings
+    type: database_execute
+    query: |
+      DELETE FROM channel_bindings
+      WHERE role IN ('dose_ec_a', 'dose_ph_up', 'dose_ph_down')
+        AND node_channel_id IN (
+          SELECT nc.id
+          FROM node_channels nc
+          JOIN nodes n ON n.id = nc.node_id
+          WHERE n.zone_id = :zone_id
+        )
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_existing_correction_infra
+    type: database_execute
+    query: |
+      DELETE FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :zone_id
+        AND label IN ('AE3 E2E EC Dose', 'AE3 E2E PH Up', 'AE3 E2E PH Down')
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_existing_e2e_calibrations
+    type: database_execute
+    query: |
+      DELETE FROM pump_calibrations
+      WHERE source = 'e2e_inline_correction'
+        AND node_channel_id IN (
+          CAST(:ec_pump_channel_id AS bigint),
+          CAST(:ph_up_channel_id AS bigint),
+          CAST(:ph_down_channel_id AS bigint)
+        )
+    params:
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: insert_correction_infrastructure
+    type: database_execute
+    query: |
+      INSERT INTO infrastructure_instances (
+        owner_type,
+        owner_id,
+        asset_type,
+        label,
+        required,
+        created_at,
+        updated_at
+      )
+      VALUES
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E EC Dose', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Up', TRUE, NOW(), NOW()),
+        ('zone', :zone_id, 'PUMP', 'AE3 E2E PH Down', TRUE, NOW(), NOW())
+    params:
+      zone_id: ${zone_id}
+
+  - step: insert_correction_bindings
+    type: database_execute
+    query: |
+      INSERT INTO channel_bindings (
+        infrastructure_instance_id,
+        node_channel_id,
+        direction,
+        role,
+        created_at,
+        updated_at
+      )
+      SELECT ii.id, mapping.node_channel_id, 'actuator', mapping.role, NOW(), NOW()
+      FROM (
+        VALUES
+          ('AE3 E2E EC Dose', CAST(:ec_pump_channel_id AS bigint), 'dose_ec_a'),
+          ('AE3 E2E PH Up', CAST(:ph_up_channel_id AS bigint), 'dose_ph_up'),
+          ('AE3 E2E PH Down', CAST(:ph_down_channel_id AS bigint), 'dose_ph_down')
+      ) AS mapping(label, node_channel_id, role)
+      JOIN infrastructure_instances ii
+        ON ii.owner_type = 'zone'
+       AND ii.owner_id = :zone_id
+       AND ii.label = mapping.label
+    params:
+      zone_id: ${zone_id}
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
+
+  - step: insert_correction_calibrations
+    type: database_execute
+    query: |
+      INSERT INTO pump_calibrations (
+        node_channel_id,
+        ml_per_sec,
+        k_ms_per_ml_l,
+        source,
+        quality_score,
+        sample_count,
+        valid_from,
+        is_active,
+        created_at,
+        updated_at
+      )
+      VALUES
+        (CAST(:ec_pump_channel_id AS bigint), 1.0, 1.0, 'e2e_inline_correction', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_up_channel_id AS bigint), 1.0, 1.0, 'e2e_inline_correction', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW()),
+        (CAST(:ph_down_channel_id AS bigint), 1.0, 1.0, 'e2e_inline_correction', 1.0, 1, NOW() - INTERVAL '1 minute', TRUE, NOW(), NOW())
+    params:
+      ec_pump_channel_id: ${ec_pump_channel_id}
+      ph_up_channel_id: ${ph_up_channel_id}
+      ph_down_channel_id: ${ph_down_channel_id}
 
   - step: wait_runtime_level_sensors_registered
     type: db.wait
@@ -485,7 +735,8 @@ actions:
         '{
           "targets": {
             "irrigation": {
-              "correction_during_irrigation": true
+              "correction_during_irrigation": true,
+              "correction_slack_sec": 150
             }
           }
         }'::jsonb,
