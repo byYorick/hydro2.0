@@ -21,12 +21,10 @@ import { parseNodeTelemetryBatch } from '@/ws/nodeTelemetryPayload'
 import type { CommandType } from '@/types'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 
-type ZoneActionType = CommandType | 'START_IRRIGATION'
-
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 interface LoadingState extends Record<string, boolean> {
-  irrigate: boolean
+  actionSubmit: boolean
   nextPhase: boolean
   cyclePause: boolean
   cycleResume: boolean
@@ -83,7 +81,7 @@ export function useZoneShowPage() {
   const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
   const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
 
-  const currentActionType = ref<ZoneActionType>('START_IRRIGATION')
+  const currentActionType = ref<CommandType>('START_IRRIGATION')
   const selectedNodeId = ref<number | null>(null)
   const selectedNode = ref<any>(null)
   const growthCycleInitialData = ref<{
@@ -98,7 +96,7 @@ export function useZoneShowPage() {
   const pumpCalibrationLastRunToken = ref<string | null>(null)
 
   const { loading, setLoading } = useLoading<LoadingState>({
-    irrigate: false,
+    actionSubmit: false,
     nextPhase: false,
     cyclePause: false,
     cycleResume: false,
@@ -113,7 +111,7 @@ export function useZoneShowPage() {
 
   const { showToast } = useToast()
   const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus } = useCommands(showToast)
-  const { fetchHistory } = useTelemetry(showToast)
+  const { fetchHistory, fetchHistoryWithNodes } = useTelemetry(showToast)
   const { reloadZone } = useZones(showToast)
   const { api } = useApi(showToast)
   const { subscribeToZoneCommands } = useWebSocket(showToast)
@@ -128,7 +126,25 @@ export function useZoneShowPage() {
     subscribeToZoneCommands,
   })
 
-  const chart = useZoneTelemetryChart(pageState.zoneId, { fetchHistory })
+  const hasSoilMoisture = computed(() => {
+    return pageState.devices.value.some((d) =>
+      (d.channels ?? []).some(
+        (c) =>
+          c.binding_role === 'soil_moisture_sensor' ||
+          String(c.metric ?? '').toUpperCase() === 'SOIL_MOISTURE'
+      )
+    )
+  })
+
+  const chart = useZoneTelemetryChart(pageState.zoneId, {
+    fetchHistory,
+    fetchHistoryWithNodes: fetchHistoryWithNodes as (
+      zoneId: number,
+      metric: 'SOIL_MOISTURE',
+      params: { from?: string; to: string }
+    ) => Promise<Record<number, Array<{ ts: number; value: number }>>>,
+    hasSoilMoisture,
+  })
 
   const { zoneId, zone, activeGrowCycle, reloadZonePageProps } = pageState
   let stopTelemetryRealtimeSubscription: (() => void) | null = null
@@ -173,7 +189,7 @@ export function useZoneShowPage() {
 
   // ─── Action handlers ──────────────────────────────────────────────────────
 
-  const openActionModal = (actionType: ZoneActionType): void => {
+  const openActionModal = (actionType: CommandType): void => {
     currentActionType.value = actionType
     modals.open('action')
   }
@@ -209,11 +225,11 @@ export function useZoneShowPage() {
     actionType,
     params,
   }: {
-    actionType: ZoneActionType
+    actionType: CommandType
     params: Record<string, unknown>
   }): Promise<void> => {
     if (!zoneId.value) return
-    setLoading('irrigate', true)
+    setLoading('actionSubmit', true)
 
     const actionNames: Record<string, string> = {
       START_IRRIGATION: 'Полив',
@@ -240,6 +256,7 @@ export function useZoneShowPage() {
       }
       const actionName = actionNames[actionType] || 'Действие'
       showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
+      modals.close('action')
       reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
       reloadZonePageProps()
     } catch (err) {
@@ -249,7 +266,7 @@ export function useZoneShowPage() {
       const actionName = actionNames[actionType] || 'Действие'
       showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
     } finally {
-      setLoading('irrigate', false)
+      setLoading('actionSubmit', false)
     }
   }
 
@@ -437,6 +454,8 @@ export function useZoneShowPage() {
     chartTimeRange: chart.chartTimeRange,
     chartDataPh: chart.chartDataPh,
     chartDataEc: chart.chartDataEc,
+    chartDataSoilMoisture: chart.chartDataSoilMoisture,
+    hasSoilMoisture,
     onChartTimeRangeChange: chart.onChartTimeRangeChange,
     // from cycle actions
     harvestModal,

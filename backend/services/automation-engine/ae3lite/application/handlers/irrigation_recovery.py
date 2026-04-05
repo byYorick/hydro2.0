@@ -1,4 +1,4 @@
-"""Post-irrigation recovery handler."""
+"""Handler recovery после полива."""
 
 from __future__ import annotations
 
@@ -46,13 +46,13 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
             return StageOutcome(
                 kind="fail",
                 error_code="irrigation_recovery_timeout",
-                error_message="Irrigation recovery timeout exceeded",
+                error_message="Превышено время этапа восстановления после полива",
             )
 
         if await self._targets_reached(task=task, plan=plan, now=now):
             return StageOutcome(kind="transition", next_stage="irrigation_recovery_stop_to_ready")
 
-        _logger.info("irrigation_recovery_check: targets not met, entering correction zone_id=%s", task.zone_id)
+        _logger.info("irrigation_recovery_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         corr = CorrectionState(
             corr_step="corr_check",

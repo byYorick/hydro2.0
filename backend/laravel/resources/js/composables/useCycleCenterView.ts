@@ -1,4 +1,5 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import type { IrrigationCorrectionSummary } from '@/types'
 
 export interface Greenhouse {
   id: number
@@ -41,6 +42,16 @@ export interface ZoneSummary {
   status: string
   greenhouse: Greenhouse | null
   telemetry: ZoneTelemetry
+  /** pH/EC/темп для карточек (effective targets), optional для старых payload */
+  targets?: {
+    ph: { min: number | null; max: number | null } | null
+    ec: { min: number | null; max: number | null } | null
+    temperature: { min: number | null; max: number | null } | null
+  }
+  /** Подсказка длительности полива из снапшота фазы (irrigation_duration_sec) */
+  current_phase_targets?: Record<string, unknown> | null
+  /** Сводка коррекции при поливе (как на странице зоны) */
+  irrigation_correction_summary?: IrrigationCorrectionSummary | null
   alerts_count: number
   alerts_preview: Array<{ id: number; type: string; details: string; created_at: string }>
   devices: { total: number; online: number }

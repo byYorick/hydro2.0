@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3 correction-authority apply acknowledgements."""
+"""PostgreSQL-репозиторий подтверждений apply для correction-authority AE3."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ _SQL_MARK_APPLIED = """
 
 
 class PgZoneCorrectionAuthorityRepository:
-    """Stores the last correction authority version actually accepted by AE."""
+    """Хранит последнюю версию correction authority, фактически принятую AE."""
 
     def _normalize_applied_at(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc) if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)

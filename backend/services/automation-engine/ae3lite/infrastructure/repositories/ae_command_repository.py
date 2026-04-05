@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3-Lite command execution records."""
+"""PostgreSQL-репозиторий записей выполнения команд AE3-Lite."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from common.db import get_pool
 
 
 class PgAeCommandRepository:
-    """Persists AE3-Lite command steps and resolves legacy history-logger links."""
+    """Сохраняет шаги команд AE3-Lite и разрешает legacy-связки с history-logger."""
 
     def _normalize_timestamp(self, value: Optional[datetime]) -> Optional[datetime]:
         if value is None:
@@ -59,7 +59,8 @@ class PgAeCommandRepository:
                     normalized_now,
                 )
         except asyncpg.exceptions.ForeignKeyViolationError:
-            # Parent ae_tasks row removed between plan step and insert (e.g. raw DELETE in e2e / admin).
+            # Родительская строка `ae_tasks` была удалена между шагом планирования и INSERT
+            # (например, raw DELETE в e2e или админском сценарии).
             return None
         return int(row["id"])
 

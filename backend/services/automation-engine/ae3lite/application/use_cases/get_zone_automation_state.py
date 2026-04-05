@@ -1,4 +1,4 @@
-"""Get full automation state for a zone — for /zones/{id}/state endpoint."""
+"""Собирает полное automation state зоны для endpoint'а /zones/{id}/state."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ _STAGE_LABELS: dict[str, str] = {
     "apply": "Свет (scheduler tick)",
 }
 
-# Maps (from_stage, to_stage) → (event_code, human label)
+# Соответствие (from_stage, to_stage) → (event_code, human label)
 _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("startup", "clean_fill_start"): ("CLEAN_FILL_STARTED", "Запуск наполнения чистой водой"),
     ("clean_fill_start", "clean_fill_check"): ("CLEAN_FILL_IN_PROGRESS", "Наполнение чистой водой"),
@@ -75,7 +75,7 @@ _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("irrigation_recovery_check", "irrigation_recovery_stop_to_ready"): ("IRRIGATION_RECOVERY_COMPLETED", "Recovery после полива завершён"),
 }
 
-# Telemetry sensor labels that carry pH/EC/level data
+# Метки телеметрических сенсоров, несущих данные pH/EC/level
 _PH_LABELS = frozenset({"ph_sensor", "ph"})
 _EC_LABELS = frozenset({"ec_sensor", "ec"})
 _CLEAN_MAX_LABELS = frozenset({"level_clean_max", "clean_level_max", "clean_max"})
@@ -86,11 +86,11 @@ _PH_CORRECTION_STEPS = frozenset({"corr_dose_ph", "corr_wait_ph"})
 
 
 class GetZoneAutomationStateUseCase:
-    """Returns full AutomationState-compatible payload for a zone.
+    """Возвращает полный payload зоны в формате AutomationState.
 
-    Reads the last task (including failed/completed) and maps it to the
-    AutomationState structure expected by the Laravel frontend.
-    Enriches with stage transitions (timeline) and live telemetry (current_levels).
+    Читает последнюю задачу, включая failed/completed, и маппит её в структуру,
+    которую ожидает Laravel frontend. Дополняет ответ переходами между stage
+    и живой телеметрией.
     """
 
     def __init__(
@@ -107,7 +107,7 @@ class GetZoneAutomationStateUseCase:
         self._startup_reset_guard_use_case = startup_reset_guard_use_case
 
     async def run(self, *, zone_id: int) -> dict[str, Any]:
-        # Try active task first, then last terminal task
+        # Сначала пробуем активную задачу, затем последнюю terminal-задачу
         task: Optional[Any] = await self._task_repository.get_active_for_zone(zone_id=zone_id)
         workflow_state: Optional[Any] = None
         last_task: Optional[Any] = None
@@ -137,7 +137,7 @@ class GetZoneAutomationStateUseCase:
         if task is None:
             last_task = await self._task_repository.get_last_for_zone(zone_id=zone_id)
 
-        # Fetch enrichment data in parallel-ish (sequential is fine — both are fast)
+        # Подтянуть дополнительные данные; последовательного чтения здесь достаточно
         transitions: list[dict] = []
         if task is not None:
             try:
@@ -175,9 +175,9 @@ class GetZoneAutomationStateUseCase:
         )
 
     async def _fetch_zone_telemetry(self, *, zone_id: int) -> tuple[dict[str, Any], bool]:
-        """Query telemetry_last for pH, EC and water level sensors of this zone.
+        """Читает ``telemetry_last`` для pH, EC и датчиков уровня этой зоны.
 
-        Returns ``(levels_dict, ok)`` where ``ok`` is False if the SQL read failed.
+        Возвращает ``(levels_dict, ok)``, где ``ok`` равно ``False``, если SQL-чтение не удалось.
         """
         try:
             rows = await self._fetch_fn(
@@ -241,7 +241,7 @@ class GetZoneAutomationStateUseCase:
                 "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
                 "active": False,
             })
-        # Mark the last event as active
+        # Пометить последнее событие как активное
         if events:
             events[-1]["active"] = True
         return events

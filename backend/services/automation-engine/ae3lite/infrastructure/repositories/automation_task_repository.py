@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3-Lite automation tasks."""
+"""PostgreSQL-репозиторий задач автоматизации AE3-Lite."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ CORRECTION_OPTIONAL_FIELDS = (
 )
 
 class PgAutomationTaskRepository:
-    """Atomic task CRUD / state transitions for AE3-Lite v2."""
+    """Атомарный CRUD задач и переходы состояния для AE3-Lite v2."""
 
     def _normalize_timestamp(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
@@ -65,8 +65,8 @@ class PgAutomationTaskRepository:
 
     def _correction_values(self, correction: CorrectionState | None) -> tuple[Any, ...]:
         if correction is None:
-            # Keep NOT NULL correction columns consistent when correction is inactive.
-            # Some DB columns (e.g. corr_ec_current_seq_index) are NOT NULL with defaults.
+            # Поддерживать согласованность NOT NULL колонок коррекции, когда коррекция неактивна.
+            # Некоторые поля БД, например `corr_ec_current_seq_index`, имеют NOT NULL и default.
             values: list[Any] = [None] * len(CORRECTION_OPTIONAL_FIELDS)
             try:
                 idx = CORRECTION_OPTIONAL_FIELDS.index("ec_current_seq_index")
@@ -160,7 +160,7 @@ class PgAutomationTaskRepository:
         return self._task_from_row(row)
 
     async def get_last_for_zone(self, *, zone_id: int) -> AutomationTask | None:
-        """Return the most recent task for a zone regardless of status."""
+        """Возвращает самую свежую задачу зоны независимо от статуса."""
         row = await self._fetchrow(
             """
             SELECT *
@@ -197,7 +197,7 @@ class PgAutomationTaskRepository:
         )
         return [AutomationTask.from_row(row) for row in rows]
 
-    # ── Create ──────────────────────────────────────────────────────
+    # ── Создание ────────────────────────────────────────────────────
 
     async def create_pending(
         self,

@@ -92,6 +92,48 @@
         </div>
       </div>
     </section>
+
+    <section
+      v-if="hasSoilMoisture"
+      class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4"
+    >
+      <div class="mb-3">
+        <div class="flex items-center gap-2">
+          <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+            Влажность почвы
+          </div>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)] text-[color:var(--accent-amber)] font-medium">
+            Умный полив
+          </span>
+        </div>
+        <div class="text-xs text-[color:var(--text-muted)] mt-1">
+          {{ soilMoistureNodeNames.length > 1 ? `${soilMoistureNodeNames.length} датчика` : 'Датчик влажности субстрата' }}
+        </div>
+      </div>
+
+      <div v-if="soilMoistureSeries.length > 0 && hasSoilMoistureData">
+        <MultiSeriesTelemetryChart
+          title="Влажность почвы, %"
+          :series="soilMoistureSeries"
+          :time-range="chartTimeRange"
+          @time-range-change="onChartRangeChange"
+        />
+      </div>
+      <div
+        v-else
+        class="text-center py-6"
+      >
+        <div class="text-3xl mb-2">
+          💧
+        </div>
+        <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+          Нет данных влажности почвы
+        </div>
+        <div class="text-xs text-[color:var(--text-muted)]">
+          Данные появятся после того, как датчики влажности начнут отправлять телеметрию
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -100,6 +142,7 @@ import { computed, defineAsyncComponent, ref } from 'vue'
 import Button from '@/Components/Button.vue'
 import { useTheme } from '@/composables/useTheme'
 import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'
+import type { Device } from '@/types/Device'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Components/MultiSeriesTelemetryChart.vue'))
@@ -118,11 +161,15 @@ type TargetRange = {
   max: number
 }
 
+
 interface Props {
   zoneId: number | null
   chartTimeRange: TelemetryRange
   chartDataPh: Array<{ ts: number; value: number }>
   chartDataEc: Array<{ ts: number; value: number }>
+  chartDataSoilMoisture: Record<number, Array<{ ts: number; value: number }>>
+  hasSoilMoisture: boolean
+  devices: Device[]
   telemetry: ZoneTelemetry
   targets: ZoneTargetsInput
 }
@@ -142,6 +189,14 @@ const resolveCssColor = (variable: string, fallback: string): string => {
   const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
   return value || fallback
 }
+
+const SOIL_MOISTURE_COLORS = [
+  { cssVar: '--accent-amber', fallback: '#f59e0b' },
+  { cssVar: '--accent-orange', fallback: '#f97316' },
+  { cssVar: '--accent-purple', fallback: '#a855f7' },
+  { cssVar: '--accent-pink', fallback: '#ec4899' },
+  { cssVar: '--accent-teal', fallback: '#14b8a6' },
+]
 
 const chartPalette = computed(() => {
   theme.value
@@ -202,6 +257,47 @@ const multiSeriesData = computed(() => {
       targetRange: resolveTargetRange('ec'),
     },
   ]
+})
+
+const nodeNameById = computed((): Record<number, string> => {
+  const map: Record<number, string> = {}
+  for (const device of props.devices) {
+    map[device.id] = device.name || `Нода #${device.id}`
+  }
+  return map
+})
+
+const soilMoistureNodeIds = computed((): number[] => {
+  return Object.keys(props.chartDataSoilMoisture).map(Number).filter((id) => id > 0)
+})
+
+const soilMoistureNodeNames = computed((): string[] => {
+  return soilMoistureNodeIds.value.map(
+    (id) => nodeNameById.value[id] ?? `Нода #${id}`
+  )
+})
+
+const hasSoilMoistureData = computed((): boolean => {
+  return soilMoistureNodeIds.value.some(
+    (id) => (props.chartDataSoilMoisture[id]?.length ?? 0) > 0
+  )
+})
+
+const soilMoistureSeries = computed(() => {
+  theme.value
+  return soilMoistureNodeIds.value.map((nodeId, index) => {
+    const colorDef = SOIL_MOISTURE_COLORS[index % SOIL_MOISTURE_COLORS.length]
+    const color = resolveCssColor(colorDef.cssVar, colorDef.fallback)
+    const nodeName = nodeNameById.value[nodeId] ?? `Нода #${nodeId}`
+    return {
+      name: `soil_${nodeId}`,
+      label: nodeName,
+      color,
+      data: props.chartDataSoilMoisture[nodeId] ?? [],
+      currentValue: null,
+      yAxisIndex: 0,
+    }
+  })
 })
 
 const onRangeClick = (range: TelemetryRange): void => {

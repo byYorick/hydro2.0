@@ -1,4 +1,4 @@
-"""Execute one claimed AE3-Lite task to next safe state (v2)."""
+"""Выполняет одну claimed-задачу AE3-Lite до следующего безопасного состояния."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ SNAPSHOT_RETRY_EXHAUSTED_CODE = "ae3_snapshot_retry_exhausted"
 
 
 class ExecuteTaskUseCase:
-    """Runs one AE3 cycle_start stage and returns terminal or safely requeued task."""
+    """Выполняет один stage AE3 cycle_start и возвращает terminal-задачу или безопасно requeue'нутую."""
 
     FAIL_SAFE_SHUTDOWN_CHANNELS = (
         "valve_clean_fill",
@@ -79,12 +79,12 @@ class ExecuteTaskUseCase:
     async def run(self, *, task: Any, now: datetime) -> Any:
         owner = str(task.claimed_by or "").strip()
         if owner == "":
-            raise TaskExecutionError("ae3_task_missing_owner", f"Task {task.id} has no claimed_by owner")
+            raise TaskExecutionError("ae3_task_missing_owner", f"У задачи {task.id} отсутствует claimed_by owner")
 
         first_run = str(getattr(task, "status", "")).strip().lower() == "claimed"
         running_task = await self._task_repository.mark_running(task_id=task.id, owner=owner, now=now)
         if running_task is None:
-            raise TaskExecutionError("ae3_task_running_transition_failed", f"Unable to mark task {task.id} running")
+            raise TaskExecutionError("ae3_task_running_transition_failed", f"Не удалось перевести задачу {task.id} в состояние running")
 
         snapshot = None
         plan = None
@@ -108,7 +108,7 @@ class ExecuteTaskUseCase:
                 )
                 start_observability_emitted = True
 
-            # v2: all two_tank tasks go through WorkflowRouter
+            # В v2 все two_tank-задачи идут через WorkflowRouter
             topology = running_task.topology
             if topology in ("two_tank", "two_tank_drip_substrate_trays"):
                 final_task = await self._workflow_router.run(task=running_task, plan=plan, now=now)
@@ -128,7 +128,7 @@ class ExecuteTaskUseCase:
                             })
                         except Exception:
                             logger.warning(
-                                "AE3 failed to log AE_TASK_COMPLETED event zone_id=%s task_id=%s",
+                                "AE3 не смог записать событие AE_TASK_COMPLETED zone_id=%s task_id=%s",
                                 final_task.zone_id,
                                 final_task.id,
                                 exc_info=True,
@@ -143,18 +143,18 @@ class ExecuteTaskUseCase:
                         })
                     except Exception:
                         logger.warning(
-                            "AE3 failed to log AE_TASK_COMPLETED event zone_id=%s task_id=%s",
+                            "AE3 не смог записать событие AE_TASK_COMPLETED zone_id=%s task_id=%s",
                             final_task.zone_id,
                             final_task.id,
                             exc_info=True,
                         )
                 return final_task
 
-            # Fallback for non-two-tank topologies (generic single-batch)
+            # Fallback для не-two_tank topology: generic single-batch
             if len(plan.steps) < 1:
                 raise TaskExecutionError(
                     "unsupported_command_plan_steps",
-                    f"AE3-Lite requires at least one command step, got {len(plan.steps)} for task_id={running_task.id}",
+                    f"AE3-Lite требует хотя бы один command step, получено {len(plan.steps)} для task_id={running_task.id}",
                 )
             result = await self._command_gateway.run_batch(task=running_task, commands=plan.steps, now=now)
             if not result["success"]:
@@ -172,7 +172,7 @@ class ExecuteTaskUseCase:
             )
             if terminal_task is not None:
                 logger.info(
-                    "AE3 task execution stopped after external terminal transition: zone_id=%s task_id=%s status=%s",
+                    "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s",
                     getattr(terminal_task, "zone_id", None),
                     getattr(terminal_task, "id", None),
                     getattr(terminal_task, "status", None),
@@ -188,12 +188,12 @@ class ExecuteTaskUseCase:
             timeout_now = datetime.now(timezone.utc)
             error_code = TASK_EXECUTION_TIMEOUT_CANCEL_MSG if timeout_cancelled else TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
             error_message = (
-                "Task execution exceeded runtime timeout"
+                "Выполнение задачи превысило runtime timeout"
                 if timeout_cancelled
-                else "Zone lease was lost during task execution"
+                else "Во время выполнения задачи был потерян zone lease"
             )
             logger.error(
-                "AE3 task execution cancelled by runtime guard: zone_id=%s task_id=%s stage=%s error_code=%s",
+                "AE3 execution задачи отменено runtime guard: zone_id=%s task_id=%s stage=%s error_code=%s",
                 running_task.zone_id,
                 running_task.id,
                 getattr(running_task, "current_stage", None),
@@ -229,7 +229,7 @@ class ExecuteTaskUseCase:
             )
             if terminal_task is not None:
                 logger.info(
-                    "AE3 task execution stopped after external terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
+                    "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
                     getattr(terminal_task, "zone_id", None),
                     getattr(terminal_task, "id", None),
                     getattr(terminal_task, "status", None),
@@ -247,7 +247,7 @@ class ExecuteTaskUseCase:
                 return retried_task
 
             logger.error(
-                "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
+                "AE3 domain error при выполнении задачи: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
                 running_task.zone_id,
                 running_task.id,
                 getattr(running_task, "current_stage", None),
@@ -282,7 +282,7 @@ class ExecuteTaskUseCase:
             )
             if terminal_task is not None:
                 logger.info(
-                    "AE3 task execution stopped after external terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
+                    "AE3 execution задачи остановлено после внешнего terminal transition: zone_id=%s task_id=%s status=%s reason=%s",
                     getattr(terminal_task, "zone_id", None),
                     getattr(terminal_task, "id", None),
                     getattr(terminal_task, "status", None),
@@ -291,7 +291,7 @@ class ExecuteTaskUseCase:
                 return terminal_task
             error_code = getattr(exc, "code", "ae3_task_execution_failed")
             logger.error(
-                "AE3 task execution domain error: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
+                "AE3 domain error при выполнении задачи: zone_id=%s task_id=%s stage=%s error_type=%s error_code=%s error=%s",
                 running_task.zone_id,
                 running_task.id,
                 getattr(running_task, "current_stage", None),
@@ -315,7 +315,7 @@ class ExecuteTaskUseCase:
         except Exception as exc:
             message = str(exc).strip() or exc.__class__.__name__
             logger.error(
-                "AE3 task execution unhandled exception: zone_id=%s task_id=%s stage=%s error_type=%s error=%s",
+                "Необработанное исключение при выполнении задачи AE3: zone_id=%s task_id=%s stage=%s error_type=%s error=%s",
                 running_task.zone_id,
                 running_task.id,
                 getattr(running_task, "current_stage", None),
@@ -371,7 +371,7 @@ class ExecuteTaskUseCase:
                 f"in stage {getattr(task, 'current_stage', '')})"
             )
             logger.error(
-                "AE3 transient snapshot gap exhausted retry budget: zone_id=%s task_id=%s stage=%s stage_age_sec=%s error=%s",
+                "AE3 transient snapshot gap исчерпал бюджет повторов: zone_id=%s task_id=%s stage=%s stage_age_sec=%s error=%s",
                 getattr(task, "zone_id", None),
                 getattr(task, "id", None),
                 getattr(task, "current_stage", None),
@@ -399,7 +399,7 @@ class ExecuteTaskUseCase:
         if not callable(update_stage):
             raise TaskExecutionError(
                 "ae3_snapshot_retry_persist_failed",
-                f"Task repository does not support update_stage for transient snapshot retry task_id={task.id}",
+                f"Task repository не поддерживает update_stage для transient snapshot retry task_id={task.id}",
             )
 
         due_at = now + timedelta(seconds=SNAPSHOT_TRANSIENT_RETRY_SEC)
@@ -414,11 +414,11 @@ class ExecuteTaskUseCase:
         if updated_task is None:
             raise TaskExecutionError(
                 "ae3_snapshot_retry_persist_failed",
-                f"Unable to persist transient snapshot retry for task {task.id}",
+                f"Не удалось сохранить transient snapshot retry для задачи {task.id}",
             )
 
         logger.warning(
-            "AE3 transient snapshot gap detected: zone_id=%s task_id=%s stage=%s retry_in=%ss stage_age_sec=%s error=%s",
+            "Обнаружен AE3 transient snapshot gap: zone_id=%s task_id=%s stage=%s retry_in=%ss stage_age_sec=%s error=%s",
             getattr(task, "zone_id", None),
             getattr(task, "id", None),
             getattr(task, "current_stage", None),
@@ -477,7 +477,7 @@ class ExecuteTaskUseCase:
             await create_zone_event(zone_id, event_type, dict(details))
         except Exception:
             logger.warning(
-                "AE3 failed to log snapshot retry observability event zone_id=%s task_id=%s event_type=%s",
+                "AE3 не смог записать observability event retry snapshot zone_id=%s task_id=%s event_type=%s",
                 zone_id,
                 int(getattr(task, "id", 0) or 0),
                 event_type,
@@ -497,7 +497,7 @@ class ExecuteTaskUseCase:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to publish snapshot retry infra alert zone_id=%s task_id=%s code=%s",
+                "AE3 не смог отправить infra alert retry snapshot zone_id=%s task_id=%s code=%s",
                 zone_id,
                 int(getattr(task, "id", 0) or 0),
                 alert_code,
@@ -520,7 +520,7 @@ class ExecuteTaskUseCase:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to log AE_TASK_STARTED readiness event zone_id=%s task_id=%s",
+                "AE3 не смог записать readiness event AE_TASK_STARTED zone_id=%s task_id=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 exc_info=True,
@@ -528,7 +528,7 @@ class ExecuteTaskUseCase:
         send_service_log(
             service="automation-engine",
             level="info",
-            message="AE3 task start readiness confirmed",
+            message="AE3 подтвердил готовность к старту задачи",
             context=details,
         )
 
@@ -582,7 +582,7 @@ class ExecuteTaskUseCase:
         if updated is None:
             raise TaskExecutionError(
                 "irrigation_decision_snapshot_persist_failed",
-                f"Unable to persist irrigation decision snapshot for task {getattr(task, 'id', None)}",
+                f"Не удалось сохранить snapshot решения по поливу для задачи {getattr(task, 'id', None)}",
             )
 
         await self._emit_irrigation_decision_snapshot_locked(
@@ -624,7 +624,7 @@ class ExecuteTaskUseCase:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to log IRRIGATION_DECISION_SNAPSHOT_LOCKED zone_id=%s task_id=%s",
+                "AE3 не смог записать IRRIGATION_DECISION_SNAPSHOT_LOCKED zone_id=%s task_id=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 exc_info=True,
@@ -633,7 +633,7 @@ class ExecuteTaskUseCase:
         send_service_log(
             service="automation-engine",
             level="info",
-            message="AE3 irrigation decision snapshot locked",
+            message="AE3 зафиксировал snapshot decision-controller полива",
             context=details,
         )
 
@@ -654,7 +654,7 @@ class ExecuteTaskUseCase:
         send_service_log(
             service="automation-engine",
             level="error",
-            message="AE3 task start readiness failed",
+            message="AE3 не подтвердил готовность к старту задачи",
             context=details,
         )
 
@@ -803,7 +803,7 @@ class ExecuteTaskUseCase:
                 )
         except Exception:
             logger.warning(
-                "AE3 failed to log AE_TASK_FAILED event zone_id=%s task_id=%s error_code=%s",
+                "AE3 не смог записать событие AE_TASK_FAILED zone_id=%s task_id=%s error_code=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 error_code,
@@ -830,7 +830,7 @@ class ExecuteTaskUseCase:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to sync zone_workflow_state on fail-closed zone_id=%s task_id=%s",
+                "AE3 не смог синхронизировать zone_workflow_state в fail-closed path zone_id=%s task_id=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 exc_info=True,
@@ -906,7 +906,7 @@ class ExecuteTaskUseCase:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to write task-failed alert: task_id=%s zone_id=%s code=%s",
+                "AE3 не смог записать alert task-failed: task_id=%s zone_id=%s code=%s",
                 getattr(task, "id", None),
                 getattr(task, "zone_id", None),
                 error_code,
@@ -984,7 +984,7 @@ class ExecuteTaskUseCase:
             return result
         except Exception:
             logger.warning(
-                "AE3 failed to enrich command_timeout observability details: zone_id=%s task_id=%s",
+                "AE3 не смог обогатить observability details для command_timeout: zone_id=%s task_id=%s",
                 getattr(task, "zone_id", None),
                 getattr(task, "id", None),
                 exc_info=True,
@@ -1083,7 +1083,7 @@ class ExecuteTaskUseCase:
                 current_task = await get_task_by_id(task_id=int(getattr(task, "id", 0) or 0))
             except Exception:
                 logger.warning(
-                    "AE3 fail-safe shutdown preflight failed to load task state: task_id=%s zone_id=%s",
+                    "AE3 fail-safe shutdown preflight не смог загрузить состояние задачи: task_id=%s zone_id=%s",
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
                     exc_info=True,
@@ -1135,7 +1135,7 @@ class ExecuteTaskUseCase:
             )
             if not bool(result.get("success")):
                 logger.error(
-                    "AE3 fail-safe shutdown batch reported non-success: task_id=%s zone_id=%s error_code=%s",
+                    "AE3 fail-safe shutdown batch вернул non-success: task_id=%s zone_id=%s error_code=%s",
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
                     result.get("error_code"),
@@ -1144,14 +1144,14 @@ class ExecuteTaskUseCase:
             raise
         except Exception:
             logger.exception(
-                "AE3 fail-safe shutdown batch failed: task_id=%s zone_id=%s",
+                "AE3 fail-safe shutdown batch завершился ошибкой: task_id=%s zone_id=%s",
                 getattr(task, "id", None),
                 getattr(task, "zone_id", None),
             )
 
     def _log_skip_fail_safe_shutdown(self, *, task: Any, reason: str) -> None:
         logger.info(
-            "AE3 skipping fail-safe shutdown: task_id=%s zone_id=%s reason=%s",
+            "AE3 пропускает fail-safe shutdown: task_id=%s zone_id=%s reason=%s",
             getattr(task, "id", None),
             getattr(task, "zone_id", None),
             reason,
@@ -1204,7 +1204,7 @@ class ExecuteTaskUseCase:
                     task = await get_task_by_id(task_id=task_id)
                 except Exception:
                     logger.warning(
-                        "AE3 failed to load current task state for terminal short-circuit: task_id=%s",
+                        "AE3 не смог загрузить текущее состояние задачи для terminal short-circuit: task_id=%s",
                         task_id,
                         exc_info=True,
                     )

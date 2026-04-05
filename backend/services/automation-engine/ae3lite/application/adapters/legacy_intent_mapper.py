@@ -1,4 +1,4 @@
-"""Maps legacy scheduler intent rows into canonical AE3-Lite v2 task metadata."""
+"""Преобразует строки legacy scheduler intent в канонические метаданные задач AE3-Lite v2."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class IntentMetadata:
-    """Extracted intent metadata for task creation."""
+    """Извлечённые метаданные intent для создания задачи."""
 
     task_type: str
     current_stage: str
@@ -28,7 +28,7 @@ class IntentMetadata:
 
 
 class LegacyIntentMapper:
-    """Compatibility adapter between legacy ``zone_automation_intents`` and AE3 v2."""
+    """Адаптер совместимости между legacy ``zone_automation_intents`` и AE3 v2."""
 
     DEFAULT_TRIGGER = "start_cycle_api"
 
@@ -38,7 +38,7 @@ class LegacyIntentMapper:
         source: str,
         intent_row: Mapping[str, Any],
     ) -> IntentMetadata:
-        """Extract structured intent metadata from legacy intent row."""
+        """Извлекает структурированные метаданные intent из legacy-строки."""
         payload = intent_row.get("payload")
         intent_payload = dict(payload) if isinstance(payload, Mapping) else {}
         _raw_id = intent_row.get("id")
@@ -50,12 +50,12 @@ class LegacyIntentMapper:
         topology = str(raw_topology or "").strip().lower()
         if not topology:
             logger.error(
-                "AE3 legacy intent mapper rejected intent without topology: intent_id=%s",
+                "AE3 legacy intent mapper отклонил intent без topology: intent_id=%s",
                 intent_id,
             )
             raise TaskCreateError(
                 "start_cycle_intent_topology_missing",
-                f"Intent {intent_id if intent_id is not None else '<unknown>'} is missing topology",
+                f"У intent {intent_id if intent_id is not None else '<unknown>'} отсутствует topology",
                 details={"intent_id": intent_id},
             )
         requested_task_type = str(intent_payload.get("task_type") or "").strip().lower()
@@ -112,7 +112,7 @@ class LegacyIntentMapper:
             irrigation_requested_duration_sec=requested_duration_sec,
         )
 
-    # Backward-compat alias (used by v1 code paths until they are removed)
+    # Алиас обратной совместимости для v1 code path, пока они не удалены
     def build_cycle_start_payload(
         self,
         *,

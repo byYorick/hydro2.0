@@ -1,4 +1,4 @@
-"""Thin AE3-Lite client for history-logger command publish."""
+"""Тонкий клиент AE3-Lite для публикации команд через history-logger."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ _RETRYABLE_STATUS_CODES = frozenset(range(500, 600))
 
 
 class HistoryLoggerClient:
-    """Publishes commands only through history-logger `/commands`."""
+    """Публикует команды только через endpoint `/commands` сервиса history-logger."""
 
     def __init__(
         self,
@@ -71,11 +71,11 @@ class HistoryLoggerClient:
         try:
             body = response.json()
         except ValueError as exc:
-            raise CommandPublishError("history-logger returned invalid JSON") from exc
+            raise CommandPublishError("history-logger вернул некорректный JSON") from exc
 
         command_id = str(((body.get("data") or {}) if isinstance(body, dict) else {}).get("command_id") or "").strip()
         if not command_id:
-            raise CommandPublishError("history-logger response does not contain data.command_id")
+            raise CommandPublishError("Ответ history-logger не содержит data.command_id")
         return command_id
 
     async def _post_with_retry(
@@ -90,7 +90,7 @@ class HistoryLoggerClient:
                 response = await self._post(path, payload, headers)
             except httpx.RequestError as exc:
                 if attempt >= self._max_retries:
-                    raise CommandPublishError(f"history-logger request failed: {exc}") from exc
+                    raise CommandPublishError(f"Запрос к history-logger завершился ошибкой: {exc}") from exc
                 await self._sleep_before_retry(path=path, attempt=attempt, reason=type(exc).__name__)
                 attempt += 1
                 continue
@@ -105,7 +105,7 @@ class HistoryLoggerClient:
 
     async def _sleep_before_retry(self, *, path: str, attempt: int, reason: str) -> None:
         logger.warning(
-            "Retrying history-logger request: path=%s attempt=%s reason=%s backoff_sec=%.2f",
+            "Повторный запрос к history-logger: path=%s attempt=%s reason=%s backoff_sec=%.2f",
             path,
             attempt + 1,
             reason,
@@ -131,4 +131,4 @@ class HistoryLoggerClient:
         text = str(response.text or "").strip()
         if text:
             return text
-        return f"history-logger publish failed with HTTP {response.status_code}"
+        return f"history-logger не смог опубликовать команду и вернул HTTP {response.status_code}"

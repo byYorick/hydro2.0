@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 const roleState = vi.hoisted(() => ({ role: 'agronomist' }))
 const apiGetMock = vi.hoisted(() => vi.fn())
@@ -189,6 +190,7 @@ function defaultStateResponse(zoneId = 42) {
 
 describe('ZoneAutomationTab.vue', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     window.localStorage.clear()
     roleState.role = 'agronomist'
     apiGetMock.mockReset()

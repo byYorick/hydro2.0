@@ -1,4 +1,4 @@
-"""AE3-Lite PostgreSQL read-models."""
+"""PostgreSQL read-model'и AE3-Lite."""
 
 from .task_status_read_model import PgTaskStatusReadModel
 from .zone_runtime_monitor import PgZoneRuntimeMonitor

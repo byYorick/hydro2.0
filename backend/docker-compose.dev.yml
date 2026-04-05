@@ -28,6 +28,9 @@ services:
       - shared_preload_libraries=timescaledb,pg_cron
       - -c
       - cron.database_name=hydro_dev
+      # dev: интеграционные pytest (Laravel + AE + др.) иначе упираются в default ~100
+      - -c
+      - max_connections=200
     environment:
       POSTGRES_PASSWORD: hydro
       POSTGRES_USER: hydro

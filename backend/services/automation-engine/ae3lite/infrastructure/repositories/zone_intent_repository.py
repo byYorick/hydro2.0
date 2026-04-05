@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3-Lite zone automation intent lifecycle."""
+"""PostgreSQL-репозиторий жизненного цикла zone automation intent в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ _ACTIVE_STATUSES = frozenset({"claimed", "running"})
 
 
 class PgZoneIntentRepository:
-    """Manages zone_automation_intents lifecycle for AE3-Lite."""
+    """Управляет жизненным циклом `zone_automation_intents` для AE3-Lite."""
 
     async def claim_start_cycle(
         self,

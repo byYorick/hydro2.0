@@ -1,4 +1,4 @@
-"""SolutionFillCheckHandler — in-flow correction while solution tank is filling."""
+"""SolutionFillCheckHandler: in-flow correction во время заполнения бака раствора."""
 
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ _logger = logging.getLogger(__name__)
 
 
 class SolutionFillCheckHandler(BaseStageHandler):
-    """Handles ``solution_fill_check``: fill window plus in-flow correction.
+    """Обрабатывает ``solution_fill_check``: окно заполнения и in-flow correction.
 
-    Outcomes:
-    1. Tank full + targets reached → ``solution_fill_stop_to_ready``
-    2. Tank full + targets not reached → ``solution_fill_stop_to_prepare``
-    3. Tank still filling + targets not reached → correction inside ``solution_fill_check``
-    4. Tank still filling + targets reached → poll
-    5. Deadline exceeded → ``solution_fill_timeout_stop``
+    Исходы:
+    1. Бак полон и target'ы достигнуты → ``solution_fill_stop_to_ready``
+    2. Бак полон, но target'ы не достигнуты → ``solution_fill_stop_to_prepare``
+    3. Бак ещё заполняется и target'ы не достигнуты → коррекция внутри ``solution_fill_check``
+    4. Бак ещё заполняется и target'ы достигнуты → ``poll``
+    5. Дедлайн превышен → ``solution_fill_timeout_stop``
     """
 
     async def run(
@@ -68,7 +68,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         )
 
         if solution_max["is_triggered"]:
-            # Tank full — check consistency
+            # Бак полон: проверить согласованность датчиков
             await self._check_sensor_consistency(
                 task=task,
                 runtime=runtime,
@@ -78,14 +78,14 @@ class SolutionFillCheckHandler(BaseStageHandler):
             )
 
             if await self._targets_reached(task=task, plan=plan, now=now):
-                _logger.debug("solution_fill_check: targets reached, stopping fill zone_id=%s", task.zone_id)
+                _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)
                 return StageOutcome(
                     kind="transition",
                     next_stage="solution_fill_stop_to_ready",
                 )
 
             _logger.info(
-                "solution_fill_check: tank full and targets not met, switching to prepare recirculation zone_id=%s",
+                "solution_fill_check: бак заполнен, но цели не достигнуты; переход в prepare recirculation zone_id=%s",
                 task.zone_id,
             )
             return StageOutcome(
@@ -93,10 +93,10 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 next_stage="solution_fill_stop_to_prepare",
             )
 
-        # Check deadline
+        # Проверка дедлайна
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
-            _logger.warning("solution_fill_check: deadline exceeded, stopping zone_id=%s", task.zone_id)
+            _logger.warning("solution_fill_check: дедлайн превышен, заполнение останавливается zone_id=%s", task.zone_id)
             STAGE_DEADLINE_EXCEEDED.labels(
                 topology=str(getattr(task, "topology", "") or ""),
                 stage="solution_fill_check",
@@ -105,7 +105,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 await send_biz_alert(
                     code="biz_solution_fill_timeout",
                     alert_type="AE3 Solution Fill Timeout",
-                    message="Solution tank fill deadline exceeded before the stage could complete.",
+                    message="Превышено время заполнения бака раствором до завершения этапа.",
                     severity="warning",
                     zone_id=int(task.zone_id),
                     details={
@@ -113,12 +113,12 @@ class SolutionFillCheckHandler(BaseStageHandler):
                         "topology": str(getattr(task, "topology", "") or ""),
                         "stage": "solution_fill_check",
                         "component": "handler:solution_fill_check",
-                        "message": "Solution tank fill deadline exceeded — check solution supply valve and pump.",
+                        "message": "Превышено время заполнения бака раствором; проверьте клапан подачи раствора и насос.",
                     },
                     scope_parts=("stage:solution_fill_check",),
                 )
             except Exception:
-                _logger.warning("Failed to send solution_fill_timeout alert zone_id=%s", task.zone_id)
+                _logger.warning("Не удалось отправить alert solution_fill_timeout zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="solution_fill_timeout_stop")
 
         if await self._targets_reached(task=task, plan=plan, now=now):
@@ -129,7 +129,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
 
         if int(getattr(task.workflow, "stage_retry_count", 0) or 0) > 0:
             _logger.info(
-                "solution_fill_check: in-flow correction already exhausted, continuing fill without new correction zone_id=%s retry_count=%s",
+                "solution_fill_check: in-flow correction уже исчерпана, заполнение продолжается без новой коррекции zone_id=%s retry_count=%s",
                 task.zone_id,
                 getattr(task.workflow, "stage_retry_count", 0),
             )
@@ -139,7 +139,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             )
 
         _logger.info(
-            "solution_fill_check: filling in progress and targets not met, entering in-flow correction zone_id=%s",
+            "solution_fill_check: заполнение продолжается, цели не достигнуты; вход в in-flow correction zone_id=%s",
             task.zone_id,
         )
         corr = self._build_correction_state(

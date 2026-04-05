@@ -1,4 +1,4 @@
-"""Bootstrap helpers for wiring AE3-Lite v2 runtime services."""
+"""Bootstrap-helper'ы для связывания runtime-сервисов AE3-Lite v2."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ from common.db import fetch
 
 @dataclass(frozen=True)
 class Ae3RuntimeBundle:
-    """Ready-to-use AE3 runtime services for compat ingress and worker drain."""
+    """Готовые к использованию runtime-сервисы AE3 для compat-ingress и drain worker'а."""
 
     create_task_from_intent_use_case: CreateTaskFromIntentUseCase
     solution_tank_startup_guard_use_case: GuardSolutionTankStartupResetUseCase

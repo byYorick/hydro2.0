@@ -1,4 +1,4 @@
-"""Runtime entrypoints for AE3-Lite v2."""
+"""Точки входа runtime для AE3-Lite v2."""
 
 from .config import Ae3RuntimeConfig
 from .worker import Ae3RuntimeWorker

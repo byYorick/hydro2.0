@@ -1,4 +1,4 @@
-"""Native AE3-Lite runtime spec resolver for two-tank cycle_start."""
+"""Нативный resolver runtime-spec для two-tank `cycle_start` в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Any, Dict, Mapping, Sequence
 from ae3lite.domain.errors import ErrorCodes, PlannerConfigurationError
 from ae3lite.domain.services.phase_utils import normalize_phase_key as _normalize_phase_key
 
-# ── Defaults for retry/attempt limits ────────────────────────────────────────
+# ── Значения по умолчанию для лимитов retry/attempt ─────────────────────────
 
-#: Maximum correction attempts during prepare_recirculation before escalating.
+#: Максимальное число попыток коррекции в `prepare_recirculation` перед эскалацией.
 _DEFAULT_PREPARE_RECIRC_MAX_CORRECTION_ATTEMPTS: int = 20
 _MAX_CORRECTION_ATTEMPTS: int = 500
 _REQUIRED_TWO_TANK_PLAN_CHANNELS: dict[str, tuple[str, ...]] = {
@@ -121,7 +121,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         active_phase_cfg = solution_fill_cfg if solution_fill_cfg else resolved_base_cfg
     else:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} has unsupported workflow_phase={active_phase_key!r} for two_tank runtime",
+            f"У зоны {zone_id} неподдерживаемый workflow_phase={active_phase_key!r} для two_tank runtime",
             code=ErrorCodes.ZONE_CORRECTION_CONFIG_MISSING_CRITICAL,
         )
 
@@ -167,7 +167,7 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
     )
     if not required_node_types:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} correction_config.base/phases.solution_fill.runtime.required_node_type is required"
+            f"Для зоны {zone_id} обязательно correction_config.base/phases.solution_fill.runtime.required_node_type"
         )
     target_ph = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ph")
     target_ec = _resolve_phase_target(snapshot=snapshot, zone_id=zone_id, key="ec")
@@ -188,7 +188,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             path="correction_config.base/phases.tank_recirc.retry.prepare_recirculation_timeout_sec",
             minimum=30,
         ),
-        # Matches workflow_router.prepare_recirculation_check deadline: base + slack (default 900s if omitted).
+        # Совпадает с дедлайном workflow_router.prepare_recirculation_check:
+        # базовое окно + slack, по умолчанию 900 с, если параметр не задан.
         "prepare_recirculation_correction_slack_sec": _resolve_bounded_int(
             recirc_retry_cfg.get("prepare_recirculation_correction_slack_sec"),
             default=900,
@@ -270,8 +271,8 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
             if isinstance(getattr(snapshot, "process_calibrations", None), Mapping)
             else {}
         ),
-        # Correction config: dose channels, timing, dosing sensitivity.
-        # "actuators" key is populated later by CycleStartPlanner after actuator resolution.
+        # Конфиг коррекции: каналы дозирования, тайминги, чувствительность.
+        # Ключ `actuators` заполняется позже в CycleStartPlanner после resolve actuator'ов.
         "correction": dict(default_correction_cfg),
         "correction_by_phase": correction_by_phase,
         "command_specs": {},
@@ -453,7 +454,7 @@ def _collect_missing_paths(*, config: Mapping[str, Any], template: Mapping[str, 
 
 
 def _validate_prepare_recirculation_timing(runtime: dict[str, Any]) -> None:
-    """Raise PlannerConfigurationError if prepare_recirculation window is too short to run one correction cycle."""
+    """Выбрасывает `PlannerConfigurationError`, если окно `prepare_recirculation` слишком короткое для одного цикла коррекции."""
     timeout_sec = runtime["prepare_recirculation_timeout_sec"]
     correction_by_phase = runtime.get("correction_by_phase")
     correction = correction_by_phase.get("tank_recirc") if isinstance(correction_by_phase, Mapping) else None
@@ -521,7 +522,7 @@ def _require_labels(raw_value: Any, *, path: str) -> list[str]:
     labels = _normalize_labels(raw_value, ())
     if labels:
         return labels
-    raise PlannerConfigurationError(f"Missing required correction_config field: {path}")
+    raise PlannerConfigurationError(f"Отсутствует обязательное поле correction_config: {path}")
 
 
 def _resolve_int(raw_value: Any, default: int, minimum: int) -> int:
@@ -548,11 +549,11 @@ def _require_int(raw_value: Any, *, path: str, minimum: int, maximum: int | None
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
-        raise PlannerConfigurationError(f"Missing or invalid correction_config field: {path}") from None
+        raise PlannerConfigurationError(f"Отсутствует или некорректно поле correction_config: {path}") from None
     if value < minimum:
-        raise PlannerConfigurationError(f"correction_config field {path} must be >= {minimum}, got {value}")
+        raise PlannerConfigurationError(f"Поле correction_config {path} должно быть >= {minimum}, получено {value}")
     if maximum is not None and value > maximum:
-        raise PlannerConfigurationError(f"correction_config field {path} must be <= {maximum}, got {value}")
+        raise PlannerConfigurationError(f"Поле correction_config {path} должно быть <= {maximum}, получено {value}")
     return int(value)
 
 
@@ -560,11 +561,11 @@ def _require_float(raw_value: Any, *, path: str, minimum: float, maximum: float 
     try:
         value = float(raw_value)
     except (TypeError, ValueError):
-        raise PlannerConfigurationError(f"Missing or invalid correction_config field: {path}") from None
+        raise PlannerConfigurationError(f"Отсутствует или некорректно поле correction_config: {path}") from None
     if value < minimum:
-        raise PlannerConfigurationError(f"correction_config field {path} must be >= {minimum}, got {value}")
+        raise PlannerConfigurationError(f"Поле correction_config {path} должно быть >= {minimum}, получено {value}")
     if maximum is not None and value > maximum:
-        raise PlannerConfigurationError(f"correction_config field {path} must be <= {maximum}, got {value}")
+        raise PlannerConfigurationError(f"Поле correction_config {path} должно быть <= {maximum}, получено {value}")
     return value
 
 
@@ -572,7 +573,7 @@ def _require_str(raw_value: Any, *, path: str) -> str:
     value = str(raw_value or "").strip().lower()
     if value:
         return value
-    raise PlannerConfigurationError(f"Missing required correction_config field: {path}")
+    raise PlannerConfigurationError(f"Отсутствует обязательное поле correction_config: {path}")
 
 
 def _resolve_prepare_recirculation_max_correction_attempts(raw_value: Any) -> int:
@@ -591,15 +592,15 @@ def _resolve_phase_target(*, snapshot: Any, zone_id: int, key: str) -> float:
     candidate = section.get("target")
     if candidate is None:
         raise PlannerConfigurationError(
-            f"Zone {zone_id} current recipe phase has no target_{key}; "
-            "automation requires recipe-phase pH/EC targets and forbids defaults or runtime overrides",
+            f"У зоны {zone_id} в текущей recipe phase отсутствует target_{key}; "
+            "automation требует recipe-phase pH/EC targets и запрещает defaults или runtime overrides",
             code=ErrorCodes.ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL,
         )
     try:
         return max(0.0, min(upper, float(candidate)))
     except (TypeError, ValueError):
         raise PlannerConfigurationError(
-            f"Zone {zone_id} current recipe phase target_{key} is not numeric: {candidate!r}",
+            f"У зоны {zone_id} в текущей recipe phase target_{key} не является числом: {candidate!r}",
             code=ErrorCodes.ZONE_RECIPE_PHASE_TARGETS_MISSING_CRITICAL,
         )
 
@@ -614,7 +615,7 @@ def _resolve_phase_target_bound(*, snapshot: Any, key: str, bound: str, fallback
     try:
         return max(0.0, min(upper, float(candidate)))
     except (TypeError, ValueError):
-        raise PlannerConfigurationError(f"{key}_{bound} value is not numeric: {candidate!r}")
+        raise PlannerConfigurationError(f"Значение {key}_{bound} не является числом: {candidate!r}")
 
 
 def _normalize_command_plan(
@@ -744,8 +745,8 @@ def _build_irrigation_execution(snapshot: Any) -> dict[str, Any]:
     irrigation = irrigation if isinstance(irrigation, Mapping) else {}
     corr_during = bool(irrigation.get("correction_during_irrigation", True))
     if irrigation.get("duration_sec") is None or irrigation.get("interval_sec") is None:
-        # Irrigation targets may be absent for cycle_start planning paths.
-        # They are required only when actually executing irrigation_start tasks.
+        # Для путей планирования `cycle_start` irrigation-target'ы могут отсутствовать.
+        # Они обязательны только при реальном выполнении задач `irrigation_start`.
         return {
             "duration_sec": None,
             "interval_sec": None,
@@ -846,7 +847,7 @@ def _build_soil_moisture_target(snapshot: Any) -> dict[str, Any] | None:
     target = irrigation.get("targets") if isinstance(irrigation.get("targets"), Mapping) else {}
     soil = target.get("soil_moisture") if isinstance(target.get("soil_moisture"), Mapping) else {}
     if not soil:
-        # Fallback: day/night curve stored in recipe phase extensions.
+        # Fallback: day/night-кривая хранится в recipe phase extensions.
         day_night = extensions.get("day_night") if isinstance(extensions.get("day_night"), Mapping) else {}
         day_night = day_night if isinstance(day_night, Mapping) else {}
         soil_curve = day_night.get("soil_moisture") if isinstance(day_night.get("soil_moisture"), Mapping) else {}

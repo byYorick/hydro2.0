@@ -171,7 +171,7 @@ function buildWorkspaceResponse(overrides: Record<string, unknown> = {}) {
           generated_at: '2026-02-10T08:00:30Z',
         },
         capabilities: {
-          executable_task_types: ['irrigation', 'lighting'],
+          executable_task_types: ['irrigation', 'lighting', 'diagnostics'],
           planned_task_types: ['irrigation', 'lighting'],
           non_executable_planned_task_types: [],
           ae3_irrigation_only_dispatch: true,

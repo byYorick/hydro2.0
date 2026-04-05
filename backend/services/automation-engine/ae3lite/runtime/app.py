@@ -1,4 +1,4 @@
-"""Standalone FastAPI app for AE3-Lite runtime."""
+"""Standalone FastAPI-приложение для runtime AE3-Lite."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class ManualStepRequest(BaseModel):
 
 
 class BackgroundTaskLimitError(RuntimeError):
-    """Raised when AE3 refuses to spawn more tracked background tasks."""
+    """Выбрасывается, когда AE3 отказывается создавать новые отслеживаемые фоновые задачи."""
 
 
 async def _drain_background_tasks(background_tasks: set[asyncio.Task], timeout_sec: float = 5.0) -> None:
@@ -70,7 +70,7 @@ async def _drain_background_tasks(background_tasks: set[asyncio.Task], timeout_s
     try:
         await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=timeout_sec)
     except asyncio.TimeoutError:
-        logger.warning("Timed out draining AE3 background tasks: pending=%s", len(pending))
+        logger.warning("Превышено время ожидания завершения фоновых задач AE3: pending=%s", len(pending))
     finally:
         background_tasks.difference_update(pending)
 
@@ -120,7 +120,7 @@ def _spawn_background_task(
             exc = done_task.exception()
         except Exception as callback_exc:
             logger.error(
-                "Failed to inspect AE3 background task result: task_name=%s error=%s",
+                "Не удалось проверить результат фоновой задачи AE3: task_name=%s error=%s",
                 task_name,
                 callback_exc,
                 exc_info=True,
@@ -159,7 +159,7 @@ def _spawn_background_task(
             asyncio.create_task(_send_alert())
         except Exception:
             logger.warning(
-                "Failed to schedule alert for crashed AE3 background task: task_name=%s",
+                "Не удалось запланировать alert для аварийно завершившейся фоновой задачи AE3: task_name=%s",
                 task_name,
                 exc_info=True,
             )
@@ -249,7 +249,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         app.state.ae3_runtime_config = runtime_config
         app.state.ae3_critical_background_tasks = critical_background_tasks
 
-        # Start intent status listener if DB DSN is available.
+        # Запустить listener статусов intent, если доступен DB DSN.
         intent_listener_task: Optional[asyncio.Task] = None
         intent_listener: Optional[IntentStatusListener] = None
         if runtime_config.db_dsn:
@@ -313,7 +313,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                     },
                 )
             except Exception:
-                logger.warning("Failed to send alert for AE3 API exception", exc_info=True)
+                logger.warning("Не удалось отправить alert для исключения AE3 API", exc_info=True)
             clear_trace_id()
             raise
 
@@ -338,7 +338,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 await send_infra_alert(
                     code="ae3_api_http_5xx",
                     alert_type="AE3 API HTTP 5xx",
-                    message=f"AE3 API returned HTTP {response.status_code} for {request.method} {request.url.path}",
+                    message=f"AE3 API вернул HTTP {response.status_code} для {request.method} {request.url.path}",
                     severity="error",
                     zone_id=None,
                     service="automation-engine",
@@ -353,7 +353,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                     },
                 )
             except Exception:
-                logger.warning("Failed to send alert for AE3 API HTTP 5xx", exc_info=True)
+                logger.warning("Не удалось отправить alert для AE3 API HTTP 5xx", exc_info=True)
 
         clear_trace_id()
         return response
@@ -475,20 +475,20 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
 
     @app.get("/zones/{zone_id}/state")
     async def get_zone_state(zone_id: int) -> dict[str, Any]:
-        """Return full automation state for a zone (tasks, phases, errors)."""
+        """Возвращает полное automation state зоны: задачи, фазы и ошибки."""
         await _validate_scheduler_zone(zone_id)
         return await bundle.get_zone_automation_state_use_case.run(zone_id=zone_id)
 
     @app.get("/zones/{zone_id}/control-mode")
     async def get_zone_control_mode(zone_id: int) -> dict[str, Any]:
-        """Return current control_mode and allowed manual steps for a zone."""
+        """Возвращает текущий `control_mode` и разрешённые manual step для зоны."""
         await _validate_scheduler_zone(zone_id)
         result = await bundle.get_zone_control_state_use_case.run(zone_id=zone_id)
         return {"status": "ok", "data": {**result, "zone_id": zone_id}}
 
     @app.post("/zones/{zone_id}/control-mode")
     async def set_zone_control_mode(zone_id: int, request: Request, req: ControlModeRequest) -> dict[str, Any]:
-        """Persist control_mode for the zone and sync the active task snapshot."""
+        """Сохраняет `control_mode` зоны и синхронизирует snapshot активной задачи."""
         await _validate_scheduler_security_baseline(request)
         await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
         await bundle.set_control_mode_use_case.run(
@@ -502,7 +502,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
 
     @app.post("/zones/{zone_id}/manual-step")
     async def request_zone_manual_step(zone_id: int, request: Request, req: ManualStepRequest) -> dict[str, Any]:
-        """Store a pending public manual step for the active zone task."""
+        """Сохраняет pending public manual step для активной задачи зоны."""
         await _validate_scheduler_security_baseline(request)
         await validate_scheduler_zone(zone_id, fetch_fn=fetch, logger=logger)
         try:
@@ -537,7 +537,7 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         except Exception as exc:
             db_ready = False
             db_reason = type(exc).__name__
-            logger.warning("AE3 readiness DB probe failed: %s", exc, exc_info=True)
+            logger.warning("Проверка готовности AE3 через DB probe завершилась ошибкой: %s", exc, exc_info=True)
 
         worker_ok, worker_reason = bundle.worker.drain_health()
         critical_ok, critical_reason = _critical_background_tasks_health(
@@ -566,7 +566,7 @@ async def serve(config: Optional[Ae3RuntimeConfig] = None) -> None:
     send_service_log(
         service="automation-engine",
         level="info",
-        message="AE3-Lite runtime service started",
+        message="Сервис AE3-Lite runtime запущен",
         context={
             "api_port": runtime_config.port,
             "app_env": runtime_config.app_env,

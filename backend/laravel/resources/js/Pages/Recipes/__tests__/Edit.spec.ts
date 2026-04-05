@@ -63,6 +63,7 @@ import RecipesEdit from '../Edit.vue'
 const sampleRecipe = {
   id: 1,
   draft_revision_id: 20,
+  latest_published_revision_id: 10,
   name: 'Test Recipe',
   description: 'Test Description',
   plants: [{ id: 1, name: 'Test Plant' }],
@@ -206,5 +207,61 @@ describe('Recipes/Edit.vue', () => {
     }))
     expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/20/publish')
     expect(routerVisitMock).toHaveBeenCalledWith('/recipes/1')
+  })
+
+  it('для published recipe создаёт draft clone и не patch-ит published phase ids', async () => {
+    usePageMock.mockReturnValue({
+      props: {
+        recipe: {
+          ...sampleRecipe,
+          draft_revision_id: null,
+          latest_draft_revision_id: null,
+        },
+      },
+    })
+
+    apiPostMock.mockImplementation((url: string) => {
+      if (url === '/recipes/1/revisions') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              id: 30,
+              phases: [
+                { id: 301, phase_index: 0, name: 'Seedling' },
+              ],
+            },
+          },
+        })
+      }
+
+      if (url === '/recipe-revisions/30/phases') {
+        return Promise.resolve({ data: { status: 'ok', data: { id: 401 } } })
+      }
+
+      if (url === '/recipe-revisions/30/publish') {
+        return Promise.resolve({ data: { status: 'ok', data: { id: 30 } } })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: { id: 101 } } })
+    })
+
+    const wrapper = mount(RecipesEdit)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="save-recipe-button"]').trigger('click')
+    await flushPromises()
+
+    expect(apiPostMock).toHaveBeenCalledWith('/recipes/1/revisions', expect.objectContaining({
+      clone_from_revision_id: 10,
+    }))
+    expect(apiDeleteMock).toHaveBeenCalledWith('/recipe-revision-phases/301')
+    expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/30/phases', expect.objectContaining({
+      phase_index: 0,
+      name: 'Seedling',
+      ph_target: 5.8,
+    }))
+    expect(apiPatchMock).not.toHaveBeenCalledWith('/recipe-revision-phases/101', expect.anything())
+    expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/30/publish')
   })
 })

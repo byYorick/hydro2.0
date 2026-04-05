@@ -1,4 +1,4 @@
-"""Stage outcome DTO returned by handler classes."""
+"""DTO результата stage, возвращаемого handler-классами."""
 
 from __future__ import annotations
 
@@ -12,16 +12,16 @@ from ae3lite.domain.entities.workflow_state import CorrectionState
 
 @dataclass(frozen=True)
 class StageOutcome:
-    """Value object returned by every stage handler to describe what happened.
+    """Объект значения, которым stage handler описывает результат выполнения.
 
-    The ``kind`` field determines how :class:`WorkflowRouter` interprets the outcome:
+    Поле ``kind`` определяет, как :class:`WorkflowRouter` интерпретирует outcome:
 
-    * ``poll`` – stay in the same stage, re-enqueue with *due_delay_sec*.
-    * ``transition`` – move to *next_stage* (clears correction state).
-    * ``enter_correction`` – start or continue correction (keeps current stage).
-    * ``exit_correction`` – correction finished, transition to *next_stage*.
-    * ``complete`` – mark task completed.
-    * ``fail`` – mark task failed with *error_code* / *error_message*.
+    * ``poll`` — остаться на текущем stage и переочередить задачу с *due_delay_sec*.
+    * ``transition`` — перейти в *next_stage* и очистить состояние коррекции.
+    * ``enter_correction`` — начать или продолжить коррекцию, оставаясь на текущем stage.
+    * ``exit_correction`` — завершить коррекцию и перейти в *next_stage*.
+    * ``complete`` — пометить задачу завершённой.
+    * ``fail`` — пометить задачу как failed с *error_code* / *error_message*.
     """
 
     kind: Literal[
@@ -36,13 +36,13 @@ class StageOutcome:
     next_stage: Optional[str] = None
     due_delay_sec: float = 0
 
-    # Workflow state overrides applied on transition
+    # Переопределения workflow state, применяемые при переходе
     stage_retry_count: Optional[int] = None
     clean_fill_cycle: Optional[int] = None
 
-    # Correction state (set on enter_correction / exit_correction)
+    # Состояние коррекции, задаётся при enter_correction / exit_correction
     correction: Optional[CorrectionState] = None
 
-    # Error info (set on fail)
+    # Информация об ошибке, задаётся при fail
     error_code: Optional[str] = None
     error_message: Optional[str] = None

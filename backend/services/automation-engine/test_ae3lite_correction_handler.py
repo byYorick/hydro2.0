@@ -321,11 +321,12 @@ class _MockGateway:
         self._success = success
         self.calls: list[dict] = []
 
-    async def run_batch(self, *, task, commands, now):
+    async def run_batch(self, *, task, commands, now, track_task_state: bool = True):
         self.calls.append({
             "task": task,
             "commands": tuple(commands),
             "now": now,
+            "track_task_state": track_task_state,
         })
         return {
             "success": self._success,
@@ -413,15 +414,17 @@ async def test_corr_check_fails_closed_when_prepare_recirc_flow_path_is_inactive
     gateway = _MockGateway()
     handler = _make_handler(monitor=monitor, gateway=gateway)
 
-    with pytest.raises(TaskExecutionError, match="IRR state mismatch for pump_main"):
+    with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(
             task=task,
             plan=_MockPlan(include_irr_state_probe=True),
             stage_def=None,
             now=NOW,
         )
+    assert exc_info.value.code == "irr_state_mismatch"
+    assert "pump_main" in str(exc_info.value)
 
-    assert len(gateway.calls) == 1
+    assert len(gateway.calls) == 1 + handler._IRR_STATE_PROBE_RETRY_COUNT
     assert gateway.calls[0]["commands"][0].channel == "storage_state"
 
 
@@ -567,7 +570,7 @@ async def test_corr_check_max_attempts_exceeded_still_sends_alert_in_prepare_rec
     await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
     send_alert.assert_awaited_once()
-    assert send_alert.await_args.kwargs["message"] == "Correction cycle exhausted all configured attempts."
+    assert send_alert.await_args.kwargs["message"] == "Цикл коррекции исчерпал все настроенные попытки."
 
 
 async def test_corr_check_keeps_ec_and_ph_in_same_correction_window(monkeypatch: pytest.MonkeyPatch):
@@ -1155,7 +1158,9 @@ async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: py
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_check"
     send_alert.assert_awaited_once()
-    assert send_alert.await_args.kwargs["message"] == "EC correction produced no observable response 3 times in a row."
+    assert send_alert.await_args.kwargs["message"] == (
+        "Коррекция EC не дала наблюдаемого эффекта 3 раз подряд."
+    )
     assert create_event.await_count == 2
     observation_call = create_event.await_args_list[0]
     assert observation_call.args[1] == "CORRECTION_OBSERVATION_EVALUATED"
@@ -2253,8 +2258,9 @@ async def test_corr_dose_ec_invalid_sequence_json_fails_closed() -> None:
     task = _make_task(corr=corr)
     handler = _make_handler()
 
-    with pytest.raises(TaskExecutionError, match="invalid"):
+    with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    assert exc_info.value.code == "corr_dose_ec_bad_sequence"
 
 
 async def test_corr_check_fails_when_pid_state_persist_fails() -> None:
@@ -2312,8 +2318,9 @@ async def test_corr_check_fails_when_pid_state_persist_fails() -> None:
     monitor = _MockRuntimeMonitor(ph=6.0, ec=0.5)
     handler = _make_handler(monitor=monitor, pid_repo=pid_repo)
 
-    with pytest.raises(TaskExecutionError, match="persist PID state"):
+    with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=task, plan=_PlanWithCalib(), stage_def=None, now=NOW)
+    assert exc_info.value.code == "corr_pid_state_persist_failed"
 
 
 # ---------------------------------------------------------------------------
@@ -2501,9 +2508,9 @@ async def test_corr_wait_ec_prepare_recirc_late_reaction_exhausts_window_before_
         sensor_type="EC",
     )
 
-    assert outcome.kind == "transition"
-    assert outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert outcome.stage_retry_count == 3
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_check"
 
 
 async def test_corr_wait_ec_no_reaction_increments_attempt_counter():

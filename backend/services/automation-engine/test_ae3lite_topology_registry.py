@@ -117,11 +117,11 @@ class TestTopologyRegistryLookup:
         assert sdef.next_stage is None
 
     def test_get_unknown_topology_raises(self, registry: TopologyRegistry):
-        with pytest.raises(KeyError, match="Unknown topology"):
+        with pytest.raises(KeyError, match="Неизвестная topology"):
             registry.get("nonexistent", "startup")
 
     def test_get_unknown_stage_raises(self, registry: TopologyRegistry):
-        with pytest.raises(KeyError, match="Unknown stage"):
+        with pytest.raises(KeyError, match="Неизвестный stage"):
             registry.get("two_tank", "nonexistent_stage")
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
@@ -134,7 +134,7 @@ class TestTopologyRegistryLookup:
         assert "prepare_recirculation_timeout_stop" not in stages
 
     def test_stages_unknown_topology_raises(self, registry: TopologyRegistry):
-        with pytest.raises(KeyError, match="Unknown topology"):
+        with pytest.raises(KeyError, match="Неизвестная topology"):
             registry.stages("nonexistent")
 
     def test_has_topology_true(self, registry: TopologyRegistry):
@@ -153,7 +153,7 @@ class TestTopologyRegistryValidate:
     def test_validate_unknown_topology(self, registry: TopologyRegistry):
         errors = registry.validate("nonexistent")
         assert len(errors) == 1
-        assert "Unknown topology" in errors[0]
+        assert "Неизвестная topology" in errors[0]
 
     def test_validate_broken_next_stage(self):
         broken = {
@@ -161,7 +161,7 @@ class TestTopologyRegistryValidate:
         }
         reg = TopologyRegistry({"broken": broken})
         errors = reg.validate("broken")
-        assert any("unknown next_stage" in e for e in errors)
+        assert any("неизвестный next_stage" in e for e in errors)
 
     def test_validate_name_mismatch(self):
         broken = {
@@ -169,7 +169,7 @@ class TestTopologyRegistryValidate:
         }
         reg = TopologyRegistry({"broken": broken})
         errors = reg.validate("broken")
-        assert any("!= StageDef.name" in e for e in errors)
+        assert any("не совпадает" in e for e in errors)
 
     def test_validate_correction_without_branches(self):
         broken = {

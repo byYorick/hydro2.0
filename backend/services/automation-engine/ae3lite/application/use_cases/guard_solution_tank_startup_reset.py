@@ -1,4 +1,4 @@
-"""Guard AE3 ready-state when the solution tank is depleted."""
+"""Защищает AE3 ready-state, когда бак раствора опустел."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ _DEFAULT_SOLUTION_MIN_LABELS: tuple[str, ...] = (
 
 
 class GuardSolutionTankStartupResetUseCase:
-    """Resets `ready` zones back to startup-required when solution tank is empty.
+    """Сбрасывает `ready`-зоны обратно в startup-required, когда бак раствора пуст.
 
-    AE3-Lite encodes "startup mode" as:
+    В AE3-Lite «режим startup» кодируется так:
     - `zone_workflow_state.workflow_phase = 'idle'`
     - `zone_workflow_state.payload.ae3_cycle_start_stage = 'startup'`
     """

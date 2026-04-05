@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick, ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/composables/useUrlState', () => ({
   useUrlState: ({ defaultValue }: { defaultValue: string }) => ref(defaultValue),
@@ -553,6 +554,7 @@ import ZonesShow from '../Show.vue'
 
 describe('Zones/Show.vue', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     axiosGetMock.mockClear()
     axiosPostMock.mockClear()
     fetchHistoryMock.mockClear()

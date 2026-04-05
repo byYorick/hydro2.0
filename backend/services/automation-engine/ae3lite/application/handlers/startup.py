@@ -1,4 +1,4 @@
-"""StartupHandler — probe hardware, read clean tank level, route to first fill stage."""
+"""StartupHandler: probe hardware, чтение уровня чистого бака и маршрут в первый fill-stage."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from ae3lite.domain.errors import TaskExecutionError
 logger = logging.getLogger(__name__)
 
 class StartupHandler(BaseStageHandler):
-    """Handles the ``startup`` stage: probe + level check + conditional routing."""
+    """Обрабатывает stage ``startup``: probe, проверка уровня и условная маршрутизация."""
 
     async def run(
         self,
@@ -70,7 +70,7 @@ class StartupHandler(BaseStageHandler):
             )
 
         if clean_max["is_triggered"]:
-            # Clean tank full — verify consistency, skip to solution fill
+            # Бак чистой воды полон: проверить согласованность и перейти к solution fill
             await self._check_sensor_consistency(
                 task=task,
                 runtime=runtime,
@@ -80,7 +80,7 @@ class StartupHandler(BaseStageHandler):
             )
             return StageOutcome(kind="transition", next_stage="solution_fill_start")
 
-        # Clean tank not full — start clean fill cycle
+        # Бак чистой воды не заполнен: запустить цикл clean fill
         return StageOutcome(
             kind="transition",
             next_stage="clean_fill_start",
@@ -94,7 +94,7 @@ class StartupHandler(BaseStageHandler):
         if not safety_plan:
             raise TaskExecutionError(
                 "irr_state_mismatch",
-                "IRR state mismatch for pump_main and no safety stop plan configured",
+                "Состояние IRR-ноды по pump_main не совпало, и safety stop plan не настроен",
             )
 
         result = await self._command_gateway.run_batch(

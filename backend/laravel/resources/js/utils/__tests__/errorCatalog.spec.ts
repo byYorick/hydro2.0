@@ -43,4 +43,28 @@ describe('errorCatalog', () => {
       message: 'Irrigation decision-controller returned fail.',
     })).toBe('Для зоны указана неизвестная стратегия decision-controller полива. Проверьте automation profile и logic profile зоны.')
   })
+
+  it('локализует потерю lease зоны во время выполнения задачи', () => {
+    expect(resolveHumanErrorMessage({
+      message: 'Zone lease was lost during task execution',
+    })).toBe('Во время выполнения задачи был потерян lease зоны.')
+  })
+
+  it('локализует таймаут ожидания READY перед поливом', () => {
+    expect(resolveHumanErrorMessage({
+      message: 'Irrigation request timed out while waiting for READY state',
+    })).toBe('Истекло время ожидания перехода зоны в состояние READY перед поливом.')
+  })
+
+  it('локализует ошибки planner runtime spec', () => {
+    expect(resolveHumanErrorMessage({
+      message: 'Missing required correction_config field: correction.runtime.telemetry_max_age_sec',
+    })).toBe('Отсутствует обязательное поле correction_config.')
+  })
+
+  it('локализует ошибки recovery command gateway', () => {
+    expect(resolveHumanErrorMessage({
+      message: 'Task 41 has no ae_command for recovery',
+    })).toBe('У задачи отсутствует связанная ae_command для recovery.')
+  })
 })

@@ -1,4 +1,4 @@
-"""Single-worker runtime driver for AE3-Lite v1."""
+"""Runtime-драйвер AE3-Lite v1 с одним worker."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from common.infra_alerts import send_infra_alert, send_infra_resolved_alert
 
 
 class Ae3RuntimeWorker:
-    """Drains pending AE3 tasks sequentially and performs startup recovery."""
+    """Последовательно обрабатывает pending-задачи AE3 и выполняет startup recovery."""
 
     def __init__(
         self,
@@ -218,7 +218,7 @@ class Ae3RuntimeWorker:
                                 await send_infra_alert(
                                     code="ae3_zone_lease_release_failed",
                                     alert_type="AE3 Zone Lease Release Failed",
-                                    message="Zone lease could not be released after task completion.",
+                                    message="Не удалось освободить lease зоны после завершения задачи.",
                                     severity="error",
                                     zone_id=int(task.zone_id),
                                     service="automation-engine",
@@ -227,12 +227,12 @@ class Ae3RuntimeWorker:
                                         "task_id": int(task.id),
                                         "owner": self._owner,
                                         "topology": str(getattr(task, "topology", "")),
-                                        "message": "Zone lease could not be released after task completion — zone may be locked.",
+                                        "message": "Не удалось освободить lease зоны после завершения задачи: зона могла остаться заблокированной.",
                                     },
                                 )
                             except Exception:
                                 self._logger.warning(
-                                    "AE3 failed to send lease_release_failed alert zone_id=%s",
+                                    "AE3 не смог отправить alert lease_release_failed zone_id=%s",
                                     task.zone_id,
                                     exc_info=True,
                                 )
@@ -247,9 +247,9 @@ class Ae3RuntimeWorker:
                                 now=self._now_fn(),
                                 success=False,
                                 error_code="task_execution_timeout",
-                                error_message=f"Task execution exceeded {self._max_task_execution_sec}s timeout",
+                                error_message=f"Выполнение задачи превысило timeout {self._max_task_execution_sec} с",
                             )
-                    self._log_debug("AE3 runtime continuing drain after timed out task: task_id=%s", task.id)
+                    self._log_debug("AE3 runtime продолжает drain после задачи с превышенным timeout: task_id=%s", task.id)
                     continue
 
                 if lease_lost_event.is_set():
@@ -262,9 +262,9 @@ class Ae3RuntimeWorker:
                                 now=self._now_fn(),
                                 success=False,
                                 error_code=TASK_EXECUTION_LEASE_LOST_CANCEL_MSG,
-                                error_message="Zone lease was lost during task execution",
+                                error_message="Во время выполнения задачи был потерян lease зоны",
                             )
-                    self._log_debug("AE3 runtime continuing drain after lease loss: task_id=%s", task.id)
+                    self._log_debug("AE3 runtime продолжает drain после потери lease: task_id=%s", task.id)
                     continue
 
                 if intent_id > 0 and final_task is not None and not final_task.is_active:
@@ -284,7 +284,7 @@ class Ae3RuntimeWorker:
             await send_infra_resolved_alert(
                 code="ae3_zone_lease_release_failed",
                 alert_type="AE3 Zone Lease Release Failed",
-                message="Zone lease is no longer present after task completion.",
+                message="После завершения задачи lease зоны больше не присутствует.",
                 zone_id=int(task.zone_id),
                 service="automation-engine",
                 component="worker:lease",
@@ -292,18 +292,21 @@ class Ae3RuntimeWorker:
                     "task_id": int(task.id),
                     "owner": self._owner,
                     "topology": str(getattr(task, "topology", "")),
-                    "message": "Zone lease is no longer present after task completion.",
+                    "message": "После завершения задачи lease зоны больше не присутствует.",
                 },
             )
         except Exception:
             self._logger.warning(
-                "AE3 failed to send lease_release_resolved alert zone_id=%s",
+                "AE3 не смог отправить alert lease_release_resolved zone_id=%s",
                 task.zone_id,
                 exc_info=True,
             )
 
     async def _lease_heartbeat(self, *, zone_id: int, lease_lost_event: asyncio.Event) -> None:
-        """Periodically extend zone lease while task is executing (heartbeat at 1/3 of TTL)."""
+        """Периодически продлевает zone lease во время выполнения задачи.
+
+        Heartbeat срабатывает примерно каждые 1/3 от TTL.
+        """
         interval = max(10.0, self._lease_ttl_sec / 3.0)
         while True:
             await asyncio.sleep(interval)
@@ -330,8 +333,8 @@ class Ae3RuntimeWorker:
                             code="ae3_zone_lease_lost",
                             alert_type="AE3 Zone Lease Lost",
                             message=(
-                                "Zone lease heartbeat failed to extend; worker signals lease_lost "
-                                "and cancels in-flight task execution for this zone."
+                                "Heartbeat zone lease не смог продлить lease; worker помечает lease_lost "
+                                "и отменяет выполняющуюся задачу для этой зоны."
                             ),
                             severity="critical",
                             zone_id=int(zone_id),
@@ -339,12 +342,12 @@ class Ae3RuntimeWorker:
                             component="worker:heartbeat",
                             details={
                                 "owner": self._owner,
-                                "message": "Zone lease heartbeat failed to extend — zone may be hijacked or frozen.",
+                                "message": "Heartbeat zone lease не смог продлить lease: зона могла быть перехвачена или зависнуть.",
                             },
                         )
                     except Exception:
                         self._logger.warning(
-                            "AE3 failed to send lease_lost alert zone_id=%s",
+                            "AE3 не смог отправить alert lease_lost zone_id=%s",
                             zone_id,
                             exc_info=True,
                         )
@@ -366,7 +369,7 @@ class Ae3RuntimeWorker:
         except asyncio.CancelledError:
             raise
         except Exception:
-            self._logger.warning("AE3 runtime failed to mark intent running: intent_id=%s", intent_id, exc_info=True)
+            self._logger.warning("AE3 runtime не смог перевести intent в running: intent_id=%s", intent_id, exc_info=True)
 
     async def _safe_mark_intent_terminal(self, *, task: Any, intent_id: int) -> None:
         await self._safe_mark_intent_terminal_result(
@@ -397,7 +400,7 @@ class Ae3RuntimeWorker:
         except asyncio.CancelledError:
             raise
         except Exception:
-            self._logger.warning("AE3 runtime failed to mark intent terminal: intent_id=%s", intent_id, exc_info=True)
+            self._logger.warning("AE3 runtime не смог перевести intent в terminal: intent_id=%s", intent_id, exc_info=True)
 
     def _current_loop(self) -> Optional[asyncio.AbstractEventLoop]:
         try:
@@ -433,9 +436,9 @@ class Ae3RuntimeWorker:
             return False
 
         now = self._now_fn()
-        # Normalize both to UTC-aware to avoid wrong comparisons when one is
-        # tz-aware and the other is naive (replace(tzinfo=None) strips info
-        # without converting, causing silent clock errors).
+        # Нормализовать обе метки к UTC-aware, чтобы избежать неверных сравнений,
+        # когда одна дата tz-aware, а другая naive. Простое replace(tzinfo=None)
+        # убирает tzinfo без конвертации и может тихо исказить время.
         next_due_utc = (
             next_due_at.astimezone(_tz.utc)
             if next_due_at.tzinfo is not None
@@ -530,7 +533,7 @@ class Ae3RuntimeWorker:
             add_done_callback(_on_done)
 
     def drain_health(self) -> tuple[bool, str]:
-        """Return (ok, reason) for readiness probe."""
+        """Возвращает `(ok, reason)` для readiness-probe."""
         drain = self._drain_task
         if drain is None:
             return self._last_drain_exit_ok, self._last_drain_exit_reason

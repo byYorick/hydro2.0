@@ -1,4 +1,4 @@
-"""ZoneLease entity for AE3-Lite v1."""
+"""Сущность ZoneLease для AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 @dataclass(frozen=True)
 class ZoneLease:
-    """Single-writer lease on zone level."""
+    """Single-writer lease на уровне зоны."""
 
     zone_id: int
     owner: str

@@ -2,8 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Support\Recipes\RecipePhasePayloadNormalizer;
 use App\Support\Recipes\RecipePhaseRules;
+use App\Support\Recipes\RecipePhaseTargetValidator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class StorePlantWithRecipeRequest extends FormRequest
 {
@@ -44,5 +47,32 @@ class StorePlantWithRecipeRequest extends FormRequest
             'recipe.revision_description' => ['nullable', 'string'],
             'recipe.phases' => ['required', 'array', 'min:1'],
         ], RecipePhaseRules::store('recipe.phases.*.'));
+    }
+
+    /**
+     * @return array<int, \Closure(\Illuminate\Validation\Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $phaseValidator = app(RecipePhaseTargetValidator::class);
+                $normalizer = app(RecipePhasePayloadNormalizer::class);
+                $phases = $this->input('recipe.phases', []);
+
+                if (! is_array($phases)) {
+                    return;
+                }
+
+                foreach ($phases as $index => $phaseData) {
+                    if (! is_array($phaseData)) {
+                        continue;
+                    }
+
+                    $normalized = $normalizer->normalizeForWrite($phaseData);
+                    $phaseValidator->appendStoreErrors($validator, $normalized, "recipe.phases.{$index}.");
+                }
+            },
+        ];
     }
 }

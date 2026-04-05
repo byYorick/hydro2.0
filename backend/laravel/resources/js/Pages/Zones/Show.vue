@@ -14,7 +14,7 @@
         :variant="variant"
         :active-grow-cycle="activeGrowCycle"
         :active-cycle="activeCycle"
-        :loading="loading"
+        :loading="{ irrigate: loading.actionSubmit && (currentActionType === 'START_IRRIGATION' || currentActionType === 'FORCE_IRRIGATION') }"
         :can-operate-zone="canOperateZone"
         :targets="targets"
         :telemetry="telemetry"
@@ -31,6 +31,9 @@
         :chart-time-range="chartTimeRange"
         :chart-data-ph="chartDataPh"
         :chart-data-ec="chartDataEc"
+        :chart-data-soil-moisture="chartDataSoilMoisture"
+        :has-soil-moisture="hasSoilMoisture"
+        :devices="devices"
         :telemetry="telemetry"
         :targets="targets"
         @time-range-change="onChartTimeRangeChange"
@@ -122,6 +125,7 @@
       :pump-calibration-save-seq="pumpCalibrationSaveSeq"
       :pump-calibration-run-seq="pumpCalibrationRunSeq"
       :pump-calibration-last-run-token="pumpCalibrationLastRunToken"
+      :irrigation-correction-summary="irrigationCorrectionSummary"
       @close-action="modals.close('action')"
       @submit-action="onActionSubmit"
       @close-pump-calibration="modals.close('pumpCalibration')"
@@ -184,6 +188,7 @@ const {
     activeCycle,
     activeGrowCycle,
     devices,
+    irrigationCorrectionSummary,
     alerts,
     events,
     canOperateZone,
@@ -200,6 +205,8 @@ const {
     chartTimeRange,
     chartDataPh,
     chartDataEc,
+    chartDataSoilMoisture,
+    hasSoilMoisture,
     onChartTimeRangeChange,
     onRunCycle,
     refreshZoneState,

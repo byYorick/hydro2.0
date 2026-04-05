@@ -1,4 +1,4 @@
-"""Request a public manual step for an active AE3-Lite task."""
+"""Запрос публичного manual step для активной задачи AE3-Lite."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from ae3lite.domain.errors import ManualControlError
 
 
 class RequestManualStepUseCase:
-    """Validate and persist a pending manual step for the active zone task."""
+    """Проверяет и сохраняет pending manual step для активной задачи зоны."""
 
     def __init__(
         self,

@@ -17,25 +17,14 @@ import { logger } from '@/utils/logger'
 import type { WsEventPayload } from '@/ws/subscriptionTypes'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
 import { useApi } from '@/composables/useApi'
+import { useZonesStore } from '@/stores/zones'
 import {
   normalizeAutomationControlMode,
+  normalizeAutomationControlModes,
   normalizeAutomationManualSteps,
 } from '@/composables/zoneAutomationUtils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const WS_ZONE_EVENT_NAMES = [
-  '.telemetry.batch.updated',
-  '.App\\Events\\TelemetryBatchUpdated',
-  '.node.telemetry.updated',
-  '.App\\Events\\NodeTelemetryUpdated',
-  '.EventCreated',
-  '.App\\Events\\EventCreated',
-  '.GrowCycleUpdated',
-  '.App\\Events\\GrowCycleUpdated',
-  '.ZoneUpdated',
-  '.App\\Events\\ZoneUpdated',
-] as const
 
 const WS_COMMAND_EVENT_NAMES = [
   '.CommandStatusUpdated',
@@ -143,30 +132,21 @@ function toOptionalBoolean(value: unknown): boolean | null {
   return null
 }
 
-function pickFirstDefined(source: Record<string, unknown>, keys: string[]): unknown {
-  for (const key of keys) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      return source[key]
-    }
-  }
-  return undefined
-}
-
 function normalizeIrrNodeState(raw: unknown): IrrNodeState | null {
   if (!raw || typeof raw !== 'object') return null
   const state = raw as Record<string, unknown>
 
   return {
-    clean_level_max: toOptionalBoolean(pickFirstDefined(state, ['clean_level_max', 'level_clean_max', 'clean_max'])),
-    clean_level_min: toOptionalBoolean(pickFirstDefined(state, ['clean_level_min', 'level_clean_min', 'clean_min'])),
-    solution_level_max: toOptionalBoolean(pickFirstDefined(state, ['solution_level_max', 'level_solution_max', 'solution_max'])),
-    solution_level_min: toOptionalBoolean(pickFirstDefined(state, ['solution_level_min', 'level_solution_min', 'solution_min'])),
-    valve_clean_fill: toOptionalBoolean(pickFirstDefined(state, ['valve_clean_fill'])),
-    valve_clean_supply: toOptionalBoolean(pickFirstDefined(state, ['valve_clean_supply'])),
-    valve_solution_fill: toOptionalBoolean(pickFirstDefined(state, ['valve_solution_fill'])),
-    valve_solution_supply: toOptionalBoolean(pickFirstDefined(state, ['valve_solution_supply'])),
-    valve_irrigation: toOptionalBoolean(pickFirstDefined(state, ['valve_irrigation'])),
-    pump_main: toOptionalBoolean(pickFirstDefined(state, ['pump_main', 'pump'])),
+    clean_level_max: toOptionalBoolean(state.clean_level_max),
+    clean_level_min: toOptionalBoolean(state.clean_level_min),
+    solution_level_max: toOptionalBoolean(state.solution_level_max),
+    solution_level_min: toOptionalBoolean(state.solution_level_min),
+    valve_clean_fill: toOptionalBoolean(state.valve_clean_fill),
+    valve_clean_supply: toOptionalBoolean(state.valve_clean_supply),
+    valve_solution_fill: toOptionalBoolean(state.valve_solution_fill),
+    valve_solution_supply: toOptionalBoolean(state.valve_solution_supply),
+    valve_irrigation: toOptionalBoolean(state.valve_irrigation),
+    pump_main: toOptionalBoolean(state.pump_main),
     updated_at: typeof state.updated_at === 'string' ? state.updated_at : null,
   }
 }
@@ -279,6 +259,7 @@ export function useAutomationPanel(
   }
 ) {
   const { get } = useApi()
+  const zonesStore = useZonesStore()
   const wsEnabled = readBooleanEnv('VITE_ENABLE_WS', true)
 
   // ─── State ────────────────────────────────────────────────────────────────
@@ -297,7 +278,6 @@ export function useAutomationPanel(
   let fallbackPollingTimer: ReturnType<typeof setInterval> | null = null
   let wsRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let wsStateListenerCleanup: (() => void) | null = null
-  let stopZoneRealtimeSubscription: (() => void) | null = null
   let stopCommandsRealtimeSubscription: (() => void) | null = null
   let lastRealtimeRefreshAt = 0
 
@@ -319,6 +299,10 @@ export function useAutomationPanel(
         : undefined)
     const irrNodeState = normalizeIrrNodeState(irrNodeStateRaw)
 
+    const rawDecision = sourceAny.decision && typeof sourceAny.decision === 'object'
+      ? sourceAny.decision as Record<string, unknown>
+      : null
+
     return {
       zone_id: Number(source.zone_id ?? props.zoneId ?? 0),
       state,
@@ -328,7 +312,13 @@ export function useAutomationPanel(
         elapsed_sec: Number(source.state_details?.elapsed_sec ?? 0),
         progress_percent: clampPercent(source.state_details?.progress_percent ?? 0),
         failed: Boolean(source.state_details?.failed ?? false),
+        error_code: (source.state_details as Record<string, unknown> | undefined)?.error_code as string | null ?? null,
+        error_message: (source.state_details as Record<string, unknown> | undefined)?.error_message as string | null ?? null,
+        human_error_message: (source.state_details as Record<string, unknown> | undefined)?.human_error_message as string | null ?? null,
       },
+      workflow_phase: (sourceAny.workflow_phase as string | null | undefined) ?? null,
+      current_stage: (sourceAny.current_stage as string | null | undefined) ?? null,
+      current_stage_label: (sourceAny.current_stage_label as string | null | undefined) ?? null,
       system_config: {
         tanks_count: tanksCount,
         system_type: (source.system_config?.system_type as IrrigationSystem) || props.fallbackSystemType || 'drip',
@@ -353,13 +343,23 @@ export function useAutomationPanel(
       estimated_completion_sec: source.estimated_completion_sec ?? null,
       irr_node_state: irrNodeState,
       control_mode: normalizeAutomationControlMode(sourceAny.control_mode),
-      control_mode_available: ['auto', 'semi', 'manual'],
+      control_mode_available: normalizeAutomationControlModes(sourceAny.control_mode_available),
       allowed_manual_steps: normalizeAutomationManualSteps(sourceAny.allowed_manual_steps),
       state_meta: sourceAny.state_meta && typeof sourceAny.state_meta === 'object'
         ? {
             source: String((sourceAny.state_meta as Record<string, unknown>).source ?? ''),
             is_stale: Boolean((sourceAny.state_meta as Record<string, unknown>).is_stale),
             served_at: String((sourceAny.state_meta as Record<string, unknown>).served_at ?? ''),
+          }
+        : null,
+      decision: rawDecision
+        ? {
+            outcome: (rawDecision.outcome as string | null | undefined) ?? null,
+            reason_code: (rawDecision.reason_code as string | null | undefined) ?? null,
+            strategy: (rawDecision.strategy as string | null | undefined) ?? null,
+            config: (rawDecision.config as Record<string, unknown> | null | undefined) ?? null,
+            bundle_revision: (rawDecision.bundle_revision as string | null | undefined) ?? null,
+            degraded: (rawDecision.degraded as boolean | null | undefined) ?? null,
           }
         : null,
     }
@@ -446,16 +446,10 @@ export function useAutomationPanel(
   }
 
   function cleanupRealtimeChannels(): void {
-    if (stopZoneRealtimeSubscription) {
-      stopZoneRealtimeSubscription()
-      stopZoneRealtimeSubscription = null
-    }
-
     if (stopCommandsRealtimeSubscription) {
       stopCommandsRealtimeSubscription()
       stopCommandsRealtimeSubscription = null
     }
-
   }
 
   function subscribeRealtimeChannels(): boolean {
@@ -464,19 +458,7 @@ export function useAutomationPanel(
     cleanupRealtimeChannels()
 
     try {
-      const zoneChannelName = `hydro.zones.${props.zoneId}`
       const commandsChannelName = `hydro.commands.${props.zoneId}`
-
-      stopZoneRealtimeSubscription = subscribeManagedChannelEvents({
-        channelName: zoneChannelName,
-        componentTag: `AutomationProcessPanel:zone:${props.zoneId}`,
-        eventHandlers: Object.fromEntries(
-          WS_ZONE_EVENT_NAMES.map((eventName) => [
-            eventName,
-            () => { scheduleRealtimeRefresh() },
-          ])
-        ) as Record<string, (payload: WsEventPayload) => void>,
-      })
 
       stopCommandsRealtimeSubscription = subscribeManagedChannelEvents({
         channelName: commandsChannelName,
@@ -491,7 +473,6 @@ export function useAutomationPanel(
 
       logger.debug('[AutomationProcessPanel] Realtime subscriptions started', {
         zoneId: props.zoneId,
-        zoneChannel: zoneChannelName,
         commandsChannel: commandsChannelName,
       })
 
@@ -653,6 +634,18 @@ export function useAutomationPanel(
     if (!value) return
     emit('state-snapshot', value)
   })
+
+  // Зональные события (GrowCycleUpdated, EventCreated, zone:updated, финальные команды)
+  // нотифицируют через zonesStore.zoneEventSeq — единственная подписка в useZonePageState,
+  // без дублирования на hydro.zones.{id}.
+  watch(
+    () => props.zoneId ? (zonesStore.zoneEventSeq[props.zoneId] ?? 0) : 0,
+    () => {
+      if (props.zoneId) {
+        scheduleRealtimeRefresh()
+      }
+    }
+  )
 
   watch(() => props.zoneId, (newZoneId, oldZoneId) => {
     if (newZoneId === oldZoneId) return

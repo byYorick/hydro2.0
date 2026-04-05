@@ -60,6 +60,9 @@ class ZoneLifecycleService
      */
     public function start(Zone $zone, array $data): void
     {
+        $zone = $zone->fresh();
+        $this->zoneService->ensureAe3AutomationBootstrap($zone);
+
         // Проверяем готовность зоны
         $readiness = app(\App\Services\ZoneReadinessService::class)->checkZoneReadiness($zone);
 

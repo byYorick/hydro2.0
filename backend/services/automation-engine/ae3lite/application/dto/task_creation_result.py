@@ -1,4 +1,4 @@
-"""Result DTO for canonical AE3-Lite task creation from legacy ingress."""
+"""DTO результата создания канонической задачи AE3-Lite из legacy ingress."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ae3lite.domain.entities import AutomationTask
 
 @dataclass(frozen=True)
 class TaskCreationResult:
-    """Describes whether a canonical AE3 task was newly created or deduplicated."""
+    """Описывает, была ли каноническая задача AE3 создана заново или дедуплицирована."""
 
     task: AutomationTask
     created: bool

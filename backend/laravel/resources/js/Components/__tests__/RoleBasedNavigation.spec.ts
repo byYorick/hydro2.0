@@ -33,8 +33,7 @@ describe('RoleBasedNavigation', () => {
 
     const wrapper = mount(RoleBasedNavigation)
 
-    expect(wrapper.text()).toContain('Дашборд')
-    expect(wrapper.text()).toContain('Центр циклов')
+    expect(wrapper.text()).toContain('Операционный центр')
     expect(wrapper.text()).toContain('Зоны')
     expect(wrapper.text()).toContain('Теплицы')
     expect(wrapper.text()).toContain('Устройства')

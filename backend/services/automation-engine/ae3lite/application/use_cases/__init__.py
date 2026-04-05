@@ -1,4 +1,4 @@
-"""AE3-Lite use cases."""
+"""Use case'ы AE3-Lite."""
 
 from .claim_next_task import ClaimNextTaskUseCase
 from .create_task_from_intent import CreateTaskFromIntentUseCase

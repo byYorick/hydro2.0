@@ -6,6 +6,9 @@
       :show="showActionModal"
       :action-type="currentActionType"
       :zone-id="zoneId"
+      :default-params="zoneActionDefaultParams"
+      :irrigation-correction-summary="irrigationCorrectionSummary"
+        :loading="loading.actionSubmit"
       @close="$emit('close-action')"
       @submit="$emit('submit-action', $event)"
     />
@@ -146,15 +149,14 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CommandType, Device } from '@/types'
+import type { CommandType, Device, IrrigationCorrectionSummary } from '@/types'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
 import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
-
-type ZoneActionType = CommandType | 'START_IRRIGATION'
+import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
 
 interface HarvestModalState {
   open: boolean
@@ -173,6 +175,7 @@ interface ChangeRecipeModalState {
 }
 
 interface LoadingState {
+  actionSubmit: boolean
   cycleHarvest: boolean
   cycleAbort: boolean
   cycleChangeRecipe: boolean
@@ -195,7 +198,7 @@ interface Props {
   } | null
   selectedNodeId: number | null
   selectedNode: any | null
-  currentActionType: ZoneActionType
+  currentActionType: CommandType
   showActionModal: boolean
   showGrowthCycleModal: boolean
   showPumpCalibrationModal: boolean
@@ -208,13 +211,14 @@ interface Props {
   pumpCalibrationSaveSeq: number
   pumpCalibrationRunSeq: number
   pumpCalibrationLastRunToken: string | null
+  irrigationCorrectionSummary?: IrrigationCorrectionSummary | null
 }
 
 const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'close-action'): void
-  (e: 'submit-action', payload: { actionType: ZoneActionType; params: Record<string, unknown> }): void
+  (e: 'submit-action', payload: { actionType: CommandType; params: Record<string, unknown> }): void
   (e: 'close-pump-calibration'): void
   (e: 'start-pump-calibration', payload: { node_channel_id: number; duration_sec: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down' }): void
   (e: 'save-pump-calibration', payload: { node_channel_id: number; duration_sec: number; actual_ml: number; component: 'npk' | 'calcium' | 'magnesium' | 'micro' | 'ph_up' | 'ph_down'; skip_run: true; run_token?: string; manual_override?: true; test_volume_l?: number; ec_before_ms?: number; ec_after_ms?: number; temperature_c?: number }): void
@@ -261,5 +265,13 @@ const changeRecipeApplyMode = computed({
   set: (value: 'now' | 'next_phase') => {
     emit('update-change-recipe-apply-mode', value)
   },
+})
+
+const zoneActionDefaultParams = computed(() => {
+  if (props.currentActionType !== 'START_IRRIGATION' && props.currentActionType !== 'FORCE_IRRIGATION') {
+    return {}
+  }
+  const sec = pickIrrigationDurationFromTargets(props.currentPhaseTargets)
+  return sec != null ? { duration_sec: sec } : {}
 })
 </script>

@@ -1,4 +1,4 @@
-"""Await-ready stage for irrigation tasks."""
+"""Стадия await-ready для задач полива."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class AwaitReadyHandler(BaseStageHandler):
             if owner == "":
                 raise TaskExecutionError(
                     "irrigation_wait_ready_missing_owner",
-                    f"Task {getattr(task, 'id', None)} has no owner in await_ready",
+                    f"У задачи {getattr(task, 'id', None)} отсутствует owner на этапе await_ready",
                 )
             updated = await self._task_repository.update_irrigation_runtime(
                 task_id=int(task.id),
@@ -86,7 +86,7 @@ class AwaitReadyHandler(BaseStageHandler):
             if updated is None:
                 raise TaskExecutionError(
                     "irrigation_wait_ready_deadline_persist_failed",
-                    f"Unable to persist wait_ready deadline for task {getattr(task, 'id', None)}",
+                    f"Не удалось сохранить deadline wait_ready для задачи {getattr(task, 'id', None)}",
                 )
             IRRIGATION_WAIT_READY_POLL.labels(topology=topo).inc()
             return StageOutcome(kind="poll", due_delay_sec=_WAIT_READY_POLL_SEC)
@@ -115,7 +115,7 @@ class AwaitReadyHandler(BaseStageHandler):
                 )
             except Exception:
                 _logger.warning(
-                    "AE3 failed to log IRRIGATION_WAIT_READY_TIMEOUT zone_id=%s task_id=%s",
+                    "AE3 не смог записать IRRIGATION_WAIT_READY_TIMEOUT zone_id=%s task_id=%s",
                     zone_id,
                     task_id,
                     exc_info=True,
@@ -124,7 +124,7 @@ class AwaitReadyHandler(BaseStageHandler):
                 await send_biz_alert(
                     code="biz_irrigation_wait_ready_timeout",
                     alert_type="AE3 Irrigation Wait Ready Timeout",
-                    message="Irrigation task timed out in await_ready (zone_workflow_phase never became ready).",
+                    message="Полив превысил время ожидания на этапе await_ready: зона не перешла в READY.",
                     severity="warning",
                     zone_id=zone_id,
                     dedupe_key=f"ae3_irr_wait_ready_timeout|z{zone_id}|t{task_id}",
@@ -137,7 +137,7 @@ class AwaitReadyHandler(BaseStageHandler):
                 )
             except Exception:
                 _logger.warning(
-                    "AE3 failed to emit biz_irrigation_wait_ready_timeout zone_id=%s task_id=%s",
+                    "AE3 не смог отправить alert biz_irrigation_wait_ready_timeout zone_id=%s task_id=%s",
                     zone_id,
                     task_id,
                     exc_info=True,
@@ -145,7 +145,7 @@ class AwaitReadyHandler(BaseStageHandler):
             return StageOutcome(
                 kind="fail",
                 error_code="irrigation_wait_ready_timeout",
-                error_message="Irrigation request timed out while waiting for READY state",
+                error_message="Истекло время ожидания перехода зоны в состояние READY перед поливом",
             )
 
         IRRIGATION_WAIT_READY_POLL.labels(topology=topo).inc()

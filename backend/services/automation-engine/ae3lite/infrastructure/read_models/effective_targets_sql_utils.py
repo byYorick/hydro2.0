@@ -1,4 +1,4 @@
-"""Utilities for effective-target assembly used by AE3-Lite snapshot read-model."""
+"""Утилиты сборки effective-target'ов для snapshot read-model AE3-Lite."""
 
 from __future__ import annotations
 

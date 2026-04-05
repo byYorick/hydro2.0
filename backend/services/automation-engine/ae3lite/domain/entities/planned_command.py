@@ -1,4 +1,4 @@
-"""Planned command entity for AE3-Lite v1."""
+"""Сущность planned-команды для AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional
 
 @dataclass(frozen=True)
 class PlannedCommand:
-    """Resolved command step ready for execution/persistence."""
+    """Разрешённый шаг команды, готовый к выполнению и сохранению."""
 
     step_no: int
     node_uid: str

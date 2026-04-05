@@ -1,1 +1,1 @@
-"""Infrastructure layer for AE3-Lite v1."""
+"""Инфраструктурный слой AE3-Lite v1."""

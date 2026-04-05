@@ -1,5 +1,5 @@
-"""AE3-Lite v1 package bootstrap.
+"""Инициализация пакета AE3-Lite v1.
 
-Schema and DB invariants are introduced first.
-Runtime flow is added in subsequent stages.
+Сначала вводятся инварианты схемы и БД.
+Затем добавляются этапы runtime-потока.
 """

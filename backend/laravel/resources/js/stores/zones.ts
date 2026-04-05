@@ -115,15 +115,24 @@ interface ZonesStoreState {
   items: Record<number, Zone>
   // Массив ID для сохранения порядка
   ids: number[]
-  
+
   // Состояние загрузки
   loading: boolean
   error: string | null
   lastFetch: Date | null
-  
+
   // Инвалидация кеша
   cacheVersion: number
   cacheInvalidatedAt: Date | null
+
+  /**
+   * Монотонный счётчик зональных событий.
+   * Инкрементируется в useZonePageState при GrowCycleUpdated, EventCreated,
+   * финальных статусах команд и zone:updated.
+   * useAutomationPanel наблюдает за этим счётчиком вместо самостоятельной
+   * WS-подписки на hydro.zones.{id}, устраняя дублирование обработчиков.
+   */
+  zoneEventSeq: Record<number, number>
 }
 
 interface InertiaPageProps {
@@ -140,6 +149,7 @@ export const useZonesStore = defineStore('zones', {
     lastFetch: null,
     cacheVersion: 0,
     cacheInvalidatedAt: null,
+    zoneEventSeq: {} as Record<number, number>,
   }),
   actions: {
     initFromProps(props: InertiaPageProps): void {
@@ -238,6 +248,16 @@ export const useZonesStore = defineStore('zones', {
       this.cacheInvalidatedAt = new Date()
     },
     
+    /**
+     * Инкрементирует счётчик зональных событий.
+     * Вызывается из useZonePageState при любом значимом WS-событии зоны,
+     * чтобы useAutomationPanel мог среагировать без собственной WS-подписки.
+     */
+    incrementEventSeq(zoneId: number): void {
+      if (!zoneId) return
+      this.zoneEventSeq[zoneId] = (this.zoneEventSeq[zoneId] ?? 0) + 1
+    },
+
     /**
      * Присвоить рецепт к зоне с перекрестной инвалидацией кеша
      */

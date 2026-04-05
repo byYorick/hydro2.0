@@ -317,6 +317,39 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     if (phaseName) rows.push(row('Фаза', phaseName))
     appendIrrigationDecisionConfigRows(rows, payload)
   }
+  else if (event.kind === 'IRRIGATION_DECISION_EVALUATED') {
+    const taskId = readNumber(payload, 'task_id')
+    const strategy = readString(payload, 'strategy')
+    const outcome = readString(payload, 'outcome')
+    const reasonCode = readString(payload, 'reason_code')
+    const bundleRevision = readString(payload, 'bundle_revision')
+    const degradedValue = payload['degraded']
+    const degraded = typeof degradedValue === 'boolean'
+      ? degradedValue
+      : (typeof degradedValue === 'string' ? degradedValue.toLowerCase() === 'true' : null)
+    const nested = toPayloadRecord(payload['details'])
+    const zoneAveragePct = nested ? readNumber(nested, 'zone_average_pct') : null
+    const sensorCount = nested ? readNumber(nested, 'sensor_count') : null
+    const samples = nested ? readNumber(nested, 'samples') : null
+    const spreadPct = nested ? readNumber(nested, 'spread_pct') : null
+    const targetProfile = nested ? readString(nested, 'target_profile') : null
+    const targetMode = nested ? readString(nested, 'target_mode') : null
+    const requestedDurationSec = nested ? readNumber(nested, 'requested_duration_sec') : null
+
+    if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
+    if (strategy) rows.push(row('Strategy', strategy))
+    if (outcome) rows.push(row('Решение', outcome))
+    if (reasonCode) rows.push(row('Причина', reasonCode))
+    if (degraded !== null) rows.push(row('Degraded', degraded ? 'да' : 'нет'))
+    if (bundleRevision) rows.push(row('Bundle', bundleRevision.slice(0, 12)))
+    if (zoneAveragePct !== null) rows.push(row('Средняя влажность', `${zoneAveragePct.toFixed(2)}%`))
+    if (sensorCount !== null) rows.push(row('Сенсоров', String(sensorCount)))
+    if (samples !== null) rows.push(row('Сэмплов', String(samples)))
+    if (spreadPct !== null) rows.push(row('Разброс', `${spreadPct.toFixed(2)}%`))
+    if (targetProfile) rows.push(row('Профиль', targetProfile))
+    if (targetMode) rows.push(row('Target mode', targetMode))
+    if (requestedDurationSec !== null) rows.push(row('Запрошено', `${requestedDurationSec} с`))
+  }
   else if (event.kind === 'AE_TASK_FAILED') {
     const taskId = readNumber(payload, 'task_id')
     const errorCode = readString(payload, 'error_code')

@@ -1,8 +1,8 @@
-"""Topology registry: static stage graph for workflow routing.
+"""Реестр topology: статический граф stage для маршрутизации workflow.
 
-Each topology (e.g. ``two_tank_drip_substrate_trays``) is a mapping from
-stage name to :class:`StageDef`.  The :class:`TopologyRegistry` provides
-lookup by ``(topology, stage_name)`` and graph-integrity validation.
+Каждая topology, например ``two_tank_drip_substrate_trays``, задаёт
+отображение имени stage в :class:`StageDef`. :class:`TopologyRegistry`
+предоставляет lookup по ``(topology, stage_name)`` и проверку целостности графа.
 """
 
 from __future__ import annotations
@@ -17,37 +17,33 @@ from typing import Mapping, Optional, Tuple
 
 @dataclass(frozen=True)
 class StageDef:
-    """Declarative definition of a single stage in a workflow topology.
+    """Декларативное описание одного stage внутри workflow-topology.
 
-    Attributes:
-        name: Unique stage identifier (e.g. ``"clean_fill_start"``).
-        handler: Handler class key used by :class:`WorkflowRouter` for dispatch
-            (``"command"``, ``"startup"``, ``"clean_fill"``, ``"solution_fill"``,
-            ``"prepare_recirc"``, ``"ready"``).
-        workflow_phase: Zone-level phase reported to external observers.
-        command_plans: Tuple of named plan keys executed by ``CommandHandler``.
-        next_stage: Static successor stage after successful command execution.
-        terminal_error: ``(error_code, error_message)`` — if set the command
-            stage is a terminal failure stage.
-        timeout_key: Runtime config key whose value (seconds) is used to
-            compute ``stage_deadline_at`` when entering this stage.
-        has_correction: Whether this check stage can initiate a correction cycle.
-        on_corr_success: Stage to transition to when correction succeeds.
-        on_corr_fail: Stage to transition to when correction fails.
+    Атрибуты:
+        name: Уникальный идентификатор stage, например ``"clean_fill_start"``.
+        handler: Ключ handler-класса, который :class:`WorkflowRouter` использует для dispatch.
+        workflow_phase: Фаза зоны, которую видят внешние наблюдатели.
+        command_plans: Кортеж имён plan-ключей, выполняемых ``CommandHandler``.
+        next_stage: Статический stage-приёмник после успешного выполнения команды.
+        terminal_error: ``(error_code, error_message)``; если задан, stage терминально падает.
+        timeout_key: Ключ runtime-конфига для вычисления ``stage_deadline_at``.
+        has_correction: Может ли этот check-stage запускать цикл коррекции.
+        on_corr_success: Stage перехода при успешной коррекции.
+        on_corr_fail: Stage перехода при неуспешной коррекции.
     """
 
     name: str
     handler: str
     workflow_phase: str = "idle"
 
-    # Command stages
+    # Командные stage
     command_plans: Tuple[str, ...] = ()
     next_stage: Optional[str] = None
 
-    # Terminal failure
+    # Терминальная ошибка
     terminal_error: Optional[Tuple[str, str]] = None
 
-    # Check stages
+    # Проверочные stage
     timeout_key: Optional[str] = None
     has_correction: bool = False
     on_corr_success: Optional[str] = None
@@ -55,7 +51,7 @@ class StageDef:
 
 
 # ---------------------------------------------------------------------------
-# Two-tank drip substrate trays topology (full graph)
+# Topology two-tank drip substrate trays (полный граф)
 # ---------------------------------------------------------------------------
 
 TWO_TANK: Mapping[str, StageDef] = {
@@ -229,10 +225,10 @@ TWO_TANK: Mapping[str, StageDef] = {
 
 
 # ---------------------------------------------------------------------------
-# Registry
+# Реестр
 # ---------------------------------------------------------------------------
 
-# Canonical topology name → stage graph
+# Каноническое имя topology → граф stage
 _TOPOLOGIES: Mapping[str, Mapping[str, StageDef]] = {
     "two_tank_drip_substrate_trays": TWO_TANK,
     "two_tank": TWO_TANK,  # short alias used in legacy intents
@@ -240,7 +236,7 @@ _TOPOLOGIES: Mapping[str, Mapping[str, StageDef]] = {
 
 
 class TopologyRegistry:
-    """Lookup service for stage definitions within a topology."""
+    """Сервис lookup для описаний stage внутри topology."""
 
     def __init__(
         self,
@@ -249,65 +245,65 @@ class TopologyRegistry:
         self._topologies = dict(topologies or _TOPOLOGIES)
 
     def get(self, topology: str, stage: str) -> StageDef:
-        """Return the :class:`StageDef` for *topology* / *stage*.
+        """Возвращает :class:`StageDef` для пары *topology* / *stage*.
 
-        Raises :class:`KeyError` if the topology or stage is unknown.
+        Выбрасывает :class:`KeyError`, если topology или stage неизвестны.
         """
         topo = self._topologies.get(topology)
         if topo is None:
-            raise KeyError(f"Unknown topology: {topology!r}")
+            raise KeyError(f"Неизвестная topology: {topology!r}")
         stage_def = topo.get(stage)
         if stage_def is None:
             raise KeyError(
-                f"Unknown stage {stage!r} in topology {topology!r}"
+                f"Неизвестный stage {stage!r} в topology {topology!r}"
             )
         return stage_def
 
     def stages(self, topology: str) -> Mapping[str, StageDef]:
-        """Return the full stage graph for *topology*."""
+        """Возвращает полный граф stage для *topology*."""
         topo = self._topologies.get(topology)
         if topo is None:
-            raise KeyError(f"Unknown topology: {topology!r}")
+            raise KeyError(f"Неизвестная topology: {topology!r}")
         return topo
 
     def has_topology(self, topology: str) -> bool:
         return topology in self._topologies
 
     def validate(self, topology: str) -> list[str]:
-        """Return a list of validation errors (empty if graph is consistent)."""
+        """Возвращает список ошибок валидации, пустой при согласованном графе."""
         topo = self._topologies.get(topology)
         if topo is None:
-            return [f"Unknown topology: {topology!r}"]
+            return [f"Неизвестная topology: {topology!r}"]
         errors: list[str] = []
         for name, sdef in topo.items():
             if sdef.name != name:
                 errors.append(
-                    f"Stage key {name!r} != StageDef.name {sdef.name!r}"
+                    f"Ключ stage {name!r} не совпадает с StageDef.name {sdef.name!r}"
                 )
             if sdef.next_stage and sdef.next_stage not in topo:
                 errors.append(
-                    f"Stage {name!r} references unknown next_stage "
+                    f"Stage {name!r} ссылается на неизвестный next_stage "
                     f"{sdef.next_stage!r}"
                 )
             if sdef.on_corr_success and sdef.on_corr_success not in topo:
                 errors.append(
-                    f"Stage {name!r} references unknown on_corr_success "
+                    f"Stage {name!r} ссылается на неизвестный on_corr_success "
                     f"{sdef.on_corr_success!r}"
                 )
             if sdef.on_corr_fail and sdef.on_corr_fail not in topo:
                 errors.append(
-                    f"Stage {name!r} references unknown on_corr_fail "
+                    f"Stage {name!r} ссылается на неизвестный on_corr_fail "
                     f"{sdef.on_corr_fail!r}"
                 )
             if sdef.has_correction and not (
                 sdef.on_corr_success and sdef.on_corr_fail
             ):
                 errors.append(
-                    f"Stage {name!r} has_correction=True but missing "
+                    f"Stage {name!r} имеет has_correction=True, но отсутствуют "
                     f"on_corr_success/on_corr_fail"
                 )
             if sdef.terminal_error and sdef.next_stage:
                 errors.append(
-                    f"Stage {name!r} has both terminal_error and next_stage"
+                    f"Stage {name!r} одновременно содержит terminal_error и next_stage"
                 )
         return errors

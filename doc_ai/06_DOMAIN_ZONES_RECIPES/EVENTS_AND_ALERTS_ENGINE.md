@@ -46,6 +46,7 @@ Breaking-change: обратная совместимость со старыми
 - `DEVICE_ONLINE`
 - `DEVICE_OFFLINE`
 - `RECIPE_PHASE_CHANGED`
+- `IRRIGATION_DECISION_EVALUATED`
 - `ALERT_CREATED`
 - `ALERT_RESOLVED`
 

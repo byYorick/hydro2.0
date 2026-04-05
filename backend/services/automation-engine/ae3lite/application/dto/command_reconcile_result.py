@@ -1,4 +1,4 @@
-"""DTO for AE3-Lite command reconcile outcome."""
+"""DTO результата reconcile команды в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ae3lite.domain.entities import AutomationTask
 
 @dataclass(frozen=True)
 class CommandReconcileResult:
-    """Reconcile result for one waiting AE3-Lite command step."""
+    """Результат reconcile для одного шага команды в состоянии waiting в AE3-Lite."""
 
     task: AutomationTask
     ae_command_id: int

@@ -1,4 +1,4 @@
-"""Live runtime monitor queries for AE3-Lite cycle_start execution."""
+"""Запросы live runtime monitor для выполнения cycle_start в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class PgZoneRuntimeMonitor:
-    """Reads fresh telemetry and irr-state snapshots during AE3 execution."""
+    """Читает свежую телеметрию и snapshot'ы irr-state во время выполнения AE3."""
 
     def _normalize_timestamp(self, value: Optional[datetime]) -> Optional[datetime]:
         if value is None:

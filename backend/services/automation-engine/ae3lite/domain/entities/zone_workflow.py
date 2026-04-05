@@ -1,4 +1,4 @@
-"""ZoneWorkflow entity for AE3-Lite v1."""
+"""Сущность ZoneWorkflow для AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Mapping, Optional
 
 @dataclass(frozen=True)
 class ZoneWorkflow:
-    """Canonical workflow state owned by AE3 `cycle_start` execution."""
+    """Канонический workflow state, которым владеет выполнение AE3 `cycle_start`."""
 
     zone_id: int
     workflow_phase: str

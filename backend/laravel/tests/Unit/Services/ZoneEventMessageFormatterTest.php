@@ -173,6 +173,34 @@ class ZoneEventMessageFormatterTest extends TestCase
         );
     }
 
+    public function test_format_irrigation_decision_snapshot_locked_contains_bundle_revision_prefix(): void
+    {
+        $message = $this->formatter->format('IRRIGATION_DECISION_SNAPSHOT_LOCKED', [
+            'strategy' => 'schedule',
+            'bundle_revision' => '1234567890abcdef1234567890abcdef12345678',
+        ]);
+
+        $this->assertSame(
+            'Снимок decision-controller полива зафиксирован: schedule (1234567890ab)',
+            $message
+        );
+    }
+
+    public function test_format_irrigation_decision_evaluated_degraded_run_is_human_readable(): void
+    {
+        $message = $this->formatter->format('IRRIGATION_DECISION_EVALUATED', [
+            'strategy' => 'smart_soil_v1',
+            'outcome' => 'degraded_run',
+            'reason_code' => 'smart_soil_telemetry_missing_or_stale',
+            'degraded' => true,
+        ]);
+
+        $this->assertSame(
+            'Decision-controller полива: разрешён деградированный полив (smart_soil_v1)',
+            $message
+        );
+    }
+
     public function test_format_self_task_dispatch_retry_scheduled_contains_retry_progress(): void
     {
         $message = $this->formatter->format('SELF_TASK_DISPATCH_RETRY_SCHEDULED', [

@@ -1,4 +1,4 @@
-"""CommandHandler — execute command batch via gateway, route using StageDef."""
+"""CommandHandler: выполняет batch команд через gateway и маршрутизирует по StageDef."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ _logger = logging.getLogger(__name__)
 
 
 class CommandHandler(BaseStageHandler):
-    """Executes command batch defined by ``StageDef.command_plans``, then routes.
+    """Выполняет batch команд из ``StageDef.command_plans`` и затем маршрутизирует.
 
-    After run_batch completes:
-    - If ``StageDef.terminal_error`` is set → fail with that error
-    - If ``StageDef.next_stage`` is set → transition to next stage
+    После завершения run_batch:
+    - если задан ``StageDef.terminal_error`` → вернуть fail с этой ошибкой
+    - если задан ``StageDef.next_stage`` → перейти в следующий stage
     """
 
     async def run(
@@ -50,8 +50,8 @@ class CommandHandler(BaseStageHandler):
             "command_handler: batch succeeded stage=%s commands_total=%s zone_id=%s",
             stage_def.name, result.get("commands_total", 0), task.zone_id,
         )
-        # After run_batch, task is back in 'running' with same current_stage.
-        # Routing comes from topology registry (StageDef), not from task state.
+        # После run_batch задача снова находится в `running` с тем же current_stage.
+        # Маршрутизация берётся из topology registry (StageDef), а не из состояния задачи.
         if stage_def.terminal_error is not None:
             error_code, error_message = stage_def.terminal_error
             return StageOutcome(
@@ -69,7 +69,7 @@ class CommandHandler(BaseStageHandler):
         )
 
     def _resolve_commands(self, *, plan: Any, stage_def: Any) -> tuple:
-        """Resolve command plan names from StageDef into PlannedCommand tuples."""
+        """Разрешает имена command plan из StageDef в кортежи PlannedCommand."""
         named = plan.named_plans if hasattr(plan, "named_plans") else {}
         result: list = []
         for plan_name in stage_def.command_plans:

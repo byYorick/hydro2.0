@@ -573,8 +573,8 @@ class ScheduleDispatcher
     }
 
     /**
-     * AE3: Laravel scheduler диспатчит только задачи полива; остальные типы расписаний пропускаются
-     * (см. doc_ai/06_DOMAIN_ZONES_RECIPES/SCHEDULER_ENGINE.md).
+     * AE3: Laravel scheduler диспатчит только поддержанные compat-path типы.
+     * Сейчас это `irrigation`, `lighting` и `diagnostics`.
      */
     private function isSchedulerTaskTypeDispatchableForAe3(int $zoneId, string $taskType): bool
     {
@@ -583,7 +583,7 @@ class ScheduleDispatcher
             return true;
         }
 
-        return in_array($taskType, ['irrigation', 'lighting'], true);
+        return in_array($taskType, ['irrigation', 'lighting', 'diagnostics'], true);
     }
 
     private function parseIsoDateTime(?string $value): ?CarbonImmutable

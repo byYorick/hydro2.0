@@ -16,6 +16,7 @@ use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\AutomationRuntimeConfigService;
 use App\Services\GrowCycleService;
+use App\Services\ZoneService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabase;
@@ -369,7 +370,7 @@ class GrowCycleServiceTest extends TestCase
             'token' => 'test-token',
         ]);
 
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
             /** @var array<string, mixed> */
             public array $dispatchState = [];
 
@@ -493,7 +494,7 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
             public int $dispatchAttempts = 0;
 
             protected function isGrowCycleStartDispatchEnabled(): bool
@@ -557,7 +558,7 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
             public int $dispatchAttempts = 0;
 
             protected function isGrowCycleStartDispatchEnabled(): bool
@@ -635,7 +636,7 @@ class GrowCycleServiceTest extends TestCase
         ]);
 
         $runtimeConfig = $this->createMock(AutomationRuntimeConfigService::class);
-        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class)) extends GrowCycleService {
+        $service = new class($runtimeConfig, app(AutomationConfigDocumentService::class), app(ZoneService::class), app(AutomationConfigCompiler::class)) extends GrowCycleService {
             public int $dispatchAttempts = 0;
 
             protected function isGrowCycleStartDispatchEnabled(): bool

@@ -1,10 +1,10 @@
-"""PostgreSQL NOTIFY listener for scheduler_intent_terminal channel.
+"""PostgreSQL NOTIFY-listener для канала scheduler_intent_terminal.
 
-Listens to terminal status transitions of zone_automation_intents and can be
-used to drive reactive task reconciliation without HTTP polling.
+Слушает переходы zone_automation_intents в terminal-статусы и может
+использоваться для реактивного reconcile задач без HTTP-polling.
 
-This module is optional infrastructure — the scheduler continues to function
-via periodic polling even if this listener is not running.
+Этот модуль относится к опциональной инфраструктуре: scheduler продолжит
+работать через периодический polling, даже если listener не запущен.
 """
 
 from __future__ import annotations
@@ -23,15 +23,15 @@ _KEEPALIVE_INTERVAL_SEC = 30
 
 
 class IntentStatusListener:
-    """Listens to scheduler_intent_terminal NOTIFY and dispatches callbacks.
+    """Слушает NOTIFY scheduler_intent_terminal и вызывает callbacks.
 
-    Design:
-    - Acquires a *dedicated* connection outside the shared pool so LISTEN
-      does not block or compete with regular queries.
-    - On each NOTIFY, calls on_terminal_intent with the parsed payload.
-    - Runs a keepalive loop (SELECT 1) every _KEEPALIVE_INTERVAL_SEC to
-      prevent idle-connection timeouts.
-    - Logs errors and auto-reconnects with exponential backoff (max 60 s).
+    Устройство:
+    - использует *выделенное* соединение вне общего пула, чтобы LISTEN
+      не блокировал и не конкурировал с обычными запросами;
+    - на каждый NOTIFY вызывает on_terminal_intent с распарсенным payload;
+    - запускает keepalive-цикл (SELECT 1) каждые _KEEPALIVE_INTERVAL_SEC,
+      чтобы избежать idle-timeout соединения;
+    - пишет ошибки в лог и автоматически переподключается с экспоненциальным backoff.
     """
 
     def __init__(
@@ -44,22 +44,22 @@ class IntentStatusListener:
         self._stop_event: asyncio.Event = asyncio.Event()
 
     def stop(self) -> None:
-        """Signal the listener to stop after the current iteration."""
+        """Даёт listener'у сигнал остановиться после текущей итерации."""
         self._stop_event.set()
 
     async def run(self) -> None:
-        """Run the listener loop with auto-reconnect on error."""
+        """Запускает цикл listener'а с автоматическим переподключением при ошибках."""
         backoff = 1.0
         while not self._stop_event.is_set():
             try:
                 await self._run_once()
                 backoff = 1.0
             except asyncio.CancelledError:
-                logger.info("IntentStatusListener: cancelled, exiting")
+                logger.info("IntentStatusListener: получена отмена, listener завершает работу")
                 return
             except Exception as exc:
                 logger.warning(
-                    "IntentStatusListener: connection error, reconnecting in %.1fs: %s",
+                    "IntentStatusListener: ошибка соединения, переподключение через %.1f с: %s",
                     backoff,
                     exc,
                     exc_info=True,
@@ -72,7 +72,7 @@ class IntentStatusListener:
 
     async def _run_once(self) -> None:
         conn: asyncpg.Connection = await asyncpg.connect(self._dsn)
-        logger.info("IntentStatusListener: connected, listening on channel=%s", _CHANNEL)
+        logger.info("IntentStatusListener: соединение установлено, прослушивается channel=%s", _CHANNEL)
         try:
             await conn.add_listener(_CHANNEL, self._notify_handler)
             while not self._stop_event.is_set():
@@ -82,19 +82,19 @@ class IntentStatusListener:
                         timeout=float(_KEEPALIVE_INTERVAL_SEC),
                     )
                 except asyncio.TimeoutError:
-                    # Keepalive: prevents idle-connection timeout on the DB side.
+                    # Keepalive предотвращает idle-timeout соединения на стороне БД.
                     await conn.execute("SELECT 1")
         finally:
             try:
                 await conn.remove_listener(_CHANNEL, self._notify_handler)
             except Exception:
                 logger.warning(
-                    "IntentStatusListener: failed to remove listener for channel=%s",
+                    "IntentStatusListener: не удалось снять listener с channel=%s",
                     _CHANNEL,
                     exc_info=True,
                 )
             await conn.close()
-            logger.info("IntentStatusListener: disconnected")
+            logger.info("IntentStatusListener: соединение закрыто")
 
     def _notify_handler(
         self,
@@ -103,12 +103,12 @@ class IntentStatusListener:
         channel: str,
         payload: str,
     ) -> None:
-        """Sync callback registered with asyncpg; schedules async work."""
+        """Синхронный callback, зарегистрированный в asyncpg; планирует асинхронную работу."""
         try:
             data: dict[str, Any] = json.loads(payload)
         except json.JSONDecodeError:
             logger.warning(
-                "IntentStatusListener: invalid JSON payload on channel=%s payload=%r",
+                "IntentStatusListener: получен некорректный JSON payload в channel=%s payload=%r",
                 channel,
                 payload,
             )
@@ -118,7 +118,7 @@ class IntentStatusListener:
         zone_id = data.get("zone_id")
         status = data.get("status")
         logger.debug(
-            "IntentStatusListener: received terminal notify intent_id=%s zone_id=%s status=%s",
+            "IntentStatusListener: получен terminal notify intent_id=%s zone_id=%s status=%s",
             intent_id,
             zone_id,
             status,
@@ -131,7 +131,7 @@ class IntentStatusListener:
             await self._on_terminal_intent(data)
         except Exception as exc:
             logger.error(
-                "IntentStatusListener: on_terminal_intent callback failed: %s",
+                "IntentStatusListener: callback on_terminal_intent завершился ошибкой: %s",
                 exc,
                 exc_info=True,
             )

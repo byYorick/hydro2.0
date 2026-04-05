@@ -1,4 +1,4 @@
-"""AE3-Lite domain entities."""
+"""Доменные сущности AE3-Lite."""
 
 from .automation_task import AutomationTask
 from .planned_command import PlannedCommand

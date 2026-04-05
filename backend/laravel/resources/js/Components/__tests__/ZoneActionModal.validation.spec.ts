@@ -23,7 +23,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('Длительность должна быть от 1 до 3600 секунд')
+    expect(wrapper.vm.error).toContain('Длительность (сек): допустимый диапазон 1–3600')
   })
 
   it('should validate duration_sec for START_IRRIGATION', async () => {
@@ -40,7 +40,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('Длительность должна быть от 1 до 3600 секунд')
+    expect(wrapper.vm.error).toContain('Длительность (сек): допустимый диапазон 1–3600')
   })
 
   it('should validate target_ph for FORCE_PH_CONTROL', async () => {
@@ -57,7 +57,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('pH должен быть от 4.0 до 9.0')
+    expect(wrapper.vm.error).toContain('pH: допустимый диапазон 4–9')
   })
 
   it('should validate target_ec for FORCE_EC_CONTROL', async () => {
@@ -74,7 +74,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('EC должен быть от 0.1 до 10.0')
+    expect(wrapper.vm.error).toContain('EC: допустимый диапазон 0.1–10')
   })
 
   it('should validate target_temp and target_humidity for FORCE_CLIMATE', async () => {
@@ -91,7 +91,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('Температура должна быть от 10 до 35°C')
+    expect(wrapper.vm.error).toContain('Температура (°C): допустимый диапазон 10–35')
 
     // Исправляем температуру, но делаем невалидную влажность
     wrapper.vm.form.target_temp = 22
@@ -101,7 +101,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('Влажность должна быть от 30 до 90%')
+    expect(wrapper.vm.error).toContain('Влажность (%): допустимый диапазон 30–90')
   })
 
   it('should validate intensity and duration_hours for FORCE_LIGHTING', async () => {
@@ -118,7 +118,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('Интенсивность должна быть от 0 до 100%')
+    expect(wrapper.vm.error).toContain('Интенсивность (%): допустимый диапазон 0–100')
 
     // Исправляем интенсивность, но делаем невалидную длительность
     wrapper.vm.form.intensity = 80
@@ -128,7 +128,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     wrapper.vm.onSubmit()
     await nextTick()
 
-    expect(wrapper.vm.error).toContain('Длительность должна быть от 0.5 до 24 часов')
+    expect(wrapper.vm.error).toContain('Длительность (ч): допустимый диапазон 0.5–24')
   })
 
   it('should pass validation with valid values', async () => {
@@ -166,7 +166,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     await wrapper.setProps({ show: true })
     await nextTick()
 
-    // Форма должна сброситься к значениям по умолчанию
-    expect(wrapper.vm.form.duration_sec).toBe(10)
+    // Сброс к water_manual_irrigation_sec из FALLBACK (useAutomationDefaults)
+    expect(wrapper.vm.form.duration_sec).toBe(90)
   })
 })

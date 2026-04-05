@@ -1,4 +1,4 @@
-"""Irrigation runtime check handler."""
+"""Handler runtime-проверок во время полива."""
 
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     )
                 except Exception:
                     _logger.warning(
-                        "AE3 failed to log IRRIGATION_SOLUTION_MIN_DETECTED zone_id=%s task_id=%s",
+                        "AE3 не смог записать IRRIGATION_SOLUTION_MIN_DETECTED zone_id=%s task_id=%s",
                         int(getattr(task, "zone_id", 0) or 0),
                         int(getattr(task, "id", 0) or 0),
                         exc_info=True,
@@ -110,7 +110,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     await send_biz_alert(
                         code="biz_irrigation_solution_min",
                         alert_type="AE3 Irrigation Solution Min",
-                        message="Solution min level switch triggered during irrigation.",
+                        message="Во время полива сработал нижний датчик уровня раствора.",
                         severity="warning",
                         zone_id=int(task.zone_id),
                         details={
@@ -123,7 +123,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     )
                 except Exception:
                     _logger.warning(
-                        "AE3 failed to emit biz_irrigation_solution_min alert zone_id=%s task_id=%s",
+                        "AE3 не смог отправить alert biz_irrigation_solution_min zone_id=%s task_id=%s",
                         int(getattr(task, "zone_id", 0) or 0),
                         int(getattr(task, "id", 0) or 0),
                         exc_info=True,
@@ -135,7 +135,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                         await send_biz_alert(
                             code="biz_irrigation_replay_exhausted",
                             alert_type="AE3 Irrigation Replay Exhausted",
-                            message="Irrigation replay budget exhausted after repeated solution-min triggers.",
+                            message="Исчерпан бюджет повторов после повторных срабатываний нижнего уровня раствора.",
                             severity="error",
                             zone_id=int(task.zone_id),
                             details={
@@ -149,7 +149,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                         )
                     except Exception:
                         _logger.warning(
-                            "AE3 failed to emit biz_irrigation_replay_exhausted alert zone_id=%s task_id=%s",
+                            "AE3 не смог отправить alert biz_irrigation_replay_exhausted zone_id=%s task_id=%s",
                             int(getattr(task, "zone_id", 0) or 0),
                             int(getattr(task, "id", 0) or 0),
                             exc_info=True,
@@ -157,7 +157,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     return StageOutcome(
                         kind="fail",
                         error_code="irrigation_solution_min_replay_exhausted",
-                        error_message="Solution min triggered again after setup replay budget was exhausted",
+                        error_message="Нижний уровень раствора снова сработал после исчерпания бюджета повторов setup",
                     )
                 updated = await self._task_repository.update_irrigation_runtime(
                     task_id=int(task.id),
@@ -166,7 +166,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     irrigation_replay_count=next_replay_count,
                 )
                 if updated is None:
-                    raise TaskExecutionError("irrigation_replay_persist_failed", "Unable to persist irrigation replay count")
+                    raise TaskExecutionError("irrigation_replay_persist_failed", "Не удалось сохранить счётчик повторов полива")
                 IRRIGATION_REPLAY.labels(topology=topology).inc()
                 _observe_duration("setup")
                 return StageOutcome(kind="transition", next_stage="irrigation_stop_to_setup")
@@ -221,7 +221,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                     )
                 except Exception:
                     _logger.warning(
-                        "AE3 failed to log IRRIGATION_CORRECTION_STARTED zone_id=%s task_id=%s",
+                        "AE3 не смог записать IRRIGATION_CORRECTION_STARTED zone_id=%s task_id=%s",
                         int(getattr(task, "zone_id", 0) or 0),
                         int(getattr(task, "id", 0) or 0),
                         exc_info=True,

@@ -1,4 +1,4 @@
-"""Pydantic request contracts for AE3-Lite API."""
+"""Pydantic-контракты запросов для API AE3-Lite."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class StartIrrigationRequest(BaseModel):
 
 
 class StartLightingTickRequest(BaseModel):
-    """Scheduler/API compat: one-shot lighting dispatch (C1, AE3-only path)."""
+    """Совместимый с scheduler/API one-shot lighting dispatch (C1, только путь AE3)."""
 
     model_config = ConfigDict(extra="forbid")
 

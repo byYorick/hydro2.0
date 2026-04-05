@@ -36,6 +36,13 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 15s
 
+  # Laravel scheduler-dispatch exporter
+  - job_name: 'laravel-scheduler'
+    static_configs:
+      - targets: ['laravel:80']
+    metrics_path: '/api/system/scheduler/metrics'
+    scrape_interval: 15s
+
 # Правила алертов
 rule_files:
   - '/etc/prometheus/alerts.yml'

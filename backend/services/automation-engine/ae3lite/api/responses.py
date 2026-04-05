@@ -1,4 +1,4 @@
-"""HTTP response helpers for AE3-Lite compat ingress."""
+"""Вспомогательные функции HTTP-ответов для compat-ingress AE3-Lite."""
 
 from __future__ import annotations
 

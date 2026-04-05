@@ -1,4 +1,4 @@
-"""Finalize AE3-Lite task into a terminal state."""
+"""Переводит задачу AE3-Lite в terminal state."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def _naive_utc(dt: datetime) -> datetime:
 
 
 class FinalizeTaskUseCase:
-    """Owns terminal task transitions so runtime paths do not inline them."""
+    """Инкапсулирует terminal-переходы задачи, чтобы runtime-пути не дублировали эту логику."""
 
     def __init__(self, *, task_repository: Any) -> None:
         self._task_repository = task_repository
@@ -36,7 +36,7 @@ class FinalizeTaskUseCase:
 
         get_by_id = getattr(self._task_repository, "get_by_id", None)
         if not callable(get_by_id):
-            raise TaskFinalizeError("ae3_task_complete_failed", f"Unable to complete task {task.id}")
+            raise TaskFinalizeError("ae3_task_complete_failed", f"Не удалось завершить задачу {task.id}")
 
         current_task = await get_by_id(task_id=task.id)
         if current_task is not None and not current_task.is_active:
@@ -59,7 +59,7 @@ class FinalizeTaskUseCase:
             )
         raise TaskFinalizeError(
             "ae3_task_complete_failed",
-            f"Unable to complete task {task.id}: row still active with status={current_task.status}",
+            f"Не удалось завершить задачу {task.id}: строка всё ещё активна со статусом={current_task.status}",
         )
 
     async def fail(
@@ -79,7 +79,7 @@ class FinalizeTaskUseCase:
             now=now,
         )
         if failed is None:
-            raise TaskFinalizeError(error_code or "ae3_task_finalize_failed", f"Unable to fail task {task.id}")
+            raise TaskFinalizeError(error_code or "ae3_task_finalize_failed", f"Не удалось перевести задачу {task.id} в failed")
         return failed
 
     async def fail_closed(
@@ -125,7 +125,7 @@ class FinalizeTaskUseCase:
         raise TaskFinalizeError(
             error_code or "ae3_task_finalize_failed",
             (
-                f"Unable to fail task {task.id}: task row remained active "
-                f"with status={current_task.status}"
+                f"Не удалось перевести задачу {task.id} в failed: строка задачи осталась активной "
+                f"со статусом={current_task.status}"
             ),
         )

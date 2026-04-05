@@ -1,7 +1,7 @@
-"""Shared ordering for «active» grow_cycle row per zone.
+"""Общая сортировка для «активной» строки grow_cycle на зону.
 
-Single source of truth for AE3 read paths that must agree with
-`PgZoneSnapshotReadModel` (bundle scope = grow_cycle id chosen here).
+Единый источник истины для read-path'ов AE3, которые должны совпадать
+с `PgZoneSnapshotReadModel` по выбору grow_cycle id для bundle scope.
 """
 
 SQL_ACTIVE_GROW_CYCLE_ORDER_BY = """

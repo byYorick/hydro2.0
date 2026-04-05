@@ -1,1 +1,1 @@
-"""Application layer for AE3-Lite v1."""
+"""Слой application для AE3-Lite v1."""

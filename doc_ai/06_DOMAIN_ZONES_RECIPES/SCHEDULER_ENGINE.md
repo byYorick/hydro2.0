@@ -33,7 +33,8 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 |------------------------------|---------------------|------------|
 | `irrigation` | `POST /zones/{id}/start-irrigation` | intent/task `irrigation_start`, опционально `requested_duration_sec` из payload расписания |
 | `lighting` | `POST /zones/{id}/start-lighting-tick` | только при `zones.automation_runtime='ae3'`; intent/task `lighting_tick` (см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH_TBD.md`, C1) |
-| прочие (`climate`, `mist`, `ventilation`, …) | `POST /zones/{id}/start-cycle` | diagnostics / `cycle_start`; на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (остаются в плане как `non_executable_planned_task_types`) |
+| `diagnostics` | `POST /zones/{id}/start-cycle` | на AE3 идёт через compat-path `diagnostics / cycle_start`; intent `DIAGNOSTICS_TICK`, task `cycle_start` |
+| прочие (`climate`, `mist`, `ventilation`, …) | `POST /zones/{id}/start-cycle` | на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (остаются в плане как `non_executable_planned_task_types`) |
 
 Для **`automation_runtime ≠ ae3`** по-прежнему используется прежняя матрица endpoint-ов (в т.ч. `start-cycle` для типов вне полива — см. код `ScheduleDispatcher`).
 
@@ -47,7 +48,7 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 - Конфигурация и флаги cutover: переменные `AUTOMATION_LARAVEL_SCHEDULER_*`, синхронизация токенов с `automation-engine` (см. `doc_ai/08_SECURITY_AND_OPS/RUNBOOKS.md`, раздел про планировщик).
 - Метрики dispatch: при необходимости — публичный endpoint Laravel `GET /api/system/scheduler/metrics` (см. `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`).
 - UI оператора: schedule workspace и timeline строятся из канонического состояния автоматизации, а не из удалённого Python task API.
-- Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` (историческое имя: «ограниченный набор типов под автодиспатч на AE3»), `capabilities.executable_task_types` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1). На AE3 автодиспатч расписания покрывает **полив и освещение**; остальные запланированные типы перечисляются как non-executable, пока не реализован отдельный compat-path.
+- Ответ `GET /api/zones/{id}/schedule-workspace` содержит `capabilities.ae3_irrigation_only_dispatch` (историческое имя: «ограниченный набор типов под автодиспатч на AE3»), `capabilities.executable_task_types` и `capabilities.non_executable_planned_task_types` — источник истины для подсказок оператору на AE3 (см. `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` §3.5.1). На AE3 автодиспатч расписания покрывает **полив, освещение и diagnostics**; остальные запланированные типы перечисляются как non-executable, пока не реализован отдельный compat-path.
 
 ---
 

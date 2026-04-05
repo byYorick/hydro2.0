@@ -1,4 +1,4 @@
-"""CycleStartPlanner for AE3-Lite v1."""
+"""CycleStartPlanner для AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ae3lite.domain.services.two_tank_runtime_spec import resolve_two_tank_runti
 
 
 class CycleStartPlanner:
-    """Builds a deterministic sequential command plan for cycle_start."""
+    """Строит детерминированный последовательный command plan для cycle_start."""
 
     SUPPORTED_SCHEMA_VERSION = 1
     LEGACY_EC_COMPONENT_CHANNELS = {
@@ -32,52 +32,52 @@ class CycleStartPlanner:
         if str(getattr(task, "task_type", "") or "").strip().lower() == "lighting_tick":
             return self._build_lighting_tick_plan(task=task, snapshot=snapshot)
         if task.task_type not in {"cycle_start", "irrigation_start"}:
-            raise PlannerConfigurationError(f"Unsupported task_type for CycleStartPlanner: {task.task_type}")
+            raise PlannerConfigurationError(f"CycleStartPlanner не поддерживает task_type={task.task_type}")
         if task.zone_id != snapshot.zone_id:
             raise PlannerConfigurationError(
-                f"AutomationTask.zone_id={task.zone_id} does not match ZoneSnapshot.zone_id={snapshot.zone_id}"
+                f"AutomationTask.zone_id={task.zone_id} не совпадает с ZoneSnapshot.zone_id={snapshot.zone_id}"
             )
         if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
-            raise PlannerConfigurationError("CycleStartPlanner requires zone.automation_runtime='ae3'")
+            raise PlannerConfigurationError("CycleStartPlanner требует zone.automation_runtime='ae3'")
         if snapshot.grow_cycle_id is None or snapshot.current_phase_id is None:
-            raise PlannerConfigurationError("CycleStartPlanner requires an active grow_cycle with current_phase_id")
+            raise PlannerConfigurationError("CycleStartPlanner требует активный grow_cycle с current_phase_id")
 
         command_plans = snapshot.command_plans if isinstance(snapshot.command_plans, Mapping) else {}
         schema_version = int(command_plans.get("schema_version") or 0)
         if schema_version != self.SUPPORTED_SCHEMA_VERSION:
-            raise PlannerConfigurationError(f"Unsupported command_plans.schema_version={schema_version}")
+            raise PlannerConfigurationError(f"Неподдерживаемая версия command_plans.schema_version={schema_version}")
 
         plans = command_plans.get("plans")
         diagnostics = plans.get("diagnostics") if isinstance(plans, Mapping) else None
         if not isinstance(diagnostics, Mapping):
-            raise PlannerConfigurationError("command_plans.plans.diagnostics is required")
+            raise PlannerConfigurationError("Обязателен раздел command_plans.plans.diagnostics")
 
         execution = snapshot.diagnostics_execution if isinstance(snapshot.diagnostics_execution, Mapping) else {}
         workflow = str(execution.get("workflow") or "").strip().lower()
         topology = str(execution.get("topology") or "").strip().lower()
         if workflow != "cycle_start":
-            raise PlannerConfigurationError(f"Unsupported diagnostics workflow for cycle_start planner: {workflow or 'empty'}")
+            raise PlannerConfigurationError(f"Неподдерживаемый diagnostics workflow для cycle_start planner: {workflow or 'empty'}")
         if not topology:
-            raise PlannerConfigurationError("diagnostics execution topology is required")
+            raise PlannerConfigurationError("Для diagnostics execution обязательно указать topology")
         if topology in {"two_tank", "two_tank_drip_substrate_trays"}:
             return self._build_two_tank_plan(task=task, snapshot=snapshot, workflow=workflow, topology=topology)
 
         steps = diagnostics.get("steps")
         if not isinstance(steps, Sequence) or not steps:
-            raise PlannerConfigurationError("command_plans.plans.diagnostics.steps must be a non-empty array")
+            raise PlannerConfigurationError("command_plans.plans.diagnostics.steps должен быть непустым массивом")
 
         default_node_types = self._normalize_node_types(execution.get("required_node_types"))
         planned_steps: List[PlannedCommand] = []
         for index, raw_step in enumerate(steps, start=1):
             if not isinstance(raw_step, Mapping):
-                raise PlannerConfigurationError(f"Invalid command plan step at index={index}")
+                raise PlannerConfigurationError(f"Некорректный шаг command plan на позиции {index}")
 
             requested_channel = str(raw_step.get("channel") or "").strip().lower()
             cmd = str(raw_step.get("cmd") or "").strip()
             params = raw_step.get("params")
             if not requested_channel or not cmd or not isinstance(params, Mapping):
                 raise PlannerConfigurationError(
-                    f"Each command step must define channel/cmd/params (index={index})"
+                    f"Каждый шаг command plan должен содержать channel/cmd/params (index={index})"
                 )
 
             node_types = self._normalize_node_types(raw_step.get("node_types")) or list(default_node_types)
@@ -160,9 +160,9 @@ class CycleStartPlanner:
             ),
         )
 
-        # Resolve dosing actuators for correction module.
-        # Optional: if a channel is absent from snapshot.actuators the correction
-        # executor will raise PlannerConfigurationError at runtime, not at plan time.
+        # Разрешить dosing actuator'ы для модуля коррекции.
+        # Это опционально: если канала нет в `snapshot.actuators`, correction executor
+        # выбросит `PlannerConfigurationError` уже во время выполнения, а не на этапе планирования.
         correction = dict(runtime.get("correction") or {})
         correction["actuators"] = self._resolve_correction_actuators(
             actuators=snapshot.actuators,
@@ -203,22 +203,22 @@ class CycleStartPlanner:
         task: AutomationTask,
         snapshot: ZoneSnapshot,
     ) -> CommandPlan:
-        """Single MQTT command batch for scheduler-driven lighting (AE3 C1)."""
+        """Один MQTT command batch для scheduler-driven lighting (AE3 C1)."""
         if str(snapshot.automation_runtime or "").strip().lower() != "ae3":
-            raise PlannerConfigurationError("lighting_tick requires zone.automation_runtime='ae3'")
+            raise PlannerConfigurationError("Для lighting_tick требуется zone.automation_runtime='ae3'")
         if task.zone_id != snapshot.zone_id:
             raise PlannerConfigurationError(
-                f"AutomationTask.zone_id={task.zone_id} does not match ZoneSnapshot.zone_id={snapshot.zone_id}"
+                f"AutomationTask.zone_id={task.zone_id} не совпадает с ZoneSnapshot.zone_id={snapshot.zone_id}"
             )
         actuators = snapshot.actuators
         if not actuators:
             raise PlannerConfigurationError(
-                "lighting_tick requires at least one online actuator mapping in zone snapshot",
+                "Для lighting_tick требуется хотя бы один online actuator mapping в snapshot зоны",
             )
         ref = self._pick_lighting_actuator(actuators)
         if ref is None:
             raise PlannerConfigurationError(
-                "lighting_tick: no lighting actuator channel found (e.g. light_main)",
+                "Для lighting_tick не найден lighting actuator channel, например light_main",
             )
 
         targets = snapshot.targets if isinstance(snapshot.targets, Mapping) else {}
@@ -343,7 +343,7 @@ class CycleStartPlanner:
                 and str(actuator.channel).strip().lower() == "system"
             ]
             if len(candidates) > 1:
-                raise PlannerConfigurationError(f"Ambiguous system channel resolution for node_type={node_type}")
+                raise PlannerConfigurationError(f"Неоднозначное разрешение system channel для node_type={node_type}")
             if len(candidates) == 1:
                 steps.append(
                     PlannedCommand(
@@ -371,7 +371,7 @@ class CycleStartPlanner:
             }
         )
         if len(candidates) != 1:
-            raise PlannerConfigurationError(f"Expected exactly one runtime node for node_types={sorted(normalized_types)}")
+            raise PlannerConfigurationError(f"Ожидался ровно один runtime node для node_types={sorted(normalized_types)}")
         return candidates[0]
 
     def _normalize_node_types(self, raw_value: Any) -> List[str]:
@@ -436,7 +436,7 @@ class CycleStartPlanner:
 
         kind = "EC" if actuator_key.startswith("ec") else "PH"
         raise PlannerConfigurationError(
-            f"{kind} dosing pump calibration is required (channel={channel}, node={node_uid})",
+            f"Для насоса дозирования {kind} требуется calibration (channel={channel}, node={node_uid})",
             code=ErrorCodes.ZONE_DOSING_CALIBRATION_MISSING_CRITICAL,
         )
 
@@ -446,11 +446,11 @@ class CycleStartPlanner:
         actuators: Sequence[ZoneActuatorRef],
         correction: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Resolve optional dosing actuator refs for the correction module.
+        """Разрешает опциональные ссылки на dosing actuator'ы для модуля коррекции.
 
-        Returns a dict with keys "ec", "ec_actuators", "ph_up", "ph_down".
-        Each value is either a dict {node_uid, channel, calibration} or None.
-        Missing actuators are allowed — CorrectionPlanner will raise at dose time.
+        Возвращает dict с ключами `"ec"`, `"ec_actuators"`, `"ph_up"`, `"ph_down"`.
+        Каждое значение — либо dict вида `{node_uid, channel, calibration}`, либо `None`.
+        Отсутствующие actuator'ы допустимы: `CorrectionPlanner` упадёт уже в момент дозирования.
         """
         def _try_resolve(channel_name: str, node_types: List[str]) -> Any:
             aliases = self._resolve_channel_aliases(channel_name=channel_name, node_types=node_types)
@@ -467,7 +467,7 @@ class CycleStartPlanner:
                         "calibration": dict(actuator.pump_calibration) if isinstance(actuator.pump_calibration, Mapping) else None,
                     }
                 except PlannerConfigurationError as exc:
-                    if "Ambiguous actuator resolution" in str(exc):
+                    if "Неоднозначное разрешение actuator" in str(exc):
                         raise
                     continue
             return None
@@ -645,7 +645,7 @@ class CycleStartPlanner:
             )
         if not candidates:
             raise PlannerConfigurationError(
-                f"No online actuator matches requested_channel={requested_channel} node_types={sorted(normalized_types)}"
+                f"Не найден online actuator для requested_channel={requested_channel} node_types={sorted(normalized_types)}"
             )
         candidates.sort(key=lambda item: (item[0], item[1].node_uid, item[1].channel, item[1].node_channel_id))
 
@@ -653,7 +653,7 @@ class CycleStartPlanner:
         equally_ranked = [item[1] for item in candidates if item[0] == best_rank]
         if len(equally_ranked) > 1:
             raise PlannerConfigurationError(
-                f"Ambiguous actuator resolution for requested_channel={requested_channel}: "
+                f"Неоднозначное разрешение actuator для requested_channel={requested_channel}: "
                 f"{[item.node_uid for item in equally_ranked]}"
             )
         return equally_ranked[0]

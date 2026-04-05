@@ -23,6 +23,10 @@ class _DecisionControllerStub:
             outcome="degraded_run",
             reason_code="smart_soil_telemetry_missing_or_stale",
             degraded=True,
+            details={
+                "sensor_count": 1,
+                "samples": 0,
+            },
         )
 
 
@@ -155,6 +159,29 @@ async def test_decision_gate_persists_irrigation_decision_columns() -> None:
         assert row["irrigation_decision_outcome"] == "degraded_run"
         assert row["irrigation_decision_reason_code"] == "smart_soil_telemetry_missing_or_stale"
         assert row["irrigation_decision_degraded"] is True
+
+        event_rows = await fetch(
+            """
+            SELECT type, payload_json
+            FROM zone_events
+            WHERE zone_id = $1
+              AND type = 'IRRIGATION_DECISION_EVALUATED'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            zone_id,
+        )
+
+        assert len(event_rows) == 1
+        payload = dict(event_rows[0]["payload_json"] or {})
+        assert event_rows[0]["type"] == "IRRIGATION_DECISION_EVALUATED"
+        assert payload["task_id"] == int(task.id)
+        assert payload["strategy"] == "smart_soil_v1"
+        assert payload["outcome"] == "degraded_run"
+        assert payload["reason_code"] == "smart_soil_telemetry_missing_or_stale"
+        assert payload["degraded"] is True
+        assert payload["details"]["sensor_count"] == 1
+        assert payload["details"]["samples"] == 0
     finally:
         await _cleanup(prefix)
 

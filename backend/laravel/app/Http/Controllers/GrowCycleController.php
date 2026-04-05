@@ -2,20 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\GrowCycle;
-use App\Models\Zone;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use App\Enums\GrowCycleStatus;
-use App\Helpers\ZoneAccessHelper;
-use App\Services\GrowCycleService;
-use App\Services\GrowCyclePresenter;
+use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
+use App\Services\GrowCyclePresenter;
+use App\Services\GrowCycleService;
 use App\Services\ZoneReadinessService;
+use App\Services\ZoneService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class GrowCycleController extends Controller
@@ -24,9 +24,9 @@ class GrowCycleController extends Controller
         private GrowCycleService $growCycleService,
         private GrowCyclePresenter $growCyclePresenter,
         private EffectiveTargetsService $effectiveTargetsService,
-        private ZoneReadinessService $zoneReadinessService
-    ) {
-    }
+        private ZoneReadinessService $zoneReadinessService,
+        private ZoneService $zoneService,
+    ) {}
 
     /**
      * Получить список всех grow cycles
@@ -35,7 +35,7 @@ class GrowCycleController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -67,6 +67,7 @@ class GrowCycleController extends Controller
             'data' => $cycles,
         ]);
     }
+
     /**
      * Запустить цикл (из PLANNED в RUNNING)
      * POST /api/grow-cycles/{id}/start
@@ -74,7 +75,7 @@ class GrowCycleController extends Controller
     public function start(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -82,7 +83,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -90,7 +91,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может управлять циклами
-        if (!Gate::allows('update', $growCycle)) {
+        if (! Gate::allows('update', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can manage grow cycles',
@@ -99,6 +100,7 @@ class GrowCycleController extends Controller
 
         try {
             $zone->loadMissing('nodes.channels');
+            $this->zoneService->ensureAe3AutomationBootstrap($zone);
             $readiness = $this->checkZoneReadiness($zone);
             if (($readiness['ready'] ?? false) !== true) {
                 return response()->json([
@@ -140,7 +142,7 @@ class GrowCycleController extends Controller
     public function pause(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -148,7 +150,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -156,7 +158,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может управлять циклами
-        if (!Gate::allows('update', $growCycle)) {
+        if (! Gate::allows('update', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can manage grow cycles',
@@ -195,7 +197,7 @@ class GrowCycleController extends Controller
     public function resume(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -203,7 +205,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -211,7 +213,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может управлять циклами
-        if (!Gate::allows('update', $growCycle)) {
+        if (! Gate::allows('update', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can manage grow cycles',
@@ -250,7 +252,7 @@ class GrowCycleController extends Controller
     public function harvest(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -258,7 +260,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -266,7 +268,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может управлять циклами
-        if (!Gate::allows('update', $growCycle)) {
+        if (! Gate::allows('update', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can manage grow cycles',
@@ -310,7 +312,7 @@ class GrowCycleController extends Controller
     public function abort(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -318,7 +320,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -326,7 +328,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может управлять циклами
-        if (!Gate::allows('update', $growCycle)) {
+        if (! Gate::allows('update', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can manage grow cycles',
@@ -363,7 +365,6 @@ class GrowCycleController extends Controller
         }
     }
 
-
     /**
      * Создать и запустить цикл выращивания
      * POST /api/zones/{zone}/grow-cycles
@@ -371,14 +372,14 @@ class GrowCycleController extends Controller
     public function store(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
 
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -386,7 +387,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может создавать циклы
-        if (!Gate::allows('create', [GrowCycle::class, $zone])) {
+        if (! Gate::allows('create', [GrowCycle::class, $zone])) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can create grow cycles',
@@ -415,6 +416,7 @@ class GrowCycleController extends Controller
         $startImmediately = (bool) ($data['start_immediately'] ?? false);
         if ($startImmediately) {
             $zone->loadMissing('nodes.channels');
+            $this->zoneService->ensureAe3AutomationBootstrap($zone);
             $readiness = $this->checkZoneReadiness($zone);
             if ($readiness['ready'] !== true) {
                 return response()->json([
@@ -496,14 +498,14 @@ class GrowCycleController extends Controller
     public function show(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
 
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -511,8 +513,8 @@ class GrowCycleController extends Controller
         }
 
         $cycle = $zone->activeGrowCycle;
-        
-        if (!$cycle) {
+
+        if (! $cycle) {
             return response()->json([
                 'status' => 'ok',
                 'data' => null,
@@ -539,10 +541,11 @@ class GrowCycleController extends Controller
 
             // Возвращаем цикл без targets в случае ошибки
             $dto = $this->growCyclePresenter->buildCycleDto($cycle);
+
             return response()->json([
                 'status' => 'ok',
                 'data' => $dto,
-                'warning' => 'Failed to load effective targets: ' . $e->getMessage(),
+                'warning' => 'Failed to load effective targets: '.$e->getMessage(),
             ]);
         }
     }
@@ -563,7 +566,7 @@ class GrowCycleController extends Controller
     public function indexByGreenhouse(Request $request, \App\Models\Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -597,7 +600,7 @@ class GrowCycleController extends Controller
     public function advancePhase(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -605,7 +608,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -613,7 +616,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может переключать фазы
-        if (!Gate::allows('switchPhase', $growCycle)) {
+        if (! Gate::allows('switchPhase', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can switch phases',
@@ -652,7 +655,7 @@ class GrowCycleController extends Controller
     public function setPhase(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -660,7 +663,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -668,7 +671,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может переключать фазы
-        if (!Gate::allows('switchPhase', $growCycle)) {
+        if (! Gate::allows('switchPhase', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can switch phases',
@@ -713,7 +716,7 @@ class GrowCycleController extends Controller
     public function changeRecipeRevision(Request $request, GrowCycle $growCycle): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -721,7 +724,7 @@ class GrowCycleController extends Controller
         }
 
         $zone = $growCycle->zone;
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -729,7 +732,7 @@ class GrowCycleController extends Controller
         }
 
         // Проверка прав: только агроном может менять ревизию рецепта
-        if (!Gate::allows('changeRecipeRevision', $growCycle)) {
+        if (! Gate::allows('changeRecipeRevision', $growCycle)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Only agronomists can change recipe revisions',
@@ -771,5 +774,4 @@ class GrowCycleController extends Controller
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
-
 }

@@ -1,6 +1,6 @@
-"""Shared workflow-phase key normalisation for AE3-Lite domain services.
+"""Общая нормализация workflow-phase key для доменных сервисов AE3-Lite.
 
-Canonical keys returned: ``"solution_fill"``, ``"tank_recirc"``,
+Канонические ключи: ``"solution_fill"``, ``"tank_recirc"``,
 ``"irrigation"``, ``"generic"``.
 """
 
@@ -10,10 +10,10 @@ from typing import Any
 
 
 def normalize_phase_key(raw: Any) -> str:
-    """Return the canonical phase key for a raw workflow_phase string.
+    """Возвращает канонический phase key для сырой строки ``workflow_phase``.
 
-    Maps workflow phase names (including legacy aliases) to one of four
-    canonical keys used by correction configs and process calibrations.
+    Преобразует имена workflow phase, включая legacy-алиасы, в один из четырёх
+    канонических ключей, используемых в correction config и process calibration.
     """
     phase = str(raw or "").strip().lower()
     if phase in {"tank_filling", "solution_fill"}:

@@ -1,7 +1,7 @@
-"""AutomationTask entity for AE3-Lite v2.
+"""Сущность AutomationTask для AE3-Lite v2.
 
-Replaces the monolithic ``payload JSONB`` column with explicit typed fields
-for intent metadata, workflow state, and correction state.
+Заменяет монолитную колонку ``payload JSONB`` явными типизированными полями
+для metadata intent'а, workflow state и correction state.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any, Mapping, Optional
 
 
 def _naive(dt: Any) -> Any:
-    """Normalize to naive UTC for mixed aware/naive DB timestamps."""
+    """Нормализует mixed aware/naive DB timestamps к naive UTC."""
     if isinstance(dt, datetime) and dt.tzinfo is not None:
         return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
@@ -25,16 +25,16 @@ ACTIVE_TASK_STATUSES = frozenset({"pending", "claimed", "running", "waiting_comm
 
 @dataclass(frozen=True)
 class AutomationTask:
-    """Canonical task entity with explicit typed state columns."""
+    """Каноническая сущность задачи с явно типизированными колонками состояния."""
 
-    # ── Identity ────────────────────────────────────────────────────
+    # ── Идентичность ────────────────────────────────────────────────
     id: int
     zone_id: int
     task_type: str
     status: str
     idempotency_key: str
 
-    # ── Scheduling ──────────────────────────────────────────────────
+    # ── Планирование ────────────────────────────────────────────────
     scheduled_for: datetime
     due_at: datetime
 
@@ -42,29 +42,29 @@ class AutomationTask:
     claimed_by: Optional[str]
     claimed_at: Optional[datetime]
 
-    # ── Error ───────────────────────────────────────────────────────
+    # ── Ошибка ──────────────────────────────────────────────────────
     error_code: Optional[str]
     error_message: Optional[str]
 
-    # ── Timestamps ──────────────────────────────────────────────────
+    # ── Временные метки ─────────────────────────────────────────────
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime]
 
-    # ── Intent metadata (write-once) ────────────────────────────────
+    # ── Metadata intent'а (write-once) ──────────────────────────────
     topology: str
     intent_source: Optional[str]
     intent_trigger: Optional[str]
     intent_id: Optional[int]
     intent_meta: Mapping[str, Any]
 
-    # ── Workflow state (mutable per stage transition) ───────────────
+    # ── Workflow state (изменяется при переходе stage) ──────────────
     workflow: WorkflowState
 
-    # ── Correction state (None when correction inactive) ────────────
+    # ── Correction state (None, когда коррекция неактивна) ──────────
     correction: Optional[CorrectionState]
 
-    # ── Irrigation runtime state (typed columns, NULL for cycle_start) ─
+    # ── Irrigation runtime state (typed columns, NULL для cycle_start) ─
     irrigation_mode: Optional[str] = None
     irrigation_requested_duration_sec: Optional[int] = None
     irrigation_decision_strategy: Optional[str] = None
@@ -79,9 +79,9 @@ class AutomationTask:
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> AutomationTask:
-        """Construct from an asyncpg Record or dict-like row."""
-        # control_mode_snapshot takes priority (task-level snapshot);
-        # pending_manual_step is always from ae_tasks (set via POST /manual-step).
+        """Собирает сущность из asyncpg Record или dict-подобной строки."""
+        # control_mode_snapshot имеет приоритет как task-level snapshot;
+        # pending_manual_step всегда читается из ae_tasks (ставится через POST /manual-step).
         raw_control_mode = (
             row.get("control_mode_snapshot")
             if row.get("control_mode_snapshot") is not None

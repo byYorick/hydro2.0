@@ -1,4 +1,4 @@
-"""PrepareRecircCheckHandler — targets + deadline + correction entry."""
+"""PrepareRecircCheckHandler: target'ы, дедлайн и вход в коррекцию."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ _logger = logging.getLogger(__name__)
 
 
 class PrepareRecircCheckHandler(BaseStageHandler):
-    """Handles ``prepare_recirculation_check``: probe, targets, correction.
+    """Обрабатывает ``prepare_recirculation_check``: probe, target'ы и коррекцию.
 
-    Outcomes:
-    1. Targets reached → ``prepare_recirculation_stop_to_ready``
-    2. Targets not reached → enter correction cycle
-    3. Deadline exceeded → ``prepare_recirculation_window_exhausted``
+    Исходы:
+    1. Target'ы достигнуты → ``prepare_recirculation_stop_to_ready``
+    2. Target'ы не достигнуты → вход в цикл коррекции
+    3. Дедлайн превышен → ``prepare_recirculation_window_exhausted``
     """
 
     async def run(
@@ -34,13 +34,13 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
-        # Fail-fast before issuing another probe command. Otherwise a stage that is
-        # already out of time can publish a fresh storage_state request and then fail
-        # on command polling instead of taking the intended window-exhausted path.
+        # Fail-fast перед новой probe-командой. Иначе stage, у которого уже
+        # закончилось время, может опубликовать новый storage_state request и упасть
+        # на command polling вместо перехода по ожидаемому path window_exhausted.
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             _logger.info(
-                "prepare_recirculation_check: deadline exceeded, exhausting window zone_id=%s retry=%s",
+                "prepare_recirculation_check: дедлайн превышен, окно исчерпывается zone_id=%s retry=%s",
                 task.zone_id, task.workflow.stage_retry_count + 1,
             )
             return StageOutcome(
@@ -50,8 +50,8 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             )
         if self._deadline_too_close_for_irr_probe(now=now, deadline=deadline, runtime=runtime):
             _logger.info(
-                "prepare_recirculation_check: remaining stage time is below IRR probe budget, "
-                "exhausting window zone_id=%s retry=%s",
+                "prepare_recirculation_check: оставшееся время stage меньше бюджета IRR probe, "
+                "окно исчерпывается zone_id=%s retry=%s",
                 task.zone_id,
                 task.workflow.stage_retry_count + 1,
             )
@@ -71,7 +71,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         )
 
         if pending_manual_step == "prepare_recirculation_stop":
-            _logger.info("prepare_recirculation_check: manual stop requested zone_id=%s", task.zone_id)
+            _logger.info("prepare_recirculation_check: запрошена ручная остановка zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_stop_to_ready",
@@ -83,15 +83,15 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             )
 
         if await self._targets_reached(task=task, plan=plan, now=now):
-            _logger.debug("prepare_recirculation_check: targets reached zone_id=%s", task.zone_id)
+            _logger.debug("prepare_recirculation_check: цели достигнуты zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",
                 next_stage="prepare_recirculation_stop_to_ready",
             )
 
-        # Targets not reached — enter correction.
-        _logger.info("prepare_recirculation_check: targets not met, entering correction zone_id=%s", task.zone_id)
-        # Sensors already active (activated by prepare_recirculation_start → sensor_mode_activate).
+        # Target'ы не достигнуты: вход в коррекцию.
+        _logger.info("prepare_recirculation_check: цели не достигнуты, переход в correction zone_id=%s", task.zone_id)
+        # Сенсоры уже активны: их включил prepare_recirculation_start → sensor_mode_activate.
         corr = self._build_correction_state(
             task=task,
             runtime=runtime,

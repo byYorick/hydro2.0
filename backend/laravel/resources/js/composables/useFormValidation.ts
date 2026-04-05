@@ -4,6 +4,13 @@
 import { computed } from 'vue'
 import type { InertiaForm } from '@inertiajs/vue3'
 import type { FormDataKeys } from '@inertiajs/core'
+import {
+  validateEmail,
+  validateMinLength,
+  validateNumberRange,
+} from '@/utils/validation'
+
+export { validateEmail, validateMinLength, validateNumberRange }
 
 /**
  * Улучшенная обработка ошибок формы
@@ -65,52 +72,6 @@ export function useFormValidation<T extends Record<string, unknown>>(
    */
   function clearAllErrors(): void {
     form.clearErrors()
-  }
-
-  /**
-   * Валидирует числовое значение в диапазоне
-   */
-  function validateNumberRange(
-    value: number | null | undefined,
-    min: number,
-    max: number,
-    fieldName: string
-  ): string | null {
-    if (value === null || value === undefined) {
-      return `${fieldName} обязательно для заполнения`
-    }
-    if (value < min || value > max) {
-      return `${fieldName} должен быть от ${min} до ${max}`
-    }
-    return null
-  }
-
-  /**
-   * Валидирует строку на минимальную длину
-   */
-  function validateMinLength(
-    value: string | null | undefined,
-    minLength: number,
-    fieldName: string
-  ): string | null {
-    if (!value || value.length < minLength) {
-      return `${fieldName} должен содержать минимум ${minLength} символов`
-    }
-    return null
-  }
-
-  /**
-   * Валидирует email
-   */
-  function validateEmail(email: string | null | undefined): string | null {
-    if (!email) {
-      return 'Email обязателен для заполнения'
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      return 'Некорректный формат email'
-    }
-    return null
   }
 
   return {

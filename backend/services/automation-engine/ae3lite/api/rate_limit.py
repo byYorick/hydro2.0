@@ -1,4 +1,4 @@
-"""Rate-limit policy for AE3-Lite ingress."""
+"""Политика rate limit для ingress AE3-Lite."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class SlidingWindowRateLimiter:
             q = self._events.setdefault(key, deque())
         if len(q) >= int(self.max_requests):
             _logger.warning(
-                "AE3 rate-limit: zone_id=%s rejected requests=%s/%s window_sec=%s",
+                "AE3 rate-limit: zone_id=%s запросы отклонены=%s/%s window_sec=%s",
                 zone_id, len(q), self.max_requests, self.window_sec,
             )
             return False

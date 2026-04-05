@@ -1,4 +1,4 @@
-"""Shared manual-control contract for AE3-Lite public API."""
+"""Общий контракт manual-control для публичного API AE3-Lite."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def normalize_control_mode(value: object) -> str:
     if normalized in AVAILABLE_CONTROL_MODES:
         return normalized
     if normalized:
-        logger.warning("AE3 unknown control_mode=%s; falling back to auto", normalized)
+        logger.warning("AE3 получил неизвестный control_mode=%s; используется auto", normalized)
     return "auto"
 
 

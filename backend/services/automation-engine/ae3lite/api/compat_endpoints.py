@@ -65,7 +65,7 @@ def bind_start_cycle_route(
             raise
         except Exception:
             logger.warning(
-                "AE3 compat start-cycle failed to mark current intent terminal: intent_id=%s",
+                "AE3 compat start-cycle не смог перевести текущий intent в terminal: intent_id=%s",
                 intent_id,
                 exc_info=True,
             )
@@ -83,13 +83,13 @@ def bind_start_cycle_route(
                 now=_utcnow(),
                 success=False,
                 error_code="start_cycle_zone_busy",
-                error_message=f"Intent skipped: zone busy (zone_id={zone_id})",
+                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
             )
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.warning(
-                "AE3 compat start-cycle failed to mark requested intent terminal: zone_id=%s intent_id=%s",
+                "AE3 compat start-cycle не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
                 zone_id,
                 requested_intent_id,
                 exc_info=True,
@@ -106,7 +106,7 @@ def bind_start_cycle_route(
                 raise
             except Exception as exc:
                 logger.warning(
-                    "AE3 compat start-cycle solution tank guard failed: zone_id=%s",
+                    "AE3 compat start-cycle: startup guard бака раствора завершился ошибкой zone_id=%s",
                     zone_id,
                     exc_info=True,
                 )
@@ -115,7 +115,7 @@ def bind_start_cycle_route(
                     detail={
                         "error": "start_cycle_solution_tank_guard_failed",
                         "zone_id": zone_id,
-                        "message": str(exc) or "solution tank startup guard failed",
+                        "message": str(exc) or "Не пройдена startup-проверка бака раствора",
                     },
                 ) from exc
 
@@ -213,7 +213,7 @@ def bind_start_cycle_route(
 
         task = creation.task
         _log_debug(
-            "AE3 compat start-cycle created task: zone_id=%s task_id=%s status=%s created=%s decision=%s",
+            "AE3 compat start-cycle создал задачу: zone_id=%s task_id=%s status=%s created=%s decision=%s",
             zone_id,
             task.id,
             task.status,
@@ -221,7 +221,7 @@ def bind_start_cycle_route(
             decision,
         )
         if task.status in {"pending", "claimed", "running", "waiting_command"}:
-            _log_debug("AE3 compat start-cycle kicking worker: zone_id=%s task_id=%s", zone_id, task.id)
+            _log_debug("AE3 compat start-cycle будит worker: zone_id=%s task_id=%s", zone_id, task.id)
             kick_worker_fn()
 
         accepted = task.status not in {"completed", "failed", "cancelled"}
@@ -276,7 +276,7 @@ def bind_start_irrigation_route(
             raise
         except Exception:
             logger.warning(
-                "AE3 compat start-irrigation failed to mark current intent terminal: intent_id=%s",
+                "AE3 compat start-irrigation не смог перевести текущий intent в terminal: intent_id=%s",
                 intent_id,
                 exc_info=True,
             )
@@ -294,13 +294,13 @@ def bind_start_irrigation_route(
                 now=_utcnow(),
                 success=False,
                 error_code="start_irrigation_zone_busy",
-                error_message=f"Intent skipped: zone busy (zone_id={zone_id})",
+                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
             )
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.warning(
-                "AE3 compat start-irrigation failed to mark requested intent terminal: zone_id=%s intent_id=%s",
+                "AE3 compat start-irrigation не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
                 zone_id,
                 requested_intent_id,
                 exc_info=True,
@@ -463,7 +463,7 @@ def bind_start_lighting_tick_route(
             raise
         except Exception:
             logger.warning(
-                "AE3 compat start-lighting-tick failed to mark current intent terminal: intent_id=%s",
+                "AE3 compat start-lighting-tick не смог перевести текущий intent в terminal: intent_id=%s",
                 intent_id,
                 exc_info=True,
             )
@@ -481,13 +481,13 @@ def bind_start_lighting_tick_route(
                 now=_utcnow(),
                 success=False,
                 error_code="start_lighting_tick_zone_busy",
-                error_message=f"Intent skipped: zone busy (zone_id={zone_id})",
+                error_message=f"Запуск отклонён: зона занята (zone_id={zone_id})",
             )
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.warning(
-                "AE3 compat start-lighting-tick failed to mark requested intent terminal: zone_id=%s intent_id=%s",
+                "AE3 compat start-lighting-tick не смог перевести запрошенный intent в terminal: zone_id=%s intent_id=%s",
                 zone_id,
                 requested_intent_id,
                 exc_info=True,

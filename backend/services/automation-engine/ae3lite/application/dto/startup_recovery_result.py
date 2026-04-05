@@ -1,4 +1,4 @@
-"""DTOs for AE3-Lite startup recovery outcome."""
+"""DTO-модели результата startup recovery в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class StartupRecoveryTerminalOutcome:
-    """Terminal legacy-intent outcome discovered during startup recovery."""
+    """Терминальный итог legacy-intent, обнаруженный во время startup recovery."""
 
     task_id: int
     intent_id: int
@@ -18,7 +18,7 @@ class StartupRecoveryTerminalOutcome:
 
 @dataclass(frozen=True)
 class StartupRecoveryResult:
-    """Aggregated outcome of one startup recovery pass."""
+    """Агрегированный результат одного прохода startup recovery."""
 
     released_expired_leases: int
     scanned_tasks: int

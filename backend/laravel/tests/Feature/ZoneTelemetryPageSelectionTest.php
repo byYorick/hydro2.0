@@ -47,6 +47,21 @@ class ZoneTelemetryPageSelectionTest extends TestCase
             });
     }
 
+    public function test_zone_show_includes_irrigation_correction_summary_for_modal(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        $this->actingAs($user)
+            ->get("/zones/{$zone->id}")
+            ->assertStatus(200)
+            ->assertInertia(function (AssertableInertia $page): void {
+                $page->component('Zones/Show')
+                    ->has('irrigationCorrectionSummary')
+                    ->where('irrigationCorrectionSummary.ec_dosing_mode', fn (mixed $v) => is_string($v) && $v !== '');
+            });
+    }
+
     private function createZoneWithTemperatureTelemetry(float $solutionTemp, float $airTemp): Zone
     {
         $zone = Zone::factory()->create();

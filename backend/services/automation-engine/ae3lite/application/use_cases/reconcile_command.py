@@ -1,4 +1,4 @@
-"""Reconcile AE3-Lite waiting command against legacy commands table."""
+"""Reconcile waiting-команды AE3-Lite с таблицей legacy commands."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT",
 
 
 class ReconcileCommandUseCase:
-    """Reads legacy command status and finalizes AE3-Lite task only on terminal state."""
+    """Читает статус legacy-команды и завершает задачу AE3-Lite только на terminal state."""
 
     def __init__(self, *, task_repository: Any, command_repository: Any, finalize_task_use_case: Any | None = None) -> None:
         self._task_repository = task_repository
@@ -24,11 +24,11 @@ class ReconcileCommandUseCase:
 
     async def run(self, *, task: AutomationTask, now: datetime) -> CommandReconcileResult:
         if not task.claimed_by:
-            raise CommandReconcileError(f"Task {task.id} has no claimed_by owner for reconcile")
+            raise CommandReconcileError(f"У задачи {task.id} отсутствует claimed_by owner для reconcile")
 
         ae_command = await self._command_repository.get_latest_for_task(task_id=task.id)
         if ae_command is None:
-            raise CommandReconcileError(f"Task {task.id} has no ae_command to reconcile")
+            raise CommandReconcileError(f"У задачи {task.id} отсутствует ae_command для reconcile")
 
         legacy_row, external_id, cmd_id = await self._resolve_legacy_command(task=task, ae_command=ae_command)
         if legacy_row is None:
@@ -45,7 +45,7 @@ class ReconcileCommandUseCase:
         legacy_status = str(legacy_row.get("status") or "").strip().upper()
         if legacy_status not in _NON_TERMINAL_STATUSES | _TERMINAL_STATUSES:
             raise CommandReconcileError(
-                f"Unsupported legacy command status={legacy_status or 'empty'} for external_id={external_id}"
+                f"Неподдерживаемый legacy command status={legacy_status or 'empty'} для external_id={external_id}"
             )
 
         ack_received_at = legacy_row.get("ack_at")
@@ -75,7 +75,7 @@ class ReconcileCommandUseCase:
                     task=task,
                     owner=task.claimed_by,
                     error_code=self._map_error_code(terminal_status),
-                    error_message=last_error or f"Command terminal status {terminal_status}",
+                    error_message=last_error or f"Команда завершилась с терминальным статусом {terminal_status}",
                     now=now,
                 )
         except TaskFinalizeError as exc:
@@ -105,11 +105,11 @@ class ReconcileCommandUseCase:
         if external_id:
             row = await self._command_repository.get_legacy_command_by_id(external_id=external_id)
             if row is None:
-                raise CommandReconcileError(f"Legacy command not found for external_id={external_id}")
+                raise CommandReconcileError(f"Не найдена legacy command для external_id={external_id}")
             return row, external_id, str(row.get("cmd_id") or "").strip() or cmd_id
 
         if not cmd_id:
-            raise CommandReconcileError(f"ae_command {ae_command.get('id')} has neither external_id nor payload.cmd_id")
+            raise CommandReconcileError(f"У ae_command {ae_command.get('id')} отсутствуют и external_id, и payload.cmd_id")
 
         row = await self._command_repository.get_legacy_command_by_cmd_id(zone_id=task.zone_id, cmd_id=cmd_id)
         if row is None:
@@ -128,7 +128,7 @@ class ReconcileCommandUseCase:
     def _resolve_last_error(self, legacy_row: Mapping[str, Any], terminal_status: Optional[str]) -> Optional[str]:
         if terminal_status in {None, "DONE"}:
             return None
-        return str(legacy_row.get("error_message") or f"Command terminal status {terminal_status}")
+        return str(legacy_row.get("error_message") or f"Команда завершилась с терминальным статусом {terminal_status}")
 
     def _map_error_code(self, terminal_status: str) -> str:
         return f"command_{terminal_status.strip().lower()}"

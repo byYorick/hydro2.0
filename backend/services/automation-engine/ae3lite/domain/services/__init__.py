@@ -1,4 +1,4 @@
-"""AE3-Lite domain services."""
+"""Доменные сервисы AE3-Lite."""
 
 from .cycle_start_planner import CycleStartPlanner
 from .topology_registry import StageDef, TopologyRegistry

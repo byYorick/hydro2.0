@@ -1,4 +1,4 @@
-"""Create or resolve canonical AE3-Lite task from legacy scheduler intent."""
+"""Создаёт или разрешает каноническую задачу AE3-Lite из legacy scheduler intent."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from common.db import get_pool
 
 
 class CreateTaskFromIntentUseCase:
-    """Creates a canonical AE3 v2 task while preserving external idempotency semantics.
+    """Создаёт каноническую задачу AE3 v2, сохраняя внешнюю семантику idempotency.
 
-    Uses PostgreSQL advisory lock (pg_try_advisory_xact_lock) per zone_id to
-    prevent duplicate task creation under concurrent requests.
+    Использует advisory lock PostgreSQL (`pg_try_advisory_xact_lock`) на `zone_id`,
+    чтобы предотвратить дублирующее создание задачи при конкурентных запросах.
     """
 
     HARD_BLOCKING_ALERT_CODES = frozenset({
@@ -48,9 +48,9 @@ class CreateTaskFromIntentUseCase:
     ) -> TaskCreationResult:
         normalized_key = str(idempotency_key or "").strip()
         if normalized_key == "":
-            raise TaskCreateError("start_cycle_missing_idempotency_key", "idempotency_key is required")
+            raise TaskCreateError("start_cycle_missing_idempotency_key", "Для запуска обязателен idempotency_key")
 
-        # Fast path: check idempotency without lock
+        # Быстрый путь: проверить idempotency без lock
         existing_task = await self._task_repository.get_by_idempotency_key(
             zone_id=zone_id,
             idempotency_key=normalized_key,
@@ -61,13 +61,13 @@ class CreateTaskFromIntentUseCase:
             raise TaskCreateError(
                 ErrorCodes.START_CYCLE_INTENT_TERMINAL,
                 (
-                    f"Terminal intent idempotency_key={normalized_key} for zone_id={zone_id} "
-                    "has no canonical task"
+                    f"У terminal intent idempotency_key={normalized_key} для zone_id={zone_id} "
+                    "отсутствует canonical task"
                 ),
                 details={"idempotency_key": normalized_key},
             )
 
-        # Acquire advisory lock for zone to make the check+create atomic
+        # Взять advisory lock по зоне, чтобы операция check+create была атомарной
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
@@ -78,11 +78,11 @@ class CreateTaskFromIntentUseCase:
                 if not lock_acquired:
                     raise TaskCreateError(
                         "start_cycle_zone_busy",
-                        f"Zone {zone_id} is locked by concurrent request",
+                        f"Зона {zone_id} заблокирована конкурентным запросом",
                         details={"zone_id": zone_id},
                     )
 
-                # Within the lock: check active tasks and lease
+                # Под lock: проверить активные задачи и lease
                 active_task_getter = getattr(self._task_repository, "get_active_for_zone_with_conn", None)
                 if callable(active_task_getter):
                     active_task = await active_task_getter(zone_id=zone_id, conn=conn)
@@ -91,7 +91,7 @@ class CreateTaskFromIntentUseCase:
                 if active_task is not None:
                     raise TaskCreateError(
                         ErrorCodes.START_CYCLE_ZONE_BUSY,
-                        f"Zone {zone_id} already has active task_id={active_task.id}",
+                        f"У зоны {zone_id} уже есть активная задача task_id={active_task.id}",
                         details={"active_task_id": active_task.id, "active_task_status": active_task.status},
                     )
 
@@ -100,7 +100,7 @@ class CreateTaskFromIntentUseCase:
                 if active_lease is not None and lease_until is not None and lease_until > self._normalize_utc(now):
                     raise TaskCreateError(
                         ErrorCodes.START_CYCLE_ZONE_BUSY,
-                        f"Zone {zone_id} already has active lease owner={active_lease.owner}",
+                        f"У зоны {zone_id} уже есть активный lease owner={active_lease.owner}",
                         details={
                             "active_lease_owner": active_lease.owner,
                             "active_lease_until": lease_until.isoformat(),
@@ -112,7 +112,7 @@ class CreateTaskFromIntentUseCase:
                     raise TaskCreateError(
                         ErrorCodes.START_CYCLE_ZONE_BUSY,
                         (
-                            f"Zone {zone_id} is blocked by active alert "
+                            f"Зона {zone_id} заблокирована активным алертом "
                             f"code={blocking_alert['code']} alert_id={blocking_alert['id']}"
                         ),
                         details={
@@ -156,7 +156,7 @@ class CreateTaskFromIntentUseCase:
                     TASK_CREATED.labels(topology=meta.topology).inc()
                     return TaskCreationResult(task=created_task, created=True)
 
-        # INSERT returned None (UNIQUE conflict on idempotency_key from concurrent req)
+        # INSERT вернул None: произошёл UNIQUE-конфликт по idempotency_key из конкурентного запроса
         deduplicated_task = await self._task_repository.get_by_idempotency_key(
             zone_id=zone_id,
             idempotency_key=normalized_key,
@@ -164,7 +164,7 @@ class CreateTaskFromIntentUseCase:
         if deduplicated_task is not None:
             return TaskCreationResult(task=deduplicated_task, created=False)
 
-        raise TaskCreateError("ae3_task_create_failed", f"Unable to create canonical task for zone_id={zone_id}")
+        raise TaskCreateError("ae3_task_create_failed", f"Не удалось создать каноническую задачу для zone_id={zone_id}")
 
     async def _find_blocking_alert(self, *, zone_id: int, conn: Any | None = None) -> dict[str, Any] | None:
         repository = self._zone_alert_repository

@@ -759,7 +759,7 @@ async def test_router_does_not_publish_workflow_phase_if_transition_persist_fail
         task_repo=_MockTaskRepo(return_task=None, current_task=None),
     )
 
-    with pytest.raises(TaskExecutionError, match="transition to clean_fill_start"):
+    with pytest.raises(TaskExecutionError, match="clean_fill_start"):
         await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
 
     assert wr.upsert_calls == []

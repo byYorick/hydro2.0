@@ -1,22 +1,20 @@
 <?php
 
-use App\Http\Controllers\UnifiedDashboardController;
+use App\Helpers\ZoneAccessHelper;
 use App\Http\Controllers\NutrientProductController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecipePageController;
-use App\Helpers\ZoneAccessHelper;
-use App\Models\Alert;
+use App\Http\Controllers\UnifiedDashboardController;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\Recipe;
 use App\Models\SystemLog;
-use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Models\ZoneSimulation;
-use App\Support\PumpCalibrationCatalog;
 use App\Services\ZoneEventMessageFormatter;
+use App\Support\PumpCalibrationCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -690,7 +688,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                             'config',
                             'last_seen_at',
                             'is_active',
-                            DB::raw("(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role"),
+                            DB::raw('(select cb.role from channel_bindings cb where cb.node_channel_id = node_channels.id limit 1) as binding_role'),
                         ]);
                     },
                 ])
@@ -739,62 +737,62 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
             }
 
             $devices = $devices->map(function (\App\Models\DeviceNode $device) use ($calibrationByChannelId) {
-                    $channels = $device->channels->map(function (\App\Models\NodeChannel $channel) use ($calibrationByChannelId) {
-                        $config = is_array($channel->config) ? $channel->config : [];
+                $channels = $device->channels->map(function (\App\Models\NodeChannel $channel) use ($calibrationByChannelId) {
+                    $config = is_array($channel->config) ? $channel->config : [];
 
-                        $calibrationRow = $calibrationByChannelId->get($channel->id);
-                        $pumpCalibration = null;
-                        if ($calibrationRow) {
-                            $pumpCalibration = [
-                                'ml_per_sec' => $calibrationRow->ml_per_sec !== null ? (float) $calibrationRow->ml_per_sec : null,
-                                'k_ms_per_ml_l' => $calibrationRow->k_ms_per_ml_l !== null ? (float) $calibrationRow->k_ms_per_ml_l : null,
-                                'duration_sec' => $calibrationRow->duration_sec !== null ? (int) $calibrationRow->duration_sec : null,
-                                'actual_ml' => $calibrationRow->actual_ml !== null ? (float) $calibrationRow->actual_ml : null,
-                                'component' => $calibrationRow->component,
-                                'test_volume_l' => $calibrationRow->test_volume_l !== null ? (float) $calibrationRow->test_volume_l : null,
-                                'ec_before_ms' => $calibrationRow->ec_before_ms !== null ? (float) $calibrationRow->ec_before_ms : null,
-                                'ec_after_ms' => $calibrationRow->ec_after_ms !== null ? (float) $calibrationRow->ec_after_ms : null,
-                                'delta_ec_ms' => $calibrationRow->delta_ec_ms !== null ? (float) $calibrationRow->delta_ec_ms : null,
-                                'temperature_c' => $calibrationRow->temperature_c !== null ? (float) $calibrationRow->temperature_c : null,
-                                'sample_count' => $calibrationRow->sample_count !== null ? (int) $calibrationRow->sample_count : null,
-                                'quality_score' => $calibrationRow->quality_score !== null ? (float) $calibrationRow->quality_score : null,
-                                'source' => $calibrationRow->source,
-                                'calibrated_at' => optional($calibrationRow->valid_from)->toIso8601String()
-                                    ?? (is_string($calibrationRow->valid_from) ? $calibrationRow->valid_from : null),
-                            ];
-                        }
-
-                        return [
-                            'id' => $channel->id,
-                            'node_id' => $channel->node_id,
-                            'channel' => $channel->channel,
-                            'type' => $channel->type,
-                            'metric' => $channel->metric,
-                            'unit' => $channel->unit,
-                            'pump_calibration' => $pumpCalibration,
-                            'pump_component' => PumpCalibrationCatalog::componentForRole($channel->binding_role),
-                            'binding_role' => $channel->binding_role,
-                            'last_seen_at' => $channel->last_seen_at?->toIso8601String(),
-                            'is_active' => (bool) ($channel->is_active ?? true),
+                    $calibrationRow = $calibrationByChannelId->get($channel->id);
+                    $pumpCalibration = null;
+                    if ($calibrationRow) {
+                        $pumpCalibration = [
+                            'ml_per_sec' => $calibrationRow->ml_per_sec !== null ? (float) $calibrationRow->ml_per_sec : null,
+                            'k_ms_per_ml_l' => $calibrationRow->k_ms_per_ml_l !== null ? (float) $calibrationRow->k_ms_per_ml_l : null,
+                            'duration_sec' => $calibrationRow->duration_sec !== null ? (int) $calibrationRow->duration_sec : null,
+                            'actual_ml' => $calibrationRow->actual_ml !== null ? (float) $calibrationRow->actual_ml : null,
+                            'component' => $calibrationRow->component,
+                            'test_volume_l' => $calibrationRow->test_volume_l !== null ? (float) $calibrationRow->test_volume_l : null,
+                            'ec_before_ms' => $calibrationRow->ec_before_ms !== null ? (float) $calibrationRow->ec_before_ms : null,
+                            'ec_after_ms' => $calibrationRow->ec_after_ms !== null ? (float) $calibrationRow->ec_after_ms : null,
+                            'delta_ec_ms' => $calibrationRow->delta_ec_ms !== null ? (float) $calibrationRow->delta_ec_ms : null,
+                            'temperature_c' => $calibrationRow->temperature_c !== null ? (float) $calibrationRow->temperature_c : null,
+                            'sample_count' => $calibrationRow->sample_count !== null ? (int) $calibrationRow->sample_count : null,
+                            'quality_score' => $calibrationRow->quality_score !== null ? (float) $calibrationRow->quality_score : null,
+                            'source' => $calibrationRow->source,
+                            'calibrated_at' => optional($calibrationRow->valid_from)->toIso8601String()
+                                ?? (is_string($calibrationRow->valid_from) ? $calibrationRow->valid_from : null),
                         ];
-                    })->values();
+                    }
 
                     return [
-                        'id' => $device->id,
-                        'uid' => $device->uid,
-                        'zone_id' => $device->zone_id,
-                        'name' => $device->name,
-                        'type' => $device->type,
-                        'status' => $device->status,
-                        'fw_version' => $device->fw_version,
-                        'last_seen_at' => $device->last_seen_at?->toIso8601String(),
-                        'zone' => $device->zone ? [
-                            'id' => $device->zone->id,
-                            'name' => $device->zone->name,
-                        ] : null,
-                        'channels' => $channels,
+                        'id' => $channel->id,
+                        'node_id' => $channel->node_id,
+                        'channel' => $channel->channel,
+                        'type' => $channel->type,
+                        'metric' => $channel->metric,
+                        'unit' => $channel->unit,
+                        'pump_calibration' => $pumpCalibration,
+                        'pump_component' => PumpCalibrationCatalog::componentForRole($channel->binding_role),
+                        'binding_role' => $channel->binding_role,
+                        'last_seen_at' => $channel->last_seen_at?->toIso8601String(),
+                        'is_active' => (bool) ($channel->is_active ?? true),
                     ];
-                })
+                })->values();
+
+                return [
+                    'id' => $device->id,
+                    'uid' => $device->uid,
+                    'zone_id' => $device->zone_id,
+                    'name' => $device->name,
+                    'type' => $device->type,
+                    'status' => $device->status,
+                    'fw_version' => $device->fw_version,
+                    'last_seen_at' => $device->last_seen_at?->toIso8601String(),
+                    'zone' => $device->zone ? [
+                        'id' => $device->zone->id,
+                        'name' => $device->zone->name,
+                    ] : null,
+                    'channels' => $channels,
+                ];
+            })
                 ->values();
 
             $alerts = collect([]);
@@ -934,6 +932,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 ] : null,
             ]);
 
+            $irrigationCorrectionSummary = app(\App\Services\IrrigationCorrectionSummaryPresenter::class)->summarize(
+                $zoneIdInt,
+                is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : null
+            );
+
             return Inertia::render('Zones/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zoneId' => $zoneIdInt,
@@ -947,6 +950,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist,enginee
                 'alerts' => $alerts,
                 'events' => $events,
                 'cycles' => $cycles,
+                'irrigationCorrectionSummary' => $irrigationCorrectionSummary,
             ]);
         })->name('zones.show');
 

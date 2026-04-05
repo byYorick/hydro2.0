@@ -486,7 +486,7 @@ async def test_irr_state_still_stale_after_wait_fails_closed() -> None:
         "has_snapshot": True, "is_stale": True,
         "snapshot": {"valve_solution_supply": True, "valve_solution_fill": True, "pump_main": True},
     }
-    monitor = _Monitor(irr_states=[stale, stale])
+    monitor = _Monitor(irr_states=[stale, stale], irr_state=stale)
     handler = _make_handler(monitor=monitor)
     with pytest.raises(TaskExecutionError) as exc_info:
         await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
@@ -500,7 +500,7 @@ async def test_irr_state_still_stale_after_wait_fails_closed() -> None:
 async def test_ph_unavailable_raises() -> None:
     """PH telemetry has_value=False → TaskExecutionError."""
     handler = _make_handler(monitor=_Monitor(has_ph=False))
-    with pytest.raises(TaskExecutionError, match="unavailable"):
+    with pytest.raises(TaskExecutionError, match="недоступна"):
         await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
 
 
@@ -508,7 +508,7 @@ async def test_ph_unavailable_raises() -> None:
 async def test_ec_unavailable_raises() -> None:
     """EC telemetry has_value=False → TaskExecutionError."""
     handler = _make_handler(monitor=_Monitor(has_ec=False))
-    with pytest.raises(TaskExecutionError, match="unavailable"):
+    with pytest.raises(TaskExecutionError, match="недоступна"):
         await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
 
 

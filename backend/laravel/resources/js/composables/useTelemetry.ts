@@ -31,6 +31,11 @@ interface HistoryPoint {
   value: number
 }
 
+interface HistoryPointWithNode extends HistoryPoint {
+  node_id?: number | null
+  channel?: string | null
+}
+
 interface ReconciliationTelemetryItem {
   zone_id?: number
   node_id?: number
@@ -299,6 +304,84 @@ export function useTelemetry(showToast?: ToastHandler) {
   }
 
   /**
+   * Получить историю телеметрии с группировкой по нодам (для метрик с несколькими сенсорами)
+   */
+  async function fetchHistoryWithNodes(
+    zoneId: number,
+    metric: TelemetryMetric,
+    params: { from?: string; to?: string } = {},
+    forceRefresh: boolean = false
+  ): Promise<Record<number, TelemetrySample[]>> {
+    const cacheKey = `telemetry_history_nodes_${zoneId}_${metric}_${JSON.stringify(params)}`
+
+    if (!forceRefresh && telemetryCache.has(cacheKey)) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
+        return cached.data as Record<number, TelemetrySample[]>
+      }
+    }
+
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await rateLimitedGet<TelemetryResponseEnvelope<HistoryPointWithNode[]> | HistoryPointWithNode[]>(
+        `/api/zones/${zoneId}/telemetry/history`,
+        {
+          params: {
+            metric,
+            ...params,
+          },
+        },
+        {
+          retries: 2,
+          backoff: 'exponential',
+          baseDelay: 1000,
+        }
+      )
+
+      const responseData = unwrapResponseData(response)
+      const data: HistoryPointWithNode[] = Array.isArray(responseData)
+        ? responseData
+        : (responseData.data ?? [])
+
+      const grouped: Record<number, TelemetrySample[]> = {}
+      for (const item of data) {
+        const nodeId = item.node_id ?? 0
+        if (!grouped[nodeId]) {
+          grouped[nodeId] = []
+        }
+        grouped[nodeId].push({
+          ts: new Date(item.ts).getTime(),
+          value: item.value,
+        })
+      }
+
+      const result: Record<number, TelemetrySample[]> = grouped
+
+      telemetryCache.set(cacheKey, {
+        data: result as unknown as TelemetrySample[],
+        timestamp: Date.now(),
+      })
+
+      cleanupCache()
+      saveCacheToStorage()
+      return result
+    } catch (err) {
+      const normalizedError = handleError(err, {
+        component: 'useTelemetry',
+        action: 'fetchHistoryWithNodes',
+        zoneId,
+        metric,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
    * Получить агрегированные данные телеметрии (для мини-графиков)
    */
   async function fetchAggregates(
@@ -453,6 +536,7 @@ export function useTelemetry(showToast?: ToastHandler) {
     error: computed(() => error.value) as ComputedRef<Error | null>,
     fetchLastTelemetry,
     fetchHistory,
+    fetchHistoryWithNodes,
     fetchAggregates,
     clearCache,
   }

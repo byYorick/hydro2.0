@@ -27,6 +27,16 @@ export function normalizeAutomationControlMode(value: unknown): AutomationContro
   return 'auto'
 }
 
+const ALL_CONTROL_MODES: AutomationControlMode[] = ['auto', 'semi', 'manual']
+
+export function normalizeAutomationControlModes(value: unknown): AutomationControlMode[] {
+  if (!Array.isArray(value) || value.length === 0) return ALL_CONTROL_MODES
+  const filtered = value
+    .map((item) => String(item ?? '').trim().toLowerCase())
+    .filter((item): item is AutomationControlMode => item === 'auto' || item === 'semi' || item === 'manual')
+  return filtered.length > 0 ? filtered : ALL_CONTROL_MODES
+}
+
 export function normalizeAutomationManualSteps(value: unknown): AutomationManualStep[] {
   if (!Array.isArray(value)) return []
   return value

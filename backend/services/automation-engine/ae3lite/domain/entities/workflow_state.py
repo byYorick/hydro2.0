@@ -1,4 +1,4 @@
-"""Workflow and correction state value objects for AE3-Lite v2."""
+"""Объекты-значения workflow state и correction state для AE3-Lite v2."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class WorkflowState:
-    """Immutable snapshot of workflow stage progression."""
+    """Неизменяемый snapshot прогресса workflow по stage."""
 
     current_stage: str
     workflow_phase: str
@@ -17,17 +17,17 @@ class WorkflowState:
     stage_retry_count: int
     stage_entered_at: Optional[datetime]
     clean_fill_cycle: int
-    # Control mode fields (read from zones.control_mode + ae_tasks.pending_manual_step)
+    # Поля control mode читаются из zones.control_mode + ae_tasks.pending_manual_step
     control_mode: str = "auto"
     pending_manual_step: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class CorrectionState:
-    """Immutable snapshot of correction cycle state.
+    """Неизменяемый snapshot состояния цикла коррекции.
 
-    All fields are populated when correction is active;
-    the entire object is ``None`` at the repository level when inactive.
+    Все поля заполнены, когда коррекция активна;
+    на уровне repository весь объект равен ``None``, когда она неактивна.
     """
 
     corr_step: str

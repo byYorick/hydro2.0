@@ -1,4 +1,4 @@
-"""Runtime configuration for standalone AE3-Lite app."""
+"""Конфигурация runtime для standalone-приложения AE3-Lite."""
 
 from __future__ import annotations
 
@@ -83,17 +83,17 @@ class Ae3RuntimeConfig:
         )
 
     def validate(self) -> None:
-        """Raise ValueError if required config is missing."""
+        """Выбрасывает ValueError, если отсутствует обязательная конфигурация."""
         history_logger_api_token = str(self.history_logger_api_token or "").strip()
         scheduler_api_token = str(self.scheduler_api_token or "").strip()
         if not history_logger_api_token:
             raise ValueError(
-                "history_logger_api_token is required. "
+                "Обязателен history_logger_api_token. "
                 "Set HISTORY_LOGGER_API_TOKEN (or AE_API_TOKEN / PY_API_TOKEN)."
             )
         if self.scheduler_security_baseline_enforce and not scheduler_api_token:
             raise ValueError(
-                "scheduler_api_token is required when scheduler security baseline is enforced. "
+                "При включённом scheduler security baseline обязателен scheduler_api_token. "
                 "Set AE_API_TOKEN (or SCHEDULER_API_TOKEN / PY_API_TOKEN)."
             )
         if self.start_cycle_rate_limit_enabled:

@@ -26,7 +26,7 @@ class SchedulerCycleServiceTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
@@ -115,7 +115,7 @@ class SchedulerCycleServiceTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
@@ -157,7 +157,7 @@ class SchedulerCycleServiceTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 return Http::response([
                     'detail' => [
                         'error' => 'start_cycle_intent_terminal',
@@ -261,6 +261,18 @@ class SchedulerCycleServiceTest extends TestCase
         $this->assertSame(0, (int) ($stats['successful_dispatches'] ?? 0));
         $this->assertDatabaseCount('laravel_scheduler_active_tasks', 2);
         Http::assertNothingSent();
+    }
+
+    private function isSchedulerZoneStartPost(Request $request, Zone $zone): bool
+    {
+        if ($request->method() !== 'POST') {
+            return false;
+        }
+
+        $url = $request->url();
+
+        return str_ends_with($url, '/zones/'.$zone->id.'/start-cycle')
+            || str_ends_with($url, '/zones/'.$zone->id.'/start-irrigation');
     }
 
     /**

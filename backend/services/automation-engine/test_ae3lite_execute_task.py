@@ -487,7 +487,7 @@ async def test_execute_task_expected_domain_errors_do_not_log_traceback(caplog: 
     domain_logs = [
         record
         for record in caplog.records
-        if "AE3 task execution domain error:" in record.getMessage()
+        if "AE3 domain error при выполнении задачи:" in record.getMessage()
     ]
     assert len(domain_logs) == 1
     assert domain_logs[0].exc_info is None
@@ -840,7 +840,7 @@ async def test_execute_task_first_run_config_failure_emits_error_service_log_wit
     assert [event_type for _, event_type, _ in recorded_events] == ["AE_TASK_FAILED"]
     assert len(recorded_service_logs) == 1
     assert recorded_service_logs[0]["level"] == "error"
-    assert recorded_service_logs[0]["message"] == "AE3 task start readiness failed"
+    assert recorded_service_logs[0]["message"] == "AE3 не подтвердил готовность к старту задачи"
     assert recorded_service_logs[0]["context"]["error_code"] == "zone_recipe_phase_targets_missing_critical"
     assert recorded_service_logs[0]["context"]["snapshot_loaded"] is True
 
@@ -1281,7 +1281,7 @@ async def test_execute_task_timeout_cancellation_fails_closed_and_runs_fail_safe
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["error_code"] == TASK_EXECUTION_TIMEOUT_CANCEL_MSG
-    assert finalize.calls[0]["error_message"] == "Task execution exceeded runtime timeout"
+    assert finalize.calls[0]["error_message"] == "Выполнение задачи превысило runtime timeout"
     assert len(gateway.calls) == 1
     assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
     assert [command.channel for command in gateway.calls[0]["commands"]] == [
@@ -1311,7 +1311,7 @@ async def test_execute_task_lease_lost_cancellation_fails_closed_and_runs_fail_s
     await use_case.run(task=task, now=NOW)
 
     assert finalize.calls[0]["error_code"] == TASK_EXECUTION_LEASE_LOST_CANCEL_MSG
-    assert finalize.calls[0]["error_message"] == "Zone lease was lost during task execution"
+    assert finalize.calls[0]["error_message"] == "Во время выполнения задачи был потерян zone lease"
     assert len(gateway.calls) == 1
     assert gateway.calls[0]["kwargs"] == {"track_task_state": False}
 

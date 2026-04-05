@@ -1,4 +1,4 @@
-"""AE3-Lite DTOs."""
+"""DTO-модели AE3-Lite."""
 
 from .command_reconcile_result import CommandReconcileResult
 from .command_plan import CommandPlan

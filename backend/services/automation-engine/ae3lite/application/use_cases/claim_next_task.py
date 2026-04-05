@@ -1,4 +1,4 @@
-"""Claim next pending AE3-Lite task and zone lease."""
+"""Берёт следующую pending-задачу AE3-Lite и zone lease."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class ZoneLeaseRepository(Protocol):
 
 
 class ClaimNextTaskUseCase:
-    """Claim next pending task and acquire zone lease for single-writer execution."""
+    """Забирает следующую pending-задачу и получает zone lease для single-writer выполнения."""
 
     def __init__(
         self,
@@ -66,16 +66,16 @@ class ClaimNextTaskUseCase:
         reverted = await self._task_repository.release_claim(task_id=task.id, owner=owner, now=now)
         if not reverted:
             logger.error(
-                "Task claim rollback failed — zone lease conflict and cannot release: task_id=%s zone_id=%s owner=%s",
+                "Откат claim задачи завершился ошибкой: конфликт zone lease и release недоступен task_id=%s zone_id=%s owner=%s",
                 task.id,
                 task.zone_id,
                 owner,
             )
             raise TaskClaimRollbackError(
-                f"Failed to rollback claimed task {task.id} after zone lease conflict"
+                f"Не удалось откатить claimed task {task.id} после конфликта zone lease"
             )
         logger.debug(
-            "Task claim rolled back after zone lease conflict: task_id=%s zone_id=%s owner=%s",
+            "Claim задачи откатан после конфликта zone lease: task_id=%s zone_id=%s owner=%s",
             task.id,
             task.zone_id,
             owner,

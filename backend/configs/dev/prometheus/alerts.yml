@@ -1,28 +1,15 @@
 groups:
-  - name: node_alerts
-    interval: 30s
-    rules:
-      - alert: NodeOffline
-        expr: |
-          (time() - node_last_seen_timestamp{status="offline"}) > 300
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Node {{ $labels.uid }} is offline"
-          description: "Node {{ $labels.uid }} ({{ $labels.name }}) has been offline for more than 5 minutes"
-
   - name: service_alerts
     interval: 30s
     rules:
       - alert: ServiceDown
-        expr: up{job=~"automation-engine|mqtt-bridge|history-logger"} == 0
+        expr: up{job=~"automation-engine|mqtt-bridge|history-logger|laravel-scheduler"} == 0
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "Service {{ $labels.job }} is down"
-          description: "Service {{ $labels.job }} has been down for more than 2 minutes"
+          description: "Service {{ $labels.job }} has been down for more than 2 minutes."
 
       - alert: MQTTBrokerDown
         expr: up{job="mqtt-bridge"} == 0
@@ -31,30 +18,7 @@ groups:
           severity: critical
         annotations:
           summary: "MQTT broker is unreachable"
-          description: "MQTT bridge service is not responding"
-
-  - name: zone_alerts
-    interval: 30s
-    rules:
-      - alert: ZoneCriticalAlert
-        expr: |
-          increase(zone_critical_alerts_total[5m]) > 3
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Zone {{ $labels.zone_id }} has multiple critical alerts"
-          description: "Zone {{ $labels.zone_id }} has generated more than 3 critical alerts in the last 5 minutes"
-
-      - alert: HighCommandFailureRate
-        expr: |
-          rate(commands_failed_total[5m]) / rate(commands_total[5m]) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High command failure rate"
-          description: "Command failure rate is above 10% for the last 5 minutes"
+          description: "MQTT bridge service is not responding."
 
   - name: history_logger_alerts
     interval: 30s
@@ -96,7 +60,7 @@ groups:
           description: "Database error rate is {{ $value }} errors/sec. Check database connectivity and performance."
 
       - alert: HistoryLoggerSlowProcessing
-        expr: histogram_quantile(0.99, rate(telemetry_processing_duration_seconds_bucket[5m])) > 5
+        expr: histogram_quantile(0.99, sum by (le) (rate(telemetry_processing_duration_seconds_bucket[5m]))) > 5
         for: 10m
         labels:
           severity: warning
@@ -104,14 +68,17 @@ groups:
           summary: "History Logger processing is slow"
           description: "P99 processing time is {{ $value }}s (threshold: 5s). Performance degradation detected."
 
-      - alert: HistoryLoggerNoProcessing
-        expr: rate(telemetry_processed_total[5m]) == 0
+      - alert: HistoryLoggerNoProgressWithIncomingTraffic
+        expr: |
+          (sum(rate(telemetry_received_total[5m])) or vector(0)) > 0.1
+          and
+          (sum(rate(telemetry_processed_total[5m])) or vector(0)) == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "History Logger is not processing telemetry"
-          description: "No telemetry messages processed in the last 5 minutes. Service may be stuck."
+          summary: "History Logger is not processing incoming telemetry"
+          description: "Telemetry is arriving, but processed rate stayed at 0 for 5 minutes."
 
       - alert: HistoryLoggerUnknownNodeEventsSpike
         expr: rate(node_event_unknown_total[5m]) > 0.05
@@ -120,172 +87,95 @@ groups:
           severity: warning
         annotations:
           summary: "History Logger receives too many unknown node events"
-          description: "Unknown node event rate is {{ $value }} events/sec for 10m. Check node firmware event_code contract."
+          description: "Unknown node event rate is {{ $value }} events/sec for 10m. Check firmware event_code contract."
 
-  - name: automation_engine_alerts
+  - name: laravel_scheduler_alerts
     interval: 30s
     rules:
-      - alert: AutomationEngineLoopErrors
-        expr: rate(automation_loop_errors_total[5m]) > 5
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Automation Engine has loop errors"
-          description: "Error rate in main loop is {{ $value }} errors/sec. Check service logs for details."
-
-      - alert: AutomationEngineConfigFetchErrors
-        expr: rate(config_fetch_errors_total[5m]) > 3
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Automation Engine cannot fetch configuration"
-          description: "Config fetch error rate is {{ $value }} errors/sec. Check Laravel API connectivity."
-
-      - alert: AutomationEngineMQTTPublishErrors
-        expr: rate(mqtt_publish_errors_total[5m]) > 10
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Automation Engine cannot publish commands"
-          description: "MQTT publish error rate is {{ $value }} errors/sec. Commands are not being sent to nodes."
-
-      - alert: AutomationEngineSlowZoneProcessing
-        expr: histogram_quantile(0.99, rate(zone_check_seconds_bucket[5m])) > 30
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Automation Engine zone processing is slow"
-          description: "P99 zone check duration is {{ $value }}s (threshold: 30s). Performance degradation detected."
-
-      - alert: AutomationEngineNoZoneChecks
-        expr: rate(zone_checks_total[5m]) == 0
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Automation Engine is not processing zones"
-          description: "No zone checks performed in the last 5 minutes. Service may be stuck or configuration is invalid."
-
-      - alert: AutomationEngineHighErrorRate
+      - alert: LaravelSchedulerDispatchFailureRateHigh
         expr: |
-          (sum(rate(automation_loop_errors_total[5m])) + 
-           sum(rate(automation_errors_total[5m])) + 
-           sum(rate(mqtt_publish_errors_total[5m]))) > 20
-        for: 5m
+          (
+            (sum(rate(laravel_scheduler_dispatches_total{result!~"accepted|deduplicated"}[5m])) or vector(0))
+            /
+            clamp_min((sum(rate(laravel_scheduler_dispatches_total[5m])) or vector(0)), 0.001)
+          ) > 0.05
+        for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Automation Engine has high error rate"
-          description: "Total error rate is {{ $value }} errors/sec. Multiple components may be failing."
+          summary: "Laravel scheduler dispatch failure rate is high"
+          description: "Non-accepted scheduler dispatches exceed 5% for 10 minutes."
 
-  - name: scheduler_task_alerts
-    interval: 30s
-    rules:
-      - alert: SchedulerTaskAcceptLatencyHigh
+      - alert: LaravelSchedulerCycleDurationHigh
         expr: |
           histogram_quantile(
             0.95,
-            sum by (le) (rate(scheduler_task_accept_latency_sec_bucket[5m]))
+            sum by (le, dispatch_mode) (rate(laravel_scheduler_cycle_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Laravel scheduler cycle duration is high"
+          description: "P95 laravel scheduler cycle duration is {{ $value }}s (threshold: 5s)."
+
+      - alert: LaravelSchedulerActiveTasksBacklogHigh
+        expr: laravel_scheduler_active_tasks_count > 20
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Laravel scheduler active task backlog is high"
+          description: "Active scheduler tasks are {{ $value }} (threshold: 20). Possible stuck reconciliation or automation slowdown."
+
+  - name: ae3_runtime_alerts
+    interval: 30s
+    rules:
+      - alert: AE3TaskFailureSpike
+        expr: (sum(increase(ae3_task_failed_total[15m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AE3 task failures detected"
+          description: "AE3 reported one or more failed tasks during the last 15 minutes."
+
+      - alert: AE3WorkerTickErrors
+        expr: rate(ae3_tick_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: error
+        annotations:
+          summary: "AE3 worker tick errors above threshold"
+          description: "Worker tick error rate is {{ $value }} errors/sec (error_type={{ $labels.error_type }}). Check automation-engine logs."
+
+      - alert: AE3CommandDispatchLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ae3_command_dispatch_duration_seconds_bucket[5m]))
           ) > 2
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Scheduler task accept latency is high"
-          description: "P95 accept latency is {{ $value }}s (threshold: 2s). Scheduler -> automation-engine handoff is degraded."
+          summary: "AE3 command dispatch latency is high"
+          description: "P95 command dispatch latency is {{ $value }}s (threshold: 2s). Check history-logger connectivity."
 
-      - alert: SchedulerTaskCompletionLatencyHigh
+      - alert: AE3CommandFailureRateHigh
         expr: |
-          histogram_quantile(
-            0.95,
-            sum by (le) (rate(scheduler_task_completion_latency_sec_bucket{status="completed"}[5m]))
-          ) > 60
+          (
+            (sum(rate(ae3_command_terminal_total{terminal_status!="DONE"}[10m])) or vector(0))
+            /
+            clamp_min((sum(rate(ae3_command_terminal_total[10m])) or vector(0)), 0.001)
+          ) > 0.1
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Scheduler task completion latency is high"
-          description: "P95 completion latency is {{ $value }}s (threshold: 60s). Automation execution is slower than expected."
+          summary: "AE3 command failure rate is high"
+          description: "More than 10% of terminal command outcomes are non-DONE over 10 minutes."
 
-      - alert: SchedulerTaskFailureRateHigh
-        expr: |
-          sum(
-            rate(scheduler_task_status_total{status=~"failed|timeout|submit_failed|not_found|rejected|expired|error|cancelled"}[5m])
-          ) > 1
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Scheduler task failure rate is high"
-          description: "Failure rate is {{ $value }} tasks/sec for terminal error statuses."
-
-      - alert: SchedulerActiveTasksBacklogHigh
-        expr: scheduler_active_tasks > 100
-        for: 10m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Scheduler active tasks backlog is high"
-          description: "Active scheduler tasks are {{ $value }} (threshold: 100). Possible stuck reconciliation or automation slowdown."
-
-  - name: scheduler_automation_slo_alerts
-    interval: 30s
-    rules:
-      - alert: SchedulerTaskAcceptToTerminalLatencySLODegraded
-        expr: |
-          histogram_quantile(
-            0.95,
-            sum by (le) (
-              rate(
-                scheduler_task_completion_latency_sec_bucket{
-                  status=~"completed|failed|timeout|rejected|expired|error|cancelled|not_found"
-                }[5m]
-              )
-            )
-          ) > 90
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Task accept->terminal latency SLO degraded"
-          description: "P95 scheduler_task_completion_latency_sec is {{ $value }}s (threshold: 90s)."
-
-      - alert: SchedulerTaskDeadlineViolationRateHigh
-        expr: |
-          sum(rate(scheduler_task_status_total{status=~"timeout|expired"}[5m])) /
-          clamp_min(sum(rate(scheduler_task_status_total[5m])), 0.001) > 0.05
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Scheduler deadline violation rate is high"
-          description: "Share of timeout/expired terminal statuses is {{ $value }} (threshold: 0.05)."
-
-      - alert: AutomationCommandEffectConfirmRateLow
-        expr: command_effect_confirm_rate < 0.95
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Command effect confirm rate is low"
-          description: "command_effect_confirm_rate is {{ $value }} (threshold: 0.95). Closed-loop DONE confirmations are degrading."
-
-      - alert: AutomationTaskRecoverySuccessRateLow
-        expr: task_recovery_success_rate < 0.9
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Task recovery success rate is low"
-          description: "task_recovery_success_rate is {{ $value }} (threshold: 0.9). Check restart recovery behavior."
-
-  - name: ae3_zone_health_alerts
-    interval: 30s
-    rules:
       - alert: AE3ZoneLeaseLost
         expr: rate(ae3_zone_lease_lost_total[5m]) > 0
         for: 1m
@@ -311,7 +201,7 @@ groups:
           severity: critical
         annotations:
           summary: "AE3 task stuck for >15 minutes (topology {{ $labels.topology }})"
-          description: "{{ $value }} active task(s) with topology={{ $labels.topology }} have been running for over 15 minutes. Check worker logs and zone lease state."
+          description: "{{ $value }} active task(s) with topology={{ $labels.topology }} have been running for over 15 minutes."
 
       - alert: AE3CorrectionExhausted
         expr: rate(ae3_correction_exhausted_total[10m]) > 0
@@ -319,8 +209,8 @@ groups:
         labels:
           severity: error
         annotations:
-          summary: "AE3 correction exhausted all attempts (zone={{ $labels.stage }})"
-          description: "Correction cycle at stage={{ $labels.stage }} topology={{ $labels.topology }} ran out of dose attempts. Check pH/EC dosing pumps."
+          summary: "AE3 correction exhausted all attempts (stage {{ $labels.stage }})"
+          description: "Correction cycle at stage={{ $labels.stage }} topology={{ $labels.topology }} ran out of dose attempts."
 
       - alert: AE3StageDeadlineExceeded
         expr: rate(ae3_stage_deadline_exceeded_total[10m]) > 0
@@ -329,16 +219,44 @@ groups:
           severity: warning
         annotations:
           summary: "AE3 stage deadline exceeded (stage {{ $labels.stage }})"
-          description: "Stage {{ $labels.stage }} (topology={{ $labels.topology }}) hit its hard deadline. Check filling hardware and sensors."
+          description: "Stage {{ $labels.stage }} (topology={{ $labels.topology }}) hit its hard deadline."
 
-      - alert: AE3TickErrors
-        expr: rate(ae3_tick_errors_total[5m]) > 0.1
-        for: 5m
+  - name: ae3_slo_alerts
+    interval: 30s
+    rules:
+      - alert: AutomationCommandEffectConfirmRateLow
+        expr: |
+          (
+            1 -
+            (
+              (sum(rate(ae3_command_terminal_total{terminal_status!="DONE"}[10m])) or vector(0))
+              /
+              clamp_min((sum(rate(ae3_command_terminal_total[10m])) or vector(0)), 0.001)
+            )
+          ) < 0.95
+        for: 10m
         labels:
-          severity: error
+          severity: warning
         annotations:
-          summary: "AE3 worker tick errors above threshold"
-          description: "Worker tick error rate is {{ $value }} errors/sec (error_type={{ $labels.error_type }}). Check automation-engine logs."
+          summary: "Command effect confirm rate is low"
+          description: "DONE share across AE3 terminal command outcomes dropped below 95% for 10 minutes."
+
+      - alert: AutomationTaskRecoverySuccessRateLow
+        expr: |
+          (
+            1 -
+            (
+              (sum(rate(ae3_startup_recovery_task_total{outcome="failed"}[30m])) or vector(0))
+              /
+              clamp_min((sum(rate(ae3_startup_recovery_task_total[30m])) or vector(0)), 0.001)
+            )
+          ) < 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Task recovery success rate is low"
+          description: "Startup recovery non-failure share dropped below 90% over 30 minutes."
 
   - name: ae3_irrigation_alerts
     interval: 30s

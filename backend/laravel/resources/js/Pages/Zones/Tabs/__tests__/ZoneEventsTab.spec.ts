@@ -127,7 +127,7 @@ describe('ZoneEventsTab.vue', () => {
 
     await wrapper.find('.cursor-pointer').trigger('click')
 
-    expect(wrapper.text()).toContain('Текущее:')
+    expect(wrapper.text()).toContain('Текущее → Цель')
     expect(wrapper.text()).toContain('1.980')
     expect(wrapper.text()).toContain('EC gap 0.0200 <= deadband 0.0500')
   })
@@ -214,5 +214,74 @@ describe('ZoneEventsTab.vue', () => {
     expect(wrapper.text()).toContain('prioritize_pending_ph_after_ec_observe')
     expect(wrapper.text()).toContain('Наблюдение:')
     expect(wrapper.text()).toContain('#2')
+  })
+
+  it('показывает детали события решения умного полива', async () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(
+            6,
+            'IRRIGATION_DECISION_EVALUATED',
+            'Decision-controller полива: разрешён деградированный полив (smart_soil_v1)',
+            {
+              task_id: 77,
+              strategy: 'smart_soil_v1',
+              outcome: 'degraded_run',
+              reason_code: 'smart_soil_telemetry_missing_or_stale',
+              degraded: true,
+              bundle_revision: '1234567890abcdef1234567890abcdef12345678',
+              details: {
+                zone_average_pct: 24.55,
+                sensor_count: 3,
+                samples: 9,
+                spread_pct: 4.2,
+                target_profile: 'veg-mid',
+                target_mode: 'profile',
+                requested_duration_sec: 120,
+              },
+            },
+          ),
+        ],
+      },
+      global: {
+        stubs: {
+          VirtualList: {
+            props: ['items'],
+            template: '<div><slot v-for="item in items" :key="item.id" :item="item" /></div>',
+          },
+        },
+      },
+    })
+
+    await wrapper.find('.cursor-pointer').trigger('click')
+
+    expect(wrapper.text()).toContain('Задача ID:')
+    expect(wrapper.text()).toContain('77')
+    expect(wrapper.text()).toContain('Strategy:')
+    expect(wrapper.text()).toContain('smart_soil_v1')
+    expect(wrapper.text()).toContain('Решение:')
+    expect(wrapper.text()).toContain('degraded_run')
+    expect(wrapper.text()).toContain('Причина:')
+    expect(wrapper.text()).toContain('smart_soil_telemetry_missing_or_stale')
+    expect(wrapper.text()).toContain('Degraded:')
+    expect(wrapper.text()).toContain('да')
+    expect(wrapper.text()).toContain('Bundle:')
+    expect(wrapper.text()).toContain('1234567890ab')
+    expect(wrapper.text()).toContain('Средняя влажность:')
+    expect(wrapper.text()).toContain('24.55%')
+    expect(wrapper.text()).toContain('Сенсоров:')
+    expect(wrapper.text()).toContain('3')
+    expect(wrapper.text()).toContain('Сэмплов:')
+    expect(wrapper.text()).toContain('9')
+    expect(wrapper.text()).toContain('Разброс:')
+    expect(wrapper.text()).toContain('4.20%')
+    expect(wrapper.text()).toContain('Профиль:')
+    expect(wrapper.text()).toContain('veg-mid')
+    expect(wrapper.text()).toContain('Target mode:')
+    expect(wrapper.text()).toContain('profile')
+    expect(wrapper.text()).toContain('Запрошено:')
+    expect(wrapper.text()).toContain('120 с')
   })
 })

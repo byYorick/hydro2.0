@@ -478,6 +478,99 @@ PY
   done
 }
 
+wait_history_logger_health() {
+  local timeout="${1:-120}"
+  local started_at
+  started_at="$(date +%s)"
+  while true; do
+    if "$PYTHON_BIN" - <<'PY' "$HISTORY_LOGGER_URL" >/dev/null 2>&1
+import sys
+import httpx
+
+base = sys.argv[1].rstrip("/")
+with httpx.Client(timeout=3.0) as c:
+    resp = c.get(base + "/health")
+if resp.status_code == 200:
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+    then
+      return 0
+    fi
+    if [ $(( "$(date +%s)" - started_at )) -ge "$timeout" ]; then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+verify_rollout_observability_contract() {
+  "$PYTHON_BIN" - <<'PY' "$AUTOMATION_ENGINE_URL" "$HISTORY_LOGGER_URL" "$LARAVEL_URL"
+from __future__ import annotations
+
+import re
+import sys
+
+import httpx
+
+
+def has_metric_contract(text: str, metric_name: str) -> bool:
+    escaped = re.escape(metric_name)
+    return re.search(rf"(^# (HELP|TYPE) {escaped}\b|^{escaped}(?:\{{|\s))", text, flags=re.MULTILINE) is not None
+
+
+targets = [
+    {
+        "name": "automation-engine",
+        "base": sys.argv[1].rstrip("/"),
+        "path": "/metrics/",
+        "metrics": [
+            "ae3_active_tasks",
+            "ae3_tick_errors_total",
+            "ae3_command_terminal_total",
+            "ae3_stage_deadline_exceeded_total",
+            "ae3_correction_exhausted_total",
+            "ae3_startup_recovery_task_total",
+        ],
+    },
+    {
+        "name": "history-logger",
+        "base": sys.argv[2].rstrip("/"),
+        "path": "/metrics",
+        "metrics": [
+            "telemetry_queue_size",
+            "telemetry_processed_total",
+            "telemetry_dropped_total",
+            "database_errors_total",
+            "node_event_unknown_total",
+        ],
+    },
+    {
+        "name": "laravel-scheduler",
+        "base": sys.argv[3].rstrip("/"),
+        "path": "/api/system/scheduler/metrics",
+        "metrics": [
+            "laravel_scheduler_dispatches_total",
+            "laravel_scheduler_cycle_duration_seconds",
+            "laravel_scheduler_active_tasks_count",
+        ],
+    },
+]
+
+with httpx.Client(timeout=10.0) as client:
+    for target in targets:
+        response = client.get(target["base"] + target["path"])
+        response.raise_for_status()
+        body = response.text
+        missing = [metric for metric in target["metrics"] if not has_metric_contract(body, metric)]
+        if missing:
+            joined = ", ".join(missing)
+            raise SystemExit(f"{target['name']}: missing metrics contract: {joined}")
+
+print("ok")
+PY
+}
+
 get_auth_token() {
   "$PYTHON_BIN" - <<'PY' "$LARAVEL_URL"
 import httpx
@@ -1268,6 +1361,14 @@ prepare_real_hardware_node() {
   fi
   if ! wait_automation_engine_ready 180; then
     echo "❌ automation-engine не стал ready вовремя: $AUTOMATION_ENGINE_URL/health/ready"
+    exit 1
+  fi
+  if ! wait_history_logger_health 180; then
+    echo "❌ history-logger не стал healthy вовремя: $HISTORY_LOGGER_URL/health"
+    exit 1
+  fi
+  if ! verify_rollout_observability_contract; then
+    echo "❌ observability contract не сошелся: exporter или метрики не готовы к rollout"
     exit 1
   fi
 

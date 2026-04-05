@@ -1,4 +1,4 @@
-"""Publish a planned AE3-Lite command via history-logger."""
+"""Публикация planned-команды AE3-Lite через history-logger."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ae3lite.domain.errors import CommandPublishError
 
 
 class PublishPlannedCommandUseCase:
-    """Persists ae_commands before publish and records legacy external_id after publish."""
+    """Сохраняет `ae_commands` перед публикацией и записывает legacy external_id после неё."""
 
     def __init__(self, *, task_repository: Any, command_repository: Any, history_logger_client: Any) -> None:
         self._task_repository = task_repository
@@ -34,13 +34,13 @@ class PublishPlannedCommandUseCase:
         )
         if ae_command_id is None:
             raise CommandPublishError(
-                f"Task {task.id} missing during ae_commands insert (likely concurrent cleanup)",
+                f"Задача {task.id} исчезла во время вставки в ae_commands (вероятен конкурентный cleanup)",
             )
 
         try:
             greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
             if not greenhouse_uid:
-                raise CommandPublishError(f"Unable to resolve greenhouse_uid for zone_id={task.zone_id}")
+                raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
 
             history_logger_cmd_id = await self._history_logger_client.publish(
                 greenhouse_uid=greenhouse_uid,
@@ -57,7 +57,7 @@ class PublishPlannedCommandUseCase:
             )
             if legacy_command_id is None:
                 raise CommandPublishError(
-                    f"Legacy commands.id not found for zone_id={task.zone_id} cmd_id={history_logger_cmd_id}"
+                    f"Не найдена запись Legacy commands.id для zone_id={task.zone_id} cmd_id={history_logger_cmd_id}"
                 )
             await self._command_repository.mark_publish_accepted(
                 ae_command_id=ae_command_id,
@@ -70,7 +70,7 @@ class PublishPlannedCommandUseCase:
                 now=now,
             )
             if updated_task is None:
-                raise CommandPublishError(f"Unable to move task_id={task.id} into waiting_command")
+                raise CommandPublishError(f"Не удалось перевести task_id={task.id} в waiting_command")
         except Exception as exc:
             await self._command_repository.mark_publish_failed(
                 ae_command_id=ae_command_id,
@@ -87,7 +87,7 @@ class PublishPlannedCommandUseCase:
                 )
                 if failed_task is None:
                     raise CommandPublishError(
-                        f"Unable to fail task_id={task.id} after publish error"
+                        f"Не удалось перевести task_id={task.id} в failed после ошибки публикации"
                     ) from exc
             if isinstance(exc, CommandPublishError):
                 raise
@@ -100,7 +100,7 @@ class PublishPlannedCommandUseCase:
         cmd_name = str(payload.get("cmd") or "").strip()
         params = payload.get("params")
         if not cmd_name or not isinstance(params, Mapping):
-            raise CommandPublishError("PlannedCommand payload must contain cmd and params for publish")
+            raise CommandPublishError("Для публикации PlannedCommand должен содержать cmd и params")
         return cmd_name, params
 
     def _build_publish_cmd_id(self, *, task: AutomationTask, command: PlannedCommand) -> str:

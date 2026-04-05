@@ -1,4 +1,4 @@
-"""CleanFillCheckHandler — level polling, deadline, retry logic."""
+"""CleanFillCheckHandler: polling уровня, дедлайна и логики повторов."""
 
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ _logger = logging.getLogger(__name__)
 
 
 class CleanFillCheckHandler(BaseStageHandler):
-    """Handles ``clean_fill_check``: poll level sensor, manage deadline and retries.
+    """Обрабатывает ``clean_fill_check``: опрашивает датчик уровня, дедлайн и повторы.
 
-    Four possible outcomes:
-    1. Tank full → transition to ``clean_fill_stop_to_solution``
-    2. Deadline exceeded + retries available → transition to ``clean_fill_retry_stop``
-    3. Deadline exceeded + no retries → transition to ``clean_fill_timeout_stop``
-    4. Still waiting → poll (re-enqueue with delay)
+    Возможные исходы:
+    1. Бак полон → переход в ``clean_fill_stop_to_solution``
+    2. Дедлайн превышен и повторы ещё доступны → переход в ``clean_fill_retry_stop``
+    3. Дедлайн превышен и повторы исчерпаны → переход в ``clean_fill_timeout_stop``
+    4. Заполнение ещё продолжается → ``poll`` с повторной постановкой в очередь
     """
 
     async def run(
@@ -37,7 +37,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
 
         if pending_manual_step == "clean_fill_stop":
-            _logger.info("clean_fill_check: manual stop requested zone_id=%s", task.zone_id)
+            _logger.info("clean_fill_check: запрошена ручная остановка zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
         if control_mode == "manual":
             return StageOutcome(
@@ -56,7 +56,7 @@ class CleanFillCheckHandler(BaseStageHandler):
         )
 
         if clean_max["is_triggered"]:
-            # Tank full — verify sensor consistency
+            # Бак полон: проверить согласованность датчиков
             await self._check_sensor_consistency(
                 task=task,
                 runtime=runtime,
@@ -64,16 +64,16 @@ class CleanFillCheckHandler(BaseStageHandler):
                 min_unavailable_error="two_tank_clean_min_level_unavailable",
                 min_stale_error="two_tank_clean_min_level_stale",
             )
-            _logger.debug("clean_fill_check: clean tank full, transitioning zone_id=%s", task.zone_id)
+            _logger.debug("clean_fill_check: бак чистой воды заполнен, выполняется переход zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
 
-        # Check deadline
+        # Проверка дедлайна
         deadline = task.workflow.stage_deadline_at
         if self._deadline_reached(now=now, deadline=deadline):
             cycle = max(1, task.workflow.clean_fill_cycle)
             retry_limit = 1 + int(runtime.get("clean_fill_retry_cycles", 0))
             if cycle < retry_limit:
-                # Retry: increment cycle, new deadline will be set by WorkflowRouter
+                # Повтор: увеличить цикл, новый дедлайн выставит WorkflowRouter
                 _logger.info(
                     "clean_fill_check: deadline exceeded, retrying cycle=%s/%s zone_id=%s",
                     cycle + 1, retry_limit, task.zone_id,
@@ -83,7 +83,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                     next_stage="clean_fill_retry_stop",
                     clean_fill_cycle=cycle + 1,
                 )
-            # Max retries exceeded — terminal timeout
+            # Лимит повторов исчерпан: терминальный timeout
             _logger.warning(
                 "clean_fill_check: deadline exceeded, max retries reached cycle=%s zone_id=%s",
                 cycle, task.zone_id,
@@ -96,7 +96,7 @@ class CleanFillCheckHandler(BaseStageHandler):
                 await send_biz_alert(
                     code="biz_clean_fill_timeout",
                     alert_type="AE3 Clean Fill Timeout",
-                    message="Clean tank fill deadline exceeded after all retry cycles.",
+                    message="Превышено время заполнения бака чистой водой после всех циклов повтора.",
                     severity="warning",
                     zone_id=int(task.zone_id),
                     details={
@@ -105,15 +105,15 @@ class CleanFillCheckHandler(BaseStageHandler):
                         "stage": "clean_fill_check",
                         "component": "handler:clean_fill_check",
                         "retry_limit": retry_limit,
-                        "message": "Clean tank fill deadline exceeded after all retry cycles — check water supply.",
+                        "message": "Превышено время заполнения бака чистой водой после всех циклов повтора; проверьте подачу воды.",
                     },
                     scope_parts=("stage:clean_fill_check",),
                 )
             except Exception:
-                _logger.warning("Failed to send clean_fill_timeout alert zone_id=%s", task.zone_id)
+                    _logger.warning("Не удалось отправить alert clean_fill_timeout zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_timeout_stop")
 
-        # Still filling — poll again
+        # Заполнение ещё идёт: повторный poll
         return StageOutcome(
             kind="poll",
             due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),

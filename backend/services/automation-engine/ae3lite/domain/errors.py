@@ -1,4 +1,4 @@
-"""Domain errors for AE3-Lite v1."""
+"""Доменные ошибки AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from enum import Enum
 
 
 class TaskStatus(str, Enum):
-    """Canonical ae_tasks.status values.
+    """Канонические значения `ae_tasks.status`.
 
-    Using ``str`` mixin allows transparent comparison with plain strings:
-        task.status == TaskStatus.COMPLETED  →  True  (when task.status == "completed")
+    Примесь ``str`` позволяет прозрачно сравнивать enum с обычными строками:
+        task.status == TaskStatus.COMPLETED  →  True  (когда task.status == "completed")
     """
 
     PENDING = "pending"
@@ -34,7 +34,7 @@ class TaskStatus(str, Enum):
 
 
 class IntentStatus(str, Enum):
-    """Canonical zone_automation_intents.status values."""
+    """Канонические значения `zone_automation_intents.status`."""
 
     PENDING = "pending"
     CLAIMED = "claimed"
@@ -55,16 +55,16 @@ class IntentStatus(str, Enum):
 
 
 class ErrorCodes:
-    """Centralized registry of AE3-Lite error code string constants.
+    """Централизованный реестр строковых error code для AE3-Lite.
 
-    Use these constants instead of inline string literals to ensure
-    consistency and enable IDE navigation.
+    Используйте эти константы вместо inline-литералов, чтобы сохранять
+    единообразие и удобную навигацию по коду в IDE.
 
-    Example::
-        raise TaskExecutionError(ErrorCodes.AE3_UNKNOWN_HANDLER, "No handler for stage X")
+    Пример::
+        raise TaskExecutionError(ErrorCodes.AE3_UNKNOWN_HANDLER, "Не найден handler для stage X")
     """
 
-    # Task lifecycle
+    # Жизненный цикл задачи
     AE3_TASK_EXECUTION_FAILED = "ae3_task_execution_failed"
     AE3_TASK_EXECUTION_UNHANDLED_EXCEPTION = "ae3_task_execution_unhandled_exception"
     AE3_TASK_FINALIZE_FAILED = "ae3_task_finalize_failed"
@@ -72,7 +72,7 @@ class ErrorCodes:
     AE3_TASK_COMPLETE_FAILED = "ae3_task_complete_failed"
     AE3_TASK_MISSING_OWNER = "ae3_task_missing_owner"
 
-    # Stage transitions
+    # Переходы между stage
     AE3_UNKNOWN_HANDLER = "ae3_unknown_handler"
     AE3_UNKNOWN_OUTCOME_KIND = "ae3_unknown_outcome_kind"
     AE3_TRANSITION_NO_NEXT_STAGE = "ae3_transition_no_next_stage"
@@ -96,7 +96,7 @@ class ErrorCodes:
     AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS = "ae3_snapshot_no_online_actuator_channels"
     AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES = "ae3_snapshot_conflicting_config_values"
 
-    # Command dispatch / reconcile
+    # Отправка и reconcile команд
     AE3_MISSING_AE_COMMAND = "ae3_missing_ae_command"
     AE3_MISSING_CMD_ID = "ae3_missing_cmd_id"
     AE3_LEGACY_COMMAND_NOT_FOUND = "ae3_legacy_command_not_found"
@@ -109,15 +109,16 @@ class ErrorCodes:
     AE3_COMMAND_POLL_DEADLINE_EXCEEDED = "ae3_command_poll_deadline_exceeded"
     AE3_INVALID_PLANNED_COMMAND = "ae3_invalid_planned_command"
     COMMAND_SEND_FAILED = "command_send_failed"
-    # Concurrent cleanup removed ae_tasks while publish pipeline was in flight (symmetric to finalize_task miss).
+    # Параллельная очистка удалила `ae_tasks`, пока publish pipeline ещё выполнялся.
+    # Это симметрично случаю с пропавшей задачей в `finalize_task`.
     AE3_TASK_MISSING_DURING_PUBLISH = "task_missing_during_publish"
 
-    # IRR state
+    # Состояние IRR
     IRR_STATE_UNAVAILABLE = "irr_state_unavailable"
     IRR_STATE_STALE = "irr_state_stale"
     IRR_STATE_MISMATCH = "irr_state_mismatch"
 
-    # Level sensors / tank
+    # Датчики уровня / баки
     TWO_TANK_CLEAN_LEVEL_UNAVAILABLE = "two_tank_clean_level_unavailable"
     TWO_TANK_CLEAN_LEVEL_STALE = "two_tank_clean_level_stale"
     TWO_TANK_CLEAN_MIN_LEVEL_UNAVAILABLE = "two_tank_clean_min_level_unavailable"
@@ -130,7 +131,7 @@ class ErrorCodes:
     TWO_TANK_PREPARE_TARGETS_STALE = "two_tank_prepare_targets_stale"
     SENSOR_STATE_INCONSISTENT = "sensor_state_inconsistent"
 
-    # Start-cycle API
+    # API запуска цикла
     START_CYCLE_ZONE_BUSY = "start_cycle_zone_busy"
     START_CYCLE_RATE_LIMITED = "start_cycle_rate_limited"
     START_CYCLE_INTENT_NOT_FOUND = "start_cycle_intent_not_found"
@@ -140,12 +141,12 @@ class ErrorCodes:
     START_CYCLE_MISSING_IDEMPOTENCY_KEY = "start_cycle_missing_idempotency_key"
     START_CYCLE_BLOCKED_BY_ALERT = "start_cycle_blocked_by_alert"
 
-    # API / infra
+    # API / инфраструктура
     AE3_API_UNHANDLED_EXCEPTION = "ae3_api_unhandled_exception"
     AE3_API_HTTP_5XX = "ae3_api_http_5xx"
     AE3_BACKGROUND_TASK_CRASHED = "ae3_background_task_crashed"
 
-    # Critical configuration guards
+    # Критические защитные проверки конфигурации
     ZONE_CORRECTION_CONFIG_MISSING_CRITICAL = "zone_correction_config_missing_critical"
     ZONE_DOSING_CALIBRATION_MISSING_CRITICAL = "zone_dosing_calibration_missing_critical"
     ZONE_PID_CONFIG_MISSING_CRITICAL = "zone_pid_config_missing_critical"
@@ -153,11 +154,11 @@ class ErrorCodes:
 
 
 class Ae3LiteError(Exception):
-    """Base AE3-Lite domain error."""
+    """Базовая доменная ошибка AE3-Lite."""
 
 
 class SnapshotBuildError(Ae3LiteError):
-    """Raised when the runtime read-model cannot build a consistent zone snapshot."""
+    """Выбрасывается, когда runtime read-model не может собрать согласованный snapshot зоны."""
 
     def __init__(
         self,
@@ -173,7 +174,7 @@ class SnapshotBuildError(Ae3LiteError):
 
 
 class PlannerConfigurationError(Ae3LiteError):
-    """Raised when CycleStartPlanner receives unsupported or invalid config."""
+    """Выбрасывается, когда CycleStartPlanner получает неподдерживаемую или некорректную конфигурацию."""
 
     def __init__(self, message: str, *, code: str | None = None) -> None:
         super().__init__(message)
@@ -183,19 +184,19 @@ class PlannerConfigurationError(Ae3LiteError):
 
 
 class CommandPublishError(Ae3LiteError):
-    """Raised when AE3-Lite cannot publish a planned command safely."""
+    """Выбрасывается, когда AE3-Lite не может безопасно опубликовать planned command."""
 
 
 class CommandReconcileError(Ae3LiteError):
-    """Raised when AE3-Lite cannot reconcile a waiting command safely."""
+    """Выбрасывается, когда AE3-Lite не может безопасно reconcile waiting-команду."""
 
 
 class StartupRecoveryError(Ae3LiteError):
-    """Raised when AE3-Lite cannot recover in-flight startup state safely."""
+    """Выбрасывается, когда AE3-Lite не может безопасно восстановить in-flight состояние после старта."""
 
 
 class TaskFinalizeError(Ae3LiteError):
-    """Raised when AE3-Lite cannot move task into a terminal state safely."""
+    """Выбрасывается, когда AE3-Lite не может безопасно перевести задачу в terminal state."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -203,11 +204,11 @@ class TaskFinalizeError(Ae3LiteError):
 
 
 class TaskClaimRollbackError(Ae3LiteError):
-    """Raised when a claimed task cannot be safely returned back to pending."""
+    """Выбрасывается, когда claimed-задачу нельзя безопасно вернуть в pending."""
 
 
 class TaskCreateError(Ae3LiteError):
-    """Raised when AE3-Lite cannot create or resolve a canonical task safely."""
+    """Выбрасывается, когда AE3-Lite не может безопасно создать или разрешить canonical task."""
 
     def __init__(self, code: str, message: str, *, details: dict[str, object] | None = None) -> None:
         super().__init__(message)
@@ -216,7 +217,7 @@ class TaskCreateError(Ae3LiteError):
 
 
 class TaskExecutionError(Ae3LiteError):
-    """Raised when AE3-Lite runtime execution must fail closed."""
+    """Выбрасывается, когда выполнение AE3-Lite должно завершиться по fail-closed."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -224,7 +225,7 @@ class TaskExecutionError(Ae3LiteError):
 
 
 class TaskTerminalStateReached(Ae3LiteError):
-    """Raised when a task becomes terminal externally during command reconciliation."""
+    """Выбрасывается, когда задача становится terminal извне во время reconcile команды."""
 
     def __init__(self, *, task: object, message: str) -> None:
         super().__init__(message)
@@ -232,7 +233,7 @@ class TaskTerminalStateReached(Ae3LiteError):
 
 
 class ManualControlError(Ae3LiteError):
-    """Raised when manual control/control-mode API must reject the request."""
+    """Выбрасывается, когда API manual control/control-mode должно отклонить запрос."""
 
     def __init__(
         self,

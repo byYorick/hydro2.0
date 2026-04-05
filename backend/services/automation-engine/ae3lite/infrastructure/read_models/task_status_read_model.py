@@ -1,4 +1,4 @@
-"""Read-model for canonical AE3-Lite task status endpoint."""
+"""Read-model для канонического endpoint'а статуса задачи AE3-Lite."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from common.db import get_pool
 
 
 class PgTaskStatusReadModel:
-    """Loads canonical AE3 task status even if the zone routing changed later."""
+    """Загружает канонический статус задачи AE3, даже если routing зоны потом изменился."""
 
     async def get_by_task_id(self, *, task_id: int) -> Optional[TaskStatusView]:
         pool = await get_pool()

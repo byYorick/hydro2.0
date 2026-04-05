@@ -1,8 +1,8 @@
-"""WorkflowRouter — pure orchestrator for AE3-Lite v2 topology-driven workflow.
+"""WorkflowRouter: чистый оркестратор topology-driven workflow в AE3-Lite v2.
 
-Dispatches to handler classes based on ``StageDef.handler``, interprets the
-returned ``StageOutcome``, updates task state via repository, records
-transitions in the audit trail, and updates the zone workflow phase.
+Маршрутизирует выполнение по ``StageDef.handler``, интерпретирует возвращённый
+``StageOutcome``, обновляет состояние задачи через repository, записывает
+переходы в audit trail и обновляет workflow phase зоны.
 """
 
 from __future__ import annotations
@@ -46,13 +46,13 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowRouter:
-    """Topology-driven orchestrator: dispatch → handler → apply outcome → requeue.
+    """Оркестратор topology-driven workflow: dispatch → handler → apply outcome → requeue.
 
-    This class does NOT contain domain logic. All sensor reads, level checks,
-    and correction calculations live in handler classes.
+    Этот класс не содержит доменную логику. Все чтения сенсоров, проверки
+    уровней и расчёты коррекции живут в handler-классах.
     """
 
-    # Handler key → handler class mapping
+    # Соответствие handler key → handler class
     HANDLER_MAP: dict[str, type[BaseStageHandler]] = {
         "startup": StartupHandler,
         "await_ready": AwaitReadyHandler,
@@ -86,7 +86,7 @@ class WorkflowRouter:
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
 
-        # Pre-instantiate handlers
+        # Предсоздать handler'ы
         self._handlers: dict[str, BaseStageHandler] = {}
         for key, cls in self.HANDLER_MAP.items():
             kwargs: dict[str, Any] = {
@@ -106,14 +106,14 @@ class WorkflowRouter:
             self._handlers[key] = cls(**kwargs)
 
     async def run(self, *, task: Any, plan: Any, now: datetime) -> Any:
-        """Execute one stage of the workflow and return the updated task.
+        """Выполняет один stage workflow и возвращает обновлённую задачу.
 
-        Called by ExecuteTaskUseCase after claiming and marking the task running.
+        Вызывается из ExecuteTaskUseCase после claim и перевода задачи в running.
         """
         topology = task.topology
         current_stage = task.current_stage
 
-        # Correction sub-machine takes priority
+        # Подмашина коррекции имеет приоритет
         if task.correction is not None:
             handler = self._handlers["correction"]
             stage_def = self._registry.get(topology, current_stage)
@@ -124,11 +124,11 @@ class WorkflowRouter:
                 task=task, plan=plan, outcome=outcome, now=now,
             )
 
-        # Normal stage dispatch
+        # Обычный dispatch stage
         stage_def = self._registry.get(topology, current_stage)
         handler_key = stage_def.handler
 
-        # ready-style terminal stages are handled centrally
+        # Терминальные ready-stage обрабатываются централизованно
         if current_stage == "complete_ready" and str(getattr(task, "task_type", "") or "") == "irrigation_start":
             if int(getattr(task, "irrigation_replay_count", 0) or 0) > 0:
                 return await self._apply_transition(
@@ -145,7 +145,7 @@ class WorkflowRouter:
         if handler is None:
             raise TaskExecutionError(
                 "ae3_unknown_handler",
-                f"No handler for key={handler_key!r} (stage={current_stage})",
+                f"Не найден handler для key={handler_key!r} (stage={current_stage})",
             )
 
         outcome = await handler.run(
@@ -193,18 +193,18 @@ class WorkflowRouter:
             return await self._fail_task(
                 task=task, now=now,
                 error_code=outcome.error_code or "ae3_stage_failed",
-                error_message=outcome.error_message or "Stage failed",
+                error_message=outcome.error_message or "Этап завершился ошибкой",
             )
 
         raise TaskExecutionError(
             "ae3_unknown_outcome_kind",
-            f"Unknown StageOutcome.kind={outcome.kind!r}",
+            f"Неизвестный StageOutcome.kind={outcome.kind!r}",
         )
 
     async def _apply_poll(
         self, *, task: Any, outcome: StageOutcome, now: datetime,
     ) -> Any:
-        """Stay in the same stage, re-enqueue with delay."""
+        """Оставляет задачу в том же stage и ставит повторный запуск с задержкой."""
         workflow = task.workflow
         due_at = now + timedelta(seconds=max(0, outcome.due_delay_sec))
 
@@ -220,7 +220,7 @@ class WorkflowRouter:
             task_id=task.id,
             updated_task=updated_task,
             error_code="ae3_poll_apply_failed",
-            error_message=f"Task {task.id} could not persist poll outcome",
+            error_message=f"Не удалось сохранить poll outcome для задачи {task.id}",
         )
         await self._safe_upsert_workflow_phase(
             task=resolved_task,
@@ -237,26 +237,26 @@ class WorkflowRouter:
         outcome: StageOutcome,
         now: datetime,
     ) -> Any:
-        """Move to a new stage, clear correction state, compute deadline."""
+        """Переходит в новый stage, очищает correction state и вычисляет дедлайн."""
         next_stage = outcome.next_stage
         if next_stage is None:
             raise TaskExecutionError(
                 "ae3_transition_no_next_stage",
-                "Transition outcome requires next_stage",
+                "Для transition outcome требуется next_stage",
             )
 
         topology = task.topology
         next_def = self._registry.get(topology, next_stage)
         same_stage = next_stage == task.current_stage
 
-        # Record metrics for completed stage
+        # Записать метрики завершённого stage
         if not same_stage:
             self._record_stage_duration(task=task, now=now)
             STAGE_ENTERED.labels(topology=topology, stage=next_stage).inc()
         if (outcome.stage_retry_count or 0) > 0:
             STAGE_RETRY.labels(topology=topology, stage=next_stage).inc()
 
-        # Compute new workflow state
+        # Вычислить новое состояние workflow
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         deadline = (
             task.workflow.stage_deadline_at
@@ -291,7 +291,7 @@ class WorkflowRouter:
             task_id=task.id,
             owner=str(task.claimed_by or ""),
             workflow=new_workflow,
-            correction=None,  # Clear correction on transition
+            correction=None,  # Очистить correction state при переходе
             due_at=due_at,
             now=now,
         )
@@ -299,7 +299,7 @@ class WorkflowRouter:
             task_id=task.id,
             updated_task=updated_task,
             error_code="ae3_transition_apply_failed",
-            error_message=f"Task {task.id} could not transition to {next_stage}",
+            error_message=f"Не удалось перевести задачу {task.id} в stage {next_stage}",
         )
         await self._safe_record_transition(
             task_id=task.id,
@@ -323,15 +323,15 @@ class WorkflowRouter:
         outcome: StageOutcome,
         now: datetime,
     ) -> Any:
-        """Enter or continue correction sub-machine within current stage."""
+        """Входит в подмашину коррекции или продолжает её в рамках текущего stage."""
         corr = outcome.correction
         if corr is None:
             raise TaskExecutionError(
                 "ae3_enter_correction_no_state",
-                "enter_correction outcome requires correction state",
+                "Для enter_correction outcome требуется correction state",
             )
 
-        # Record metrics on first entry
+        # Записать метрики при первом входе
         if task.correction is None:
             CORRECTION_STARTED.labels(topology=task.topology).inc()
 
@@ -349,7 +349,7 @@ class WorkflowRouter:
             task_id=task.id,
             updated_task=updated_task,
             error_code="ae3_correction_apply_failed",
-            error_message=f"Task {task.id} could not persist correction state",
+            error_message=f"Не удалось сохранить correction state для задачи {task.id}",
         )
         await self._safe_upsert_workflow_phase(
             task=resolved_task,
@@ -366,7 +366,7 @@ class WorkflowRouter:
         outcome: StageOutcome,
         now: datetime,
     ) -> Any:
-        """Correction finished — transition to return stage."""
+        """Коррекция завершена: перейти в stage возврата."""
         final_corr = outcome.correction if outcome.correction is not None else task.correction
         success = (
             final_corr.outcome_success
@@ -395,13 +395,13 @@ class WorkflowRouter:
                 )
             except Exception:
                 logger.warning(
-                    "AE3 failed to log IRRIGATION_CORRECTION_COMPLETED zone_id=%s task_id=%s",
+                    "AE3 не смог записать IRRIGATION_CORRECTION_COMPLETED zone_id=%s task_id=%s",
                     int(getattr(task, "zone_id", 0) or 0),
                     int(getattr(task, "id", 0) or 0),
                     exc_info=True,
                 )
 
-        # Delegate to normal transition
+        # Делегировать обычному переходу
         return await self._apply_transition(
             task=task, plan=plan, outcome=outcome, now=now,
         )
@@ -417,7 +417,7 @@ class WorkflowRouter:
             task_id=task.id,
             updated_task=completed,
             error_code="ae3_complete_transition_failed",
-            error_message=f"Task {task.id} could not transition to completed",
+            error_message=f"Не удалось перевести задачу {task.id} в completed",
         )
         await self._safe_upsert_workflow_phase(
             task=resolved_task, workflow_phase="ready", now=now,
@@ -435,7 +435,7 @@ class WorkflowRouter:
     def _compute_deadline(
         self, *, task: Any, stage_def: Any, runtime: Mapping[str, Any], now: datetime,
     ) -> Optional[datetime]:
-        """Compute stage_deadline_at from runtime config timeout keys."""
+        """Вычисляет `stage_deadline_at` по timeout-ключам из runtime-конфига."""
         if stage_def.name == "irrigation_check":
             irrigation_runtime = runtime.get("irrigation_execution")
             irrigation_runtime = irrigation_runtime if isinstance(irrigation_runtime, Mapping) else {}
@@ -486,7 +486,8 @@ class WorkflowRouter:
             total_sec = min(base_sec + slack, 86400)
             return now + timedelta(seconds=total_sec)
         if stage_def.name == "prepare_recirculation_check":
-            # Base window from retry config; inline EC/pH corrections need extra wall time on real HL→MQTT→node.
+            # Базовое окно берётся из retry-конфига; inline EC/pH-коррекциям нужно
+            # дополнительное wall time на реальном пути HL→MQTT→node.
             base_raw = runtime.get("prepare_recirculation_timeout_sec")
             if base_raw is None:
                 return None
@@ -536,10 +537,10 @@ class WorkflowRouter:
     async def _upsert_workflow_phase(
         self, *, task: Any, workflow_phase: str, stage: str | None = None, now: datetime,
     ) -> None:
-        """Update zone workflow state (external visibility).
+        """Обновляет состояние zone workflow для внешней видимости.
 
-        ``stage`` overrides the stage written to payload when calling during a
-        transition (where task.current_stage is still the OLD stage).
+        Параметр ``stage`` подменяет stage, который будет записан в payload
+        во время перехода, когда `task.current_stage` ещё содержит старое значение.
         """
         if self._workflow_repo is not None:
             await self._workflow_repo.upsert_phase(
@@ -562,7 +563,7 @@ class WorkflowRouter:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to sync zone_workflow_state zone_id=%s task_id=%s phase=%s stage=%s",
+                "AE3 не смог синхронизировать zone_workflow_state zone_id=%s task_id=%s phase=%s stage=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 workflow_phase,
@@ -591,7 +592,7 @@ class WorkflowRouter:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to record stage transition task_id=%s from=%s to=%s",
+                "AE3 не смог записать переход stage task_id=%s from=%s to=%s",
                 task_id,
                 from_stage,
                 to_stage,

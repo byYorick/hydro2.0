@@ -166,4 +166,76 @@ class AlertLocalizationTest extends TestCase
                 'Задача AE3 #1 (cycle_start) завершилась с ошибкой (код: command_timeout): этап startup, workflow idle, topology two_tank_drip_substrate_trays. Причина: Не дождались ответа: probe irr_state_probe, команда ae3-t1-z1-s1, нода nd-test-irrig-1, канал storage_state. Контекст: статус узла online, last_seen 182 с назад, online-статус уже выглядел устаревшим.'
             );
     }
+
+    public function test_alerts_api_returns_localized_message_for_ae3_irr_state_unavailable_reason(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_ae3_task_failed',
+            'type' => 'Ошибка задачи автоматики',
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'error',
+            'details' => [
+                'task_id' => 41,
+                'task_type' => 'irrigation_start',
+                'stage' => 'irrigation_check',
+                'workflow_phase' => 'irrigating',
+                'topology' => 'two_tank_drip_substrate_trays',
+                'stage_retry_count' => 0,
+                'error_code' => 'irr_state_unavailable',
+                'error_message' => 'IRR state snapshot unavailable',
+                'message' => 'IRR state snapshot unavailable',
+            ],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath(
+                'data.data.0.message',
+                'Задача AE3 #41 (irrigation_start) завершилась с ошибкой (код: irr_state_unavailable): этап irrigation_check, workflow irrigating, topology two_tank_drip_substrate_trays. Причина: Снимок состояния IRR-ноды недоступен.'
+            );
+    }
+
+    public function test_alerts_api_localizes_irrigation_wait_ready_timeout_alert(): void
+    {
+        $user = User::factory()->create(['role' => 'admin']);
+        $zone = Zone::factory()->create();
+
+        Alert::query()->create([
+            'zone_id' => $zone->id,
+            'source' => 'biz',
+            'code' => 'biz_irrigation_wait_ready_timeout',
+            'type' => 'AE3 Irrigation Wait Ready Timeout',
+            'status' => 'ACTIVE',
+            'category' => 'operations',
+            'severity' => 'warning',
+            'details' => [
+                'task_id' => 9,
+                'message' => 'Irrigation task timed out in await_ready (zone_workflow_phase never became ready).',
+            ],
+            'error_count' => 1,
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/alerts?zone_id={$zone->id}")
+            ->assertOk()
+            ->assertJsonPath('data.data.0.title', 'Таймаут ожидания READY перед поливом')
+            ->assertJsonPath(
+                'data.data.0.message',
+                'Полив превысил время ожидания на этапе await_ready: зона так и не перешла в состояние READY.'
+            );
+    }
 }

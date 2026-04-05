@@ -1,4 +1,4 @@
-"""Sequential AE3-Lite node command pipeline."""
+"""Последовательный pipeline команд к нодам в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ _TERMINAL_STATUSES = frozenset({"DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT",
 
 
 class SequentialCommandGateway:
-    """Publishes resolved commands one by one and waits for terminal legacy status."""
+    """Публикует разрешённые команды по одной и ждёт terminal-статус legacy-команды."""
 
     def __init__(
         self,
@@ -115,7 +115,7 @@ class SequentialCommandGateway:
                     "external_id": None,
                     "cmd_id": None,
                 }
-            raise TaskExecutionError("ae3_missing_ae_command", f"Task {task.id} has no ae_command for recovery")
+            raise TaskExecutionError("ae3_missing_ae_command", f"У задачи {task.id} отсутствует ae_command для recovery")
         legacy_row, external_id, cmd_id = await self._resolve_legacy_command(task=task, ae_command=ae_command)
         if legacy_row is None:
             return {"state": "waiting_command", "task": task, "legacy_status": None, "external_id": external_id, "cmd_id": cmd_id}
@@ -161,7 +161,7 @@ class SequentialCommandGateway:
         try:
             greenhouse_uid = await self._command_repository.resolve_greenhouse_uid(zone_id=task.zone_id)
             if not greenhouse_uid:
-                raise CommandPublishError(f"Unable to resolve greenhouse_uid for zone_id={task.zone_id}")
+                raise CommandPublishError(f"Не удалось определить greenhouse_uid для zone_id={task.zone_id}")
             _dispatch_start = time.monotonic()
             published_cmd_id = await self._history_logger_client.publish(
                 greenhouse_uid=greenhouse_uid,
@@ -180,7 +180,7 @@ class SequentialCommandGateway:
             )
             if legacy_command_id is None:
                 raise CommandPublishError(
-                    f"Legacy commands.id not found for zone_id={task.zone_id} cmd_id={published_cmd_id}"
+                    f"Не найдена запись Legacy commands.id для zone_id={task.zone_id} cmd_id={published_cmd_id}"
                 )
             accepted_ok = await self._command_repository.mark_publish_accepted(
                 ae_command_id=ae_command_id,
@@ -204,7 +204,7 @@ class SequentialCommandGateway:
                         ),
                     )
                 raise CommandPublishError(
-                    f"ae_commands.id={ae_command_id} not updated after publish (task still present)"
+                    f"Не удалось обновить ae_commands.id={ae_command_id} после публикации (задача всё ещё существует)"
                 )
             status_entry = {
                 "ae_command_id": int(ae_command_id),
@@ -244,7 +244,7 @@ class SequentialCommandGateway:
                     )
                 raise TaskExecutionError(
                     "ae3_waiting_command_transition_failed",
-                    f"Task {task.id} could not enter waiting_command",
+                    f"Не удалось перевести задачу {task.id} в waiting_command",
                 )
         except Exception as exc:
             try:
@@ -321,7 +321,7 @@ class SequentialCommandGateway:
                         "command_statuses": [status_entry],
                         "error_code": "ae3_command_poll_deadline_exceeded",
                         "error_message": (
-                            f"Command polling exceeded stage deadline for task {task.id} "
+                            f"Опрос команды превысил дедлайн stage для задачи {task.id} "
                             f"stage={getattr(task, 'current_stage', None)}"
                         ),
                     }
@@ -338,7 +338,7 @@ class SequentialCommandGateway:
             if task_state is not None and task_status in {"cancelled", "completed", "failed"}:
                 raise TaskTerminalStateReached(
                     task=task_state,
-                    message=f"Task {task.id} became {task_status} during command roundtrip",
+                    message=f"Во время command roundtrip задача {task.id} перешла в состояние {task_status}",
                 )
             status_entry = {
                 **status_entry,
@@ -392,7 +392,7 @@ class SequentialCommandGateway:
             )
         except Exception:
             logger.warning(
-                "AE3 failed to log AE_COMMAND_POLL_DEADLINE_EXCEEDED zone_id=%s task_id=%s cmd_id=%s",
+                "AE3 не смог записать AE_COMMAND_POLL_DEADLINE_EXCEEDED zone_id=%s task_id=%s cmd_id=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 cmd_id,
@@ -428,12 +428,12 @@ class SequentialCommandGateway:
         if external_id:
             row = await self._command_repository.get_legacy_command_by_id(external_id=external_id)
             if row is None:
-                raise TaskExecutionError("ae3_legacy_command_not_found", f"Legacy command not found for external_id={external_id}")
+                raise TaskExecutionError("ae3_legacy_command_not_found", f"Не найдена legacy command для external_id={external_id}")
             return row, external_id, str(row.get("cmd_id") or "").strip() or cmd_id
         if not cmd_id:
             raise TaskExecutionError(
                 "ae3_missing_cmd_id",
-                f"ae_command {ae_command.get('id')} has neither external_id nor payload.cmd_id",
+                f"У ae_command {ae_command.get('id')} отсутствуют и external_id, и payload.cmd_id",
             )
         row = await self._command_repository.get_legacy_command_by_cmd_id(zone_id=task.zone_id, cmd_id=cmd_id)
         if row is None:
@@ -450,7 +450,7 @@ class SequentialCommandGateway:
     ) -> Mapping[str, Any]:
         legacy_status = str(legacy_row.get("status") or "").strip().upper()
         if legacy_status not in _NON_TERMINAL_STATUSES | _TERMINAL_STATUSES:
-            raise TaskExecutionError("ae3_unsupported_legacy_status", f"Unsupported legacy status={legacy_status or 'empty'}")
+            raise TaskExecutionError("ae3_unsupported_legacy_status", f"Неподдерживаемый legacy status={legacy_status or 'empty'}")
         external_id = str(legacy_row.get("id") or "")
         cmd_id = str(legacy_row.get("cmd_id") or "").strip() or None
         terminal_status = legacy_status if legacy_status in _TERMINAL_STATUSES else None
@@ -496,11 +496,11 @@ class SequentialCommandGateway:
             task_id=task.id,
             owner=str(task.claimed_by or ""),
             error_code=f"command_{terminal_status.strip().lower()}",
-            error_message=last_error or f"Command terminal status {terminal_status}",
+            error_message=last_error or f"Команда завершилась с терминальным статусом {terminal_status}",
             now=now,
         )
         if failed_task is None:
-            raise TaskExecutionError("ae3_failed_transition_failed", f"Task {task.id} could not fail on {terminal_status}")
+            raise TaskExecutionError("ae3_failed_transition_failed", f"Не удалось перевести задачу {task.id} в failed после {terminal_status}")
         return {
             "state": "failed",
             "task": failed_task,
@@ -516,7 +516,7 @@ class SequentialCommandGateway:
         cmd_name = str(payload.get("cmd") or "").strip()
         params = payload.get("params")
         if not cmd_name or not isinstance(params, Mapping):
-            raise TaskExecutionError("ae3_invalid_planned_command", "PlannedCommand payload must contain cmd and params")
+            raise TaskExecutionError("ae3_invalid_planned_command", "PlannedCommand должен содержать cmd и params")
         return cmd_name, params
 
     def _complete_on_ack(self, command: PlannedCommand) -> bool:

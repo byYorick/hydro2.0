@@ -18,7 +18,7 @@ final class ScheduleWorkspaceCapabilities
     {
         $isAe3 = $zone->automation_runtime === 'ae3';
         $executable = $isAe3
-            ? ['irrigation', 'lighting']
+            ? ['irrigation', 'lighting', 'diagnostics']
             : array_values($plannedTaskTypes);
         $nonExecutablePlanned = array_values(array_diff($plannedTaskTypes, $executable));
 

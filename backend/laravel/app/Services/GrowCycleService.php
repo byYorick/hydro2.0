@@ -9,21 +9,20 @@ use App\Models\DeviceNode;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
-use App\Models\NodeChannel;
 use App\Models\GrowStageTemplate;
+use App\Models\NodeChannel;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use Carbon\Carbon;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use DomainException;
 
 class GrowCycleService
 {
@@ -52,8 +51,9 @@ class GrowCycleService
     public function __construct(
         private readonly AutomationRuntimeConfigService $runtimeConfig,
         private readonly AutomationConfigDocumentService $documents,
-    ) {
-    }
+        private readonly ZoneService $zoneService,
+        private readonly AutomationConfigCompiler $automationConfigCompiler,
+    ) {}
 
     /**
      * Создать новый цикл выращивания (новая модель с recipe_revision_id)
@@ -90,7 +90,7 @@ class GrowCycleService
             $settings = is_array($data['settings'] ?? null) ? $data['settings'] : [];
 
             $irrigation = is_array($data['irrigation'] ?? null) ? $data['irrigation'] : [];
-            if (!empty($irrigation)) {
+            if (! empty($irrigation)) {
                 $settings['irrigation'] = [
                     'system_type' => $irrigation['system_type'] ?? 'drip',
                     'interval_minutes' => (int) ($irrigation['interval_minutes'] ?? 30),
@@ -116,7 +116,7 @@ class GrowCycleService
                 'phase_started_at' => null,
                 'batch_label' => $data['batch_label'] ?? null,
                 'notes' => $data['notes'] ?? null,
-                'settings' => !empty($settings) ? $settings : null,
+                'settings' => ! empty($settings) ? $settings : null,
                 'started_at' => null,
             ]);
 
@@ -183,6 +183,14 @@ class GrowCycleService
             throw new \DomainException('Cycle must be in PLANNED status to start');
         }
 
+        $zone = $cycle->zone ?? Zone::query()->find($cycle->zone_id);
+        if ($zone) {
+            $this->zoneService->ensureAe3AutomationBootstrap($zone);
+            if (strtolower(trim((string) ($zone->automation_runtime ?? ''))) === 'ae3') {
+                $this->automationConfigCompiler->compileGrowCycleBundle((int) $cycle->id);
+            }
+        }
+
         $startedCycle = DB::transaction(function () use ($cycle, $plantingAt) {
             $plantingAt = $plantingAt ?? now();
             $plantingAt->setMicrosecond(0);
@@ -226,6 +234,14 @@ class GrowCycleService
      */
     public function syncCycleConfigDocuments(GrowCycle $cycle, array $data = [], ?int $userId = null): void
     {
+        $zone = $cycle->zone;
+        if ($zone === null) {
+            $zone = Zone::query()->find($cycle->zone_id);
+        }
+        if ($zone !== null) {
+            $this->zoneService->ensureAe3AutomationBootstrap($zone);
+        }
+
         $firstPhase = $cycle->phases()->orderBy('phase_index')->first();
 
         $phasePayload = $firstPhase ? [
@@ -1041,8 +1057,7 @@ class GrowCycleService
         Zone $zone,
         string $errorCode = 'grow_cycle_aborted',
         ?string $errorMessage = null
-    ): void
-    {
+    ): void {
         if (strtolower(trim((string) $zone->automation_runtime)) !== 'ae3') {
             return;
         }
@@ -1386,8 +1401,7 @@ class GrowCycleService
         ?GrowCycle $cycle,
         RecipeRevisionPhase $templatePhase,
         ?Carbon $startedAt = null,
-    ): GrowCyclePhase
-    {
+    ): GrowCyclePhase {
         $attributes = [
             'grow_cycle_id' => $cycle?->id,
             'recipe_revision_phase_id' => $templatePhase->id,
@@ -1439,5 +1453,4 @@ class GrowCycleService
 
         return GrowCyclePhase::create($attributes);
     }
-
 }

@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { nextTick, reactive } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { __resetManagedChannelEventsForTests } from '@/ws/managedChannelEvents'
 
 const wsStateListeners: Array<(state: string) => void> = []
@@ -102,10 +103,12 @@ vi.mock('@/stores/zones', () => ({
   useZonesStore: () => ({
     allZones: [],
     cacheVersion: 0,
+    zoneEventSeq: {},
     initFromProps: vi.fn(),
     upsert: vi.fn(),
     remove: vi.fn(),
     invalidateCache: vi.fn(),
+    incrementEventSeq: vi.fn(),
     zoneById: vi.fn((id: number) => {
       // Возвращаем undefined для любых ID в тестах, так как store пустой
       return undefined
@@ -200,6 +203,7 @@ describe('Zones/Show.vue - WebSocket Integration', () => {
   }, 30000)
 
   beforeEach(() => {
+    setActivePinia(createPinia())
     __resetManagedChannelEventsForTests()
     vi.clearAllMocks()
     wsStateListeners.splice(0, wsStateListeners.length)

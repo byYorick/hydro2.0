@@ -55,7 +55,7 @@ async def test_await_ready_raises_when_deadline_persist_fails() -> None:
     task = SimpleNamespace(id=1, zone_id=7, claimed_by="worker", irrigation_wait_ready_deadline_at=None)
     plan = SimpleNamespace(runtime={"zone_workflow_phase": "tank_filling"})
 
-    with pytest.raises(TaskExecutionError, match="persist wait_ready deadline"):
+    with pytest.raises(TaskExecutionError, match="Не удалось сохранить deadline wait_ready"):
         await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
 
 
@@ -66,7 +66,7 @@ async def test_await_ready_raises_when_owner_missing() -> None:
     task = SimpleNamespace(id=1, zone_id=7, claimed_by=None, irrigation_wait_ready_deadline_at=None)
     plan = SimpleNamespace(runtime={"zone_workflow_phase": "tank_filling"})
 
-    with pytest.raises(TaskExecutionError, match="has no owner"):
+    with pytest.raises(TaskExecutionError, match="отсутствует owner"):
         await handler.run(task=task, plan=plan, stage_def=SimpleNamespace(), now=now)
 
 

@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3-Lite zone leases."""
+"""PostgreSQL-репозиторий zone lease для AE3-Lite."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from common.db import get_pool
 
 
 class PgZoneLeaseRepository:
-    """Zone single-writer lease repository."""
+    """Репозиторий zone lease для модели single-writer."""
 
     def _normalize_timestamp(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
@@ -57,7 +57,10 @@ class PgZoneLeaseRepository:
         now: datetime,
         lease_ttl_sec: int,
     ) -> bool:
-        """Extend lease for existing owner. Returns True if extended, False if lease belongs to another owner."""
+        """Продлевает lease текущего owner.
+
+        Возвращает ``True``, если lease продлён, и ``False``, если lease уже принадлежит другому owner.
+        """
         normalized_now = self._normalize_timestamp(now)
         leased_until = normalized_now + timedelta(seconds=max(1, int(lease_ttl_sec)))
         pool = await get_pool()

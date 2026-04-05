@@ -1,4 +1,4 @@
-"""Planner output DTO for AE3-Lite v1."""
+"""DTO результата planner'а для AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ae3lite.domain.entities import PlannedCommand
 
 @dataclass(frozen=True)
 class CommandPlan:
-    """Resolved command plan for a canonical AE3-Lite task."""
+    """Разрешённый command plan для канонической задачи AE3-Lite."""
 
     task_type: str
     workflow: str

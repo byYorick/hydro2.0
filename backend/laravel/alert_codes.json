@@ -475,6 +475,76 @@
       "node_related": false
     },
     {
+      "code": "biz_irrigation_decision_skip",
+      "source": "biz",
+      "category": "operations",
+      "severity": "info",
+      "title": "Полив пропущен решением контроллера",
+      "description": "Decision-controller полива решил пропустить текущий запуск.",
+      "recommendation": "Проверьте reason_code в деталях алерта и входную телеметрию стратегии полива.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_decision_degraded",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Разрешён деградированный полив",
+      "description": "Decision-controller полива разрешил запуск в деградированном режиме.",
+      "recommendation": "Проверьте reason_code в деталях алерта и состояние входных датчиков.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_decision_fail",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Decision-controller полива отклонил запуск",
+      "description": "AE3 остановил запуск полива на этапе принятия решения.",
+      "recommendation": "Проверьте strategy/reason_code в деталях алерта и конфигурацию automation profile зоны.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_solution_min",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Сработал нижний уровень раствора",
+      "description": "Во время полива датчик нижнего уровня раствора сообщил о нехватке раствора.",
+      "recommendation": "Проверьте уровень раствора, датчик и причину просадки уровня в контуре.",
+      "node_related": true
+    },
+    {
+      "code": "biz_irrigation_replay_exhausted",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Исчерпаны повторы полива",
+      "description": "AE3 исчерпал бюджет повторов после повторных срабатываний нижнего уровня раствора.",
+      "recommendation": "Проверьте наличие раствора, работу насосов и повторные срабатывания solution_min.",
+      "node_related": true
+    },
+    {
+      "code": "biz_irrigation_wait_ready_timeout",
+      "source": "biz",
+      "category": "operations",
+      "severity": "warning",
+      "title": "Таймаут ожидания READY перед поливом",
+      "description": "Полив не дождался перехода зоны в состояние READY в допустимое время.",
+      "recommendation": "Проверьте workflow_phase зоны, активный цикл и логи automation-engine.",
+      "node_related": false
+    },
+    {
+      "code": "biz_irrigation_correction_exhausted",
+      "source": "biz",
+      "category": "operations",
+      "severity": "error",
+      "title": "Коррекция во время полива исчерпана",
+      "description": "Попытки коррекции во время полива исчерпаны, полив продолжается без новых коррекций.",
+      "recommendation": "Проверьте дозирующие каналы, калибровки и текущие pH/EC target.",
+      "node_related": true
+    },
+    {
       "code": "biz_prepare_recirculation_retry_exhausted",
       "source": "biz",
       "category": "operations",

@@ -196,7 +196,7 @@ async def test_publish_planned_command_marks_ae_command_failed_when_legacy_link_
         zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
         task = await _insert_task(zone_id, prefix=prefix, now=now)
 
-        with pytest.raises(CommandPublishError, match="Legacy commands.id not found"):
+        with pytest.raises(CommandPublishError, match="Не найдена запись Legacy commands"):
             await use_case.run(
                 task=task,
                 command=PlannedCommand(
@@ -213,7 +213,7 @@ async def test_publish_planned_command_marks_ae_command_failed_when_legacy_link_
         assert row is not None
         assert row["publish_status"] == "failed"
         assert row["external_id"] is None
-        assert "Legacy commands.id not found" in str(row["last_error"])
+        assert "Legacy commands.id" in str(row["last_error"])
 
         updated_task = await task_repository.get_by_id(task_id=task.id)
         assert updated_task is not None

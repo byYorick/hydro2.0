@@ -91,9 +91,9 @@ describe('useFormValidation (P3-3)', () => {
     const { validateNumberRange } = useFormValidation(form)
 
     expect(validateNumberRange(5, 1, 10, 'Value')).toBeNull()
-    expect(validateNumberRange(0, 1, 10, 'Value')).toContain('должен быть от 1 до 10')
-    expect(validateNumberRange(11, 1, 10, 'Value')).toContain('должен быть от 1 до 10')
-    expect(validateNumberRange(null, 1, 10, 'Value')).toContain('обязательно')
+    expect(validateNumberRange(0, 1, 10, 'Value')).toContain('допустимый диапазон 1–10')
+    expect(validateNumberRange(11, 1, 10, 'Value')).toContain('допустимый диапазон 1–10')
+    expect(validateNumberRange(null, 1, 10, 'Value')).toContain('обязательное поле')
   })
 
   it('should validate minimum length', () => {

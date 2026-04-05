@@ -146,6 +146,7 @@ import { type CommandActionType, type CommandCycleType, type CommandHistoryItem,
 import { useCommandPaletteSearch } from '@/composables/useCommandPaletteSearch'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
 import type { CommandParams, CommandType } from '@/types'
 
 interface ConfirmModalState {
@@ -271,19 +272,6 @@ function resolveTargetValue(target: unknown): number | null {
   return min ?? max
 }
 
-function resolveIrrigationDuration(targets: Record<string, unknown> | null): number | null {
-  if (!targets) return null
-  const irrigation = targets.irrigation as Record<string, unknown> | undefined
-  const candidates = [
-    irrigation?.duration_sec,
-    irrigation?.duration_seconds,
-    targets.irrigation_duration_sec,
-    targets.irrigation_duration_seconds,
-  ]
-  const match = candidates.find((value) => typeof value === 'number')
-  return typeof match === 'number' ? match : null
-}
-
 async function resolveCycleParams(zoneId: number, cycleType: CommandCycleType): Promise<CommandParams | null> {
   let targets: Record<string, unknown> | null = null
 
@@ -307,8 +295,8 @@ async function resolveCycleParams(zoneId: number, cycleType: CommandCycleType): 
   if (!targets) return null
 
   if (cycleType === 'IRRIGATION') {
-    const duration = resolveIrrigationDuration(targets)
-    return duration !== null ? { duration_sec: duration } : null
+    const duration = pickIrrigationDurationFromTargets(targets)
+    return duration !== undefined ? { duration_sec: duration } : null
   }
 
   if (cycleType === 'PH_CONTROL') {
@@ -326,17 +314,18 @@ async function resolveCycleParams(zoneId: number, cycleType: CommandCycleType): 
   return null
 }
 
-function openActionModalForCycle(zoneId: number, cycleType: CommandCycleType): void {
+async function openActionModalForCycle(zoneId: number, cycleType: CommandCycleType): Promise<void> {
   const actionMap: Record<CommandCycleType, CommandType> = {
     IRRIGATION: 'FORCE_IRRIGATION',
     PH_CONTROL: 'FORCE_PH_CONTROL',
     EC_CONTROL: 'FORCE_EC_CONTROL',
   }
+  const defaultParams = (await resolveCycleParams(zoneId, cycleType)) ?? {}
   actionModal.value = {
     open: true,
     zoneId,
     actionType: actionMap[cycleType],
-    defaultParams: {},
+    defaultParams,
   }
 }
 
@@ -403,7 +392,7 @@ async function executeZoneCycle(zoneId: number, cycleType: CommandCycleType, zon
 
     const params = await resolveCycleParams(zoneId, cycleType)
     if (!params) {
-      openActionModalForCycle(zoneId, cycleType)
+      await openActionModalForCycle(zoneId, cycleType)
       close()
       return
     }

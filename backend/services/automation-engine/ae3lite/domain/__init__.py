@@ -1,1 +1,1 @@
-"""Domain layer for AE3-Lite v1."""
+"""Доменный слой AE3-Lite v1."""

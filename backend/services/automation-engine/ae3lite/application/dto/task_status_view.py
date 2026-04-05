@@ -1,4 +1,4 @@
-"""Canonical AE3-Lite task status view."""
+"""Каноническое представление статуса задачи AE3-Lite."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class TaskStatusView:
-    """Minimal canonical task status payload for AE3 zones."""
+    """Минимальный канонический payload статуса задачи для AE3-зон."""
 
     task_id: int
     zone_id: int

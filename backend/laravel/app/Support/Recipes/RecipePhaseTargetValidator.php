@@ -10,53 +10,82 @@ class RecipePhaseTargetValidator
     /**
      * @param  array<string, mixed>  $data
      */
-    public function validateForStore(array $data): void
-    {
-        $this->buildValidator($data, null, false)->validate();
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    public function validateForUpdate(array $data, RecipeRevisionPhase $existingPhase): void
-    {
-        $this->buildValidator($data, $existingPhase, true)->validate();
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private function buildValidator(array $data, ?RecipeRevisionPhase $existingPhase, bool $partial)
+    public function validateForStore(array $data, string $attributePrefix = ''): void
     {
         $validator = Validator::make($data, []);
-
-        $validator->after(function ($validator) use ($data, $existingPhase, $partial): void {
-            $this->validateMetric(
-                validator: $validator,
-                data: $data,
-                existingPhase: $existingPhase,
-                partial: $partial,
-                metric: 'ph',
-                targetField: 'ph_target',
-                minField: 'ph_min',
-                maxField: 'ph_max',
-                label: 'pH',
-            );
-
-            $this->validateMetric(
-                validator: $validator,
-                data: $data,
-                existingPhase: $existingPhase,
-                partial: $partial,
-                metric: 'ec',
-                targetField: 'ec_target',
-                minField: 'ec_min',
-                maxField: 'ec_max',
-                label: 'EC',
-            );
+        $validator->after(function (\Illuminate\Validation\Validator $v) use ($data, $attributePrefix): void {
+            $this->applyValidation($v, $data, null, false, $attributePrefix);
         });
+        $validator->validate();
+    }
 
-        return $validator;
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function validateForUpdate(array $data, RecipeRevisionPhase $existingPhase, string $attributePrefix = ''): void
+    {
+        $validator = Validator::make($data, []);
+        $validator->after(function (\Illuminate\Validation\Validator $v) use ($data, $existingPhase, $attributePrefix): void {
+            $this->applyValidation($v, $data, $existingPhase, true, $attributePrefix);
+        });
+        $validator->validate();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function appendStoreErrors(mixed $validator, array $data, string $attributePrefix = ''): void
+    {
+        $this->applyValidation($validator, $data, null, false, $attributePrefix);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function appendUpdateErrors(
+        mixed $validator,
+        array $data,
+        RecipeRevisionPhase $existingPhase,
+        string $attributePrefix = ''
+    ): void {
+        $this->applyValidation($validator, $data, $existingPhase, true, $attributePrefix);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function applyValidation(
+        mixed $validator,
+        array $data,
+        ?RecipeRevisionPhase $existingPhase,
+        bool $partial,
+        string $attributePrefix
+    ): void {
+        $this->validateMetric(
+            validator: $validator,
+            data: $data,
+            existingPhase: $existingPhase,
+            partial: $partial,
+            metric: 'ph',
+            targetField: 'ph_target',
+            minField: 'ph_min',
+            maxField: 'ph_max',
+            label: 'pH',
+            attributePrefix: $attributePrefix,
+        );
+
+        $this->validateMetric(
+            validator: $validator,
+            data: $data,
+            existingPhase: $existingPhase,
+            partial: $partial,
+            metric: 'ec',
+            targetField: 'ec_target',
+            minField: 'ec_min',
+            maxField: 'ec_max',
+            label: 'EC',
+            attributePrefix: $attributePrefix,
+        );
     }
 
     /**
@@ -72,6 +101,7 @@ class RecipePhaseTargetValidator
         string $minField,
         string $maxField,
         string $label,
+        string $attributePrefix = '',
     ): void {
         $hasIncoming = array_key_exists($targetField, $data)
             || array_key_exists($minField, $data)
@@ -84,15 +114,18 @@ class RecipePhaseTargetValidator
         $target = $this->resolveNumeric($data[$targetField] ?? null, $existingPhase?->{$targetField});
         $min = $this->resolveNumeric($data[$minField] ?? null, $existingPhase?->{$minField});
         $max = $this->resolveNumeric($data[$maxField] ?? null, $existingPhase?->{$maxField});
+        $targetAttribute = $attributePrefix.$targetField;
+        $minAttribute = $attributePrefix.$minField;
+        $maxAttribute = $attributePrefix.$maxField;
 
         if ($target === null) {
-            $validator->errors()->add($targetField, "Для {$label} требуется явный target.");
+            $validator->errors()->add($targetAttribute, "Для {$label} требуется явный target.");
         }
         if ($min === null) {
-            $validator->errors()->add($minField, "Для {$label} требуется min.");
+            $validator->errors()->add($minAttribute, "Для {$label} требуется min.");
         }
         if ($max === null) {
-            $validator->errors()->add($maxField, "Для {$label} требуется max.");
+            $validator->errors()->add($maxAttribute, "Для {$label} требуется max.");
         }
 
         if ($target === null || $min === null || $max === null) {
@@ -100,16 +133,17 @@ class RecipePhaseTargetValidator
         }
 
         if ($min > $max) {
-            $validator->errors()->add($minField, "{$label}: min не может быть больше max.");
+            $validator->errors()->add($minAttribute, "{$label}: min не может быть больше max.");
+
             return;
         }
 
         if ($target < $min || $target > $max) {
-            $validator->errors()->add($targetField, "{$label}: target должен быть в диапазоне min..max.");
+            $validator->errors()->add($targetAttribute, "{$label}: target должен быть в диапазоне min..max.");
         }
 
         if ($metric === 'ph' && ($target < 0.0 || $target > 14.0 || $min < 0.0 || $max > 14.0)) {
-            $validator->errors()->add($targetField, 'pH target/min/max должны быть в диапазоне 0..14.');
+            $validator->errors()->add($targetAttribute, 'pH target/min/max должны быть в диапазоне 0..14.');
         }
     }
 

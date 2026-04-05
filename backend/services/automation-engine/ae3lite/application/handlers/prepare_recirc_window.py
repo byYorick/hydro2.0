@@ -1,4 +1,4 @@
-"""PrepareRecircWindowHandler — stop current window, retry or fail with alert."""
+"""PrepareRecircWindowHandler: остановка текущего окна, retry или fail с alert."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _logger = logging.getLogger(__name__)
 
 
 class PrepareRecircWindowHandler(BaseStageHandler):
-    """Owns prepare-recirculation timeout-window rollover logic."""
+    """Управляет rollover-логикой timeout-окна prepare-recirculation."""
 
     def __init__(
         self,
@@ -49,8 +49,8 @@ class PrepareRecircWindowHandler(BaseStageHandler):
             if not limit_reached or exc.code not in {"command_timeout", "ae3_command_poll_deadline_exceeded"}:
                 raise
             _logger.warning(
-                "prepare_recirc_window: stop commands failed after retry limit reached; "
-                "keeping primary limit-exhausted failure zone_id=%s retry=%s/%s code=%s",
+                "prepare_recirc_window: stop-команды завершились ошибкой после достижения лимита повторов; "
+                "сохраняется основная ошибка исчерпания лимита zone_id=%s retry=%s/%s code=%s",
                 task.zone_id,
                 retry_count,
                 attempt_limit,
@@ -59,7 +59,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
 
         if limit_reached:
             _logger.warning(
-                "prepare_recirc_window: retry limit reached retry_count=%s/%s zone_id=%s",
+                "prepare_recirc_window: достигнут лимит повторов retry_count=%s/%s zone_id=%s",
                 retry_count, attempt_limit, task.zone_id,
             )
             await self._emit_retry_limit_alert(
@@ -71,11 +71,11 @@ class PrepareRecircWindowHandler(BaseStageHandler):
             return StageOutcome(
                 kind="fail",
                 error_code="prepare_recirculation_attempt_limit_reached",
-                error_message="Prepare recirculation retry limit reached",
+                error_message="Исчерпан лимит повторов подготовки рециркуляции",
             )
 
         _logger.info(
-            "prepare_recirc_window: rolling over window retry=%s/%s zone_id=%s",
+            "prepare_recirc_window: окно перезапускается retry=%s/%s zone_id=%s",
             retry_count + 1, attempt_limit, task.zone_id,
         )
         await self._run_commands(task=task, plan=plan, plan_names=("sensor_mode_activate", "prepare_recirculation_start"), now=now)
@@ -86,7 +86,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         )
 
     def _prepare_recirculation_max_attempts(self, *, plan: Any, task: Any) -> int:
-        """Read limit from phase correction bundle (``retry.*`` or top-level)."""
+        """Читает лимит из phase correction bundle (``retry.*`` или top-level)."""
         correction_cfg = self._correction_config(plan=plan, task=task)
         if not isinstance(correction_cfg, Mapping):
             return 3
@@ -141,7 +141,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         if not commands:
             raise TaskExecutionError(
                 "ae3_empty_command_plan",
-                f"No commands resolved for prepare recirculation window flow: {plan_names}",
+                f"Для окна подготовки рециркуляции не удалось разрешить команды: {plan_names}",
             )
         result = await self._command_gateway.run_batch(task=task, commands=tuple(commands), now=now)
         if not result["success"]:

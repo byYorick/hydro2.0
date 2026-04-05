@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3-Lite zone workflow state."""
+"""PostgreSQL-репозиторий состояния zone workflow в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from common.db import get_pool
 
 
 class PgZoneWorkflowRepository:
-    """Persists canonical `zone_workflow_state` with CAS version bumps."""
+    """Сохраняет канонический `zone_workflow_state` с CAS-инкрементом версии."""
 
     def _normalize_timestamp(self, value: Optional[datetime]) -> Optional[datetime]:
         if value is None:

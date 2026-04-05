@@ -267,6 +267,64 @@ def test_set_fault_mode_updates_soil_moisture_snapshot():
     assert sim.state.soil_moisture == 31.5
 
 
+def test_soil_moisture_rises_during_irrigation_and_then_dries_back():
+    mqtt = _DummyMqtt()
+    sim = TestNodeSimulator(mqtt)
+    sim.state.soil_moisture = 43.0
+
+    sim.state.main_pump_on = True
+    sim.state.valve_solution_supply_on = True
+    sim.state.valve_irrigation_on = True
+    for _ in range(6):
+        sim.apply_passive_drift()
+    raised = sim.state.soil_moisture
+
+    sim.state.main_pump_on = False
+    sim.state.valve_solution_supply_on = False
+    sim.state.valve_irrigation_on = False
+    for _ in range(12):
+        sim.apply_passive_drift()
+    dried = sim.state.soil_moisture
+
+    assert raised > 43.0
+    assert dried < raised
+
+
+def test_soil_moisture_dynamics_scale_with_telemetry_interval():
+    fast = TestNodeSimulator(_DummyMqtt(), telemetry_interval_ms=2000)
+    slow = TestNodeSimulator(_DummyMqtt(), telemetry_interval_ms=5000)
+
+    fast.state.soil_moisture = 43.0
+    slow.state.soil_moisture = 43.0
+    fast.state.main_pump_on = True
+    fast.state.valve_solution_supply_on = True
+    fast.state.valve_irrigation_on = True
+    slow.state.main_pump_on = True
+    slow.state.valve_solution_supply_on = True
+    slow.state.valve_irrigation_on = True
+
+    for _ in range(15):
+        fast.apply_passive_drift()
+    for _ in range(6):
+        slow.apply_passive_drift()
+
+    assert abs(fast.state.soil_moisture - slow.state.soil_moisture) < 1.5
+
+    fast.state.main_pump_on = False
+    fast.state.valve_solution_supply_on = False
+    fast.state.valve_irrigation_on = False
+    slow.state.main_pump_on = False
+    slow.state.valve_solution_supply_on = False
+    slow.state.valve_irrigation_on = False
+
+    for _ in range(15):
+        fast.apply_passive_drift()
+    for _ in range(6):
+        slow.apply_passive_drift()
+
+    assert abs(fast.state.soil_moisture - slow.state.soil_moisture) < 1.5
+
+
 def test_set_fault_mode_updates_ph_and_ec_snapshot():
     mqtt = _DummyMqtt()
     sim = TestNodeSimulator(mqtt)

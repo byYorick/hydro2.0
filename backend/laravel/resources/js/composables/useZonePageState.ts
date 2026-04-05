@@ -12,7 +12,7 @@ import { normalizeGrowCycle } from '@/utils/normalizeGrowCycle'
 import { resolveCurrentRecipePhase, resolveRecipePhaseTargets } from '@/utils/recipePhaseTargets'
 import { parseZoneUpdatePayload } from '@/ws/zoneUpdatePayload'
 import type { BadgeVariant } from '@/Components/Badge.vue'
-import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, GrowCycle, RecipePhase } from '@/types'
+import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, GrowCycle, RecipePhase, IrrigationCorrectionSummary } from '@/types'
 import type { CommandStatus } from '@/types/Command'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 import type { Alert } from '@/types/Alert'
@@ -49,13 +49,14 @@ interface PageProps {
   current_phase?: RecipePhase | null
   active_cycle?: GrowCycle | null
   active_grow_cycle?: GrowCycle | null
+  irrigationCorrectionSummary?: IrrigationCorrectionSummary | null
   auth?: { user?: { role?: string } }
   [key: string]: unknown
 }
 
 const RELOAD_PROPS_DEBOUNCE_MS = 350
 const defaultZoneReloadProps = [
-  'zone', 'targets', 'current_phase', 'active_cycle', 'active_grow_cycle', 'cycles', 'alerts', 'events', 'devices',
+  'zone', 'targets', 'current_phase', 'active_cycle', 'active_grow_cycle', 'cycles', 'alerts', 'events', 'devices', 'irrigationCorrectionSummary',
 ]
 
 // ─── Deps interface ───────────────────────────────────────────────────────────
@@ -278,7 +279,8 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     current_phase: currentPhaseProp,
     active_cycle: activeCycleProp,
     active_grow_cycle: activeGrowCycleProp,
-  } = usePageProps<PageProps>(['targets', 'devices', 'alerts', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle'])
+    irrigationCorrectionSummary: irrigationCorrectionSummaryProp,
+  } = usePageProps<PageProps>(['targets', 'devices', 'alerts', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle', 'irrigationCorrectionSummary'])
 
   const effectiveTargets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
 
@@ -341,6 +343,8 @@ export function useZonePageState(deps: ZonePageStateDeps) {
   })
 
   const activeGrowCycle = computed(() => normalizeGrowCycle(rawActiveGrowCycle.value))
+  const irrigationCorrectionSummary = computed(() => (irrigationCorrectionSummaryProp.value ?? null) as IrrigationCorrectionSummary | null)
+
   const devices = computed(() => (devicesProp.value || []) as Device[])
   const alerts = computed(() => (alertsProp.value || []) as Alert[])
   const eventsRef = ref<ZoneEvent[]>((eventsProp.value || []) as ZoneEvent[])
@@ -490,6 +494,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
           logger.info('[Zones/Show] GrowCycleUpdated event received', event)
           reloadZone(targetZoneId, ['zone', 'active_grow_cycle', 'active_cycle'])
           reloadZonePageProps()
+          zonesStore.incrementEventSeq(targetZoneId)
         },
       },
     })
@@ -504,6 +509,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
       if (finalStatuses.includes(commandEvent.status)) {
         reloadZoneAfterCommand(targetZoneId, ['zone', 'cycles', 'active_grow_cycle', 'active_cycle'])
         reloadZonePageProps()
+        zonesStore.incrementEventSeq(targetZoneId)
       }
     })
 
@@ -517,12 +523,14 @@ export function useZonePageState(deps: ZonePageStateDeps) {
           const event = toRealtimeZoneEvent(payload)
           if (event) {
             applyRealtimeZoneEvent(event)
+            zonesStore.incrementEventSeq(targetZoneId)
           }
         },
         '.App\\Events\\EventCreated': (payload) => {
           const event = toRealtimeZoneEvent(payload)
           if (event) {
             applyRealtimeZoneEvent(event)
+            zonesStore.incrementEventSeq(targetZoneId)
           }
         },
       },
@@ -567,6 +575,7 @@ export function useZonePageState(deps: ZonePageStateDeps) {
 
       reloadZone(zoneId.value, ['zone', 'active_grow_cycle', 'active_cycle'])
       reloadZonePageProps()
+      zonesStore.incrementEventSeq(zoneId.value)
     })
   })
 
@@ -601,5 +610,6 @@ export function useZonePageState(deps: ZonePageStateDeps) {
     cyclesList,
     reloadZonePageProps,
     applyRealtimeTelemetryPoint,
+    irrigationCorrectionSummary,
   }
 }

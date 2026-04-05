@@ -144,7 +144,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
 
         $postCalls = 0;
         Http::fake(function (Request $request) use ($zone, &$postCalls) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 $postCalls++;
                 $taskId = $postCalls === 1 ? '2001' : '2002';
 
@@ -206,7 +206,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
 
         $postCalls = 0;
         Http::fake(function (Request $request) use ($zone, &$postCalls) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 $postCalls++;
                 $taskId = $postCalls === 1 ? '3001' : '3002';
 
@@ -285,7 +285,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
@@ -323,7 +323,7 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1);
 
         Http::fake(function (Request $request) use ($zone) {
-            if ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+            if ($this->isSchedulerZoneStartPost($request, $zone)) {
                 return Http::response([
                     'status' => 'ok',
                     'data' => [
@@ -360,6 +360,85 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         $this->assertSame('ae3_task_id_invalid', $details['error'] ?? null);
     }
 
+    public function test_command_dispatches_diagnostics_schedule_to_start_cycle_for_ae3(): void
+    {
+        $this->enableSchedulerConfig();
+        [$zone, $cycle] = $this->createZoneAndCycle(automationRuntime: 'ae3');
+        $this->bindEffectiveTargetsMock($cycle->id, $zone->id, 1, [
+            'diagnostics' => [
+                'interval_sec' => 60,
+            ],
+        ]);
+
+        Http::fake(function (Request $request) use ($zone) {
+            if (! ($request->method() === 'POST' && str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle'))) {
+                return Http::response(['status' => 'error', 'message' => 'unexpected request'], 500);
+            }
+
+            return Http::response([
+                'status' => 'ok',
+                'data' => [
+                    'task_id' => '6001',
+                    'zone_id' => $zone->id,
+                    'accepted' => true,
+                    'runner_state' => 'active',
+                    'deduplicated' => false,
+                ],
+            ], 200);
+        });
+
+        $this->artisan('automation:dispatch-schedules')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseHas('laravel_scheduler_active_tasks', [
+            'task_id' => '6001',
+            'zone_id' => $zone->id,
+            'task_type' => 'diagnostics',
+            'status' => 'accepted',
+        ]);
+        $this->assertDatabaseHas('zone_automation_intents', [
+            'zone_id' => $zone->id,
+            'intent_type' => 'DIAGNOSTICS_TICK',
+            'status' => 'pending',
+        ]);
+
+        $intentRow = DB::table('zone_automation_intents')
+            ->where('zone_id', $zone->id)
+            ->orderByDesc('id')
+            ->first();
+        $this->assertNotNull($intentRow);
+
+        $intentPayloadRaw = $intentRow->payload ?? null;
+        $intentPayload = is_string($intentPayloadRaw)
+            ? json_decode($intentPayloadRaw, true, 512, JSON_THROW_ON_ERROR)
+            : (is_array($intentPayloadRaw) ? $intentPayloadRaw : []);
+        $this->assertSame('diagnostics', $intentPayload['task_type'] ?? null);
+        $this->assertSame('cycle_start', $intentPayload['workflow'] ?? null);
+
+        Http::assertSent(function (Request $request) use ($zone): bool {
+            if (! str_ends_with($request->url(), '/zones/'.$zone->id.'/start-cycle')) {
+                return false;
+            }
+
+            $payload = $request->data();
+
+            return (string) ($payload['source'] ?? '') === 'laravel_scheduler'
+                && str_starts_with((string) ($payload['idempotency_key'] ?? ''), 'sch:z'.$zone->id.':diagnostics:');
+        });
+    }
+
+    private function isSchedulerZoneStartPost(Request $request, Zone $zone): bool
+    {
+        if ($request->method() !== 'POST') {
+            return false;
+        }
+
+        $url = $request->url();
+
+        return str_ends_with($url, '/zones/'.$zone->id.'/start-cycle')
+            || str_ends_with($url, '/zones/'.$zone->id.'/start-irrigation');
+    }
+
     private function enableSchedulerConfig(): void
     {
         Config::set('services.automation_engine.laravel_scheduler_enabled', true);
@@ -393,12 +472,12 @@ class AutomationDispatchSchedulesCommandTest extends TestCase
         return [$zone, $cycle];
     }
 
-    private function bindEffectiveTargetsMock(int $cycleId, int $zoneId, int $times): void
+    private function bindEffectiveTargetsMock(int $cycleId, int $zoneId, int $times, ?array $targetsOverride = null): void
     {
         $targetsPayload = [
             'cycle_id' => $cycleId,
             'zone_id' => $zoneId,
-            'targets' => [
+            'targets' => $targetsOverride ?? [
                 'irrigation' => [
                     'interval_sec' => 60,
                     'duration_sec' => 10,

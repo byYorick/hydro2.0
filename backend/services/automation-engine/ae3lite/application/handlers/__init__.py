@@ -1,4 +1,4 @@
-"""Stage handler classes for AE3-Lite v2 workflow."""
+"""Классы stage-handler'ов для workflow AE3-Lite v2."""
 
 from .base import BaseStageHandler
 from .startup import StartupHandler

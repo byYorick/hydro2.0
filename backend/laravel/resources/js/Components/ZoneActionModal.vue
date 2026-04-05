@@ -29,12 +29,14 @@
             step="1"
             required
             class="input-field w-full"
-            placeholder="10"
+            :placeholder="String(defaultIrrigationDuration)"
           />
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
-            От 1 до 3600 секунд
+            По умолчанию: системная настройка или длительность из фазы рецепта (если задана). Диапазон 1–3600 с.
           </div>
         </div>
+
+        <IrrigationCorrectionSummaryPanel :summary="irrigationCorrectionSummary" />
       </div>
 
       <div
@@ -226,11 +228,13 @@
 import { ref, computed, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-import { useFormValidation } from '@/composables/useFormValidation'
-import { VALIDATION_RANGES, VALIDATION_MESSAGES } from '@/constants/validation'
-import type { CommandType } from '@/types'
+import IrrigationCorrectionSummaryPanel from '@/Components/IrrigationCorrectionSummaryPanel.vue'
+import { useAutomationDefaults } from '@/composables/useAutomationDefaults'
+import { validateNumberRange } from '@/utils/validation'
+import { VALIDATION_RANGES } from '@/constants/validation'
+import type { CommandType, IrrigationCorrectionSummary } from '@/types'
 
-type ActionType = CommandType | 'START_IRRIGATION'
+type ActionType = CommandType
 
 interface ActionParams {
   duration_sec?: number
@@ -247,11 +251,15 @@ interface Props {
   actionType: ActionType
   zoneId: number
   defaultParams?: ActionParams
+  irrigationCorrectionSummary?: IrrigationCorrectionSummary | null
+  loading?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   show: false,
-  defaultParams: () => ({})
+  defaultParams: () => ({}),
+  irrigationCorrectionSummary: null,
+  loading: false,
 })
 
 const emit = defineEmits<{
@@ -259,16 +267,21 @@ const emit = defineEmits<{
   submit: [data: { actionType: ActionType; params: ActionParams }]
 }>()
 
-const loading = ref<boolean>(false)
 const error = ref<string | null>(null)
+const automationDefaults = useAutomationDefaults()
 
-// Создаем мок-форму для использования useFormValidation
-const mockForm = {
-  errors: {} as Record<string, string>,
-  clearErrors: () => {},
-} as any
+function resolveDefaultIrrigationDurationSec(): number {
+  const fromParams = props.defaultParams?.duration_sec
+  if (typeof fromParams === 'number' && Number.isFinite(fromParams) && fromParams >= 1) {
+    return Math.min(3600, Math.max(1, Math.round(fromParams)))
+  }
+  return Math.min(
+    3600,
+    Math.max(1, Math.round(automationDefaults.value.water_manual_irrigation_sec)),
+  )
+}
 
-const { validateNumberRange } = useFormValidation(mockForm)
+const defaultIrrigationDuration = computed(() => resolveDefaultIrrigationDurationSec())
 
 // Форма с параметрами по умолчанию
 const form = ref<ActionParams>({
@@ -279,10 +292,12 @@ const form = ref<ActionParams>({
   target_humidity: 60,
   intensity: 80,
   duration_hours: 12,
-  ...props.defaultParams
+  ...props.defaultParams,
 })
+if (props.actionType === 'START_IRRIGATION' || props.actionType === 'FORCE_IRRIGATION') {
+  form.value.duration_sec = resolveDefaultIrrigationDurationSec()
+}
 
-// Заголовок и описание в зависимости от типа действия
 const title = computed<string>(() => {
   const titles: Record<ActionType, string> = {
     'START_IRRIGATION': 'Полив зоны',
@@ -307,7 +322,10 @@ watch(() => props.show, (newVal: boolean) => {
       target_humidity: 60,
       intensity: 80,
       duration_hours: 12,
-      ...props.defaultParams
+      ...props.defaultParams,
+    }
+    if (props.actionType === 'START_IRRIGATION' || props.actionType === 'FORCE_IRRIGATION') {
+      form.value.duration_sec = resolveDefaultIrrigationDurationSec()
     }
   }
 })
@@ -315,82 +333,50 @@ watch(() => props.show, (newVal: boolean) => {
 function onSubmit(): void {
   error.value = null
 
-  // Валидация полей с использованием useFormValidation
   if (props.actionType === 'START_IRRIGATION' || props.actionType === 'FORCE_IRRIGATION') {
-    const validationError = validateNumberRange(
+    const err = validateNumberRange(
       form.value.duration_sec,
       VALIDATION_RANGES.IRRIGATION_DURATION.min,
       VALIDATION_RANGES.IRRIGATION_DURATION.max,
-      'Длительность полива'
+      'Длительность (сек)',
     )
-    if (validationError) {
-      error.value = VALIDATION_MESSAGES.IRRIGATION_DURATION
-      return
-    }
+    if (err) { error.value = err; return }
   } else if (props.actionType === 'FORCE_PH_CONTROL') {
-    const validationError = validateNumberRange(
-      form.value.target_ph,
-      VALIDATION_RANGES.PH.min,
-      VALIDATION_RANGES.PH.max,
-      'pH'
-    )
-    if (validationError) {
-      error.value = VALIDATION_MESSAGES.PH
-      return
-    }
+    const err = validateNumberRange(form.value.target_ph, VALIDATION_RANGES.PH.min, VALIDATION_RANGES.PH.max, 'pH')
+    if (err) { error.value = err; return }
   } else if (props.actionType === 'FORCE_EC_CONTROL') {
-    const validationError = validateNumberRange(
-      form.value.target_ec,
-      VALIDATION_RANGES.EC.min,
-      VALIDATION_RANGES.EC.max,
-      'EC'
-    )
-    if (validationError) {
-      error.value = VALIDATION_MESSAGES.EC
-      return
-    }
+    const err = validateNumberRange(form.value.target_ec, VALIDATION_RANGES.EC.min, VALIDATION_RANGES.EC.max, 'EC')
+    if (err) { error.value = err; return }
   } else if (props.actionType === 'FORCE_CLIMATE') {
-    const tempError = validateNumberRange(
+    const tempErr = validateNumberRange(
       form.value.target_temp,
       VALIDATION_RANGES.TEMPERATURE.min,
       VALIDATION_RANGES.TEMPERATURE.max,
-      'Температура'
+      'Температура (°C)',
     )
-    if (tempError) {
-      error.value = VALIDATION_MESSAGES.TEMPERATURE
-      return
-    }
-    const humidityError = validateNumberRange(
+    if (tempErr) { error.value = tempErr; return }
+    const humErr = validateNumberRange(
       form.value.target_humidity,
       VALIDATION_RANGES.HUMIDITY.min,
       VALIDATION_RANGES.HUMIDITY.max,
-      'Влажность'
+      'Влажность (%)',
     )
-    if (humidityError) {
-      error.value = VALIDATION_MESSAGES.HUMIDITY
-      return
-    }
+    if (humErr) { error.value = humErr; return }
   } else if (props.actionType === 'FORCE_LIGHTING') {
-    const intensityError = validateNumberRange(
+    const intErr = validateNumberRange(
       form.value.intensity,
       VALIDATION_RANGES.LIGHTING_INTENSITY.min,
       VALIDATION_RANGES.LIGHTING_INTENSITY.max,
-      'Интенсивность'
+      'Интенсивность (%)',
     )
-    if (intensityError) {
-      error.value = VALIDATION_MESSAGES.LIGHTING_INTENSITY
-      return
-    }
-    const durationError = validateNumberRange(
+    if (intErr) { error.value = intErr; return }
+    const durErr = validateNumberRange(
       form.value.duration_hours,
       VALIDATION_RANGES.LIGHTING_DURATION.min,
       VALIDATION_RANGES.LIGHTING_DURATION.max,
-      'Длительность освещения'
+      'Длительность (ч)',
     )
-    if (durationError) {
-      error.value = VALIDATION_MESSAGES.LIGHTING_DURATION
-      return
-    }
+    if (durErr) { error.value = durErr; return }
   }
 
   // Формируем параметры в зависимости от типа действия
@@ -412,9 +398,7 @@ function onSubmit(): void {
 
   emit('submit', {
     actionType: props.actionType,
-    params
+    params,
   })
-  
-  emit('close')
 }
 </script>

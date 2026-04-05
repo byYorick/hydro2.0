@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 const apiGetMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/Components/StatusIndicator.vue', () => ({
@@ -35,6 +36,7 @@ import AutomationProcessPanel from '../AutomationProcessPanel.vue'
 
 describe('AutomationProcessPanel', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     apiGetMock.mockReset()
     apiGetMock.mockResolvedValue({
       data: {

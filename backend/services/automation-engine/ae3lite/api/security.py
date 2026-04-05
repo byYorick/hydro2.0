@@ -1,4 +1,4 @@
-"""Security baseline checks for AE3-Lite ingress."""
+"""Базовые security-проверки для ingress AE3-Lite."""
 
 from __future__ import annotations
 
@@ -23,18 +23,18 @@ def validate_scheduler_security_baseline(
 
     expected_token = str(scheduler_api_token or "").strip()
     if not expected_token:
-        _logger.error("AE3 security: scheduler_api_token is not configured — rejecting with 500")
+        _logger.error("AE3 security: scheduler_api_token не настроен, запрос отклонён с 500")
         raise HTTPException(status_code=500, detail="scheduler_security_token_not_configured")
 
     auth_header = str(headers.get("authorization") or "").strip()
     if auth_header != f"Bearer {expected_token}":
-        _logger.warning("AE3 security: unauthorized request rejected (bad or missing token)")
+        _logger.warning("AE3 security: неавторизованный запрос отклонён (токен отсутствует или неверный)")
         raise HTTPException(status_code=401, detail="unauthorized")
 
     if require_trace_id:
         trace_id = extract_trace_id_from_headers_fn(headers)
         if not trace_id:
-            _logger.warning("AE3 security: request rejected — X-Trace-Id header missing")
+            _logger.warning("AE3 security: запрос отклонён, отсутствует заголовок X-Trace-Id")
             raise HTTPException(status_code=422, detail="missing_trace_id")
 
 

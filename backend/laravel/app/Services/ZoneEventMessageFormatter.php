@@ -75,6 +75,7 @@ class ZoneEventMessageFormatter
             'PROCESS_CALIBRATION_SAVED' => $this->formatProcessCalibrationSaved($payload),
             'IRR_STATE_SNAPSHOT' => $this->formatIrrStateSnapshot($payload),
             'IRRIGATION_DECISION_SNAPSHOT_LOCKED' => $this->formatIrrigationDecisionSnapshotLocked($payload),
+            'IRRIGATION_DECISION_EVALUATED' => $this->formatIrrigationDecisionEvaluated($payload),
             'COMMAND_TIMEOUT' => $this->formatCommandTimeout($payload),
             'AE_STARTUP_PROBE_TIMEOUT' => $this->formatAeStartupProbeTimeout($payload),
             'CLEAN_FILL_COMPLETED' => 'Наполнение чистой водой завершено',
@@ -158,7 +159,7 @@ class ZoneEventMessageFormatter
     }
 
     /**
-     * @param array<string, mixed> $details
+     * @param  array<string, mixed>  $details
      */
     private function localizeAlertPayloadMessage(array $details, string $fallback): string
     {
@@ -206,7 +207,7 @@ class ZoneEventMessageFormatter
 
     private function formatIrrigationDecisionSnapshotLocked(array $details): string
     {
-        $strategy = $this->toStringOrNull($details['strategy'] ?? null) ?? 'task'
+        $strategy = $this->toStringOrNull($details['strategy'] ?? null) ?? 'task';
         $bundleRevision = $this->toStringOrNull($details['bundle_revision'] ?? null);
         if ($bundleRevision !== null) {
             return sprintf(
@@ -217,6 +218,33 @@ class ZoneEventMessageFormatter
         }
 
         return sprintf('Снимок decision-controller полива зафиксирован: %s', $strategy);
+    }
+
+    private function formatIrrigationDecisionEvaluated(array $details): string
+    {
+        $outcome = strtolower($this->toStringOrNull($details['outcome'] ?? null) ?? '');
+        $strategy = $this->toStringOrNull($details['strategy'] ?? null);
+        $degraded = filter_var($details['degraded'] ?? false, FILTER_VALIDATE_BOOL);
+
+        $base = match ($outcome) {
+            'skip' => 'Decision-controller полива: полив пропущен',
+            'degraded_run' => 'Decision-controller полива: разрешён деградированный полив',
+            'fail' => 'Decision-controller полива: решение завершилось fail-closed',
+            'run' => 'Decision-controller полива: полив разрешён',
+            default => 'Decision-controller полива: решение принято',
+        };
+
+        $parts = [];
+        if ($strategy !== null) {
+            $parts[] = $strategy;
+        }
+        if ($degraded && $outcome !== 'degraded_run') {
+            $parts[] = 'degraded';
+        }
+
+        return $parts !== []
+            ? sprintf('%s (%s)', $base, implode(', ', $parts))
+            : $base;
     }
 
     private function formatAlertUpdated(array $details): string

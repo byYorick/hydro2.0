@@ -140,7 +140,7 @@ class ScheduleWorkspaceControllerTest extends TestCase
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('data.control.automation_runtime', 'ae3')
             ->assertJsonPath('data.control.control_mode', 'semi')
-            ->assertJsonPath('data.capabilities.executable_task_types', ['irrigation', 'lighting'])
+            ->assertJsonPath('data.capabilities.executable_task_types', ['irrigation', 'lighting', 'diagnostics'])
             ->assertJsonPath('data.capabilities.ae3_irrigation_only_dispatch', true)
             ->assertJsonPath('data.capabilities.non_executable_planned_task_types', [])
             ->assertJsonPath('data.execution.active_run.execution_id', (string) $executionId)

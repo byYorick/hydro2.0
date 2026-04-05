@@ -261,6 +261,10 @@ class TestNodeSimulator:
         self._state_command_queue: asyncio.Queue[PendingCommand] = asyncio.Queue(maxsize=STATE_COMMAND_QUEUE_LENGTH)
         self._config_report_on_connect_pending = True
 
+    def _telemetry_tick_ratio(self) -> float:
+        # Keep virtual plant dynamics stable if telemetry cadence differs from the nominal profile.
+        return max(0.1, float(self.telemetry_interval_ms) / float(TELEMETRY_INTERVAL_MS))
+
     async def start(self) -> None:
         if self._running:
             return
@@ -1482,10 +1486,11 @@ class TestNodeSimulator:
         await self._handle_connection_change(True)
 
     def apply_passive_drift(self) -> None:
+        tick_ratio = self._telemetry_tick_ratio()
         drift = ((self._telemetry_tick % 11) - 5.0) * 0.002
         ph_drift = drift
         ec_drift = drift * 2.0
-        soil_noise = ((self._telemetry_tick % 7) - 3.0) * 0.03
+        soil_noise = (((self._telemetry_tick % 7) - 3.0) * 0.03) * tick_ratio
         clean_fill_active = self.is_clean_fill_active()
         solution_fill_active = self.is_solution_fill_active()
         irrigation_active = self.is_irrigation_active()
@@ -1525,9 +1530,9 @@ class TestNodeSimulator:
                 self.state.solution_fill_started_at = 0
 
         if clean_fill_active:
-            self.state.water_level = clamp_float(self.state.water_level + 0.003, 0.05, 0.88)
+            self.state.water_level = clamp_float(self.state.water_level + (0.003 * tick_ratio), 0.05, 0.88)
         if solution_fill_active:
-            transfer = 0.006
+            transfer = 0.006 * tick_ratio
             available = self.state.water_level - 0.05
             if available > 0:
                 if transfer > available:
@@ -1535,9 +1540,9 @@ class TestNodeSimulator:
                 self.state.water_level = clamp_float(self.state.water_level - transfer, 0.05, 0.98)
                 self.state.solution_level = clamp_float(self.state.solution_level + transfer, 0.05, 0.98)
         if irrigation_active:
-            self.state.solution_level = clamp_float(self.state.solution_level - 0.008, 0.05, 0.98)
+            self.state.solution_level = clamp_float(self.state.solution_level - (0.008 * tick_ratio), 0.05, 0.98)
         if self.state.tank_drain_on:
-            self.state.solution_level = clamp_float(self.state.solution_level - 0.008, 0.05, 0.98)
+            self.state.solution_level = clamp_float(self.state.solution_level - (0.008 * tick_ratio), 0.05, 0.98)
 
         if self.state.fan_on:
             self.state.air_temp = clamp_float(self.state.air_temp - 0.05, 18.0, 32.0)
@@ -1551,9 +1556,10 @@ class TestNodeSimulator:
             self.state.air_humidity = clamp_float(self.state.air_humidity - 0.04, 35.0, 90.0)
 
         if irrigation_active:
-            self.state.soil_moisture = clamp_float(self.state.soil_moisture + 1.2 + soil_noise, 8.0, 88.0)
+            rise = (1.2 * tick_ratio) + soil_noise
+            self.state.soil_moisture = clamp_float(self.state.soil_moisture + rise, 8.0, 88.0)
         else:
-            dry_back = 0.18 + max(0.0, self.state.air_temp - 22.0) * 0.015
+            dry_back = (0.18 + max(0.0, self.state.air_temp - 22.0) * 0.015) * tick_ratio
             self.state.soil_moisture = clamp_float(self.state.soil_moisture - dry_back + soil_noise, 8.0, 88.0)
 
         if self.state.light_on:

@@ -1,4 +1,4 @@
-"""PostgreSQL zone snapshot read-model for AE3-Lite v1."""
+"""PostgreSQL read-model snapshot'а зоны для AE3-Lite v1."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .effective_targets_sql_utils import (
 
 
 class PgZoneSnapshotReadModel:
-    """Loads a consistent immutable ZoneSnapshot from PostgreSQL."""
+    """Загружает согласованный неизменяемый `ZoneSnapshot` из PostgreSQL."""
 
     @staticmethod
     def _normalize_timestamp(value: Any) -> Any:
@@ -78,19 +78,19 @@ class PgZoneSnapshotReadModel:
                 )
                 if zone_row is None:
                     raise SnapshotBuildError(
-                        f"Zone {zone_id} not found",
+                        f"Зона {zone_id} не найдена",
                         code=ErrorCodes.AE3_SNAPSHOT_ZONE_NOT_FOUND,
                     )
 
                 grow_cycle_id = zone_row.get("grow_cycle_id")
                 if grow_cycle_id is None:
                     raise SnapshotBuildError(
-                        f"Zone {zone_id} has no active grow_cycle",
+                        f"У зоны {zone_id} отсутствует активный grow_cycle",
                         code=ErrorCodes.AE3_SNAPSHOT_NO_ACTIVE_GROW_CYCLE,
                     )
                 if zone_row.get("current_phase_id") is None:
                     raise SnapshotBuildError(
-                        f"Zone {zone_id} has no current_phase_id for active grow_cycle",
+                        f"У зоны {zone_id} отсутствует current_phase_id для активного grow_cycle",
                         code=ErrorCodes.AE3_SNAPSHOT_MISSING_CURRENT_PHASE,
                     )
 
@@ -106,7 +106,7 @@ class PgZoneSnapshotReadModel:
                 )
                 if bundle_row is None:
                     raise SnapshotBuildError(
-                        f"Grow cycle {grow_cycle_id} has no automation_effective_bundle",
+                        f"У grow cycle {grow_cycle_id} отсутствует automation_effective_bundle",
                         code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_MISSING,
                     )
 
@@ -117,7 +117,7 @@ class PgZoneSnapshotReadModel:
                 if expected_bundle_revision and expected_bundle_revision != actual_bundle_revision:
                     raise SnapshotBuildError(
                         (
-                            f"Grow cycle {grow_cycle_id} bundle revision mismatch: "
+                            f"У grow cycle {grow_cycle_id} не совпадает bundle revision: "
                             f"expected={expected_bundle_revision} actual={actual_bundle_revision or 'empty'}"
                         ),
                         code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_INVALID,
@@ -126,7 +126,7 @@ class PgZoneSnapshotReadModel:
                 bundle_config = bundle_row.get("config")
                 if not isinstance(bundle_config, Mapping):
                     raise SnapshotBuildError(
-                        f"Grow cycle {grow_cycle_id} has invalid automation bundle config",
+                        f"У grow cycle {grow_cycle_id} некорректный automation bundle config",
                         code=ErrorCodes.AE3_SNAPSHOT_BUNDLE_INVALID,
                     )
 
@@ -140,21 +140,21 @@ class PgZoneSnapshotReadModel:
                 zone_bundle = bundle_config.get("zone")
                 if not isinstance(zone_bundle, Mapping):
                     raise SnapshotBuildError(
-                        f"Grow cycle {grow_cycle_id} has no zone bundle",
+                        f"У grow cycle {grow_cycle_id} отсутствует zone bundle",
                         code=ErrorCodes.AE3_SNAPSHOT_ZONE_BUNDLE_MISSING,
                     )
 
                 logic_profile = zone_bundle.get("logic_profile")
                 if not isinstance(logic_profile, Mapping):
                     raise SnapshotBuildError(
-                        f"Zone {zone_id} has no active logic profile bundle",
+                        f"У зоны {zone_id} отсутствует active logic profile bundle",
                         code=ErrorCodes.AE3_SNAPSHOT_LOGIC_PROFILE_BUNDLE_MISSING,
                     )
 
                 active_profile = logic_profile.get("active_profile")
                 if not isinstance(active_profile, Mapping):
                     raise SnapshotBuildError(
-                        f"Zone {zone_id} has no active automation logic profile",
+                        f"У зоны {zone_id} отсутствует active automation logic profile",
                         code=ErrorCodes.AE3_SNAPSHOT_ACTIVE_LOGIC_PROFILE_MISSING,
                     )
 
@@ -269,7 +269,7 @@ class PgZoneSnapshotReadModel:
         command_plans = profile_row.get("command_plans")
         if not isinstance(command_plans, Mapping) or not command_plans:
             raise SnapshotBuildError(
-                f"Zone {zone_id} has empty command_plans",
+                f"У зоны {zone_id} пустой command_plans",
                 code=ErrorCodes.AE3_SNAPSHOT_EMPTY_COMMAND_PLANS,
             )
 
@@ -308,7 +308,7 @@ class PgZoneSnapshotReadModel:
         )
         if not actuators:
             raise SnapshotBuildError(
-                f"Zone {zone_id} has no online actuator channels",
+                f"У зоны {zone_id} отсутствуют online actuator channels",
                 code=ErrorCodes.AE3_SNAPSHOT_NO_ONLINE_ACTUATOR_CHANNELS,
             )
 
@@ -535,7 +535,7 @@ class PgZoneSnapshotReadModel:
         )
 
     def _normalize_two_tank_execution_contract(self, execution: Dict[str, Any]) -> None:
-        """Remove legacy top-level fields from two_tank execution contract (in-place)."""
+        """Удаляет legacy top-level поля из two_tank execution contract прямо в исходном объекте."""
         execution.pop("startup", None)
         execution.pop("required_node_types", None)
 
@@ -614,7 +614,7 @@ class PgZoneSnapshotReadModel:
                 continue
             if left_value != right_value:
                 raise SnapshotBuildError(
-                    f"Conflicting value for {current_path}",
+                    f"Конфликтующее значение для {current_path}",
                     code=ErrorCodes.AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES,
                 )
         return merged
@@ -657,7 +657,7 @@ class PgZoneSnapshotReadModel:
             seen_sensor_types[sensor_type] = seen_sensor_types.get(sensor_type, 0) + 1
             if sensor_type in {"ph", "ec"} and seen_sensor_types[sensor_type] > 1:
                 raise SnapshotBuildError(
-                    f"Zone snapshot has multiple active telemetry sensors for critical type={sensor_type}",
+                    f"В zone snapshot обнаружено несколько активных telemetry sensors для критического типа={sensor_type}",
                     code=ErrorCodes.AE3_SNAPSHOT_CONFLICTING_CONFIG_VALUES,
                 )
             if sensor_type in result:

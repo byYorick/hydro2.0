@@ -259,7 +259,7 @@ def test_resolve_two_tank_runtime_rejects_unknown_active_phase() -> None:
     snap = _snapshot(correction={})
     snap.workflow_phase = "mystery_phase"
 
-    with pytest.raises(PlannerConfigurationError, match="unsupported workflow_phase"):
+    with pytest.raises(PlannerConfigurationError, match="неподдерживаемый workflow_phase"):
         resolve_two_tank_runtime(snap)
 
 
@@ -372,7 +372,7 @@ def test_resolve_two_tank_runtime_includes_configurable_retry_delays() -> None:
 
 
 def test_resolve_two_tank_runtime_rejects_correction_attempt_caps_above_contract_maximum() -> None:
-    with pytest.raises(PlannerConfigurationError, match="retry.max_ec_correction_attempts must be <= 500"):
+    with pytest.raises(PlannerConfigurationError, match="должно быть <= 500"):
         resolve_two_tank_runtime(
             _snapshot(
                 correction={

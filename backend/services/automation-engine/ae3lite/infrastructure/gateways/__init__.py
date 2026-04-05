@@ -1,4 +1,4 @@
-"""AE3-Lite runtime gateways."""
+"""Runtime-gateway'и AE3-Lite."""
 
 from .sequential_command_gateway import SequentialCommandGateway
 

@@ -1,4 +1,4 @@
-"""Get current control mode and allowed manual steps for a zone."""
+"""Возвращает текущий control mode зоны и разрешённые manual step'ы."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class GetZoneControlStateUseCase:
-    """Returns control_mode + current_stage + allowed_manual_steps for a zone.
+    """Возвращает для зоны control_mode, current_stage и allowed_manual_steps.
 
-    Reads zones.control_mode directly (not ae_tasks snapshot) so the response
-    always reflects the latest operator setting.
+    Читает `zones.control_mode` напрямую, а не из snapshot `ae_tasks`, чтобы
+    ответ всегда отражал последнее действие оператора.
     """
 
     def __init__(
@@ -34,7 +34,7 @@ class GetZoneControlStateUseCase:
         self._workflow_repository = workflow_repository
 
     async def run(self, *, zone_id: int) -> dict[str, Any]:
-        # Read control_mode from zones table (source of truth)
+        # Читаем control_mode из таблицы zones как source of truth
         rows = await self._fetch_fn(
             "SELECT control_mode FROM zones WHERE id = $1",
             zone_id,
@@ -44,7 +44,7 @@ class GetZoneControlStateUseCase:
             raw = rows[0].get("control_mode") if hasattr(rows[0], "get") else getattr(rows[0], "control_mode", None)
             control_mode = normalize_control_mode(raw)
 
-        # Read active task for current_stage
+        # Читаем активную задачу для определения current_stage
         task: Optional[Any] = await self._task_repository.get_active_for_zone(zone_id=zone_id)
         workflow_state: Optional[Any] = None
         last_task: Optional[Any] = None
@@ -81,7 +81,7 @@ class GetZoneControlStateUseCase:
                 normalized_payload = payload if isinstance(payload, Mapping) else {}
                 current_stage = str(normalized_payload.get("ae3_cycle_start_stage") or "").strip() or None
 
-        # Compute allowed steps only for manual/semi modes
+        # Вычисляем allowed steps только для manual/semi режимов
         allowed_manual_steps: list[str] = []
         if control_mode in ("manual", "semi") and current_stage is not None:
             allowed_manual_steps = allowed_manual_steps_for_stage(current_stage)

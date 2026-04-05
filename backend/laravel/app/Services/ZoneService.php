@@ -2,13 +2,12 @@
 
 namespace App\Services;
 
-use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Events\ZoneUpdated;
+use App\Exceptions\ZoneRuntimeSwitchDeniedException;
 use App\Models\Command;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Services\ZoneLogicProfileCatalog;
 use App\Support\ZoneNodeChannelScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -115,8 +114,7 @@ class ZoneService
             Log::info('Zone updated', ['zone_id' => $zone->id]);
             $zone = $zone->fresh();
             if ((string) ($zone->automation_runtime ?? '') === 'ae3') {
-                $this->ensureCorrectionConfigBootstrap((int) $zone->id);
-                $this->ensureLogicProfileBootstrap($zone);
+                $this->ensureAe3AutomationBootstrap($zone);
             }
 
             // Dispatch event для уведомления Python-сервиса
@@ -124,6 +122,23 @@ class ZoneService
 
             return $zone;
         });
+    }
+
+    /**
+     * Материализует документы authority для зоны и активирует дефолтный zone.logic_profile (WORKING),
+     * если для runtime AE3 их ещё нет. Нужно перед проверкой готовности и запуском цикла.
+     */
+    public function ensureAe3AutomationBootstrap(Zone $zone): void
+    {
+        if (strtolower(trim((string) ($zone->automation_runtime ?? ''))) !== 'ae3') {
+            return;
+        }
+        $zoneId = (int) $zone->id;
+        if ($zoneId <= 0) {
+            return;
+        }
+        $this->ensureCorrectionConfigBootstrap($zoneId);
+        $this->ensureLogicProfileBootstrap($zone->fresh());
     }
 
     private function ensureCorrectionConfigBootstrap(int $zoneId): void
@@ -773,6 +788,7 @@ class ZoneService
                 && ! array_is_list($currentValue)
             ) {
                 $merged[$key] = $this->mergeAssocConfig($currentValue, $value);
+
                 continue;
             }
 

@@ -1,16 +1,17 @@
-"""Decision gate for irrigation tasks."""
+"""Decision gate для задач полива."""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import IRRIGATION_DECISION
 from common.biz_alerts import send_biz_alert
+from common.db import create_zone_event
 
 
 _logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class DecisionGateHandler(BaseStageHandler):
             irrigation_decision_degraded=decision.degraded,
         )
         if updated is None:
-            raise TaskExecutionError("irrigation_decision_persist_failed", "Unable to persist irrigation decision")
+            raise TaskExecutionError("irrigation_decision_persist_failed", "Не удалось сохранить решение по поливу")
 
         IRRIGATION_DECISION.labels(
             topology=str(getattr(task, "topology", "") or ""),
@@ -65,12 +66,18 @@ class DecisionGateHandler(BaseStageHandler):
             outcome=str(decision.outcome or ""),
         ).inc()
 
+        await self._emit_irrigation_decision_event(
+            task=updated,
+            plan=plan,
+            decision=decision,
+        )
+
         try:
             if decision.outcome == "skip":
                 await send_biz_alert(
                     code="biz_irrigation_decision_skip",
                     alert_type="AE3 Irrigation Decision Skip",
-                    message="Irrigation decision-controller decided to skip irrigation.",
+                    message="Decision-controller полива решил пропустить запуск.",
                     severity="info",
                     zone_id=int(task.zone_id),
                     dedupe_key=_irrigation_decision_alert_dedupe_key(
@@ -93,7 +100,7 @@ class DecisionGateHandler(BaseStageHandler):
                 await send_biz_alert(
                     code="biz_irrigation_decision_degraded",
                     alert_type="AE3 Irrigation Decision Degraded",
-                    message="Irrigation decision-controller allowed degraded irrigation run.",
+                    message="Decision-controller полива разрешил деградированный запуск.",
                     severity="warning",
                     zone_id=int(task.zone_id),
                     dedupe_key=_irrigation_decision_alert_dedupe_key(
@@ -116,7 +123,7 @@ class DecisionGateHandler(BaseStageHandler):
                 await send_biz_alert(
                     code="biz_irrigation_decision_fail",
                     alert_type="AE3 Irrigation Decision Fail",
-                    message="Irrigation decision-controller returned fail.",
+                    message="Decision-controller полива вернул отказ.",
                     severity="error",
                     zone_id=int(task.zone_id),
                     dedupe_key=_irrigation_decision_alert_dedupe_key(
@@ -138,7 +145,7 @@ class DecisionGateHandler(BaseStageHandler):
                 )
         except Exception:
             _logger.warning(
-                "AE3 failed to emit irrigation decision alert zone_id=%s task_id=%s outcome=%s",
+                "AE3 не смог отправить alert по решению полива zone_id=%s task_id=%s outcome=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 str(getattr(decision, "outcome", "") or ""),
@@ -151,6 +158,46 @@ class DecisionGateHandler(BaseStageHandler):
             return StageOutcome(
                 kind="fail",
                 error_code=decision.reason_code,
-                error_message="Irrigation decision-controller returned fail",
+                error_message="Decision-controller полива вернул отказ",
             )
         return StageOutcome(kind="transition", next_stage="irrigation_start")
+
+    async def _emit_irrigation_decision_event(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        decision: Any,
+    ) -> None:
+        runtime = plan.runtime if isinstance(getattr(plan, "runtime", None), Mapping) else {}
+        decision_cfg = runtime.get("irrigation_decision")
+        decision_cfg = decision_cfg if isinstance(decision_cfg, Mapping) else {}
+        details = {
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "zone_id": int(getattr(task, "zone_id", 0) or 0),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
+            "topology": str(getattr(task, "topology", "") or ""),
+            "strategy": str(decision_cfg.get("strategy") or getattr(task, "irrigation_decision_strategy", "") or ""),
+            "bundle_revision": str((runtime.get("bundle_revision") or getattr(task, "irrigation_bundle_revision", "") or "")).strip() or None,
+            "outcome": str(getattr(decision, "outcome", "") or ""),
+            "reason_code": str(getattr(decision, "reason_code", "") or ""),
+            "degraded": bool(getattr(decision, "degraded", False)),
+            "details": dict(getattr(decision, "details", {}) or {}) if isinstance(getattr(decision, "details", None), Mapping) else None,
+        }
+        payload = {key: value for key, value in details.items() if value is not None and value != ""}
+
+        try:
+            await create_zone_event(
+                int(getattr(task, "zone_id", 0) or 0),
+                "IRRIGATION_DECISION_EVALUATED",
+                payload,
+            )
+        except Exception:
+            _logger.warning(
+                "AE3 не смог записать IRRIGATION_DECISION_EVALUATED zone_id=%s task_id=%s outcome=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                str(getattr(decision, "outcome", "") or ""),
+                exc_info=True,
+            )

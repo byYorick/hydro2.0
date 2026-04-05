@@ -444,8 +444,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `capabilities`:
     - `executable_task_types[]`
     - `planned_task_types[]`
-    - `ae3_irrigation_only_dispatch` (boolean): для `automation_runtime=ae3` — `true` (Laravel scheduler диспатчит только полив)
-    - `non_executable_planned_task_types[]`: типы окон из плана, для которых при текущем runtime нет автоматического dispatch (например `lighting`, если в плане есть свет, но executable только `irrigation`)
+    - `ae3_irrigation_only_dispatch` (boolean): для `automation_runtime=ae3` — `true` (историческое имя флага; фактически список поддержанных типов смотреть в `executable_task_types[]`)
+    - `non_executable_planned_task_types[]`: типы окон из плана, для которых при текущем runtime нет автоматического dispatch (например `climate`, если в плане есть климат, а AE3 compat-path поддерживает только `irrigation`, `lighting`, `diagnostics`)
     - `diagnostics_available`
   - `plan`:
     - `horizon`

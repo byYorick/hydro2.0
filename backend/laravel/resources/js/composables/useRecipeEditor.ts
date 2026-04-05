@@ -24,6 +24,12 @@ interface SaveRecipeOptions {
   redirectToRecipe?: boolean
 }
 
+interface EnsureDraftRevisionResult {
+  revisionId: number
+  createdFromClone: boolean
+  clonedPhaseIds: number[]
+}
+
 export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   const { showToast } = useToast()
   const { api } = useApi(showToast)
@@ -203,12 +209,20 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     return nextRecipeId
   }
 
-  async function ensureDraftRevision(currentRecipeId: number): Promise<number> {
+  async function ensureDraftRevision(currentRecipeId: number): Promise<EnsureDraftRevisionResult> {
     if (draftRevisionId.value) {
-      return draftRevisionId.value
+      return {
+        revisionId: draftRevisionId.value,
+        createdFromClone: false,
+        clonedPhaseIds: [],
+      }
     }
 
+    const cloneFromRevisionId = typeof initialRecipe?.latest_published_revision_id === 'number'
+      ? initialRecipe.latest_published_revision_id
+      : null
     const response = await api.post(`/recipes/${currentRecipeId}/revisions`, {
+      clone_from_revision_id: cloneFromRevisionId,
       description: recipeId.value ? 'Updated via unified editor' : 'Initial revision',
     })
 
@@ -220,7 +234,18 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
 
     draftRevisionId.value = nextRevisionId
     form.draft_revision_id = nextRevisionId
-    return nextRevisionId
+
+    const clonedPhaseIds = Array.isArray(revision?.phases)
+      ? revision.phases
+        .map((phase) => (typeof phase?.id === 'number' ? phase.id : null))
+        .filter((phaseId): phaseId is number => phaseId !== null)
+      : []
+
+    return {
+      revisionId: nextRevisionId,
+      createdFromClone: cloneFromRevisionId !== null,
+      clonedPhaseIds,
+    }
   }
 
   async function saveRecipe(options: SaveRecipeOptions = {}): Promise<Recipe | null> {
@@ -235,7 +260,20 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     processing.value = true
     try {
       const currentRecipeId = await ensureRecipeShell()
-      const currentRevisionId = await ensureDraftRevision(currentRecipeId)
+      const draftRevision = await ensureDraftRevision(currentRecipeId)
+      const currentRevisionId = draftRevision.revisionId
+
+      if (draftRevision.createdFromClone && draftRevision.clonedPhaseIds.length > 0) {
+        for (const phaseId of draftRevision.clonedPhaseIds) {
+          await api.delete(`/recipe-revision-phases/${phaseId}`)
+        }
+
+        initialPhaseIds.value = []
+        form.phases.forEach((phase) => {
+          delete phase.id
+        })
+      }
+
       const persistedPhaseIds = new Set<number>()
 
       for (const phase of sortedPhases.value) {

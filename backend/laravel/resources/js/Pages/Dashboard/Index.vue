@@ -226,6 +226,8 @@
           :show="actionModal.open"
           :zone-id="actionModal.zone.id"
           :action-type="actionModal.actionType"
+          :default-params="dashboardZoneActionDefaultParams"
+          :irrigation-correction-summary="actionModal.zone.irrigation_correction_summary ?? null"
           @close="closeActionModal"
           @submit="submitAction"
         />
@@ -362,6 +364,7 @@
 
 <script setup lang="ts">
 import { computed, ref, toRef } from 'vue'
+import { pickIrrigationDurationFromTargets } from '@/utils/irrigationModalDefaults'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Badge from '@/Components/Badge.vue'
@@ -443,5 +446,14 @@ const {
   zones: zonesRef,
   api,
   showToast,
+})
+
+const dashboardZoneActionDefaultParams = computed(() => {
+  const z = actionModal.zone
+  if (!z || (actionModal.actionType !== 'START_IRRIGATION' && actionModal.actionType !== 'FORCE_IRRIGATION')) {
+    return {}
+  }
+  const sec = pickIrrigationDurationFromTargets(z.current_phase_targets ?? null)
+  return sec != null ? { duration_sec: sec } : {}
 })
 </script>

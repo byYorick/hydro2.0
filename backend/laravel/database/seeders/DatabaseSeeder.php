@@ -103,6 +103,7 @@ class DatabaseSeeder extends Seeder
         if ($seedProfile === 'start') {
             $this->command->info('⚡ Запуск стартовых сидеров (только админ и агроном)');
             $this->call(StartUsersSeeder::class);
+            $this->call(AutomationAuthoritySystemDefaultsSeeder::class);
             $this->call(AccessControlBootstrapSeeder::class);
             $this->command->info('✅ Стартовые сидеры выполнены');
 

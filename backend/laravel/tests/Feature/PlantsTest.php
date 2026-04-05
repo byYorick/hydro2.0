@@ -7,10 +7,10 @@ use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
-use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Inertia\Testing\AssertableInertia;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class PlantsTest extends TestCase
@@ -205,6 +205,41 @@ class PlantsTest extends TestCase
         $this->assertDatabaseHas('recipe_revisions', ['id' => $revision->id, 'status' => 'PUBLISHED']);
         $this->assertSame('drip', data_get($phase->extensions, 'subsystems.irrigation.targets.system_type'));
         $this->assertSame('06:00:00', data_get($phase->extensions, 'day_night.lighting.day_start_time'));
+    }
+
+    public function test_create_plant_with_recipe_rejects_phase_target_outside_bounds(): void
+    {
+        $user = $this->makeUser();
+
+        $payload = [
+            'plant' => [
+                'name' => 'Салат с невалидной фазой',
+            ],
+            'recipe' => [
+                'name' => 'Рецепт с невалидной фазой',
+                'phases' => [
+                    [
+                        'phase_index' => 0,
+                        'name' => 'Фаза 1',
+                        'duration_hours' => 72,
+                        'ph_target' => 5.2,
+                        'ph_min' => 5.3,
+                        'ph_max' => 5.4,
+                        'ec_target' => 1.4,
+                        'ec_min' => 1.3,
+                        'ec_max' => 1.5,
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)->postJson('/api/plants/with-recipe', $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['recipe.phases.0.ph_target']);
+
+        $this->assertDatabaseMissing('plants', ['name' => 'Салат с невалидной фазой']);
+        $this->assertDatabaseMissing('recipes', ['name' => 'Рецепт с невалидной фазой']);
     }
 
     public function test_profitability_endpoint_returns_data(): void

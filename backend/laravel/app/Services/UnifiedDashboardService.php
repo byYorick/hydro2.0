@@ -14,7 +14,7 @@ class UnifiedDashboardService
     public function __construct(
         private GrowCyclePresenter $growCyclePresenter,
         private ZoneFrontendTelemetryService $zoneFrontendTelemetry,
-        private EffectiveTargetsService $effectiveTargetsService,
+        private ZoneIrrigationModalContextService $irrigationModalContext,
     ) {}
 
     /**
@@ -62,10 +62,9 @@ class UnifiedDashboardService
 
         $telemetryByZone = $this->zoneFrontendTelemetry->getZoneSnapshots($zoneIds, true);
         $alertsByZone = $this->getAlertsByZone($zoneIds);
-        $targetsByZone = $this->getTargetsByZone($zones);
         $latestAlerts = $this->getLatestAlerts($user, $accessibleZoneIds);
         $summary = $this->buildSummary($zones);
-        $zonesData = $this->formatZones($zones, $telemetryByZone, $alertsByZone, $targetsByZone);
+        $zonesData = $this->formatZones($zones, $telemetryByZone, $alertsByZone);
         $greenhouses = $this->getGreenhouses($zones);
 
         return [
@@ -130,49 +129,6 @@ class UnifiedDashboardService
             ->get();
     }
 
-    /**
-     * @return array<int, array{ph: array{min: float|null, max: float|null}|null, ec: array{min: float|null, max: float|null}|null, temperature: array{min: float|null, max: float|null}|null}>
-     */
-    private function getTargetsByZone(Collection $zones): array
-    {
-        $targetsByZone = [];
-        foreach ($zones as $zone) {
-            $cycle = $zone->activeGrowCycle;
-            if (! $cycle) {
-                $targetsByZone[$zone->id] = ['ph' => null, 'ec' => null, 'temperature' => null];
-
-                continue;
-            }
-            try {
-                $effective = $this->effectiveTargetsService->getEffectiveTargets($cycle->id);
-                $targets = $effective['targets'] ?? [];
-                $climate = is_array($targets['climate_request'] ?? null) ? $targets['climate_request'] : [];
-                $tempTarget = $climate['temp_air_target'] ?? null;
-                $targetsByZone[$zone->id] = [
-                    'ph' => isset($targets['ph']) && is_array($targets['ph'])
-                        ? [
-                            'min' => isset($targets['ph']['min']) ? (float) $targets['ph']['min'] : null,
-                            'max' => isset($targets['ph']['max']) ? (float) $targets['ph']['max'] : null,
-                        ]
-                        : null,
-                    'ec' => isset($targets['ec']) && is_array($targets['ec'])
-                        ? [
-                            'min' => isset($targets['ec']['min']) ? (float) $targets['ec']['min'] : null,
-                            'max' => isset($targets['ec']['max']) ? (float) $targets['ec']['max'] : null,
-                        ]
-                        : null,
-                    'temperature' => $tempTarget !== null
-                        ? ['min' => (float) $tempTarget - 2, 'max' => (float) $tempTarget + 2]
-                        : null,
-                ];
-            } catch (\Throwable) {
-                $targetsByZone[$zone->id] = ['ph' => null, 'ec' => null, 'temperature' => null];
-            }
-        }
-
-        return $targetsByZone;
-    }
-
     private function buildSummary(Collection $zones): array
     {
         $greenhouseIds = $zones->pluck('greenhouse_id')->filter()->unique()->values();
@@ -221,12 +177,11 @@ class UnifiedDashboardService
     /**
      * @param  array<int, array>  $telemetryByZone
      * @param  array<int, array>  $alertsByZone
-     * @param  array<int, array>  $targetsByZone
      * @return array<int, array<string, mixed>>
      */
-    private function formatZones(Collection $zones, array $telemetryByZone, array $alertsByZone, array $targetsByZone): array
+    private function formatZones(Collection $zones, array $telemetryByZone, array $alertsByZone): array
     {
-        return $zones->map(function (Zone $zone) use ($telemetryByZone, $alertsByZone, $targetsByZone) {
+        return $zones->map(function (Zone $zone) use ($telemetryByZone, $alertsByZone) {
             $cycle = $zone->activeGrowCycle;
             $cycleDto = $cycle ? ($this->growCyclePresenter->buildCycleDto($cycle)['cycle'] ?? null) : null;
 
@@ -244,6 +199,7 @@ class UnifiedDashboardService
             }
 
             $crop = $cycle?->plant?->name ?? $recipe['name'] ?? null;
+            $ctx = $this->irrigationModalContext->buildForZone($zone);
 
             return [
                 'id' => $zone->id,
@@ -254,11 +210,9 @@ class UnifiedDashboardService
                     'name' => $zone->greenhouse->name,
                 ] : null,
                 'telemetry' => $this->normalizeTelemetrySnapshot($telemetryByZone[$zone->id] ?? []),
-                'targets' => $targetsByZone[$zone->id] ?? [
-                    'ph' => null,
-                    'ec' => null,
-                    'temperature' => null,
-                ],
+                'targets' => $ctx['targets'],
+                'current_phase_targets' => $ctx['current_phase_targets'],
+                'irrigation_correction_summary' => $ctx['irrigation_correction_summary'],
                 'alerts_count' => (int) ($zone->alerts_count ?? 0),
                 'alerts_preview' => $alertsByZone[$zone->id] ?? [],
                 'devices' => [

@@ -289,7 +289,7 @@ Tabs:
 - engineer/admin получают отдельный diagnostics block через `GET /api/zones/{id}/scheduler-diagnostics`;
 - `scheduler_logs` не используются в публичном UI path;
 - текущая реализация оформлена как operator-first dashboard: current-state summary, attention block, next executable windows, recent runs и компактный detail card исполнения;
-- на `automation_runtime=ae3` предупреждение в attention отражает типы из `non_executable_planned_task_types`; автодиспатч scheduler покрывает как минимум **полив и освещение** (`capabilities.executable_task_types`).
+- на `automation_runtime=ae3` предупреждение в attention отражает типы из `non_executable_planned_task_types`; автодиспатч scheduler покрывает compat-path типы из `capabilities.executable_task_types` и сейчас включает **полив, освещение и diagnostics**.
 
 ---
 

@@ -115,7 +115,7 @@ class CorrectionHandler(BaseStageHandler):
             return self._run_done(corr=corr)
 
         raise TaskExecutionError(
-            "ae3_unknown_corr_step", f"Unknown correction step={step!r}",
+            "ae3_unknown_corr_step", f"Неизвестный correction step={step!r}",
         )
 
     # ── Step handlers ───────────────────────────────────────────────
@@ -308,7 +308,7 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             _logger.warning(
-                "zone %s: telemetry stale during correction check; retrying in %.1fs",
+                "zone %s: телеметрия устарела во время correction check; повтор через %.1f с",
                 task.zone_id,
                 retry_delay_sec,
             )
@@ -361,7 +361,7 @@ class CorrectionHandler(BaseStageHandler):
                     "ec_since_ts": self._serialize_metric_ts(ec.get("since_ts")),
                 },
             )
-            _logger.warning("zone %s: %s — retrying in %.1fs", task.zone_id, msg, retry_delay_sec)
+            _logger.warning("zone %s: %s, повтор через %.1f с", task.zone_id, msg, retry_delay_sec)
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,
                 plan=plan,
@@ -380,7 +380,7 @@ class CorrectionHandler(BaseStageHandler):
                 default=30.0,
             )
             _logger.warning(
-                "zone %s: non-finite telemetry value (ph=%s, ec=%s); retrying in %.1fs",
+                "zone %s: некорректное telemetry value (ph=%s, ec=%s); повтор через %.1f с",
                 task.zone_id, current_ph, current_ec, retry_delay_sec,
             )
             return self._enter_correction_after_delay_or_interrupt(
@@ -706,26 +706,26 @@ class CorrectionHandler(BaseStageHandler):
             try:
                 raw = json.loads(corr.ec_dose_sequence_json)
                 if not isinstance(raw, list):
-                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON must be a list")
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON должен быть списком")
                 seq = list(raw)
             except Exception as exc:
                 if isinstance(exc, TaskExecutionError):
                     raise
-                raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON is invalid")
+                raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence JSON некорректен")
         if seq:
             for item in seq:
                 if not isinstance(item, dict):
-                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence item must be object")
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "Элемент EC dose sequence должен быть объектом")
                 if not str(item.get("node_uid") or "").strip():
-                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence missing node_uid")
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "В EC dose sequence отсутствует node_uid")
                 if not str(item.get("channel") or "").strip():
-                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence missing channel")
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "В EC dose sequence отсутствует channel")
                 try:
                     ml = float(item.get("amount_ml"))
                 except (TypeError, ValueError):
                     ml = 0.0
                 if ml <= 0:
-                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "EC dose sequence amount_ml must be > 0")
+                    raise TaskExecutionError("corr_dose_ec_bad_sequence", "В EC dose sequence значение amount_ml должно быть > 0")
         else:
             if (
                 not corr.ec_node_uid
@@ -737,7 +737,7 @@ class CorrectionHandler(BaseStageHandler):
                 raise TaskExecutionError(
                     "corr_dose_ec_missing_plan",
                     (
-                        "EC dose plan missing "
+                        "Отсутствует EC dose plan "
                         f"(node={corr.ec_node_uid}, ch={corr.ec_channel}, ms={corr.ec_duration_ms}, "
                         f"ml={corr.ec_amount_ml})"
                     ),
@@ -812,7 +812,7 @@ class CorrectionHandler(BaseStageHandler):
                     zone_id=task.zone_id, pid_type="ec"
                 )
             except Exception:
-                _logger.debug("Could not read EC pid_state for event logging", exc_info=True)
+                _logger.debug("Не удалось прочитать EC pid_state для логирования события", exc_info=True)
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="EC_DOSING",
@@ -847,7 +847,7 @@ class CorrectionHandler(BaseStageHandler):
                     },
                 )
             except Exception:
-                _logger.debug("Failed to create IRRIGATION_EC_MULTI_DOSE zone event", exc_info=True)
+                _logger.debug("Не удалось создать zone event IRRIGATION_EC_MULTI_DOSE", exc_info=True)
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
@@ -950,7 +950,7 @@ class CorrectionHandler(BaseStageHandler):
                     zone_id=task.zone_id, pid_type="ph"
                 )
             except Exception:
-                _logger.debug("Could not read PH pid_state for event logging", exc_info=True)
+                _logger.debug("Не удалось прочитать PH pid_state для логирования события", exc_info=True)
         ph_direction = "up" if corr.needs_ph_up else "down"
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -1245,7 +1245,7 @@ class CorrectionHandler(BaseStageHandler):
             await send_biz_alert(
                 code="biz_correction_exhausted",
                 alert_type="AE3 Correction Exhausted",
-                message="Correction cycle exhausted all configured attempts.",
+                message="Цикл коррекции исчерпал все настроенные попытки.",
                 severity="error",
                 zone_id=int(task.zone_id),
                 details={
@@ -1257,19 +1257,19 @@ class CorrectionHandler(BaseStageHandler):
                     "max_attempts": corr.max_attempts,
                     "ec_attempt": corr.ec_attempt,
                     "ph_attempt": corr.ph_attempt,
-                    "message": "Correction cycle exhausted all dose attempts — check pH/EC dosing hardware.",
+                    "message": "Цикл коррекции исчерпал все попытки дозирования, проверьте оборудование дозирования pH/EC.",
                 },
                 scope_parts=(f"stage:{stage}", f"topology:{topology}"),
             )
         except Exception:
-            _logger.warning("Failed to send CORRECTION_EXHAUSTED infra alert zone_id=%s", task.zone_id)
+            _logger.warning("Не удалось отправить infra alert CORRECTION_EXHAUSTED zone_id=%s", task.zone_id)
         if str(task.current_stage).strip().lower() == "irrigation_check":
             runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
             try:
                 await send_biz_alert(
                     code="biz_irrigation_correction_exhausted",
                     alert_type="AE3 Irrigation Correction Exhausted",
-                    message="Correction during irrigation exhausted all configured attempts.",
+                    message="Коррекция во время полива исчерпала все настроенные попытки.",
                     severity="error",
                     zone_id=int(task.zone_id),
                     details={
@@ -1279,12 +1279,12 @@ class CorrectionHandler(BaseStageHandler):
                         "component": f"correction:{stage}",
                         "attempt": corr.attempt,
                         "max_attempts": corr.max_attempts,
-                        "message": "Irrigation correction exhausted — irrigation will continue without further correction attempts in this stage.",
+                        "message": "Коррекция полива исчерпана, полив продолжится без новых попыток коррекции на этом этапе.",
                     },
                     scope_parts=(f"stage:{stage}", f"topology:{topology}"),
                 )
             except Exception:
-                _logger.warning("Failed to send irrigation_correction_exhausted alert zone_id=%s", task.zone_id)
+                _logger.warning("Не удалось отправить alert irrigation_correction_exhausted zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",
                 next_stage="irrigation_check",
@@ -1665,7 +1665,7 @@ class CorrectionHandler(BaseStageHandler):
                 },
             )
             _logger.warning(
-                "zone %s: %s telemetry stale/unavailable during observation window; retrying in %.1fs",
+                "zone %s: телеметрия %s устарела или недоступна во время observation window; повтор через %.1f с",
                 task.zone_id,
                 sensor_type,
                 retry_delay_sec,
@@ -1864,7 +1864,7 @@ class CorrectionHandler(BaseStageHandler):
         if gain is None or gain <= 0 or amount_ml is None or amount_ml <= 0:
             raise TaskExecutionError(
                 "corr_process_gain_missing",
-                f"Process gain is required to evaluate {pid_type} response",
+                f"Для оценки отклика {pid_type} требуется process gain",
             )
         return float(gain) * float(amount_ml)
 
@@ -2088,8 +2088,8 @@ class CorrectionHandler(BaseStageHandler):
                 code=f"biz_{pid_type}_correction_no_effect",
                 alert_type="AE3 Correction No Effect",
                 message=(
-                    f"{pid_type.upper()} correction produced no observable response "
-                    f"{no_effect_limit} times in a row."
+                    f"Коррекция {pid_type.upper()} не дала наблюдаемого эффекта "
+                    f"{no_effect_limit} раз подряд."
                 ),
                 severity="error",
                 zone_id=int(task.zone_id),
@@ -2107,7 +2107,7 @@ class CorrectionHandler(BaseStageHandler):
                 scope_parts=(f"pid_type:{pid_type}", f"stage:{task.current_stage}"),
             )
         except Exception:
-            _logger.warning("Failed to send CORRECTION_NO_EFFECT infra alert zone_id=%s", task.zone_id)
+            _logger.warning("Не удалось отправить infra alert CORRECTION_NO_EFFECT zone_id=%s", task.zone_id)
         current_stage = str(task.current_stage).strip().lower()
         if current_stage == "prepare_recirculation_check":
             return StageOutcome(
@@ -2166,7 +2166,7 @@ class CorrectionHandler(BaseStageHandler):
         try:
             await create_zone_event(zone_id, event_type, event_payload)
         except Exception:
-            _logger.warning("Failed to log %s zone event", event_type, exc_info=True)
+            _logger.warning("Не удалось записать zone event %s", event_type, exc_info=True)
 
     def _correction_window_id(self, *, task: Any | None) -> str | None:
         if task is None:
@@ -2189,7 +2189,8 @@ class CorrectionHandler(BaseStageHandler):
     def _build_sensor_mode_commands(
         self, *, plan: Any, cmd: str, params: Mapping[str, Any],
     ) -> tuple[PlannedCommand, ...]:
-        named = plan.named_plans if isinstance(plan.named_plans, Mapping) else {}
+        raw_named = getattr(plan, "named_plans", None)
+        named = raw_named if isinstance(raw_named, Mapping) else {}
         source_key = "sensor_mode_activate" if cmd == "activate_sensor_mode" else "sensor_mode_deactivate"
         templates = named.get(source_key, ())
         return tuple(
@@ -2243,7 +2244,7 @@ class CorrectionHandler(BaseStageHandler):
         except Exception:
             raise TaskExecutionError(
                 "corr_pid_state_persist_failed",
-                f"Failed to persist PID state for zone {zone_id}",
+                f"Не удалось сохранить PID state для зоны {zone_id}",
             )
 
     def _normalize_timestamp(self, value: datetime | None) -> datetime | None:

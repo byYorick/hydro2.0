@@ -1,4 +1,4 @@
-"""Base handler with shared sensor/level/probe operations."""
+"""Базовый handler с общими операциями probe, sensor и level."""
 
 from __future__ import annotations
 
@@ -18,14 +18,14 @@ _logger = logging.getLogger(__name__)
 
 
 def _utc_naive_dt(dt: datetime) -> datetime:
-    """Normalize datetimes to UTC-naive before comparisons."""
+    """Нормализует datetime к UTC-naive перед сравнениями."""
     return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
 class BaseStageHandler:
-    """Provides reusable sensor-reading helpers shared by check-type handlers.
+    """Предоставляет переиспользуемые helper'ы чтения сенсоров для check-handler'ов.
 
-    Subclasses implement ``run()`` and return :class:`StageOutcome`.
+    Подклассы реализуют ``run()`` и возвращают :class:`StageOutcome`.
     """
 
     _IRR_STATE_PROBE_RETRY_COUNT = 1
@@ -62,14 +62,14 @@ class BaseStageHandler:
         return max(0.0, remaining)
 
     def _irr_probe_deadline_budget_sec(self, *, runtime: Mapping[str, Any]) -> float:
-        # Real test-node command/state roundtrip can legitimately take a few seconds.
-        # If we start a fresh IRR probe too close to the stage deadline, the command
-        # can fail in polling after deadline instead of taking the intended stage path.
+        # На реальном test-node roundtrip команды и состояния может занимать несколько секунд.
+        # Если запускать новый IRR probe слишком близко к дедлайну stage, команда
+        # может упасть уже на polling после дедлайна, а не пойти по ожидаемому stage path.
         wait_timeout = self._coerce_float(runtime.get("irr_state_wait_timeout_sec"))
         attempts = 1 + self._IRR_STATE_PROBE_RETRY_COUNT
-        # Budget must cover both the storage_state command roundtrip and the follow-up
-        # snapshot wait. On real hardware the combined path can easily exceed 5s,
-        # and a single republish is allowed for transient MQTT probe loss.
+        # Бюджет должен покрывать и roundtrip команды storage_state, и последующее
+        # ожидание snapshot. На реальном железе этот путь легко превышает 5 с,
+        # и для transient-потери MQTT probe допускается один republish.
         single_attempt_budget = (wait_timeout if wait_timeout is not None else 0.0) + 2.0
         base_budget = (single_attempt_budget * attempts) + (
             self._IRR_STATE_PROBE_RETRY_DELAY_SEC * self._IRR_STATE_PROBE_RETRY_COUNT
@@ -98,12 +98,12 @@ class BaseStageHandler:
         now: datetime,
         expected: Mapping[str, bool],
     ) -> None:
-        """Send probe command and assert hardware state matches expectations."""
+        """Отправляет probe-команду и проверяет, что состояние hardware совпадает с ожиданиями."""
         probe_cmds = plan.named_plans.get("irr_state_probe", ())
         if not probe_cmds:
             raise TaskExecutionError(
                 "irr_state_probe_plan_missing",
-                f"IRR state probe command plan is missing for stage={getattr(task, 'current_stage', None)}",
+                f"Для stage={getattr(task, 'current_stage', None)} отсутствует command plan зонда IRR state",
             )
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         last_state: Mapping[str, Any] = {}
@@ -153,7 +153,7 @@ class BaseStageHandler:
         )
         if reason == "stale":
             raise TaskExecutionError(
-                "irr_state_stale", "IRR state snapshot stale",
+                "irr_state_stale", "Снимок состояния IRR-ноды устарел",
             )
         if reason == "mismatch":
             snapshot = last_state["snapshot"] if isinstance(last_state["snapshot"], Mapping) else {}
@@ -161,10 +161,10 @@ class BaseStageHandler:
                 if bool(snapshot.get(key)) != bool(value):
                     raise TaskExecutionError(
                         "irr_state_mismatch",
-                        f"IRR state mismatch for {key}: expected={value}, got={snapshot.get(key)}",
+                        f"Состояние IRR-ноды не совпало по признаку {key}: ожидалось={value}, получено={snapshot.get(key)}",
                     )
         raise TaskExecutionError(
-            "irr_state_unavailable", "IRR state snapshot unavailable",
+            "irr_state_unavailable", "Снимок состояния IRR-ноды недоступен",
         )
 
     def _classify_probe_failure_reason(
@@ -289,7 +289,7 @@ class BaseStageHandler:
             )
         except Exception:
             _logger.warning(
-                "AE3 failed to log IRR_STATE_PROBE_FAILED zone_id=%s task_id=%s stage=%s",
+                "AE3 не смог записать IRR_STATE_PROBE_FAILED zone_id=%s task_id=%s stage=%s",
                 int(getattr(task, "zone_id", 0) or 0),
                 int(getattr(task, "id", 0) or 0),
                 str(getattr(task, "current_stage", "") or ""),
@@ -317,11 +317,11 @@ class BaseStageHandler:
         )
         if not level["has_level"]:
             raise TaskExecutionError(
-                unavailable_error, f"Level sensor unavailable: {labels}",
+                unavailable_error, f"Недоступен датчик уровня: {labels}",
             )
         if level["is_stale"]:
             raise TaskExecutionError(
-                stale_error, f"Level sensor stale: {labels}",
+                stale_error, f"Данные датчика уровня устарели: {labels}",
             )
         return level
 
@@ -392,12 +392,12 @@ class BaseStageHandler:
         if not window["has_sensor"]:
             raise TaskExecutionError(
                 unavailable_error,
-                f"{sensor_type} telemetry unavailable for target evaluation",
+                f"Телеметрия {sensor_type} недоступна для оценки target",
             )
         if window["is_stale"]:
             raise TaskExecutionError(
                 stale_error,
-                f"{sensor_type} telemetry stale for target evaluation",
+                f"Телеметрия {sensor_type} устарела для оценки target",
             )
         summary = self._summarize_metric_window(
             samples=window["samples"],
@@ -520,7 +520,7 @@ class BaseStageHandler:
         if transport_delay_sec <= 0 or settle_sec <= 0:
             raise TaskExecutionError(
                 "corr_process_calibration_missing",
-                f"Process calibration transport_delay_sec/settle_sec is required for {kind}",
+                f"Для {kind} требуется process calibration с transport_delay_sec/settle_sec",
             )
 
         adaptive_timing = self._adaptive_observation_timing(pid_entry=pid_entry)
@@ -674,7 +674,7 @@ class BaseStageHandler:
         if not level["is_triggered"]:
             raise TaskExecutionError(
                 "sensor_state_inconsistent",
-                f"Tank sensors inconsistent: max=1 min=0 ({min_labels_key})",
+                f"Датчики бака противоречат друг другу: max=1 min=0 ({min_labels_key})",
             )
 
     def _coerce_float(self, value: Any) -> float | None:

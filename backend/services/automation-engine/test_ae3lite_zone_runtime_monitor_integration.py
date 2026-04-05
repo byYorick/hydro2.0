@@ -118,21 +118,27 @@ async def test_read_metric_window_returns_recent_samples_for_sensor() -> None:
         )
         sensor_id = int(sensor_rows[0]["id"])
 
+        anchor = datetime.now(timezone.utc).replace(microsecond=0)
+        anchor_naive = anchor.replace(tzinfo=None)
+
         await execute(
             """
             INSERT INTO telemetry_samples (sensor_id, ts, zone_id, value, quality, created_at)
             VALUES
-                ($1, NOW() - INTERVAL '6 seconds', $2, 1.10, 'GOOD', NOW()),
-                ($1, NOW() - INTERVAL '4 seconds', $2, 1.25, 'GOOD', NOW()),
-                ($1, NOW() - INTERVAL '2 seconds', $2, 1.40, 'GOOD', NOW())
+                ($1, $2, $3, 1.10, 'GOOD', NOW()),
+                ($1, $4, $3, 1.25, 'GOOD', NOW()),
+                ($1, $5, $3, 1.40, 'GOOD', NOW())
             """,
             sensor_id,
+            anchor_naive - timedelta(seconds=6),
             zone_id,
+            anchor_naive - timedelta(seconds=4),
+            anchor_naive - timedelta(seconds=2),
         )
         await execute(
             """
             INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
-            VALUES ($1, 1.40, NOW() - INTERVAL '2 seconds', 'GOOD', NOW())
+            VALUES ($1, 1.40, $2, 'GOOD', NOW())
             ON CONFLICT (sensor_id)
             DO UPDATE SET
                 last_value = EXCLUDED.last_value,
@@ -141,12 +147,13 @@ async def test_read_metric_window_returns_recent_samples_for_sensor() -> None:
                 updated_at = EXCLUDED.updated_at
             """,
             sensor_id,
+            anchor_naive - timedelta(seconds=2),
         )
 
         result = await monitor.read_metric_window(
             zone_id=zone_id,
             sensor_type="EC",
-            since_ts=datetime.now(timezone.utc) - timedelta(seconds=5),
+            since_ts=anchor - timedelta(seconds=5),
             telemetry_max_age_sec=10,
         )
 
@@ -252,6 +259,7 @@ async def test_read_metric_window_includes_boundary_second_when_since_ts_has_mic
         )
         sensor_id = int(sensor_rows[0]["id"])
         anchor = datetime.now(timezone.utc).replace(microsecond=0)
+        anchor_naive = anchor.replace(tzinfo=None)
 
         await execute(
             """
@@ -261,9 +269,9 @@ async def test_read_metric_window_includes_boundary_second_when_since_ts_has_mic
                 ($1, $4, $3, 16.5, 'GOOD', NOW())
             """,
             sensor_id,
-            anchor - timedelta(seconds=4),
+            anchor_naive - timedelta(seconds=4),
             zone_id,
-            anchor - timedelta(seconds=2),
+            anchor_naive - timedelta(seconds=2),
         )
         await execute(
             """
@@ -277,7 +285,7 @@ async def test_read_metric_window_includes_boundary_second_when_since_ts_has_mic
                 updated_at = EXCLUDED.updated_at
             """,
             sensor_id,
-            anchor - timedelta(seconds=2),
+            anchor_naive - timedelta(seconds=2),
         )
 
         result = await monitor.read_metric_window(

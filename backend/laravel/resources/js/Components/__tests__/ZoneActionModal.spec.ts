@@ -237,19 +237,36 @@ describe('ZoneActionModal', () => {
     })
   })
 
-  it('emits close event when form is submitted', async () => {
+  it('does not auto-close on submit — parent closes after API call', async () => {
     const wrapper = mount(ZoneActionModal, {
       props: {
         show: true,
         actionType: 'FORCE_IRRIGATION',
-        zoneId: 1
-      }
+        zoneId: 1,
+      },
     })
 
     const form = wrapper.find('form')
     await form.trigger('submit.prevent')
 
-    expect(wrapper.emitted('close')).toBeTruthy()
+    expect(wrapper.emitted('submit')).toBeTruthy()
+    expect(wrapper.emitted('close')).toBeFalsy()
+  })
+
+  it('disables submit button when loading prop is true', () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'FORCE_IRRIGATION',
+        zoneId: 1,
+        loading: true,
+      },
+    })
+
+    const buttons = wrapper.findAll('button')
+    buttons.forEach((btn) => {
+      expect(btn.attributes('disabled')).toBeDefined()
+    })
   })
 
   it('applies defaultParams to form', () => {
@@ -280,24 +297,25 @@ describe('ZoneActionModal', () => {
     await wrapper.setProps({ show: true })
 
     const input = wrapper.find('input[type="number"]')
-    // Should reset to default value
-    expect((input.element as HTMLInputElement).value).toBe('10')
+    // Дефолт = water_manual_irrigation_sec из FALLBACK (useAutomationDefaults)
+    expect((input.element as HTMLInputElement).value).toBe('90')
   })
 
-  it('handles API errors gracefully', async () => {
+  it('stays open after submit — error handling is parent responsibility', async () => {
     const wrapper = mount(ZoneActionModal, {
       props: {
         show: true,
         actionType: 'FORCE_IRRIGATION',
-        zoneId: 1
-      }
+        zoneId: 1,
+      },
     })
 
     const form = wrapper.find('form')
     await form.trigger('submit.prevent')
 
-    // Should still emit close event even on error
-    expect(wrapper.emitted('close')).toBeTruthy()
+    expect(wrapper.emitted('submit')).toBeTruthy()
+    expect(wrapper.emitted('close')).toBeFalsy()
+    expect(wrapper.find('.modal').exists()).toBe(true)
   })
 
   it('validates required fields before submission', async () => {

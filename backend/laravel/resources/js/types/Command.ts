@@ -5,6 +5,7 @@ import type { Device } from './Device'
  * Тип команды
  */
 export type CommandType =
+  | 'START_IRRIGATION'
   | 'FORCE_IRRIGATION'
   | 'FORCE_PH_CONTROL'
   | 'FORCE_EC_CONTROL'

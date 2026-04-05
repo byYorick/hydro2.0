@@ -1,4 +1,4 @@
-"""Standalone AE3-Lite service entrypoint."""
+"""Точка входа standalone-сервиса AE3-Lite."""
 
 from __future__ import annotations
 

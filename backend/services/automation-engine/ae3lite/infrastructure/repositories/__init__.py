@@ -1,4 +1,4 @@
-"""AE3-Lite PostgreSQL repositories."""
+"""PostgreSQL-репозитории AE3-Lite."""
 
 from .ae_command_repository import PgAeCommandRepository
 from .automation_task_repository import PgAutomationTaskRepository

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\GrowCycleStatus;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Alert;
 use App\Models\Zone;
@@ -12,7 +11,8 @@ class CycleCenterService
 {
     public function __construct(
         private GrowCyclePresenter $growCyclePresenter,
-        private ZoneFrontendTelemetryService $zoneFrontendTelemetry
+        private ZoneFrontendTelemetryService $zoneFrontendTelemetry,
+        private ZoneIrrigationModalContextService $irrigationModalContext,
     ) {}
 
     /**
@@ -67,7 +67,7 @@ class CycleCenterService
             ])
             ->orderBy('name');
 
-        if (!$user?->isAdmin()) {
+        if (! $user?->isAdmin()) {
             $query->whereIn('id', $accessibleZoneIds ?: [0]);
         }
 
@@ -131,8 +131,9 @@ class CycleCenterService
 
         foreach ($zones as $zone) {
             $cycle = $zone->activeGrowCycle;
-            if (!$cycle) {
+            if (! $cycle) {
                 $summary['cycles_none']++;
+
                 continue;
             }
 
@@ -178,6 +179,8 @@ class CycleCenterService
                 ];
             }
 
+            $ctx = $this->irrigationModalContext->buildForZone($zone);
+
             return [
                 'id' => $zone->id,
                 'name' => $zone->name,
@@ -194,6 +197,9 @@ class CycleCenterService
                     'co2' => null,
                     'updated_at' => null,
                 ],
+                'targets' => $ctx['targets'],
+                'current_phase_targets' => $ctx['current_phase_targets'],
+                'irrigation_correction_summary' => $ctx['irrigation_correction_summary'],
                 'alerts_count' => (int) ($zone->alerts_count ?? 0),
                 'alerts_preview' => $alertsByZone[$zone->id] ?? [],
                 'devices' => [
@@ -216,7 +222,7 @@ class CycleCenterService
     private function getGreenhouses(Collection $zones): array
     {
         return $zones->map(function (Zone $zone) {
-            if (!$zone->greenhouse) {
+            if (! $zone->greenhouse) {
                 return null;
             }
 

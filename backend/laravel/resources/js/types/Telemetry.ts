@@ -24,4 +24,4 @@ export interface TelemetrySample {
 /**
  * Тип метрики телеметрии
  */
-export type TelemetryMetric = 'PH' | 'EC' | 'TEMPERATURE' | 'HUMIDITY'
+export type TelemetryMetric = 'PH' | 'EC' | 'TEMPERATURE' | 'HUMIDITY' | 'SOIL_MOISTURE'

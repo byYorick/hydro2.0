@@ -97,10 +97,10 @@ test.describe('Zone Detail', () => {
                 timezone: 'Europe/Simferopol',
               },
               capabilities: {
-                executable_task_types: ['irrigation', 'lighting'],
+                executable_task_types: ['irrigation', 'lighting', 'diagnostics'],
                 planned_task_types: ['irrigation', 'lighting'],
                 non_executable_planned_task_types: [],
-                diagnostics_available: false,
+                diagnostics_available: true,
               },
               plan: {
                 horizon: '24h',
@@ -264,7 +264,7 @@ test.describe('Zone Detail', () => {
               capabilities: {
                 executable_task_types: ['irrigation'],
                 planned_task_types: ['irrigation'],
-                diagnostics_available: false,
+                diagnostics_available: true,
               },
               plan: {
                 horizon,
@@ -388,10 +388,10 @@ test.describe('Zone Detail', () => {
                 timezone: 'Europe/Simferopol',
               },
               capabilities: {
-                executable_task_types: ['irrigation', 'lighting'],
+                executable_task_types: ['irrigation', 'lighting', 'diagnostics'],
                 planned_task_types: ['irrigation', 'lighting'],
                 non_executable_planned_task_types: [],
-                diagnostics_available: false,
+                diagnostics_available: true,
               },
               plan: {
                 horizon: '24h',

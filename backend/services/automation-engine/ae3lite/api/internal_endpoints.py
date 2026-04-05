@@ -1,4 +1,4 @@
-"""AE3-Lite internal HTTP endpoints."""
+"""Внутренние HTTP-endpoint'ы AE3-Lite."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Recover AE3-Lite v2 in-flight tasks safely after runtime restart."""
+"""Безопасно восстанавливает in-flight задачи AE3-Lite v2 после рестарта runtime."""
 
 from __future__ import annotations
 
@@ -11,14 +11,15 @@ from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import WorkflowState
 from ae3lite.domain.errors import CommandReconcileError, StartupRecoveryError, TaskExecutionError
 from ae3lite.domain.services.topology_registry import TopologyRegistry
+from ae3lite.infrastructure.metrics import STARTUP_RECOVERY_RUN, STARTUP_RECOVERY_TASK
 
 logger = logging.getLogger(__name__)
 
 
 class StartupRecoveryUseCase:
-    """Reconciles persisted in-flight tasks without issuing a new publish.
+    """Reconcilе'ит сохранённые in-flight задачи без новой публикации команды.
 
-    v2: Uses topology registry for done-transition routing instead of payload keys.
+    В v2 использует topology registry для маршрутизации done-transition вместо payload keys.
     """
 
     def __init__(
@@ -39,6 +40,7 @@ class StartupRecoveryUseCase:
         self._registry = topology_registry or TopologyRegistry()
 
     async def run(self, *, now: datetime) -> StartupRecoveryResult:
+        STARTUP_RECOVERY_RUN.inc()
         released_expired_leases = await self._lease_repository.release_expired(now=now)
         tasks = await self._task_repository.list_for_startup_recovery()
 
@@ -50,6 +52,7 @@ class StartupRecoveryUseCase:
 
         for task in tasks:
             outcome, terminal_outcome = await self._recover_task(task=task, now=now)
+            STARTUP_RECOVERY_TASK.labels(outcome=outcome).inc()
             if outcome == "completed":
                 completed_tasks += 1
             elif outcome == "failed":
@@ -61,12 +64,12 @@ class StartupRecoveryUseCase:
                 recovered_waiting_command_tasks += 1
             else:
                 logger.error(
-                    "Startup recovery: unsupported outcome=%s task_id=%s zone_id=%s",
+                    "Startup recovery: неподдерживаемый outcome=%s task_id=%s zone_id=%s",
                     outcome,
                     getattr(task, "id", None),
                     getattr(task, "zone_id", None),
                 )
-                raise StartupRecoveryError(f"Unsupported startup recovery outcome={outcome}")
+                raise StartupRecoveryError(f"Неподдерживаемый результат startup recovery={outcome}")
             if terminal_outcome is not None:
                 terminal_outcomes.append(terminal_outcome)
 
@@ -90,7 +93,7 @@ class StartupRecoveryUseCase:
             failed_task = await self._fail_task(
                 task=task,
                 error_code="startup_recovery_missing_owner",
-                error_message=f"Task {task.id} has no claimed_by during startup recovery",
+                error_message=f"У задачи {task.id} отсутствует claimed_by во время startup recovery",
                 now=now,
             )
             return "failed", self._build_terminal_outcome(task=failed_task)
@@ -135,7 +138,7 @@ class StartupRecoveryUseCase:
                     task.zone_id,
                     task.status,
                 )
-                raise StartupRecoveryError(f"Unable to recover task_id={task.id} into waiting_command")
+                raise StartupRecoveryError(f"Не удалось перевести task_id={task.id} в waiting_command во время recovery")
             return "recovered_waiting_command", None
 
         return "waiting_command", None
@@ -150,18 +153,18 @@ class StartupRecoveryUseCase:
             failed_task = await self._fail_task(
                 task=task,
                 error_code="startup_recovery_unconfirmed_command",
-                error_message=f"Task {task.id} has no confirmed external command during startup recovery",
+                error_message=f"У задачи {task.id} отсутствует подтверждённая внешняя команда во время startup recovery",
                 now=now,
             )
             return "failed", self._build_terminal_outcome(task=failed_task)
 
-        # Correction in-flight during a command batch → cannot safely resume dosing
+        # Если коррекция прервалась внутри command batch, безопасно продолжать дозирование нельзя
         if task.correction is not None:
             failed_task = await self._fail_task(
                 task=task,
                 error_code="startup_recovery_correction_interrupted",
                 error_message=(
-                    f"Task {task.id} correction interrupted during {task.correction.corr_step}"
+                    f"Коррекция задачи {task.id} была прервана на шаге {task.correction.corr_step}"
                 ),
                 now=now,
             )
@@ -184,12 +187,12 @@ class StartupRecoveryUseCase:
             return "failed", self._build_terminal_outcome(task=result["task"])
         if result["state"] != "done":
             logger.error(
-                "Startup recovery: unsupported native recovery state=%s task_id=%s zone_id=%s",
+                "Startup recovery: неподдерживаемое native recovery state=%s task_id=%s zone_id=%s",
                 result["state"],
                 task.id,
                 task.zone_id,
             )
-            raise StartupRecoveryError(f"Unsupported native recovery state={result['state']}")
+            raise StartupRecoveryError(f"Неподдерживаемое состояние native recovery={result['state']}")
 
         progressed_task = await self._apply_topology_done_transition(task=result["task"], now=now)
         if progressed_task.status == "completed":
@@ -201,12 +204,12 @@ class StartupRecoveryUseCase:
     async def _apply_topology_done_transition(
         self, *, task: AutomationTask, now: datetime,
     ) -> AutomationTask:
-        """v2 recovery: use topology registry to determine next stage after command DONE.
+        """Recovery v2: использует topology registry, чтобы определить следующий stage после command DONE.
 
-        1. Read task.current_stage
-        2. Lookup StageDef from registry
-        3. If terminal_error → fail
-        4. If next_stage → transition to next stage
+        1. Прочитать ``task.current_stage``.
+        2. Найти ``StageDef`` в registry.
+        3. Если задан ``terminal_error`` -> завершить ошибкой.
+        4. Если задан ``next_stage`` -> перейти в следующий stage.
         """
         topology = task.topology
         current_stage = task.current_stage
@@ -219,7 +222,7 @@ class StartupRecoveryUseCase:
             failed = await self._task_repository.fail_for_recovery(
                 task_id=task.id,
                 error_code="startup_recovery_unknown_stage",
-                error_message=f"Unknown stage {current_stage} in topology {topology}",
+                error_message=f"Неизвестный stage {current_stage} в topology {topology}",
                 now=now,
             )
             if failed is None:
@@ -231,7 +234,7 @@ class StartupRecoveryUseCase:
                     topology,
                 )
                 raise StartupRecoveryError(
-                    f"Unable to fail task_id={task.id} for unknown stage",
+                    f"Не удалось перевести task_id={task.id} в failed для неизвестного stage",
                 )
             return failed
 
@@ -260,7 +263,7 @@ class StartupRecoveryUseCase:
                     error_code,
                 )
                 raise StartupRecoveryError(
-                    f"Unable to fail task_id={task.id} after recovery DONE",
+                    f"Не удалось перевести task_id={task.id} в failed после recovery DONE",
                 )
             return failed
 
@@ -313,7 +316,7 @@ class StartupRecoveryUseCase:
                     next_stage,
                 )
                 raise StartupRecoveryError(
-                    f"Unable to requeue task_id={task.id} after recovery DONE",
+                    f"Не удалось повторно поставить task_id={task.id} в очередь после recovery DONE",
                 )
             return requeued
 
@@ -338,7 +341,7 @@ class StartupRecoveryUseCase:
                 current_stage,
             )
             raise StartupRecoveryError(
-                f"Unable to complete task_id={task.id} after recovery DONE",
+                f"Не удалось завершить task_id={task.id} после recovery DONE",
             )
         return completed
 
@@ -379,7 +382,7 @@ class StartupRecoveryUseCase:
                 error_code,
             )
             raise StartupRecoveryError(
-                f"Unable to fail task_id={task.id} during startup recovery with error_code={error_code}"
+                f"Не удалось перевести task_id={task.id} в failed во время startup recovery с error_code={error_code}"
             )
         return failed_task
 
@@ -432,8 +435,8 @@ class StartupRecoveryUseCase:
 
     def _missing_command_error_message(self, task: AutomationTask) -> str:
         if task.status == "waiting_command":
-            return f"Task {task.id} is waiting_command without resolvable legacy command"
-        return f"Task {task.id} has no confirmed external command during startup recovery"
+            return f"Задача {task.id} находится в waiting_command без разрешимой legacy command"
+        return f"У задачи {task.id} отсутствует подтверждённая внешняя команда во время startup recovery"
 
     def _build_terminal_outcome(self, *, task: AutomationTask) -> StartupRecoveryTerminalOutcome | None:
         intent_id = task.intent_id or 0

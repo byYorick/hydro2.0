@@ -1,4 +1,4 @@
-"""Immutable read-model DTO for AE3-Lite zone runtime snapshot."""
+"""Неизменяемый DTO read-model для runtime snapshot зоны AE3-Lite."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional, Tuple
 
 @dataclass(frozen=True)
 class ZoneActuatorRef:
-    """Resolved online command channel for planner-time node lookup."""
+    """Разрешённый online command channel для поиска ноды на этапе planner'а."""
 
     node_uid: str
     node_type: str
@@ -21,7 +21,7 @@ class ZoneActuatorRef:
 
 @dataclass(frozen=True)
 class ZoneSnapshot:
-    """Immutable zone runtime snapshot loaded from PostgreSQL in one transaction."""
+    """Неизменяемый runtime snapshot зоны, загружаемый из PostgreSQL в одной транзакции."""
 
     zone_id: int
     greenhouse_id: Optional[int]

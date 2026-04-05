@@ -1,4 +1,4 @@
-"""Persist control mode for a zone and sync active AE3 task snapshot."""
+"""Сохраняет control mode зоны и синхронизирует snapshot активной задачи AE3."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from common.db import execute
 
 
 class SetControlModeUseCase:
-    """Update zones.control_mode and keep the active task snapshot in sync."""
+    """Обновляет `zones.control_mode` и держит snapshot активной задачи в актуальном состоянии."""
 
     def __init__(
         self,

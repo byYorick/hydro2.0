@@ -243,3 +243,16 @@ CORRECTION_CAP_IGNORED = Counter(
     "Total times attempt-based correction caps were intentionally ignored by stage policy",
     ["topology", "stage", "cap_type"],
 )
+
+# ─── Startup recovery ────────────────────────────────────────────────
+
+STARTUP_RECOVERY_RUN = Counter(
+    "ae3_startup_recovery_run_total",
+    "Total startup recovery passes executed by AE3 runtime",
+)
+
+STARTUP_RECOVERY_TASK = Counter(
+    "ae3_startup_recovery_task_total",
+    "Tasks processed during startup recovery grouped by recovery outcome",
+    ["outcome"],  # completed | failed | waiting_command | recovered_waiting_command
+)

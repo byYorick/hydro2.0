@@ -151,6 +151,19 @@ class AlertLocalizationService
             'biz_correction_exhausted' => 'Цикл коррекции исчерпал все настроенные попытки.',
             'biz_clean_fill_timeout' => 'Превышено время ожидания заполнения бака чистой водой после всех циклов повтора.',
             'biz_solution_fill_timeout' => 'Превышено время ожидания заполнения бака раствором до завершения этапа.',
+            'biz_irrigation_decision_skip' => $this->translateRawMessage($rawMessage ?? '') ?? 'Decision-controller полива решил пропустить запуск полива.',
+            'biz_irrigation_decision_degraded' => $this->translateRawMessage($rawMessage ?? '') ?? 'Decision-controller полива разрешил деградированный запуск полива.',
+            'biz_irrigation_decision_fail' => $this->translateRawMessage($rawMessage ?? '') ?? 'Decision-controller полива вернул отказ.',
+            'biz_irrigation_solution_min' => $this->translateRawMessage($rawMessage ?? '') ?? 'Во время полива сработал нижний датчик уровня раствора.',
+            'biz_irrigation_replay_exhausted' => $this->translateRawMessage($rawMessage ?? '') ?? 'Исчерпан бюджет повторных запусков после повторных срабатываний нижнего уровня раствора.',
+            'biz_irrigation_wait_ready_timeout' => $this->translateRawMessage($rawMessage ?? '') ?? 'Полив не дождался перехода зоны в состояние READY.',
+            'biz_irrigation_correction_exhausted' => $this->translateRawMessage($rawMessage ?? '') ?? 'Попытки коррекции во время полива исчерпаны; полив продолжится без новых попыток коррекции на этом этапе.',
+            'irr_state_unavailable' => 'Снимок состояния IRR-ноды недоступен.',
+            'irr_state_stale' => 'Снимок состояния IRR-ноды устарел.',
+            'irr_state_mismatch' => $this->translateIrrStateMismatch($rawMessage) ?? 'Состояние IRR-ноды не совпадает с ожидаемым.',
+            'two_tank_irr_state_unavailable' => 'Снимок состояния IRR-ноды недоступен для критической проверки двухбакового workflow.',
+            'two_tank_irr_state_stale' => 'Снимок состояния IRR-ноды устарел для критической проверки двухбакового workflow.',
+            'two_tank_irr_state_mismatch' => $this->translateIrrStateMismatch($rawMessage) ?? 'Состояние IRR-ноды не совпадает с ожидаемым на критическом этапе двухбакового workflow.',
             'ae3_zone_lease_release_failed' => 'Не удалось освободить lease зоны после завершения задачи.',
             'ae3_zone_lease_lost' => 'Worker потерял lease зоны и продолжил выполнение без действительной блокировки.',
             'ae3_background_task_crashed' => 'Фоновая задача AE3 завершилась с аварией.',
@@ -302,13 +315,53 @@ class AlertLocalizationService
 
         $exactMap = [
             'Correction cycle exhausted all configured attempts.' => 'Цикл коррекции исчерпал все настроенные попытки.',
+            'Correction during irrigation exhausted all configured attempts.' => 'Попытки коррекции во время полива исчерпаны.',
             'Clean tank fill deadline exceeded after all retry cycles.' => 'Превышено время ожидания заполнения бака чистой водой после всех циклов повтора.',
+            'Clean tank fill deadline exceeded after all retry cycles — check water supply.' => 'Превышено время ожидания заполнения бака чистой водой после всех циклов повтора; проверьте подачу воды.',
             'Solution tank fill deadline exceeded before the stage could complete.' => 'Превышено время ожидания заполнения бака раствором до завершения этапа.',
+            'Solution tank fill deadline exceeded — check solution supply valve and pump.' => 'Превышено время ожидания заполнения бака раствором; проверьте клапан подачи раствора и насос.',
+            'Irrigation decision-controller decided to skip irrigation.' => 'Decision-controller полива решил пропустить запуск полива.',
+            'Irrigation decision-controller allowed degraded irrigation run.' => 'Decision-controller полива разрешил деградированный запуск полива.',
+            'Irrigation decision-controller returned fail.' => 'Decision-controller полива вернул отказ.',
+            'Irrigation decision-controller returned fail' => 'Decision-controller полива вернул отказ.',
+            'Solution min level switch triggered during irrigation.' => 'Во время полива сработал нижний датчик уровня раствора.',
+            'Irrigation replay budget exhausted after repeated solution-min triggers.' => 'Исчерпан бюджет повторных запусков после повторных срабатываний нижнего уровня раствора.',
+            'Solution min triggered again after setup replay budget was exhausted' => 'Нижний уровень раствора снова сработал после исчерпания бюджета повторов этапа setup.',
+            'Irrigation task timed out in await_ready (zone_workflow_phase never became ready).' => 'Полив превысил время ожидания на этапе await_ready: зона так и не перешла в состояние READY.',
+            'Irrigation request timed out while waiting for READY state' => 'Истекло время ожидания перехода зоны в состояние READY перед поливом.',
+            'Irrigation recovery timeout exceeded' => 'Превышено время этапа восстановления после полива.',
+            'Prepare recirculation retry limit reached' => 'Исчерпан лимит повторов подготовки рециркуляции.',
+            'IRR state snapshot unavailable' => 'Снимок состояния IRR-ноды недоступен.',
+            'IRR state snapshot stale' => 'Снимок состояния IRR-ноды устарел.',
+            'Zone lease was lost during task execution' => 'Во время выполнения задачи был потерян lease зоны.',
+            'Zone lease is no longer present after task completion.' => 'После завершения задачи lease зоны больше не присутствует.',
             'Zone lease could not be released after task completion.' => 'Не удалось освободить lease зоны после завершения задачи.',
             'Zone lease could not be released after task completion — zone may be locked.' => 'Не удалось освободить lease зоны после завершения задачи: зона могла остаться заблокированной.',
             'Zone lease heartbeat failed and the worker kept running without a valid lease.' => 'Потерян heartbeat lease зоны, и worker продолжил выполнение без действительной блокировки.',
             'Zone lease heartbeat failed to extend — zone may be hijacked or frozen.' => 'Не удалось продлить heartbeat lease зоны: зону могли перехватить или она зависла.',
             'Task execution exceeded runtime timeout' => 'Выполнение задачи превысило допустимый runtime timeout.',
+            'Transition outcome requires next_stage' => 'Результат перехода требует указания next_stage.',
+            'Unable to persist irrigation replay count' => 'Не удалось сохранить счётчик повторов полива.',
+            'Unable to persist irrigation decision' => 'Не удалось сохранить решение decision-controller полива.',
+            'idempotency_key is required' => 'Для запуска обязателен idempotency_key.',
+            'history-logger returned invalid JSON' => 'history-logger вернул некорректный JSON.',
+            'history-logger response does not contain data.command_id' => 'Ответ history-logger не содержит data.command_id.',
+            'CycleStartPlanner requires zone.automation_runtime=\'ae3\'' => 'CycleStartPlanner требует, чтобы zone.automation_runtime был равен `ae3`.',
+            'CycleStartPlanner requires an active grow_cycle with current_phase_id' => 'CycleStartPlanner требует активный grow_cycle с заполненным current_phase_id.',
+            'command_plans.plans.diagnostics is required' => 'В automation bundle обязателен раздел command_plans.plans.diagnostics.',
+            'diagnostics execution topology is required' => 'Для diagnostics execution обязательно указать topology.',
+            'command_plans.plans.diagnostics.steps must be a non-empty array' => 'command_plans.plans.diagnostics.steps должен быть непустым массивом.',
+            'lighting_tick requires zone.automation_runtime=\'ae3\'' => 'Для lighting_tick требуется zone.automation_runtime=`ae3`.',
+            'lighting_tick requires at least one online actuator mapping in zone snapshot' => 'Для lighting_tick требуется хотя бы один online actuator mapping в snapshot зоны.',
+            'lighting_tick: no lighting actuator channel found (e.g. light_main)' => 'Для lighting_tick не найден lighting actuator channel, например `light_main`.',
+            'PlannedCommand payload must contain cmd and params' => 'PlannedCommand должен содержать `cmd` и `params`.',
+            'PlannedCommand payload must contain cmd and params for publish' => 'Для публикации PlannedCommand должен содержать `cmd` и `params`.',
+            'EC dose sequence JSON must be a list' => 'JSON последовательности дозирования EC должен быть списком.',
+            'EC dose sequence JSON is invalid' => 'JSON последовательности дозирования EC некорректен.',
+            'EC dose sequence item must be object' => 'Элемент последовательности дозирования EC должен быть объектом.',
+            'EC dose sequence missing node_uid' => 'В последовательности дозирования EC отсутствует node_uid.',
+            'EC dose sequence missing channel' => 'В последовательности дозирования EC отсутствует channel.',
+            'EC dose sequence amount_ml must be > 0' => 'В последовательности дозирования EC поле amount_ml должно быть больше 0.',
         ];
 
         if (array_key_exists($normalized, $exactMap)) {
@@ -316,7 +369,269 @@ class AlertLocalizationService
         }
 
         return $this->translateCorrectionNoEffect($normalized, [])
+            ?? $this->translateIrrStateMismatch($normalized)
+            ?? $this->translateAe3StructuredMessage($normalized)
             ?? $this->translateAe3HttpMessage($normalized);
+    }
+
+    private function translateIrrStateMismatch(?string $message): ?string
+    {
+        $normalized = trim((string) $message);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/^IRR state mismatch for ([a-z0-9_\-]+): expected=(.+), got=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf(
+                'Состояние IRR-ноды не совпало по признаку %s: ожидалось %s, получено %s.',
+                $matches[1],
+                $matches[2],
+                $matches[3],
+            );
+        }
+
+        return null;
+    }
+
+    private function translateAe3StructuredMessage(?string $message): ?string
+    {
+        $normalized = trim((string) $message);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/^Intent skipped: zone busy(?: \(zone_id=(\d+)\))?$/i', $normalized, $matches) === 1) {
+            $zoneId = isset($matches[1]) && $matches[1] !== '' ? (int) $matches[1] : null;
+            return $zoneId !== null
+                ? sprintf('Повторный запуск отклонён: зона %d уже занята активной задачей или intent.', $zoneId)
+                : 'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.';
+        }
+
+        if (preg_match('/^Task execution exceeded (\d+)s timeout$/i', $normalized, $matches) === 1) {
+            return sprintf('Выполнение задачи превысило timeout %d с.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) has no claimed_by during startup recovery$/i', $normalized, $matches) === 1) {
+            return sprintf('Во время startup recovery у задачи %d отсутствует claimed_by.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) has no confirmed external command during startup recovery$/i', $normalized, $matches) === 1) {
+            return sprintf('Во время startup recovery у задачи %d не подтверждена внешняя команда.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) is waiting_command without resolvable legacy command$/i', $normalized, $matches) === 1) {
+            return sprintf('Задача %d находится в waiting_command без разрешимой legacy-команды.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) correction interrupted during ([a-z0-9_\-]+)$/i', $normalized, $matches) === 1) {
+            return sprintf(
+                'Коррекция задачи %d была прервана на шаге %s.',
+                (int) $matches[1],
+                $matches[2],
+            );
+        }
+
+        if (preg_match('/^Unknown stage ([a-z0-9_\-]+) in topology ([a-z0-9_\-]+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неизвестный stage %s для topology %s.', $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Task (\d+) has no claimed_by owner$/i', $normalized, $matches) === 1) {
+            return sprintf('У задачи %d отсутствует владелец claimed_by.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Unable to mark task (\d+) running$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести задачу %d в состояние running.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) could not persist poll outcome$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось сохранить результат poll для задачи %d.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) could not transition to completed$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести задачу %d в состояние completed.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) could not transition to ([a-z0-9_\-]+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести задачу %d на stage %s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Task (\d+) could not persist correction state$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось сохранить состояние коррекции для задачи %d.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) has no ae_command for recovery$/i', $normalized, $matches) === 1) {
+            return sprintf('У задачи %d отсутствует связанная ae_command для recovery.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) missing during ae_commands insert \(likely concurrent cleanup\)$/i', $normalized, $matches) === 1) {
+            return sprintf('Задача %d исчезла во время вставки в ae_commands, вероятно из-за конкурентного cleanup.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) missing after HL publish while linking ae_commands \(likely concurrent cleanup\); cmd_id=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Задача %d исчезла после публикации через history-logger при связывании ae_commands; cmd_id=%s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Task (\d+) missing before waiting_command transition \(likely concurrent cleanup\); cmd_id=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Задача %d исчезла перед переходом в waiting_command; cmd_id=%s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Task (\d+) missing during publish pipeline \(likely concurrent cleanup\): (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Задача %d исчезла во время publish pipeline: %s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Task (\d+) could not enter waiting_command$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести задачу %d в waiting_command.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Task (\d+) could not fail on ([A-Z_]+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести задачу %d в failed после terminal status %s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Task (\d+) became ([a-z_]+) during command roundtrip$/i', $normalized, $matches) === 1) {
+            return sprintf('Во время command roundtrip задача %d перешла в состояние %s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Command polling exceeded stage deadline for task (\d+) stage=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Опрос команды превысил дедлайн stage для задачи %d на этапе %s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^Command terminal status ([A-Z_]+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Команда завершилась terminal status %s.', $matches[1]);
+        }
+
+        if (preg_match('/^Legacy commands\.id not found for zone_id=(\d+) cmd_id=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Не найдена запись legacy commands.id для зоны %d и cmd_id=%s.', (int) $matches[1], $matches[2]);
+        }
+
+        if (preg_match('/^ae_commands\.id=(\d+) not updated after publish \(task still present\)$/i', $normalized, $matches) === 1) {
+            return sprintf('После публикации не удалось обновить ae_commands.id=%d, хотя задача ещё существует.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^ae_command (.+) has neither external_id nor payload\.cmd_id$/i', $normalized, $matches) === 1) {
+            return sprintf('У ae_command %s отсутствуют и external_id, и payload.cmd_id.', $matches[1]);
+        }
+
+        if (preg_match('/^Unable to create canonical task for zone_id=(\d+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось создать canonical task для зоны %d.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Unable to move task_id=(\d+) into waiting_command$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести task_id=%d в waiting_command.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Unable to fail task_id=(\d+) after publish error$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось перевести task_id=%d в failed после ошибки публикации.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Unable to recover task_id=(\d+) into waiting_command$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось восстановить task_id=%d в состояние waiting_command.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Unsupported startup recovery outcome=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неподдерживаемый результат startup recovery: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^Unsupported native recovery state=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неподдерживаемое состояние native recovery: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^Unsupported task_type for CycleStartPlanner: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('CycleStartPlanner не поддерживает task_type=%s.', $matches[1]);
+        }
+
+        if (preg_match('/^AutomationTask\.zone_id=(\d+) does not match ZoneSnapshot\.zone_id=(\d+)$/i', $normalized, $matches) === 1) {
+            return sprintf('AutomationTask.zone_id=%d не совпадает с ZoneSnapshot.zone_id=%d.', (int) $matches[1], (int) $matches[2]);
+        }
+
+        if (preg_match('/^Unsupported command_plans\.schema_version=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неподдерживаемая версия command_plans.schema_version=%s.', $matches[1]);
+        }
+
+        if (preg_match('/^Unsupported diagnostics workflow for cycle_start planner: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('CycleStartPlanner не поддерживает diagnostics workflow=%s.', $matches[1]);
+        }
+
+        if (preg_match('/^Invalid command plan step at index=(\d+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Некорректный шаг command plan на позиции %d.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Each command step must define channel\/cmd\/params \(index=(\d+)\)$/i', $normalized, $matches) === 1) {
+            return sprintf('Каждый шаг command plan должен содержать channel/cmd/params (index=%d).', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Ambiguous system channel resolution for node_type=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неоднозначное разрешение system channel для node_type=%s.', $matches[1]);
+        }
+
+        if (preg_match('/^Expected exactly one runtime node for node_types=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Ожидалась ровно одна runtime-нода для node_types=%s.', $matches[1]);
+        }
+
+        if (preg_match('/^Missing required correction_config field: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Отсутствует обязательное поле correction_config: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^Missing or invalid correction_config field: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Поле correction_config отсутствует или некорректно: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^correction_config field (.+) must be >= (.+), got (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Поле correction_config %s должно быть >= %s, получено %s.', $matches[1], $matches[2], $matches[3]);
+        }
+
+        if (preg_match('/^correction_config field (.+) must be <= (.+), got (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Поле correction_config %s должно быть <= %s, получено %s.', $matches[1], $matches[2], $matches[3]);
+        }
+
+        if (preg_match('/^Unable to resolve greenhouse_uid for zone_id=(\d+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Не удалось определить greenhouse_uid для зоны %d.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^history-logger request failed: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Запрос к history-logger завершился ошибкой: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^history-logger publish failed with HTTP (\d+)$/i', $normalized, $matches) === 1) {
+            return sprintf('history-logger не смог опубликовать команду и вернул HTTP %d.', (int) $matches[1]);
+        }
+
+        if (preg_match('/^Legacy command not found for external_id=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Не найдена legacy-команда для external_id=%s.', $matches[1]);
+        }
+
+        if (preg_match('/^Unsupported legacy status=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неподдерживаемый legacy-статус: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^Level sensor unavailable: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Недоступен датчик уровня: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^Level sensor stale: (.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Данные датчика уровня устарели: %s.', $matches[1]);
+        }
+
+        if (preg_match('/^(PH|EC) telemetry unavailable for target evaluation$/i', $normalized, $matches) === 1) {
+            return sprintf('Телеметрия %s недоступна для оценки достижения target.', strtoupper($matches[1]));
+        }
+
+        if (preg_match('/^(PH|EC) telemetry stale for target evaluation$/i', $normalized, $matches) === 1) {
+            return sprintf('Телеметрия %s устарела для оценки достижения target.', strtoupper($matches[1]));
+        }
+
+        if (preg_match('/^Tank sensors inconsistent: max=1 min=0 \((.+)\)$/i', $normalized, $matches) === 1) {
+            return sprintf('Датчики бака противоречат друг другу: max=1 и min=0 (%s).', $matches[1]);
+        }
+
+        if (preg_match('/^No handler for key=(.+) \(stage=(.+)\)$/i', $normalized, $matches) === 1) {
+            return sprintf('Для stage %s не найден handler %s.', $matches[2], $matches[1]);
+        }
+
+        if (preg_match('/^Unknown StageOutcome\.kind=(.+)$/i', $normalized, $matches) === 1) {
+            return sprintf('Неизвестный тип результата StageOutcome: %s.', $matches[1]);
+        }
+
+        return null;
     }
 
     private function translateCorrectionConfigMissing(?string $message): ?string
@@ -476,6 +791,13 @@ class AlertLocalizationService
             'ae3 background task crashed' => 'Сбой фоновой задачи AE3',
             'ae3 api unhandled exception' => 'Необработанное исключение AE3 API',
             'ae3 api http 5xx' => 'Ошибка AE3 API уровня HTTP 5xx',
+            'ae3 irrigation decision skip' => 'Decision-controller полива пропустил запуск',
+            'ae3 irrigation decision degraded' => 'Decision-controller полива разрешил деградированный запуск',
+            'ae3 irrigation decision fail' => 'Decision-controller полива отклонил запуск',
+            'ae3 irrigation solution min' => 'Сработал нижний уровень раствора во время полива',
+            'ae3 irrigation replay exhausted' => 'Исчерпан бюджет повторов полива',
+            'ae3 irrigation wait ready timeout' => 'Таймаут ожидания READY перед поливом',
+            'ae3 irrigation correction exhausted' => 'Исчерпаны попытки коррекции во время полива',
             'command ack not found' => 'ACK для неизвестной команды',
             'command send failed' => 'Команда не отправлена',
             'command node/zone mismatch' => 'Несоответствие node/zone для команды',

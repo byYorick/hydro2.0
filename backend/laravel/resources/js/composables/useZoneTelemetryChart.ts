@@ -1,5 +1,5 @@
 import { computed, ref, watch } from 'vue'
-import type { ComputedRef } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
 import { logger } from '@/utils/logger'
 
 export const telemetryRanges = ['1H', '24H', '7D', '30D', 'ALL'] as const
@@ -11,16 +11,23 @@ export interface ZoneTelemetryChartDeps {
     metric: 'PH' | 'EC',
     params: { from?: string; to: string }
   ) => Promise<Array<{ ts: number; value: number }>>
+  fetchHistoryWithNodes: (
+    zoneId: number,
+    metric: 'SOIL_MOISTURE',
+    params: { from?: string; to: string }
+  ) => Promise<Record<number, Array<{ ts: number; value: number }>>>
+  hasSoilMoisture: Ref<boolean>
 }
 
 export function useZoneTelemetryChart(
   zoneId: ComputedRef<number | undefined>,
   deps: ZoneTelemetryChartDeps
 ) {
-  const { fetchHistory } = deps
+  const { fetchHistory, fetchHistoryWithNodes, hasSoilMoisture } = deps
   const chartTimeRange = ref<TelemetryRange>('24H')
   const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
   const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
+  const chartDataSoilMoisture = ref<Record<number, Array<{ ts: number; value: number }>>>({})
   let chartDataRequestVersion = 0
 
   const telemetryRangeKey = computed(() =>
@@ -137,15 +144,47 @@ export function useZoneTelemetryChart(
     }
   }
 
+  async function loadSoilMoistureData(
+    timeRange: TelemetryRange
+  ): Promise<Record<number, Array<{ ts: number; value: number }>>> {
+    const requestZoneId = zoneId.value
+    if (!requestZoneId) return {}
+
+    const now = new Date()
+    let from: Date | null = null
+    switch (timeRange) {
+      case '1H': from = new Date(now.getTime() - 60 * 60 * 1000); break
+      case '24H': from = new Date(now.getTime() - 24 * 60 * 60 * 1000); break
+      case '7D': from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break
+      case '30D': from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break
+      case 'ALL': from = null; break
+    }
+
+    try {
+      const params: { from?: string; to: string } = { to: now.toISOString() }
+      if (from) params.from = from.toISOString()
+      return await fetchHistoryWithNodes(requestZoneId, 'SOIL_MOISTURE', params)
+    } catch (err) {
+      logger.error('Failed to load SOIL_MOISTURE history:', err)
+      return {}
+    }
+  }
+
   async function refreshChartData(timeRange: TelemetryRange): Promise<void> {
     const requestVersion = ++chartDataRequestVersion
-    const [phData, ecData] = await Promise.all([
+    const soilPromise = hasSoilMoisture.value
+      ? loadSoilMoistureData(timeRange)
+      : Promise.resolve<Record<number, Array<{ ts: number; value: number }>>>({})
+
+    const [phData, ecData, soilData] = await Promise.all([
       loadChartData('PH', timeRange),
       loadChartData('EC', timeRange),
+      soilPromise,
     ])
     if (requestVersion !== chartDataRequestVersion) return
     chartDataPh.value = phData
     chartDataEc.value = ecData
+    chartDataSoilMoisture.value = soilData
   }
 
   async function onChartTimeRangeChange(newRange: TelemetryRange): Promise<void> {
@@ -171,6 +210,7 @@ export function useZoneTelemetryChart(
     chartDataRequestVersion += 1
     chartDataPh.value = []
     chartDataEc.value = []
+    chartDataSoilMoisture.value = {}
     if (!newZoneId) return
     void refreshChartData(chartTimeRange.value)
   })
@@ -179,6 +219,7 @@ export function useZoneTelemetryChart(
     chartTimeRange,
     chartDataPh,
     chartDataEc,
+    chartDataSoilMoisture,
     onChartTimeRangeChange,
     refreshChartData,
     initStoredRange,

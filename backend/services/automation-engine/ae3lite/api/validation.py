@@ -1,4 +1,4 @@
-"""AE3-Lite scheduler API validation helpers."""
+"""Вспомогательные проверки scheduler API для AE3-Lite."""
 
 from __future__ import annotations
 
@@ -25,15 +25,15 @@ async def validate_scheduler_zone(
         )
     except Exception as exc:
         logger.error(
-            "Failed to validate scheduler zone: zone_id=%s error=%s",
+            "Не удалось провалидировать scheduler zone: zone_id=%s error=%s",
             zone_id,
             exc,
             exc_info=True,
         )
-        raise HTTPException(status_code=503, detail="Zone validation unavailable") from exc
+        raise HTTPException(status_code=503, detail="Проверка зоны временно недоступна") from exc
 
     if not rows:
-        raise HTTPException(status_code=404, detail=f"Zone '{zone_id}' not found")
+        raise HTTPException(status_code=404, detail=f"Зона '{zone_id}' не найдена")
 
 
 __all__ = ["validate_scheduler_zone"]

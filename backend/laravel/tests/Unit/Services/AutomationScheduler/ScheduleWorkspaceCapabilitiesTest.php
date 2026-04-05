@@ -8,15 +8,15 @@ use Tests\TestCase;
 
 class ScheduleWorkspaceCapabilitiesTest extends TestCase
 {
-    public function test_ae3_marks_irrigation_and_lighting_executable(): void
+    public function test_ae3_marks_irrigation_lighting_and_diagnostics_executable(): void
     {
         $zone = new Zone;
         $zone->setRawAttributes(['automation_runtime' => 'ae3'], true);
 
-        $caps = ScheduleWorkspaceCapabilities::build($zone, ['irrigation', 'lighting']);
+        $caps = ScheduleWorkspaceCapabilities::build($zone, ['irrigation', 'lighting', 'diagnostics']);
 
         $this->assertTrue($caps['ae3_irrigation_only_dispatch']);
-        $this->assertSame(['irrigation', 'lighting'], $caps['executable_task_types']);
+        $this->assertSame(['irrigation', 'lighting', 'diagnostics'], $caps['executable_task_types']);
         $this->assertSame([], $caps['non_executable_planned_task_types']);
         $this->assertTrue($caps['diagnostics_available']);
     }
@@ -39,6 +39,17 @@ class ScheduleWorkspaceCapabilitiesTest extends TestCase
         $caps = ScheduleWorkspaceCapabilities::build($zone, ['irrigation']);
 
         $this->assertSame([], $caps['non_executable_planned_task_types']);
+    }
+
+    public function test_ae3_does_not_mark_diagnostics_as_non_executable(): void
+    {
+        $zone = new Zone;
+        $zone->setRawAttributes(['automation_runtime' => 'ae3'], true);
+
+        $caps = ScheduleWorkspaceCapabilities::build($zone, ['diagnostics', 'climate']);
+
+        $this->assertSame(['irrigation', 'lighting', 'diagnostics'], $caps['executable_task_types']);
+        $this->assertSame(['climate'], $caps['non_executable_planned_task_types']);
     }
 
     /**

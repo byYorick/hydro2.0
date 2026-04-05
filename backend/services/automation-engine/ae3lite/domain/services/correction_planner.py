@@ -1,4 +1,4 @@
-"""Pure domain service for AE3-Lite correction dose planning."""
+"""Чистый доменный сервис планирования доз коррекции для AE3-Lite."""
 
 from __future__ import annotations
 
@@ -13,21 +13,21 @@ from ae3lite.domain.services.phase_utils import normalize_phase_key
 
 _logger = logging.getLogger(__name__)
 
-# ── Defaults for dose computation (5.1: named constants replacing magic numbers) ──
+# ── Значения по умолчанию для расчёта доз (5.1: именованные константы вместо magic numbers) ──
 
-#: Default solution tank volume when not provided in correction_config.
+#: Объём бака раствора по умолчанию, если он не задан в correction_config.
 _DEFAULT_SOLUTION_VOLUME_L: float = 100.0
 
-#: Hard upper limit for a single EC dose when correction_config.max_ec_dose_ml is absent.
+#: Жёсткий верхний предел для одной EC-дозы, если correction_config.max_ec_dose_ml отсутствует.
 _DEFAULT_MAX_EC_DOSE_ML: float = 50.0
 
-#: Hard upper limit for a single pH dose when correction_config.max_ph_dose_ml is absent.
+#: Жёсткий верхний предел для одной pH-дозы, если correction_config.max_ph_dose_ml отсутствует.
 _DEFAULT_MAX_PH_DOSE_ML: float = 20.0
 
-# ── EC component selection fallback order (5.3) ──────────────────────────────
+# ── Порядок fallback-выбора EC-компонентов (5.3) ──────────────────────────────
 
-#: Preferred order for EC components when no ec_component_policy is configured.
-#: Components not in this list are appended alphabetically after the listed ones.
+#: Предпочтительный порядок EC-компонентов, когда ec_component_policy не настроен.
+#: Компоненты вне этого списка добавляются после перечисленных в алфавитном порядке.
 _EC_COMPONENT_DEFAULT_ORDER: tuple[str, ...] = ("npk", "a", "b", "calcium", "magnesium", "micro", "trace")
 
 
@@ -42,7 +42,7 @@ class EcDoseStep:
 
 @dataclass(frozen=True)
 class DosePlan:
-    """Resolved correction actions for the current measurement snapshot."""
+    """Разрешённые действия коррекции для текущего snapshot измерений."""
 
     needs_ec: bool = False
     ec_component: str = ""
@@ -88,7 +88,7 @@ class DosePlan:
 
 
 class CorrectionPlanner:
-    """Domain planner for EC/pH dose pulses."""
+    """Доменный planner импульсов дозирования EC/pH."""
 
     def is_within_tolerance(
         self,
@@ -245,10 +245,13 @@ class CorrectionPlanner:
                 ec_dosing_mode = str(correction_config.get("ec_dosing_mode") or "single").strip().lower() or "single"
                 excluded = correction_config.get("ec_excluded_components") or ()
                 excluded_set = {str(x).strip().lower() for x in excluded if str(x).strip()}
+                # Используем нормализованный phase_key (irrigating|irrigation|irrig_recirc → irrigation),
+                # а не сырой workflow_phase, чтобы fail-closed логика совпадала с normalize_phase_key
+                # и мы не откатывались к NPK из-за опечатки.
                 multi_fail_closed = (
                     ec_dosing_mode == "multi_sequential"
                     and "npk" in excluded_set
-                    and str(workflow_phase).strip().lower() == "irrigating"
+                    and phase_key == "irrigation"
                 )
                 if ec_dosing_mode == "multi_sequential" and isinstance(ec_actuators, Mapping):
                     ec_pid_entry = _pid_entry(pid_state, "ec")
@@ -282,7 +285,7 @@ class CorrectionPlanner:
                             continue
                         active[name] = weight
                     active_sum = sum(active.values())
-                    if multi_fail_closed and str(workflow_phase).strip().lower() == "irrigating" and active_sum <= 0:
+                    if multi_fail_closed and active_sum <= 0:
                         raise PlannerConfigurationError(
                             "EC multi_sequential excludes NPK but no active EC components are configured"
                         )
@@ -324,7 +327,7 @@ class CorrectionPlanner:
                             calibration = resolved_ec.get("calibration")
                             if not isinstance(calibration, Mapping):
                                 raise PlannerConfigurationError(
-                                    f"EC dosing pump calibration is required (channel={channel}, node={node_uid})"
+                                    f"Для насоса дозирования EC требуется calibration (channel={channel}, node={node_uid})"
                                 )
 
                             gain = _ec_component_process_gain(
@@ -335,7 +338,7 @@ class CorrectionPlanner:
                             )
                             if gain is None or gain <= 0:
                                 raise PlannerConfigurationError(
-                                    f"Process gain is required for ec component {component} in multi_sequential mode"
+                                    f"Для ec component {component} в режиме multi_sequential требуется process gain"
                                 )
 
                             dose_ml = output_units * active_ratio / gain
@@ -345,7 +348,8 @@ class CorrectionPlanner:
                             min_effective_ml = max(0.0, float(calibration.get("min_effective_ml") or 0.0))
                             if dose_ml > 0 and min_effective_ml > 0:
                                 dose_ml = max(dose_ml, min_effective_ml)
-                                # Re-apply caps after min_effective bump to avoid exceeding PID/contract limits.
+                                # Повторно применить ограничения после min_effective bump,
+                                # чтобы не превысить лимиты PID/контракта.
                                 dose_ml = min(dose_ml, component_gap / gain if component_gap > 0 else 0.0)
                                 dose_ml = min(dose_ml, max_ml * active_ratio)
                                 if dose_ml > 0 and dose_ml < min_effective_ml:
@@ -409,8 +413,8 @@ class CorrectionPlanner:
                             ec_discarded_details = {"discarded": discarded}
                             ec_needs = False
 
-                # Fail-closed: if multi_sequential is enabled and NPK is excluded during irrigation,
-                # do NOT fallback to single-dose (which would default to ec_npk_pump).
+                # Fail-closed: если включён multi_sequential и NPK исключён во время полива,
+                # нельзя откатываться к single-dose, который по умолчанию выберет ec_npk_pump.
                 if multi_fail_closed and not ec_dose_sequence:
                     discarded = ()
                     if isinstance(ec_discarded_details, Mapping):
@@ -440,7 +444,7 @@ class CorrectionPlanner:
                     calibration = resolved_ec.get("calibration")
                     if not isinstance(calibration, Mapping):
                         raise PlannerConfigurationError(
-                            f"EC dosing pump calibration is required (channel={ec_channel}, node={ec_node_uid})"
+                            f"Для насоса дозирования EC требуется calibration (channel={ec_channel}, node={ec_node_uid})"
                         )
                     ec_amount_ml, ec_pid_update = _compute_amount_ml(
                         kind="ec",
@@ -488,7 +492,7 @@ class CorrectionPlanner:
                 calibration = resolved_ph.get("calibration")
                 if not isinstance(calibration, Mapping):
                     raise PlannerConfigurationError(
-                        f"PH dosing pump calibration is required (channel={ph_channel}, node={ph_node_uid})"
+                        f"Для насоса дозирования PH требуется calibration (channel={ph_channel}, node={ph_node_uid})"
                     )
                 ph_gap = ph_up_gap if ph_needs_up else ph_down_gap
                 ph_amount_ml, ph_pid_update = _compute_amount_ml(
@@ -644,7 +648,7 @@ def _find_ec_component_actuator(
     ec_actuators: Mapping[str, Any],
     component: str,
 ) -> Mapping[str, Any] | None:
-    """Best-effort lookup of an EC component actuator by normalized name."""
+    """Пытается найти actuator EC-компонента по нормализованному имени."""
     want = str(component).strip().lower()
     if not want:
         return None
@@ -671,7 +675,7 @@ def _ec_component_process_gain(
     pid_entry: Mapping[str, Any],
     phase_key: str,
 ) -> float | None:
-    """Resolve per-component EC gain, falling back to generic ec_gain_per_ml."""
+    """Разрешает EC-gain для конкретного компонента с fallback на общий `ec_gain_per_ml`."""
     gains = process_cfg.get("ec_component_gains")
     gains = gains if isinstance(gains, Mapping) else {}
     entry = gains.get(component) if isinstance(gains.get(component), Mapping) else None
@@ -682,7 +686,7 @@ def _ec_component_process_gain(
         except (TypeError, ValueError):
             value = 0.0
         if value > 0:
-            # Do not apply adaptive EMA here yet; keep per-component gains authoritative.
+            # Пока не применяем adaptive EMA: per-component gain остаётся авторитетным.
             return value
     return _process_gain(kind="ec", process_cfg=process_cfg, pid_entry=pid_entry, phase_key=phase_key)
 
@@ -717,7 +721,8 @@ def _resolve_ec_actuator(
             order_idx = 0  # explicit policy overrides default ordering
         else:
             weight = 0.0
-            # Use _EC_COMPONENT_DEFAULT_ORDER for deterministic, agronomically sensible selection.
+            # Использовать _EC_COMPONENT_DEFAULT_ORDER для детерминированного
+            # и агрономически осмысленного выбора.
             try:
                 order_idx = _EC_COMPONENT_DEFAULT_ORDER.index(component)
             except ValueError:
@@ -799,7 +804,7 @@ def _compute_amount_ml(
         dose_ml = output_units / gain if gain > 0 else 0.0
     else:
         raise PlannerConfigurationError(
-            f"Process gain is required for {kind} in observation-driven correction mode"
+            f"Для {kind} в режиме observation-driven correction требуется process gain"
         )
 
     if gain is not None and gap > 0:
@@ -875,9 +880,9 @@ def _process_gain(
         weight *= max(0.35, 1.0 - min(0.65, wave_score_ema))
     effective = value * (1.0 - weight) + learned_gain * weight
     if phase_key == "tank_recirc" and kind == "ec":
-        # Recirculation must stay conservative: learned EC gain may only
-        # increase confidence, but it must not reduce the authoritative
-        # process-calibration gain and inflate the next pulse.
+        # В recirculation режим должен оставаться консервативным:
+        # learned EC gain может повышать уверенность, но не должен уменьшать
+        # авторитетный gain из process calibration и раздувать следующий импульс.
         effective = max(value, effective)
     return max(value * 0.25, min(value * 4.0, effective))
 
@@ -935,9 +940,9 @@ def _reset_pid_state_if_inside_bounds(
             "integral": 0.0,
             "prev_error": 0.0,
             "prev_derivative": 0.0,
-            # Reset last_measurement_at so the next out-of-bounds tick computes
-            # dt from now — not from a stale pre-reset timestamp, which would
-            # cause an integral spike on re-entry.
+            # Сбросить last_measurement_at, чтобы следующий out-of-bounds tick
+            # считал dt от текущего момента, а не от устаревшей отметки времени,
+            # иначе при повторном входе можно получить всплеск интеграла.
             "last_measurement_at": now,
             "current_zone": "dead",
         }

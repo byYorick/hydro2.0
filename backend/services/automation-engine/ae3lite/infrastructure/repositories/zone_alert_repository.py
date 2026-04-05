@@ -1,4 +1,4 @@
-"""Read-only access to zone alerts for AE3 runtime gating."""
+"""Read-only доступ к алертам зоны для runtime-gating в AE3."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from common.db import get_pool
 
 
 class PgZoneAlertRepository:
-    """Minimal alert lookup used by AE3 stage guards."""
+    """Минимальный lookup алертов, который используют stage-guard'ы AE3."""
 
     async def has_active_alert(self, *, zone_id: int, code: str) -> bool:
         normalized_code = str(code or "").strip().lower()

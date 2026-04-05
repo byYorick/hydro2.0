@@ -1,4 +1,4 @@
-"""PostgreSQL repository for AE3-Lite PID runtime state."""
+"""PostgreSQL-репозиторий runtime-состояния PID в AE3-Lite."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ _SQL_UPSERT = """
 
 
 class PgPidStateRepository:
-    """Persist additive runtime state for PH/EC controllers."""
+    """Сохраняет накопленное runtime-состояние PH/EC-контроллеров."""
 
     def _normalize_timestamp(self, value: datetime) -> datetime:
         normalized = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
@@ -152,10 +152,10 @@ class PgPidStateRepository:
         now: datetime,
         updates: list[dict],
     ) -> None:
-        """Atomically upsert multiple pid_type states within a single transaction.
+        """Атомарно upsert'ит состояния нескольких `pid_type` в одной транзакции.
 
-        Each item in ``updates`` is a dict accepted by ``upsert_state`` minus
-        ``zone_id`` and ``now`` (those are shared).
+        Каждый элемент ``updates`` — это dict, совместимый с ``upsert_state``,
+        но без ``zone_id`` и ``now``: они общие для всей операции.
         """
         all_params = [
             self._normalize_params(zone_id=zone_id, now=now, **update)
@@ -181,11 +181,11 @@ class PgPidStateRepository:
             )
 
     async def read_measured_value(self, *, zone_id: int, pid_type: str) -> Optional[float]:
-        """Return the most recently persisted last_measured_value for a PID type.
+        """Возвращает последнее сохранённое `last_measured_value` для типа PID.
 
-        Used by dose steps to retrieve the measurement that triggered the dose,
-        avoiding reliance on the potentially stale plan.runtime pid_state snapshot.
-        Returns None if no row exists yet.
+        Используется шагами дозирования, чтобы взять измерение, которое вызвало дозу,
+        а не полагаться на потенциально устаревший snapshot `plan.runtime.pid_state`.
+        Возвращает ``None``, если строки ещё нет.
         """
         pool = await get_pool()
         async with pool.acquire() as conn:
