@@ -33,6 +33,10 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function clonePidConfig(raw: unknown): PidConfig {
+  return clone(raw) as PidConfig
+}
+
 function normalizePreset(input: unknown): RuntimeTuningPreset | null {
   if (!isRecord(input)) {
     return null
@@ -52,14 +56,14 @@ function normalizePreset(input: unknown): RuntimeTuningPreset | null {
       irrigation: isRecord(processCalibration.irrigation) ? clone(processCalibration.irrigation) : {},
     },
     pid: {
-      ph: isRecord(pid.ph) ? clone(pid.ph as PidConfig) : {} as PidConfig,
-      ec: isRecord(pid.ec) ? clone(pid.ec as PidConfig) : {} as PidConfig,
+      ph: isRecord(pid.ph) ? clonePidConfig(pid.ph) : {} as PidConfig,
+      ec: isRecord(pid.ec) ? clonePidConfig(pid.ec) : {} as PidConfig,
     },
   }
 }
 
 export function normalizeRuntimeTuningBundleDocument(
-  document: AutomationDocument<Record<string, unknown>> | null | undefined,
+  document: AutomationDocument<unknown> | null | undefined,
 ): RuntimeTuningBundlePayload {
   const payload = isRecord(document?.payload) ? document.payload : {}
   const presets = Array.isArray(payload.presets)
@@ -92,8 +96,8 @@ export function normalizeRuntimeTuningBundleDocument(
         irrigation: isRecord(resolvedProcessCalibration.irrigation) ? clone(resolvedProcessCalibration.irrigation) : {},
       },
       pid: {
-        ph: isRecord(resolvedPid.ph) ? clone(resolvedPid.ph as PidConfig) : {} as PidConfig,
-        ec: isRecord(resolvedPid.ec) ? clone(resolvedPid.ec as PidConfig) : {} as PidConfig,
+        ph: isRecord(resolvedPid.ph) ? clonePidConfig(resolvedPid.ph) : {} as PidConfig,
+        ec: isRecord(resolvedPid.ec) ? clonePidConfig(resolvedPid.ec) : {} as PidConfig,
       },
     },
   }

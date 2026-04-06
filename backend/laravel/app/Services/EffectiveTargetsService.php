@@ -498,8 +498,10 @@ class EffectiveTargetsService
         }
 
         if ($enabled === false) {
+            $lighting['enabled'] = false;
             $lighting = $this->mergeTaskExecution($lighting, ['force_skip' => true]);
         } elseif ($enabled === true) {
+            $lighting['enabled'] = true;
             $lighting = $this->mergeTaskExecution($lighting, ['force_skip' => false]);
         }
 

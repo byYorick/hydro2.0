@@ -2486,14 +2486,17 @@ const recipeSoilMoistureTargets = computed(() => {
 
 const recipeChemistrySummary = computed(() => {
   const phase = asRecord(props.currentRecipePhase)
+  const targets = asRecord(phase?.targets)
+  const phBand = asRecord(targets?.ph)
+  const ecBand = asRecord(targets?.ec)
 
   return {
     phTarget: toNullableNumber(phase?.ph_target),
-    phMin: toNullableNumber(phase?.ph_min ?? asRecord(phase?.targets)?.ph?.min),
-    phMax: toNullableNumber(phase?.ph_max ?? asRecord(phase?.targets)?.ph?.max),
+    phMin: toNullableNumber(phase?.ph_min ?? phBand?.min),
+    phMax: toNullableNumber(phase?.ph_max ?? phBand?.max),
     ecTarget: toNullableNumber(phase?.ec_target),
-    ecMin: toNullableNumber(phase?.ec_min ?? asRecord(phase?.targets)?.ec?.min),
-    ecMax: toNullableNumber(phase?.ec_max ?? asRecord(phase?.targets)?.ec?.max),
+    ecMin: toNullableNumber(phase?.ec_min ?? ecBand?.min),
+    ecMax: toNullableNumber(phase?.ec_max ?? ecBand?.max),
     nutrientMode: typeof phase?.nutrient_mode === 'string' ? phase.nutrient_mode : null,
   }
 })

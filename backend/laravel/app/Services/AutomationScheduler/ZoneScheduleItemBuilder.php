@@ -126,6 +126,11 @@ class ZoneScheduleItemBuilder
             return false;
         }
 
+        $configEnabled = $this->coerceSubsystemEnabledFlag($config['enabled'] ?? null);
+        if ($configEnabled === false) {
+            return false;
+        }
+
         return true;
     }
 
@@ -163,8 +168,36 @@ class ZoneScheduleItemBuilder
         if (! is_array($subsystem)) {
             return null;
         }
-        $enabled = $subsystem['enabled'] ?? null;
+        return $this->coerceSubsystemEnabledFlag($subsystem['enabled'] ?? null);
+    }
 
-        return is_bool($enabled) ? $enabled : null;
+    /**
+     * То же согласование, что в EffectiveTargetsService::toBool: JSON/БД могут отдавать 0/1 или строки.
+     */
+    private function coerceSubsystemEnabledFlag(mixed $value): ?bool
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return ((int) $value) !== 0;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return null;
     }
 }

@@ -7,8 +7,35 @@ import {
   FALLBACK_AUTOMATION_DEFAULTS,
 } from '@/composables/useAutomationDefaults'
 import type {
+  AutomationCommandTemplatesSettings,
   AutomationDefaultsSettings,
 } from '@/types/SystemSettings'
+
+function twoTankCommandsFromTemplates(
+  templates: AutomationCommandTemplatesSettings,
+): Record<string, Array<{ channel: string; cmd: string; params: { state: boolean } }>> {
+  const keys: (keyof AutomationCommandTemplatesSettings)[] = [
+    'irrigation_start',
+    'irrigation_stop',
+    'clean_fill_start',
+    'clean_fill_stop',
+    'solution_fill_start',
+    'solution_fill_stop',
+    'prepare_recirculation_start',
+    'prepare_recirculation_stop',
+    'irrigation_recovery_start',
+    'irrigation_recovery_stop',
+  ]
+  const out: Record<string, Array<{ channel: string; cmd: string; params: { state: boolean } }>> = {}
+  for (const key of keys) {
+    out[key] = templates[key].map((step) => ({
+      channel: step.channel,
+      cmd: step.cmd,
+      params: { state: step.params.state },
+    }))
+  }
+  return out
+}
 
 function isValidTimeHHMM(value: string): boolean {
   if (!/^\d{2}:\d{2}$/.test(value)) return false
@@ -60,6 +87,7 @@ export function buildGrowthCycleConfigPayload(
     includeSystemType?: boolean
     includeClimateSubsystem?: boolean
     automationDefaults?: AutomationDefaultsSettings
+    automationCommandTemplates?: AutomationCommandTemplatesSettings
   }
 ): Record<string, unknown> {
   const { climateForm, waterForm, lightingForm } = forms
@@ -282,6 +310,9 @@ export function buildGrowthCycleConfigPayload(
         ec_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ec_pct,
         ph_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ph_pct,
       },
+    }
+    if (options?.automationCommandTemplates) {
+      diagnosticsExecution.two_tank_commands = twoTankCommandsFromTemplates(options.automationCommandTemplates)
     }
   } else if (waterForm.tanksCount === 3) {
     diagnosticsExecution.topology = 'three_tank_drip_substrate_trays'

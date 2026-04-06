@@ -355,28 +355,28 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <ProductField
+              <RecipeEditorProductField
                 v-model:product-id="phase.nutrient_npk_product_id"
                 v-model:ratio="phase.nutrient_npk_ratio_pct"
                 v-model:dose="phase.nutrient_npk_dose_ml_l"
                 label="NPK"
                 :products="npkProducts"
               />
-              <ProductField
+              <RecipeEditorProductField
                 v-model:product-id="phase.nutrient_calcium_product_id"
                 v-model:ratio="phase.nutrient_calcium_ratio_pct"
                 v-model:dose="phase.nutrient_calcium_dose_ml_l"
                 label="Кальций"
                 :products="calciumProducts"
               />
-              <ProductField
+              <RecipeEditorProductField
                 v-model:product-id="phase.nutrient_magnesium_product_id"
                 v-model:ratio="phase.nutrient_magnesium_ratio_pct"
                 v-model:dose="phase.nutrient_magnesium_dose_ml_l"
                 label="Магний"
                 :products="magnesiumProducts"
               />
-              <ProductField
+              <RecipeEditorProductField
                 v-model:product-id="phase.nutrient_micro_product_id"
                 v-model:ratio="phase.nutrient_micro_ratio_pct"
                 v-model:dose="phase.nutrient_micro_dose_ml_l"
@@ -521,8 +521,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent } from 'vue'
+import { computed } from 'vue'
 import Button from '@/Components/Button.vue'
+import RecipeEditorProductField from '@/Components/RecipeEditorProductField.vue'
 import type { NutrientProduct } from '@/types'
 import type { PlantOption, RecipeEditorFormState, RecipePhaseFormState } from '@/composables/recipeEditorShared'
 import { normalizePhaseRatios, nutrientRatioSum } from '@/composables/recipeEditorShared'
@@ -552,51 +553,5 @@ defineEmits<{
 
 const sortedPhases = computed<RecipePhaseFormState[]>(() => {
   return [...props.form.phases].sort((left, right) => left.phase_index - right.phase_index)
-})
-const ProductField = defineComponent({
-  name: 'RecipeEditorProductField',
-  props: {
-    label: { type: String, required: true },
-    products: { type: Array, required: true },
-    productId: { type: Number, default: null },
-    ratio: { type: Number, default: null },
-    dose: { type: Number, default: null },
-  },
-  emits: ['update:product-id', 'update:ratio', 'update:dose'],
-  template: `
-    <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-2">
-      <div class="text-xs font-semibold text-[color:var(--text-primary)]">{{ label }}</div>
-      <select
-        :value="productId"
-        class="input-field"
-        @input="$emit('update:product-id', Number($event.target.value) || null)"
-      >
-        <option value="">Продукт</option>
-        <option
-          v-for="product in products"
-          :key="product.id"
-          :value="product.id"
-        >
-          {{ product.manufacturer }} · {{ product.name }}
-        </option>
-      </select>
-      <input
-        :value="ratio"
-        type="number"
-        step="0.01"
-        class="input-field"
-        placeholder="Ratio %"
-        @input="$emit('update:ratio', Number($event.target.value) || null)"
-      />
-      <input
-        :value="dose"
-        type="number"
-        step="0.01"
-        class="input-field"
-        placeholder="Доза мл/л"
-        @input="$emit('update:dose', Number($event.target.value) || null)"
-      />
-    </div>
-  `,
 })
 </script>

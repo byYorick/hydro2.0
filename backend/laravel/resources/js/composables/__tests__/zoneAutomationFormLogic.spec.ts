@@ -8,6 +8,7 @@ import {
   type ZoneAutomationForms,
 } from '@/composables/zoneAutomationFormLogic'
 import { FALLBACK_AUTOMATION_DEFAULTS } from '@/composables/useAutomationDefaults'
+import { FALLBACK_AUTOMATION_COMMAND_TEMPLATES } from '@/composables/useAutomationCommandTemplates'
 
 function createForms(): ZoneAutomationForms {
   return {
@@ -406,6 +407,24 @@ describe('zoneAutomationFormLogic', () => {
 
     const payload = buildGrowthCycleConfigPayload(forms) as any
     expect(payload.subsystems.diagnostics.execution.two_tank_commands).toBeUndefined()
+  })
+
+  it('добавляет two_tank_commands при явно переданных automationCommandTemplates (2 бака)', () => {
+    const forms = createForms()
+    forms.waterForm.systemType = 'drip'
+    forms.waterForm.tanksCount = 2
+
+    const payload = buildGrowthCycleConfigPayload(forms, {
+      automationCommandTemplates: FALLBACK_AUTOMATION_COMMAND_TEMPLATES,
+    }) as any
+    const cmds = payload.subsystems.diagnostics.execution.two_tank_commands
+    expect(cmds).toBeDefined()
+    expect(Array.isArray(cmds.irrigation_start)).toBe(true)
+    expect(cmds.irrigation_start[0]).toMatchObject({
+      channel: 'valve_solution_supply',
+      cmd: 'set_relay',
+      params: { state: true },
+    })
   })
 
   it('buildGrowthCycleConfigPayload может не отправлять system_type для активного цикла', () => {

@@ -58,4 +58,48 @@ class ZoneScheduleItemBuilderTest extends TestCase
         $this->assertNotEmpty($withInterval);
         $this->assertSame(['duration_sec' => 45], $withInterval[0]->payload);
     }
+
+    public function test_lighting_schedule_skipped_when_extensions_subsystem_enabled_is_zero(): void
+    {
+        $builder = new ZoneScheduleItemBuilder(
+            lightingScheduleParser: new LightingScheduleParser,
+        );
+
+        $targets = [
+            'lighting' => [
+                'photoperiod_hours' => 12,
+                'start_time' => '06:00:00',
+                'interval_sec' => 600,
+            ],
+            'extensions' => [
+                'subsystems' => [
+                    'lighting' => ['enabled' => 0],
+                ],
+            ],
+        ];
+
+        $schedules = $builder->buildSchedulesForZone(1, $targets, CarbonImmutable::parse('2026-04-04 12:00:00', 'UTC'));
+        $lighting = array_values(array_filter($schedules, fn ($s) => $s->taskType === 'lighting'));
+        $this->assertSame([], $lighting);
+    }
+
+    public function test_lighting_schedule_skipped_when_targets_lighting_enabled_is_false(): void
+    {
+        $builder = new ZoneScheduleItemBuilder(
+            lightingScheduleParser: new LightingScheduleParser,
+        );
+
+        $targets = [
+            'lighting' => [
+                'enabled' => false,
+                'photoperiod_hours' => 12,
+                'start_time' => '06:00:00',
+                'interval_sec' => 600,
+            ],
+        ];
+
+        $schedules = $builder->buildSchedulesForZone(1, $targets, CarbonImmutable::parse('2026-04-04 12:00:00', 'UTC'));
+        $lighting = array_values(array_filter($schedules, fn ($s) => $s->taskType === 'lighting'));
+        $this->assertSame([], $lighting);
+    }
 }
