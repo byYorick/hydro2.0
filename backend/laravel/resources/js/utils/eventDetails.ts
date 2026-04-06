@@ -26,6 +26,71 @@ function row(label: string, value: string, variant: DetailRow['variant'] = 'defa
   return { label, value, variant }
 }
 
+function formatJsonForEventDetail(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    return value
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function appendPidConfigRows(rows: DetailRow[], label: 'old_config' | 'new_config', config: Payload | null): void {
+  if (!config) return
+
+  const prefix = label === 'old_config' ? 'Было' : 'Стало'
+
+  const deadZone = readNumber(config, 'dead_zone')
+  const closeZone = readNumber(config, 'close_zone')
+  const farZone = readNumber(config, 'far_zone')
+  const maxIntegral = readNumber(config, 'max_integral')
+
+  const zoneCoeffs = toPayloadRecord(config['zone_coeffs'])
+  const closeCoeffs = zoneCoeffs ? toPayloadRecord(zoneCoeffs['close']) : null
+  const farCoeffs = zoneCoeffs ? toPayloadRecord(zoneCoeffs['far']) : null
+
+  const closeKp = closeCoeffs ? readNumber(closeCoeffs, 'kp') : null
+  const closeKi = closeCoeffs ? readNumber(closeCoeffs, 'ki') : null
+  const closeKd = closeCoeffs ? readNumber(closeCoeffs, 'kd') : null
+  const farKp = farCoeffs ? readNumber(farCoeffs, 'kp') : null
+  const farKi = farCoeffs ? readNumber(farCoeffs, 'ki') : null
+  const farKd = farCoeffs ? readNumber(farCoeffs, 'kd') : null
+
+  if (
+    deadZone === null && closeZone === null && farZone === null
+    && closeKp === null && farKp === null
+  ) {
+    const raw = formatJsonForEventDetail(config)
+    if (raw) rows.push(row(prefix, raw))
+    return
+  }
+
+  if (deadZone !== null) rows.push(row(`${prefix} dead_zone`, String(deadZone)))
+  if (closeZone !== null) rows.push(row(`${prefix} close_zone`, String(closeZone)))
+  if (farZone !== null) rows.push(row(`${prefix} far_zone`, String(farZone)))
+  if (maxIntegral !== null) rows.push(row(`${prefix} max_integral`, String(maxIntegral)))
+
+  if (closeKp !== null || closeKi !== null || closeKd !== null) {
+    const parts: string[] = []
+    if (closeKp !== null) parts.push(`Kp=${closeKp}`)
+    if (closeKi !== null) parts.push(`Ki=${closeKi}`)
+    if (closeKd !== null) parts.push(`Kd=${closeKd}`)
+    rows.push(row(`${prefix} close`, parts.join('  ')))
+  }
+  if (farKp !== null || farKi !== null || farKd !== null) {
+    const parts: string[] = []
+    if (farKp !== null) parts.push(`Kp=${farKp}`)
+    if (farKi !== null) parts.push(`Ki=${farKi}`)
+    if (farKd !== null) parts.push(`Kd=${farKd}`)
+    rows.push(row(`${prefix} far`, parts.join('  ')))
+  }
+}
+
 function appendCorrectionTrace(rows: DetailRow[], payload: Payload): void {
   const windowId = readString(payload, 'correction_window_id')
   const taskId = readNumber(payload, 'task_id')
@@ -360,6 +425,67 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     if (humanError) rows.push(row('Ошибка', humanError, 'error'))
     if (errorCode && humanError !== errorCode) rows.push(row('Код ошибки', errorCode, 'error'))
     if (stage) rows.push(row('Стадия', stage))
+  }
+  else if (event.kind === 'PID_OUTPUT') {
+    const pidKind = firstString(payload, ['pid_type', 'type'])
+    const zoneState = readString(payload, 'zone_state')
+    const pidOut = readNumber(payload, 'output')
+    const err = readNumber(payload, 'error')
+    const pTerm = firstNumber(payload, ['proportional_term', 'p_term'])
+    const integral = readNumber(payload, 'integral_term')
+    const dTerm = firstNumber(payload, ['derivative_term', 'd_term'])
+    const dtSec = readNumber(payload, 'dt_seconds')
+    const current = readNumber(payload, 'current')
+    const target = readNumber(payload, 'target')
+    const safety = readString(payload, 'safety_skip_reason')
+    if (pidKind) {
+      rows.push(row('Контур', pidKind.toUpperCase()))
+    }
+    if (zoneState) {
+      rows.push(row('Зона PID', zoneState))
+    }
+    if (current !== null) {
+      rows.push(row('Текущее', formatPayloadNumber(current, 4) ?? String(current)))
+    }
+    if (target !== null) {
+      rows.push(row('Цель', formatPayloadNumber(target, 4) ?? String(target)))
+    }
+    if (err !== null) {
+      rows.push(row('Ошибка (e)', formatPayloadNumber(err, 4) ?? String(err)))
+    }
+    if (pidOut !== null) {
+      rows.push(row('Выход (u)', `${formatPayloadNumber(pidOut, 4) ?? String(pidOut)} мл`))
+    }
+    if (pTerm !== null) {
+      rows.push(row('P-член', formatPayloadNumber(pTerm, 4) ?? String(pTerm)))
+    }
+    if (integral !== null) {
+      rows.push(row('I-член', formatPayloadNumber(integral, 4) ?? String(integral)))
+    }
+    if (dTerm !== null) {
+      rows.push(row('D-член', formatPayloadNumber(dTerm, 4) ?? String(dTerm)))
+    }
+    if (dtSec !== null) {
+      rows.push(row('Δt', `${dtSec} с`))
+    }
+    if (safety) {
+      rows.push(row('Safety', safety))
+    }
+  }
+  else if (event.kind === 'PID_CONFIG_UPDATED') {
+    const pidKind = firstString(payload, ['pid_type', 'type'])
+    const updatedByRaw = payload['updated_by']
+    const updatedByLabel = updatedByRaw !== undefined && updatedByRaw !== null && String(updatedByRaw).trim() !== ''
+      ? String(updatedByRaw)
+      : null
+    if (pidKind) {
+      rows.push(row('Контур', pidKind.toUpperCase()))
+    }
+    if (updatedByLabel) {
+      rows.push(row('Кто обновил', updatedByLabel))
+    }
+    appendPidConfigRows(rows, 'old_config', toPayloadRecord(payload['old_config']))
+    appendPidConfigRows(rows, 'new_config', toPayloadRecord(payload['new_config']))
   }
   else {
     // Generic / fallback

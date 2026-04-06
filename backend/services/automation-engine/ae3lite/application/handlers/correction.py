@@ -29,7 +29,7 @@ from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
-from ae3lite.domain.services.correction_planner import CorrectionPlanner
+from ae3lite.domain.services.correction_planner import CorrectionPlanner, DosePlan
 from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IGNORED, CORRECTION_EXHAUSTED
 from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
 from common.db import create_zone_event
@@ -689,6 +689,17 @@ class CorrectionHandler(BaseStageHandler):
                     else {}
                 ),
             },
+        )
+        await self._maybe_emit_pid_output_zone_event(
+            zone_id=int(task.zone_id),
+            corr_step=str(next_corr.corr_step),
+            dose_plan=dose_plan,
+            pid_state_before=pid_state,
+            current_ph=current_ph,
+            current_ec=current_ec,
+            target_ph=target_ph,
+            target_ec=target_ec,
+            now=now,
         )
         return self._enter_correction_after_delay_or_interrupt(
             task=task,
@@ -2216,6 +2227,101 @@ class CorrectionHandler(BaseStageHandler):
             "ph_up": actuators.get("ph_up"),
             "ph_down": actuators.get("ph_down"),
         }
+
+    def _pid_output_dt_seconds(self, last_measurement_at: Any, now: datetime) -> float | None:
+        if not isinstance(last_measurement_at, datetime):
+            return None
+        prev = self._normalize_timestamp(last_measurement_at)
+        cur = self._normalize_timestamp(now)
+        if prev is None or cur is None:
+            return None
+        return max(0.0, (cur - prev).total_seconds())
+
+    async def _maybe_emit_pid_output_zone_event(
+        self,
+        *,
+        zone_id: int,
+        corr_step: str,
+        dose_plan: DosePlan,
+        pid_state_before: Mapping[str, Any],
+        current_ph: float,
+        current_ec: float,
+        target_ph: float,
+        target_ec: float,
+        now: datetime,
+    ) -> None:
+        """Пишет PID_OUTPUT в zone_events для вкладки «Логи PID» в UI."""
+        try:
+            detail: dict[str, Any]
+            if corr_step == "corr_dose_ec":
+                if not dose_plan.needs_ec or dose_plan.ec_amount_ml <= 0:
+                    return
+                pu = dose_plan.pid_state_updates.get("ec")
+                if not isinstance(pu, Mapping):
+                    return
+                coeffs = dose_plan.ec_pid_coeffs if isinstance(dose_plan.ec_pid_coeffs, Mapping) else {}
+                gap = float(pu.get("prev_error") or 0.0)
+                integral = float(pu.get("integral") or 0.0)
+                deriv = float(pu.get("prev_derivative") or 0.0)
+                kp = float(coeffs.get("kp") or 0.0)
+                ki = float(coeffs.get("ki") or 0.0)
+                kd = float(coeffs.get("kd") or 0.0)
+                p_term = kp * gap
+                i_term = ki * integral
+                d_term = kd * deriv
+                zone_st = str(dose_plan.ec_pid_zone or pu.get("current_zone") or "").strip()
+                prev = pid_state_before.get("ec") if isinstance(pid_state_before.get("ec"), Mapping) else {}
+                dt_sec = self._pid_output_dt_seconds(prev.get("last_measurement_at"), now)
+                detail = {
+                    "type": "ec",
+                    "zone_state": zone_st or None,
+                    "output": float(dose_plan.ec_amount_ml),
+                    "error": gap,
+                    "proportional_term": round(p_term, 6),
+                    "integral_term": round(i_term, 6),
+                    "derivative_term": round(d_term, 6),
+                    "dt_seconds": dt_sec,
+                    "current": current_ec,
+                    "target": target_ec,
+                }
+            elif corr_step == "corr_dose_ph":
+                if not (dose_plan.needs_ph_up or dose_plan.needs_ph_down) or dose_plan.ph_amount_ml <= 0:
+                    return
+                pu = dose_plan.pid_state_updates.get("ph")
+                if not isinstance(pu, Mapping):
+                    return
+                coeffs = dose_plan.ph_pid_coeffs if isinstance(dose_plan.ph_pid_coeffs, Mapping) else {}
+                gap = float(pu.get("prev_error") or 0.0)
+                integral = float(pu.get("integral") or 0.0)
+                deriv = float(pu.get("prev_derivative") or 0.0)
+                kp = float(coeffs.get("kp") or 0.0)
+                ki = float(coeffs.get("ki") or 0.0)
+                kd = float(coeffs.get("kd") or 0.0)
+                p_term = kp * gap
+                i_term = ki * integral
+                d_term = kd * deriv
+                zone_st = str(dose_plan.ph_pid_zone or pu.get("current_zone") or "").strip()
+                prev = pid_state_before.get("ph") if isinstance(pid_state_before.get("ph"), Mapping) else {}
+                dt_sec = self._pid_output_dt_seconds(prev.get("last_measurement_at"), now)
+                detail = {
+                    "type": "ph",
+                    "zone_state": zone_st or None,
+                    "output": float(dose_plan.ph_amount_ml),
+                    "error": gap,
+                    "proportional_term": round(p_term, 6),
+                    "integral_term": round(i_term, 6),
+                    "derivative_term": round(d_term, 6),
+                    "dt_seconds": dt_sec,
+                    "current": current_ph,
+                    "target": target_ph,
+                }
+            else:
+                return
+
+            payload = {k: v for k, v in detail.items() if v is not None}
+            await create_zone_event(zone_id, "PID_OUTPUT", payload)
+        except Exception:
+            _logger.debug("Не удалось записать PID_OUTPUT zone event", exc_info=True)
 
     async def _persist_pid_state_updates(
         self,

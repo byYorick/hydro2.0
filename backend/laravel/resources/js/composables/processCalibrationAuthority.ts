@@ -52,7 +52,7 @@ export function processCalibrationNamespace(mode: ProcessCalibrationMode): strin
 }
 
 export function isSavedProcessCalibration(calibration: ZoneProcessCalibration | null | undefined): boolean {
-  return Boolean(calibration) && calibration?.source !== 'system_default'
+  return Boolean(calibration)
 }
 
 export function documentToZoneProcessCalibration(

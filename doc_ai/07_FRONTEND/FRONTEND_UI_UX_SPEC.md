@@ -221,6 +221,31 @@ resources/js/Pages/
 - workflow/timeline в automation-панели строятся из canonical automation state и `zone_events`, без снимков `scheduler-task`;
 - оператор должен получать быстрый доступ к управлению зоной, не переключаясь в developer diagnostics.
 
+### 6.6.1. Shared UI автоматики зоны
+
+Shared-компоненты автоматики зоны обязаны использовать одинаковый UX и contract ownership
+в `/setup/wizard` и в zone edit screens.
+
+Water / irrigation / correction rules:
+
+- low-level 2-tank relay sequencing не редактируется на фронте;
+- в блоке `Водный контур` из advanced остаются только runtime timeout-поля;
+- `timed irrigation` принадлежит recipe phase и отображается как readonly summary;
+- `smart irrigation` принадлежит zone automation и редактируется только для `decision.strategy=smart_soil_v1`;
+- `correction_during_irrigation` рендерится внутри блока `Полив`, а не в chemistry block;
+- inline irrigation correction отображается как fixed domain summary:
+  `Ca/Mg/Micro + pH`, `NPK` исключён;
+- `pH/EC target|min|max` и EC strategy принадлежат recipe и не редактируются в зоне;
+- `prepare tolerance` не редактируется в shared форме зоны.
+
+Process calibration / PID rules:
+
+- базовый экран показывает preset + effective summary;
+- подробная форма открывается только через `Расширенные настройки`;
+- source of truth для preset UX: `zone.runtime_tuning_bundle`;
+- source of truth для runtime reading: `zone.process_calibration.*`, `zone.pid.*`;
+- bootstrap/system defaults считаются валидной стартовой конфигурацией и не маркируются как fail-closed только из-за `source=bootstrap/system_default`.
+
 ## 6.7. Scheduler Tab: Schedule Workspace
 
 `Pages/Zones/Tabs/ZoneSchedulerTab.vue`

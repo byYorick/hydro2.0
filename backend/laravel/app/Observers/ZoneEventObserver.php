@@ -2,8 +2,9 @@
 
 namespace App\Observers;
 
-use App\Models\ZoneEvent;
 use App\Events\EventCreated;
+use App\Models\ZoneEvent;
+use App\Services\ZoneEventMessageFormatter;
 use Illuminate\Support\Facades\Log;
 
 class ZoneEventObserver
@@ -13,24 +14,22 @@ class ZoneEventObserver
      */
     public function created(ZoneEvent $zoneEvent): void
     {
-        // Отправляем событие о создании события зоны
         try {
-            // Формируем сообщение из type и details
-            $message = $zoneEvent->type ?? 'Zone event occurred';
-            if ($zoneEvent->details && is_array($zoneEvent->details)) {
-                $detailsStr = json_encode($zoneEvent->details);
-                if (strlen($detailsStr) < 200) {
-                    $message .= ': ' . $detailsStr;
-                }
+            $payload = is_array($zoneEvent->payload_json) ? $zoneEvent->payload_json : [];
+            if ($payload === [] && is_array($zoneEvent->details)) {
+                $payload = $zoneEvent->details;
             }
-            
+            $formatter = app(ZoneEventMessageFormatter::class);
+            $type = $zoneEvent->type ?? 'INFO';
+            $message = $formatter->format($type, $payload);
+
             event(new EventCreated(
                 id: $zoneEvent->id,
-                kind: $zoneEvent->type ?? 'INFO',
+                kind: $type,
                 message: $message,
                 zoneId: $zoneEvent->zone_id,
                 occurredAt: $zoneEvent->created_at?->toIso8601String() ?? now()->toIso8601String(),
-                payload: is_array($zoneEvent->details) ? $zoneEvent->details : null
+                payload: $payload !== [] ? $payload : null
             ));
         } catch (\Exception $e) {
             Log::error('Failed to broadcast EventCreated', [

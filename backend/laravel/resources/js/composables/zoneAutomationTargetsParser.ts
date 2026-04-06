@@ -22,15 +22,6 @@ function asArray(value: unknown): unknown[] | null {
   return value
 }
 
-function readArrayLength(value: unknown): number | null {
-  const items = asArray(value)
-  if (!items) {
-    return null
-  }
-
-  return items.length
-}
-
 function readNumber(...values: unknown[]): number | null {
   for (const value of values) {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -549,16 +540,6 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
     waterForm.startupCleanFillRetryCycles = clamp(Math.round(startupCleanFillRetryCycles), 0, 20)
   }
 
-  const prepareTolerance = asRecord(diagnosticsExecutionResolved?.prepare_tolerance)
-  const prepareToleranceEcPct = readNumber(prepareTolerance?.ec_pct)
-  if (prepareToleranceEcPct !== null) {
-    waterForm.prepareToleranceEcPct = clamp(prepareToleranceEcPct, 0.1, 100)
-  }
-  const prepareTolerancePhPct = readNumber(prepareTolerance?.ph_pct)
-  if (prepareTolerancePhPct !== null) {
-    waterForm.prepareTolerancePhPct = clamp(prepareTolerancePhPct, 0.1, 100)
-  }
-
   const correction = asRecord(diagnosticsExecutionResolved?.correction)
   const correctionMaxEcCorrectionAttempts = readNumber(correction?.max_ec_correction_attempts)
   if (correctionMaxEcCorrectionAttempts !== null) {
@@ -603,48 +584,6 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   const irrigationRecoveryTimeoutSec = readNumber(irrigationRecovery?.timeout_sec)
   if (irrigationRecoveryTimeoutSec !== null) {
     waterForm.irrigationRecoveryTimeoutSeconds = clamp(Math.round(irrigationRecoveryTimeoutSec), 30, 86400)
-  }
-
-  const twoTankCommands = asRecord(diagnosticsExecutionResolved?.two_tank_commands)
-  const twoTankIrrigationStartSteps = readArrayLength(twoTankCommands?.irrigation_start)
-  if (twoTankIrrigationStartSteps !== null) {
-    waterForm.twoTankIrrigationStartSteps = clamp(twoTankIrrigationStartSteps, 1, 12)
-  }
-  const twoTankIrrigationStopSteps = readArrayLength(twoTankCommands?.irrigation_stop)
-  if (twoTankIrrigationStopSteps !== null) {
-    waterForm.twoTankIrrigationStopSteps = clamp(twoTankIrrigationStopSteps, 1, 12)
-  }
-  const twoTankCleanFillStartSteps = readArrayLength(twoTankCommands?.clean_fill_start)
-  if (twoTankCleanFillStartSteps !== null) {
-    waterForm.twoTankCleanFillStartSteps = clamp(twoTankCleanFillStartSteps, 1, 12)
-  }
-  const twoTankCleanFillStopSteps = readArrayLength(twoTankCommands?.clean_fill_stop)
-  if (twoTankCleanFillStopSteps !== null) {
-    waterForm.twoTankCleanFillStopSteps = clamp(twoTankCleanFillStopSteps, 1, 12)
-  }
-  const twoTankSolutionFillStartSteps = readArrayLength(twoTankCommands?.solution_fill_start)
-  if (twoTankSolutionFillStartSteps !== null) {
-    waterForm.twoTankSolutionFillStartSteps = clamp(twoTankSolutionFillStartSteps, 1, 12)
-  }
-  const twoTankSolutionFillStopSteps = readArrayLength(twoTankCommands?.solution_fill_stop)
-  if (twoTankSolutionFillStopSteps !== null) {
-    waterForm.twoTankSolutionFillStopSteps = clamp(twoTankSolutionFillStopSteps, 1, 12)
-  }
-  const twoTankPrepareRecirculationStartSteps = readArrayLength(twoTankCommands?.prepare_recirculation_start)
-  if (twoTankPrepareRecirculationStartSteps !== null) {
-    waterForm.twoTankPrepareRecirculationStartSteps = clamp(twoTankPrepareRecirculationStartSteps, 1, 12)
-  }
-  const twoTankPrepareRecirculationStopSteps = readArrayLength(twoTankCommands?.prepare_recirculation_stop)
-  if (twoTankPrepareRecirculationStopSteps !== null) {
-    waterForm.twoTankPrepareRecirculationStopSteps = clamp(twoTankPrepareRecirculationStopSteps, 1, 12)
-  }
-  const twoTankIrrigationRecoveryStartSteps = readArrayLength(twoTankCommands?.irrigation_recovery_start)
-  if (twoTankIrrigationRecoveryStartSteps !== null) {
-    waterForm.twoTankIrrigationRecoveryStartSteps = clamp(twoTankIrrigationRecoveryStartSteps, 1, 12)
-  }
-  const twoTankIrrigationRecoveryStopSteps = readArrayLength(twoTankCommands?.irrigation_recovery_stop)
-  if (twoTankIrrigationRecoveryStopSteps !== null) {
-    waterForm.twoTankIrrigationRecoveryStopSteps = clamp(twoTankIrrigationRecoveryStopSteps, 1, 12)
   }
 
   const solutionChange = asRecord(targets.solution_change)

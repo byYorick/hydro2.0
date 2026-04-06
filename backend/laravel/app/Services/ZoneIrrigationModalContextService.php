@@ -61,7 +61,8 @@ final class ZoneIrrigationModalContextService
                     : null,
             ];
             $irrigation = is_array($targets['irrigation'] ?? null) ? $targets['irrigation'] : null;
-            $summary = $this->correctionSummary->summarize((int) $zone->id, $irrigation);
+            $nutrition = is_array($targets['nutrition'] ?? null) ? $targets['nutrition'] : null;
+            $summary = $this->correctionSummary->summarize((int) $zone->id, $irrigation, $nutrition);
 
             return [
                 'targets' => $displayTargets,

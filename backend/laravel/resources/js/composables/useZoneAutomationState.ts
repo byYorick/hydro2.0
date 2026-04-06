@@ -117,19 +117,6 @@ function sanitizeWaterForm(
       : toBoolean(legacyRaw?.cycleStartWorkflowEnabled, legacyFallback.cycleStartWorkflowEnabled ?? false)
         ? (tanksCount === 2 ? 'startup' : 'cycle_start')
         : 'diagnostics'
-  const fallbackStepCount = (value: unknown, defaultValue: number): number => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value
-    }
-    return defaultValue
-  }
-  const sanitizeStepCount = (value: unknown, fallbackValue: unknown, defaultValue: number): number => {
-    return clamp(
-      toRoundedNumber(value, fallbackStepCount(fallbackValue, defaultValue)),
-      1,
-      12
-    )
-  }
 
   const sanitized: WaterFormState = {
     systemType,
@@ -298,26 +285,6 @@ function sanitizeWaterForm(
         ? fallback.stopOnSolutionMin
         : defaults.water_irrigation_stop_on_solution_min
     ),
-    prepareToleranceEcPct: clamp(
-      toNumber(
-        raw?.prepareToleranceEcPct,
-        typeof fallback.prepareToleranceEcPct === 'number'
-          ? fallback.prepareToleranceEcPct
-          : defaults.water_prepare_tolerance_ec_pct
-      ),
-      0.1,
-      100
-    ),
-    prepareTolerancePhPct: clamp(
-      toNumber(
-        raw?.prepareTolerancePhPct,
-        typeof fallback.prepareTolerancePhPct === 'number'
-          ? fallback.prepareTolerancePhPct
-          : defaults.water_prepare_tolerance_ph_pct
-      ),
-      0.1,
-      100
-    ),
     correctionMaxEcCorrectionAttempts: clamp(
       toRoundedNumber(
         raw?.correctionMaxEcCorrectionAttempts,
@@ -367,46 +334,6 @@ function sanitizeWaterForm(
       ),
       0,
       3600
-    ),
-    twoTankCleanFillStartSteps: sanitizeStepCount(
-      raw?.twoTankCleanFillStartSteps,
-      fallback.twoTankCleanFillStartSteps,
-      defaults.water_two_tank_clean_fill_start_steps
-    ),
-    twoTankCleanFillStopSteps: sanitizeStepCount(
-      raw?.twoTankCleanFillStopSteps,
-      fallback.twoTankCleanFillStopSteps,
-      defaults.water_two_tank_clean_fill_stop_steps
-    ),
-    twoTankSolutionFillStartSteps: sanitizeStepCount(
-      raw?.twoTankSolutionFillStartSteps,
-      fallback.twoTankSolutionFillStartSteps,
-      defaults.water_two_tank_solution_fill_start_steps
-    ),
-    twoTankSolutionFillStopSteps: sanitizeStepCount(
-      raw?.twoTankSolutionFillStopSteps,
-      fallback.twoTankSolutionFillStopSteps,
-      defaults.water_two_tank_solution_fill_stop_steps
-    ),
-    twoTankPrepareRecirculationStartSteps: sanitizeStepCount(
-      raw?.twoTankPrepareRecirculationStartSteps,
-      fallback.twoTankPrepareRecirculationStartSteps,
-      defaults.water_two_tank_prepare_recirculation_start_steps
-    ),
-    twoTankPrepareRecirculationStopSteps: sanitizeStepCount(
-      raw?.twoTankPrepareRecirculationStopSteps,
-      fallback.twoTankPrepareRecirculationStopSteps,
-      defaults.water_two_tank_prepare_recirculation_stop_steps
-    ),
-    twoTankIrrigationRecoveryStartSteps: sanitizeStepCount(
-      raw?.twoTankIrrigationRecoveryStartSteps,
-      fallback.twoTankIrrigationRecoveryStartSteps,
-      defaults.water_two_tank_irrigation_recovery_start_steps
-    ),
-    twoTankIrrigationRecoveryStopSteps: sanitizeStepCount(
-      raw?.twoTankIrrigationRecoveryStopSteps,
-      fallback.twoTankIrrigationRecoveryStopSteps,
-      defaults.water_two_tank_irrigation_recovery_stop_steps
     ),
     refillRequiredNodeTypes:
       typeof raw?.refillRequiredNodeTypes === 'string' && raw.refillRequiredNodeTypes.trim() !== ''

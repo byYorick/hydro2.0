@@ -13,6 +13,44 @@
         </Badge>
       </div>
 
+      <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <label class="space-y-1.5">
+          <span class="block text-xs font-medium text-[color:var(--text-muted)]">
+            Preset runtime tuning
+          </span>
+          <select
+            v-model="selectedPresetKey"
+            class="input-select w-full"
+            data-testid="process-calibration-preset-select"
+            :disabled="loading || saving || presetSwitching"
+            @change="applySelectedPreset"
+          >
+            <option
+              v-for="preset in presetOptions"
+              :key="preset.key"
+              :value="preset.key"
+            >
+              {{ preset.name }}
+            </option>
+          </select>
+          <span class="block text-[11px] text-[color:var(--text-dim)]">
+            {{ selectedPresetDescription }}
+          </span>
+        </label>
+
+        <div class="flex items-end">
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="process-calibration-toggle-advanced"
+            :disabled="loading"
+            @click="showAdvanced = !showAdvanced"
+          >
+            {{ showAdvanced ? 'Скрыть расширенные настройки' : 'Расширенные настройки' }}
+          </Button>
+        </div>
+      </div>
+
       <div class="flex flex-wrap gap-2">
         <Button
           v-for="mode in modes"
@@ -43,7 +81,7 @@
               selectedUsesFallback
                 ? `Для режима ${modeLabel(activeMode)} используется generic-калибровка.`
                 : selectedUsesSystemDefaults
-                  ? `Для режима ${modeLabel(activeMode)} в форме подставлены системные дефолты.`
+                  ? `Для режима ${modeLabel(activeMode)} применён materialized system default.`
                   : `Режим: ${modeLabel(activeMode)}`
             }}
           </div>
@@ -54,16 +92,20 @@
             v-if="selectedUsesSystemDefaults"
             class="mt-1"
           >
-            Runtime всё ещё fail-closed, пока значения не будут сохранены как calibration зоны.
+            Это валидный bootstrap preset зоны. Его можно использовать как стартовую конфигурацию без обязательного первого сохранения.
           </div>
           <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            <span>Preset: {{ selectedPresetName }}</span>
             <span>Источник: {{ calibrationSourceLabel }}</span>
             <span>Активно с: {{ formatDateTime(effectiveCalibration?.valid_from) }}</span>
             <span>Confidence: {{ formatConfidence(displayedConfidence) }}</span>
           </div>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div
+          v-if="showAdvanced"
+          class="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+        >
           <label
             v-for="field in fields"
             :key="field.key"
@@ -107,7 +149,7 @@
           </div>
           <div class="mt-2">
             Runtime сначала ждёт доставку дозы до датчика, затем добирает устойчивое окно наблюдения.
-            Если ни mode-specific, ни generic process calibration нет, новый in-flow path работает fail-closed.
+            Materialized bootstrap defaults уже считаются валидной стартовой калибровкой.
           </div>
         </div>
 
@@ -154,7 +196,10 @@
           </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div
+          v-if="showAdvanced"
+          class="flex flex-wrap items-center gap-2"
+        >
           <Button
             size="sm"
             data-testid="process-calibration-save"
@@ -194,6 +239,13 @@ import {
   createDefaultProcessCalibrationForm,
   useProcessCalibrationDefaults,
 } from '@/composables/useProcessCalibrationDefaults'
+import {
+  normalizeRuntimeTuningBundleDocument,
+  RUNTIME_TUNING_BUNDLE_NAMESPACE,
+  selectedRuntimeTuningPreset,
+  withProcessCalibrationOverride,
+  type RuntimeTuningBundlePayload,
+} from '@/composables/runtimeTuningBundle'
 import { useToast } from '@/composables/useToast'
 import type {
   ProcessCalibrationMode,
@@ -368,6 +420,8 @@ const fields: FieldDescriptor[] = [
 const loading = ref(true)
 const historyLoading = ref(true)
 const saving = ref(false)
+const presetSwitching = ref(false)
+const showAdvanced = ref(false)
 const activeMode = ref<ProcessCalibrationMode>('solution_fill')
 const calibrations = ref<Record<ProcessCalibrationMode, ZoneProcessCalibration | null>>({
   generic: null,
@@ -378,6 +432,8 @@ const calibrations = ref<Record<ProcessCalibrationMode, ZoneProcessCalibration |
 const form = ref<ZoneProcessCalibrationForm>(emptyForm())
 const validationErrors = ref<Partial<Record<FormKey, string>>>({})
 const historyEvents = ref<ProcessCalibrationHistoryItem[]>([])
+const runtimeTuningBundle = ref<RuntimeTuningBundlePayload | null>(null)
+const selectedPresetKey = ref('system_default')
 
 const selectedCalibration = computed(() => calibrations.value[activeMode.value])
 const genericCalibration = computed(() => calibrations.value.generic)
@@ -418,6 +474,10 @@ const activeHistoryEvents = computed(() => {
     .filter((event) => relevantModes.has(event.mode))
     .slice(0, 6)
 })
+const selectedPreset = computed(() => selectedRuntimeTuningPreset(runtimeTuningBundle.value))
+const presetOptions = computed(() => runtimeTuningBundle.value?.presets ?? [])
+const selectedPresetName = computed(() => selectedPreset.value?.name ?? 'Системный preset')
+const selectedPresetDescription = computed(() => selectedPreset.value?.description ?? 'Канонические стартовые значения process calibration и PID для зоны.')
 const observationWindowLabel = computed(() => {
   const transport = parseNumeric(form.value.transport_delay_sec) ?? 0
   const settle = parseNumeric(form.value.settle_sec) ?? 0
@@ -457,17 +517,20 @@ function formatNumeric(value: number | null | undefined, step: string): string {
 }
 
 function hydrateForm(mode: ProcessCalibrationMode): void {
-  const source = calibrations.value[mode] ?? (mode === 'generic' ? null : calibrations.value.generic)
+  const preview = runtimeTuningBundle.value?.resolved_preview.process_calibration?.[mode]
+  const source = preview && Object.keys(preview).length > 0
+    ? preview
+    : (calibrations.value[mode] ?? (mode === 'generic' ? null : calibrations.value.generic))
   form.value = source
     ? {
-      ec_gain_per_ml: formatNumeric(source.ec_gain_per_ml, '0.001'),
-      ph_up_gain_per_ml: formatNumeric(source.ph_up_gain_per_ml, '0.001'),
-      ph_down_gain_per_ml: formatNumeric(source.ph_down_gain_per_ml, '0.001'),
-      ph_per_ec_ml: formatNumeric(source.ph_per_ec_ml, '0.001'),
-      ec_per_ph_ml: formatNumeric(source.ec_per_ph_ml, '0.001'),
-      transport_delay_sec: formatNumeric(source.transport_delay_sec, '1'),
-      settle_sec: formatNumeric(source.settle_sec, '1'),
-      confidence: formatNumeric(source.confidence, '0.01'),
+      ec_gain_per_ml: formatNumeric(parseNumeric(source.ec_gain_per_ml as string | number | null | undefined), '0.001'),
+      ph_up_gain_per_ml: formatNumeric(parseNumeric(source.ph_up_gain_per_ml as string | number | null | undefined), '0.001'),
+      ph_down_gain_per_ml: formatNumeric(parseNumeric(source.ph_down_gain_per_ml as string | number | null | undefined), '0.001'),
+      ph_per_ec_ml: formatNumeric(parseNumeric(source.ph_per_ec_ml as string | number | null | undefined), '0.001'),
+      ec_per_ph_ml: formatNumeric(parseNumeric(source.ec_per_ph_ml as string | number | null | undefined), '0.001'),
+      transport_delay_sec: formatNumeric(parseNumeric(source.transport_delay_sec as string | number | null | undefined), '1'),
+      settle_sec: formatNumeric(parseNumeric(source.settle_sec as string | number | null | undefined), '1'),
+      confidence: formatNumeric(parseNumeric(source.confidence as string | number | null | undefined), '0.01'),
     }
     : createDefaultProcessCalibrationForm(processCalibrationDefaults.value)
   validationErrors.value = {}
@@ -520,11 +583,18 @@ function validateForm(): boolean {
 async function loadCalibrations(): Promise<void> {
   loading.value = true
   try {
-    const documents = await Promise.all(
-      PROCESS_CALIBRATION_MODES.map((mode) =>
-        automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, processCalibrationNamespace(mode))
+    const [bundleDocument, ...documents] = await Promise.all(
+      [
+        automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, RUNTIME_TUNING_BUNDLE_NAMESPACE),
+      ].concat(
+        PROCESS_CALIBRATION_MODES.map((mode) =>
+          automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, processCalibrationNamespace(mode))
+        )
       )
     )
+    runtimeTuningBundle.value = normalizeRuntimeTuningBundleDocument(bundleDocument)
+    selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
+    const nextDocuments = documents as Awaited<ReturnType<typeof automationConfig.getDocument<Record<string, unknown>>>>[]
     const next: Record<ProcessCalibrationMode, ZoneProcessCalibration | null> = {
       generic: null,
       solution_fill: null,
@@ -532,12 +602,36 @@ async function loadCalibrations(): Promise<void> {
       irrigation: null,
     }
     PROCESS_CALIBRATION_MODES.forEach((mode, index) => {
-      next[mode] = documentToZoneProcessCalibration(props.zoneId, mode, documents[index])
+      next[mode] = documentToZoneProcessCalibration(props.zoneId, mode, nextDocuments[index])
     })
     calibrations.value = next
     hydrateForm(activeMode.value)
   } finally {
     loading.value = false
+  }
+}
+
+async function persistRuntimeTuningBundle(nextBundle: RuntimeTuningBundlePayload): Promise<void> {
+  const document = await automationConfig.updateDocument('zone', props.zoneId, RUNTIME_TUNING_BUNDLE_NAMESPACE, nextBundle)
+  runtimeTuningBundle.value = normalizeRuntimeTuningBundleDocument(document)
+  selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
+}
+
+async function applySelectedPreset(): Promise<void> {
+  if (!runtimeTuningBundle.value) {
+    return
+  }
+
+  presetSwitching.value = true
+  try {
+    await persistRuntimeTuningBundle({
+      ...runtimeTuningBundle.value,
+      selected_preset_key: selectedPresetKey.value,
+    })
+    await loadCalibrations()
+    showToast(`Preset "${selectedPresetName.value}" применён к runtime tuning зоны.`, 'success')
+  } finally {
+    presetSwitching.value = false
   }
 }
 
@@ -637,9 +731,14 @@ async function save(): Promise<void> {
     },
   }
 
+  if (!runtimeTuningBundle.value) {
+    showToast('Runtime tuning bundle зоны ещё не загружен.', 'warning')
+    return
+  }
+
   saving.value = true
   try {
-    await automationConfig.updateDocument('zone', props.zoneId, processCalibrationNamespace(activeMode.value), payload)
+    await persistRuntimeTuningBundle(withProcessCalibrationOverride(runtimeTuningBundle.value, activeMode.value, payload))
     showToast(`Калибровка процесса для режима "${modeLabel(activeMode.value)}" сохранена.`, 'success')
     await Promise.all([loadCalibrations(), loadHistory()])
     emit('saved', activeMode.value)

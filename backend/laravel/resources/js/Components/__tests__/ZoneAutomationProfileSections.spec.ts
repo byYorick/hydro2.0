@@ -26,8 +26,6 @@ function buildWaterForm(overrides: Record<string, unknown> = {}) {
     irrigationDecisionStaleAfterSeconds: 900,
     irrigationDecisionHysteresisPct: 3.5,
     irrigationDecisionSpreadAlertThresholdPct: 18,
-    prepareToleranceEcPct: 10,
-    prepareTolerancePhPct: 5,
     correctionMaxEcCorrectionAttempts: 8,
     correctionMaxPhCorrectionAttempts: 8,
     correctionPrepareRecirculationMaxAttempts: 6,
@@ -56,14 +54,6 @@ function buildWaterForm(overrides: Record<string, unknown> = {}) {
     solutionChangeIntervalMinutes: 180,
     solutionChangeDurationSeconds: 120,
     manualIrrigationSeconds: 90,
-    twoTankCleanFillStartSteps: 1,
-    twoTankCleanFillStopSteps: 1,
-    twoTankSolutionFillStartSteps: 1,
-    twoTankSolutionFillStopSteps: 1,
-    twoTankPrepareRecirculationStartSteps: 1,
-    twoTankPrepareRecirculationStopSteps: 1,
-    twoTankIrrigationRecoveryStartSteps: 1,
-    twoTankIrrigationRecoveryStopSteps: 1,
     ...overrides,
   }
 }

@@ -37,15 +37,8 @@ class AutomationConfigController extends Controller
                 $namespace,
                 $scopeType,
                 $scopeId,
-                ! $this->isZonePidNamespace($namespace)
+                true
             );
-
-            if ($this->isZonePidNamespace($namespace) && ($document === null || $document->source === 'bootstrap')) {
-                return response()->json([
-                    'status' => 'ok',
-                    'data' => null,
-                ]);
-            }
 
             return response()->json([
                 'status' => 'ok',
@@ -99,14 +92,16 @@ class AutomationConfigController extends Controller
 
             $previousDocument = $this->documents->getDocument($namespace, $scopeType, $scopeId, false);
             $previousPayload = is_array($previousDocument?->payload) ? $previousDocument->payload : [];
-            $document = $this->documents->upsertDocument(
-                $namespace,
-                $scopeType,
-                $scopeId,
-                $payload,
-                $request->user()?->id,
-                'unified_api'
-            );
+            $document = $namespace === AutomationConfigRegistry::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE
+                ? $this->documents->upsertRuntimeTuningBundle($scopeId, $payload, $request->user()?->id, 'unified_api')
+                : $this->documents->upsertDocument(
+                    $namespace,
+                    $scopeType,
+                    $scopeId,
+                    $payload,
+                    $request->user()?->id,
+                    'unified_api'
+                );
             $this->emitZoneScopedEvent(
                 $namespace,
                 $scopeType,
@@ -230,6 +225,27 @@ class AutomationConfigController extends Controller
             return;
         }
 
+        $pidType = match ($namespace) {
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH => 'ph',
+            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC => 'ec',
+            default => null,
+        };
+
+        if ($pidType !== null) {
+            ZoneEvent::query()->create([
+                'zone_id' => $scopeId,
+                'type' => 'PID_CONFIG_UPDATED',
+                'payload_json' => [
+                    'type' => $pidType,
+                    'updated_by' => $userId,
+                    'old_config' => $previousPayload,
+                    'new_config' => $payload,
+                ],
+            ]);
+
+            return;
+        }
+
         $mode = match ($namespace) {
             AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC => 'generic',
             AutomationConfigRegistry::NAMESPACE_ZONE_PROCESS_CALIBRATION_SOLUTION_FILL => 'solution_fill',
@@ -285,14 +301,6 @@ class AutomationConfigController extends Controller
         if ($this->registry->scopeType($namespace) !== $scopeType) {
             throw new \InvalidArgumentException("Namespace {$namespace} must be addressed in scope {$this->registry->scopeType($namespace)}.");
         }
-    }
-
-    private function isZonePidNamespace(string $namespace): bool
-    {
-        return in_array($namespace, [
-            AutomationConfigRegistry::NAMESPACE_ZONE_PID_PH,
-            AutomationConfigRegistry::NAMESPACE_ZONE_PID_EC,
-        ], true);
     }
 
     /**

@@ -59,23 +59,11 @@ export interface WaterFormState {
   irrigationAutoReplayAfterSetup?: boolean
   irrigationMaxSetupReplays?: number
   stopOnSolutionMin?: boolean
-  prepareToleranceEcPct?: number
-  prepareTolerancePhPct?: number
   correctionMaxEcCorrectionAttempts?: number
   correctionMaxPhCorrectionAttempts?: number
   correctionPrepareRecirculationMaxAttempts?: number
   correctionPrepareRecirculationMaxCorrectionAttempts?: number
   correctionStabilizationSec?: number
-  twoTankIrrigationStartSteps?: number
-  twoTankIrrigationStopSteps?: number
-  twoTankCleanFillStartSteps?: number
-  twoTankCleanFillStopSteps?: number
-  twoTankSolutionFillStartSteps?: number
-  twoTankSolutionFillStopSteps?: number
-  twoTankPrepareRecirculationStartSteps?: number
-  twoTankPrepareRecirculationStopSteps?: number
-  twoTankIrrigationRecoveryStartSteps?: number
-  twoTankIrrigationRecoveryStopSteps?: number
   refillRequiredNodeTypes: string
   refillPreferredChannel: string
   solutionChangeEnabled: boolean

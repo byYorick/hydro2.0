@@ -47,6 +47,7 @@
           >
             <span class="text-[color:var(--text-dim)] whitespace-nowrap">{{ detail.label }}:</span>
             <strong
+              class="min-w-0 break-words font-mono text-[11px] leading-snug"
               :class="detail.variant === 'error' ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-primary)]'"
             >
               {{ detail.value }}

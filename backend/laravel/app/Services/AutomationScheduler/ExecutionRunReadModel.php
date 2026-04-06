@@ -9,6 +9,34 @@ use Illuminate\Support\Facades\Schema;
 
 class ExecutionRunReadModel
 {
+    /**
+     * Коды ошибок backpressure scheduler/AE: не считаем операционными сбоями
+     * (ожидаемый 409/429 при активной зоне или rate limit).
+     *
+     * @return list<string>
+     */
+    private static function schedulerBackpressureErrorCodes(): array
+    {
+        return [
+            'start_cycle_zone_busy',
+            'start_irrigation_zone_busy',
+            'start_lighting_tick_zone_busy',
+            'start_cycle_rate_limited',
+        ];
+    }
+
+    /**
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  string  $column  Полное имя колонки, например intents.error_code
+     */
+    private static function whereFailureIsOperational($query, string $column): void
+    {
+        $codes = self::schedulerBackpressureErrorCodes();
+        $query->where(function ($q) use ($column, $codes): void {
+            $q->whereNull($column)->orWhereNotIn($column, $codes);
+        });
+    }
+
     public function __construct(
         private readonly ExecutionTimelineReader $timelineReader,
         private readonly \App\Services\ErrorCodeCatalogService $errorCodeCatalog,
@@ -107,6 +135,9 @@ class ExecutionRunReadModel
                 ->where('zone_id', $zoneId)
                 ->whereIn('status', ['failed', 'cancelled'])
                 ->where('updated_at', '>=', $since)
+                ->where(function ($q): void {
+                    self::whereFailureIsOperational($q, 'error_code');
+                })
                 ->count()
             : 0;
 
@@ -129,6 +160,9 @@ class ExecutionRunReadModel
 
             $failedIntentOnly = (clone $intentOnlyBaseQuery)
                 ->whereIn('intents.status', ['failed', 'cancelled'])
+                ->where(function ($q): void {
+                    self::whereFailureIsOperational($q, 'intents.error_code');
+                })
                 ->count();
         }
 
@@ -367,6 +401,9 @@ class ExecutionRunReadModel
             })
             ->where('tasks.zone_id', $zoneId)
             ->whereIn('tasks.status', ['failed', 'cancelled'])
+            ->where(function ($q): void {
+                self::whereFailureIsOperational($q, 'tasks.error_code');
+            })
             ->orderByDesc('tasks.updated_at')
             ->orderByDesc('tasks.id')
             ->first([
@@ -427,6 +464,9 @@ class ExecutionRunReadModel
             ->where('intents.zone_id', $zoneId)
             ->whereNull('tasks.id')
             ->whereIn('intents.status', ['failed', 'cancelled'])
+            ->where(function ($q): void {
+                self::whereFailureIsOperational($q, 'intents.error_code');
+            })
             ->orderByDesc('intents.updated_at')
             ->orderByDesc('intents.id')
             ->first([

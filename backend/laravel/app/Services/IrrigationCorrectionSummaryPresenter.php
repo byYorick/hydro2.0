@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Automation\RecipeNutritionRuntimeConfigResolver;
 use App\Support\Automation\ZoneCorrectionResolvedConfigBuilder;
 use Throwable;
 
@@ -13,13 +14,15 @@ final class IrrigationCorrectionSummaryPresenter
     public function __construct(
         private AutomationConfigDocumentService $documents,
         private ZoneCorrectionResolvedConfigBuilder $builder,
+        private RecipeNutritionRuntimeConfigResolver $recipeNutritionRuntimeConfigResolver,
     ) {}
 
     /**
      * @param  array<string, mixed>|null  $irrigationTargets  срез effective targets['irrigation']
+     * @param  array<string, mixed>|null  $nutritionTargets  срез effective targets['nutrition']
      * @return array<string, mixed>|null
      */
-    public function summarize(int $zoneId, ?array $irrigationTargets): ?array
+    public function summarize(int $zoneId, ?array $irrigationTargets, ?array $nutritionTargets = null): ?array
     {
         try {
             $corrPayload = $this->documents->getPayload(
@@ -34,10 +37,11 @@ final class IrrigationCorrectionSummaryPresenter
                 $irrPhaseCfg = $resolved['phases']['irrigation'];
             } else {
                 $resolved = $this->builder->buildFromPayload($corrPayload);
-                $irrPhaseCfg = is_array($resolved['phases']['irrigation'] ?? null)
-                    ? $resolved['phases']['irrigation']
-                    : [];
             }
+            $resolved = $this->recipeNutritionRuntimeConfigResolver->applyToResolvedConfig($resolved, $nutritionTargets);
+            $irrPhaseCfg = is_array($resolved['phases']['irrigation'] ?? null)
+                ? $resolved['phases']['irrigation']
+                : [];
             $dosing = is_array($irrPhaseCfg['dosing'] ?? null) ? $irrPhaseCfg['dosing'] : [];
             $ratios = is_array($irrPhaseCfg['ec_component_ratios'] ?? null) ? $irrPhaseCfg['ec_component_ratios'] : [];
             $policy = is_array($irrPhaseCfg['ec_component_policy'] ?? null) ? $irrPhaseCfg['ec_component_policy'] : [];

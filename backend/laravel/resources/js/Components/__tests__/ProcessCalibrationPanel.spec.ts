@@ -122,10 +122,47 @@ function systemDefaultPayload(mode: 'generic' | 'solution_fill' | 'tank_recirc' 
   }
 }
 
+function runtimeTuningBundleDocument(overrides: Partial<Record<'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation', Record<string, unknown>>> = {}) {
+  const processCalibration = {
+    generic: overrides.generic ?? systemDefaultPayload('generic'),
+    solution_fill: overrides.solution_fill ?? systemDefaultPayload('solution_fill'),
+    tank_recirc: overrides.tank_recirc ?? systemDefaultPayload('tank_recirc'),
+    irrigation: overrides.irrigation ?? systemDefaultPayload('irrigation'),
+  }
+
+  return calibrationDocument('zone.runtime_tuning_bundle', {
+    selected_preset_key: 'system_default',
+    presets: [
+      {
+        key: 'system_default',
+        name: 'Системный preset',
+        description: 'Канонические стартовые значения process calibration и PID для зоны.',
+        process_calibration: processCalibration,
+        pid: {
+          ph: { dead_zone: 0.04, close_zone: 0.18, far_zone: 0.65, zone_coeffs: { close: { kp: 0.18, ki: 0.01, kd: 0 }, far: { kp: 0.28, ki: 0.015, kd: 0 } }, max_integral: 12 },
+          ec: { dead_zone: 0.06, close_zone: 0.25, far_zone: 0.9, zone_coeffs: { close: { kp: 0.35, ki: 0.02, kd: 0 }, far: { kp: 0.55, ki: 0.03, kd: 0 } }, max_integral: 20 },
+        },
+      },
+    ],
+    advanced_overrides: {},
+    resolved_preview: {
+      process_calibration: processCalibration,
+      pid: {
+        ph: { dead_zone: 0.04, close_zone: 0.18, far_zone: 0.65, zone_coeffs: { close: { kp: 0.18, ki: 0.01, kd: 0 }, far: { kp: 0.28, ki: 0.015, kd: 0 } }, max_integral: 12 },
+        ec: { dead_zone: 0.06, close_zone: 0.25, far_zone: 0.9, zone_coeffs: { close: { kp: 0.35, ki: 0.02, kd: 0 }, far: { kp: 0.55, ki: 0.03, kd: 0 } }, max_integral: 20 },
+      },
+    },
+  })
+}
+
 function installDocumentMocks(overrides: Partial<Record<'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation', Record<string, unknown>>>) {
   getDocumentMock.mockImplementation((_scopeType: string, _scopeId: number, namespace: string) => {
     if (namespace === 'system.process_calibration_defaults') {
       return Promise.resolve(defaultsDocument())
+    }
+
+    if (namespace === 'zone.runtime_tuning_bundle') {
+      return Promise.resolve(runtimeTuningBundleDocument(overrides))
     }
 
     if (namespace === processNamespace('generic')) {
@@ -173,11 +210,13 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     updateDocumentMock.mockResolvedValue(
-      calibrationDocument(processNamespace('solution_fill'), calibration('solution_fill'))
+      runtimeTuningBundleDocument({
+        solution_fill: calibration('solution_fill'),
+      })
     )
   })
 
-  it('использует generic fallback для solution_fill и показывает observation window', async () => {
+  it('использует materialized system default для solution_fill и показывает observation window', async () => {
     installDocumentMocks({
       generic: calibration('generic'),
       solution_fill: systemDefaultPayload('solution_fill'),
@@ -190,9 +229,9 @@ describe('ProcessCalibrationPanel.vue', () => {
     await flushPromises()
 
     expect(getDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.process_calibration.solution_fill')
-    expect(wrapper.text()).toContain('Fallback на generic')
+    expect(wrapper.text()).toContain('Режим: Наполнение')
     expect(wrapper.text()).toContain('transport_delay_sec + settle_sec = 65 сек')
-    expect(wrapper.text()).toContain('Confidence: 0.91')
+    expect(wrapper.text()).toContain('Confidence: 0.75')
   })
 
   it('подставляет системные дефолты в пустую форму, если сохранённой калибровки ещё нет', async () => {
@@ -203,13 +242,14 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     await flushPromises()
+    await wrapper.get('[data-testid="process-calibration-toggle-advanced"]').trigger('click')
 
     const inputs = wrapper.findAll('input')
     expect(inputs[0]?.element).toHaveProperty('value', '20')
     expect(inputs[1]?.element).toHaveProperty('value', '45')
     expect(inputs[2]?.element).toHaveProperty('value', '0.11')
     expect(inputs[7]?.element).toHaveProperty('value', '0.75')
-    expect(wrapper.text()).toContain('в форме подставлены системные дефолты')
+    expect(wrapper.text()).toContain('Materialized bootstrap defaults уже считаются валидной стартовой калибровкой.')
     expect(wrapper.text()).toContain('Источник: system defaults')
     expect(wrapper.text()).toContain('Confidence: 0.75')
   })
@@ -220,6 +260,7 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     await flushPromises()
+    await wrapper.get('[data-testid="process-calibration-toggle-advanced"]').trigger('click')
 
     const confidenceInput = wrapper.find('input[min="0"][max="1"]')
     await confidenceInput.setValue('2')
@@ -235,27 +276,29 @@ describe('ProcessCalibrationPanel.vue', () => {
   })
 
   it('сохраняет текущий режим и перезагружает calibrations', async () => {
-    let solutionFillCalls = 0
+    let currentSolutionFill = calibration('solution_fill')
     getDocumentMock.mockImplementation((_scopeType: string, _scopeId: number, namespace: string) => {
       if (namespace === 'system.process_calibration_defaults') {
         return Promise.resolve(defaultsDocument())
       }
 
+      if (namespace === 'zone.runtime_tuning_bundle') {
+        return Promise.resolve(runtimeTuningBundleDocument({
+          solution_fill: currentSolutionFill,
+        }))
+      }
+
       if (namespace === processNamespace('solution_fill')) {
-        solutionFillCalls += 1
-        return Promise.resolve(calibrationDocument(
-          namespace,
-          solutionFillCalls === 1
-            ? calibration('solution_fill')
-            : calibration('solution_fill', { confidence: 0.5, transport_delay_sec: 30 })
-        ))
+        return Promise.resolve(calibrationDocument(namespace, currentSolutionFill))
       }
 
       const mode = namespace.split('.').at(-1) as 'generic' | 'solution_fill' | 'tank_recirc' | 'irrigation'
       return Promise.resolve(calibrationDocument(namespace, systemDefaultPayload(mode)))
     })
     updateDocumentMock.mockResolvedValue(
-      calibrationDocument(processNamespace('solution_fill'), calibration('solution_fill', { confidence: 0.5, transport_delay_sec: 30 }))
+      runtimeTuningBundleDocument({
+        solution_fill: calibration('solution_fill', { confidence: 0.5, transport_delay_sec: 30 }),
+      })
     )
 
     const wrapper = mount(ProcessCalibrationPanel, {
@@ -263,20 +306,28 @@ describe('ProcessCalibrationPanel.vue', () => {
     })
 
     await flushPromises()
+    await wrapper.get('[data-testid="process-calibration-toggle-advanced"]').trigger('click')
 
     await wrapper.find('input[min="0"][max="120"]').setValue('30')
     await wrapper.find('input[min="0"][max="1"]').setValue('0.5')
+    currentSolutionFill = calibration('solution_fill', { confidence: 0.5, transport_delay_sec: 30 })
 
     const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Сохранить'))
     expect(saveButton).toBeTruthy()
     await saveButton!.trigger('click')
     await flushPromises()
 
-    expect(updateDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.process_calibration.solution_fill', expect.objectContaining({
-      mode: 'solution_fill',
-      transport_delay_sec: 30,
-      confidence: 0.5,
-      source: 'manual',
+    expect(updateDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.runtime_tuning_bundle', expect.objectContaining({
+      advanced_overrides: expect.objectContaining({
+        process_calibration: expect.objectContaining({
+          solution_fill: expect.objectContaining({
+            mode: 'solution_fill',
+            transport_delay_sec: 30,
+            confidence: 0.5,
+            source: 'manual',
+          }),
+        }),
+      }),
     }))
     expect(showToastMock).toHaveBeenCalledWith('Калибровка процесса для режима "Наполнение" сохранена.', 'success')
     expect(wrapper.text()).toContain('transport_delay_sec + settle_sec = 75 сек')
@@ -332,7 +383,7 @@ describe('ProcessCalibrationPanel.vue', () => {
 
     await flushPromises()
 
-    await wrapper.findAll('button')[1].trigger('click')
+    await wrapper.get('[data-testid="process-calibration-mode-tank_recirc"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('История calibration')

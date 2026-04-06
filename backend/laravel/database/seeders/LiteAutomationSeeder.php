@@ -502,12 +502,12 @@ class LiteAutomationSeeder extends Seeder
         }
 
         $defaults = [
-            'ph_acid_pump' => ['ml_per_sec' => 0.5, 'component' => 'ph_down'],
-            'ph_base_pump' => ['ml_per_sec' => 0.5, 'component' => 'ph_up'],
+            'ph_acid_pump' => ['ml_per_sec' => 1.0, 'component' => 'ph_down'],
+            'ph_base_pump' => ['ml_per_sec' => 1.0, 'component' => 'ph_up'],
             'ec_npk_pump' => ['ml_per_sec' => 1.0, 'component' => 'npk'],
             'ec_calcium_pump' => ['ml_per_sec' => 1.0, 'component' => 'calcium'],
             'ec_magnesium_pump' => ['ml_per_sec' => 1.0, 'component' => 'magnesium'],
-            'ec_micro_pump' => ['ml_per_sec' => 0.8, 'component' => 'micro'],
+            'ec_micro_pump' => ['ml_per_sec' => 1.0, 'component' => 'micro'],
         ];
 
         $now = now();

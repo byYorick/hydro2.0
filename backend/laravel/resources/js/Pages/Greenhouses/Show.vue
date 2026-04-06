@@ -421,8 +421,6 @@ const waterForm = reactive<WaterFormState>({
   ecPct: 10,
   valveSwitching: true,
   correctionDuringIrrigation: true,
-  prepareToleranceEcPct: 10,
-  prepareTolerancePhPct: 5,
   correctionMaxEcCorrectionAttempts: 8,
   correctionMaxPhCorrectionAttempts: 8,
   correctionPrepareRecirculationMaxAttempts: 6,
@@ -448,10 +446,6 @@ const waterForm = reactive<WaterFormState>({
   solutionChangeIntervalMinutes: 180,
   solutionChangeDurationSeconds: 120,
   manualIrrigationSeconds: 90,
-  twoTankCleanFillStartSteps: 1,
-  twoTankCleanFillStopSteps: 1,
-  twoTankSolutionFillStartSteps: 1,
-  twoTankSolutionFillStopSteps: 1,
 })
 
 const lightingForm = reactive<LightingFormState>({

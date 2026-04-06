@@ -78,8 +78,8 @@ class _TwoTankHistoryLoggerStub:
             snapshot_payload = {"snapshot": dict(self._state), "cmd_id": f"hl-{cmd_id}"}
             await execute(
                 """
-                INSERT INTO zone_events (zone_id, type, payload_json, details, created_at)
-                VALUES ($1, 'IRR_STATE_SNAPSHOT', $2::jsonb, $2::jsonb, NOW())
+                INSERT INTO zone_events (zone_id, type, payload_json, created_at)
+                VALUES ($1, 'IRR_STATE_SNAPSHOT', $2::jsonb, NOW())
                 """,
                 self._zone_id,
                 snapshot_payload,

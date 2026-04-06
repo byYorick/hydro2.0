@@ -309,6 +309,29 @@
                 </div>
               </div>
             </div>
+
+            <div
+              v-if="allRequiredComponentsCalibrated"
+              class="rounded-xl border border-[color:var(--accent-green)] bg-[color:var(--bg-surface)] p-3 text-xs text-[color:var(--text-muted)]"
+              data-testid="pump-calibration-complete"
+            >
+              <div class="text-sm font-semibold text-[color:var(--accent-green)]">
+                Насосы откалиброваны
+              </div>
+              <div class="mt-1">
+                Все обязательные дозирующие насосы зоны имеют сохранённую calibration. Подтвердите завершение сценария.
+              </div>
+              <div class="mt-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="pump-calibration-accept-btn"
+                  @click="onAccept"
+                >
+                  Принять
+                </Button>
+              </div>
+            </div>
           </section>
         </div>
 
@@ -365,6 +388,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'accepted'): void
   (e: 'start', payload: PumpCalibrationRunPayload): void
   (e: 'save', payload: PumpCalibrationSavePayload): void
 }>()
@@ -472,6 +496,13 @@ const currentPathSummary = computed(() => {
   return `Даже после обновления выбранного канала в ${currentPathLabel.value} ещё не хватает: ${missing.map((item) => item.label).join(', ')}.`
 })
 
+const allRequiredComponentsCalibrated = computed(() => {
+  return componentOptions.every((option) => {
+    const channelId = autoComponentMap.value[option.value]
+    return isChannelCalibrated(channelId)
+  })
+})
+
 function onStart(): void {
   const err = validateCommon()
   if (err) {
@@ -498,6 +529,11 @@ function onSave(): void {
   }
   formError.value = null
   emit('save', buildSavePayload())
+}
+
+function onAccept(): void {
+  emit('accepted')
+  emit('close')
 }
 </script>
 

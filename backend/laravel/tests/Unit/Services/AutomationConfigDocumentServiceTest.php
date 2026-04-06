@@ -5,11 +5,19 @@ namespace Tests\Unit\Services;
 use App\Models\Alert;
 use App\Models\AutomationEffectiveBundle;
 use App\Models\AutomationConfigPreset;
+use App\Models\GrowCycle;
+use App\Models\GrowCyclePhase;
+use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
+use App\Services\AutomationConfigCompiler;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
 use App\Services\ZoneCorrectionConfigCatalog;
+use App\Support\Automation\RecipeNutritionRuntimeConfigResolver;
 use App\Support\Automation\ZoneProcessCalibrationDefaults;
+use App\Enums\GrowCycleStatus;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -233,5 +241,111 @@ class AutomationConfigDocumentServiceTest extends TestCase
             $this->assertSame($expected['transport_delay_sec'], $payload['transport_delay_sec']);
             $this->assertSame($expected['settle_sec'], $payload['settle_sec']);
         }
+    }
+
+    public function test_compiler_applies_recipe_derived_inline_ec_config_to_grow_cycle_bundle(): void
+    {
+        $documents = app(AutomationConfigDocumentService::class);
+        $compiler = app(AutomationConfigCompiler::class);
+        $zone = Zone::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        $recipePhase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'name' => 'Inline EC',
+            'nutrient_mode' => 'ratio_ec_pid',
+            'nutrient_solution_volume_l' => 135.0,
+            'nutrient_npk_ratio_pct' => 44.0,
+            'nutrient_calcium_ratio_pct' => 36.0,
+            'nutrient_magnesium_ratio_pct' => 17.0,
+            'nutrient_micro_ratio_pct' => 3.0,
+        ]);
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
+        $snapshotPhase = GrowCyclePhase::factory()->create([
+            'grow_cycle_id' => $cycle->id,
+            'recipe_revision_phase_id' => $recipePhase->id,
+            'phase_index' => 0,
+            'name' => 'Inline EC',
+            'nutrient_mode' => 'ratio_ec_pid',
+            'nutrient_solution_volume_l' => 135.0,
+            'nutrient_npk_ratio_pct' => 44.0,
+            'nutrient_calcium_ratio_pct' => 36.0,
+            'nutrient_magnesium_ratio_pct' => 17.0,
+            'nutrient_micro_ratio_pct' => 3.0,
+        ]);
+        $cycle->update(['current_phase_id' => $snapshotPhase->id]);
+
+        $documents->ensureZoneDefaults($zone->id);
+        $documents->ensureCycleDefaults($cycle->id);
+
+        $bundle = $compiler->compileGrowCycleBundle($cycle->id);
+
+        $this->assertSame(
+            'multi_sequential',
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_dosing_mode')
+        );
+        $this->assertSame(
+            ['npk'],
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_excluded_components')
+        );
+        $this->assertEquals(
+            135.0,
+            data_get($bundle->config, 'zone.correction.resolved_config.base.dosing.solution_volume_l')
+        );
+        $this->assertEquals(
+            36.0,
+            data_get($bundle->config, 'zone.correction.resolved_config.phases.irrigation.ec_component_policy.irrigation.calcium')
+        );
+        $this->assertSame(
+            'ratio_ec_pid',
+            data_get($bundle->config, 'zone.correction.resolved_config.meta.recipe_nutrient_mode')
+        );
+    }
+
+    public function test_recipe_nutrition_runtime_resolver_supports_delta_ec_by_k_without_frontend_hardcode(): void
+    {
+        $resolver = app(RecipeNutritionRuntimeConfigResolver::class);
+
+        $resolved = $resolver->applyToResolvedConfig(
+            [
+                'base' => ZoneCorrectionConfigCatalog::defaults(),
+                'phases' => [
+                    'solution_fill' => ZoneCorrectionConfigCatalog::defaults(),
+                    'tank_recirc' => ZoneCorrectionConfigCatalog::defaults(),
+                    'irrigation' => ZoneCorrectionConfigCatalog::defaults(),
+                ],
+                'meta' => [],
+            ],
+            [
+                'mode' => 'delta_ec_by_k',
+                'solution_volume_l' => 110.0,
+                'components' => [
+                    'npk' => ['ratio_pct' => 45.0],
+                    'calcium' => ['ratio_pct' => 33.0],
+                    'magnesium' => ['ratio_pct' => 17.0],
+                    'micro' => ['ratio_pct' => 5.0],
+                ],
+            ]
+        );
+
+        $this->assertSame('delta_ec_by_k', data_get($resolved, 'meta.recipe_nutrient_mode'));
+        $this->assertSame('multi_sequential', data_get($resolved, 'phases.irrigation.ec_dosing_mode'));
+        $this->assertSame(110.0, data_get($resolved, 'base.dosing.solution_volume_l'));
+        $this->assertSame(
+            ['npk'],
+            data_get($resolved, 'phases.irrigation.ec_excluded_components')
+        );
+        $this->assertSame(
+            5.0,
+            data_get($resolved, 'phases.irrigation.ec_component_policy.irrigation.micro')
+        );
     }
 }

@@ -147,13 +147,54 @@ class ScheduleWorkspaceControllerTest extends TestCase
             ->assertJsonPath('data.execution.active_run.task_type', 'irrigation')
             ->assertJsonPath('data.execution.recent_runs.0.execution_id', (string) $executionId)
             ->assertJsonPath('data.execution.counters.active', 1)
-            ->assertJsonPath('data.execution.counters.failed_24h', 1)
-            ->assertJsonPath('data.execution.latest_failure.error_code', 'start_cycle_zone_busy')
-            ->assertJsonPath('data.execution.latest_failure.human_error_message', 'Повторный запуск отклонён: по зоне уже есть активный intent или выполняемая задача.')
-            ->assertJsonPath('data.execution.latest_failure.source', 'zone_automation_intents');
+            // start_cycle_zone_busy — ожидаемый backpressure, не операционная ошибка в агрегатах
+            ->assertJsonPath('data.execution.counters.failed_24h', 0)
+            ->assertJsonPath('data.execution.latest_failure', null);
 
         $this->assertContains('irrigation', array_column($response->json('data.plan.lanes'), 'task_type'));
         $this->assertGreaterThan(0, count($response->json('data.plan.windows')));
+    }
+
+    public function test_schedule_workspace_counts_operational_failures_excluding_zone_busy_backpressure(): void
+    {
+        [$user, $token] = $this->createViewer();
+        $zone = Zone::factory()->create(['automation_runtime' => 'ae3']);
+
+        $effectiveTargetsService = Mockery::mock(EffectiveTargetsService::class);
+        $effectiveTargetsService->shouldReceive('getEffectiveTargetsBatch')->andReturn([]);
+        $this->app->instance(EffectiveTargetsService::class, $effectiveTargetsService);
+        Http::fake(['*' => Http::response(['status' => 'ok', 'data' => ['control_mode' => 'semi']])]);
+
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['task_type' => 'irrigation']),
+            'idempotency_key' => 'sch:z'.$zone->id.':busy:1',
+            'status' => 'failed',
+            'error_code' => 'start_cycle_zone_busy',
+            'error_message' => 'zone busy',
+            'created_at' => now()->subHour(),
+            'updated_at' => now()->subHour(),
+        ]);
+        DB::table('zone_automation_intents')->insert([
+            'zone_id' => $zone->id,
+            'intent_type' => 'IRRIGATE_ONCE',
+            'payload' => json_encode(['task_type' => 'irrigation']),
+            'idempotency_key' => 'sch:z'.$zone->id.':real:1',
+            'status' => 'failed',
+            'error_code' => 'ae_task_hard_fail',
+            'error_message' => 'boom',
+            'created_at' => now()->subMinutes(30),
+            'updated_at' => now()->subMinutes(30),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/schedule-workspace?horizon=24h");
+
+        $response->assertOk()
+            ->assertJsonPath('data.execution.counters.failed_24h', 1)
+            ->assertJsonPath('data.execution.latest_failure.error_code', 'ae_task_hard_fail');
     }
 
     public function test_schedule_execution_returns_execution_detail_and_timeline(): void

@@ -54,19 +54,17 @@ async def test_read_latest_irr_state_filters_by_expected_cmd_id() -> None:
 
         await execute(
             """
-            INSERT INTO zone_events (zone_id, type, payload_json, details, created_at)
+            INSERT INTO zone_events (zone_id, type, payload_json, created_at)
             VALUES
                 (
                     $1,
                     'IRR_STATE_SNAPSHOT',
-                    '{"cmd_id":"older-probe","snapshot":{"pump_main":false}}'::jsonb,
                     '{"cmd_id":"older-probe","snapshot":{"pump_main":false}}'::jsonb,
                     NOW() - INTERVAL '2 seconds'
                 ),
                 (
                     $1,
                     'IRR_STATE_SNAPSHOT',
-                    '{"cmd_id":"probe-cmd-77","snapshot":{"pump_main":true}}'::jsonb,
                     '{"cmd_id":"probe-cmd-77","snapshot":{"pump_main":true}}'::jsonb,
                     NOW()
                 )

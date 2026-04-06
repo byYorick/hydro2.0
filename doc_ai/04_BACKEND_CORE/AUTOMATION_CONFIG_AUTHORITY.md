@@ -2,7 +2,7 @@
 # Единый authority automation/runtime-конфигов
 
 **Версия:** 1.0  
-**Дата обновления:** 2026-03-24  
+**Дата обновления:** 2026-04-06  
 **Статус:** Канонично для Laravel runtime, AE3 read-model и web-admin
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -47,6 +47,7 @@ Authority покрывает только automation/runtime-конфиги:
 - `zone.correction`
 - `zone.pid.ph`
 - `zone.pid.ec`
+- `zone.runtime_tuning_bundle`
 - `zone.process_calibration.generic`
 - `zone.process_calibration.solution_fill`
 - `zone.process_calibration.tank_recirc`
@@ -137,12 +138,13 @@ Violation shape:
 
 ### 3.5 Presets
 
-Preset subsystem используется только для correction family:
+Preset subsystem используется для correction family и zone runtime tuning:
 
 - `zone.correction`
 - `zone.pid.ph`
 - `zone.pid.ec`
 - `zone.process_calibration.*`
+- `zone.runtime_tuning_bundle`
 
 Хранение:
 
@@ -155,6 +157,16 @@ Preset subsystem используется только для correction family:
 - custom presets editable;
 - `Apply preset` копирует payload в draft/document;
 - preset не является runtime authority и не создаёт live-link на документ.
+- `zone.runtime_tuning_bundle` является application-layer preset document:
+  он хранит `selected_preset_key`, `presets[]`, `advanced_overrides`, `resolved_preview`,
+  но runtime напрямую его не читает.
+- при `PUT zone.runtime_tuning_bundle` backend обязан atomically upsert-ить:
+  - `zone.process_calibration.generic`
+  - `zone.process_calibration.solution_fill`
+  - `zone.process_calibration.tank_recirc`
+  - `zone.process_calibration.irrigation`
+  - `zone.pid.ph`
+  - `zone.pid.ec`
 
 ---
 
@@ -172,6 +184,9 @@ Preset subsystem используется только для correction family:
 - cycle update пересобирает bundle конкретного cycle;
 - fallback на чтении не допускается;
 - обязательные defaults материализуются как реальные documents.
+- `zone.pid.ph`, `zone.pid.ec`, `zone.process_calibration.*` и `zone.runtime_tuning_bundle`
+  materialize-ятся как bootstrap/system defaults и считаются launch-valid,
+  если document schema-valid.
 
 ### 4.2 Runtime rules
 
@@ -214,6 +229,23 @@ Laravel использует authority для:
 - greenhouse/zone logic profile editors;
 - readiness;
 - grow cycle start.
+
+Дополнительные ownership rules:
+
+- low-level `two_tank_commands` в `zone.logic_profile` backend-owned:
+  frontend больше не редактирует relay step-count и sequencing;
+- если incoming `zone.logic_profile` не содержит `two_tank_commands`,
+  backend сохраняет существующие custom commands зоны, а при их отсутствии
+  materialize-ит defaults из `system.command_templates`;
+- canonical owner `prepare_tolerance` для runtime correction:
+  `zone.correction.resolved_config.phases.*.tolerance.prepare_tolerance`;
+  legacy `zone.logic_profile.subsystems.diagnostics.execution.prepare_tolerance`
+  допускается только как migration fallback;
+- если irrigation decision strategy = `task`, timed irrigation (`mode`, `interval`, `duration`)
+  является recipe-owned и zone override игнорируется compiler/runtime;
+- если irrigation decision strategy = `smart_soil_v1`, trigger/config принадлежат zone automation;
+- frontend больше не владеет `subsystems.irrigation.execution.correction_strategy`
+  и `subsystems.irrigation.dosing_rules`: runtime derivation идёт из recipe/correction authority.
 
 ### 6.2 AE3 / Python
 

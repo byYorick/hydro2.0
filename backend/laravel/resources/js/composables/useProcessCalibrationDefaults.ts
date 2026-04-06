@@ -7,14 +7,14 @@ const authorityProcessCalibrationDefaults = ref<Partial<ProcessCalibrationDefaul
 let authorityProcessCalibrationDefaultsRequest: Promise<void> | null = null
 
 export const FALLBACK_PROCESS_CALIBRATION_DEFAULTS: ProcessCalibrationDefaultsSettings = {
-  ec_gain_per_ml: 0.11,
-  ph_up_gain_per_ml: 0.08,
-  ph_down_gain_per_ml: 0.07,
-  ph_per_ec_ml: -0.015,
-  ec_per_ph_ml: 0.02,
-  transport_delay_sec: 20,
-  settle_sec: 45,
-  confidence: 0.75,
+  ec_gain_per_ml: 0.006,
+  ph_up_gain_per_ml: 0.015,
+  ph_down_gain_per_ml: 0.015,
+  ph_per_ec_ml: -0.002,
+  ec_per_ph_ml: 0.001,
+  transport_delay_sec: 4,
+  settle_sec: 12,
+  confidence: 0.85,
 }
 
 export function normalizeProcessCalibrationDefaults(

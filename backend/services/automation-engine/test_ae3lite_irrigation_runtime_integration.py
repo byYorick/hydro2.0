@@ -201,7 +201,7 @@ async def test_irrigation_check_persists_replay_count_when_solution_min_is_trigg
         assert task is not None
 
         handler = IrrigationCheckHandler(
-            runtime_monitor=_RuntimeMonitorStub(level_triggered=True),
+            runtime_monitor=_RuntimeMonitorStub(level_triggered=False),
             command_gateway=_CommandGatewayStub(),
             task_repository=task_repository,
         )

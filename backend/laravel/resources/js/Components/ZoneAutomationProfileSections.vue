@@ -474,125 +474,9 @@
 
               <div
                 v-if="waterForm.tanksCount === 2"
-                class="rounded-xl border border-[color:var(--border-muted)] p-3"
+                class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 text-xs text-[color:var(--text-dim)]"
               >
-                <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
-                  Relay-шаги 2-баковой схемы
-                </h5>
-                <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankCleanFillStartSteps')"
-                  >
-                    Clean fill start steps
-                    <input
-                      v-model.number="waterForm.twoTankCleanFillStartSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankCleanFillStopSteps')"
-                  >
-                    Clean fill stop steps
-                    <input
-                      v-model.number="waterForm.twoTankCleanFillStopSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankSolutionFillStartSteps')"
-                  >
-                    Solution fill start steps
-                    <input
-                      v-model.number="waterForm.twoTankSolutionFillStartSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankSolutionFillStopSteps')"
-                  >
-                    Solution fill stop steps
-                    <input
-                      v-model.number="waterForm.twoTankSolutionFillStopSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankPrepareRecirculationStartSteps')"
-                  >
-                    Prepare recirculation start
-                    <input
-                      v-model.number="waterForm.twoTankPrepareRecirculationStartSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankPrepareRecirculationStopSteps')"
-                  >
-                    Prepare recirculation stop
-                    <input
-                      v-model.number="waterForm.twoTankPrepareRecirculationStopSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankIrrigationRecoveryStartSteps')"
-                  >
-                    Irrigation recovery start
-                    <input
-                      v-model.number="waterForm.twoTankIrrigationRecoveryStartSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)]"
-                    :title="fieldHelp('water.twoTankIrrigationRecoveryStopSteps')"
-                  >
-                    Irrigation recovery stop
-                    <input
-                      v-model.number="waterForm.twoTankIrrigationRecoveryStopSteps"
-                      type="number"
-                      min="1"
-                      max="12"
-                      class="input-field mt-1 w-full"
-                      :disabled="!canConfigure"
-                    />
-                  </label>
-                </div>
+                Low-level relay plans 2-баковой топологии больше не редактируются на фронте. Командные шаги собираются backend/compiler из authority templates или уже сохранённого custom plan зоны.
               </div>
             </div>
           </details>
@@ -608,6 +492,40 @@
               Основной цикл полива, окна приготовления и рабочие объёмы контура.
             </p>
 
+            <div class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label
+                  class="text-xs text-[color:var(--text-muted)]"
+                  :title="fieldHelp('water.irrigationDecisionStrategy')"
+                >
+                  Режим полива
+                  <select
+                    v-model="waterForm.irrigationDecisionStrategy"
+                    data-test="irrigation-decision-strategy"
+                    class="input-select mt-1 w-full"
+                    :disabled="!canConfigure"
+                  >
+                    <option value="task">По времени</option>
+                    <option value="smart_soil_v1">Умный полив</option>
+                  </select>
+                </label>
+
+                <div
+                  v-if="waterForm.irrigationDecisionStrategy === 'task'"
+                  class="text-xs text-[color:var(--text-muted)] md:col-span-3"
+                >
+                  <div class="font-semibold text-[color:var(--text-primary)]">
+                    Параметры из текущей recipe phase
+                  </div>
+                  <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+                    <div>Mode: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.mode ?? '—' }}</span></div>
+                    <div>Interval: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.intervalSec ?? '—' }}</span> сек</div>
+                    <div>Duration: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.durationSec ?? '—' }}</span> сек</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <label
                 class="text-xs text-[color:var(--text-muted)]"
@@ -620,7 +538,7 @@
                   min="5"
                   max="1440"
                   class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
+                  :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
                 />
               </label>
               <label
@@ -634,7 +552,7 @@
                   min="1"
                   max="3600"
                   class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
+                  :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
                 />
               </label>
               <label
@@ -728,6 +646,47 @@
                 Настройки decision-controller штатного полива (`smart_soil_v1`) и recovery/safety политики. Цели влажности (day/night) задаются в фазе рецепта.
               </p>
 
+              <div class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs text-[color:var(--text-muted)]">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.correctionDuringIrrigation')"
+                  >
+                    Коррекция во время полива
+                    <select
+                      v-model="waterForm.correctionDuringIrrigation"
+                      class="input-select mt-1 w-full"
+                      :disabled="!canConfigure"
+                    >
+                      <option :value="true">Включена</option>
+                      <option :value="false">Выключена</option>
+                    </select>
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.correctionStabilizationSec')"
+                  >
+                    Стабилизация после дозирования (сек)
+                    <input
+                      v-model.number="waterForm.correctionStabilizationSec"
+                      type="number"
+                      min="0"
+                      max="3600"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <div class="md:col-span-2 xl:col-span-2">
+                    <div class="font-semibold text-[color:var(--text-primary)]">
+                      Inline correction состав
+                    </div>
+                    <div class="mt-1">
+                      Во время полива automation использует `Ca/Mg/Micro + pH`. `NPK` исключён и не настраивается на фронте.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div
                 v-if="waterForm.irrigationDecisionStrategy === 'smart_soil_v1' && waterForm.systemType === 'drip'"
                 class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs"
@@ -766,8 +725,8 @@
                     class="input-select mt-1 w-full"
                     :disabled="!canConfigure"
                   >
-                    <option value="task">task</option>
-                    <option value="smart_soil_v1">smart_soil_v1</option>
+                    <option value="task">По времени</option>
+                    <option value="smart_soil_v1">Умный полив</option>
                   </select>
                 </label>
 
@@ -980,34 +939,16 @@
                   disabled
                 />
               </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="fieldHelp('water.correctionDuringIrrigation')"
-              >
-                Коррекция во время полива
-                <select
-                  v-model="waterForm.correctionDuringIrrigation"
-                  class="input-select mt-1 w-full"
-                  :disabled="!canConfigure"
-                >
-                  <option :value="true">Включена</option>
-                  <option :value="false">Выключена</option>
-                </select>
-              </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="fieldHelp('water.correctionStabilizationSec')"
-              >
-                Стабилизация после дозирования (сек)
-                <input
-                  v-model.number="waterForm.correctionStabilizationSec"
-                  type="number"
-                  min="0"
-                  max="3600"
-                  class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
-                />
-              </label>
+              <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs text-[color:var(--text-muted)] md:col-span-2">
+                <div class="font-semibold text-[color:var(--text-primary)]">
+                  Recipe-derived chemistry summary
+                </div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <div>pH window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }}</span></div>
+                  <div>EC window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}</span></div>
+                  <div class="md:col-span-2">EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span></div>
+                </div>
+              </div>
             </div>
 
             <details class="mt-3 rounded-xl border border-[color:var(--border-muted)] p-3">
@@ -1016,36 +957,6 @@
               </summary>
 
               <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <label
-                  class="text-xs text-[color:var(--text-muted)]"
-                  :title="fieldHelp('water.prepareToleranceEcPct')"
-                >
-                  Допуск EC подготовки (%)
-                  <input
-                    v-model.number="waterForm.prepareToleranceEcPct"
-                    type="number"
-                    min="0.1"
-                    max="100"
-                    step="0.1"
-                    class="input-field mt-1 w-full"
-                    :disabled="!canConfigure"
-                  />
-                </label>
-                <label
-                  class="text-xs text-[color:var(--text-muted)]"
-                  :title="fieldHelp('water.prepareTolerancePhPct')"
-                >
-                  Допуск pH подготовки (%)
-                  <input
-                    v-model.number="waterForm.prepareTolerancePhPct"
-                    type="number"
-                    min="0.1"
-                    max="100"
-                    step="0.1"
-                    class="input-field mt-1 w-full"
-                    :disabled="!canConfigure"
-                  />
-                </label>
                 <label
                   class="text-xs text-[color:var(--text-muted)]"
                   :title="fieldHelp('water.correctionMaxEcCorrectionAttempts')"
@@ -1148,35 +1059,68 @@
         </summary>
 
         <div class="space-y-4 border-t border-[color:var(--border-muted)] p-4">
+          <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label
+                class="text-xs text-[color:var(--text-muted)]"
+                :title="fieldHelp('water.irrigationDecisionStrategy')"
+              >
+                Режим полива
+                <select
+                  v-model="waterForm.irrigationDecisionStrategy"
+                  data-test="irrigation-decision-strategy"
+                  class="input-select mt-1 w-full"
+                  :disabled="!canConfigure"
+                >
+                  <option value="task">По времени</option>
+                  <option value="smart_soil_v1">Умный полив</option>
+                </select>
+              </label>
+              <div
+                v-if="waterForm.irrigationDecisionStrategy === 'task'"
+                class="text-xs text-[color:var(--text-muted)] md:col-span-3"
+              >
+                <div class="font-semibold text-[color:var(--text-primary)]">
+                  Параметры из текущей recipe phase
+                </div>
+                <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <div>Mode: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.mode ?? '—' }}</span></div>
+                  <div>Interval: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.intervalSec ?? '—' }}</span> сек</div>
+                  <div>Duration: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeIrrigationSummary.durationSec ?? '—' }}</span> сек</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.intervalMinutes')"
             >
               Интервал полива (мин)
-              <input
-                v-model.number="waterForm.intervalMinutes"
-                type="number"
-                min="5"
-                max="1440"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigure"
-              />
-            </label>
+                <input
+                  v-model.number="waterForm.intervalMinutes"
+                  type="number"
+                  min="5"
+                  max="1440"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
+                />
+              </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.durationSeconds')"
             >
               Длительность полива (сек)
-              <input
-                v-model.number="waterForm.durationSeconds"
-                type="number"
-                min="1"
-                max="3600"
-                class="input-field mt-1 w-full"
-                :disabled="!canConfigure"
-              />
-            </label>
+                <input
+                  v-model.number="waterForm.durationSeconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  class="input-field mt-1 w-full"
+                  :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
+                />
+              </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.irrigationBatchL')"
@@ -1273,6 +1217,47 @@
                   Strategy обычного полива, требования к телеметрии и replay-policy после setup/recovery. Цели влажности (day/night) задаются в фазе рецепта.
                 </p>
 
+                <div class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs text-[color:var(--text-muted)]">
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <label
+                      class="text-xs text-[color:var(--text-muted)]"
+                      :title="fieldHelp('water.correctionDuringIrrigation')"
+                    >
+                      Коррекция во время полива
+                      <select
+                        v-model="waterForm.correctionDuringIrrigation"
+                        class="input-select mt-1 w-full"
+                        :disabled="!canConfigure"
+                      >
+                        <option :value="true">Включена</option>
+                        <option :value="false">Выключена</option>
+                      </select>
+                    </label>
+                    <label
+                      class="text-xs text-[color:var(--text-muted)]"
+                      :title="fieldHelp('water.correctionStabilizationSec')"
+                    >
+                      Стабилизация после дозирования (сек)
+                      <input
+                        v-model.number="waterForm.correctionStabilizationSec"
+                        type="number"
+                        min="0"
+                        max="3600"
+                        class="input-field mt-1 w-full"
+                        :disabled="!canConfigure"
+                      />
+                    </label>
+                    <div class="md:col-span-2 xl:col-span-2">
+                      <div class="font-semibold text-[color:var(--text-primary)]">
+                        Inline correction состав
+                      </div>
+                      <div class="mt-1">
+                        Во время полива automation использует `Ca/Mg/Micro + pH`. `NPK` исключён и не настраивается на фронте.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div
                   v-if="waterForm.irrigationDecisionStrategy === 'smart_soil_v1' && waterForm.systemType === 'drip'"
                   class="mt-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs"
@@ -1310,8 +1295,8 @@
                       class="input-select mt-1 w-full"
                       :disabled="!canConfigure"
                     >
-                      <option value="task">task</option>
-                      <option value="smart_soil_v1">smart_soil_v1</option>
+                      <option value="task">По времени</option>
+                      <option value="smart_soil_v1">Умный полив</option>
                     </select>
                   </label>
                   <label
@@ -1782,20 +1767,16 @@
                 disabled
               />
             </label>
-            <label
-              class="text-xs text-[color:var(--text-muted)]"
-              :title="fieldHelp('water.correctionDuringIrrigation')"
-            >
-              Коррекция во время полива
-              <select
-                v-model="waterForm.correctionDuringIrrigation"
-                class="input-select mt-1 w-full"
-                :disabled="!canConfigure"
-              >
-                <option :value="true">Включена</option>
-                <option :value="false">Выключена</option>
-              </select>
-            </label>
+            <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-muted)] p-3 text-xs text-[color:var(--text-muted)] md:col-span-2">
+              <div class="font-semibold text-[color:var(--text-primary)]">
+                Recipe-derived chemistry summary
+              </div>
+              <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div>pH window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }}</span></div>
+                <div>EC window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}</span></div>
+                <div class="md:col-span-2">EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span></div>
+              </div>
+            </div>
           </div>
 
           <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
@@ -1804,36 +1785,6 @@
             </summary>
 
             <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="fieldHelp('water.prepareToleranceEcPct')"
-              >
-                Допуск EC подготовки (%)
-                <input
-                  v-model.number="waterForm.prepareToleranceEcPct"
-                  type="number"
-                  min="0.1"
-                  max="100"
-                  step="0.1"
-                  class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
-                />
-              </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="fieldHelp('water.prepareTolerancePhPct')"
-              >
-                Допуск pH подготовки (%)
-                <input
-                  v-model.number="waterForm.prepareTolerancePhPct"
-                  type="number"
-                  min="0.1"
-                  max="100"
-                  step="0.1"
-                  class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
-                />
-              </label>
               <label
                 class="text-xs text-[color:var(--text-muted)]"
                 :title="fieldHelp('water.correctionMaxEcCorrectionAttempts')"
@@ -1886,20 +1837,6 @@
                   type="number"
                   min="1"
                   max="500"
-                  class="input-field mt-1 w-full"
-                  :disabled="!canConfigure"
-                />
-              </label>
-              <label
-                class="text-xs text-[color:var(--text-muted)]"
-                :title="fieldHelp('water.correctionStabilizationSec')"
-              >
-                Stabilization (sec)
-                <input
-                  v-model.number="waterForm.correctionStabilizationSec"
-                  type="number"
-                  min="0"
-                  max="3600"
                   class="input-field mt-1 w-full"
                   :disabled="!canConfigure"
                 />
@@ -2526,6 +2463,15 @@ function toNullablePercent(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function toNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 const recipeSoilMoistureTargets = computed(() => {
   const phase = asRecord(props.currentRecipePhase)
   const extensions = asRecord(phase?.extensions)
@@ -2535,6 +2481,30 @@ const recipeSoilMoistureTargets = computed(() => {
   return {
     day: toNullablePercent(soil?.day),
     night: toNullablePercent(soil?.night),
+  }
+})
+
+const recipeChemistrySummary = computed(() => {
+  const phase = asRecord(props.currentRecipePhase)
+
+  return {
+    phTarget: toNullableNumber(phase?.ph_target),
+    phMin: toNullableNumber(phase?.ph_min ?? asRecord(phase?.targets)?.ph?.min),
+    phMax: toNullableNumber(phase?.ph_max ?? asRecord(phase?.targets)?.ph?.max),
+    ecTarget: toNullableNumber(phase?.ec_target),
+    ecMin: toNullableNumber(phase?.ec_min ?? asRecord(phase?.targets)?.ec?.min),
+    ecMax: toNullableNumber(phase?.ec_max ?? asRecord(phase?.targets)?.ec?.max),
+    nutrientMode: typeof phase?.nutrient_mode === 'string' ? phase.nutrient_mode : null,
+  }
+})
+
+const recipeIrrigationSummary = computed(() => {
+  const phase = asRecord(props.currentRecipePhase)
+
+  return {
+    mode: typeof phase?.irrigation_mode === 'string' ? phase.irrigation_mode : null,
+    intervalSec: toNullableNumber(phase?.irrigation_interval_sec),
+    durationSec: toNullableNumber(phase?.irrigation_duration_sec),
   }
 })
 
@@ -2560,14 +2530,6 @@ const FIELD_HELP: Record<string, string> = {
   'water.enableDrainControl': 'Включает контроль процента дренажа. Имеет смысл только для 3-баковой схемы с отдельным drain контуром.',
   'water.drainTargetPercent': 'Целевой процент дренажа относительно подачи. Используется как ориентир для режима с drain control.',
   'water.valveSwitching': 'Разрешает relay-командам переключать клапаны между фазами clean fill, solution fill и recirculation.',
-  'water.twoTankCleanFillStartSteps': 'Сколько relay-step команд отправлять на старте clean fill в 2-баковой схеме.',
-  'water.twoTankCleanFillStopSteps': 'Сколько relay-step команд отправлять на остановке clean fill в 2-баковой схеме.',
-  'water.twoTankSolutionFillStartSteps': 'Количество relay-step команд для старта solution fill в 2-баковой схеме.',
-  'water.twoTankSolutionFillStopSteps': 'Количество relay-step команд для остановки solution fill в 2-баковой схеме.',
-  'water.twoTankPrepareRecirculationStartSteps': 'Количество relay-step команд для входа в prepare recirculation в 2-баковой схеме.',
-  'water.twoTankPrepareRecirculationStopSteps': 'Количество relay-step команд для выхода из prepare recirculation в 2-баковой схеме.',
-  'water.twoTankIrrigationRecoveryStartSteps': 'Количество relay-step команд для старта recovery после полива в 2-баковой схеме.',
-  'water.twoTankIrrigationRecoveryStopSteps': 'Количество relay-step команд для завершения recovery после полива в 2-баковой схеме.',
   'water.intervalMinutes': 'Период между штатными поливами. Чем меньше интервал, тем чаще scheduler будет инициировать irrigation workflow.',
   'water.durationSeconds': 'Длительность одного поливочного окна. Это прямое время работы исполнительного контура полива.',
   'water.irrigationBatchL': 'Целевой объём одной порции полива. Используется как агрономический ориентир при настройке цикла.',
@@ -2606,8 +2568,6 @@ const FIELD_HELP: Record<string, string> = {
   'water.targetPh': 'Readonly поле. Канонический target pH берётся только из активной фазы рецепта и не сохраняется в zone logic profile.',
   'water.targetEc': 'Readonly поле. Канонический target EC берётся только из активной фазы рецепта и не сохраняется в zone logic profile.',
   'water.correctionDuringIrrigation': 'Разрешает correction runtime работать прямо во время irrigation path, а не только до него.',
-  'water.prepareToleranceEcPct': 'Допустимое отклонение EC при подготовке раствора перед тем, как runtime признает target достигнутым.',
-  'water.prepareTolerancePhPct': 'Допустимое отклонение pH при подготовке раствора перед завершением correction step.',
   'water.correctionMaxEcCorrectionAttempts': 'Максимум dosing-попыток EC-коррекции в одном correction window.',
   'water.correctionMaxPhCorrectionAttempts': 'Максимум dosing-попыток pH-коррекции в одном correction window.',
   'water.correctionPrepareRecirculationMaxAttempts': 'Сколько recirculation-окон runtime может открыть при неуспешной коррекции.',

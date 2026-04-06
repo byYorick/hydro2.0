@@ -113,6 +113,9 @@ Breaking-change: обратная совместимость со старыми
 - содержит агрегированный `readiness` для запуска цикла;
 - readiness fail-closed учитывает не только bind-ы/калибровки/PID, но и `automation_engine.grow_cycle_start_dispatch_enabled`;
 - readiness включает `blocking_alerts` для hard-block кодов automation-engine (`biz_zone_correction_config_missing`, `biz_zone_dosing_calibration_missing`).
+- readiness payload обязан различать `checked=false` и `ready=false`:
+  отсутствие ошибок при `checked=false` не считается launch-success;
+- `canLaunch` на фронтенде допустим только при `readiness.checked=true` и `readiness.ready=true`.
 
 Контракт `GET /api/zones/{id}/state`:
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.

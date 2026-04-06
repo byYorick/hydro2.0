@@ -87,7 +87,7 @@ class IrrigationCheckHandler(BaseStageHandler):
                 unavailable_error="two_tank_solution_min_level_unavailable",
                 stale_error="two_tank_solution_min_level_stale",
             )
-            if solution_min["is_triggered"]:
+            if not solution_min["is_triggered"]:
                 IRRIGATION_SOLUTION_MIN.labels(topology=topology).inc()
                 try:
                     await create_zone_event(

@@ -43,6 +43,7 @@ import type {
 export type { Mode, SystemType, Greenhouse, GreenhouseType, Zone, Plant, Recipe, Node, RecipePhaseForm } from './setupWizardTypes'
 
 interface ZoneLaunchReadiness {
+  checked?: boolean
   ready: boolean
   checks?: Record<string, boolean>
   errors?: string[]
@@ -302,8 +303,6 @@ export function useSetupWizard() {
     ecPct: 10,
     valveSwitching: true,
     correctionDuringIrrigation: true,
-    prepareToleranceEcPct: 10,
-    prepareTolerancePhPct: 5,
     correctionMaxEcCorrectionAttempts: 8,
     correctionMaxPhCorrectionAttempts: 8,
     correctionPrepareRecirculationMaxAttempts: 6,
@@ -329,10 +328,6 @@ export function useSetupWizard() {
     solutionChangeIntervalMinutes: 180,
     solutionChangeDurationSeconds: 120,
     manualIrrigationSeconds: 90,
-    twoTankCleanFillStartSteps: 1,
-    twoTankCleanFillStopSteps: 1,
-    twoTankSolutionFillStartSteps: 3,
-    twoTankSolutionFillStopSteps: 3,
   })
 
   const automationLightingForm = reactive<LightingFormState>({
@@ -523,7 +518,16 @@ export function useSetupWizard() {
   })
 
   const stepZoneCalibrationReady = computed(() => {
+    const readiness = zoneLaunchReadiness.value
+    const checks = readiness?.checks ?? {}
+
     return stepZoneAutomationDone.value
+      && checks.process_calibration_generic === true
+      && checks.process_calibration_solution_fill === true
+      && checks.process_calibration_tank_recirc === true
+      && checks.process_calibration_irrigation === true
+      && checks.pid_config_ph === true
+      && checks.pid_config_ec === true
   })
 
   const zoneLaunchReady = computed(() => {
@@ -531,7 +535,8 @@ export function useSetupWizard() {
       return false
     }
 
-    return zoneLaunchReadiness.value?.ready === true
+    return zoneLaunchReadiness.value?.checked === true
+      && zoneLaunchReadiness.value?.ready === true
   })
 
   const zoneLaunchReadinessErrors = computed(() => {
@@ -545,7 +550,7 @@ export function useSetupWizard() {
       return true
     }
 
-    return automationAppliedAt.value !== null
+    return zoneLaunchReadiness.value?.checked === true
       && zoneLaunchReadinessErrors.value.length === 0
   })
 

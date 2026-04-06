@@ -6,12 +6,7 @@ import {
   createDefaultWaterForm,
   FALLBACK_AUTOMATION_DEFAULTS,
 } from '@/composables/useAutomationDefaults'
-import {
-  FALLBACK_AUTOMATION_COMMAND_TEMPLATES,
-} from '@/composables/useAutomationCommandTemplates'
 import type {
-  AutomationCommandTemplateStep,
-  AutomationCommandTemplatesSettings,
   AutomationDefaultsSettings,
 } from '@/types/SystemSettings'
 
@@ -32,54 +27,6 @@ function normalizeNumber(value: unknown, fallback: number): number {
 function round(value: number, digits: number): number {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
-}
-
-function normalizeStepCount(value: unknown, fallback: number): number {
-  return clamp(Math.round(normalizeNumber(value, fallback)), 1, 12)
-}
-
-const MIN_TWO_TANK_COMMAND_STEPS: Record<string, number> = {
-  irrigation_start: 3,
-  irrigation_stop: 3,
-  clean_fill_start: 1,
-  clean_fill_stop: 1,
-  solution_fill_start: 3,
-  solution_fill_stop: 3,
-  prepare_recirculation_start: 3,
-  prepare_recirculation_stop: 3,
-  irrigation_recovery_start: 4,
-  irrigation_recovery_stop: 4,
-}
-
-function normalizeTwoTankPlanStepCount(planName: string, value: unknown, fallback: number): number {
-  const minimum = MIN_TWO_TANK_COMMAND_STEPS[planName] ?? 1
-
-  return clamp(Math.round(normalizeNumber(value, fallback)), minimum, 12)
-}
-
-function cloneRelayCommand(command: AutomationCommandTemplateStep): AutomationCommandTemplateStep {
-  return {
-    channel: command.channel,
-    cmd: command.cmd,
-    params: {
-      state: command.params.state,
-    },
-  }
-}
-
-function resizeCommandSteps(steps: AutomationCommandTemplateStep[], requestedCount: number): AutomationCommandTemplateStep[] {
-  const normalizedCount = clamp(requestedCount, 1, 12)
-  const base = steps.map(cloneRelayCommand)
-  if (normalizedCount <= base.length) {
-    return base.slice(0, normalizedCount)
-  }
-
-  const tail = base[base.length - 1]
-  while (base.length < normalizedCount) {
-    base.push(cloneRelayCommand(tail))
-  }
-
-  return base
 }
 
 export function validateForms(forms: Pick<ZoneAutomationForms, 'climateForm' | 'waterForm'>): string | null {
@@ -113,7 +60,6 @@ export function buildGrowthCycleConfigPayload(
     includeSystemType?: boolean
     includeClimateSubsystem?: boolean
     automationDefaults?: AutomationDefaultsSettings
-    automationCommandTemplates?: AutomationCommandTemplatesSettings
   }
 ): Record<string, unknown> {
   const { climateForm, waterForm, lightingForm } = forms
@@ -121,8 +67,6 @@ export function buildGrowthCycleConfigPayload(
   const includeSystemType = options?.includeSystemType ?? true
   const includeClimateSubsystem = options?.includeClimateSubsystem ?? true
   const automationDefaults = options?.automationDefaults ?? FALLBACK_AUTOMATION_DEFAULTS
-  const automationCommandTemplates = options?.automationCommandTemplates ?? FALLBACK_AUTOMATION_COMMAND_TEMPLATES
-
   const irrigationIntervalMinutes = clamp(Math.round(waterForm.intervalMinutes), 5, 1440)
   const irrigationDurationSeconds = clamp(Math.round(waterForm.durationSeconds), 1, 3600)
   const climateIntervalSec = clamp(Math.round(climateForm.intervalMinutes * 60), 60, 86400)
@@ -184,14 +128,6 @@ export function buildGrowthCycleConfigPayload(
     Math.round(normalizeNumber(waterForm.startupCleanFillRetryCycles, automationDefaults.water_startup_clean_fill_retry_cycles)),
     0,
     20
-  )
-  const prepareToleranceEcPct = round(
-    clamp(normalizeNumber(waterForm.prepareToleranceEcPct, automationDefaults.water_prepare_tolerance_ec_pct), 0.1, 100),
-    1
-  )
-  const prepareTolerancePhPct = round(
-    clamp(normalizeNumber(waterForm.prepareTolerancePhPct, automationDefaults.water_prepare_tolerance_ph_pct), 0.1, 100),
-    1
   )
   const irrigationRecoveryMaxContinueAttempts = clamp(
     Math.round(
@@ -291,59 +227,6 @@ export function buildGrowthCycleConfigPayload(
     0,
     3600
   )
-  const twoTankCommandSteps = {
-    irrigation_start: normalizeTwoTankPlanStepCount(
-      'irrigation_start',
-      waterForm.twoTankIrrigationStartSteps,
-      automationCommandTemplates.irrigation_start.length
-    ),
-    irrigation_stop: normalizeTwoTankPlanStepCount(
-      'irrigation_stop',
-      waterForm.twoTankIrrigationStopSteps,
-      automationCommandTemplates.irrigation_stop.length
-    ),
-    clean_fill_start: normalizeTwoTankPlanStepCount(
-      'clean_fill_start',
-      waterForm.twoTankCleanFillStartSteps,
-      automationCommandTemplates.clean_fill_start.length
-    ),
-    clean_fill_stop: normalizeTwoTankPlanStepCount(
-      'clean_fill_stop',
-      waterForm.twoTankCleanFillStopSteps,
-      automationCommandTemplates.clean_fill_stop.length
-    ),
-    solution_fill_start: normalizeTwoTankPlanStepCount(
-      'solution_fill_start',
-      waterForm.twoTankSolutionFillStartSteps,
-      automationCommandTemplates.solution_fill_start.length
-    ),
-    solution_fill_stop: normalizeTwoTankPlanStepCount(
-      'solution_fill_stop',
-      waterForm.twoTankSolutionFillStopSteps,
-      automationCommandTemplates.solution_fill_stop.length
-    ),
-    prepare_recirculation_start: normalizeTwoTankPlanStepCount(
-      'prepare_recirculation_start',
-      waterForm.twoTankPrepareRecirculationStartSteps,
-      automationCommandTemplates.prepare_recirculation_start.length
-    ),
-    prepare_recirculation_stop: normalizeTwoTankPlanStepCount(
-      'prepare_recirculation_stop',
-      waterForm.twoTankPrepareRecirculationStopSteps,
-      automationCommandTemplates.prepare_recirculation_stop.length
-    ),
-    irrigation_recovery_start: normalizeTwoTankPlanStepCount(
-      'irrigation_recovery_start',
-      waterForm.twoTankIrrigationRecoveryStartSteps,
-      automationCommandTemplates.irrigation_recovery_start.length
-    ),
-    irrigation_recovery_stop: normalizeTwoTankPlanStepCount(
-      'irrigation_recovery_stop',
-      waterForm.twoTankIrrigationRecoveryStopSteps,
-      automationCommandTemplates.irrigation_recovery_stop.length
-    ),
-  }
-
   const requiredNodeTypes = waterForm.refillRequiredNodeTypes
     .split(',')
     .map((item) => item.trim())
@@ -381,10 +264,6 @@ export function buildGrowthCycleConfigPayload(
       clean_max_sensor_labels: [automationDefaults.water_startup_clean_max_sensor_label],
       solution_max_sensor_labels: [automationDefaults.water_startup_solution_max_sensor_label],
     }
-    diagnosticsExecution.prepare_tolerance = {
-      ec_pct: prepareToleranceEcPct,
-      ph_pct: prepareTolerancePhPct,
-    }
     diagnosticsExecution.correction = {
       max_ec_correction_attempts: correctionMaxEcCorrectionAttempts,
       max_ph_correction_attempts: correctionMaxPhCorrectionAttempts,
@@ -404,32 +283,42 @@ export function buildGrowthCycleConfigPayload(
         ph_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ph_pct,
       },
     }
-    diagnosticsExecution.two_tank_commands = {
-      irrigation_start: resizeCommandSteps(automationCommandTemplates.irrigation_start, twoTankCommandSteps.irrigation_start),
-      irrigation_stop: resizeCommandSteps(automationCommandTemplates.irrigation_stop, twoTankCommandSteps.irrigation_stop),
-      clean_fill_start: resizeCommandSteps(automationCommandTemplates.clean_fill_start, twoTankCommandSteps.clean_fill_start),
-      clean_fill_stop: resizeCommandSteps(automationCommandTemplates.clean_fill_stop, twoTankCommandSteps.clean_fill_stop),
-      solution_fill_start: resizeCommandSteps(automationCommandTemplates.solution_fill_start, twoTankCommandSteps.solution_fill_start),
-      solution_fill_stop: resizeCommandSteps(automationCommandTemplates.solution_fill_stop, twoTankCommandSteps.solution_fill_stop),
-      prepare_recirculation_start: resizeCommandSteps(
-        automationCommandTemplates.prepare_recirculation_start,
-        twoTankCommandSteps.prepare_recirculation_start
-      ),
-      prepare_recirculation_stop: resizeCommandSteps(
-        automationCommandTemplates.prepare_recirculation_stop,
-        twoTankCommandSteps.prepare_recirculation_stop
-      ),
-      irrigation_recovery_start: resizeCommandSteps(
-        automationCommandTemplates.irrigation_recovery_start,
-        twoTankCommandSteps.irrigation_recovery_start
-      ),
-      irrigation_recovery_stop: resizeCommandSteps(
-        automationCommandTemplates.irrigation_recovery_stop,
-        twoTankCommandSteps.irrigation_recovery_stop
-      ),
-    }
   } else if (waterForm.tanksCount === 3) {
     diagnosticsExecution.topology = 'three_tank_drip_substrate_trays'
+  }
+
+  const irrigationExecution: Record<string, unknown> = {
+    ...(irrigationDecisionStrategy === 'smart_soil_v1'
+      ? {
+          interval_minutes: irrigationIntervalMinutes,
+          interval_sec: irrigationIntervalMinutes * 60,
+          duration_seconds: irrigationDurationSeconds,
+          duration_sec: irrigationDurationSeconds,
+        }
+      : {}),
+    ...(includeSystemType ? { system_type: waterForm.systemType } : {}),
+    tanks_count: waterForm.tanksCount,
+    fill_strategy: 'volume',
+    clean_tank_fill_l: clamp(Math.round(waterForm.cleanTankFillL), 10, 5000),
+    nutrient_tank_target_l: clamp(Math.round(waterForm.nutrientTankTargetL), 10, 5000),
+    irrigation_batch_l: clamp(Math.round(waterForm.irrigationBatchL), 1, 500),
+    valve_switching_enabled: waterForm.valveSwitching,
+    correction_during_irrigation: waterForm.correctionDuringIrrigation,
+    fill_temperature_c: clamp(waterForm.fillTemperatureC, 5, 35),
+    schedule: [
+      {
+        start: waterForm.fillWindowStart,
+        end: waterForm.fillWindowEnd,
+        action: 'fill_clean_tank_then_mix',
+      },
+    ],
+    correction_node: {
+      sensors_location: 'correction_node',
+    },
+    drain_control: {
+      enabled: waterForm.tanksCount === 3 ? waterForm.enableDrainControl : false,
+      target_percent: waterForm.tanksCount === 3 ? clamp(waterForm.drainTargetPercent, 0, 100) : null,
+    },
   }
 
   const payload = {
@@ -445,36 +334,7 @@ export function buildGrowthCycleConfigPayload(
       },
       irrigation: {
         enabled: true,
-        execution: {
-          interval_minutes: irrigationIntervalMinutes,
-          interval_sec: irrigationIntervalMinutes * 60,
-          duration_seconds: irrigationDurationSeconds,
-          duration_sec: irrigationDurationSeconds,
-          ...(includeSystemType ? { system_type: waterForm.systemType } : {}),
-          tanks_count: waterForm.tanksCount,
-          fill_strategy: 'volume',
-          correction_strategy: 'feedback_target',
-          clean_tank_fill_l: clamp(Math.round(waterForm.cleanTankFillL), 10, 5000),
-          nutrient_tank_target_l: clamp(Math.round(waterForm.nutrientTankTargetL), 10, 5000),
-          irrigation_batch_l: clamp(Math.round(waterForm.irrigationBatchL), 1, 500),
-          valve_switching_enabled: waterForm.valveSwitching,
-          correction_during_irrigation: waterForm.correctionDuringIrrigation,
-          fill_temperature_c: clamp(waterForm.fillTemperatureC, 5, 35),
-          schedule: [
-            {
-              start: waterForm.fillWindowStart,
-              end: waterForm.fillWindowEnd,
-              action: 'fill_clean_tank_then_mix',
-            },
-          ],
-          correction_node: {
-            sensors_location: 'correction_node',
-          },
-          drain_control: {
-              enabled: waterForm.tanksCount === 3 ? waterForm.enableDrainControl : false,
-              target_percent: waterForm.tanksCount === 3 ? clamp(waterForm.drainTargetPercent, 0, 100) : null,
-            },
-        },
+        execution: irrigationExecution,
         decision: {
           strategy: irrigationDecisionStrategy,
           config: {
@@ -493,10 +353,6 @@ export function buildGrowthCycleConfigPayload(
         },
         safety: {
           stop_on_solution_min: Boolean(irrigationStopOnSolutionMin),
-        },
-        dosing_rules: {
-          irrigation_allowed_components: ['calcium', 'magnesium', 'micro'],
-          irrigation_forbid_components: ['npk'],
         },
       },
       lighting: {

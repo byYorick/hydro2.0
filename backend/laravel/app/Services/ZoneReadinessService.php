@@ -352,6 +352,7 @@ class ZoneReadinessService
         ], $pidConfigChecks, $processCalibrationChecks);
 
         $readiness = [
+            'checked' => true,
             'ready' => empty($errorDetails),
             'warnings' => [],
             'errors' => [],
@@ -562,6 +563,7 @@ class ZoneReadinessService
         $zone = Zone::query()->find($zoneId);
         if (! $zone) {
             return [
+                'checked' => false,
                 'valid' => false,
                 'ready' => false,
                 'warnings' => [],
@@ -573,6 +575,7 @@ class ZoneReadinessService
         $readiness = $this->checkZoneReadiness($zone);
 
         return [
+            'checked' => (bool) ($readiness['checked'] ?? false),
             'valid' => $readiness['ready'],
             'ready' => $readiness['ready'],
             'warnings' => $this->buildUserFacingWarnings($readiness),
@@ -614,6 +617,7 @@ class ZoneReadinessService
 
         return [
             'zone_id' => $zone->id,
+            'checked' => (bool) ($readiness['checked'] ?? false),
             'ready' => $readiness['ready'],
             'warnings' => $readiness['warnings'],
             'errors' => $readiness['errors'],
@@ -794,7 +798,7 @@ class ZoneReadinessService
             );
             $payload = is_array($document?->payload) ? $document->payload : [];
 
-            if ($document?->source === 'bootstrap' || $payload === [] || array_is_list($payload)) {
+            if ($payload === [] || array_is_list($payload)) {
                 $missing[] = $type;
                 continue;
             }

@@ -170,12 +170,6 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   if (form.stopOnSolutionMin === undefined) {
     form.stopOnSolutionMin = automationDefaults.value.water_irrigation_stop_on_solution_min
   }
-  if (form.prepareToleranceEcPct === undefined || !Number.isFinite(Number(form.prepareToleranceEcPct))) {
-    form.prepareToleranceEcPct = automationDefaults.value.water_prepare_tolerance_ec_pct
-  }
-  if (form.prepareTolerancePhPct === undefined || !Number.isFinite(Number(form.prepareTolerancePhPct))) {
-    form.prepareTolerancePhPct = automationDefaults.value.water_prepare_tolerance_ph_pct
-  }
   if (form.correctionMaxEcCorrectionAttempts === undefined || !Number.isFinite(Number(form.correctionMaxEcCorrectionAttempts))) {
     form.correctionMaxEcCorrectionAttempts = automationDefaults.value.water_correction_max_ec_attempts
   }
@@ -211,8 +205,6 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   form.irrigationRecoveryMaxContinueAttempts = clamp(Math.round(form.irrigationRecoveryMaxContinueAttempts), 1, 30)
   form.irrigationRecoveryTimeoutSeconds = clamp(Math.round(form.irrigationRecoveryTimeoutSeconds), 30, 86400)
   form.irrigationMaxSetupReplays = clamp(Math.round(form.irrigationMaxSetupReplays), 0, 10)
-  form.prepareToleranceEcPct = clamp(form.prepareToleranceEcPct, 0.1, 100)
-  form.prepareTolerancePhPct = clamp(form.prepareTolerancePhPct, 0.1, 100)
   form.correctionMaxEcCorrectionAttempts = clamp(Math.round(form.correctionMaxEcCorrectionAttempts), 1, 50)
   form.correctionMaxPhCorrectionAttempts = clamp(Math.round(form.correctionMaxPhCorrectionAttempts), 1, 50)
   form.correctionPrepareRecirculationMaxAttempts = clamp(Math.round(form.correctionPrepareRecirculationMaxAttempts), 1, 50)

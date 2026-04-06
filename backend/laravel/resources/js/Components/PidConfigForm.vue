@@ -68,6 +68,44 @@
         </div>
       </div>
 
+      <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <label class="space-y-1.5">
+          <span class="block text-xs font-medium text-[color:var(--text-muted)]">
+            Preset runtime tuning
+          </span>
+          <select
+            v-model="selectedPresetKey"
+            class="input-select w-full"
+            data-testid="pid-config-preset-select"
+            :disabled="loading || presetSwitching"
+            @change="applySelectedPreset"
+          >
+            <option
+              v-for="preset in presetOptions"
+              :key="preset.key"
+              :value="preset.key"
+            >
+              {{ preset.name }}
+            </option>
+          </select>
+          <p class="text-xs text-[color:var(--text-dim)]">
+            {{ selectedPresetDescription }}
+          </p>
+        </label>
+
+        <div class="flex items-end">
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="pid-config-toggle-advanced"
+            :disabled="loading"
+            @click="showAdvanced = !showAdvanced"
+          >
+            {{ showAdvanced ? 'Скрыть расширенные настройки' : 'Расширенные настройки' }}
+          </Button>
+        </div>
+      </div>
+
       <div
         v-if="!phaseTargetAvailable"
         class="rounded-md border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] p-3 text-xs text-[color:var(--badge-danger-text)]"
@@ -76,7 +114,17 @@
         В актуальной recipe phase отсутствует `{{ selectedType.toUpperCase() }}` target. PID-конфиг сохранить нельзя, automation должна перейти в fail-closed.
       </div>
 
+      <div class="rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
+        <div class="font-medium text-[color:var(--text-primary)]">
+          {{ selectedPresetName }}
+        </div>
+        <div class="mt-1">
+          Effective PID: dead {{ form.dead_zone }}, close {{ form.close_zone }}, far {{ form.far_zone }}, max_integral {{ form.max_integral }}
+        </div>
+      </div>
+
       <form
+        v-if="showAdvanced"
         class="space-y-4"
         @submit.prevent="onSubmit"
       >
@@ -321,6 +369,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { resolveRecipePhasePidTargets, type RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { usePidConfig } from '@/composables/usePidConfig'
 import { useApi } from '@/composables/useApi'
+import { useAutomationConfig } from '@/composables/useAutomationConfig'
+import {
+  normalizeRuntimeTuningBundleDocument,
+  RUNTIME_TUNING_BUNDLE_NAMESPACE,
+  selectedRuntimeTuningPreset,
+  withPidOverride,
+  type RuntimeTuningBundlePayload,
+} from '@/composables/runtimeTuningBundle'
 import { logger } from '@/utils/logger'
 import Card from './Card.vue'
 import Button from './Button.vue'
@@ -359,36 +415,41 @@ const emit = defineEmits<{
 
 const DEFAULT_CONFIGS: Record<'ph' | 'ec', PidConfig> = {
   ph: {
-    dead_zone: 0.05,
-    close_zone: 0.3,
-    far_zone: 1.0,
+    dead_zone: 0.04,
+    close_zone: 0.18,
+    far_zone: 0.65,
     zone_coeffs: {
-      close: { kp: 5.0, ki: 0.05, kd: 0.0 },
-      far: { kp: 8.0, ki: 0.02, kd: 0.0 },
+      close: { kp: 0.18, ki: 0.01, kd: 0.0 },
+      far: { kp: 0.28, ki: 0.015, kd: 0.0 },
     },
-    max_integral: 20.0,
+    max_integral: 12.0,
   },
   ec: {
-    dead_zone: 0.1,
-    close_zone: 0.5,
-    far_zone: 1.5,
+    dead_zone: 0.06,
+    close_zone: 0.25,
+    far_zone: 0.9,
     zone_coeffs: {
-      close: { kp: 30.0, ki: 0.3, kd: 0.0 },
-      far: { kp: 50.0, ki: 0.1, kd: 0.0 },
+      close: { kp: 0.35, ki: 0.02, kd: 0.0 },
+      far: { kp: 0.55, ki: 0.03, kd: 0.0 },
     },
-    max_integral: 100.0,
+    max_integral: 20.0,
   },
 }
 
 const selectedType = ref<'ph' | 'ec'>('ph')
 const confirmed = ref(false)
+const showAdvanced = ref(false)
+const presetSwitching = ref(false)
 const resolvedPhaseTargets = ref<RecipePhasePidTargets | null>(props.phaseTargets)
 const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({
   ph: false,
   ec: false,
 })
 const { api } = useApi()
-const { getPidConfig, getAllPidConfigs, updatePidConfig, loading } = usePidConfig()
+const automationConfig = useAutomationConfig()
+const { getPidConfig, getAllPidConfigs, loading } = usePidConfig()
+const runtimeTuningBundle = ref<RuntimeTuningBundlePayload | null>(null)
+const selectedPresetKey = ref('system_default')
 
 const form = ref<PidConfig>(cloneConfig(DEFAULT_CONFIGS.ph))
 
@@ -407,6 +468,10 @@ const phaseTargetSourceHint = computed(() => {
 
   return `${base} Ручное редактирование target запрещено, в zone.pid.* он не сохраняется.`
 })
+const selectedPreset = computed(() => selectedRuntimeTuningPreset(runtimeTuningBundle.value))
+const presetOptions = computed(() => runtimeTuningBundle.value?.presets ?? [])
+const selectedPresetName = computed(() => selectedPreset.value?.name ?? 'Системный preset')
+const selectedPresetDescription = computed(() => selectedPreset.value?.description ?? 'Канонические стартовые значения PID и process calibration для зоны.')
 
 const needsConfirmation = computed(() => {
   return (
@@ -452,9 +517,10 @@ function normalizeConfig(raw: Partial<PidConfig> | null | undefined, type: 'ph' 
 async function loadConfig() {
   try {
     const config = await getPidConfig(props.zoneId, selectedType.value)
-    const source = config?.config ?? DEFAULT_CONFIGS[selectedType.value]
+    const preview = runtimeTuningBundle.value?.resolved_preview.pid?.[selectedType.value]
+    const source = config?.config ?? preview ?? DEFAULT_CONFIGS[selectedType.value]
     form.value = normalizeConfig(source, selectedType.value)
-    pidConfigSavedState.value[selectedType.value] = Boolean(config) && config.is_default !== true
+    pidConfigSavedState.value[selectedType.value] = Boolean(config)
     confirmed.value = false
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID config:', error)
@@ -466,11 +532,46 @@ async function loadStatuses(): Promise<void> {
   try {
     const configs = await getAllPidConfigs(props.zoneId)
     pidConfigSavedState.value = {
-      ph: Boolean(configs.ph) && configs.ph?.is_default !== true,
-      ec: Boolean(configs.ec) && configs.ec?.is_default !== true,
+      ph: Boolean(configs.ph),
+      ec: Boolean(configs.ec),
     }
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load PID status map:', error)
+  }
+}
+
+async function loadRuntimeTuningBundle(): Promise<void> {
+  try {
+    const document = await automationConfig.getDocument<Record<string, unknown>>('zone', props.zoneId, RUNTIME_TUNING_BUNDLE_NAMESPACE)
+    runtimeTuningBundle.value = normalizeRuntimeTuningBundleDocument(document)
+    selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
+  } catch (error) {
+    logger.error('[PidConfigForm] Failed to load runtime tuning bundle:', error)
+  }
+}
+
+async function persistRuntimeTuningBundle(nextBundle: RuntimeTuningBundlePayload): Promise<void> {
+  const document = await automationConfig.updateDocument('zone', props.zoneId, RUNTIME_TUNING_BUNDLE_NAMESPACE, nextBundle)
+  runtimeTuningBundle.value = normalizeRuntimeTuningBundleDocument(document)
+  selectedPresetKey.value = runtimeTuningBundle.value.selected_preset_key
+}
+
+async function applySelectedPreset(): Promise<void> {
+  if (!runtimeTuningBundle.value) {
+    return
+  }
+
+  presetSwitching.value = true
+  try {
+    await persistRuntimeTuningBundle({
+      ...runtimeTuningBundle.value,
+      selected_preset_key: selectedPresetKey.value,
+    })
+    await Promise.all([loadStatuses(), loadConfig()])
+  } catch (error) {
+    logger.error('[PidConfigForm] Failed to apply runtime tuning preset:', error)
+  } finally {
+    presetSwitching.value = false
   }
 }
 
@@ -525,11 +626,23 @@ async function onSubmit() {
   }
 
   try {
-    const saved = await updatePidConfig(props.zoneId, selectedType.value, form.value)
-    form.value = normalizeConfig(saved.config, selectedType.value)
-    pidConfigSavedState.value[selectedType.value] = true
-    await loadStatuses()
-    emit('saved', saved)
+    if (!runtimeTuningBundle.value) {
+      logger.warn('[PidConfigForm] Refusing to save PID config without runtime tuning bundle', {
+        zoneId: props.zoneId,
+        pidType: selectedType.value,
+      })
+      return
+    }
+
+    await persistRuntimeTuningBundle(withPidOverride(runtimeTuningBundle.value, selectedType.value, form.value as unknown as Record<string, unknown>))
+    await Promise.all([loadStatuses(), loadConfig()])
+    emit('saved', {
+      type: selectedType.value,
+      config: cloneConfig(form.value),
+      updated_by: null,
+      updated_at: null,
+      is_default: false,
+    })
     confirmed.value = false
   } catch (error) {
     logger.error('[PidConfigForm] Failed to save PID config:', error)
@@ -563,8 +676,7 @@ watch(
 
 onMounted(() => {
   void hydratePhaseTargets()
-  void loadStatuses()
-  void loadConfig()
+  void loadRuntimeTuningBundle().then(() => Promise.all([loadStatuses(), loadConfig()]))
 })
 </script>
 

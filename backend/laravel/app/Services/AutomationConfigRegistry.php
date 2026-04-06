@@ -25,6 +25,7 @@ class AutomationConfigRegistry
     public const NAMESPACE_ZONE_CORRECTION = 'zone.correction';
     public const NAMESPACE_ZONE_PID_PH = 'zone.pid.ph';
     public const NAMESPACE_ZONE_PID_EC = 'zone.pid.ec';
+    public const NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE = 'zone.runtime_tuning_bundle';
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC = 'zone.process_calibration.generic';
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_SOLUTION_FILL = 'zone.process_calibration.solution_fill';
     public const NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC = 'zone.process_calibration.tank_recirc';
@@ -99,6 +100,7 @@ class AutomationConfigRegistry
             ],
             self::NAMESPACE_ZONE_PID_PH => $this->zonePidDefinition('ph'),
             self::NAMESPACE_ZONE_PID_EC => $this->zonePidDefinition('ec'),
+            self::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE => $this->zoneRuntimeTuningBundleDefinition(),
             self::NAMESPACE_ZONE_PROCESS_CALIBRATION_GENERIC => $this->zoneProcessCalibrationDefinition('generic'),
             self::NAMESPACE_ZONE_PROCESS_CALIBRATION_SOLUTION_FILL => $this->zoneProcessCalibrationDefinition('solution_fill'),
             self::NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC => $this->zoneProcessCalibrationDefinition('tank_recirc'),
@@ -182,6 +184,7 @@ class AutomationConfigRegistry
             self::NAMESPACE_ZONE_PROCESS_CALIBRATION_SOLUTION_FILL,
             self::NAMESPACE_ZONE_PROCESS_CALIBRATION_TANK_RECIRC,
             self::NAMESPACE_ZONE_PROCESS_CALIBRATION_IRRIGATION,
+            self::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE,
         ], true);
     }
 
@@ -213,6 +216,10 @@ class AutomationConfigRegistry
 
             case self::NAMESPACE_ZONE_PID_EC:
                 $this->validatePidPayload($payload, 'ec');
+                return;
+
+            case self::NAMESPACE_ZONE_RUNTIME_TUNING_BUNDLE:
+                $this->validateRuntimeTuningBundlePayload($payload);
                 return;
 
             case self::NAMESPACE_ZONE_LOGIC_PROFILE:
@@ -312,7 +319,53 @@ class AutomationConfigRegistry
             'scope_type' => self::SCOPE_ZONE,
             'schema_version' => 1,
             'default_payload' => ZonePidDefaults::forType($type),
-            'required' => false,
+            'required' => true,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function zoneRuntimeTuningBundleDefinition(): array
+    {
+        $processCalibration = [];
+        foreach (['generic', 'solution_fill', 'tank_recirc', 'irrigation'] as $mode) {
+            $processCalibration[$mode] = array_merge(
+                ZoneProcessCalibrationDefaults::forMode($mode),
+                [
+                    'mode' => $mode,
+                    'source' => 'system_default',
+                    'meta' => [],
+                ]
+            );
+        }
+
+        $pid = [
+            'ph' => ZonePidDefaults::forType('ph'),
+            'ec' => ZonePidDefaults::forType('ec'),
+        ];
+
+        $systemPreset = [
+            'key' => 'system_default',
+            'name' => 'Системный preset',
+            'description' => 'Канонические стартовые значения process calibration и PID для зоны.',
+            'process_calibration' => $processCalibration,
+            'pid' => $pid,
+        ];
+
+        return [
+            'scope_type' => self::SCOPE_ZONE,
+            'schema_version' => 1,
+            'default_payload' => [
+                'selected_preset_key' => 'system_default',
+                'presets' => [$systemPreset],
+                'advanced_overrides' => [],
+                'resolved_preview' => [
+                    'process_calibration' => $processCalibration,
+                    'pid' => $pid,
+                ],
+            ],
+            'required' => true,
         ];
     }
 
@@ -453,6 +506,74 @@ class AutomationConfigRegistry
 
         if (! is_numeric($payload['max_integral']) || (float) $payload['max_integral'] <= 0) {
             throw new InvalidArgumentException("zone.pid.{$type}.max_integral must be positive.");
+        }
+    }
+
+    private function validateRuntimeTuningBundlePayload(array $payload): void
+    {
+        if (array_is_list($payload)) {
+            throw new InvalidArgumentException('zone.runtime_tuning_bundle must be an object.');
+        }
+
+        $selectedPresetKey = trim((string) ($payload['selected_preset_key'] ?? ''));
+        if ($selectedPresetKey === '') {
+            throw new InvalidArgumentException('zone.runtime_tuning_bundle.selected_preset_key is required.');
+        }
+
+        $presets = $payload['presets'] ?? null;
+        if (! is_array($presets) || ! array_is_list($presets) || $presets === []) {
+            throw new InvalidArgumentException('zone.runtime_tuning_bundle.presets must be a non-empty array.');
+        }
+
+        $presetKeys = [];
+        foreach ($presets as $index => $preset) {
+            if (! is_array($preset) || array_is_list($preset)) {
+                throw new InvalidArgumentException("zone.runtime_tuning_bundle.presets.{$index} must be an object.");
+            }
+
+            $key = trim((string) ($preset['key'] ?? ''));
+            if ($key === '') {
+                throw new InvalidArgumentException("zone.runtime_tuning_bundle.presets.{$index}.key is required.");
+            }
+            $presetKeys[] = $key;
+
+            if (trim((string) ($preset['name'] ?? '')) === '') {
+                throw new InvalidArgumentException("zone.runtime_tuning_bundle.presets.{$index}.name is required.");
+            }
+
+            $processCalibration = $preset['process_calibration'] ?? null;
+            if (! is_array($processCalibration) || array_is_list($processCalibration)) {
+                throw new InvalidArgumentException("zone.runtime_tuning_bundle.presets.{$index}.process_calibration must be an object.");
+            }
+
+            foreach (['generic', 'solution_fill', 'tank_recirc', 'irrigation'] as $mode) {
+                $modePayload = $processCalibration[$mode] ?? null;
+                if (! is_array($modePayload) || array_is_list($modePayload)) {
+                    throw new InvalidArgumentException("zone.runtime_tuning_bundle.presets.{$index}.process_calibration.{$mode} must be an object.");
+                }
+                $this->validateProcessCalibrationPayload($modePayload);
+            }
+
+            $pid = $preset['pid'] ?? null;
+            if (! is_array($pid) || array_is_list($pid)) {
+                throw new InvalidArgumentException("zone.runtime_tuning_bundle.presets.{$index}.pid must be an object.");
+            }
+            $this->validatePidPayload(is_array($pid['ph'] ?? null) ? $pid['ph'] : [], 'ph');
+            $this->validatePidPayload(is_array($pid['ec'] ?? null) ? $pid['ec'] : [], 'ec');
+        }
+
+        if (! in_array($selectedPresetKey, $presetKeys, true)) {
+            throw new InvalidArgumentException('zone.runtime_tuning_bundle.selected_preset_key must reference an existing preset.');
+        }
+
+        $advancedOverrides = $payload['advanced_overrides'] ?? [];
+        if (! is_array($advancedOverrides) || ($advancedOverrides !== [] && array_is_list($advancedOverrides))) {
+            throw new InvalidArgumentException('zone.runtime_tuning_bundle.advanced_overrides must be an object.');
+        }
+
+        $resolvedPreview = $payload['resolved_preview'] ?? [];
+        if (! is_array($resolvedPreview) || ($resolvedPreview !== [] && array_is_list($resolvedPreview))) {
+            throw new InvalidArgumentException('zone.runtime_tuning_bundle.resolved_preview must be an object.');
         }
     }
 

@@ -1099,6 +1099,7 @@ describe('Setup/Wizard.vue', () => {
             status: 'ok',
             data: {
               readiness: {
+                checked: true,
                 ready: true,
                 errors: [],
               },

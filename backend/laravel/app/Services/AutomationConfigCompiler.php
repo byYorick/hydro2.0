@@ -7,6 +7,7 @@ use App\Models\AutomationConfigViolation;
 use App\Models\AutomationEffectiveBundle;
 use App\Models\GrowCycle;
 use App\Models\Zone;
+use App\Support\Automation\RecipeNutritionRuntimeConfigResolver;
 use App\Support\Automation\ZoneCorrectionResolvedConfigBuilder;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +16,7 @@ class AutomationConfigCompiler
     public function __construct(
         private readonly AutomationConfigRegistry $registry,
         private readonly ZoneCorrectionResolvedConfigBuilder $zoneCorrectionResolvedConfigBuilder,
+        private readonly RecipeNutritionRuntimeConfigResolver $recipeNutritionRuntimeConfigResolver,
     ) {
     }
 
@@ -115,13 +117,22 @@ class AutomationConfigCompiler
 
     public function compileGrowCycleBundle(int $growCycleId): AutomationEffectiveBundle
     {
-        $cycle = GrowCycle::query()->findOrFail($growCycleId);
+        $cycle = GrowCycle::query()
+            ->with('currentPhase')
+            ->findOrFail($growCycleId);
         $zoneBundle = $this->bundleConfig(AutomationConfigRegistry::SCOPE_ZONE, (int) $cycle->zone_id);
+        $zoneConfig = is_array($zoneBundle['zone'] ?? null) && ! array_is_list($zoneBundle['zone'])
+            ? $zoneBundle['zone']
+            : [];
+        $zoneConfig['correction'] = $this->zoneCorrectionPayload(
+            (int) $cycle->zone_id,
+            $this->growCycleNutritionPayload($cycle)
+        );
 
         $bundle = $this->storeBundle(AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId, [
             'schema_version' => 1,
             'system' => $zoneBundle['system'] ?? [],
-            'zone' => $zoneBundle['zone'] ?? [],
+            'zone' => $zoneConfig,
             'cycle' => [
                 'start_snapshot' => $this->payload(AutomationConfigRegistry::NAMESPACE_CYCLE_START_SNAPSHOT, AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId),
                 'phase_overrides' => $this->payload(AutomationConfigRegistry::NAMESPACE_CYCLE_PHASE_OVERRIDES, AutomationConfigRegistry::SCOPE_GROW_CYCLE, $growCycleId),
@@ -263,7 +274,7 @@ class AutomationConfigCompiler
     /**
      * @return array<string, mixed>
      */
-    private function zoneCorrectionPayload(int $zoneId): array
+    private function zoneCorrectionPayload(int $zoneId, ?array $nutrition = null): array
     {
         $payload = $this->payload(
             AutomationConfigRegistry::NAMESPACE_ZONE_CORRECTION,
@@ -288,9 +299,37 @@ class AutomationConfigCompiler
         }
 
         $resolvedConfig['meta'] = $meta;
+        $resolvedConfig = $this->recipeNutritionRuntimeConfigResolver->applyToResolvedConfig($resolvedConfig, $nutrition);
         $payload['resolved_config'] = $resolvedConfig;
 
         return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function growCycleNutritionPayload(GrowCycle $cycle): ?array
+    {
+        $phase = $cycle->currentPhase;
+        if ($phase === null) {
+            return null;
+        }
+
+        $mode = trim((string) ($phase->nutrient_mode ?? ''));
+        if ($mode === '') {
+            return null;
+        }
+
+        return [
+            'mode' => $mode,
+            'solution_volume_l' => $phase->nutrient_solution_volume_l,
+            'components' => [
+                'npk' => ['ratio_pct' => $phase->nutrient_npk_ratio_pct],
+                'calcium' => ['ratio_pct' => $phase->nutrient_calcium_ratio_pct],
+                'magnesium' => ['ratio_pct' => $phase->nutrient_magnesium_ratio_pct],
+                'micro' => ['ratio_pct' => $phase->nutrient_micro_ratio_pct],
+            ],
+        ];
     }
 
     private function documentVersion(string $namespace, string $scopeType, int $scopeId): int
@@ -335,26 +374,9 @@ class AutomationConfigCompiler
             : app(AutomationConfigDocumentService::class)->getPayload($namespace, $scopeType, $scopeId, true);
     }
 
-    /**
-     * Bootstrap-materialized zone PID defaults are not a valid runtime source of truth.
-     *
-     * @return array<string, mixed>
-     */
     private function zonePidPayload(string $namespace, int $zoneId): array
     {
-        $document = AutomationConfigDocument::query()
-            ->where('namespace', $namespace)
-            ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
-            ->where('scope_id', $zoneId)
-            ->first();
-
-        if ($document === null || $document->source === 'bootstrap') {
-            return [];
-        }
-
-        $payload = $document->payload;
-
-        return is_array($payload) && ! array_is_list($payload) ? $payload : [];
+        return $this->payload($namespace, AutomationConfigRegistry::SCOPE_ZONE, $zoneId);
     }
 
     /**

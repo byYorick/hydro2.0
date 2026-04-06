@@ -69,21 +69,11 @@ function createForms(): ZoneAutomationForms {
       irrigationAutoReplayAfterSetup: true,
       irrigationMaxSetupReplays: 1,
       stopOnSolutionMin: true,
-      prepareToleranceEcPct: 25,
-      prepareTolerancePhPct: 15,
       correctionMaxEcCorrectionAttempts: 5,
       correctionMaxPhCorrectionAttempts: 5,
       correctionPrepareRecirculationMaxAttempts: 3,
       correctionPrepareRecirculationMaxCorrectionAttempts: 20,
       correctionStabilizationSec: 60,
-      twoTankCleanFillStartSteps: 1,
-      twoTankCleanFillStopSteps: 1,
-      twoTankSolutionFillStartSteps: 3,
-      twoTankSolutionFillStopSteps: 3,
-      twoTankPrepareRecirculationStartSteps: 3,
-      twoTankPrepareRecirculationStopSteps: 3,
-      twoTankIrrigationRecoveryStartSteps: 4,
-      twoTankIrrigationRecoveryStopSteps: 3,
       refillRequiredNodeTypes: 'irrig,climate,light',
       refillPreferredChannel: 'fill_valve',
       solutionChangeEnabled: false,
@@ -226,10 +216,6 @@ describe('zoneAutomationFormLogic', () => {
                 prepare_recirculation_timeout_sec: 960,
                 clean_fill_retry_cycles: 2,
               },
-              prepare_tolerance: {
-                ec_pct: 18,
-                ph_pct: 12,
-              },
               irrigation_recovery: {
                 max_continue_attempts: 7,
                 timeout_sec: 800,
@@ -240,16 +226,6 @@ describe('zoneAutomationFormLogic', () => {
                 prepare_recirculation_max_attempts: 4,
                 prepare_recirculation_max_correction_attempts: 150,
                 stabilization_sec: 45,
-              },
-              two_tank_commands: {
-                clean_fill_start: [{}, {}],
-                clean_fill_stop: [{}],
-                solution_fill_start: [{}, {}, {}, {}],
-                solution_fill_stop: [{}, {}],
-                prepare_recirculation_start: [{}, {}, {}],
-                prepare_recirculation_stop: [{}, {}],
-                irrigation_recovery_start: [{}, {}, {}, {}, {}],
-                irrigation_recovery_stop: [{}, {}, {}, {}],
               },
             },
           },
@@ -312,21 +288,11 @@ describe('zoneAutomationFormLogic', () => {
     expect(forms.waterForm.irrigationAutoReplayAfterSetup).toBe(false)
     expect(forms.waterForm.irrigationMaxSetupReplays).toBe(4)
     expect(forms.waterForm.stopOnSolutionMin).toBe(false)
-    expect(forms.waterForm.prepareToleranceEcPct).toBe(18)
-    expect(forms.waterForm.prepareTolerancePhPct).toBe(12)
     expect(forms.waterForm.correctionMaxEcCorrectionAttempts).toBe(6)
     expect(forms.waterForm.correctionMaxPhCorrectionAttempts).toBe(8)
     expect(forms.waterForm.correctionPrepareRecirculationMaxAttempts).toBe(4)
     expect(forms.waterForm.correctionPrepareRecirculationMaxCorrectionAttempts).toBe(150)
     expect(forms.waterForm.correctionStabilizationSec).toBe(45)
-    expect(forms.waterForm.twoTankCleanFillStartSteps).toBe(2)
-    expect(forms.waterForm.twoTankCleanFillStopSteps).toBe(1)
-    expect(forms.waterForm.twoTankSolutionFillStartSteps).toBe(4)
-    expect(forms.waterForm.twoTankSolutionFillStopSteps).toBe(2)
-    expect(forms.waterForm.twoTankPrepareRecirculationStartSteps).toBe(3)
-    expect(forms.waterForm.twoTankPrepareRecirculationStopSteps).toBe(2)
-    expect(forms.waterForm.twoTankIrrigationRecoveryStartSteps).toBe(5)
-    expect(forms.waterForm.twoTankIrrigationRecoveryStopSteps).toBe(4)
     expect(forms.waterForm.refillRequiredNodeTypes).toBe('irrig,climate')
     expect(forms.waterForm.refillPreferredChannel).toBe('fill_valve')
     expect(forms.waterForm.solutionChangeEnabled).toBe(true)
@@ -359,15 +325,11 @@ describe('zoneAutomationFormLogic', () => {
     forms.waterForm.irrigationAutoReplayAfterSetup = false
     forms.waterForm.irrigationMaxSetupReplays = 3
     forms.waterForm.stopOnSolutionMin = false
-    forms.waterForm.prepareToleranceEcPct = 19
-    forms.waterForm.prepareTolerancePhPct = 11
     forms.waterForm.correctionMaxEcCorrectionAttempts = 11
     forms.waterForm.correctionMaxPhCorrectionAttempts = 13
     forms.waterForm.correctionPrepareRecirculationMaxAttempts = 6
     forms.waterForm.correctionPrepareRecirculationMaxCorrectionAttempts = 200
     forms.waterForm.correctionStabilizationSec = 50
-    forms.waterForm.twoTankCleanFillStartSteps = 2
-    forms.waterForm.twoTankSolutionFillStartSteps = 4
     forms.climateForm.ventMinPercent = -5
     forms.climateForm.ventMaxPercent = 140
     forms.lightingForm.hoursOn = 25
@@ -408,8 +370,6 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.irrigation.recovery.auto_replay_after_setup).toBe(false)
     expect(payload.subsystems.irrigation.recovery.max_setup_replays).toBe(3)
     expect(payload.subsystems.irrigation.safety.stop_on_solution_min).toBe(false)
-    expect(payload.subsystems.diagnostics.execution.prepare_tolerance.ec_pct).toBe(19)
-    expect(payload.subsystems.diagnostics.execution.prepare_tolerance.ph_pct).toBe(11)
     expect(payload.subsystems.diagnostics.execution.correction.max_ec_correction_attempts).toBe(11)
     expect(payload.subsystems.diagnostics.execution.correction.max_ph_correction_attempts).toBe(13)
     expect(payload.subsystems.diagnostics.execution.correction.prepare_recirculation_max_attempts).toBe(6)
@@ -418,12 +378,8 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.diagnostics.execution.correction.ph_mix_wait_sec).toBeUndefined()
     expect(payload.subsystems.diagnostics.execution.correction.stabilization_sec).toBe(50)
     expect(payload.subsystems.diagnostics.execution.irrigation_recovery.degraded_tolerance.ec_pct).toBe(20)
-    expect(payload.subsystems.diagnostics.execution.two_tank_commands.clean_fill_start.length).toBe(2)
-    expect(payload.subsystems.diagnostics.execution.two_tank_commands.clean_fill_start[0].channel).toBe('valve_clean_fill')
-    expect(payload.subsystems.diagnostics.execution.two_tank_commands.solution_fill_start.length).toBe(4)
-    expect(payload.subsystems.diagnostics.execution.two_tank_commands.prepare_recirculation_start[0].channel).toBe(
-      'valve_solution_supply'
-    )
+    expect(payload.subsystems.diagnostics.execution.prepare_tolerance).toBeUndefined()
+    expect(payload.subsystems.diagnostics.execution.two_tank_commands).toBeUndefined()
     expect(payload.subsystems.solution_change.execution.duration_sec).toBe(120)
     expect(payload.subsystems.lighting.execution.photoperiod.hours_on).toBe(24)
   })
@@ -442,27 +398,14 @@ describe('zoneAutomationFormLogic', () => {
     expect(payload.subsystems.irrigation.decision.strategy).toBe('task')
   })
 
-  it('не даёт урезать критические two-tank command plans ниже безопасного минимума', () => {
+  it('больше не отправляет frontend-owned two-tank command plans в payload', () => {
     const forms = createForms()
 
     forms.waterForm.systemType = 'drip'
     forms.waterForm.tanksCount = 2
-    forms.waterForm.twoTankSolutionFillStartSteps = 1
-    forms.waterForm.twoTankSolutionFillStopSteps = 1
-    forms.waterForm.twoTankPrepareRecirculationStartSteps = 1
-    forms.waterForm.twoTankPrepareRecirculationStopSteps = 1
-    forms.waterForm.twoTankIrrigationRecoveryStartSteps = 1
-    forms.waterForm.twoTankIrrigationRecoveryStopSteps = 1
 
     const payload = buildGrowthCycleConfigPayload(forms) as any
-    const twoTankCommands = payload.subsystems.diagnostics.execution.two_tank_commands
-
-    expect(twoTankCommands.solution_fill_start).toHaveLength(3)
-    expect(twoTankCommands.solution_fill_stop).toHaveLength(3)
-    expect(twoTankCommands.prepare_recirculation_start).toHaveLength(3)
-    expect(twoTankCommands.prepare_recirculation_stop).toHaveLength(3)
-    expect(twoTankCommands.irrigation_recovery_start).toHaveLength(4)
-    expect(twoTankCommands.irrigation_recovery_stop).toHaveLength(4)
+    expect(payload.subsystems.diagnostics.execution.two_tank_commands).toBeUndefined()
   })
 
   it('buildGrowthCycleConfigPayload может не отправлять system_type для активного цикла', () => {
