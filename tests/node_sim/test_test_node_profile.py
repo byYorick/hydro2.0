@@ -325,6 +325,39 @@ def test_soil_moisture_dynamics_scale_with_telemetry_interval():
     assert abs(fast.state.soil_moisture - slow.state.soil_moisture) < 1.5
 
 
+def test_ec_correction_hold_prevents_fast_regression_during_observe_window():
+    held = TestNodeSimulator(_DummyMqtt())
+    released = TestNodeSimulator(_DummyMqtt())
+
+    for sim in (held, released):
+        sim.state.ec_value = 1.92
+        sim.state.ec_sensor_mode_active = True
+        sim.state.main_pump_on = True
+        sim.state.valve_solution_supply_on = True
+        sim.state.valve_solution_fill_on = True
+        asyncio.run(
+            sim.execute_pending_command(
+                PendingCommand(
+                    node_uid="nd-test-ec-1",
+                    channel="pump_a",
+                    cmd_id="cmd-ec-dose-1",
+                    cmd="dose",
+                    kind=CommandKind.ACTUATOR,
+                    params={"ml": 6.0},
+                    execute_delay_ms=0,
+                )
+            )
+        )
+
+    released.state.ec_drift_hold_ticks = 0
+
+    for _ in range(20):
+        held.apply_passive_drift()
+        released.apply_passive_drift()
+
+    assert held.state.ec_value > released.state.ec_value + 0.04
+
+
 def test_set_fault_mode_updates_ph_and_ec_snapshot():
     mqtt = _DummyMqtt()
     sim = TestNodeSimulator(mqtt)

@@ -285,26 +285,36 @@ Pipeline:
 
 Пассивный drift на тик телеметрии:
 
-- `pH`: `drift + 0.0005`
-- `EC`: `drift*2 - 0.0025`
+- `pH`: `drift + 0.0002`
+- `EC`: `drift*2 - 0.0010`
 
 где `drift` — детерминированная псевдо-динамика из telemetry loop.
 
 Реакция коррекции:
 
-- `pump_acid`: `pH -= 0.10 * scale * phase_factor`
-- `pump_base`: `pH += 0.10 * scale * phase_factor`
-- `pump_a..pump_d`: `EC += 0.055 * scale * phase_factor`
+- `pump_acid`: `pH -= 0.12 * scale * phase_factor`
+- `pump_base`: `pH += 0.12 * scale * phase_factor`
+- `pump_a..pump_d`: `EC += 0.068 * scale * phase_factor`
+- onset delayed: `~4 сек` (`2` telemetry tick при периоде `2 сек`)
+- transient decay: ещё `~8 сек`
+- при упоре в sensor clamp decay считается только от фактически применённого delta после clamp, поэтому stacked-dose
+  не создаёт искусственный inversion ниже seeded baseline
+- residual drift protection:
+  - `~120 сек` на flow-path (`solution_fill`, `tank_recirc`, `irrigation`)
+  - `~24 сек` вне flow-path
 
 Phase factor:
 
 - `solution_fill` path:
-  - `pH`: `0.50`
-  - `EC`: `0.50`
+  - `pH`: `2.20`
+  - `EC`: `2.90`
 - `tank_recirc` path:
   - `pH`: `2.50`
   - `EC`: `3.20`
-- вне fill/recirc path: `1.0`
+- `irrigation` path:
+  - `pH`: `2.85`
+  - `EC`: `3.75`
+- вне flow-path: `1.0`
 
 Scale:
 

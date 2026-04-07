@@ -52,6 +52,8 @@ CORRECTION_RECIRC_EC_PHASE_FACTOR = 3.20
 CORRECTION_SETTLE_TICKS = 4
 CORRECTION_REACTION_SCALE_MIN = 0.5
 CORRECTION_REACTION_SCALE_MAX = 5.0
+CORRECTION_FLOW_DRIFT_HOLD_SEC = 120
+CORRECTION_IDLE_DRIFT_HOLD_SEC = 24
 
 TRANSIENT_DELAY_BASE_MIN_MS = 220
 TRANSIENT_DELAY_BASE_MAX_MS = 460
@@ -136,6 +138,8 @@ class VirtualState:
     light_pwm: int = 0
     irrigation_boost_ticks: int = 0
     correction_boost_ticks: int = 0
+    ph_drift_hold_ticks: int = 0
+    ec_drift_hold_ticks: int = 0
     clean_fill_started_at: int = 0
     solution_fill_started_at: int = 0
 
@@ -976,6 +980,18 @@ class TestNodeSimulator:
             return CORRECTION_FILL_PHASE_FACTOR
         return 1.0
 
+    def correction_drift_hold_ticks(self, phase_factor: float) -> int:
+        hold_sec = CORRECTION_FLOW_DRIFT_HOLD_SEC if phase_factor > 1.0 else CORRECTION_IDLE_DRIFT_HOLD_SEC
+        ticks = int((hold_sec * 1000 + self.telemetry_interval_ms - 1) / self.telemetry_interval_ms)
+        return max(1, ticks)
+
+    def arm_correction_drift_hold(self, ec_channel: bool, phase_factor: float) -> None:
+        hold_ticks = self.correction_drift_hold_ticks(phase_factor)
+        if ec_channel:
+            self.state.ec_drift_hold_ticks = max(self.state.ec_drift_hold_ticks, hold_ticks)
+        else:
+            self.state.ph_drift_hold_ticks = max(self.state.ph_drift_hold_ticks, hold_ticks)
+
     def build_sensor_probe_details(self, channel: str) -> dict[str, Any]:
         if channel == "ph_sensor":
             metric_type, value, unit = "PH", self.state.ph_value, "pH"
@@ -1308,6 +1324,7 @@ class TestNodeSimulator:
             delta = PH_REACTION_BASE_DELTA * scale * phase_factor
             self.state.ph_value = clamp_float(self.state.ph_value - delta, 4.8, 7.2)
             self.state.correction_boost_ticks = CORRECTION_SETTLE_TICKS
+            self.arm_correction_drift_hold(False, phase_factor)
             details["phase_factor"] = phase_factor
             details["delta_ph"] = -delta
             details["ph_after"] = self.state.ph_value
@@ -1318,6 +1335,7 @@ class TestNodeSimulator:
             delta = PH_REACTION_BASE_DELTA * scale * phase_factor
             self.state.ph_value = clamp_float(self.state.ph_value + delta, 4.8, 7.2)
             self.state.correction_boost_ticks = CORRECTION_SETTLE_TICKS
+            self.arm_correction_drift_hold(False, phase_factor)
             details["phase_factor"] = phase_factor
             details["delta_ph"] = delta
             details["ph_after"] = self.state.ph_value
@@ -1328,6 +1346,7 @@ class TestNodeSimulator:
             delta = EC_REACTION_BASE_DELTA * scale * phase_factor
             self.state.ec_value = clamp_float(self.state.ec_value + delta, 0.4, 3.2)
             self.state.correction_boost_ticks = CORRECTION_SETTLE_TICKS
+            self.arm_correction_drift_hold(True, phase_factor)
             details["phase_factor"] = phase_factor
             details["delta_ec"] = delta
             details["ec_after"] = self.state.ec_value
@@ -1395,8 +1414,10 @@ class TestNodeSimulator:
                 if level_solution_max_override is not None:
                     self.state.level_solution_max_override = level_solution_max_override
                 if ph_value is not None:
+                    self.state.ph_drift_hold_ticks = 0
                     self.state.ph_value = clamp_float(ph_value, 4.8, 7.2)
                 if ec_value is not None:
+                    self.state.ec_drift_hold_ticks = 0
                     self.state.ec_value = clamp_float(ec_value, 0.4, 3.2)
                 if soil_moisture_pct is not None:
                     self.state.soil_moisture = clamp_float(soil_moisture_pct, 0.0, 100.0)
@@ -1496,9 +1517,14 @@ class TestNodeSimulator:
         irrigation_active = self.is_irrigation_active()
         now_sec = self.get_timestamp_seconds()
 
-        if self.state.correction_boost_ticks == 0:
+        if self.state.ph_drift_hold_ticks <= 0:
             ph_drift += PH_DRIFT_BIAS_PER_TICK
+        else:
+            self.state.ph_drift_hold_ticks -= 1
+        if self.state.ec_drift_hold_ticks <= 0:
             ec_drift += EC_DRIFT_BIAS_PER_TICK
+        else:
+            self.state.ec_drift_hold_ticks -= 1
 
         self.state.ph_value = clamp_float(self.state.ph_value + ph_drift, 4.8, 7.2)
         self.state.ec_value = clamp_float(self.state.ec_value + ec_drift, 0.4, 3.2)

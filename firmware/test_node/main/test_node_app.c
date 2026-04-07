@@ -51,8 +51,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TASK_STACK_COMMAND_WORKER_FALLBACK 5632
 #define TASK_STACK_STATE_COMMAND_WORKER 4096
 #define TASK_STACK_STATE_COMMAND_WORKER_FALLBACK 3584
-#define TASK_STACK_MQTT_REANNOUNCE 3584
-#define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 3072
+#define TASK_STACK_MQTT_REANNOUNCE 6144
+#define TASK_STACK_MQTT_REANNOUNCE_FALLBACK 5632
 #define CLEAN_FILL_MIN_DELAY_SEC 10
 #define CLEAN_FILL_DELAY_SEC 30
 #define SOLUTION_FILL_MIN_DELAY_SEC 10
@@ -93,6 +93,8 @@ static const char *CMD_TAG = "test_node_cmd";
 #define TELEMETRY_DRIFT_WAVE_AMPLITUDE 0.0009f
 #define CORRECTION_REACTION_SCALE_MIN 0.5f
 #define CORRECTION_REACTION_SCALE_MAX 5.0f
+#define CORRECTION_FLOW_DRIFT_HOLD_SEC 120
+#define CORRECTION_IDLE_DRIFT_HOLD_SEC 24
 #define CONTROL_DELAY_MIN_MS 120
 #define CONTROL_DELAY_MAX_MS 260
 #define TRANSIENT_DELAY_BASE_MIN_MS 220
@@ -170,6 +172,8 @@ typedef struct {
     uint8_t light_pwm;
     uint8_t irrigation_boost_ticks;
     uint8_t correction_boost_ticks;
+    uint8_t ph_drift_hold_ticks;
+    uint8_t ec_drift_hold_ticks;
     float pending_ph_delta;
     float pending_ec_delta;
     float ph_decay_remaining;
@@ -377,6 +381,8 @@ static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
+    .ph_drift_hold_ticks = 0,
+    .ec_drift_hold_ticks = 0,
     .pending_ph_delta = 0.0f,
     .pending_ec_delta = 0.0f,
     .ph_decay_remaining = 0.0f,
@@ -429,6 +435,8 @@ static virtual_state_t s_virtual_state = {
     .light_pwm = 0,
     .irrigation_boost_ticks = 0,
     .correction_boost_ticks = 0,
+    .ph_drift_hold_ticks = 0,
+    .ec_drift_hold_ticks = 0,
     .pending_ph_delta = 0.0f,
     .pending_ec_delta = 0.0f,
     .ph_decay_remaining = 0.0f,
@@ -892,16 +900,38 @@ static void clear_correction_response_state(void) {
     s_virtual_state.ph_decay_ticks_remaining = 0;
     s_virtual_state.ec_decay_ticks_remaining = 0;
     s_virtual_state.correction_boost_ticks = 0;
+    s_virtual_state.ph_drift_hold_ticks = 0;
+    s_virtual_state.ec_drift_hold_ticks = 0;
 }
 
-static void schedule_correction_response(bool ec_channel, float delta) {
+static uint8_t correction_drift_hold_ticks(float phase_factor) {
+    float hold_sec = phase_factor > 1.0f
+        ? (float)CORRECTION_FLOW_DRIFT_HOLD_SEC
+        : (float)CORRECTION_IDLE_DRIFT_HOLD_SEC;
+    int ticks = (int)ceilf((hold_sec * 1000.0f) / (float)TELEMETRY_INTERVAL_MS);
+
+    if (ticks < 1) {
+        ticks = 1;
+    }
+    if (ticks > 255) {
+        ticks = 255;
+    }
+    return (uint8_t)ticks;
+}
+
+static void schedule_correction_response(bool ec_channel, float delta, float phase_factor) {
     float *pending_delta = ec_channel ? &s_virtual_state.pending_ec_delta : &s_virtual_state.pending_ph_delta;
     uint8_t *delay_ticks = ec_channel ? &s_virtual_state.pending_ec_delay_ticks : &s_virtual_state.pending_ph_delay_ticks;
+    uint8_t *drift_hold_ticks = ec_channel ? &s_virtual_state.ec_drift_hold_ticks : &s_virtual_state.ph_drift_hold_ticks;
     uint8_t total_activity_ticks = CORRECTION_RESPONSE_DELAY_TICKS + CORRECTION_DECAY_TICKS + 1;
+    uint8_t hold_ticks = correction_drift_hold_ticks(phase_factor);
 
     *pending_delta += delta;
     if (*delay_ticks == 0) {
         *delay_ticks = CORRECTION_RESPONSE_DELAY_TICKS;
+    }
+    if (*drift_hold_ticks < hold_ticks) {
+        *drift_hold_ticks = hold_ticks;
     }
     if (s_virtual_state.correction_boost_ticks < total_activity_ticks) {
         s_virtual_state.correction_boost_ticks = total_activity_ticks;
@@ -947,6 +977,9 @@ static void apply_scheduled_metric_response(
     float max_value
 ) {
     bool onset_applied = false;
+    float previous_value;
+    float clamped_value;
+    float applied_onset_delta;
 
     if (!value || !pending_delta || !delay_ticks || !decay_remaining || !decay_ticks_remaining) {
         return;
@@ -956,13 +989,16 @@ static void apply_scheduled_metric_response(
         (*delay_ticks)--;
         if (*delay_ticks == 0 && fabsf(*pending_delta) >= 0.0001f) {
             float onset_delta = *pending_delta;
-            float transient_delta = onset_delta * CORRECTION_TRANSIENT_RATIO;
 
-            *value = clamp_float(*value + onset_delta, min_value, max_value);
+            previous_value = *value;
+            clamped_value = clamp_float(previous_value + onset_delta, min_value, max_value);
+            applied_onset_delta = clamped_value - previous_value;
+            *value = clamped_value;
             *pending_delta = 0.0f;
             onset_applied = true;
 
-            if (fabsf(transient_delta) >= 0.0001f) {
+            if (fabsf(applied_onset_delta) >= 0.0001f) {
+                float transient_delta = applied_onset_delta * CORRECTION_TRANSIENT_RATIO;
                 *decay_remaining += transient_delta;
                 if (*decay_ticks_remaining < CORRECTION_DECAY_TICKS) {
                     *decay_ticks_remaining = CORRECTION_DECAY_TICKS;
@@ -995,6 +1031,19 @@ static void apply_scheduled_correction_responses(void) {
         EC_VALUE_MIN,
         EC_VALUE_MAX
     );
+}
+
+static bool correction_metric_active(bool ec_channel) {
+    if (ec_channel) {
+        return s_virtual_state.pending_ec_delay_ticks > 0 ||
+            s_virtual_state.ec_decay_ticks_remaining > 0 ||
+            fabsf(s_virtual_state.pending_ec_delta) >= 0.0001f ||
+            fabsf(s_virtual_state.ec_decay_remaining) >= 0.0001f;
+    }
+    return s_virtual_state.pending_ph_delay_ticks > 0 ||
+        s_virtual_state.ph_decay_ticks_remaining > 0 ||
+        fabsf(s_virtual_state.pending_ph_delta) >= 0.0001f ||
+        fabsf(s_virtual_state.ph_decay_remaining) >= 0.0001f;
 }
 
 static int random_range_ms(int min_value, int max_value) {
@@ -2894,7 +2943,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         float projected_peak = clamp_ph_value(
             s_virtual_state.ph_value + s_virtual_state.pending_ph_delta - delta
         );
-        schedule_correction_response(false, -delta);
+        schedule_correction_response(false, -delta, phase_factor);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", -delta);
         cJSON_AddNumberToObject(details, "ph_after", projected_peak);
@@ -2908,7 +2957,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         float projected_peak = clamp_ph_value(
             s_virtual_state.ph_value + s_virtual_state.pending_ph_delta + delta
         );
-        schedule_correction_response(false, delta);
+        schedule_correction_response(false, delta, phase_factor);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ph", delta);
         cJSON_AddNumberToObject(details, "ph_after", projected_peak);
@@ -2929,7 +2978,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             0.4f,
             3.2f
         );
-        schedule_correction_response(true, delta);
+        schedule_correction_response(true, delta, phase_factor);
         cJSON_AddNumberToObject(details, "phase_factor", phase_factor);
         cJSON_AddNumberToObject(details, "delta_ec", delta);
         cJSON_AddNumberToObject(details, "ec_after", projected_peak);
@@ -3773,12 +3822,15 @@ static void apply_passive_drift(void) {
 
     apply_scheduled_correction_responses();
 
-    if (s_virtual_state.pending_ph_delay_ticks == 0 &&
-        s_virtual_state.pending_ec_delay_ticks == 0 &&
-        s_virtual_state.ph_decay_ticks_remaining == 0 &&
-        s_virtual_state.ec_decay_ticks_remaining == 0) {
+    if (!correction_metric_active(false) && s_virtual_state.ph_drift_hold_ticks == 0) {
         ph_drift += PH_DRIFT_BIAS_PER_TICK;
+    } else if (!correction_metric_active(false) && s_virtual_state.ph_drift_hold_ticks > 0) {
+        s_virtual_state.ph_drift_hold_ticks--;
+    }
+    if (!correction_metric_active(true) && s_virtual_state.ec_drift_hold_ticks == 0) {
         ec_drift += EC_DRIFT_BIAS_PER_TICK;
+    } else if (!correction_metric_active(true) && s_virtual_state.ec_drift_hold_ticks > 0) {
+        s_virtual_state.ec_drift_hold_ticks--;
     }
 
     s_virtual_state.ph_value = clamp_ph_value(s_virtual_state.ph_value + ph_drift);
