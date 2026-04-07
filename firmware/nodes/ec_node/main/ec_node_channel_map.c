@@ -1,6 +1,7 @@
 #include "ec_node_channel_map.h"
 #include "ec_node_defaults.h"
 #include "cJSON.h"
+#include <string.h>
 
 const ec_node_sensor_channel_t EC_NODE_SENSOR_CHANNELS[] = {
     {
@@ -50,6 +51,24 @@ const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[] = {
 };
 
 const size_t EC_NODE_ACTUATOR_CHANNELS_COUNT = sizeof(EC_NODE_ACTUATOR_CHANNELS) / sizeof(EC_NODE_ACTUATOR_CHANNELS[0]);
+
+const ec_node_actuator_channel_t *ec_node_find_actuator_channel(const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < EC_NODE_ACTUATOR_CHANNELS_COUNT; i++) {
+        if (strcmp(EC_NODE_ACTUATOR_CHANNELS[i].name, name) == 0) {
+            return &EC_NODE_ACTUATOR_CHANNELS[i];
+        }
+    }
+
+    return NULL;
+}
+
+bool ec_node_is_system_channel(const char *name) {
+    return name != NULL && strcmp(name, "system") == 0;
+}
 
 static cJSON *ec_node_build_sensor_entry(const ec_node_sensor_channel_t *sensor) {
     if (sensor == NULL || sensor->name == NULL || sensor->metric == NULL) {
@@ -133,6 +152,17 @@ cJSON *ec_node_build_config_channels(void) {
         }
         cJSON_AddItemToArray(channels, entry);
     }
+
+    cJSON *service_entry = cJSON_CreateObject();
+    if (!service_entry) {
+        cJSON_Delete(channels);
+        return NULL;
+    }
+    cJSON_AddStringToObject(service_entry, "name", "system");
+    cJSON_AddStringToObject(service_entry, "channel", "system");
+    cJSON_AddStringToObject(service_entry, "type", "ACTUATOR");
+    cJSON_AddStringToObject(service_entry, "actuator_type", "SYSTEM");
+    cJSON_AddItemToArray(channels, service_entry);
 
     return channels;
 }

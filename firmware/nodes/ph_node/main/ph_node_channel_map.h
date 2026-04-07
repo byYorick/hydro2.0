@@ -40,6 +40,10 @@ extern const size_t PH_NODE_SENSOR_CHANNELS_COUNT;
 extern const ph_node_actuator_channel_t PH_NODE_ACTUATOR_CHANNELS[];
 extern const size_t PH_NODE_ACTUATOR_CHANNELS_COUNT;
 
+const char *ph_node_canonicalize_actuator_channel(const char *name);
+const ph_node_actuator_channel_t *ph_node_find_actuator_channel(const char *name);
+bool ph_node_is_system_channel(const char *name);
+
 /**
  * @brief Создаёт cJSON массив каналов (sensor + actuator)
  *

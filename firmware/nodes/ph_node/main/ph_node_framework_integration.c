@@ -35,6 +35,7 @@
 
 static const char *TAG = "ph_node_fw";
 static bool s_ph_sensor_error_active = false;
+static bool s_sensor_mode_active = false;
 
 // Параметры для отложенного ответа DONE после теста насоса
 #define PH_NODE_MAX_TEST_CHANNELS 8
@@ -99,9 +100,11 @@ static void ph_node_process_pump_queue(void);
 static void ph_node_schedule_pump_retry(uint32_t delay_ms);
 static void ph_node_pump_retry_timer_cb(TimerHandle_t timer);
 static void ph_node_signal_pump_queue_process(void);
+static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx);
 static esp_err_t ph_node_start_pump_command(const char *channel, uint32_t duration_ms,
                                             float *current_ma, bool *current_valid);
 static cJSON *ph_node_create_pump_failed_response(const char *cmd_id, const char *channel, esp_err_t err);
+static esp_err_t handle_test_sensor(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 
 // Forward declaration для callback safe_mode
 static esp_err_t ph_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -160,6 +163,82 @@ static esp_err_t ph_node_init_channel_callback(
     return ESP_ERR_NOT_SUPPORTED;
 }
 
+static esp_err_t ph_node_enqueue_pump_command(
+    const ph_node_actuator_channel_t *actuator,
+    const char *cmd_id,
+    uint32_t duration_ms,
+    cJSON *extra,
+    cJSON **response
+) {
+    if (actuator == NULL || response == NULL) {
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint32_t cooldown_remaining_ms = 0;
+    bool channel_in_cooldown = ph_node_is_channel_in_cooldown(actuator->name, &cooldown_remaining_ms);
+    bool should_queue = ph_node_any_pump_running() || channel_in_cooldown;
+
+    ph_node_pump_cmd_t queued_cmd = {0};
+    strncpy(queued_cmd.channel_name, actuator->name, sizeof(queued_cmd.channel_name) - 1);
+    if (cmd_id) {
+        strncpy(queued_cmd.cmd_id, cmd_id, sizeof(queued_cmd.cmd_id) - 1);
+    }
+    queued_cmd.duration_ms = duration_ms;
+
+    if (!ph_node_pump_queue_push(&queued_cmd)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "pump_queue_full",
+            "Pump queue is full",
+            NULL
+        );
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (extra == NULL) {
+        extra = cJSON_CreateObject();
+    }
+    if (extra) {
+        cJSON_AddStringToObject(extra, "channel", actuator->name);
+        cJSON_AddNumberToObject(extra, "duration_ms", (double)duration_ms);
+        cJSON_AddBoolToObject(extra, "queued", should_queue);
+        if (channel_in_cooldown && cooldown_remaining_ms > 0) {
+            cJSON_AddNumberToObject(extra, "cooldown_ms", (double)cooldown_remaining_ms);
+        }
+    }
+
+    *response = node_command_handler_create_response(
+        cmd_id,
+        "ACK",
+        NULL,
+        NULL,
+        extra
+    );
+    if (extra) {
+        cJSON_Delete(extra);
+    }
+
+    ESP_LOGI(
+        TAG,
+        "Pump %s accepted for %lu ms%s",
+        actuator->name,
+        (unsigned long)duration_ms,
+        should_queue ? " (queued)" : ""
+    );
+    if (channel_in_cooldown && cooldown_remaining_ms > 0) {
+        ph_node_schedule_pump_retry(cooldown_remaining_ms);
+    }
+    ph_node_signal_pump_queue_process();
+    return ESP_OK;
+}
+
 // Обработчик команды run_pump
 static esp_err_t handle_run_pump(
     const char *channel,
@@ -174,11 +253,23 @@ static esp_err_t handle_run_pump(
     }
 
     const char *cmd_id = node_command_handler_get_cmd_id(params);
+
+    const ph_node_actuator_channel_t *actuator = ph_node_find_actuator_channel(channel);
+    if (actuator == NULL || ph_node_is_system_channel(channel)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "pump_not_found",
+            "Pump channel not found",
+            NULL
+        );
+        return ESP_ERR_NOT_FOUND;
+    }
+
     cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
     if (!cJSON_IsNumber(duration_item)) {
-        // cmd_id будет добавлен автоматически в node_command_handler_process
         *response = node_command_handler_create_response(
-            NULL,
+            cmd_id,
             "ERROR",
             "invalid_params",
             "Missing or invalid duration_ms",
@@ -190,7 +281,7 @@ static esp_err_t handle_run_pump(
     int duration_ms = duration_item->valueint;
     if (duration_ms <= 0 || duration_ms > 60000) {
         *response = node_command_handler_create_response(
-            NULL,
+            cmd_id,
             "ERROR",
             "invalid_params",
             "duration_ms must be between 1 and 60000",
@@ -199,39 +290,150 @@ static esp_err_t handle_run_pump(
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint32_t cooldown_remaining_ms = 0;
-    bool channel_in_cooldown = ph_node_is_channel_in_cooldown(channel, &cooldown_remaining_ms);
-    bool should_queue = ph_node_any_pump_running() || channel_in_cooldown;
+    return ph_node_enqueue_pump_command(actuator, cmd_id, (uint32_t)duration_ms, NULL, response);
+}
 
-    ph_node_pump_cmd_t queued_cmd = {0};
-    strncpy(queued_cmd.channel_name, channel, sizeof(queued_cmd.channel_name) - 1);
-    if (cmd_id) {
-        strncpy(queued_cmd.cmd_id, cmd_id, sizeof(queued_cmd.cmd_id) - 1);
+static esp_err_t handle_dose(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)user_ctx;
+
+    if (channel == NULL || params == NULL || response == NULL) {
+        return ESP_ERR_INVALID_ARG;
     }
-    queued_cmd.duration_ms = (uint32_t)duration_ms;
 
-    if (!ph_node_pump_queue_push(&queued_cmd)) {
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
+
+    const ph_node_actuator_channel_t *actuator = ph_node_find_actuator_channel(channel);
+    if (actuator == NULL || ph_node_is_system_channel(channel)) {
         *response = node_command_handler_create_response(
             cmd_id,
             "ERROR",
-            "pump_queue_full",
-            "Pump queue is full",
+            "pump_not_found",
+            "Pump channel not found",
             NULL
         );
-        return ESP_ERR_NO_MEM;
+        return ESP_ERR_NOT_FOUND;
     }
+
+    if (!s_sensor_mode_active) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "node_not_activated",
+            "node is not activated",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    cJSON *ml_item = cJSON_GetObjectItem(params, "ml");
+    if (!cJSON_IsNumber(ml_item)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "Missing or invalid ml",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    double ml = cJSON_GetNumberValue(ml_item);
+    if (ml <= 0.0 || !isfinite(ml)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_params",
+            "ml must be greater than 0",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (actuator->ml_per_second <= 0.0f) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "pump_not_calibrated",
+            "Pump ml_per_second is not configured",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    double raw_duration_ms = ceil((ml / (double)actuator->ml_per_second) * 1000.0);
+    if (raw_duration_ms < 1.0) {
+        raw_duration_ms = 1.0;
+    }
+
+    bool duration_limited = raw_duration_ms > (double)actuator->max_duration_ms;
+    uint32_t duration_ms = duration_limited ? actuator->max_duration_ms : (uint32_t)raw_duration_ms;
 
     cJSON *extra = cJSON_CreateObject();
     if (extra) {
-        cJSON_AddNumberToObject(extra, "duration_ms", duration_ms);
-        cJSON_AddBoolToObject(extra, "queued", should_queue);
-        if (channel_in_cooldown && cooldown_remaining_ms > 0) {
-            cJSON_AddNumberToObject(extra, "cooldown_ms", cooldown_remaining_ms);
+        cJSON_AddNumberToObject(extra, "ml", ml);
+        cJSON_AddNumberToObject(extra, "ml_per_second", actuator->ml_per_second);
+        if (duration_limited) {
+            cJSON_AddBoolToObject(extra, "duration_limited", true);
         }
     }
+
+    return ph_node_enqueue_pump_command(
+        actuator,
+        cmd_id,
+        duration_ms,
+        extra,
+        response
+    );
+}
+
+static esp_err_t handle_sensor_mode_command(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    if (channel == NULL || response == NULL || user_ctx == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *cmd_id = params ? node_command_handler_get_cmd_id(params) : NULL;
+
+    if (!ph_node_is_system_channel(channel)) {
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_channel",
+            "sensor mode commands are supported only on system channel",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    bool activate = *((const bool *)user_ctx);
+    bool already_in_state = (s_sensor_mode_active == activate);
+    s_sensor_mode_active = activate;
+
+    cJSON *extra = cJSON_CreateObject();
+    if (extra) {
+        cJSON_AddBoolToObject(extra, "sensor_mode_active", s_sensor_mode_active);
+        if (already_in_state) {
+            cJSON_AddStringToObject(
+                extra,
+                "note",
+                activate ? "sensor_mode_already_active_treated_as_done"
+                         : "sensor_mode_already_inactive_treated_as_done"
+            );
+        }
+    }
+
     *response = node_command_handler_create_response(
         cmd_id,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         extra
@@ -240,13 +442,42 @@ static esp_err_t handle_run_pump(
         cJSON_Delete(extra);
     }
 
-    ESP_LOGI(TAG, "Pump %s accepted for %d ms%s", channel, duration_ms,
-             should_queue ? " (queued)" : "");
-    if (channel_in_cooldown && cooldown_remaining_ms > 0) {
-        ph_node_schedule_pump_retry(cooldown_remaining_ms);
+    if (activate) {
+        (void)ph_node_publish_telemetry_callback(NULL);
     }
-    ph_node_signal_pump_queue_process();
+
     return ESP_OK;
+}
+
+static esp_err_t handle_activate_sensor_mode(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    static const bool activate = true;
+    (void)user_ctx;
+    return handle_sensor_mode_command(channel, params, response, (void *)&activate);
+}
+
+static esp_err_t handle_deactivate_sensor_mode(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    static const bool activate = false;
+    (void)user_ctx;
+    return handle_sensor_mode_command(channel, params, response, (void *)&activate);
+}
+
+static esp_err_t handle_probe_sensor(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    return handle_test_sensor(channel, params, response, user_ctx);
 }
 
 // Обработчик команды calibrate для pH сенсора
@@ -591,6 +822,11 @@ esp_err_t ph_node_framework_init(void) {
         ESP_LOGW(TAG, "Failed to register run_pump handler: %s", esp_err_to_name(err));
     }
 
+    err = node_command_handler_register("dose", handle_dose, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register dose handler: %s", esp_err_to_name(err));
+    }
+
     err = node_command_handler_register("calibrate", handle_calibrate_ph, NULL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register calibrate handler: %s", esp_err_to_name(err));
@@ -604,6 +840,21 @@ esp_err_t ph_node_framework_init(void) {
     err = node_command_handler_register("test_sensor", handle_test_sensor, NULL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register test_sensor handler: %s", esp_err_to_name(err));
+    }
+
+    err = node_command_handler_register("probe_sensor", handle_probe_sensor, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register probe_sensor handler: %s", esp_err_to_name(err));
+    }
+
+    err = node_command_handler_register("activate_sensor_mode", handle_activate_sensor_mode, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register activate_sensor_mode handler: %s", esp_err_to_name(err));
+    }
+
+    err = node_command_handler_register("deactivate_sensor_mode", handle_deactivate_sensor_mode, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register deactivate_sensor_mode handler: %s", esp_err_to_name(err));
     }
 
     // Регистрация callback для отключения актуаторов в safe_mode

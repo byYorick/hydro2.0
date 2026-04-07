@@ -27,6 +27,7 @@ static esp_timer_handle_t s_restart_timer = NULL;
 // Константы для HMAC проверки
 #define HMAC_TIMESTAMP_TOLERANCE_SEC 10  // Допустимое отклонение timestamp (секунды)
 #define NODE_COMMAND_MAX_JSON_SIZE 4096  // Защита от слишком больших команд
+#define COMMAND_LOG_PREVIEW_MAX 256
 
 // Структура зарегистрированного обработчика
 typedef struct {
@@ -131,6 +132,129 @@ static void log_command_response_summary(
         channel ? channel : "default",
         status
     );
+}
+
+static void build_log_preview(const char *data, int data_len, char *preview, size_t preview_size) {
+    if (preview == NULL || preview_size == 0) {
+        return;
+    }
+
+    preview[0] = '\0';
+    if (data == NULL || data_len <= 0) {
+        return;
+    }
+
+    size_t limit = preview_size - 1;
+    bool truncated = false;
+    if ((size_t)data_len > limit) {
+        data_len = (int)limit;
+        truncated = true;
+    }
+
+    memcpy(preview, data, (size_t)data_len);
+    preview[data_len] = '\0';
+
+    if (truncated && preview_size >= 4) {
+        size_t len = strlen(preview);
+        if (len >= 3) {
+            preview[len - 3] = '.';
+            preview[len - 2] = '.';
+            preview[len - 1] = '.';
+        }
+    }
+}
+
+static bool cjson_replace_string_field(cJSON *object, const char *key, const char *value) {
+    if (object == NULL || key == NULL) {
+        return false;
+    }
+
+    cJSON_DeleteItemFromObject(object, key);
+    if (value == NULL) {
+        return true;
+    }
+
+    cJSON *item = cJSON_AddStringToObject(object, key, value);
+    if (item == NULL) {
+        ESP_LOGE(TAG, "Failed to add JSON string field '%s'", key);
+        return false;
+    }
+
+    return true;
+}
+
+static void normalize_response_envelope(cJSON *response, const char *cmd_id) {
+    if (response == NULL) {
+        return;
+    }
+
+    if (cmd_id != NULL) {
+        if (!cjson_replace_string_field(response, "cmd_id", cmd_id)) {
+            ESP_LOGE(TAG, "Failed to normalize response cmd_id");
+        }
+    }
+
+    cJSON *status_item = cJSON_GetObjectItem(response, "status");
+    const char *status = cJSON_IsString(status_item) ? status_item->valuestring : NULL;
+    const char *normalized_status = normalize_response_status(status);
+    if (!cJSON_IsString(status_item) || normalized_status != status) {
+        if (!cjson_replace_string_field(response, "status", normalized_status)) {
+            ESP_LOGE(TAG, "Failed to normalize response status");
+        }
+    }
+
+    cJSON *ts_item = cJSON_GetObjectItem(response, "ts");
+    if (!cJSON_IsNumber(ts_item)) {
+        cJSON_DeleteItemFromObject(response, "ts");
+        int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
+        if (cJSON_AddNumberToObject(response, "ts", (double)ts_ms) == NULL) {
+            ESP_LOGE(TAG, "Failed to normalize response timestamp");
+        }
+    }
+}
+
+static esp_err_t publish_command_response_json(
+    const char *topic,
+    const char *channel,
+    const char *cmd,
+    const char *cmd_id,
+    cJSON *response
+) {
+    if (response == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    normalize_response_envelope(response, cmd_id);
+
+    char *json_str = cJSON_PrintUnformatted(response);
+    if (json_str == NULL) {
+        ESP_LOGE(
+            TAG,
+            "Failed to serialize command response: topic=%s channel=%s cmd=%s cmd_id=%s",
+            topic ? topic : "-",
+            channel ? channel : "default",
+            cmd ? cmd : "unknown",
+            cmd_id ? cmd_id : "-"
+        );
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+    if (err != ESP_OK) {
+        ESP_LOGE(
+            TAG,
+            "Failed to publish command response: topic=%s channel=%s cmd=%s cmd_id=%s err=0x%x (%s)",
+            topic ? topic : "-",
+            channel ? channel : "default",
+            cmd ? cmd : "unknown",
+            cmd_id ? cmd_id : "-",
+            (unsigned)err,
+            esp_err_to_name(err)
+        );
+    }
+
+    free(json_str);
+    return err;
 }
 
 /**
@@ -586,23 +710,41 @@ void node_command_handler_process(
     int data_len,
     void *user_ctx
 ) {
-    (void)topic;
     (void)user_ctx;
     
     if (data == NULL || data_len <= 0) {
-        ESP_LOGE(TAG, "Invalid command parameters");
+        ESP_LOGE(TAG, "Invalid command parameters: topic=%s channel=%s data_len=%d",
+                 topic ? topic : "-",
+                 channel ? channel : "default",
+                 data_len);
         return;
     }
 
     if (data_len > NODE_COMMAND_MAX_JSON_SIZE) {
-        ESP_LOGE(TAG, "Command payload too large: %d bytes (max %d)", data_len, NODE_COMMAND_MAX_JSON_SIZE);
+        ESP_LOGE(TAG, "Command payload too large: topic=%s channel=%s len=%d max=%d",
+                 topic ? topic : "-",
+                 channel ? channel : "default",
+                 data_len,
+                 NODE_COMMAND_MAX_JSON_SIZE);
         return;
     }
 
     // Парсинг JSON команды
     cJSON *json = cJSON_ParseWithLength(data, data_len);
     if (!json) {
-        ESP_LOGE(TAG, "Failed to parse command JSON");
+        char preview[COMMAND_LOG_PREVIEW_MAX];
+        build_log_preview(data, data_len, preview, sizeof(preview));
+        ESP_LOGE(TAG, "Failed to parse command JSON: topic=%s channel=%s len=%d payload=%s",
+                 topic ? topic : "-",
+                 channel ? channel : "default",
+                 data_len,
+                 preview);
+        return;
+    }
+
+    if (!cJSON_IsObject(json)) {
+        ESP_LOGE(TAG, "Invalid command format: root JSON must be an object");
+        cJSON_Delete(json);
         return;
     }
 
@@ -610,14 +752,71 @@ void node_command_handler_process(
     cJSON *cmd_item = cJSON_GetObjectItem(json, "cmd");
     cJSON *cmd_id_item = cJSON_GetObjectItem(json, "cmd_id");
 
-    if (!cJSON_IsString(cmd_item) || !cJSON_IsString(cmd_id_item)) {
-        ESP_LOGE(TAG, "Invalid command format: missing cmd or cmd_id");
+    const char *cmd = cJSON_IsString(cmd_item) ? cmd_item->valuestring : NULL;
+    const char *cmd_id = cJSON_IsString(cmd_id_item) ? cmd_id_item->valuestring : NULL;
+
+    if (cmd == NULL || cmd[0] == '\0' || cmd_id == NULL || cmd_id[0] == '\0') {
+        ESP_LOGE(TAG, "Invalid command format: missing or invalid cmd/cmd_id");
+        if (cmd_id != NULL) {
+            cJSON *response = node_command_handler_create_response(
+                cmd_id,
+                "ERROR",
+                "invalid_command_format",
+                "Command must include non-empty cmd and cmd_id",
+                NULL
+            );
+            if (response) {
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
+                cJSON_Delete(response);
+            }
+        }
         cJSON_Delete(json);
         return;
     }
 
-    const char *cmd = cmd_item->valuestring;
-    const char *cmd_id = cmd_id_item->valuestring;
+    if (strlen(cmd) >= NODE_COMMAND_NAME_MAX_LEN) {
+        ESP_LOGE(TAG, "Command name too long: topic=%s channel=%s cmd_id=%s len=%zu max=%d",
+                 topic ? topic : "-",
+                 channel ? channel : "default",
+                 cmd_id,
+                 strlen(cmd),
+                 NODE_COMMAND_NAME_MAX_LEN - 1);
+        cJSON *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_command_format",
+            "Command name is too long",
+            NULL
+        );
+        if (response) {
+            (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
+            cJSON_Delete(response);
+        }
+        cJSON_Delete(json);
+        return;
+    }
+
+    if (strlen(cmd_id) >= sizeof(s_global_cmd_cache.global_cache[0].cmd_id)) {
+        ESP_LOGE(TAG, "cmd_id too long: topic=%s channel=%s cmd=%s len=%zu max=%zu",
+                 topic ? topic : "-",
+                 channel ? channel : "default",
+                 cmd,
+                 strlen(cmd_id),
+                 sizeof(s_global_cmd_cache.global_cache[0].cmd_id) - 1);
+        cJSON *response = node_command_handler_create_response(
+            cmd_id,
+            "ERROR",
+            "invalid_command_format",
+            "cmd_id is too long",
+            NULL
+        );
+        if (response) {
+            (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
+            cJSON_Delete(response);
+        }
+        cJSON_Delete(json);
+        return;
+    }
 
     // Извлечение ts и sig для HMAC проверки (опциональные поля для обратной совместимости)
     cJSON *ts_item = cJSON_GetObjectItem(json, "ts");
@@ -639,11 +838,7 @@ void node_command_handler_process(
             NULL
         );
         if (response) {
-            char *json_str = cJSON_PrintUnformatted(response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                free(json_str);
-            }
+            (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
             cJSON_Delete(response);
         }
         cJSON_Delete(json);
@@ -660,11 +855,7 @@ void node_command_handler_process(
             NULL
         );
         if (response) {
-            char *json_str = cJSON_PrintUnformatted(response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                free(json_str);
-            }
+            (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
             cJSON_Delete(response);
         }
         cJSON_Delete(json);
@@ -683,11 +874,7 @@ void node_command_handler_process(
                 NULL
             );
             if (response) {
-                char *json_str = cJSON_PrintUnformatted(response);
-                if (json_str) {
-                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                    free(json_str);
-                }
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
                 cJSON_Delete(response);
             }
             cJSON_Delete(json);
@@ -708,11 +895,7 @@ void node_command_handler_process(
                 NULL
             );
             if (response) {
-                char *json_str = cJSON_PrintUnformatted(response);
-                if (json_str) {
-                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                    free(json_str);
-                }
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
                 cJSON_Delete(response);
             }
             cJSON_Delete(json);
@@ -730,11 +913,7 @@ void node_command_handler_process(
                 NULL
             );
             if (response) {
-                char *json_str = cJSON_PrintUnformatted(response);
-                if (json_str) {
-                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                    free(json_str);
-                }
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
                 cJSON_Delete(response);
             }
             cJSON_Delete(json);
@@ -752,11 +931,7 @@ void node_command_handler_process(
                 NULL
             );
             if (response) {
-                char *json_str = cJSON_PrintUnformatted(response);
-                if (json_str) {
-                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                    free(json_str);
-                }
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
                 cJSON_Delete(response);
             }
             cJSON_Delete(json);
@@ -773,11 +948,7 @@ void node_command_handler_process(
                 NULL
             );
             if (response) {
-                char *json_str = cJSON_PrintUnformatted(response);
-                if (json_str) {
-                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                    free(json_str);
-                }
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
                 cJSON_Delete(response);
             }
             cJSON_Delete(json);
@@ -795,11 +966,7 @@ void node_command_handler_process(
                 NULL
             );
             if (response) {
-                char *json_str = cJSON_PrintUnformatted(response);
-                if (json_str) {
-                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                    free(json_str);
-                }
+                (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
                 cJSON_Delete(response);
             }
             cJSON_Delete(json);
@@ -845,11 +1012,7 @@ void node_command_handler_process(
             NULL
         );
         if (response) {
-            char *json_str = cJSON_PrintUnformatted(response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                free(json_str);
-            }
+            (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
             cJSON_Delete(response);
         }
         cJSON_Delete(json);
@@ -869,11 +1032,7 @@ void node_command_handler_process(
             NULL
         );
         if (response) {
-            char *json_str = cJSON_PrintUnformatted(response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-                free(json_str);
-            }
+            (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
             cJSON_Delete(response);
         }
         cJSON_Delete(json);
@@ -909,22 +1068,39 @@ void node_command_handler_process(
         cJSON *params_obj = cJSON_GetObjectItem(json, "params");
         cJSON *params = NULL;
 
-        if (params_obj && cJSON_IsObject(params_obj)) {
+        if (params_obj != NULL && !cJSON_IsObject(params_obj)) {
+            ESP_LOGE(TAG, "Invalid command format: params must be an object");
+            response = node_command_handler_create_response(
+                cmd_id,
+                "ERROR",
+                "invalid_params_format",
+                "params must be a JSON object",
+                NULL
+            );
+        } else if (params_obj && cJSON_IsObject(params_obj)) {
             params = cJSON_Duplicate(params_obj, 1);
             // Добавляем cmd_id в params для обработчиков (нужно для командного автомата)
             if (params && cmd_id) {
-                cJSON_AddStringToObject(params, "cmd_id", cmd_id);
+                if (!cjson_replace_string_field(params, "cmd_id", cmd_id)) {
+                    cJSON_Delete(params);
+                    params = NULL;
+                }
             }
         } else {
             // Fallback на старый формат: копируем весь объект и убираем служебные поля
             params = cJSON_Duplicate(json, 1);
             if (params) {
                 cJSON_DeleteItemFromObject(params, "cmd");
-                // cmd_id оставляем в params для обработчиков
+                cJSON_DeleteItemFromObject(params, "ts");
+                cJSON_DeleteItemFromObject(params, "sig");
+                if (cmd_id && !cjson_replace_string_field(params, "cmd_id", cmd_id)) {
+                    cJSON_Delete(params);
+                    params = NULL;
+                }
             }
         }
 
-        if (params == NULL) {
+        if (params == NULL && response == NULL) {
             ESP_LOGE(TAG, "Failed to duplicate command params (out of memory)");
             response = node_command_handler_create_response(
                 cmd_id,
@@ -957,10 +1133,7 @@ void node_command_handler_process(
             
             // Убеждаемся, что cmd_id есть в ответе (если ответ был создан)
             if (response != NULL) {
-                cJSON *response_cmd_id = cJSON_GetObjectItem(response, "cmd_id");
-                if (!response_cmd_id || !cJSON_IsString(response_cmd_id)) {
-                    cJSON_AddStringToObject(response, "cmd_id", cmd_id);
-                }
+                normalize_response_envelope(response, cmd_id);
             }
             
             cJSON_Delete(params);
@@ -981,6 +1154,8 @@ void node_command_handler_process(
 
     // Публикация ответа
     if (response) {
+        normalize_response_envelope(response, cmd_id);
+
         // Извлекаем финальный статус из ответа для сохранения в кеш
         cJSON *status_item = cJSON_GetObjectItem(response, "status");
         if (status_item && cJSON_IsString(status_item)) {
@@ -992,12 +1167,7 @@ void node_command_handler_process(
             }
         }
         
-        char *json_str = cJSON_PrintUnformatted(response);
-        if (json_str) {
-            // Публикуем ответ через mqtt_manager
-            mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
-            free(json_str);
-        }
+        (void)publish_command_response_json(topic, channel, cmd, cmd_id, response);
         log_command_response_summary(cmd, cmd_id, channel, response);
         cJSON_Delete(response);
     }
@@ -1031,8 +1201,20 @@ esp_err_t node_command_handler_publish_accepted(const char *cmd_id, const char *
 
     char *json_str = cJSON_PrintUnformatted(accepted_response);
     if (json_str) {
-        mqtt_manager_publish_command_response(publish_channel, json_str);
+        esp_err_t publish_err = mqtt_manager_publish_command_response(publish_channel, json_str);
+        if (publish_err != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "Failed to publish ACK response: cmd_id=%s channel=%s err=0x%x (%s)",
+                cmd_id,
+                publish_channel,
+                (unsigned)publish_err,
+                esp_err_to_name(publish_err)
+            );
+        }
         free(json_str);
+    } else {
+        ESP_LOGE(TAG, "Failed to serialize ACK response: cmd_id=%s channel=%s", cmd_id, publish_channel);
     }
     cJSON_Delete(accepted_response);
 
@@ -1179,6 +1361,50 @@ static esp_err_t handle_restart(
     return ESP_OK;
 }
 
+static esp_err_t handle_publish_config_report(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)channel;
+    (void)user_ctx;
+    const char *cmd_id = params ? node_command_handler_get_cmd_id(params) : NULL;
+
+    esp_err_t err = node_utils_publish_config_report();
+    if (err != ESP_OK) {
+        if (response) {
+            *response = node_command_handler_create_response(
+                cmd_id,
+                "ERROR",
+                "config_report_failed",
+                "Failed to publish config_report",
+                NULL
+            );
+        }
+        return err;
+    }
+
+    if (response) {
+        cJSON *extra = cJSON_CreateObject();
+        if (extra) {
+            cJSON_AddStringToObject(extra, "note", "config_report_published");
+        }
+        *response = node_command_handler_create_response(
+            cmd_id,
+            "DONE",
+            NULL,
+            NULL,
+            extra
+        );
+        if (extra) {
+            cJSON_Delete(extra);
+        }
+    }
+
+    return ESP_OK;
+}
+
 /**
  * @brief Инициализация встроенных обработчиков команд
  * 
@@ -1187,6 +1413,11 @@ static esp_err_t handle_restart(
 void node_command_handler_init_builtin_handlers(void) {
     node_command_handler_register("set_time", handle_set_time, NULL);
     node_command_handler_register("restart", handle_restart, NULL);
+    node_command_handler_register("reboot", handle_restart, NULL);
+    node_command_handler_register("report_config", handle_publish_config_report, NULL);
+    node_command_handler_register("config_report", handle_publish_config_report, NULL);
+    node_command_handler_register("get_config", handle_publish_config_report, NULL);
+    node_command_handler_register("sync_config", handle_publish_config_report, NULL);
     ESP_LOGD(TAG, "Built-in command handlers registered");
 }
 
@@ -1202,27 +1433,56 @@ cJSON *node_command_handler_create_response(
         return NULL;
     }
 
-    if (cmd_id) {
-        cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+    if (cmd_id && cJSON_AddStringToObject(response, "cmd_id", cmd_id) == NULL) {
+        ESP_LOGE(TAG, "Failed to add response cmd_id");
+        cJSON_Delete(response);
+        return NULL;
     }
 
     const char *normalized_status = normalize_response_status(status);
-    cJSON_AddStringToObject(response, "status", normalized_status);
+    if (cJSON_AddStringToObject(response, "status", normalized_status) == NULL) {
+        ESP_LOGE(TAG, "Failed to add response status");
+        cJSON_Delete(response);
+        return NULL;
+    }
 
     // ts в миллисекундах согласно эталону node-sim
     int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
-    cJSON_AddNumberToObject(response, "ts", (double)ts_ms);
+    if (cJSON_AddNumberToObject(response, "ts", (double)ts_ms) == NULL) {
+        ESP_LOGE(TAG, "Failed to add response timestamp");
+        cJSON_Delete(response);
+        return NULL;
+    }
 
     if (error_code && strcmp(normalized_status, "ERROR") == 0) {
-        cJSON_AddStringToObject(response, "error_code", error_code);
+        if (cJSON_AddStringToObject(response, "error_code", error_code) == NULL) {
+            ESP_LOGE(TAG, "Failed to add response error_code");
+            cJSON_Delete(response);
+            return NULL;
+        }
     }
 
     if (error_message && strcmp(normalized_status, "ERROR") == 0) {
-        cJSON_AddStringToObject(response, "error_message", error_message);
+        if (cJSON_AddStringToObject(response, "error_message", error_message) == NULL) {
+            ESP_LOGE(TAG, "Failed to add response error_message");
+            cJSON_Delete(response);
+            return NULL;
+        }
     }
 
     if (extra_data) {
-        cJSON_AddItemToObject(response, "details", cJSON_Duplicate(extra_data, 1));
+        cJSON *details = cJSON_Duplicate(extra_data, 1);
+        if (details == NULL) {
+            ESP_LOGE(TAG, "Failed to duplicate response details");
+            cJSON_Delete(response);
+            return NULL;
+        }
+        if (!cJSON_AddItemToObject(response, "details", details)) {
+            ESP_LOGE(TAG, "Failed to add response details");
+            cJSON_Delete(details);
+            cJSON_Delete(response);
+            return NULL;
+        }
     }
 
     return response;

@@ -1,6 +1,7 @@
 #include "ph_node_channel_map.h"
 #include "ph_node_defaults.h"
 #include "cJSON.h"
+#include <string.h>
 
 const ph_node_sensor_channel_t PH_NODE_SENSOR_CHANNELS[] = {
     {
@@ -23,7 +24,7 @@ const size_t PH_NODE_SENSOR_CHANNELS_COUNT = sizeof(PH_NODE_SENSOR_CHANNELS) / s
 
 const ph_node_actuator_channel_t PH_NODE_ACTUATOR_CHANNELS[] = {
     {
-        .name = "ph_doser_up",
+        .name = "pump_base",
         .gpio = PH_NODE_PH_DOSER_UP_GPIO,
         .fail_safe_nc = PH_NODE_PH_DOSER_FAIL_SAFE_NC,
         .max_duration_ms = PH_NODE_PH_DOSER_MAX_DURATION_MS,
@@ -31,7 +32,7 @@ const ph_node_actuator_channel_t PH_NODE_ACTUATOR_CHANNELS[] = {
         .ml_per_second = PH_NODE_PH_DOSER_ML_PER_SECOND
     },
     {
-        .name = "ph_doser_down",
+        .name = "pump_acid",
         .gpio = PH_NODE_PH_DOSER_DOWN_GPIO,
         .fail_safe_nc = PH_NODE_PH_DOSER_FAIL_SAFE_NC,
         .max_duration_ms = PH_NODE_PH_DOSER_MAX_DURATION_MS,
@@ -41,6 +42,38 @@ const ph_node_actuator_channel_t PH_NODE_ACTUATOR_CHANNELS[] = {
 };
 
 const size_t PH_NODE_ACTUATOR_CHANNELS_COUNT = sizeof(PH_NODE_ACTUATOR_CHANNELS) / sizeof(PH_NODE_ACTUATOR_CHANNELS[0]);
+
+const char *ph_node_canonicalize_actuator_channel(const char *name) {
+    if (name == NULL) {
+        return NULL;
+    }
+    if (strcmp(name, "ph_doser_up") == 0) {
+        return "pump_base";
+    }
+    if (strcmp(name, "ph_doser_down") == 0) {
+        return "pump_acid";
+    }
+    return name;
+}
+
+const ph_node_actuator_channel_t *ph_node_find_actuator_channel(const char *name) {
+    const char *canonical = ph_node_canonicalize_actuator_channel(name);
+    if (canonical == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < PH_NODE_ACTUATOR_CHANNELS_COUNT; i++) {
+        if (strcmp(PH_NODE_ACTUATOR_CHANNELS[i].name, canonical) == 0) {
+            return &PH_NODE_ACTUATOR_CHANNELS[i];
+        }
+    }
+
+    return NULL;
+}
+
+bool ph_node_is_system_channel(const char *name) {
+    return name != NULL && strcmp(name, "system") == 0;
+}
 
 static cJSON *ph_node_build_sensor_entry(const ph_node_sensor_channel_t *sensor) {
     if (sensor == NULL || sensor->name == NULL || sensor->metric == NULL) {
@@ -124,6 +157,17 @@ cJSON *ph_node_build_config_channels(void) {
         }
         cJSON_AddItemToArray(channels, entry);
     }
+
+    cJSON *service_entry = cJSON_CreateObject();
+    if (!service_entry) {
+        cJSON_Delete(channels);
+        return NULL;
+    }
+    cJSON_AddStringToObject(service_entry, "name", "system");
+    cJSON_AddStringToObject(service_entry, "channel", "system");
+    cJSON_AddStringToObject(service_entry, "type", "ACTUATOR");
+    cJSON_AddStringToObject(service_entry, "actuator_type", "SYSTEM");
+    cJSON_AddItemToArray(channels, service_entry);
 
     return channels;
 }

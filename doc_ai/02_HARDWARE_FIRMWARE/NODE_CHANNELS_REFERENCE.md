@@ -200,8 +200,10 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 
 - Domain keys: `pump_acid`, `pump_base`.
 - Firmware channel id:
-  - `ph_doser_down` / `ph_doser_up` (real `ph_node`);
-  - `pump_acid` / `pump_base` (test_node и часть orchestration-контрактов).
+  - `pump_acid` / `pump_base` (production `ph_node` и `test_node`).
+- Legacy aliases, допустимые только для firmware-backward-compatibility:
+  - `ph_doser_down` -> `pump_acid`;
+  - `ph_doser_up` -> `pump_base`.
 
 Тип: `ACTUATOR`.
 
@@ -405,7 +407,7 @@ Runtime-оговорка:
 **Применимость (целевой контракт orchestration):** pH/EC ноды, зависящие от потока раствора.
 Фактическая реализация:
 - `test_node`: поддерживается;
-- production `ph_node/ec_node`: на текущий момент не зарегистрировано (см. матрицу соответствия).
+- production `ph_node/ec_node`: поддерживается через service-channel `system`.
 
 **Payload:**
 ```json
@@ -459,7 +461,7 @@ Runtime-оговорка:
 **Применимость (целевой контракт orchestration):** pH/EC ноды.
 Фактическая реализация:
 - `test_node`: поддерживается;
-- production `ph_node/ec_node`: на текущий момент не зарегистрировано.
+- production `ph_node/ec_node`: поддерживается через service-channel `system`.
 
 **Payload:**
 ```json

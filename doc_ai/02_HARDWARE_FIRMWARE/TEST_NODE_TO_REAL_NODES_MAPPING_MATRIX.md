@@ -83,9 +83,9 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Канал в test_node | Реальная нода | Совместимость | Детали migration |
 |---|---|---|---|
 | `ph_sensor` | `ph_node/ph_sensor` | `Direct` | Канал совпадает. |
-| `pump_acid` | `ph_node/ph_doser_down` или `storage_irrigation_node/pump_acid` | `Alias/Adapter` | В коде `ph_node` актуаторы называются `ph_doser_up`/`ph_doser_down`, не `pump_acid`/`pump_base`. |
-| `pump_base` | `ph_node/ph_doser_up` или `storage_irrigation_node/pump_base` | `Alias/Adapter` | Нужен явный mapping направлений дозирования. |
-| `system` (sensor-mode service) | `ph_node` | `Missing` | Команды `activate/deactivate_sensor_mode` в боевой `ph_node` не зарегистрированы. |
+| `pump_acid` | `ph_node/pump_acid` или `storage_irrigation_node/pump_acid` | `Direct` | Внешний контракт `ph_node` нормализован; legacy alias `ph_doser_down` сохранён для backward-compatibility. |
+| `pump_base` | `ph_node/pump_base` или `storage_irrigation_node/pump_base` | `Direct` | Внешний контракт `ph_node` нормализован; legacy alias `ph_doser_up` сохранён для backward-compatibility. |
+| `system` (sensor-mode service) | `ph_node/system` | `Direct` | Команды `activate_sensor_mode` и `deactivate_sensor_mode` зарегистрированы на service-channel `system`. |
 
 ## 4.3. `nd-test-ec-1` (`type=ec`)
 
@@ -96,7 +96,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `pump_b` | `ec_node/pump_b` | `Direct` | Совпадает по имени и роли. |
 | `pump_c` | `ec_node/pump_c` | `Direct` | Совпадает по имени и роли. |
 | `pump_d` | `ec_node/pump_d` | `Direct` | Совпадает по имени и роли. |
-| `system` (sensor-mode service) | `ec_node` | `Missing` | Команды `activate/deactivate_sensor_mode` в боевой `ec_node` не зарегистрированы. |
+| `system` (sensor-mode service) | `ec_node/system` | `Direct` | Команды `activate_sensor_mode` и `deactivate_sensor_mode` зарегистрированы на service-channel `system`. |
 
 ## 4.4. `nd-test-soil-1` (`type=water_sensor`)
 
@@ -133,21 +133,21 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | Команда | test_node | Real nodes | Совместимость | Комментарий |
 |---|---|---|---|---|
 | `test_sensor` | Да | Да (`ph/ec/climate/light`) | `Direct` | Канальные проверки сенсоров в real-node есть. |
-| `probe_sensor` | Да | Нет | `Missing` | Требуется alias на `test_sensor` или отдельный handler. |
+| `probe_sensor` | Да | Да (`ph/ec` alias к `test_sensor`) | `Direct` | Для `ph/ec` добавлен compatibility alias. |
 | `state` | Да | Нет | `Missing` | Нужен отдельный built-in/handler в real-node. |
-| `report_config` / `config_report` / `get_config` / `sync_config` | Да | Нет | `Missing` | В real-node как команда не зарегистрировано. |
+| `report_config` / `config_report` / `get_config` / `sync_config` | Да | Да (built-in alias) | `Direct` | В `node_command_handler` добавлены alias на публикацию config report. |
 | `restart` | Да | Да (built-in) | `Direct` | Built-in в `node_command_handler`. |
-| `reboot` | Да (alias к restart) | Нет | `Alias/Adapter` | Нужен alias `reboot -> restart` на orchestration слое или в firmware. |
+| `reboot` | Да (alias к restart) | Да (built-in alias) | `Direct` | Alias зарегистрирован в `node_command_handler`. |
 | `set_relay` | Да | Да (`relay_node`, `climate_node`) | `Partial` | В `ph/ec/pump/light` как команда отсутствует. |
 | `set_pwm` | Да | Да (`climate_node`) | `Partial` | Для `light_node` команда отсутствует. |
 | `run_pump` | Да | Да (`ph/ec/pump`) | `Direct` | Основная pump-команда для боевых нод. |
-| `dose` | Да | Нет | `Missing` | Нужен adapter `dose -> run_pump(duration_ms|ml->ms)` или firmware support. |
+| `dose` | Да | Да (`ph/ec`) | `Direct` | В `ph/ec` добавлена firmware-поддержка `dose` с преобразованием `ml -> duration_ms` по `ml_per_second`. |
 | `emit_event` | Да | Нет | `Missing` | Специфично для test-node. |
 | `set_fault_mode` | Да | Нет | `Missing` | Симуляционная команда test-node. |
 | `reset_state` | Да | Нет | `Missing` | Симуляционная команда test-node. |
 | `reset_binding` | Да | Нет | `Missing` | Симуляционная/операционная команда test-node. |
-| `activate_sensor_mode` | Да | Нет | `Missing` | В real `ph/ec` не зарегистрировано. |
-| `deactivate_sensor_mode` | Да | Нет | `Missing` | В real `ph/ec` не зарегистрировано. |
+| `activate_sensor_mode` | Да | Да (`ph/ec/system`) | `Direct` | Реализовано на service-channel `system`; включает sensor mode и публикует telemetry snapshot. |
+| `deactivate_sensor_mode` | Да | Да (`ph/ec/system`) | `Direct` | Реализовано на service-channel `system`; выключает sensor mode. |
 | `calibrate` | Нет (в test_node) | Да (`ph/ec`) | `Gap in test-node` | Для parity e2e желательно поддержать и в test-node. |
 | `calibrate_ph` | Нет (в test_node) | Да (`ph`) | `Gap in test-node` | Аналогично. |
 | `calibrate_ec` | Нет (в test_node) | Да (`ec`) | `Gap in test-node` | Аналогично. |
@@ -177,10 +177,10 @@ Real-node (`node_command_handler`):
 
 ## 7. Обязательные шаги перед production rollout
 
-1. Нормализовать канальные имена между test и real (`air_temp_c->temperature`, `air_rh->humidity`, `light_level->light`, `pump_acid/pump_base <-> ph_doser_*`).
-2. Зафиксировать adapter для команд (`dose->run_pump`, `reboot->restart`, опционально `probe_sensor->test_sensor`).
+1. Нормализовать оставшиеся канальные имена между test и real (`air_temp_c->temperature`, `air_rh->humidity`, `light_level->light`).
+2. Зафиксировать оставшиеся adapter-команды только там, где ещё нет firmware parity.
 3. Определить источник и контракт для `level_*` и `storage_state` (отдельная real-node или расширение existing firmware).
-4. Добавить/согласовать `activate_sensor_mode/deactivate_sensor_mode` в `ph/ec` либо убрать зависимость orchestration от этих команд.
+4. Проверить реальные e2e/HIL сценарии на `ph/ec/system` после добавления `activate_sensor_mode/deactivate_sensor_mode`.
 5. Для strict e2e на real hardware использовать HMAC-подписанные команды и синхронизацию времени до старта циклов.
 
 ---

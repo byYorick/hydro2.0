@@ -97,6 +97,56 @@ static esp_err_t mqtt_manager_create_client(void);
 static void mqtt_manager_reset_rx_assembly(void);
 static void mqtt_manager_log_error_details(const esp_mqtt_error_codes_t *error_handle);
 
+static bool mqtt_topic_has_suffix(const char *topic, const char *suffix) {
+    if (topic == NULL || suffix == NULL) {
+        return false;
+    }
+
+    size_t topic_len = strlen(topic);
+    size_t suffix_len = strlen(suffix);
+    if (topic_len <= suffix_len) {
+        return false;
+    }
+
+    if (topic[topic_len - suffix_len - 1] != '/') {
+        return false;
+    }
+
+    return strcmp(topic + topic_len - suffix_len, suffix) == 0;
+}
+
+static bool mqtt_extract_command_channel(const char *topic, char *channel_buf, size_t channel_buf_size) {
+    if (topic == NULL || channel_buf == NULL || channel_buf_size < 2) {
+        return false;
+    }
+
+    const char *suffix = "/command";
+    size_t topic_len = strlen(topic);
+    size_t suffix_len = strlen(suffix);
+    if (topic_len <= suffix_len + 1 || strcmp(topic + topic_len - suffix_len, suffix) != 0) {
+        return false;
+    }
+
+    const char *channel_end = topic + topic_len - suffix_len;
+    const char *channel_start = channel_end;
+    while (channel_start > topic && channel_start[-1] != '/') {
+        channel_start--;
+    }
+
+    if (channel_start == channel_end) {
+        return false;
+    }
+
+    size_t channel_len = (size_t)(channel_end - channel_start);
+    if (channel_len >= channel_buf_size) {
+        return false;
+    }
+
+    memcpy(channel_buf, channel_start, channel_len);
+    channel_buf[channel_len] = '\0';
+    return true;
+}
+
 static void mqtt_manager_log_error_details(const esp_mqtt_error_codes_t *error_handle) {
     if (error_handle == NULL) {
         return;
@@ -737,6 +787,12 @@ esp_err_t mqtt_manager_unsubscribe_raw(const char *topic) {
  */
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain) {
     if (!s_mqtt_client || !topic || !data) {
+        ESP_LOGE(TAG, "Invalid publish arguments: client=%p topic=%p data=%p", (void *)s_mqtt_client, (void *)topic, (void *)data);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (topic[0] == '\0') {
+        ESP_LOGE(TAG, "Refusing to publish to empty topic");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -1018,6 +1074,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             }
 
             if (current_offset == 0) {
+                if (s_rx_assembly_active && s_rx_received_len < s_rx_expected_len) {
+                    ESP_LOGW(
+                        TAG,
+                        "Dropping incomplete MQTT assembly: topic='%s' received=%d expected=%d",
+                        s_rx_topic_buf,
+                        s_rx_received_len,
+                        s_rx_expected_len
+                    );
+                }
+
                 if (!event->topic || event->topic_len <= 0 || (size_t)event->topic_len > max_topic_len) {
                     ESP_LOGW(
                         TAG,
@@ -1057,6 +1123,24 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                         "MQTT chunk total_len mismatch: chunk=%d expected=%d",
                         total_data_len,
                         s_rx_expected_len
+                    );
+                    mqtt_manager_reset_rx_assembly();
+                    #if DIAGNOSTICS_AVAILABLE
+                    if (diagnostics_is_initialized()) {
+                        diagnostics_update_mqtt_metrics(false, true, false);
+                    }
+                    #endif
+                    break;
+                }
+
+                if (current_offset != s_rx_received_len) {
+                    ESP_LOGW(
+                        TAG,
+                        "MQTT chunk order mismatch: topic='%s' offset=%d expected_offset=%d chunk_len=%d",
+                        s_rx_topic_buf,
+                        current_offset,
+                        s_rx_received_len,
+                        event->data_len
                     );
                     mqtt_manager_reset_rx_assembly();
                     #if DIAGNOSTICS_AVAILABLE
@@ -1195,74 +1279,56 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 } else {
                     ESP_LOGW(TAG, "Failed to parse time response JSON");
                 }
-            } else if (strstr(topic, "/config") != NULL) {
-                // Config топик - вызываем callback для обработки конфигурации
-                ESP_LOGI(TAG, "Config message received on topic: %s, len=%d", topic, payload_len);
-                if (s_config_cb) {
-                    ESP_LOGI(TAG, "Calling registered config callback");
-                    s_config_cb(topic, data, payload_len, s_config_user_ctx);
-                    ESP_LOGI(TAG, "Config callback completed");
-                } else {
-                    ESP_LOGW(TAG, "Config message received but no callback registered");
-                }
-            } else if (strstr(topic, "/command") != NULL) {
-                // Command топик - извлекаем channel из топика
-                // Формат: hydro/{gh}/{zone}/{node}/{channel}/command
-                // Пример: hydro/gh-1/zn-3/nd-ph-1/pump_acid/command
-                // Нужно извлечь "pump_acid" из топика
-                const char *last_slash = strrchr(topic, '/');
-                if (last_slash && last_slash > topic) {
-                    // Ищем предыдущий слэш перед channel (перед последним "/command")
-                    const char *prev_slash = last_slash - 1;
-                    while (prev_slash > topic && *prev_slash != '/') {
-                        prev_slash--;
-                    }
-                    if (*prev_slash == '/' && prev_slash < last_slash) {
-                        prev_slash++; // Пропускаем слэш
-                        size_t channel_len = last_slash - prev_slash;
-                        if (channel_len > 0 && channel_len < 64) {
-                            char channel[64] = {0};
-                            memcpy(channel, prev_slash, channel_len);
-                            
-                            // Логирование приема команды
-                            const int log_data_max = 200;
-                            char cmd_log_data[log_data_max + 4];
-                            if (payload_len <= log_data_max) {
-                                memcpy(cmd_log_data, data, payload_len);
-                                cmd_log_data[payload_len] = '\0';
-                            } else {
-                                memcpy(cmd_log_data, data, log_data_max);
-                                cmd_log_data[log_data_max] = '\0';
-                                strcat(cmd_log_data, "...");
-                            }
-                            ESP_LOGI(TAG, "MQTT COMMAND RECEIVED: topic='%s', channel='%s', len=%d, data=%s", 
-                                     topic, channel, payload_len, cmd_log_data);
-                            
-                            // Проверка: в setup режиме не обрабатываем команды
-                            #if SETUP_PORTAL_AVAILABLE
-                            if (setup_portal_is_running()) {
-                                ESP_LOGW(TAG, "Command ignored: device is in setup mode");
-                            } else
-                            #endif
-                            {
-                                if (s_command_cb) {
-                                    s_command_cb(topic, channel, data, payload_len, s_command_user_ctx);
-                                } else {
-                                    ESP_LOGW(TAG, "Command message received but no callback registered");
-                                }
-                            }
-                        } else {
-                            ESP_LOGE(TAG, "Invalid channel length in topic: %s", topic);
-                        }
-                    } else {
-                        ESP_LOGE(TAG, "Failed to extract channel from topic: %s", topic);
-                    }
-                } else {
-                    ESP_LOGE(TAG, "Invalid command topic format: %s", topic);
-                }
-            } else {
-                ESP_LOGD(TAG, "Unknown topic type: %s", topic);
-            }
+	            } else if (mqtt_topic_has_suffix(topic, "config")) {
+	                // Config топик - вызываем callback для обработки конфигурации
+	                ESP_LOGI(TAG, "Config message received on topic: %s, len=%d", topic, payload_len);
+	                if (s_config_cb) {
+	                    ESP_LOGI(TAG, "Calling registered config callback");
+	                    s_config_cb(topic, data, payload_len, s_config_user_ctx);
+	                    ESP_LOGI(TAG, "Config callback completed");
+	                } else {
+	                    ESP_LOGW(TAG, "Config message received but no callback registered");
+	                }
+	            } else if (mqtt_topic_has_suffix(topic, "command")) {
+	                // Command топик - извлекаем channel из топика
+	                // Формат: hydro/{gh}/{zone}/{node}/{channel}/command
+	                // Пример: hydro/gh-1/zn-3/nd-ph-1/pump_acid/command
+	                // Нужно извлечь "pump_acid" из топика
+	                char channel[64] = {0};
+	                if (mqtt_extract_command_channel(topic, channel, sizeof(channel))) {
+	                    // Логирование приема команды
+	                    const int log_data_max = 200;
+	                    char cmd_log_data[log_data_max + 4];
+	                    if (payload_len <= log_data_max) {
+	                        memcpy(cmd_log_data, data, payload_len);
+	                        cmd_log_data[payload_len] = '\0';
+	                    } else {
+	                        memcpy(cmd_log_data, data, log_data_max);
+	                        cmd_log_data[log_data_max] = '\0';
+	                        strcat(cmd_log_data, "...");
+	                    }
+	                    ESP_LOGI(TAG, "MQTT COMMAND RECEIVED: topic='%s', channel='%s', len=%d, data=%s",
+	                             topic, channel, payload_len, cmd_log_data);
+
+	                    // Проверка: в setup режиме не обрабатываем команды
+	                    #if SETUP_PORTAL_AVAILABLE
+	                    if (setup_portal_is_running()) {
+	                        ESP_LOGW(TAG, "Command ignored: device is in setup mode");
+	                    } else
+	                    #endif
+	                    {
+	                        if (s_command_cb) {
+	                            s_command_cb(topic, channel, data, payload_len, s_command_user_ctx);
+	                        } else {
+	                            ESP_LOGW(TAG, "Command message received but no callback registered");
+	                        }
+	                    }
+	                } else {
+	                    ESP_LOGE(TAG, "Invalid command topic format: %s", topic);
+	                }
+	            } else {
+	                ESP_LOGD(TAG, "Unknown topic type: %s", topic);
+	            }
 
             mqtt_manager_reset_rx_assembly();
             break;

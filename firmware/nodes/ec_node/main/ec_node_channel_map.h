@@ -38,6 +38,9 @@ extern const size_t EC_NODE_SENSOR_CHANNELS_COUNT;
 extern const ec_node_actuator_channel_t EC_NODE_ACTUATOR_CHANNELS[];
 extern const size_t EC_NODE_ACTUATOR_CHANNELS_COUNT;
 
+const ec_node_actuator_channel_t *ec_node_find_actuator_channel(const char *name);
+bool ec_node_is_system_channel(const char *name);
+
 cJSON *ec_node_build_config_channels(void);
 
 #ifdef __cplusplus
