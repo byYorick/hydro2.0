@@ -645,7 +645,7 @@ describe('useGrowthCycleWizard', () => {
     expect(wizard.waterForm.value.targetEc).toBe(1.5)
   })
 
-  it('не включает lighting обратно при запуске цикла, если профиль зоны уже выключил свет', async () => {
+  it('не включает lighting обратно при синке recipe phase, если профиль зоны уже выключил свет', async () => {
     installAuthorityMocks({
       active_mode: 'setup',
       profiles: {
@@ -738,29 +738,10 @@ describe('useGrowthCycleWizard', () => {
       return Promise.resolve({ data: { status: 'ok', data: [] } })
     })
 
-    vi.mocked(api.post).mockImplementation((url: string) => {
-      if (url === '/api/zones/7/grow-cycles') {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 77 } } })
-      }
-
-      return Promise.resolve({ data: { status: 'ok' } })
-    })
-
     await flushPromises()
     await nextTick()
 
     expect(wizard.lightingForm.value.enabled).toBe(false)
-
-    wizard.currentStep.value = 6
-    await wizard.onSubmit()
-
-    const automationPayload = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 7 && namespace === 'zone.logic_profile')?.[3]
-    expect(automationPayload?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(false)
-    expect(api.post).toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.objectContaining({
-      start_immediately: true,
-      recipe_revision_id: 3,
-      plant_id: 2,
-    }))
   })
 
   it('не восстанавливает draft сразу на submit-шаг', async () => {
@@ -901,6 +882,7 @@ describe('useGrowthCycleWizard', () => {
     wizard.form.value.startedAt = '2026-03-24T10:00'
     wizard.selectedPlantId.value = 2
     wizard.selectedRevisionId.value = 3
+    wizard.lightingForm.value.enabled = false
 
     vi.mocked(api.get).mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
       if (url === '/plants') {
@@ -962,6 +944,7 @@ describe('useGrowthCycleWizard', () => {
     expect(growCycleIndex).toBeGreaterThan(finalReadinessIndex)
     expect(updateDocumentMock).toHaveBeenCalledWith('zone', 7, 'zone.logic_profile', expect.any(Object))
     const automationPayload = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 7 && namespace === 'zone.logic_profile')?.[3]
+    expect(automationPayload?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(false)
     expect(automationPayload?.profiles?.setup?.command_plans?.schema_version).toBe(1)
     expect(automationPayload?.profiles?.setup?.command_plans?.plans?.diagnostics?.steps).toHaveLength(1)
     expect(automationPayload?.profiles?.setup?.subsystems?.irrigation?.execution?.interval_minutes).toBeGreaterThan(0)

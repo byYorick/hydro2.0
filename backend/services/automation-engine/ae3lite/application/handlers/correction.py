@@ -1452,10 +1452,9 @@ class CorrectionHandler(BaseStageHandler):
         return current_stage != "solution_fill_check"
 
     def _should_reset_attempt_counters_on_reaction(self, *, task: Any) -> bool:
-        current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
-        # prepare_recirculation windows must preserve successful dose counters
-        # so impossible targets can roll over into window_exhausted/retry.
-        return current_stage != "prepare_recirculation_check"
+        # Попытки считаются только для последовательных no-effect циклов.
+        # Любая наблюдаемая реакция должна сбрасывать окно попыток, независимо от stage.
+        return True
 
     def _should_log_limit_policy(self, *, task: Any, corr: CorrectionState) -> bool:
         if self._enforce_attempt_caps(task=task):
@@ -1814,9 +1813,8 @@ class CorrectionHandler(BaseStageHandler):
                 no_effect_limit=int(observe_cfg["no_effect_limit"]),
             )
 
-        # solution_fill keeps one long-lived correction window and can reset
-        # counters on reaction; bounded prepare_recirculation windows must
-        # retain successful dose counters so retry/exhaustion semantics work.
+        # Attempt counters model consecutive no-effect observations only.
+        # Any observable reaction resets the correction window counters.
         if is_no_effect:
             next_attempt = corr.attempt + 1
             next_ec_attempt = corr.ec_attempt

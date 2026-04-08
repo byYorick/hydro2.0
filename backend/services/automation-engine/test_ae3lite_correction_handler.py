@@ -620,9 +620,9 @@ async def test_corr_check_keeps_ec_and_ph_in_same_correction_window(monkeypatch:
     assert outcome.correction.needs_ec is True
     assert outcome.correction.needs_ph_down is True
     assert outcome.correction.ph_channel == "ph_down_pump"
-    create_event.assert_awaited_once()
-    assert create_event.await_args.args[1] == "CORRECTION_DECISION_MADE"
-    decision_payload = create_event.await_args.args[2]
+    decision_calls = [call for call in create_event.await_args_list if call.args[1] == "CORRECTION_DECISION_MADE"]
+    assert len(decision_calls) == 1
+    decision_payload = decision_calls[0].args[2]
     assert decision_payload["selected_action"] == "ec"
     assert decision_payload["decision_reason"] == "ec_first_in_window"
     assert decision_payload["correction_window_id"] == "task:6:tank_recirc:prepare_recirculation_check"
@@ -2373,7 +2373,7 @@ async def test_corr_wait_ec_solution_fill_reaction_detected_resets_all_attempt_c
     assert c.ph_attempt == 0  # сброшен
 
 
-async def test_corr_wait_ec_prepare_recirc_reaction_preserves_attempt_counters_and_next_check_exhausts():
+async def test_corr_wait_ec_prepare_recirc_reaction_resets_attempt_counters_and_next_check_continues():
     class _PlannerNeedsEcOnly:
         def is_within_tolerance(self, **kwargs):
             return False
@@ -2436,8 +2436,8 @@ async def test_corr_wait_ec_prepare_recirc_reaction_preserves_attempt_counters_a
     assert observe_outcome.kind == "enter_correction"
     assert observe_outcome.correction is not None
     assert observe_outcome.correction.corr_step == "corr_check"
-    assert observe_outcome.correction.attempt == 1
-    assert observe_outcome.correction.ec_attempt == 1
+    assert observe_outcome.correction.attempt == 0
+    assert observe_outcome.correction.ec_attempt == 0
     assert observe_outcome.correction.ph_attempt == 0
 
     check_outcome = await handler.run(
@@ -2452,9 +2452,9 @@ async def test_corr_wait_ec_prepare_recirc_reaction_preserves_attempt_counters_a
         now=NOW,
     )
 
-    assert check_outcome.kind == "transition"
-    assert check_outcome.next_stage == "prepare_recirculation_window_exhausted"
-    assert check_outcome.stage_retry_count == 3
+    assert check_outcome.kind == "enter_correction"
+    assert check_outcome.correction is not None
+    assert check_outcome.correction.corr_step == "corr_dose_ec"
 
 
 async def test_corr_wait_ec_prepare_recirc_late_reaction_exhausts_window_before_next_check():
