@@ -846,6 +846,9 @@ describe('useGrowthCycleWizard', () => {
     const automationPayload = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 7 && namespace === 'zone.logic_profile')?.[3]
     expect(automationPayload?.profiles?.setup?.command_plans?.schema_version).toBe(1)
     expect(automationPayload?.profiles?.setup?.command_plans?.plans?.diagnostics?.steps).toHaveLength(1)
+    expect(automationPayload?.profiles?.setup?.subsystems?.irrigation?.execution?.interval_minutes).toBeGreaterThan(0)
+    expect(automationPayload?.profiles?.setup?.subsystems?.irrigation?.execution?.duration_seconds).toBeGreaterThan(0)
+    expect(automationPayload?.profiles?.setup?.subsystems?.irrigation?.decision?.strategy).toBe('task')
     expect(api.post).not.toHaveBeenCalledWith(expect.stringContaining('/calibrate-pump'), expect.anything())
     expect(api.post).toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.objectContaining({
       start_immediately: true,
@@ -859,6 +862,80 @@ describe('useGrowthCycleWizard', () => {
       'success',
       expect.any(Number),
     )
+  })
+
+  it('сохраняет smart irrigation настройки в automation profile', async () => {
+    installAuthorityMocks()
+    const { wizard, api } = mountWizardHarness()
+
+    wizard.form.value.zoneId = 7
+    await nextTick()
+    wizard.form.value.startedAt = '2026-03-24T10:00'
+    wizard.selectedPlantId.value = 2
+    wizard.selectedRevisionId.value = 3
+    wizard.waterForm.value.irrigationDecisionStrategy = 'smart_soil_v1'
+    wizard.waterForm.value.intervalMinutes = 45
+    wizard.waterForm.value.durationSeconds = 180
+    wizard.waterForm.value.irrigationDecisionLookbackSeconds = 2400
+    wizard.waterForm.value.irrigationDecisionMinSamples = 5
+    wizard.waterForm.value.irrigationDecisionStaleAfterSeconds = 900
+    wizard.waterForm.value.irrigationDecisionHysteresisPct = 4.5
+    wizard.waterForm.value.irrigationDecisionSpreadAlertThresholdPct = 16
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve(buildRecipeRevisionResponse())
+      }
+
+      if (url === '/api/zones/7/health') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              readiness: {
+                ready: true,
+                errors: [],
+              },
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === '/api/zones/7/grow-cycles') {
+        return Promise.resolve({ data: { status: 'ok', data: { id: 77 } } })
+      }
+
+      return Promise.resolve({ data: { status: 'ok' } })
+    })
+
+    wizard.currentStep.value = 6
+    await flushPromises()
+
+    await wizard.onSubmit()
+
+    const automationPayload = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 7 && namespace === 'zone.logic_profile')?.[3]
+    const irrigation = automationPayload?.profiles?.setup?.subsystems?.irrigation
+
+    expect(irrigation?.decision?.strategy).toBe('smart_soil_v1')
+    expect(irrigation?.decision?.config?.lookback_sec).toBe(2400)
+    expect(irrigation?.decision?.config?.min_samples).toBe(5)
+    expect(irrigation?.decision?.config?.stale_after_sec).toBe(900)
+    expect(irrigation?.decision?.config?.hysteresis_pct).toBe(4.5)
+    expect(irrigation?.decision?.config?.spread_alert_threshold_pct).toBe(16)
+    expect(irrigation?.execution?.interval_minutes).toBe(45)
+    expect(irrigation?.execution?.duration_seconds).toBe(180)
   })
 
   it('на submit не делает запросов к legacy calibrate-pump endpoint', async () => {

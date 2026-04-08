@@ -71,7 +71,6 @@ export interface GrowthCycleWizardProps {
   show: boolean;
   zoneId?: number;
   zoneName?: string;
-  currentPhaseTargets?: unknown;
   activeCycle?: unknown;
   initialData?: {
     recipeId?: number | null;
@@ -191,14 +190,6 @@ function toFiniteNumber(value: unknown): number | null {
   }
 
   return null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
 }
 
 function normalizeDatetimeLocal(value: string | null | undefined): string | null {
@@ -1570,7 +1561,7 @@ export function useGrowthCycleWizard({
     void loadSelectedRevision(revisionId);
   });
 
-  watch(selectedRevision, (revision) => {
+  watch(selectedRevision, () => {
     const firstPhase = selectedLaunchPhase.value;
     if (firstPhase) {
       if (draftWasLoaded.value) {

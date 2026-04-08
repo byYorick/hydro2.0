@@ -319,14 +319,10 @@ export function buildGrowthCycleConfigPayload(
   }
 
   const irrigationExecution: Record<string, unknown> = {
-    ...(irrigationDecisionStrategy === 'smart_soil_v1'
-      ? {
-          interval_minutes: irrigationIntervalMinutes,
-          interval_sec: irrigationIntervalMinutes * 60,
-          duration_seconds: irrigationDurationSeconds,
-          duration_sec: irrigationDurationSeconds,
-        }
-      : {}),
+    interval_minutes: irrigationIntervalMinutes,
+    interval_sec: irrigationIntervalMinutes * 60,
+    duration_seconds: irrigationDurationSeconds,
+    duration_sec: irrigationDurationSeconds,
     ...(includeSystemType ? { system_type: waterForm.systemType } : {}),
     tanks_count: waterForm.tanksCount,
     fill_strategy: 'volume',

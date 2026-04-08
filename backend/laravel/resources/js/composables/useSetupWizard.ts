@@ -29,7 +29,6 @@ import type {
   RecipeFormState,
   SetupWizardDeviceAssignments,
   SetupWizardLoadingState,
-  SystemType,
   Zone,
   ZoneFormState,
 } from './setupWizardTypes'
@@ -202,9 +201,6 @@ export function useSetupWizard() {
 
   const greenhouseMode = ref<Mode>('select')
   const zoneMode = ref<Mode>('select')
-  const plantMode = ref<Mode>('select')
-  const recipeMode = ref<Mode>('select')
-
   const availableGreenhouses = ref<Greenhouse[]>([])
   const availableGreenhouseTypes = ref<GreenhouseType[]>([])
   const availableZones = ref<Zone[]>([])
@@ -545,18 +541,9 @@ export function useSetupWizard() {
       : []
   })
 
-  const launchReadinessSatisfied = computed(() => {
-    if (zoneLaunchReady.value) {
-      return true
-    }
-
-    return zoneLaunchReadiness.value?.checked === true
-      && zoneLaunchReadinessErrors.value.length === 0
-  })
-
   const canLaunch = computed(() => {
     return stepZoneDone.value
-      && launchReadinessSatisfied.value
+      && zoneLaunchReady.value
       && !selectedZoneHasActiveCycle.value
   })
 
@@ -1143,8 +1130,6 @@ export function useSetupWizard() {
     loading,
     greenhouseMode,
     zoneMode,
-    plantMode,
-    recipeMode,
     availableGreenhouses,
     availableGreenhouseTypes,
     availableZones,

@@ -8,10 +8,47 @@ const loadZoneReadinessMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const refreshDbCalibrationsMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const showToastMock = vi.hoisted(() => vi.fn())
 const apiPostMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: { status: 'ok' } })))
+const currentStepValue = vi.hoisted(() => ({ value: 5 }))
+const waterFormValue = vi.hoisted(() => ({
+  value: {
+    targetPh: 5.8,
+    targetEc: 1.6,
+    systemType: 'drip',
+    irrigationDecisionStrategy: 'task',
+    intervalMinutes: 30,
+    durationSeconds: 120,
+    cleanTankFillL: 200,
+    nutrientTankTargetL: 180,
+    irrigationBatchL: 20,
+    fillTemperatureC: 18,
+    fillWindowStart: '08:00',
+    fillWindowEnd: '09:30',
+    tanksCount: 2,
+    cleanTankFullThreshold: 0.9,
+    diagnosticsEnabled: true,
+    diagnosticsIntervalMinutes: 30,
+    diagnosticsWorkflow: 'startup',
+    irrigationDecisionLookbackSeconds: 900,
+    irrigationDecisionMinSamples: 3,
+    irrigationDecisionStaleAfterSeconds: 600,
+    irrigationDecisionHysteresisPct: 2,
+    irrigationDecisionSpreadAlertThresholdPct: 8,
+    stopOnSolutionMin: true,
+    irrigationAutoReplayAfterSetup: true,
+    irrigationMaxSetupReplays: 2,
+    refillDurationSeconds: 30,
+    refillTimeoutSeconds: 300,
+    refillRequiredNodeTypes: 'irrig,climate',
+    refillPreferredChannel: 'fill_valve',
+    solutionChangeEnabled: false,
+    solutionChangeIntervalMinutes: 120,
+    solutionChangeDurationSeconds: 90,
+  },
+}))
 
 vi.mock('@/composables/useGrowthCycleWizard', () => ({
   useGrowthCycleWizard: () => ({
-    currentStep: ref(5),
+    currentStep: ref(currentStepValue.value),
     recipeMode: ref('select'),
     loading: ref(false),
     error: ref(null),
@@ -23,17 +60,7 @@ vi.mock('@/composables/useGrowthCycleWizard', () => ({
       expectedHarvestAt: '',
     }),
     climateForm: ref({}),
-    waterForm: ref({
-      targetPh: 5.8,
-      targetEc: 1.6,
-      systemType: 'drip',
-      intervalMinutes: 30,
-      durationSeconds: 120,
-      cleanTankFillL: 200,
-      nutrientTankTargetL: 180,
-      irrigationBatchL: 20,
-      tanksCount: 2,
-    }),
+    waterForm: ref({ ...waterFormValue.value }),
     lightingForm: ref({}),
     availableZones: ref([]),
     availablePlants: ref([]),
@@ -66,6 +93,12 @@ vi.mock('@/composables/useGrowthCycleWizard', () => ({
     zoneDevicesError: ref(null),
     zoneReadiness: ref(null),
     zoneReadinessLoading: ref(false),
+    soilMoistureChannelCandidates: ref([{ id: 301, label: 'Node / soil_moisture' }]),
+    soilMoistureBindingLoading: ref(false),
+    soilMoistureBindingError: ref(null),
+    soilMoistureBindingSavedAt: ref(null),
+    soilMoistureSelectedNodeChannelId: ref<number | null>(null),
+    soilMoistureBoundNodeChannelId: ref<number | null>(null),
     formatDateTime: (value: string) => value,
     formatDate: (value: string) => value,
     onZoneSelected: vi.fn(),
@@ -73,6 +106,7 @@ vi.mock('@/composables/useGrowthCycleWizard', () => ({
     onRecipeCreated: vi.fn(),
     fetchZoneDevices: fetchZoneDevicesMock,
     loadZoneReadiness: loadZoneReadinessMock,
+    saveSoilMoistureBinding: vi.fn(),
     nextStep: vi.fn(),
     prevStep: vi.fn(),
     onSubmit: vi.fn(),
@@ -166,6 +200,9 @@ vi.mock('@/Components/RecipeCreateWizard.vue', () => ({
 
 describe('GrowthCycleWizard', () => {
   it('показывает единый статус калибровки и открывает общую pump calibration modal', async () => {
+    currentStepValue.value = 5
+    waterFormValue.value.irrigationDecisionStrategy = 'task'
+
     const wrapper = mount(GrowthCycleWizard, {
       props: {
         show: true,
@@ -185,5 +222,38 @@ describe('GrowthCycleWizard', () => {
     expect(wrapper.find('[data-test="pump-calibration-modal"]').exists()).toBe(true)
     expect(fetchZoneDevicesMock).toHaveBeenCalled()
     expect(refreshDbCalibrationsMock).toHaveBeenCalled()
+  })
+
+  it('на водной вкладке показывает основной блок и отдельную smart-секцию только для умного полива', async () => {
+    currentStepValue.value = 4
+    waterFormValue.value.irrigationDecisionStrategy = 'task'
+
+    const wrapper = mount(GrowthCycleWizard, {
+      props: {
+        show: true,
+        zoneId: 7,
+        zoneName: 'Zone 7',
+      },
+    })
+
+    await wrapper.findAll('button').find((button) => button.text().includes('Водный узел'))!.trigger('click')
+
+    expect(wrapper.text()).toContain('Основной цикл полива, окна приготовления и рабочие объёмы контура')
+    expect(wrapper.text()).toContain('Режим полива')
+    expect(wrapper.text()).toContain('Интервал полива (мин)')
+    expect(wrapper.text()).toContain('Порция полива (л)')
+    expect(wrapper.text()).toContain('Температура набора (°C)')
+    expect(wrapper.text()).toContain('Объём чистого бака (л)')
+    expect(wrapper.text()).toContain('Окно набора воды: от')
+    expect(wrapper.text()).toContain('Настройки полива по времени')
+    expect(wrapper.text()).not.toContain('Умный полив (decision, recovery, safety)')
+
+    await wrapper.get('[data-testid="growth-wizard-irrigation-mode-smart"]').trigger('click')
+
+    expect(wrapper.text()).toContain('Умный полив (decision, recovery, safety)')
+    expect(wrapper.text()).toContain('Decision')
+    expect(wrapper.text()).toContain('Recovery')
+    expect(wrapper.text()).toContain('Safety')
+    expect(wrapper.text()).not.toContain('Настройки полива по времени')
   })
 })

@@ -8,7 +8,7 @@
       :zone-id="zoneId"
       :default-params="zoneActionDefaultParams"
       :irrigation-correction-summary="irrigationCorrectionSummary"
-        :loading="loading.actionSubmit"
+      :loading="loading.actionSubmit"
       @close="$emit('close-action')"
       @submit="$emit('submit-action', $event)"
     />
@@ -52,7 +52,6 @@
       :show="showGrowthCycleModal"
       :zone-id="zoneId"
       :zone-name="zoneName"
-      :current-phase-targets="currentPhaseTargets"
       :active-cycle="activeCycle"
       :initial-data="growthCycleInitialData"
       @close="$emit('close-growth-cycle')"

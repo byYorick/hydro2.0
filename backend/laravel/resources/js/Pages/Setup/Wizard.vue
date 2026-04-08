@@ -588,6 +588,7 @@ import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrati
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useApi } from '@/composables/useApi'
+import { usePumpCalibrationActions } from '@/composables/usePumpCalibrationActions'
 import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { useSetupWizard } from '@/composables/useSetupWizard'
 import { useSensorCalibrationSettings } from '@/composables/useSensorCalibrationSettings'
@@ -608,7 +609,6 @@ const {
   loading,
   greenhouseMode,
   zoneMode,
-  plantMode,
   availableGreenhouses,
   availableGreenhouseTypes,
   availableZones,
@@ -672,16 +672,29 @@ const {
 
 const showPlantCreateWizard = ref(false)
 const showPumpCalibrationModal = ref(false)
-const pumpCalibrationLoadingRun = ref(false)
-const pumpCalibrationLoadingSave = ref(false)
-const pumpCalibrationSaveSeq = ref(0)
-const pumpCalibrationRunSeq = ref(0)
-const pumpCalibrationLastRunToken = ref<string | null>(null)
 const zoneCorrectionAuthoritySeq = ref(0)
 const savingAutomationSection = ref<ZoneAutomationSectionSaveKey | null>(null)
 const committedWaterForm = ref<WaterFormState>(cloneWaterForm(automationWaterForm))
 const committedLightingForm = ref<LightingFormState>(cloneLightingForm(automationLightingForm))
 const committedZoneClimateForm = ref<ZoneClimateFormState>(cloneZoneClimateForm(zoneClimateForm))
+const pumpCalibrationActions = usePumpCalibrationActions({
+  api,
+  getZoneId: () => selectedZone.value?.id ?? null,
+  showToast,
+  runSuccessMessage: 'Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.',
+  saveSuccessMessage: 'Калибровка насоса сохранена.',
+  onSaveSuccess: async () => {
+    await refreshAvailableNodes()
+    if (selectedZone.value?.id) {
+      await refreshZoneLaunchReadiness(selectedZone.value.id)
+    }
+  },
+})
+const pumpCalibrationLoadingRun = pumpCalibrationActions.loadingRun
+const pumpCalibrationLoadingSave = pumpCalibrationActions.loadingSave
+const pumpCalibrationSaveSeq = pumpCalibrationActions.saveSeq
+const pumpCalibrationRunSeq = pumpCalibrationActions.runSeq
+const pumpCalibrationLastRunToken = pumpCalibrationActions.lastRunToken
 const wizardReadinessRefreshToken = computed(
   () => `${pumpCalibrationSaveSeq.value}:${pumpCalibrationRunSeq.value}:${zoneCorrectionAuthoritySeq.value}`
 )
@@ -923,42 +936,11 @@ watch(
 )
 
 async function startPumpCalibration(payload: PumpCalibrationRunPayload): Promise<void> {
-  if (!selectedZone.value?.id) {
-    return
-  }
-
-  pumpCalibrationLoadingRun.value = true
-  try {
-    const response = await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, payload)
-    const runToken = response?.data?.data?.run_token
-    pumpCalibrationLastRunToken.value = typeof runToken === 'string' && runToken !== '' ? runToken : null
-    pumpCalibrationRunSeq.value += 1
-    showToast('Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.', 'success')
-  } catch {
-    showToast('Не удалось запустить калибровку насоса.', 'error')
-  } finally {
-    pumpCalibrationLoadingRun.value = false
-  }
+  await pumpCalibrationActions.startPumpCalibration(payload)
 }
 
 async function savePumpCalibration(payload: PumpCalibrationSavePayload): Promise<void> {
-  if (!selectedZone.value?.id) {
-    return
-  }
-
-  pumpCalibrationLoadingSave.value = true
-  try {
-    await api.post(`/api/zones/${selectedZone.value.id}/calibrate-pump`, { ...payload, skip_run: true })
-    await refreshAvailableNodes()
-    await refreshZoneLaunchReadiness(selectedZone.value.id)
-    pumpCalibrationLastRunToken.value = null
-    pumpCalibrationSaveSeq.value += 1
-    showToast('Калибровка насоса сохранена.', 'success')
-  } catch {
-    showToast('Не удалось сохранить калибровку насоса.', 'error')
-  } finally {
-    pumpCalibrationLoadingSave.value = false
-  }
+  await pumpCalibrationActions.savePumpCalibration(payload)
 }
 
 async function saveZoneAutomationBlock(section: ZoneAutomationSectionSaveKey): Promise<void> {
@@ -1046,7 +1028,6 @@ function handlePlantCreated(plant: { id?: number; name?: string } | null): void 
   showPlantCreateWizard.value = false
 
   if (!plant?.id) {
-    plantMode.value = 'select'
     return
   }
 
@@ -1059,7 +1040,6 @@ function handlePlantCreated(plant: { id?: number; name?: string } | null): void 
   }
 
   selectedPlantId.value = plant.id
-  plantMode.value = 'select'
   selectPlant()
 }
 
@@ -1068,12 +1048,10 @@ function openPlantCreateWizard(): void {
     return
   }
 
-  plantMode.value = 'create'
   showPlantCreateWizard.value = true
 }
 
 function handlePlantCreateClose(): void {
   showPlantCreateWizard.value = false
-  plantMode.value = 'select'
 }
 </script>

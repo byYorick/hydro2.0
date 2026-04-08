@@ -13,6 +13,7 @@ import { useToast } from '@/composables/useToast'
 import { useZoneCycleActions } from '@/composables/useZoneCycleActions'
 import { useZonePageState } from '@/composables/useZonePageState'
 import { useZoneTelemetryChart } from '@/composables/useZoneTelemetryChart'
+import { usePumpCalibrationActions } from '@/composables/usePumpCalibrationActions'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
@@ -89,11 +90,8 @@ export function useZoneShowPage() {
     recipeRevisionId?: number | null
     plantId?: number | null
     startedAt?: string | null
-    expectedHarvestAt?: string | null
+      expectedHarvestAt?: string | null
   } | null>(null)
-  const pumpCalibrationSaveSeq = ref(0)
-  const pumpCalibrationRunSeq = ref(0)
-  const pumpCalibrationLastRunToken = ref<string | null>(null)
 
   const { loading, setLoading } = useLoading<LoadingState>({
     actionSubmit: false,
@@ -116,6 +114,30 @@ export function useZoneShowPage() {
   const { api } = useApi(showToast)
   const { subscribeToZoneCommands } = useWebSocket(showToast)
   const { handleError } = useErrorHandler(showToast)
+  const pumpCalibrationActions = usePumpCalibrationActions({
+    api,
+    getZoneId: () => zoneId.value,
+    showToast,
+    successTimeout: TOAST_TIMEOUT.NORMAL,
+    runSuccessMessage: 'Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.',
+    saveSuccessMessage: 'Калибровка сохранена в конфигурации канала.',
+    onRunSuccess: () => {
+      setLoading('pumpCalibrationRun', false)
+    },
+    onSaveSuccess: async () => {
+      reloadZone(zoneId.value as number, ['zone', 'active_grow_cycle', 'active_cycle'])
+      reloadZonePageProps()
+    },
+    onRunError: (error) => {
+      handleError(error, { component: 'useZoneShowPage', action: 'pumpCalibrationRun', zoneId: zoneId.value })
+    },
+    onSaveError: (error) => {
+      handleError(error, { component: 'useZoneShowPage', action: 'pumpCalibrationSave', zoneId: zoneId.value })
+    },
+  })
+  const pumpCalibrationSaveSeq = pumpCalibrationActions.saveSeq
+  const pumpCalibrationRunSeq = pumpCalibrationActions.runSeq
+  const pumpCalibrationLastRunToken = pumpCalibrationActions.lastRunToken
 
   // ─── Sub-composables ──────────────────────────────────────────────────────
 
@@ -273,38 +295,15 @@ export function useZoneShowPage() {
   const onPumpCalibrationRun = async (payload: PumpCalibrationRunPayload): Promise<void> => {
     if (!zoneId.value) return
     setLoading('pumpCalibrationRun', true)
-    try {
-      const response = await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, payload)
-      const runToken = response?.data?.data?.run_token
-      pumpCalibrationLastRunToken.value = typeof runToken === 'string' && runToken !== '' ? runToken : null
-      pumpCalibrationRunSeq.value += 1
-      showToast(
-        'Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.',
-        'success',
-        TOAST_TIMEOUT.NORMAL
-      )
-    } catch (error) {
-      handleError(error, { component: 'useZoneShowPage', action: 'pumpCalibrationRun', zoneId: zoneId.value })
-    } finally {
-      setLoading('pumpCalibrationRun', false)
-    }
+    await pumpCalibrationActions.startPumpCalibration(payload)
+    setLoading('pumpCalibrationRun', false)
   }
 
   const onPumpCalibrationSave = async (payload: PumpCalibrationSavePayload): Promise<void> => {
     if (!zoneId.value) return
     setLoading('pumpCalibrationSave', true)
-    try {
-      await api.post(`/api/zones/${zoneId.value}/calibrate-pump`, { ...payload, skip_run: true })
-      reloadZone(zoneId.value, ['zone', 'active_grow_cycle', 'active_cycle'])
-      reloadZonePageProps()
-      showToast('Калибровка сохранена в конфигурации канала.', 'success', TOAST_TIMEOUT.NORMAL)
-      pumpCalibrationLastRunToken.value = null
-      pumpCalibrationSaveSeq.value += 1
-    } catch (error) {
-      handleError(error, { component: 'useZoneShowPage', action: 'pumpCalibrationSave', zoneId: zoneId.value })
-    } finally {
-      setLoading('pumpCalibrationSave', false)
-    }
+    await pumpCalibrationActions.savePumpCalibration(payload)
+    setLoading('pumpCalibrationSave', false)
   }
 
   const onGrowthCycleWizardSubmit = async ({

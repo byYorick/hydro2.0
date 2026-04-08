@@ -1147,6 +1147,69 @@ describe('Setup/Wizard.vue', () => {
     expect(targetUrl).not.toContain('plant_id=')
   })
 
+  it('не разрешает открыть мастер запуска, если readiness checked, но ready=false даже без ошибок', async () => {
+    apiGetMock.mockImplementation((url: string) => {
+      if (url === '/api/greenhouses') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 10, uid: 'gh-main', name: 'Main GH' }],
+          },
+        })
+      }
+
+      if (url === '/api/greenhouses/10') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: { id: 10, uid: 'gh-main', name: 'Main GH' },
+          },
+        })
+      }
+
+      if (url === '/api/zones') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: [{ id: 20, name: 'Zone A', greenhouse_id: 10 }],
+          },
+        })
+      }
+
+      if (url === '/api/zones/20/health') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              readiness: {
+                checked: true,
+                ready: false,
+                errors: [],
+              },
+            },
+          },
+        })
+      }
+
+      return mockDefaultGet(url)
+    })
+
+    const wrapper = mount(Wizard)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="setup-wizard-greenhouse-select"]').setValue('10')
+    await flushPromises()
+    await wrapper.get('[data-testid="setup-wizard-zone-select"]').setValue('20')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Можно запускать')
+
+    const openLaunchButton = wrapper.findAll('button').find((btn) => btn.text().includes('Открыть мастер запуска цикла'))
+    expect(openLaunchButton).toBeTruthy()
+    expect((openLaunchButton?.element as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('обновляет список доступных нод по кнопке "Обновить ноды"', async () => {
     const wrapper = mount(Wizard)
     await flushPromises()
