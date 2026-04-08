@@ -36,6 +36,9 @@
 
 static const char *TAG = "storage_irrigation_node_framework";
 static const uint32_t STORAGE_IRRIGATION_NODE_PUMP_MAIN_DRY_RUN_MAX_MS = 3000;
+static bool s_storage_event_time_wait_logged = false;
+static bool s_clean_fill_completion_latched = false;
+static bool s_solution_fill_completion_latched = false;
 
 // Forward declaration для callback safe_mode
 static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -1220,6 +1223,15 @@ static esp_err_t storage_irrigation_node_publish_storage_event(const char *event
     if (!mqtt_manager_is_connected()) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (!node_utils_is_time_synced()) {
+        if (!s_storage_event_time_wait_logged) {
+            ESP_LOGW(TAG, "Storage event publish suppressed until time synchronization completes");
+            s_storage_event_time_wait_logged = true;
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_storage_event_time_wait_logged = false;
 
     mqtt_node_info_t node_info = {0};
     esp_err_t info_err = mqtt_manager_get_node_info(&node_info);
@@ -1312,11 +1324,16 @@ static void storage_irrigation_node_check_fill_completion_events(void) {
     }
 
     bool clean_fill_active = storage_irrigation_node_is_clean_fill_active_locked();
-    if (clean_level_max_ok && clean_level_max && clean_fill_active) {
+    bool clean_completion_ready = clean_level_max_ok && clean_level_max && clean_fill_active;
+    if (!clean_fill_active) {
+        s_clean_fill_completion_latched = false;
+    }
+    if (clean_completion_ready && !s_clean_fill_completion_latched) {
         int valve_clean_fill_idx = storage_irrigation_node_find_actuator_index("valve_clean_fill");
         if (valve_clean_fill_idx >= 0) {
             esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_fill_idx, false);
             if (stop_err == ESP_OK) {
+                s_clean_fill_completion_latched = true;
                 emit_clean_completed = true;
             } else {
                 ESP_LOGE(TAG, "Failed to stop valve_clean_fill on level_clean_max: %s", esp_err_to_name(stop_err));
@@ -1325,7 +1342,12 @@ static void storage_irrigation_node_check_fill_completion_events(void) {
     }
 
     bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
-    if (solution_level_max_ok && solution_level_max && solution_fill_active) {
+    bool solution_completion_ready = solution_level_max_ok && solution_level_max && solution_fill_active;
+    if (!solution_fill_active) {
+        s_solution_fill_completion_latched = false;
+    }
+    if (solution_completion_ready && !s_solution_fill_completion_latched) {
+        s_solution_fill_completion_latched = true;
         emit_solution_completed = true;
     }
 

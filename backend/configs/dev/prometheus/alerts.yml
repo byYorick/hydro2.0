@@ -89,6 +89,26 @@ groups:
           summary: "History Logger receives too many unknown node events"
           description: "Unknown node event rate is {{ $value }} events/sec for 10m. Check firmware event_code contract."
 
+      - alert: HistoryLoggerCommandStatusRepairReplayFailed
+        expr: |
+          (sum(increase(pipeline_command_status_repair_total{outcome="replay_failed"}[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: error
+        annotations:
+          summary: "History Logger self-heal replay failed"
+          description: "Self-heal repair path reported one or more replay_failed outcomes during the last 10 minutes."
+
+      - alert: HistoryLoggerCommandStatusRepairNoCorrelation
+        expr: |
+          (sum(increase(pipeline_command_status_repair_total{outcome="no_correlation"}[10m])) or vector(0)) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger found stale command statuses without correlation"
+          description: "Self-heal repair path reported one or more no_correlation outcomes during the last 10 minutes."
+
   - name: laravel_scheduler_alerts
     interval: 30s
     rules:

@@ -72,6 +72,7 @@ static bool s_was_connected = false;  // Флаг, что было хотя бы
 static char s_mqtt_uri[256] = {0};
 static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
 static TaskHandle_t s_mqtt_event_task_handle = NULL;
+static bool s_status_time_wait_logged = false;
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -646,6 +647,16 @@ esp_err_t mqtt_manager_publish_status(const char *data) {
     if (!data) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    if (!node_utils_is_time_synced()) {
+        if (!s_status_time_wait_logged) {
+            ESP_LOGW(TAG, "Status publish suppressed until time synchronization completes");
+            s_status_time_wait_logged = true;
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_status_time_wait_logged = false;
 
     char topic[192];
     esp_err_t err = build_topic(topic, sizeof(topic), "status", NULL);

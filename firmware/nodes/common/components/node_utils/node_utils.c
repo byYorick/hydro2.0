@@ -260,7 +260,8 @@ int64_t node_utils_get_timestamp_seconds(void) {
 /**
  * @brief Получение текущего Unix timestamp в секундах с учетом смещения
  * 
- * Использует смещение времени (time_offset_us), установленное через set_time,
+ * Использует смещение времени (time_offset_us), установленное через
+ * обработку `hydro/time/response` / node_utils_set_time(),
  * для преобразования esp_timer_get_time() в Unix timestamp.
  * 
  * @return Unix timestamp в секундах, или аптайм если время не синхронизировано
@@ -272,9 +273,8 @@ int64_t node_utils_now_epoch(void) {
         return current_time_us / 1000000;
     }
     
-    // Время не синхронизировано - возвращаем аптайм
-    // Это позволяет работать даже без синхронизации, но history-logger должен понимать,
-    // что это аптайм, а не Unix timestamp
+    // Время не синхронизировано - возвращаем аптайм как локальный fallback
+    // для внутренней логики. MQTT payload'ы с полем ts до time sync публиковаться не должны.
     return esp_timer_get_time() / 1000000;
 }
 
@@ -472,7 +472,7 @@ esp_err_t node_utils_publish_config_report(void) {
  * @brief Запрос времени у сервера через MQTT
  * 
  * Публикует запрос времени в топик hydro/time/request
- * Сервер должен ответить командой set_time
+ * Сервер должен ответить payload'ом в топик hydro/time/response
  */
 esp_err_t node_utils_request_time(void) {
     if (!mqtt_manager_is_connected()) {

@@ -24,6 +24,8 @@ _logger = logging.getLogger(__name__)
 
 
 class IrrigationCheckHandler(BaseStageHandler):
+    _STALE_RECHECK_DELAY_SEC = 0.25
+
     def __init__(self, *, runtime_monitor: Any, command_gateway: Any, task_repository: Any) -> None:
         super().__init__(runtime_monitor=runtime_monitor, command_gateway=command_gateway)
         self._task_repository = task_repository
@@ -86,6 +88,8 @@ class IrrigationCheckHandler(BaseStageHandler):
                 telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
                 unavailable_error="two_tank_solution_min_level_unavailable",
                 stale_error="two_tank_solution_min_level_stale",
+                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+                prefer_probe_snapshot=True,
             )
             if not solution_min["is_triggered"]:
                 IRRIGATION_SOLUTION_MIN.labels(topology=topology).inc()

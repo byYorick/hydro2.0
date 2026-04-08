@@ -10,7 +10,11 @@ from typing import Any, Dict, Optional
 import httpx
 
 import state
-from common.command_status_queue import CommandStatus, normalize_status, send_status_to_laravel
+from common.command_status_queue import (
+    CommandStatus,
+    deliver_status_to_laravel,
+    normalize_status,
+)
 from common.db import create_zone_event, execute, fetch, upsert_unassigned_node_error
 from common.env import get_settings
 from common.error_handler import get_error_handler
@@ -1701,6 +1705,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 
         zone_id = None
         cmd_name = None
+        existing_status = None
         try:
             existing_cmd = await fetch(
                 "SELECT status, zone_id, cmd FROM commands WHERE cmd_id = $1", cmd_id
@@ -1787,27 +1792,46 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
             "node_uid": node_uid,
             "channel": channel,
             "gh_uid": gh_uid,
+            "zone_id": zone_id,
         })
         details = {k: v for k, v in details.items() if v is not None}
 
-        success = await send_status_to_laravel(cmd_id, normalized_status, details)
+        delivery_result = await deliver_status_to_laravel(cmd_id, normalized_status, details)
 
-        if success:
+        if delivery_result.delivered:
             logger.info(
-                "[COMMAND_RESPONSE] Status '%s' delivered to Laravel for cmd_id=%s, node_uid=%s, channel=%s",
+                "[COMMAND_RESPONSE] Status '%s' delivered to Laravel for cmd_id=%s, node_uid=%s, channel=%s, local_status_before=%s",
                 normalized_status.value,
                 cmd_id,
                 node_uid,
                 channel,
+                existing_status,
+            )
+        elif delivery_result.queued:
+            logger.warning(
+                "[COMMAND_RESPONSE] Status '%s' retry-enqueued for cmd_id=%s, node_uid=%s, channel=%s, local_status_before=%s, reason=%s, queue_size=%s, dlq_size=%s",
+                normalized_status.value,
+                cmd_id,
+                node_uid,
+                channel,
+                existing_status,
+                delivery_result.reason,
+                (delivery_result.queue_metrics or {}).get("size"),
+                (delivery_result.queue_metrics or {}).get("dlq_size"),
             )
         else:
-            logger.info(
-                "[COMMAND_RESPONSE] Status '%s' queued for retry for cmd_id=%s, node_uid=%s, channel=%s",
+            logger.error(
+                "[COMMAND_RESPONSE] Status '%s' DROPPED for cmd_id=%s, node_uid=%s, channel=%s, local_status_before=%s, reason=%s, http_status=%s, queue_error=%s",
                 normalized_status.value,
                 cmd_id,
                 node_uid,
                 channel,
+                existing_status,
+                delivery_result.reason,
+                delivery_result.http_status,
+                delivery_result.queue_error,
             )
+            COMMAND_RESPONSE_ERROR.inc()
 
         cmd_name_normalized = str(cmd_name or "").strip().lower()
         channel_normalized = str(channel or "").strip().lower()
@@ -1823,11 +1847,11 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                         int(zone_id),
                         _IRR_STATE_SNAPSHOT_EVENT_TYPE,
                         {
-                            "source": "command_response_state",
-                            "cmd_id": cmd_id,
-                            "node_uid": node_uid,
-                            "channel": channel,
-                            "response_ts": response_ts,
+                    "source": "command_response_state",
+                    "cmd_id": cmd_id,
+                    "node_uid": node_uid,
+                    "channel": channel,
+                    "response_ts": response_ts,
                             "snapshot": snapshot,
                         },
                     )
@@ -1865,7 +1889,12 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
                     "channel": channel,
                     "node_uid": node_uid,
                     "raw_status": raw_status,
-                    "delivery": "delivered" if success else "queued",
+                    "delivery": (
+                        "delivered"
+                        if delivery_result.delivered
+                        else ("queued" if delivery_result.queued else "dropped")
+                    ),
+                    "delivery_reason": delivery_result.reason,
                 },
             )
 
@@ -1882,7 +1911,7 @@ async def handle_command_response(topic: str, payload: bytes) -> None:
 async def handle_time_request(topic: str, payload: bytes) -> None:
     """
     Обработчик запросов времени от устройств (time_request).
-    Отправляет команду set_time с текущим серверным временем.
+    Публикует payload time_response с текущим серверным временем в hydro/time/response.
     """
     try:
         data = _parse_json(payload)

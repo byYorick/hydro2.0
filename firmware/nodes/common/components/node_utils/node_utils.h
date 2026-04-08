@@ -101,7 +101,8 @@ esp_err_t node_utils_init_mqtt_config(
 /**
  * @brief Получение текущего timestamp в секундах
  * 
- * Возвращает Unix timestamp с учетом смещения времени, установленного через set_time.
+ * Возвращает Unix timestamp с учетом смещения времени, установленного через
+ * обработку `hydro/time/response` / node_utils_set_time().
  * Если время не синхронизировано, возвращает аптайм (uptime).
  * 
  * @return Unix timestamp в секундах, или аптайм если время не синхронизировано
@@ -111,7 +112,8 @@ int64_t node_utils_get_timestamp_seconds(void);
 /**
  * @brief Получение текущего Unix timestamp в секундах с учетом смещения
  * 
- * Использует смещение времени (time_offset_us), установленное через set_time,
+ * Использует смещение времени (time_offset_us), установленное через
+ * `hydro/time/response` / node_utils_set_time(),
  * для преобразования esp_timer_get_time() в Unix timestamp.
  * 
  * @return Unix timestamp в секундах, или аптайм если время не синхронизировано
@@ -142,7 +144,7 @@ int64_t node_utils_get_unix_timestamp(void);
 /**
  * @brief Проверка синхронизации времени
  * 
- * @return true если время синхронизировано через set_time
+ * @return true если время синхронизировано через `hydro/time/response`
  */
 bool node_utils_is_time_synced(void);
 
@@ -194,7 +196,7 @@ esp_err_t node_utils_publish_config_report(void);
  * @brief Запрос времени у сервера через MQTT
  * 
  * Публикует запрос времени в топик hydro/time/request
- * Сервер должен ответить командой set_time
+ * Сервер должен ответить payload'ом в топик hydro/time/response
  * 
  * @return ESP_OK при успехе
  */

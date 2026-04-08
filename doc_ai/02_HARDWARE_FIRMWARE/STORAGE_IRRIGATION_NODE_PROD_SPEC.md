@@ -87,8 +87,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - interlock `pump_main`: включение запрещено без открытых supply-клапанов (`valve_clean_supply|valve_solution_supply`)
   и target-клапанов (`valve_solution_fill|valve_irrigation`);
 - при попытке нарушения interlock возвращается `ERROR` + `error_code=pump_interlock_blocked`;
-- `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_completed`;
-- `level_solution_max` публикует `solution_fill_completed` в `storage_state/event` со snapshot,
+- `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_completed`
+  один раз на эпизод `clean_fill`;
+- `level_solution_max` публикует `solution_fill_completed` в `storage_state/event` со snapshot
+  один раз на эпизод `solution_fill`,
   но не выключает `pump_main/valve_solution_fill/valve_clean_supply`: завершением `solution_fill`
   и переходом в `prepare_recirculation` управляет AE3.
 
@@ -107,11 +109,17 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 
 - `.../{channel}/telemetry`
 - `.../{channel}/command_response`
+- `.../diagnostics`
 - `.../storage_state/event`
 - `.../status`
 - `.../heartbeat`
 - `.../config_report`
 - `hydro/node_hello`
+
+Дополнительно для production IRR-ноды:
+- `.../diagnostics` используется для structured engineering snapshots, которые не соответствуют scalar telemetry contract;
+- snapshot `diagnostic_type=pump_health` публикует состояние pump channels и INA209;
+- `pump_health` не должен публиковаться как `.../pump_health/telemetry`, потому что payload содержит массивы/объекты и не совместим с ingest telemetry.
 
 Фактические подписки:
 
@@ -156,9 +164,12 @@ Runtime-валидация `pump_driver` сохраняется:
 - setup/provisioning: AP-портал (`node_type_prefix=IRRIG`) при отсутствии валидного Wi-Fi/MQTT.
 
 При MQTT reconnect нода:
+- подписывается на `hydro/time/response`;
 - запрашивает время (`hydro/time/request`);
 - публикует `config_report`;
 - при temp/unbound конфиге публикует `node_hello`.
+
+До получения `hydro/time/response` нода не публикует `telemetry`, `status` и `storage_state/event` с полем `ts`.
 
 ---
 

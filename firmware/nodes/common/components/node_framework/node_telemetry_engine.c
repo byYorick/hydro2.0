@@ -51,6 +51,7 @@ static struct {
     TaskHandle_t flush_task;
     bool initialized;
     bool disconnect_log_emitted;
+    bool time_sync_log_emitted;
     uint32_t batch_interval_ms;
     uint32_t batch_size;
 } s_telemetry_engine = {
@@ -224,6 +225,16 @@ static esp_err_t flush_batch_internal(void) {
         return ESP_OK;
     }
 
+    if (!node_utils_is_time_synced()) {
+        if (!s_telemetry_engine.time_sync_log_emitted) {
+            ESP_LOGW(TAG, "Time not synchronized yet, dropping buffered telemetry batch");
+            s_telemetry_engine.time_sync_log_emitted = true;
+        }
+        s_telemetry_engine.batch.count = 0;
+        s_telemetry_engine.batch.last_flush_time = esp_timer_get_time() / 1000;
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!mqtt_manager_is_connected()) {
         if (!s_telemetry_engine.disconnect_log_emitted) {
             ESP_LOGW(TAG, "MQTT not connected, keeping telemetry batch");
@@ -306,6 +317,16 @@ static esp_err_t add_to_batch(
     if (channel == NULL || metric_type_str == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    if (!node_utils_is_time_synced()) {
+        if (!s_telemetry_engine.time_sync_log_emitted) {
+            ESP_LOGW(TAG, "Time not synchronized yet, suppressing telemetry publish");
+            s_telemetry_engine.time_sync_log_emitted = true;
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_telemetry_engine.time_sync_log_emitted = false;
 
     // Проверка на NaN и Inf
     if (isnan(value) || isinf(value)) {

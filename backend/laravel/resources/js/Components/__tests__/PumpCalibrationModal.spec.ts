@@ -261,4 +261,38 @@ describe('PumpCalibrationModal', () => {
     expect(wrapper.text()).toContain('pump-node-1 / pump_npk:')
     expect(wrapper.text()).toContain('0.81 мл/сек')
   })
+
+  it('не показывает проточный pump_main в списке каналов для калибровки', async () => {
+    const wrapper = mount(PumpCalibrationModal, {
+      props: {
+        show: true,
+        zoneId: 1,
+        devices: [
+          {
+            id: 1,
+            uid: 'irrig-node-1',
+            type: 'irrig',
+            status: 'online',
+            channels: [
+              { id: 100, node_id: 1, channel: 'pump_main', type: 'ACTUATOR', metric: null, unit: null, binding_role: 'main_pump' },
+              { id: 101, node_id: 1, channel: 'pump_npk', type: 'ACTUATOR', metric: null, unit: null, pump_component: 'npk' },
+            ],
+          },
+        ],
+        loadingRun: false,
+        loadingSave: false,
+      },
+      global: {
+        stubs: {
+          ZonePumpCalibrationSettingsCard: { template: '<div class="pump-runtime-bounds-stub" />' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const options = wrapper.findAll('[data-testid="pump-calibration-channel"] option').map((option) => option.text())
+    expect(options).toEqual(['irrig-node-1 / pump_npk'])
+    expect(wrapper.text()).not.toContain('pump_main')
+  })
 })

@@ -95,6 +95,7 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.3. Requirements
 - QoS = 1
 - Retain = false
+- Узел публикует telemetry только после time sync через `hydro/time/response`
 - Backend сохраняет TelemetrySample
 - Backend обновляет last_value в Redis
 - Backend может триггерить Alerts
@@ -143,7 +144,7 @@ payload: "offline"
 
 ## 4.2. Online status
 
-**ОБЯЗАТЕЛЬНО:** При успешном подключении к MQTT брокеру (событие `MQTT_EVENT_CONNECTED`) узел **ОБЯЗАН** немедленно опубликовать status топик.
+**ОБЯЗАТЕЛЬНО:** Узел публикует `status` только после успешной синхронизации времени через `hydro/time/response`.
 
 **Топик:**
 ```
@@ -161,19 +162,17 @@ hydro/{gh}/{zone}/{node}/status
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **сразу после** успешного подключения, до подписки на command топики
+- Публикация не должна происходить до завершения time sync
 - Поле `ts` содержит Unix timestamp в секундах (время публикации)
 - Backend использует этот статус для обновления `nodes.status` и `nodes.last_seen_at`
 
 **Последовательность действий при подключении:**
 1. Установка LWT (Last Will and Testament) — выполняется при инициализации MQTT клиента
 2. Подключение к брокеру
-3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО
-4. Подписка на `hydro/{gh}/{zone}/{node}/+/command` (wildcard для всех каналов)
-5. (Опционально) Подписка на `hydro/{gh}/{zone}/{node}/config` для сервисного сценария
-6. Вызов connection callback (если зарегистрирован)
-
-**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
+3. Подписка на `hydro/time/response` и рабочие топики ноды (`command`, опционально `config`)
+4. Публикация `hydro/time/request`
+5. Вызов connection callback (если зарегистрирован)
+6. После получения `hydro/time/response` разрешается публикация `status`/`telemetry`/`event` с полем `ts`
 
 ## 4.3. Offline
 Отправляется брокером автоматически (LWT):
@@ -941,8 +940,8 @@ Backend никогда не остаётся "в неизвестности": п
    - при timeout нода локально останавливает stage-path и публикует terminal `ERROR`
      по исходному `cmd_id` с `error_code=stage_timeout`.
 3. `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует
-   `clean_fill_completed`.
-4. `level_solution_max` публикует `solution_fill_completed`, но не выключает локально
+   `clean_fill_completed` один раз на эпизод `clean_fill`.
+4. `level_solution_max` публикует `solution_fill_completed` один раз на эпизод `solution_fill`, но не выключает локально
    `pump_main/valve_solution_fill/valve_clean_supply`: переход в `prepare_recirculation` завершает AE3.
 5. Дополнительно нода публикует событие (канал `storage_state`):
 
@@ -1215,6 +1214,7 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 ### Регулярно:
 - **telemetry** (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`) — по расписанию из NodeConfig
 - **heartbeat** (`hydro/{gh}/{zone}/{node}/heartbeat`) — периодически (например, каждые 30 секунд)
+- **diagnostics** (`hydro/{gh}/{zone}/{node}/diagnostics`) — опционально, для structured engineering snapshots, не совместимых с scalar telemetry contract
 
 ### По запросу:
 - **command_response** (`hydro/{gh}/{zone}/{node}/{channel}/command_response`) — на каждую команду

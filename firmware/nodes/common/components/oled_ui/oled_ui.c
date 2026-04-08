@@ -238,6 +238,8 @@ static void task_update_display(void *pvParameters);
 static void oled_ui_push_event(oled_ui_event_type_t type);
 static oled_ui_event_type_t oled_ui_peek_event(uint64_t now_ms);
 static void shorten_host_last_two_octets(const char *host, char *out, size_t out_size);
+static bool oled_ui_find_channel_state(const char *name, bool *state_out);
+static bool oled_ui_render_storage_level_summary(void);
 
 static void oled_ui_push_event(oled_ui_event_type_t type) {
     if (type == OLED_EVENT_NONE) {
@@ -1194,6 +1196,9 @@ static void render_normal_screen(void) {
             case OLED_UI_NODE_TYPE_PUMP:
             case OLED_UI_NODE_TYPE_UNKNOWN:
             default: {
+                if (oled_ui_render_storage_level_summary()) {
+                    break;
+                }
                 if (s_ui.model.channel_count > 0) {
                     for (size_t i = 0; i < s_ui.model.channel_count && i < 2; i++) {
                         char line[22];
@@ -1919,4 +1924,56 @@ static void shorten_host_last_two_octets(const char *host, char *out, size_t out
         // Нет второй точки - fallback
         strlcpy(out, last_dot + 1, out_size);
     }
+}
+
+static bool oled_ui_find_channel_state(const char *name, bool *state_out) {
+    if (name == NULL || state_out == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < s_ui.model.channel_count; i++) {
+        if (strcmp(s_ui.model.channels[i].name, name) == 0) {
+            *state_out = s_ui.model.channels[i].active || s_ui.model.channels[i].value >= 0.5f;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool oled_ui_render_storage_level_summary(void) {
+    bool clean_min = false;
+    bool clean_max = false;
+    bool solution_min = false;
+    bool solution_max = false;
+
+    bool has_clean_min = oled_ui_find_channel_state("level_clean_min", &clean_min);
+    bool has_clean_max = oled_ui_find_channel_state("level_clean_max", &clean_max);
+    bool has_solution_min = oled_ui_find_channel_state("level_solution_min", &solution_min);
+    bool has_solution_max = oled_ui_find_channel_state("level_solution_max", &solution_max);
+
+    if (!(has_clean_min || has_clean_max || has_solution_min || has_solution_max)) {
+        return false;
+    }
+
+    char line[22];
+    snprintf(
+        line,
+        sizeof(line),
+        "Clean m:%d M:%d",
+        has_clean_min ? (clean_min ? 1 : 0) : -1,
+        has_clean_max ? (clean_max ? 1 : 0) : -1
+    );
+    frame_buffer_draw_line(5, line);
+
+    snprintf(
+        line,
+        sizeof(line),
+        "Solut m:%d M:%d",
+        has_solution_min ? (solution_min ? 1 : 0) : -1,
+        has_solution_max ? (solution_max ? 1 : 0) : -1
+    );
+    frame_buffer_draw_line(6, line);
+
+    return true;
 }

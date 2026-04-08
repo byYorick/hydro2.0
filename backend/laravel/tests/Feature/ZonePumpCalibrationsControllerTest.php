@@ -172,4 +172,56 @@ class ZonePumpCalibrationsControllerTest extends TestCase
             ->assertJsonPath('data.0.component', 'npk')
             ->assertJsonPath('data.0.ml_per_sec', 0.75);
     }
+
+    public function test_index_excludes_main_irrigation_pump_even_if_legacy_calibration_exists(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => 'online',
+        ]);
+        $channel = NodeChannel::query()->create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'actuator',
+            'metric' => 'PUMP',
+            'unit' => '',
+            'config' => [],
+        ]);
+
+        $infraId = DB::table('infrastructure_instances')->insertGetId([
+            'owner_type' => 'zone',
+            'owner_id' => $zone->id,
+            'asset_type' => 'PUMP',
+            'label' => 'Main Irrigation Pump',
+            'required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('channel_bindings')->insert([
+            'infrastructure_instance_id' => $infraId,
+            'node_channel_id' => $channel->id,
+            'direction' => 'actuator',
+            'role' => 'main_pump',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('pump_calibrations')->insert([
+            'node_channel_id' => $channel->id,
+            'component' => 'unknown',
+            'ml_per_sec' => 1.0,
+            'source' => 'manual_calibration',
+            'valid_from' => now(),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson("/api/zones/{$zone->id}/pump-calibrations");
+
+        $response->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
 }

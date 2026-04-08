@@ -71,7 +71,7 @@ class ZonePumpCalibrationsController extends Controller
             })
             ->where(function ($query): void {
                 $query->whereIn('zb.role', PumpCalibrationCatalog::dosingRoles())
-                    ->orWhereNotNull('pc.node_channel_id');
+                    ->orWhereIn('pc.component', PumpCalibrationCatalog::dosingComponents());
             })
             ->selectRaw(
                 "nc.id AS node_channel_id,
@@ -99,10 +99,17 @@ class ZonePumpCalibrationsController extends Controller
                 ?: PumpCalibrationCatalog::roleForComponent($row->calibration_component)
                 ?: 'unbound_pump';
 
+            $resolvedComponent = $row->calibration_component
+                ?: PumpCalibrationCatalog::componentForRole($resolvedRole);
+
+            if (! PumpCalibrationCatalog::isDosingRole($resolvedRole) && ! PumpCalibrationCatalog::isDosingComponent($resolvedComponent)) {
+                return null;
+            }
+
             return [
                 'node_channel_id' => (int) $row->node_channel_id,
                 'role' => (string) $resolvedRole,
-                'component' => (string) ($row->calibration_component ?: PumpCalibrationCatalog::componentForRole($resolvedRole) ?: 'unknown'),
+                'component' => (string) ($resolvedComponent ?: 'unknown'),
                 'channel_label' => (string) ($row->channel_label ?? $row->channel),
                 'node_uid' => (string) $row->node_uid,
                 'channel' => (string) $row->channel,
@@ -113,7 +120,7 @@ class ZonePumpCalibrationsController extends Controller
                 'is_active' => (bool) $row->is_active,
                 'calibration_age_days' => $row->calibration_age_days !== null ? (int) $row->calibration_age_days : null,
             ];
-        })->values();
+        })->filter()->values();
 
         return response()->json([
             'status' => 'ok',

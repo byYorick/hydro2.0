@@ -335,13 +335,13 @@ on_command_received for pump_channel:
 ```
 
 > **Важно:** поля `node_uid` и `channel` не включаются в JSON, так как они уже есть в топике.
-> `metric_type` в UPPERCASE, `ts` в секундах (до time sync допускается uptime-seconds).
+> `metric_type` в UPPERCASE, `ts` в секундах Unix time; до time sync telemetry с `ts` не публикуется.
 
 ## 5.2. Правила:
 - отправка с QoS=1
 - interval задаётся NodeConfig (`poll_interval_ms`) и может переопределяться серверным config apply
 - raw значение сохраняется для диагностики
-- timestamp в секундах (uptime до синхронизации времени, Unix time после `set_time`)
+- timestamp в секундах Unix time; до синхронизации времени публикация telemetry с `ts` подавляется
 
 ---
 
@@ -450,6 +450,7 @@ hydro/{gh}/{zone}/{node}/diagnostics
 - free heap spikes
 - reboot causes
 - driver errors
+- structured engineering snapshots, которые не подходят под scalar telemetry contract
 
 ---
 

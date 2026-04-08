@@ -26,6 +26,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
     5. Дедлайн превышен → ``solution_fill_timeout_stop``
     """
 
+    _STALE_RECHECK_DELAY_SEC = 0.25
+
     async def run(
         self,
         *,
@@ -65,6 +67,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
             telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
             unavailable_error="two_tank_solution_level_unavailable",
             stale_error="two_tank_solution_level_stale",
+            stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+            prefer_probe_snapshot=True,
         )
 
         if solution_max["is_triggered"]:
@@ -75,6 +79,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 min_labels_key="solution_min_sensor_labels",
                 min_unavailable_error="two_tank_solution_min_level_unavailable",
                 min_stale_error="two_tank_solution_min_level_stale",
+                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+                prefer_probe_snapshot=True,
             )
 
             if await self._targets_reached(task=task, plan=plan, now=now):
@@ -161,6 +167,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
             telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
             unavailable_error="two_tank_solution_level_unavailable",
             stale_error="two_tank_solution_level_stale",
+            stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+            prefer_probe_snapshot=True,
         )
         if not solution_max["is_triggered"]:
             return False
@@ -171,6 +179,8 @@ class SolutionFillCheckHandler(BaseStageHandler):
             min_labels_key="solution_min_sensor_labels",
             min_unavailable_error="two_tank_solution_min_level_unavailable",
             min_stale_error="two_tank_solution_min_level_stale",
+            stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+            prefer_probe_snapshot=True,
         )
         return await self._targets_reached(task=task, plan=plan, now=now)
 

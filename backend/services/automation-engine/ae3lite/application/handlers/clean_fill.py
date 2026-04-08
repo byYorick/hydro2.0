@@ -24,6 +24,8 @@ class CleanFillCheckHandler(BaseStageHandler):
     4. Заполнение ещё продолжается → ``poll`` с повторной постановкой в очередь
     """
 
+    _STALE_RECHECK_DELAY_SEC = 0.25
+
     async def run(
         self,
         *,
@@ -53,6 +55,7 @@ class CleanFillCheckHandler(BaseStageHandler):
             telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
             unavailable_error="two_tank_clean_level_unavailable",
             stale_error="two_tank_clean_level_stale",
+            stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
         )
 
         if clean_max["is_triggered"]:

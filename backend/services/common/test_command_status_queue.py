@@ -8,12 +8,15 @@ import pytest
 
 from common.command_status_queue import (
     CommandStatus,
+    StatusDeliveryResult,
     StatusUpdateQueue,
+    deliver_status_to_laravel,
     _PENDING_STATUS_UPDATES_DLQ_REQUIRED_COLUMNS,
     _PENDING_STATUS_UPDATES_REQUIRED_COLUMNS,
     _decode_details_payload,
     _sanitize_status_details,
     normalize_status,
+    repair_stuck_commands_once,
     retry_worker,
     send_status_to_laravel,
 )
@@ -191,6 +194,39 @@ async def test_send_status_to_laravel_queues_and_alerts_on_command_not_found():
 
 
 @pytest.mark.asyncio
+async def test_deliver_status_to_laravel_marks_dropped_when_retry_enqueue_fails():
+    settings = SimpleNamespace(
+        laravel_api_url="http://laravel",
+        history_logger_api_token="token",
+        ingest_token="token",
+    )
+    queue = AsyncMock()
+    queue.enqueue.return_value = False
+    queue.get_queue_metrics.return_value = {"size": 3, "dlq_size": 1}
+    response = _ResponseStub(500, text='{"status":"error"}')
+
+    with patch("common.command_status_queue.get_settings", return_value=settings), \
+         patch("common.command_status_queue.make_request", new=AsyncMock(return_value=response)), \
+         patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue._emit_status_retry_enqueue_failed_alert", new=AsyncMock()) as mock_alert:
+        result = await deliver_status_to_laravel(
+            "cmd-enqueue-fail",
+            CommandStatus.ERROR,
+            {"zone_id": 7, "node_uid": "nd-1", "channel": "pump_1"},
+        )
+
+    assert result.delivered is False
+    assert result.queued is False
+    assert result.dropped is True
+    assert result.reason == "http_500"
+    assert result.http_status == 500
+    assert result.queue_error == "queue_enqueue_failed"
+    queue.enqueue.assert_awaited_once()
+    queue.get_queue_metrics.assert_awaited_once()
+    mock_alert.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_send_status_to_laravel_ignores_command_not_found_for_e2e_cmd():
     settings = SimpleNamespace(
         laravel_api_url="http://laravel",
@@ -292,12 +328,25 @@ async def test_retry_worker_passes_shutdown_quickly_on_processing_pause():
 
     with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
          patch("common.command_status_queue.send_status_to_laravel", new=AsyncMock(return_value=False)) as mock_send, \
-         patch("common.command_status_queue.calculate_backoff_with_jitter", return_value=1):
+         patch("common.command_status_queue.calculate_backoff_with_jitter", return_value=1), \
+         patch("common.command_status_queue.record_command_status_retry") as mock_record_metric, \
+         patch("common.command_status_queue.update_command_status_retry_scan") as mock_update_scan:
         await asyncio.wait_for(retry_worker(interval=0.01, shutdown_event=shutdown_event), timeout=1.0)
 
     mock_send.assert_awaited_once()
     assert mock_send.await_args.kwargs["enqueue_on_failure"] is False
     queue.mark_retry.assert_awaited_once()
+    mock_record_metric.assert_called_once_with(outcome="retry_scheduled", status="ACK")
+    assert any(
+        kwargs == {
+            "processed": 1,
+            "delivered": 0,
+            "retry_scheduled": 1,
+            "dlq_moved": 0,
+            "dlq_move_failed": 0,
+        }
+        for _, kwargs in mock_update_scan.call_args_list
+    )
 
 
 @pytest.mark.asyncio
@@ -476,10 +525,311 @@ async def test_retry_worker_does_not_delete_pending_when_dlq_move_fails():
 
     with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
          patch("common.command_status_queue.send_status_to_laravel", new=AsyncMock(return_value=False)), \
-         patch("common.command_status_queue.calculate_backoff_with_jitter", return_value=1):
+         patch("common.command_status_queue.calculate_backoff_with_jitter", return_value=1), \
+         patch("common.command_status_queue.record_command_status_retry") as mock_record_metric, \
+         patch("common.command_status_queue.update_command_status_retry_scan") as mock_update_scan:
         await asyncio.wait_for(retry_worker(interval=0.01, shutdown_event=shutdown_event), timeout=1.0)
 
     queue.move_to_dlq.assert_awaited_once()
     queue.mark_delivered.assert_not_awaited()
     queue.mark_retry.assert_awaited_once()
     assert "dlq_move_failed" in str(queue.mark_retry.await_args.args[3])
+    mock_record_metric.assert_called_once_with(outcome="dlq_move_failed", status="ACK")
+    assert any(
+        kwargs == {
+            "processed": 1,
+            "delivered": 0,
+            "retry_scheduled": 0,
+            "dlq_moved": 0,
+            "dlq_move_failed": 1,
+        }
+        for _, kwargs in mock_update_scan.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_worker_records_delivered_metric_and_scan_summary():
+    shutdown_event = asyncio.Event()
+    queue = AsyncMock()
+    pending_item = (
+        777,
+        "cmd-777",
+        CommandStatus.DONE,
+        {"zone_id": 4},
+        0,
+        5,
+        None,
+    )
+    calls = {"count": 0}
+
+    async def _get_pending(limit=50):
+        if calls["count"] == 0:
+            calls["count"] += 1
+            return [pending_item]
+        shutdown_event.set()
+        return []
+
+    queue.get_pending = AsyncMock(side_effect=_get_pending)
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.send_status_to_laravel", new=AsyncMock(return_value=True)) as mock_send, \
+         patch("common.command_status_queue.record_command_status_retry") as mock_record_metric, \
+         patch("common.command_status_queue.update_command_status_retry_scan") as mock_update_scan:
+        await asyncio.wait_for(retry_worker(interval=0.01, shutdown_event=shutdown_event), timeout=1.0)
+
+    mock_send.assert_awaited_once()
+    queue.mark_delivered.assert_awaited_once_with(777)
+    mock_record_metric.assert_called_once_with(outcome="delivered", status="DONE")
+    assert any(
+        kwargs == {
+            "processed": 1,
+            "delivered": 1,
+            "retry_scheduled": 0,
+            "dlq_moved": 0,
+            "dlq_move_failed": 0,
+        }
+        for _, kwargs in mock_update_scan.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_repair_stuck_commands_once_replays_pending_terminal_status():
+    queue = AsyncMock()
+    queue.ensure_table = AsyncMock()
+    queue.mark_delivered = AsyncMock()
+    queue.purge_dlq_item = AsyncMock()
+
+    fetch_rows = [
+        [
+            {
+                "id": 41,
+                "cmd_id": "cmd-stuck-pending",
+                "status": "SENT",
+                "zone_id": 7,
+                "node_id": 11,
+                "channel": "storage_state",
+                "cmd": "state",
+                "source": "automation",
+                "status_since": None,
+            }
+        ],
+        [
+            {
+                "source": "pending",
+                "id": 501,
+                "cmd_id": "cmd-stuck-pending",
+                "status": "DONE",
+                "details": {"zone_id": 7, "node_uid": "nd-1"},
+                "retry_count": 2,
+                "max_attempts": 10,
+                "last_error": None,
+                "occurred_at": None,
+            }
+        ],
+    ]
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.fetch", new=AsyncMock(side_effect=fetch_rows)), \
+         patch("common.command_status_queue.record_command_status_repair") as mock_metric, \
+         patch(
+             "common.command_status_queue.deliver_status_to_laravel",
+             new=AsyncMock(
+                 return_value=StatusDeliveryResult(
+                     delivered=True,
+                     queued=False,
+                     dropped=False,
+                     reason="delivered",
+                 )
+             ),
+         ) as mock_deliver:
+        summary = await repair_stuck_commands_once(stale_after_seconds=30.0, limit=10)
+
+    assert summary["scanned"] == 1
+    assert summary["repaired"] == 1
+    queue.ensure_table.assert_awaited_once()
+    queue.mark_delivered.assert_awaited_once_with(501)
+    queue.purge_dlq_item.assert_not_awaited()
+    mock_deliver.assert_awaited_once()
+    mock_metric.assert_called_once_with(
+        outcome="repaired",
+        command_status="SENT",
+        source="pending",
+        replay_status="DONE",
+    )
+    assert mock_deliver.await_args.kwargs["cmd_id"] == "cmd-stuck-pending"
+    assert mock_deliver.await_args.kwargs["status"] == CommandStatus.DONE
+    assert mock_deliver.await_args.kwargs["enqueue_on_failure"] is False
+
+
+@pytest.mark.asyncio
+async def test_repair_stuck_commands_once_replays_dlq_terminal_status():
+    queue = AsyncMock()
+    queue.ensure_table = AsyncMock()
+    queue.mark_delivered = AsyncMock()
+    queue.purge_dlq_item = AsyncMock(return_value=True)
+
+    fetch_rows = [
+        [
+            {
+                "id": 42,
+                "cmd_id": "cmd-stuck-dlq",
+                "status": "ACK",
+                "zone_id": 8,
+                "node_id": 12,
+                "channel": "pump_main",
+                "cmd": "set_relay",
+                "source": "device",
+                "status_since": None,
+            }
+        ],
+        [
+            {
+                "source": "dlq",
+                "id": 777,
+                "cmd_id": "cmd-stuck-dlq",
+                "status": "ERROR",
+                "details": {"zone_id": 8, "error_code": "pump_interlock_blocked"},
+                "retry_count": 10,
+                "max_attempts": 10,
+                "last_error": "http_500",
+                "occurred_at": None,
+            }
+        ],
+    ]
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.fetch", new=AsyncMock(side_effect=fetch_rows)), \
+         patch("common.command_status_queue.record_command_status_repair") as mock_metric, \
+         patch(
+             "common.command_status_queue.deliver_status_to_laravel",
+             new=AsyncMock(
+                 return_value=StatusDeliveryResult(
+                     delivered=True,
+                     queued=False,
+                     dropped=False,
+                     reason="delivered",
+                 )
+             ),
+         ) as mock_deliver:
+        summary = await repair_stuck_commands_once(stale_after_seconds=30.0, limit=10)
+
+    assert summary["scanned"] == 1
+    assert summary["repaired"] == 1
+    queue.mark_delivered.assert_not_awaited()
+    queue.purge_dlq_item.assert_awaited_once_with(777)
+    mock_deliver.assert_awaited_once()
+    mock_metric.assert_called_once_with(
+        outcome="repaired",
+        command_status="ACK",
+        source="dlq",
+        replay_status="ERROR",
+    )
+    assert mock_deliver.await_args.kwargs["status"] == CommandStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_repair_stuck_commands_once_skips_when_no_correlation():
+    queue = AsyncMock()
+    queue.ensure_table = AsyncMock()
+    queue.mark_delivered = AsyncMock()
+    queue.purge_dlq_item = AsyncMock()
+
+    fetch_rows = [
+        [
+            {
+                "id": 43,
+                "cmd_id": "cmd-stuck-no-correlation",
+                "status": "SENT",
+                "zone_id": 9,
+                "node_id": 13,
+                "channel": "storage_state",
+                "cmd": "state",
+                "source": "automation",
+                "status_since": None,
+            }
+        ],
+        [],
+    ]
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.fetch", new=AsyncMock(side_effect=fetch_rows)), \
+         patch("common.command_status_queue.record_command_status_repair") as mock_metric, \
+         patch("common.command_status_queue.deliver_status_to_laravel", new=AsyncMock()) as mock_deliver:
+        summary = await repair_stuck_commands_once(stale_after_seconds=30.0, limit=10)
+
+    assert summary["scanned"] == 1
+    assert summary["no_correlation"] == 1
+    queue.mark_delivered.assert_not_awaited()
+    queue.purge_dlq_item.assert_not_awaited()
+    mock_metric.assert_called_once_with(
+        outcome="no_correlation",
+        command_status="SENT",
+        source="none",
+        replay_status="none",
+    )
+    mock_deliver.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_repair_stuck_commands_once_records_replay_failed_metric():
+    queue = AsyncMock()
+    queue.ensure_table = AsyncMock()
+    queue.mark_delivered = AsyncMock()
+    queue.purge_dlq_item = AsyncMock()
+
+    fetch_rows = [
+        [
+            {
+                "id": 44,
+                "cmd_id": "cmd-stuck-replay-failed",
+                "status": "ACK",
+                "zone_id": 10,
+                "node_id": 14,
+                "channel": "pump_main",
+                "cmd": "set_relay",
+                "status_since": None,
+            }
+        ],
+        [
+            {
+                "source": "pending",
+                "id": 778,
+                "cmd_id": "cmd-stuck-replay-failed",
+                "status": "ERROR",
+                "details": {"zone_id": 10, "error_code": "pump_interlock_blocked"},
+                "retry_count": 1,
+                "max_attempts": 10,
+                "last_error": None,
+                "occurred_at": None,
+            }
+        ],
+    ]
+
+    with patch("common.command_status_queue.get_status_queue", new=AsyncMock(return_value=queue)), \
+         patch("common.command_status_queue.fetch", new=AsyncMock(side_effect=fetch_rows)), \
+         patch("common.command_status_queue.record_command_status_repair") as mock_metric, \
+         patch(
+             "common.command_status_queue.deliver_status_to_laravel",
+             new=AsyncMock(
+                 return_value=StatusDeliveryResult(
+                     delivered=False,
+                     queued=False,
+                     dropped=True,
+                     reason="http_500",
+                     http_status=500,
+                 )
+             ),
+         ) as mock_deliver:
+        summary = await repair_stuck_commands_once(stale_after_seconds=30.0, limit=10)
+
+    assert summary["scanned"] == 1
+    assert summary["replay_failed"] == 1
+    queue.mark_delivered.assert_not_awaited()
+    queue.purge_dlq_item.assert_not_awaited()
+    mock_deliver.assert_awaited_once()
+    mock_metric.assert_called_once_with(
+        outcome="replay_failed",
+        command_status="ACK",
+        source="pending",
+        replay_status="ERROR",
+    )

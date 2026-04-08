@@ -6,7 +6,7 @@
  * - heartbeat_task_start_default - публикация heartbeat (общий компонент)
  * - task_sensor_scan - быстрый опрос level-switch и runtime-реакции
  * - task_current_poll - периодическая публикация level-switch telemetry
- * - task_pump_health - health-метрики насосов
+ * - task_pump_health - structured diagnostics snapshot для насосов
  * 
  * Примечание: уровень баков публикуется через level-switch каналы.
  */
@@ -38,13 +38,14 @@ static const char *TAG = "storage_irrigation_node_tasks";
 // Периоды задач (в миллисекундах)
 #define DEFAULT_CURRENT_POLL_MS   STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_POLL_INTERVAL_MS
 #define SENSOR_SCAN_INTERVAL_MS    STORAGE_IRRIGATION_NODE_LEVEL_SWITCH_SCAN_INTERVAL_MS
-#define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
+#define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - pump health diagnostics
 #define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
 #define TASK_WDT_RESET_SLICE_MS     1000
 
 // Глобальная переменная для интервала публикации level-switch (потокобезопасно)
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
 static SemaphoreHandle_t s_current_poll_interval_mutex = NULL;
+static bool s_pump_health_time_wait_logged = false;
 
 /**
  * @brief Инициализация mutex для s_current_poll_interval_ms
@@ -144,7 +145,7 @@ static void task_current_poll(void *pvParameters) {
 }
 
 /**
- * @brief Задача публикации health-метрик насосов и INA209
+ * @brief Задача публикации pump health snapshot в diagnostics topic
  */
 static void task_pump_health(void *pvParameters) {
     ESP_LOGI(TAG, "Pump health task started");
@@ -175,22 +176,40 @@ static void task_pump_health(void *pvParameters) {
             continue;
         }
 
+        if (!node_utils_is_time_synced()) {
+            if (!s_pump_health_time_wait_logged) {
+                ESP_LOGW(TAG, "Pump health diagnostics suppressed until time synchronization completes");
+                s_pump_health_time_wait_logged = true;
+            }
+            continue;
+        }
+
+        s_pump_health_time_wait_logged = false;
+
         esp_err_t err = pump_driver_get_health_snapshot(&snapshot);
         if (err != ESP_OK) {
             ESP_LOGD(TAG, "Health snapshot unavailable: %s", esp_err_to_name(err));
             continue;
         }
 
-        cJSON *health = cJSON_CreateObject();
-        if (!health) {
+        cJSON *diagnostics = cJSON_CreateObject();
+        if (!diagnostics) {
             continue;
         }
 
-        cJSON_AddNumberToObject(health, "ts", (double)node_utils_get_timestamp_seconds());
+        cJSON_AddStringToObject(diagnostics, "diagnostic_type", "pump_health");
+        cJSON_AddNumberToObject(diagnostics, "ts", (double)node_utils_get_timestamp_seconds());
+
+        cJSON *health = cJSON_CreateObject();
+        if (!health) {
+            cJSON_Delete(diagnostics);
+            continue;
+        }
 
         cJSON *channels = cJSON_CreateArray();
         if (!channels) {
             cJSON_Delete(health);
+            cJSON_Delete(diagnostics);
             continue;
         }
 
@@ -228,13 +247,15 @@ static void task_pump_health(void *pvParameters) {
             cJSON_AddItemToObject(health, "ina209", ina);
         }
 
-        char *json_str = cJSON_PrintUnformatted(health);
+        cJSON_AddItemToObject(diagnostics, "pump_health", health);
+
+        char *json_str = cJSON_PrintUnformatted(diagnostics);
         if (json_str) {
-            mqtt_manager_publish_telemetry("pump_health", json_str);
+            mqtt_manager_publish_diagnostics(json_str);
             free(json_str);
         }
 
-        cJSON_Delete(health);
+        cJSON_Delete(diagnostics);
         node_watchdog_reset();
     }
 }

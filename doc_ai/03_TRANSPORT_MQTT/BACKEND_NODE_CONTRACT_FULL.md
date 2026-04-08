@@ -226,22 +226,21 @@ hydro/{gh}/{zone}/{node}/status
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **до** подписки на command топики
+- Публикация выполняется только после time sync через `hydro/time/response`
 - Поле `ts` содержит Unix timestamp в секундах
 
 **Последовательность при подключении:**
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
-3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО
-4. Подписка на command топики (config — опционально)
+3. Подписка на `hydro/time/response` и command топики (config — опционально)
+4. Публикация `hydro/time/request`
 5. Вызов connection callback (если зарегистрирован)
+6. После получения `hydro/time/response` разрешается публикация `status`/`telemetry`/`event` с `ts`
 
 **Backend обязан:**
 - обновить `nodes.status = 'ONLINE'`
 - обновить `nodes.last_seen_at = NOW()`
 - обработать статус для мониторинга зон
-
-**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
 
 ## 8.2. OFFLINE (LWT)
 
@@ -456,9 +455,9 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 
 1. `level_clean_max`:
    - локально закрыть `valve_clean_fill`;
-   - опубликовать `clean_fill_completed`.
+   - опубликовать `clean_fill_completed` один раз на эпизод `clean_fill`.
 2. `level_solution_max`:
-   - опубликовать `solution_fill_completed`;
+   - опубликовать `solution_fill_completed` один раз на эпизод `solution_fill`;
    - не выключать локально `pump_main/valve_solution_fill/valve_clean_supply`, если path удерживается AE3 для
      последующего `prepare_recirculation`.
 3. `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживает stage-level timeout guard только для

@@ -215,6 +215,7 @@ HTTP endpoint для приема телеметрии.
 - `hydro/+/+/+/config_report` - конфигурация от ноды (firmware-defined)
 - `hydro/+/+/+/+/command_response` - ответы на команды
 - `hydro/time/request` - запрос синхронизации времени
+- `hydro/time/response` - ответ history-logger с `unix_ts`/`server_time`
 
 ### Формат топика телеметрии
 

@@ -32,6 +32,15 @@ const componentKeywords: Record<PumpCalibrationComponent, string[]> = {
   ph_down: ['ph_down', 'phdown', 'acid'],
 }
 
+const flowPathChannelNames = new Set([
+  'pump_main',
+  'main_pump',
+  'pump_irrigation',
+  'pump_in',
+  'drain',
+  'drain_main',
+])
+
 export { componentOptions }
 
 export function usePumpCalibration(props: PumpCalibrationProps) {
@@ -85,6 +94,7 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
     ]
 
     const channels: PumpChannelOption[] = []
+    const dosingKeywords = new Set(Object.values(componentKeywords).flat())
 
     props.devices.forEach((device) => {
       const deviceLabel = device.uid || device.name || `Node ${device.id}`
@@ -101,6 +111,18 @@ export function usePumpCalibration(props: PumpCalibrationProps) {
 
         const channelName = String(channel.channel || '')
         const lowerName = channelName.toLowerCase()
+        const bindingRole = String(channel.binding_role || '').trim().toLowerCase()
+        const pumpComponent = normalizeComponent(channel.pump_component ?? channel.pump_calibration?.component)
+
+        if (bindingRole === 'main_pump' || bindingRole === 'drain' || flowPathChannelNames.has(lowerName) || lowerName.startsWith('valve_')) {
+          return
+        }
+
+        const looksLikeDosingChannel = Array.from(dosingKeywords).some((keyword) => lowerName.includes(keyword))
+        if (!pumpComponent && !looksLikeDosingChannel) {
+          return
+        }
+
         const priority = keywordPriority.reduce((maxScore, item) => {
           return lowerName.includes(item.keyword) ? Math.max(maxScore, item.score) : maxScore
         }, 0)

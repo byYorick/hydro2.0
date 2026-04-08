@@ -39,6 +39,7 @@ class BaseStageHandler:
     ) -> None:
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
+        self._last_probe_state: dict[str, Any] | None = None
 
     async def run(
         self,
@@ -135,6 +136,7 @@ class BaseStageHandler:
                 expected=expected,
                 expected_cmd_id=probe_cmd_id,
             ):
+                self._remember_probe_state(task=task, state=state)
                 return
             if attempt_index + 1 < total_attempts:
                 await asyncio.sleep(self._IRR_STATE_PROBE_RETRY_DELAY_SEC)
@@ -298,6 +300,118 @@ class BaseStageHandler:
 
     # ── Level switch reading ────────────────────────────────────────
 
+    def _remember_probe_state(self, *, task: Any, state: Mapping[str, Any]) -> None:
+        snapshot = state.get("snapshot")
+        stored_snapshot = dict(snapshot) if isinstance(snapshot, Mapping) else None
+        self._last_probe_state = {
+            "zone_id": int(getattr(task, "zone_id", 0) or 0),
+            "task_id": int(getattr(task, "id", 0) or 0),
+            "stage": str(getattr(task, "current_stage", "") or ""),
+            "state": {
+                "has_snapshot": bool(state.get("has_snapshot")),
+                "is_stale": bool(state.get("is_stale")),
+                "snapshot": stored_snapshot,
+                "sample_age_sec": state.get("sample_age_sec"),
+                "created_at": state.get("created_at"),
+                "cmd_id": state.get("cmd_id"),
+            },
+        }
+
+    def _read_probe_level_snapshot(
+        self,
+        *,
+        task: Any,
+        labels: Sequence[str],
+        threshold: float,
+        telemetry_max_age_sec: int,
+    ) -> Mapping[str, Any] | None:
+        probe_ctx = self._last_probe_state
+        if not isinstance(probe_ctx, Mapping):
+            return None
+        if int(probe_ctx.get("zone_id", 0) or 0) != int(getattr(task, "zone_id", 0) or 0):
+            return None
+        if int(probe_ctx.get("task_id", 0) or 0) != int(getattr(task, "id", 0) or 0):
+            return None
+        if str(probe_ctx.get("stage", "") or "") != str(getattr(task, "current_stage", "") or ""):
+            return None
+        state = probe_ctx.get("state")
+        if not isinstance(state, Mapping):
+            return None
+        if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):
+            return None
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, Mapping):
+            return None
+        age_sec = self._coerce_float(state.get("sample_age_sec"))
+        if age_sec is not None and age_sec > max(0, int(telemetry_max_age_sec)):
+            return None
+        lookup = self._lookup_level_value_in_probe_snapshot(snapshot=snapshot, labels=labels)
+        if lookup is None:
+            return None
+        resolved_label, is_triggered = lookup
+        sample_ts = state.get("created_at")
+        return {
+            "sensor_label": resolved_label,
+            "level": 1.0 if is_triggered else 0.0,
+            "sample_ts": sample_ts,
+            "sample_age_sec": age_sec,
+            "has_level": True,
+            "is_stale": False,
+            "is_triggered": is_triggered,
+            "expected_labels": list(labels),
+            "source": "irr_state_snapshot",
+        }
+
+    def _lookup_level_value_in_probe_snapshot(
+        self,
+        *,
+        snapshot: Mapping[str, Any],
+        labels: Sequence[str],
+    ) -> tuple[str, bool] | None:
+        normalized_snapshot = {
+            str(key or "").strip().lower(): value
+            for key, value in snapshot.items()
+            if str(key or "").strip()
+        }
+        for label in labels:
+            normalized_label = str(label or "").strip().lower()
+            if normalized_label == "":
+                continue
+            aliases = self._level_snapshot_aliases(normalized_label)
+            for alias in aliases:
+                if alias not in normalized_snapshot:
+                    continue
+                coerced_value = self._coerce_probe_level_switch_value(normalized_snapshot[alias])
+                if coerced_value is None:
+                    continue
+                return alias, coerced_value
+        return None
+
+    def _level_snapshot_aliases(self, label: str) -> tuple[str, ...]:
+        aliases = {label}
+        if label.startswith("level_"):
+            suffix = label[len("level_"):]
+            parts = suffix.split("_")
+            if len(parts) >= 2:
+                aliases.add("_".join((parts[0], "level", *parts[1:])))
+        parts = label.split("_")
+        if len(parts) >= 3 and parts[1] == "level":
+            aliases.add("_".join(("level", parts[0], *parts[2:])))
+        return tuple(aliases)
+
+    def _coerce_probe_level_switch_value(self, value: Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return float(value) != 0.0
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "on", "yes"}:
+                return True
+            if normalized in {"0", "false", "off", "no"}:
+                return False
+        return None
+
     async def _read_level(
         self,
         *,
@@ -308,7 +422,26 @@ class BaseStageHandler:
         telemetry_max_age_sec: int,
         unavailable_error: str,
         stale_error: str,
+        stale_recheck_delay_sec: float | None = None,
+        prefer_probe_snapshot: bool = False,
     ) -> Mapping[str, Any]:
+        if prefer_probe_snapshot:
+            probe_level = self._read_probe_level_snapshot(
+                task=task,
+                labels=labels,
+                threshold=threshold,
+                telemetry_max_age_sec=telemetry_max_age_sec,
+            )
+            if probe_level is not None:
+                self._log_level_state(
+                    task=task,
+                    labels=labels,
+                    level=probe_level,
+                    telemetry_max_age_sec=telemetry_max_age_sec,
+                    reason="probe_snapshot_used",
+                    log_method=_logger.info,
+                )
+                return probe_level
         level = await self._runtime_monitor.read_level_switch(
             zone_id=zone_id,
             sensor_labels=labels,
@@ -320,10 +453,71 @@ class BaseStageHandler:
                 unavailable_error, f"Недоступен датчик уровня: {labels}",
             )
         if level["is_stale"]:
+            self._log_level_state(
+                task=task,
+                labels=labels,
+                level=level,
+                telemetry_max_age_sec=telemetry_max_age_sec,
+                reason="stale_first_read",
+            )
+            if stale_recheck_delay_sec is not None and stale_recheck_delay_sec > 0:
+                await asyncio.sleep(stale_recheck_delay_sec)
+                refreshed_level = await self._runtime_monitor.read_level_switch(
+                    zone_id=zone_id,
+                    sensor_labels=labels,
+                    threshold=threshold,
+                    telemetry_max_age_sec=telemetry_max_age_sec,
+                )
+                if refreshed_level["has_level"] and not refreshed_level["is_stale"]:
+                    self._log_level_state(
+                        task=task,
+                        labels=labels,
+                        level=refreshed_level,
+                        telemetry_max_age_sec=telemetry_max_age_sec,
+                        reason="stale_recheck_recovered",
+                        log_method=_logger.info,
+                    )
+                    return refreshed_level
+                self._log_level_state(
+                    task=task,
+                    labels=labels,
+                    level=refreshed_level,
+                    telemetry_max_age_sec=telemetry_max_age_sec,
+                    reason="stale_recheck_failed",
+                )
             raise TaskExecutionError(
                 stale_error, f"Данные датчика уровня устарели: {labels}",
             )
         return level
+
+    def _log_level_state(
+        self,
+        *,
+        task: Any,
+        labels: Sequence[str],
+        level: Mapping[str, Any],
+        telemetry_max_age_sec: int,
+        reason: str,
+        log_method: Any = _logger.warning,
+    ) -> None:
+        sample_ts = level.get("sample_ts")
+        serialized_sample_ts = sample_ts.isoformat() if hasattr(sample_ts, "isoformat") else sample_ts
+        log_method(
+            "AE3 level read zone_id=%s task_id=%s stage=%s reason=%s labels=%s sample_ts=%s sample_age_sec=%s "
+            "telemetry_max_age_sec=%s has_level=%s is_stale=%s is_triggered=%s source=%s",
+            int(getattr(task, "zone_id", 0) or 0),
+            int(getattr(task, "id", 0) or 0),
+            str(getattr(task, "current_stage", "") or ""),
+            str(reason or ""),
+            list(labels),
+            serialized_sample_ts,
+            level.get("sample_age_sec"),
+            int(telemetry_max_age_sec),
+            bool(level.get("has_level")),
+            bool(level.get("is_stale")),
+            bool(level.get("is_triggered")),
+            str(level.get("source") or "telemetry_last"),
+        )
 
     # ── PH/EC target evaluation ─────────────────────────────────────
 
@@ -660,6 +854,8 @@ class BaseStageHandler:
         min_labels_key: str,
         min_unavailable_error: str,
         min_stale_error: str,
+        stale_recheck_delay_sec: float | None = None,
+        prefer_probe_snapshot: bool = False,
     ) -> None:
         """Read min-level sensor and assert it's triggered (consistency with max)."""
         level = await self._read_level(
@@ -670,6 +866,8 @@ class BaseStageHandler:
             telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
             unavailable_error=min_unavailable_error,
             stale_error=min_stale_error,
+            stale_recheck_delay_sec=stale_recheck_delay_sec,
+            prefer_probe_snapshot=prefer_probe_snapshot,
         )
         if not level["is_triggered"]:
             raise TaskExecutionError(

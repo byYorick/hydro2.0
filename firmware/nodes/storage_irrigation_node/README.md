@@ -9,7 +9,8 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - Выполняет команды `set_relay` для 6 IRR-актуаторов (`pump_main`, `valve_*`) с firmware-locked GPIO.
 - Поддерживает сервисную команду `state` на канале `storage_state` с `snapshot` для `IRR_STATE_SNAPSHOT`.
 - Публикует телеметрию по level-switch каналам 2-бакового контура.
-- Публикует `storage_state/event` со `snapshot` (и `state` alias) при событиях заполнения (`clean_fill_completed`, `solution_fill_completed`).
+- Публикует structured diagnostics snapshot `pump_health` в `hydro/{gh}/{zone}/{node}/diagnostics`.
+- Публикует `storage_state/event` со `snapshot` (и `state` alias) при событиях заполнения (`clean_fill_completed`, `solution_fill_completed`) один раз на эпизод заполнения.
 - Работает через `node_framework` с HMAC-проверкой команд (строгий режим по умолчанию; см. `../../NODE_CONFIG_SPEC.md`).
 
 ## Канонический контракт
@@ -22,7 +23,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `set_relay {state:true}` на production IRR-ноде работает как latched `ON` и держит канал включенным до явного `set_relay {state:false}`.
 - `pump_main/set_relay {state:true, timeout_ms, stage}` arm'ит локальный stage-timeout guard для `solution_fill` или `prepare_recirculation`, отвечает `ACK`, а terminal `DONE/ERROR` публикует позже по тому же `cmd_id`.
 - Для `pump_main` действует interlock: включение разрешено только при открытых `valve_clean_supply|valve_solution_supply` и `valve_solution_fill|valve_irrigation`.
-- `level_clean_max` локально завершает только `clean_fill`; `level_solution_max` публикует `solution_fill_completed`, но не выключает flow-path за AE3.
+- `level_clean_max` локально завершает только `clean_fill`; `level_solution_max` публикует `solution_fill_completed` один раз на fill-эпизод, но не выключает flow-path за AE3.
 - Терминальные статусы: `DONE`/`ERROR`; timed-start использует `ACK -> DONE/ERROR`.
 - Неизвестная команда: `ERROR` + `error_code=unknown_command`.
 
@@ -62,6 +63,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `hydro/{gh}/{zone}/{node}/heartbeat`
 - `hydro/{gh}/{zone}/{node}/{channel}/telemetry`
 - `hydro/{gh}/{zone}/{node}/{channel}/command_response`
+- `hydro/{gh}/{zone}/{node}/diagnostics`
 - `hydro/{gh}/{zone}/{node}/storage_state/event`
 - `hydro/{gh}/{zone}/{node}/config_report`
 - `hydro/node_hello`

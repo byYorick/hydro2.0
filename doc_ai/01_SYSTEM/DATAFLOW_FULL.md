@@ -213,14 +213,15 @@ hydro/{gh}/{zone}/{node}/status
 **Последовательность при подключении:**
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
-3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО (выполняется сразу после `MQTT_EVENT_CONNECTED`)
-4. Подписка на command топики (config — опционально, сервисный сценарий)
+3. Подписка на `hydro/time/response` и рабочие топики ноды
+4. Публикация `hydro/time/request`
 5. Вызов connection callback (если зарегистрирован)
+6. После получения `hydro/time/response` разрешается публикация `status` с `"ONLINE"`
 
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **до** подписки на command топики
+- Публикация выполняется только после time sync через `hydro/time/response`
 - Backend обновляет `nodes.status = 'ONLINE'` и `nodes.last_seen_at = NOW()`
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)

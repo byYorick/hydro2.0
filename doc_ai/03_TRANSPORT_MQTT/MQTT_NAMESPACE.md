@@ -162,6 +162,22 @@ hydro/system/{subtopic}
 - `hydro/system/health/{node_uid}` — отчёт о состоянии узла;
 - `hydro/system/metrics/{service}` — метрики Python-сервиса и backend.
 
+Отдельно от `hydro/system/*` используется глобальный сервисный канал синхронизации времени:
+
+```text
+hydro/time/request
+hydro/time/response
+```
+
+Правила:
+- `hydro/time/request` публикует узел после MQTT connect и/или reconnect;
+- `hydro/time/response` публикует `history-logger` c payload `{"message_type":"time_response","unix_ts":...,"server_time":...}`;
+- до получения `hydro/time/response` узел не должен публиковать telemetry/status/event payload'ы с полем `ts`.
+
+`hydro/{gh}/{zone}/{node}/diagnostics` используется для structured diagnostics payload'ов инженерного назначения.
+Такие сообщения могут содержать вложенные объекты и массивы и не должны отправляться в `.../{channel}/telemetry`,
+где действует scalar telemetry contract.
+
 ---
 
 ## 4. Правила именования каналов

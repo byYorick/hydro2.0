@@ -9,7 +9,10 @@ from fastapi import FastAPI, Request
 import state
 from command_routes import router as command_router
 from common.alert_queue import retry_worker as alert_retry_worker
-from common.command_status_queue import retry_worker as command_retry_worker
+from common.command_status_queue import (
+    repair_worker as command_status_repair_worker,
+    retry_worker as command_retry_worker,
+)
 from common.env import get_settings
 from common.http_client_pool import close_http_client as close_unified_http_client
 from common.mqtt import get_mqtt_client
@@ -50,6 +53,7 @@ async def lifespan(app: FastAPI):
     # Reset runtime state on each startup (important for tests/restarts).
     state.shutdown_event.clear()
     state.background_tasks.clear()
+    s = get_settings()
 
     if state.telemetry_queue is None:
         state.telemetry_queue = TelemetryQueue()
@@ -64,6 +68,16 @@ async def lifespan(app: FastAPI):
         command_retry_worker(interval=30.0, shutdown_event=state.shutdown_event)
     )
     state.background_tasks.append(command_retry_task)
+
+    command_repair_task = asyncio.create_task(
+        command_status_repair_worker(
+            interval=s.command_status_repair_interval_sec,
+            stale_after_seconds=s.command_status_repair_stale_after_sec,
+            batch_size=s.command_status_repair_batch_size,
+            shutdown_event=state.shutdown_event,
+        )
+    )
+    state.background_tasks.append(command_repair_task)
 
     alert_retry_task = asyncio.create_task(
         alert_retry_worker(interval=30.0, shutdown_event=state.shutdown_event)
@@ -102,7 +116,6 @@ async def lifespan(app: FastAPI):
 
     state.shutdown_event.set()
 
-    s = get_settings()
     if state.background_tasks:
         tasks_to_wait = list(state.background_tasks)
         logger.info(

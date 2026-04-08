@@ -334,8 +334,9 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 Для production `storage_irrigation_node` нода обязана:
 
 1. При активном наполнении контролировать датчики `level_clean_max` / `level_solution_max`.
-2. При `level_clean_max` локально закрыть `valve_clean_fill` и опубликовать `clean_fill_completed`.
-3. При `level_solution_max` опубликовать `solution_fill_completed`, но не выключать локально flow-path
+2. При `level_clean_max` локально закрыть `valve_clean_fill` и опубликовать `clean_fill_completed`
+   один раз на эпизод `clean_fill`.
+3. При `level_solution_max` опубликовать `solution_fill_completed` один раз на эпизод `solution_fill`, но не выключать локально flow-path
    (`pump_main`, `valve_solution_fill`, `valve_clean_supply`): завершением stage владеет AE3.
 4. `set_relay {state:true}` на IRR-actuator path работает как latched `ON/OFF` и остаётся включенным до явного `OFF`.
 

@@ -682,7 +682,6 @@ export function useGrowthCycleWizard({
     }
 
     climateForm.value.enabled = true;
-    lightingForm.value.enabled = true;
   }
 
   function syncRecipeLaunchTargetsFromPhase(phase: WizardRecipePhase): void {

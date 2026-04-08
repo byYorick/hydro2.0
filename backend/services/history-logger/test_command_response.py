@@ -5,6 +5,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+def _delivery_result(*, delivered: bool, queued: bool = False, dropped: bool = False, reason: str = "delivered"):
+    from common.command_status_queue import StatusDeliveryResult
+
+    return StatusDeliveryResult(
+        delivered=delivered,
+        queued=queued,
+        dropped=dropped,
+        reason=reason,
+    )
+
+
 @pytest.mark.asyncio
 async def test_handle_command_response_existing_command_sends_status():
     """Existing command should forward status to Laravel without creating stub."""
@@ -18,12 +29,12 @@ async def test_handle_command_response_existing_command_sends_status():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_RECEIVED") as mock_received, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         mock_fetch.return_value = [{"status": "QUEUED", "zone_id": 12, "cmd": "irrigation"}]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -56,14 +67,14 @@ async def test_handle_command_response_creates_stub_for_missing_command():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_RECEIVED") as mock_received:
         mock_fetch.side_effect = [
             [],
             [{"id": 5, "zone_id": 9}],
         ]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -93,13 +104,13 @@ async def test_handle_command_response_creates_preterminal_stub_for_terminal_sta
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_fetch.side_effect = [
             [],
             [{"id": 5, "zone_id": 9}],
         ]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -122,13 +133,13 @@ async def test_handle_command_response_timeout_uses_ack_stub_for_unknown_cmd():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.execute", new_callable=AsyncMock) as mock_execute, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock):
         mock_fetch.side_effect = [
             [],
             [{"id": 5, "zone_id": 9}],
         ]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -146,7 +157,7 @@ async def test_handle_command_response_missing_cmd_id():
     payload = json.dumps({"status": "ACK", "ts": 1737979200002}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         await handle_command_response(topic, payload)
@@ -166,7 +177,7 @@ async def test_handle_command_response_unknown_status():
     payload = json.dumps({"cmd_id": "cmd-3", "status": "UNKNOWN", "ts": 1737979200003}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         await handle_command_response(topic, payload)
@@ -189,7 +200,7 @@ async def test_handle_command_response_legacy_status_rejected(legacy_status):
     ).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         await handle_command_response(topic, payload)
@@ -209,10 +220,10 @@ async def test_handle_command_response_no_effect_records_warning_level():
     payload = json.dumps({"cmd_id": "cmd-4", "status": "NO_EFFECT", "ts": 1737979200005}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "irrigation"}]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -232,7 +243,7 @@ async def test_handle_command_response_invalid_details_type_rejected():
     ).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "irrigation"}]
@@ -254,10 +265,10 @@ async def test_handle_command_response_missing_details_keeps_metadata():
     payload = json.dumps({"cmd_id": "cmd-6", "status": "ACK", "ts": 1737979200007}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "irrigation"}]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -291,10 +302,10 @@ async def test_handle_command_response_uses_top_level_message_as_error_message()
     ).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record:
         mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "set_relay"}]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -316,7 +327,7 @@ async def test_handle_command_response_missing_ts_rejected():
     payload = json.dumps({"cmd_id": "cmd-no-ts", "status": "ACK"}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
          patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
         await handle_command_response(topic, payload)
@@ -355,11 +366,11 @@ async def test_handle_command_response_state_persists_irr_snapshot_event():
     ).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock), \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
         mock_fetch.return_value = [{"status": "SENT", "zone_id": 7, "cmd": "state"}]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -398,12 +409,12 @@ async def test_handle_command_response_storage_state_persists_snapshot_even_with
     ).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.send_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
          patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock), \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
         # cmd != state, но канал storage_state — snapshot всё равно должен попасть в zone_events.
         mock_fetch.return_value = [{"status": "SENT", "zone_id": 7, "cmd": "set_fault_mode"}]
-        mock_send.return_value = True
+        mock_send.return_value = _delivery_result(delivered=True)
 
         await handle_command_response(topic, payload)
 
@@ -414,3 +425,32 @@ async def test_handle_command_response_storage_state_persists_snapshot_even_with
         assert args[2]["snapshot"]["pump_main"] is True
         # Частичный snapshot допустим: отсутствующие поля не блокируют сохранение.
         assert "valve_irrigation" not in args[2]["snapshot"]
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_marks_dropped_delivery_in_simulation_event():
+    from mqtt_handlers import handle_command_response
+
+    topic = "hydro/gh-1/zn-1/nd-irrig-1/pump1/command_response"
+    payload = json.dumps(
+        {"cmd_id": "cmd-delivery-drop", "status": "DONE", "ts": 1737979200042}
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.deliver_status_to_laravel", new_callable=AsyncMock) as mock_send, \
+         patch("mqtt_handlers.record_simulation_event", new_callable=AsyncMock) as mock_record, \
+         patch("mqtt_handlers.COMMAND_RESPONSE_ERROR") as mock_error:
+        mock_fetch.return_value = [{"status": "SENT", "zone_id": 12, "cmd": "set_relay"}]
+        mock_send.return_value = _delivery_result(
+            delivered=False,
+            queued=False,
+            dropped=True,
+            reason="http_500",
+        )
+
+        await handle_command_response(topic, payload)
+
+        mock_error.inc.assert_called_once()
+        mock_record.assert_awaited_once()
+        assert mock_record.await_args.kwargs["payload"]["delivery"] == "dropped"
+        assert mock_record.await_args.kwargs["payload"]["delivery_reason"] == "http_500"

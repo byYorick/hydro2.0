@@ -54,6 +54,9 @@ class Settings:
     queue_check_interval_sec: float = float(os.getenv("QUEUE_CHECK_INTERVAL_SEC", "0.05"))  # Уменьшено для быстрой реакции (50ms)
     queue_error_retry_delay_sec: float = float(os.getenv("QUEUE_ERROR_RETRY_DELAY_SEC", "1.0"))  # Задержка при ошибке обработки очереди
     laravel_api_timeout_sec: float = float(os.getenv("LARAVEL_API_TIMEOUT_SEC", "10.0"))  # Таймаут для Laravel API
+    command_status_repair_interval_sec: float = float(os.getenv("COMMAND_STATUS_REPAIR_INTERVAL_SEC", "15.0"))
+    command_status_repair_stale_after_sec: float = float(os.getenv("COMMAND_STATUS_REPAIR_STALE_AFTER_SEC", "30.0"))
+    command_status_repair_batch_size: int = int(os.getenv("COMMAND_STATUS_REPAIR_BATCH_SIZE", "25"))
     node_offline_timeout_sec: int = int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120"))  # Таймаут офлайна по last_seen_at
     node_offline_check_interval_sec: int = int(os.getenv("NODE_OFFLINE_CHECK_INTERVAL_SEC", "30"))  # Интервал проверки офлайна
     

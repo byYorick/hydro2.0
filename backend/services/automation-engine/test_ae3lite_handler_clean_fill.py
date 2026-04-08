@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
+from unittest.mock import AsyncMock
 
 from ae3lite.application.handlers.clean_fill import CleanFillCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
+from ae3lite.domain.errors import TaskExecutionError
 
 
 NOW = datetime(2026, 3, 14, 15, 30, 0, tzinfo=timezone.utc)
@@ -46,8 +48,22 @@ def _task(*, control_mode: str = "auto", pending_manual_step: str | None = None)
 
 
 class _Monitor:
+    def __init__(self, *, level_states: list[dict[str, object]] | None = None) -> None:
+        self._level_states = level_states or [
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            }
+        ]
+        self.level_call_count = 0
+
     async def read_level_switch(self, **_kwargs: Any) -> dict[str, object]:
-        return {"has_level": True, "is_stale": False, "is_triggered": False}
+        idx = min(self.level_call_count, len(self._level_states) - 1)
+        self.level_call_count += 1
+        return dict(self._level_states[idx])
 
     async def read_metric(self, **_kwargs: Any) -> dict[str, object]:
         return {"has_value": True, "is_stale": False, "value": 5.8}
@@ -89,3 +105,64 @@ async def test_manual_clean_fill_stop_transitions_to_solution() -> None:
     )
     assert outcome.kind == "transition"
     assert outcome.next_stage == "clean_fill_stop_to_solution"
+
+
+@pytest.mark.asyncio
+async def test_clean_fill_stale_level_recovers_on_safe_recheck(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    monitor = _Monitor(level_states=[
+        {
+            "has_level": True,
+            "is_stale": True,
+            "is_triggered": False,
+            "sample_ts": NOW,
+            "sample_age_sec": 10.5,
+        },
+        {
+            "has_level": True,
+            "is_stale": False,
+            "is_triggered": False,
+            "sample_ts": NOW,
+            "sample_age_sec": 0.0,
+        },
+    ])
+    handler = CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway())
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr("ae3lite.application.handlers.base.asyncio.sleep", sleep_mock)
+
+    with caplog.at_level("INFO"):
+        outcome = await handler.run(task=_task(), plan=_Plan(), stage_def=None, now=NOW)
+
+    assert outcome.kind == "poll"
+    assert monitor.level_call_count == 2
+    sleep_mock.assert_awaited_once_with(handler._STALE_RECHECK_DELAY_SEC)
+    assert "sample_ts=" in caplog.text
+    assert "sample_age_sec=10.5" in caplog.text
+    assert "stale_recheck_recovered" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_clean_fill_stale_level_raises_after_failed_safe_recheck(monkeypatch: pytest.MonkeyPatch) -> None:
+    monitor = _Monitor(level_states=[
+        {
+            "has_level": True,
+            "is_stale": True,
+            "is_triggered": False,
+            "sample_ts": NOW,
+            "sample_age_sec": 12.0,
+        },
+        {
+            "has_level": True,
+            "is_stale": True,
+            "is_triggered": False,
+            "sample_ts": NOW,
+            "sample_age_sec": 12.2,
+        },
+    ])
+    handler = CleanFillCheckHandler(runtime_monitor=monitor, command_gateway=_Gateway())
+    monkeypatch.setattr("ae3lite.application.handlers.base.asyncio.sleep", AsyncMock())
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=_task(), plan=_Plan(), stage_def=None, now=NOW)
+
+    assert exc_info.value.code == "two_tank_clean_level_stale"
+    assert monitor.level_call_count == 2

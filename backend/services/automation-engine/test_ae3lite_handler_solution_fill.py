@@ -89,6 +89,7 @@ class _Monitor:
         min_triggered: bool = True,
         has_level: bool = True,
         level_stale: bool = False,
+        level_states: list[dict[str, Any]] | None = None,
         ph: float = 5.8,
         ec: float = 1.4,
         ph_samples: list[float] | None = None,
@@ -104,6 +105,7 @@ class _Monitor:
         self._min_triggered = min_triggered
         self._has_level = has_level
         self._level_stale = level_stale
+        self._level_states = list(level_states) if level_states is not None else None
         self._ph = {"has_value": has_ph, "is_stale": False, "value": ph}
         self._ec = {"has_value": has_ec, "is_stale": False, "value": ec}
         self._ph_window = self._build_window(values=ph_samples if ph_samples is not None else [ph] * 3)
@@ -126,8 +128,17 @@ class _Monitor:
 
     async def read_level_switch(self, *, sensor_labels: Any, **_kw: Any) -> dict:
         self._level_call += 1
+        if self._level_states is not None:
+            idx = min(self._level_call - 1, len(self._level_states) - 1)
+            return dict(self._level_states[idx])
         triggered = self._max_triggered if self._level_call <= 1 else self._min_triggered
-        return {"has_level": self._has_level, "is_stale": self._level_stale, "is_triggered": triggered}
+        return {
+            "has_level": self._has_level,
+            "is_stale": self._level_stale,
+            "is_triggered": triggered,
+            "sample_ts": NOW,
+            "sample_age_sec": 0.0 if not self._level_stale else 11.0,
+        }
 
     async def read_latest_irr_state(self, **_kw: Any) -> dict:
         self._irr_reads += 1
@@ -385,6 +396,61 @@ async def test_level_stale_raises() -> None:
     with pytest.raises(TaskExecutionError) as exc_info:
         await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
     assert exc_info.value.code == "two_tank_solution_level_stale"
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_uses_probe_snapshot_for_level_switches() -> None:
+    runtime = {
+        **_RUNTIME,
+        "solution_max_sensor_labels": ["level_solution_max"],
+        "solution_min_sensor_labels": ["level_solution_min"],
+    }
+    m = _Monitor(
+        level_stale=True,
+        irr_state={
+            "has_snapshot": True,
+            "is_stale": False,
+            "sample_age_sec": 0.0,
+            "created_at": NOW,
+            "snapshot": {
+                "valve_clean_supply": True,
+                "valve_solution_fill": True,
+                "pump_main": True,
+                "level_solution_max": True,
+                "level_solution_min": True,
+            },
+        },
+        ph=5.8,
+        ec=1.4,
+    )
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+    assert m._level_call == 0
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_stale_level_recovers_on_safe_recheck() -> None:
+    m = _Monitor(level_states=[
+        {
+            "has_level": True,
+            "is_stale": True,
+            "is_triggered": False,
+            "sample_ts": NOW,
+            "sample_age_sec": 10.8,
+        },
+        {
+            "has_level": True,
+            "is_stale": False,
+            "is_triggered": False,
+            "sample_ts": NOW,
+            "sample_age_sec": 0.0,
+        },
+    ])
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "poll"
+    assert outcome.due_delay_sec == 10
+    assert m._level_call == 2
 
 
 # ── 6. Sensor inconsistency (max=1, min=0) ────────────────────────────────────

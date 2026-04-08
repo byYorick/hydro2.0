@@ -645,6 +645,124 @@ describe('useGrowthCycleWizard', () => {
     expect(wizard.waterForm.value.targetEc).toBe(1.5)
   })
 
+  it('не включает lighting обратно при запуске цикла, если профиль зоны уже выключил свет', async () => {
+    installAuthorityMocks({
+      active_mode: 'setup',
+      profiles: {
+        setup: {
+          mode: 'setup',
+          is_active: true,
+          subsystems: {
+            lighting: {
+              enabled: false,
+              execution: {
+                interval_sec: 1800,
+                schedule: [{ start: '06:00', end: '22:00' }],
+                photoperiod: { hours_on: 16, hours_off: 8 },
+              },
+            },
+          },
+          command_plans: {
+            schema_version: 1,
+            plans: {},
+          },
+          updated_at: '2026-03-24T10:00:00Z',
+        },
+      },
+    })
+    const { wizard, api } = mountWizardHarness({
+      show: true,
+      zoneId: 7,
+      initialData: {
+        plantId: 2,
+        recipeId: 1,
+        recipeRevisionId: 3,
+        startedAt: '2026-03-24T10:00',
+      },
+    })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/plants') {
+        return Promise.resolve({ data: { status: 'ok', data: [] } })
+      }
+
+      if (url === '/recipes') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              data: [
+                {
+                  id: 1,
+                  name: 'Recipe A',
+                  latest_published_revision_id: 3,
+                },
+              ],
+            },
+          },
+        })
+      }
+
+      if (url === '/recipe-revisions/3') {
+        return Promise.resolve(buildRecipeRevisionResponse([
+          {
+            id: 30,
+            phase_index: 0,
+            name: 'Первая фаза',
+            ph_target: 5.8,
+            ph_min: 5.6,
+            ph_max: 6.0,
+            ec_target: 1.5,
+            ec_min: 1.3,
+            ec_max: 1.7,
+            lighting_photoperiod_hours: 16,
+            lighting_start_time: '06:00',
+          },
+        ]))
+      }
+
+      if (url === '/api/zones/7/health') {
+        return Promise.resolve({
+          data: {
+            status: 'ok',
+            data: {
+              readiness: {
+                ready: true,
+                errors: [],
+              },
+            },
+          },
+        })
+      }
+
+      return Promise.resolve({ data: { status: 'ok', data: [] } })
+    })
+
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === '/api/zones/7/grow-cycles') {
+        return Promise.resolve({ data: { status: 'ok', data: { id: 77 } } })
+      }
+
+      return Promise.resolve({ data: { status: 'ok' } })
+    })
+
+    await flushPromises()
+    await nextTick()
+
+    expect(wizard.lightingForm.value.enabled).toBe(false)
+
+    wizard.currentStep.value = 6
+    await wizard.onSubmit()
+
+    const automationPayload = updateDocumentMock.mock.calls.find(([, scopeId, namespace]) => scopeId === 7 && namespace === 'zone.logic_profile')?.[3]
+    expect(automationPayload?.profiles?.setup?.subsystems?.lighting?.enabled).toBe(false)
+    expect(api.post).toHaveBeenCalledWith('/api/zones/7/grow-cycles', expect.objectContaining({
+      start_immediately: true,
+      recipe_revision_id: 3,
+      plant_id: 2,
+    }))
+  })
+
   it('не восстанавливает draft сразу на submit-шаг', async () => {
     installAuthorityMocks()
     localStorage.setItem('growthCycleWizardDraft:zone-1', JSON.stringify({

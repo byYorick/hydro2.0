@@ -97,6 +97,73 @@ QUEUE_HEALTHY = Gauge(
     ["queue_name"]  # queue_name: alerts, status_updates
 )
 
+COMMAND_STATUS_REPAIR_TOTAL = Counter(
+    "pipeline_command_status_repair_total",
+    "Total number of command status repair outcomes",
+    ["outcome", "command_status", "source", "replay_status"],
+)
+
+COMMAND_STATUS_REPAIR_LAST_SCAN_TS = Gauge(
+    "pipeline_command_status_repair_last_scan_unixtime",
+    "Unix timestamp of the last command status repair scan",
+)
+
+COMMAND_STATUS_REPAIR_LAST_SCAN_SCANNED = Gauge(
+    "pipeline_command_status_repair_last_scan_scanned",
+    "Number of stale commands scanned during the last command status repair pass",
+)
+
+COMMAND_STATUS_REPAIR_LAST_SCAN_REPAIRED = Gauge(
+    "pipeline_command_status_repair_last_scan_repaired",
+    "Number of stale commands repaired during the last command status repair pass",
+)
+
+COMMAND_STATUS_REPAIR_LAST_SCAN_REPLAY_FAILED = Gauge(
+    "pipeline_command_status_repair_last_scan_replay_failed",
+    "Number of stale commands whose replay delivery failed during the last repair pass",
+)
+
+COMMAND_STATUS_REPAIR_LAST_SCAN_NO_CORRELATION = Gauge(
+    "pipeline_command_status_repair_last_scan_no_correlation",
+    "Number of stale commands with no correlated terminal status during the last repair pass",
+)
+
+COMMAND_STATUS_RETRY_TOTAL = Counter(
+    "pipeline_command_status_retry_total",
+    "Total number of retry worker outcomes while delivering pending command statuses",
+    ["outcome", "status"],
+)
+
+COMMAND_STATUS_RETRY_LAST_SCAN_TS = Gauge(
+    "pipeline_command_status_retry_last_scan_unixtime",
+    "Unix timestamp of the last retry worker scan",
+)
+
+COMMAND_STATUS_RETRY_LAST_SCAN_PROCESSED = Gauge(
+    "pipeline_command_status_retry_last_scan_processed",
+    "Number of pending status updates processed during the last retry worker pass",
+)
+
+COMMAND_STATUS_RETRY_LAST_SCAN_DELIVERED = Gauge(
+    "pipeline_command_status_retry_last_scan_delivered",
+    "Number of pending status updates delivered during the last retry worker pass",
+)
+
+COMMAND_STATUS_RETRY_LAST_SCAN_RETRY_SCHEDULED = Gauge(
+    "pipeline_command_status_retry_last_scan_retry_scheduled",
+    "Number of pending status updates rescheduled for retry during the last retry worker pass",
+)
+
+COMMAND_STATUS_RETRY_LAST_SCAN_DLQ_MOVED = Gauge(
+    "pipeline_command_status_retry_last_scan_dlq_moved",
+    "Number of pending status updates moved to DLQ during the last retry worker pass",
+)
+
+COMMAND_STATUS_RETRY_LAST_SCAN_DLQ_MOVE_FAILED = Gauge(
+    "pipeline_command_status_retry_last_scan_dlq_move_failed",
+    "Number of pending status updates that failed to move to DLQ during the last retry worker pass",
+)
+
 
 def update_queue_metrics(queue_name: str, size: int, oldest_age_seconds: float):
     """
@@ -192,3 +259,53 @@ def update_queue_health(queue_name: str, healthy: bool):
         healthy: True если очередь здорова
     """
     QUEUE_HEALTHY.labels(queue_name=queue_name).set(1 if healthy else 0)
+
+
+def record_command_status_repair(
+    *,
+    outcome: str,
+    command_status: str,
+    source: str,
+    replay_status: str,
+) -> None:
+    """Инкрементирует счётчик исходов self-heal command status repair."""
+    COMMAND_STATUS_REPAIR_TOTAL.labels(
+        outcome=outcome,
+        command_status=command_status,
+        source=source,
+        replay_status=replay_status,
+    ).inc()
+
+
+def update_command_status_repair_scan(*, scanned: int, repaired: int, replay_failed: int, no_correlation: int) -> None:
+    """Обновляет gauges последнего прохода repair worker."""
+    COMMAND_STATUS_REPAIR_LAST_SCAN_TS.set(utcnow().timestamp())
+    COMMAND_STATUS_REPAIR_LAST_SCAN_SCANNED.set(scanned)
+    COMMAND_STATUS_REPAIR_LAST_SCAN_REPAIRED.set(repaired)
+    COMMAND_STATUS_REPAIR_LAST_SCAN_REPLAY_FAILED.set(replay_failed)
+    COMMAND_STATUS_REPAIR_LAST_SCAN_NO_CORRELATION.set(no_correlation)
+
+
+def record_command_status_retry(*, outcome: str, status: str) -> None:
+    """Инкрементирует счётчик исходов retry worker."""
+    COMMAND_STATUS_RETRY_TOTAL.labels(
+        outcome=outcome,
+        status=status,
+    ).inc()
+
+
+def update_command_status_retry_scan(
+    *,
+    processed: int,
+    delivered: int,
+    retry_scheduled: int,
+    dlq_moved: int,
+    dlq_move_failed: int,
+) -> None:
+    """Обновляет gauges последнего прохода retry worker."""
+    COMMAND_STATUS_RETRY_LAST_SCAN_TS.set(utcnow().timestamp())
+    COMMAND_STATUS_RETRY_LAST_SCAN_PROCESSED.set(processed)
+    COMMAND_STATUS_RETRY_LAST_SCAN_DELIVERED.set(delivered)
+    COMMAND_STATUS_RETRY_LAST_SCAN_RETRY_SCHEDULED.set(retry_scheduled)
+    COMMAND_STATUS_RETRY_LAST_SCAN_DLQ_MOVED.set(dlq_moved)
+    COMMAND_STATUS_RETRY_LAST_SCAN_DLQ_MOVE_FAILED.set(dlq_move_failed)

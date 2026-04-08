@@ -97,7 +97,7 @@ typedef struct {
     
     // Каналы (для отображения на экране каналов)
     struct {
-        char name[16];
+        char name[24];
         float value;
         bool active;
     } channels[8];
