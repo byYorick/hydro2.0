@@ -449,9 +449,9 @@ def test_build_dose_plan_caps_ph_down_by_modeled_closure_dose() -> None:
     )
 
     assert dose_plan.needs_ph_down is True
-    # gap to upper bound 5.8 is 0.483; with gain 0.12 max safe dose is 4.025 ml.
-    assert dose_plan.ph_amount_ml == pytest.approx(4.025, rel=1e-6)
-    assert dose_plan.ph_duration_ms == 8050
+    # gap to canonical target 5.75 is 0.533; with gain 0.12 max safe dose is 4.4417 ml.
+    assert dose_plan.ph_amount_ml == pytest.approx(4.4417, rel=1e-6)
+    assert dose_plan.ph_duration_ms == 8883
 
 
 def test_build_dose_plan_caps_ph_up_by_modeled_closure_dose() -> None:
@@ -485,9 +485,9 @@ def test_build_dose_plan_caps_ph_up_by_modeled_closure_dose() -> None:
     )
 
     assert dose_plan.needs_ph_up is True
-    # gap to lower bound 5.7 is 0.662; with gain 0.10 max safe dose is 6.62 ml.
-    assert dose_plan.ph_amount_ml == pytest.approx(6.62, rel=1e-6)
-    assert dose_plan.ph_duration_ms == 13240
+    # gap to canonical target 5.75 is 0.712; with gain 0.10 max safe dose is 7.12 ml.
+    assert dose_plan.ph_amount_ml == pytest.approx(7.12, rel=1e-6)
+    assert dose_plan.ph_duration_ms == 14240
 
 
 def test_build_dose_plan_ignores_stale_feedforward_bias_after_hold_window() -> None:
@@ -575,8 +575,21 @@ def test_build_dose_plan_applies_feedforward_bias_from_pid_state() -> None:
     assert dose_plan.needs_any is False
 
 
-def test_is_within_tolerance_prefers_explicit_target_windows() -> None:
+def test_is_within_tolerance_uses_target_tolerance_not_explicit_window_floor() -> None:
     planner = CorrectionPlanner()
+
+    assert planner.is_within_tolerance(
+        current_ph=5.0,
+        current_ec=2.21,
+        target_ph=5.0,
+        target_ec=2.4,
+        ph_min=4.8,
+        ph_max=5.2,
+        ec_min=2.2,
+        ec_max=2.6,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+    ) is False
 
     assert planner.is_within_tolerance(
         current_ph=5.0,
@@ -587,22 +600,9 @@ def test_is_within_tolerance_prefers_explicit_target_windows() -> None:
         ph_max=5.2,
         ec_min=2.2,
         ec_max=2.6,
-        ph_tolerance_pct=15.0,
-        ec_tolerance_pct=25.0,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
     ) is True
-
-    assert planner.is_within_tolerance(
-        current_ph=5.31,
-        current_ec=2.4,
-        target_ph=5.0,
-        target_ec=2.4,
-        ph_min=4.8,
-        ph_max=5.2,
-        ec_min=2.2,
-        ec_max=2.6,
-        ph_tolerance_pct=15.0,
-        ec_tolerance_pct=25.0,
-    ) is False
 
 
 def test_build_dose_plan_uses_explicit_target_window_for_ph_direction() -> None:
@@ -671,6 +671,41 @@ def test_build_dose_plan_respects_explicit_window_even_inside_deadband() -> None
     assert dose_plan.ph_channel == "ph_up_pump"
 
 
+def test_build_dose_plan_keeps_dosing_toward_target_inside_explicit_window() -> None:
+    planner = CorrectionPlanner()
+
+    dose_plan = planner.build_dose_plan(
+        current_ph=6.0,
+        current_ec=1.91,
+        target_ph=6.0,
+        target_ec=2.0,
+        ph_min=5.9,
+        ph_max=6.1,
+        ec_min=1.9,
+        ec_max=2.1,
+        ph_tolerance_pct=1.0,
+        ec_tolerance_pct=1.0,
+        correction_config=_correction_config(
+            ec_overrides={"kp": 1.0, "ki": 0.0, "kd": 0.0, "deadband": 0.01, "min_interval_sec": 0}
+        ),
+        workflow_phase="tank_recirc",
+        process_calibrations={"tank_recirc": {"ec_gain_per_ml": 0.1}},
+        ec_component_policy={},
+        ec_actuator={
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 10.0},
+        },
+        ec_actuators={},
+        ph_up_actuator=None,
+        ph_down_actuator=None,
+    )
+
+    assert dose_plan.needs_ec is True
+    assert dose_plan.ec_channel == "ec_pump"
+    assert dose_plan.ec_amount_ml == pytest.approx(0.9)
+
+
 def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> None:
     planner = CorrectionPlanner()
     now = datetime(2026, 3, 8, 12, 5, 0)
@@ -721,12 +756,12 @@ def test_build_dose_plan_uses_pid_controller_state_and_applies_anti_windup() -> 
     )
 
     assert dose_plan.needs_ec is True
-    # integral = 0.9 + gap*dt = 0.9 + 0.95*10 = 10.4, clamped to max_integral=1.0
+    # integral = 0.9 + gap*dt = 0.9 + 1.0*10 = 10.9, clamped to max_integral=1.0
     assert dose_plan.pid_state_updates["ec"]["integral"] == 1.0
-    assert dose_plan.pid_state_updates["ec"]["prev_error"] == 0.95
-    # output = 9.6 ml by PI term, but the planner now caps one pulse to the
-    # modeled closure dose to the nearest allowed bound: (1.95 - 1.0) / 0.25 = 3.8 ml.
-    assert dose_plan.ec_amount_ml == 3.8
+    assert dose_plan.pid_state_updates["ec"]["prev_error"] == 1.0
+    # output = 10.0 ml by PI term, but one pulse is capped to the modeled
+    # closure dose to the canonical target: (2.0 - 1.0) / 0.25 = 4.0 ml.
+    assert dose_plan.ec_amount_ml == 4.0
 
 
 def test_build_dose_plan_returns_retry_delay_when_min_interval_is_active() -> None:
@@ -1095,7 +1130,7 @@ def test_build_dose_plan_uses_irrigation_process_calibration_for_irrigating_phas
     )
 
     assert dose_plan.needs_ec is True
-    assert dose_plan.ec_amount_ml == pytest.approx(4.5)
+    assert dose_plan.ec_amount_ml == pytest.approx(5.0)
 
 
 def test_build_dose_plan_uses_configured_derivative_filter_alpha() -> None:

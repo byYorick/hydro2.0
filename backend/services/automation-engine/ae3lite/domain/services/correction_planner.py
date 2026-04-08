@@ -104,18 +104,15 @@ class CorrectionPlanner:
         ec_min: float | None = None,
         ec_max: float | None = None,
     ) -> bool:
-        ph_has_explicit_window = ph_min is not None and ph_max is not None
-        ec_has_explicit_window = ec_min is not None and ec_max is not None
-        ph_lo, ph_hi = _resolve_bounds(
+        # Correction success is defined by proximity to the canonical target.
+        # Explicit min/max windows are recipe bounds and observability metadata,
+        # not an early-success shortcut at the lower edge of the window.
+        ph_lo, ph_hi = _resolve_target_tolerance_bounds(
             target=target_ph,
-            lower=ph_min,
-            upper=ph_max,
             tolerance_pct=ph_tolerance_pct,
         )
-        ec_lo, ec_hi = _resolve_bounds(
+        ec_lo, ec_hi = _resolve_target_tolerance_bounds(
             target=target_ec,
-            lower=ec_min,
-            upper=ec_max,
             tolerance_pct=ec_tolerance_pct,
         )
         return ph_lo <= current_ph <= ph_hi and ec_lo <= current_ec <= ec_hi
@@ -152,16 +149,12 @@ class CorrectionPlanner:
         pid_configs = pid_configs if isinstance(pid_configs, Mapping) else {}
         now = _to_utc_naive(now or datetime.now(UTC))
 
-        ph_lo, ph_hi = _resolve_bounds(
+        ph_lo, ph_hi = _resolve_target_tolerance_bounds(
             target=target_ph,
-            lower=ph_min,
-            upper=ph_max,
             tolerance_pct=ph_tolerance_pct,
         )
-        ec_lo, ec_hi = _resolve_bounds(
+        ec_lo, ec_hi = _resolve_target_tolerance_bounds(
             target=target_ec,
-            lower=ec_min,
-            upper=ec_max,
             tolerance_pct=ec_tolerance_pct,
         )
 
@@ -189,9 +182,9 @@ class CorrectionPlanner:
         controller_ph = _controller_cfg(correction_config, "ph")
         solution_volume_l = _positive_float(correction_config.get("solution_volume_l"), _DEFAULT_SOLUTION_VOLUME_L)
 
-        ec_gap = max(0.0, (ec_lo - current_ec) if ec_has_explicit_window else (target_ec - current_ec))
-        ph_up_gap = max(0.0, (ph_lo - predicted_ph) if ph_has_explicit_window else (target_ph - predicted_ph))
-        ph_down_gap = max(0.0, (predicted_ph - ph_hi) if ph_has_explicit_window else (predicted_ph - target_ph))
+        ec_gap = max(0.0, target_ec - current_ec)
+        ph_up_gap = max(0.0, target_ph - predicted_ph)
+        ph_down_gap = max(0.0, predicted_ph - target_ph)
 
         ec_controller_cfg, ec_pid_zone, ec_pid_coeffs = _resolve_pid_controller_cfg(
             controller_cfg=controller_ec,
@@ -209,9 +202,9 @@ class CorrectionPlanner:
         ec_deadband = _non_negative_float(ec_controller_cfg.get("deadband"), 0.0)
         ph_deadband = _non_negative_float(ph_controller_cfg.get("deadband"), 0.0)
 
-        ec_needs = ec_gap > 0.0 if ec_has_explicit_window else ec_gap > ec_deadband
-        ph_needs_up = ph_up_gap > 0.0 if ph_has_explicit_window else ph_up_gap > ph_deadband
-        ph_needs_down = ph_down_gap > 0.0 if ph_has_explicit_window else ph_down_gap > ph_deadband
+        ec_needs = ec_gap > ec_deadband
+        ph_needs_up = ph_up_gap > ph_deadband
+        ph_needs_down = ph_down_gap > ph_deadband
 
         ec_retry_after = None
         ph_retry_after = None
@@ -565,15 +558,11 @@ class CorrectionPlanner:
         )
 
 
-def _resolve_bounds(
+def _resolve_target_tolerance_bounds(
     *,
     target: float,
-    lower: float | None,
-    upper: float | None,
     tolerance_pct: float,
 ) -> tuple[float, float]:
-    if lower is not None and upper is not None:
-        return float(lower), float(upper)
     tol = abs(float(target)) * (float(tolerance_pct) / 100.0)
     return float(target) - tol, float(target) + tol
 

@@ -549,20 +549,17 @@ class BaseStageHandler:
         tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
         ph_target = float(runtime["target_ph"])
         ec_target = float(runtime["target_ec"])
-        ph_min = self._coerce_float(runtime.get("target_ph_min"))
-        ph_max = self._coerce_float(runtime.get("target_ph_max"))
-        ec_min = self._coerce_float(runtime.get("target_ec_min"))
-        ec_max = self._coerce_float(runtime.get("target_ec_max"))
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
-        if ph_min is None or ph_max is None:
-            ph_tol = abs(ph_target) * (float(tolerance.get("ph_pct", 15)) / 100.0)
-            ph_min = ph_target - ph_tol
-            ph_max = ph_target + ph_tol
-        if ec_min is None or ec_max is None:
-            ec_tol = abs(ec_target) * (float(tolerance.get("ec_pct", 25)) / 100.0)
-            ec_min = ec_target - ec_tol
-            ec_max = ec_target + ec_tol
+        # Parent-stage readiness should be aligned with correction success:
+        # we aim for the canonical target, not merely the lower edge of the
+        # recipe min/max window.
+        ph_tol = abs(ph_target) * (float(tolerance.get("ph_pct", 15)) / 100.0)
+        ec_tol = abs(ec_target) * (float(tolerance.get("ec_pct", 25)) / 100.0)
+        ph_min = ph_target - ph_tol
+        ph_max = ph_target + ph_tol
+        ec_min = ec_target - ec_tol
+        ec_max = ec_target + ec_tol
         return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
 
     async def _read_target_metric_window(

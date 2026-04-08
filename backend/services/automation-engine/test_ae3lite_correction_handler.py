@@ -395,6 +395,81 @@ async def test_corr_check_within_tolerance_exits_success():
     assert outcome.correction.outcome_success is True
 
 
+async def test_corr_check_inside_explicit_window_below_target_keeps_dosing(monkeypatch: pytest.MonkeyPatch):
+    corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
+    task = _make_task(corr=corr)
+    runtime = deepcopy(RUNTIME)
+    runtime["prepare_tolerance"] = {"ph_pct": 1.0, "ec_pct": 1.0}
+    runtime["target_ec_min"] = 1.9
+    runtime["target_ec_max"] = 2.1
+    runtime["correction"] = dict(runtime["correction"])
+    runtime["correction"]["controllers"] = {
+        "ec": {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.01,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+        },
+        "ph": {
+            "kp": 0.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.01,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+            "telemetry_period_sec": 2,
+            "window_min_samples": 3,
+        },
+    }
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {"node_uid": "ph-node", "channel": "ph_up_pump"},
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+    runtime["correction_by_phase"] = {"solution_fill": dict(runtime["correction"])}
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=1.91,
+        ph_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 6.0},
+            {"ts": NOW - timedelta(seconds=5), "value": 6.0},
+            {"ts": NOW - timedelta(seconds=3), "value": 6.0},
+        ],
+        ec_samples=[
+            {"ts": NOW - timedelta(seconds=7), "value": 1.91},
+            {"ts": NOW - timedelta(seconds=5), "value": 1.91},
+            {"ts": NOW - timedelta(seconds=3), "value": 1.91},
+        ],
+    )
+    handler = _make_handler(monitor=monitor, pid_repo=_MockPidStateRepository())
+    monkeypatch.setattr(
+        "ae3lite.application.handlers.correction.create_zone_event",
+        AsyncMock(return_value=None),
+    )
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_dose_ec"
+    assert outcome.correction.needs_ec is True
+
+
 async def test_corr_check_fails_closed_when_prepare_recirc_flow_path_is_inactive():
     corr = _base_corr(corr_step="corr_check", attempt=1, max_attempts=5)
     task = _make_task(
@@ -1732,6 +1807,7 @@ async def test_corr_check_logs_discarded_dose_with_runtime_details(monkeypatch: 
         "ml_per_sec_min": 0.01,
         "ml_per_sec_max": 100.0,
     }
+    runtime["prepare_tolerance"] = {"ph_pct": 1.0, "ec_pct": 0.1}
     runtime["target_ec_min"] = 2.0
     runtime["target_ec_max"] = 2.05
     runtime["correction_by_phase"] = {"solution_fill": dict(runtime["correction"])}
@@ -1866,6 +1942,7 @@ async def test_corr_check_prepare_recirc_keeps_ec_and_ph_in_same_correction_wind
         workflow_phase="tank_recirc",
     )
     runtime = deepcopy(RUNTIME)
+    runtime["prepare_tolerance"] = {"ph_pct": 1.0, "ec_pct": 1.0}
     runtime["target_ph_min"] = 5.9
     runtime["target_ph_max"] = 6.1
     runtime["target_ec_min"] = 1.9

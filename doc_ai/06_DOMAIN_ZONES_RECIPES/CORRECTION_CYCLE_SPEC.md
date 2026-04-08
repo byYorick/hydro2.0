@@ -197,6 +197,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не могут менять
   canonical `target_ph/target_ec` и их windows; runtime допускает из них только execution/config
   параметры, не chemical setpoints.
+- success/fail логика correction и parent-stage readiness должны стремиться к canonical
+  `target_ph/target_ec` с phase `prepare_tolerance`; `target_*_min/max` используются как
+  recipe bounds/observability metadata и не могут считаться ранним success только потому,
+  что значение вошло в нижнюю/верхнюю границу окна.
 - `no-effect` определяется по факту наблюдаемой реакции на дозу (`peak_effect` в observe-window),
   а не только по tail-median; это нужно для проточных систем, где отклик может быть волнообразным.
 - learned runtime metrics (`gain_ema`, `retention_ema`, `wave_score_ema`, learned timing) сохраняются

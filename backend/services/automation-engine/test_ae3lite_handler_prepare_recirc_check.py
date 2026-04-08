@@ -275,6 +275,20 @@ async def test_targets_reached_within_tolerance() -> None:
 
 
 @pytest.mark.asyncio
+async def test_targets_reached_does_not_treat_explicit_min_as_success() -> None:
+    runtime = dict(RUNTIME)
+    runtime["prepare_tolerance"] = {"ph_pct": 1, "ec_pct": 1}
+    runtime["target_ec_min"] = 1.9
+    runtime["target_ec_max"] = 2.1
+    handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.91))
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+
+
+@pytest.mark.asyncio
 async def test_targets_use_window_median_not_single_latest_sample() -> None:
     handler = _make_handler(
         monitor=_Monitor(
