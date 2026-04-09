@@ -11,7 +11,10 @@ from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.domain.errors import TaskExecutionError
+from ae3lite.application.level_monitor import level_snapshot_aliases
+from ae3lite.infrastructure.metrics import EMERGENCY_STOP_RECONCILE, FAIL_SAFE_TRANSITION
 from common.db import create_zone_event
+from common.service_logs import send_service_log
 
 
 _logger = logging.getLogger(__name__)
@@ -40,6 +43,7 @@ class BaseStageHandler:
         self._runtime_monitor = runtime_monitor
         self._command_gateway = command_gateway
         self._last_probe_state: dict[str, Any] | None = None
+        self._reconciled_estop_event_ids: set[int] = set()
 
     async def run(
         self,
@@ -55,6 +59,16 @@ class BaseStageHandler:
         if deadline is None:
             return False
         return _utc_naive_dt(now) >= _utc_naive_dt(deadline)
+
+    def _stage_entered_at(self, *, task: Any) -> datetime | None:
+        entered = getattr(getattr(task, "workflow", None), "stage_entered_at", None)
+        return _utc_naive_dt(entered) if isinstance(entered, datetime) else None
+
+    def _stage_elapsed_ms(self, *, task: Any, now: datetime) -> int:
+        entered = self._stage_entered_at(task=task)
+        if entered is None:
+            return 0
+        return max(0, int((_utc_naive_dt(now) - entered).total_seconds() * 1000.0))
 
     def _remaining_stage_time_sec(self, *, now: datetime, deadline: datetime | None) -> float | None:
         if deadline is None:
@@ -88,6 +102,138 @@ class BaseStageHandler:
         if remaining is None:
             return False
         return remaining <= self._irr_probe_deadline_budget_sec(runtime=runtime)
+
+    async def _read_recent_storage_event(
+        self,
+        *,
+        task: Any,
+        event_types: Sequence[str],
+        max_age_sec: int = 3600,
+    ) -> Mapping[str, Any] | None:
+        read_latest_zone_event = getattr(self._runtime_monitor, "read_latest_zone_event", None)
+        if not callable(read_latest_zone_event):
+            return None
+        return await read_latest_zone_event(
+            zone_id=int(getattr(task, "zone_id", 0) or 0),
+            event_types=event_types,
+            max_age_sec=max_age_sec,
+            since_ts=self._stage_entered_at(task=task),
+            channel="storage_state",
+        )
+
+    def _storage_event_payload(self, event: Mapping[str, Any] | None) -> Mapping[str, Any]:
+        payload = event.get("payload") if isinstance(event, Mapping) else None
+        return payload if isinstance(payload, Mapping) else {}
+
+    def _task_topology(self, *, task: Any) -> str:
+        return str(getattr(task, "topology", "") or "").strip()
+
+    def _task_stage(self, *, task: Any) -> str:
+        workflow = getattr(task, "workflow", None)
+        return str(
+            getattr(workflow, "current_stage", None)
+            or getattr(task, "current_stage", None)
+            or ""
+        ).strip()
+
+    def _observe_fail_safe_transition(
+        self,
+        *,
+        task: Any,
+        reason: str,
+        source: str,
+        next_stage: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
+        topology = self._task_topology(task=task)
+        stage = self._task_stage(task=task)
+        FAIL_SAFE_TRANSITION.labels(
+            topology=topology,
+            stage=stage or "unknown",
+            reason=str(reason or "unknown"),
+            source=str(source or "unknown"),
+        ).inc()
+        context = {
+            "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
+            "task_id": int(getattr(task, "id", 0) or 0) or None,
+            "topology": topology or None,
+            "stage": stage or None,
+            "reason": str(reason or "unknown"),
+            "source": str(source or "unknown"),
+            "next_stage": str(next_stage or "unknown"),
+        }
+        if isinstance(details, Mapping):
+            context.update({str(k): v for k, v in details.items()})
+        send_service_log(
+            service="automation-engine",
+            level="warning",
+            message="AE3 fail-safe transition selected",
+            context=context,
+        )
+
+    async def _reconcile_recent_emergency_stop(
+        self,
+        *,
+        task: Any,
+        plan: Any,
+        now: datetime,
+        expected: Mapping[str, bool],
+    ) -> None:
+        event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("EMERGENCY_STOP_ACTIVATED",),
+            max_age_sec=86400,
+        )
+        if not isinstance(event, Mapping):
+            return
+        event_id = int(event.get("event_id") or 0)
+        if event_id > 0 and event_id in self._reconciled_estop_event_ids:
+            return
+
+        try:
+            await self._probe_irr_state(task=task, plan=plan, now=now, expected=expected)
+        except TaskExecutionError as exc:
+            EMERGENCY_STOP_RECONCILE.labels(
+                topology=self._task_topology(task=task),
+                stage=self._task_stage(task=task) or "unknown",
+                outcome="failed",
+            ).inc()
+            send_service_log(
+                service="automation-engine",
+                level="error",
+                message="AE3 emergency-stop reconcile failed",
+                context={
+                    "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
+                    "task_id": int(getattr(task, "id", 0) or 0) or None,
+                    "topology": self._task_topology(task=task) or None,
+                    "stage": self._task_stage(task=task) or None,
+                    "error_code": "emergency_stop_activated",
+                    "error_message": str(exc),
+                },
+            )
+            raise TaskExecutionError(
+                "emergency_stop_activated",
+                f"Физический E-Stop активирован и stage не восстановил ожидаемое состояние: {exc}",
+            ) from exc
+
+        EMERGENCY_STOP_RECONCILE.labels(
+            topology=self._task_topology(task=task),
+            stage=self._task_stage(task=task) or "unknown",
+            outcome="restored",
+        ).inc()
+        send_service_log(
+            service="automation-engine",
+            level="info",
+            message="AE3 emergency-stop reconcile restored expected state",
+            context={
+                "zone_id": int(getattr(task, "zone_id", 0) or 0) or None,
+                "task_id": int(getattr(task, "id", 0) or 0) or None,
+                "topology": self._task_topology(task=task) or None,
+                "stage": self._task_stage(task=task) or None,
+            },
+        )
+        if event_id > 0:
+            self._reconciled_estop_event_ids.add(event_id)
 
     # ── Probe IRR state (hardware safety check) ─────────────────────
 
@@ -388,16 +534,7 @@ class BaseStageHandler:
         return None
 
     def _level_snapshot_aliases(self, label: str) -> tuple[str, ...]:
-        aliases = {label}
-        if label.startswith("level_"):
-            suffix = label[len("level_"):]
-            parts = suffix.split("_")
-            if len(parts) >= 2:
-                aliases.add("_".join((parts[0], "level", *parts[1:])))
-        parts = label.split("_")
-        if len(parts) >= 3 and parts[1] == "level":
-            aliases.add("_".join(("level", parts[0], *parts[2:])))
-        return tuple(aliases)
+        return level_snapshot_aliases(label)
 
     def _coerce_probe_level_switch_value(self, value: Any) -> bool | None:
         if isinstance(value, bool):
@@ -425,6 +562,13 @@ class BaseStageHandler:
         stale_recheck_delay_sec: float | None = None,
         prefer_probe_snapshot: bool = False,
     ) -> Mapping[str, Any]:
+        level = await self._runtime_monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=labels,
+            threshold=threshold,
+            telemetry_max_age_sec=telemetry_max_age_sec,
+            allow_initial_event_fallback=True,
+        )
         if prefer_probe_snapshot:
             probe_level = self._read_probe_level_snapshot(
                 task=task,
@@ -432,7 +576,10 @@ class BaseStageHandler:
                 threshold=threshold,
                 telemetry_max_age_sec=telemetry_max_age_sec,
             )
-            if probe_level is not None:
+            if probe_level is not None and self._should_use_probe_level(
+                probe_level=probe_level,
+                runtime_level=level,
+            ):
                 self._log_level_state(
                     task=task,
                     labels=labels,
@@ -442,12 +589,6 @@ class BaseStageHandler:
                     log_method=_logger.info,
                 )
                 return probe_level
-        level = await self._runtime_monitor.read_level_switch(
-            zone_id=zone_id,
-            sensor_labels=labels,
-            threshold=threshold,
-            telemetry_max_age_sec=telemetry_max_age_sec,
-        )
         if not level["has_level"]:
             raise TaskExecutionError(
                 unavailable_error, f"Недоступен датчик уровня: {labels}",
@@ -467,6 +608,7 @@ class BaseStageHandler:
                     sensor_labels=labels,
                     threshold=threshold,
                     telemetry_max_age_sec=telemetry_max_age_sec,
+                    allow_initial_event_fallback=True,
                 )
                 if refreshed_level["has_level"] and not refreshed_level["is_stale"]:
                     self._log_level_state(
@@ -489,6 +631,25 @@ class BaseStageHandler:
                 stale_error, f"Данные датчика уровня устарели: {labels}",
             )
         return level
+
+    def _should_use_probe_level(
+        self,
+        *,
+        probe_level: Mapping[str, Any],
+        runtime_level: Mapping[str, Any],
+    ) -> bool:
+        if not bool(probe_level.get("has_level")) or bool(probe_level.get("is_stale")):
+            return False
+        if not bool(runtime_level.get("has_level")) or bool(runtime_level.get("is_stale")):
+            return True
+
+        probe_ts = probe_level.get("sample_ts")
+        runtime_ts = runtime_level.get("sample_ts")
+        if isinstance(probe_ts, datetime) and isinstance(runtime_ts, datetime):
+            return probe_ts > runtime_ts
+        if isinstance(probe_ts, datetime) and runtime_ts is None:
+            return True
+        return False
 
     def _log_level_state(
         self,

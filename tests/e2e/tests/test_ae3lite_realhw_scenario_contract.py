@@ -729,11 +729,11 @@ class TestAe3LiteReadyDuringRecirculationRealHwScenarioContract(unittest.TestCas
         )
 
     def test_recirculation_contract_does_not_require_second_ec_dose_count(self) -> None:
-        load_fill_step = self._find_step("actions", "load_fill_ec_correction_commands_if_any")
+        load_fill_step = self._find_step("actions", "wait_fill_ec_correction_command")
         ec_assertion = self._find_assertion("recirculation_ec_correction_logged")
         recirc_ec_step = self._find_step("actions", "wait_recirculation_ec_correction_command")
 
-        self.assertEqual(load_fill_step.get("type"), "database_query")
+        self.assertEqual(load_fill_step.get("type"), "db.wait")
         self.assertNotIn("after_command_id", str(recirc_ec_step.get("params", {})))
 
         condition = str(ec_assertion.get("condition") or "")

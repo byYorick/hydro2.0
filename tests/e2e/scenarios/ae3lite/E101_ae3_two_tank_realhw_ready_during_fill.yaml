@@ -946,7 +946,8 @@ actions:
         error_message
       FROM ae_tasks
       WHERE id = CAST(:task_id AS bigint)
-        AND status IN ('pending', 'completed', 'failed')
+        AND status = 'pending'
+        AND current_stage = 'clean_fill_check'
       LIMIT 1
     params:
       task_id: ${task_id}

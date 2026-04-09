@@ -610,6 +610,8 @@ authority-документ `zone.logic_profile` через API `/api/automation-
   - `state_details.started_at|elapsed_sec|progress_percent`
   - `system_config.tanks_count|system_type|clean_tank_capacity_l|nutrient_tank_capacity_l`
   - `current_levels.clean_tank_level_percent|nutrient_tank_level_percent|buffer_tank_level_percent|ph|ec`
+    Для AE3 `nutrient_tank_level_percent` является coarse-level индикатором
+    `0 | 50 | 100`, собранным из канонической пары `solution_min/solution_max`.
   - `active_processes.pump_in|circulation_pump|ph_correction|ec_correction`
   - `irr_node_state.clean_level_max|clean_level_min|solution_level_max|solution_level_min`
   - `irr_node_state.valve_clean_fill|valve_clean_supply|valve_solution_fill|valve_solution_supply|valve_irrigation|pump_main`

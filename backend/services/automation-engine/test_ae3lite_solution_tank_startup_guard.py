@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 from datetime import datetime, timezone
 
+from ae3lite.application.level_monitor import load_zone_level_monitor_config
 from ae3lite.application.use_cases.guard_solution_tank_startup_reset import GuardSolutionTankStartupResetUseCase
 from ae3lite.domain.entities.zone_workflow import ZoneWorkflow
 
@@ -43,12 +44,13 @@ class _RuntimeMonitor:
         self.level = level
         self.calls: list[dict] = []
 
-    async def read_level_switch(self, *, zone_id, sensor_labels, threshold, telemetry_max_age_sec):
+    async def read_level_switch(self, *, zone_id, sensor_labels, threshold, telemetry_max_age_sec, allow_initial_event=False):
         self.calls.append({
             "zone_id": zone_id,
             "sensor_labels": tuple(sensor_labels),
             "threshold": threshold,
             "telemetry_max_age_sec": telemetry_max_age_sec,
+            "allow_initial_event": allow_initial_event,
         })
         return dict(self.level)
 
@@ -66,13 +68,13 @@ def _workflow(*, phase: str = "ready", stage: str = "complete_ready") -> ZoneWor
     )
 
 
-async def test_guard_resets_ready_zone_to_startup_when_solution_min_is_triggered():
+async def test_guard_resets_ready_zone_to_startup_when_solution_min_is_not_triggered():
     repo = _WorkflowRepo(_workflow())
     monitor = _RuntimeMonitor(
         {
             "has_level": True,
             "is_stale": False,
-            "is_triggered": True,
+            "is_triggered": False,
             "sensor_label": "level_solution_min",
             "sample_ts": NOW,
         }
@@ -93,11 +95,12 @@ async def test_guard_resets_ready_zone_to_startup_when_solution_min_is_triggered
     assert repo.upsert_calls[0]["workflow_phase"] == "idle"
     assert repo.upsert_calls[0]["payload"]["ae3_cycle_start_stage"] == "startup"
     assert repo.upsert_calls[0]["payload"]["guard_reason"] == "solution_tank_depleted"
+    assert monitor.calls[0]["allow_initial_event"] is True
 
 
 async def test_guard_ignores_non_ready_zone():
     repo = _WorkflowRepo(_workflow(phase="tank_filling", stage="solution_fill_check"))
-    monitor = _RuntimeMonitor({"has_level": True, "is_stale": False, "is_triggered": True})
+    monitor = _RuntimeMonitor({"has_level": True, "is_stale": False, "is_triggered": False})
 
     async def fetch_fn(_query, _zone_id):
         return []
@@ -140,12 +143,14 @@ async def test_guard_handles_non_mapping_payload_without_crashing():
 
     result = await use_case.run(zone_id=7, now=NOW.replace(tzinfo=None))
 
-    assert result["reset"] is False
-    assert result["reason"] == "solution_tank_has_solution"
+    assert result["reset"] is True
+    assert result["reason"] == "solution_tank_depleted"
     assert len(monitor.calls) == 1
 
 
-def test_guard_solution_min_sensor_cfg_query_uses_shared_active_grow_cycle_order_sql() -> None:
-    """Regression: guard must stay aligned with snapshot read-model grow_cycle ordering."""
+def test_guard_solution_min_sensor_cfg_uses_shared_loader() -> None:
+    """Regression: guard должен брать конфиг из общего канонического loader."""
     src = inspect.getsource(GuardSolutionTankStartupResetUseCase._load_solution_min_sensor_cfg)
-    assert "SQL_ACTIVE_GROW_CYCLE_ORDER_BY" in src
+    assert "load_zone_level_monitor_config" in src
+    loader_src = inspect.getsource(load_zone_level_monitor_config)
+    assert "SQL_ACTIVE_GROW_CYCLE_ORDER_BY" in loader_src

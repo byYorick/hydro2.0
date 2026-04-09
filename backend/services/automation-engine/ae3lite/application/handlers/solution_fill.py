@@ -9,6 +9,7 @@ from typing import Any
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
 from ae3lite.domain.entities.workflow_state import CorrectionState
+from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import STAGE_DEADLINE_EXCEEDED
 from common.biz_alerts import send_biz_alert
 
@@ -39,15 +40,73 @@ class SolutionFillCheckHandler(BaseStageHandler):
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
-
-        await self._probe_irr_state(
-            task=task, plan=plan, now=now,
-            expected={
-                "valve_clean_supply": True,
-                "valve_solution_fill": True,
-                "pump_main": True,
-            },
+        fail_safe_guards = runtime.get("fail_safe_guards") if isinstance(runtime.get("fail_safe_guards"), dict) else {}
+        recent_storage_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=(
+                "SOLUTION_FILL_SOURCE_EMPTY",
+                "SOLUTION_FILL_LEAK_DETECTED",
+                "SOLUTION_FILL_COMPLETED",
+                "EMERGENCY_STOP_ACTIVATED",
+            ),
+            max_age_sec=86400,
         )
+        recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
+        if recent_event_type == "SOLUTION_FILL_SOURCE_EMPTY":
+            self._observe_fail_safe_transition(
+                task=task,
+                reason="solution_fill_source_empty",
+                source="node_event",
+                next_stage="solution_fill_source_empty_stop",
+            )
+            return StageOutcome(kind="transition", next_stage="solution_fill_source_empty_stop")
+        if recent_event_type == "SOLUTION_FILL_LEAK_DETECTED":
+            self._observe_fail_safe_transition(
+                task=task,
+                reason="solution_fill_leak_detected",
+                source="node_event",
+                next_stage="solution_fill_leak_stop",
+            )
+            return StageOutcome(kind="transition", next_stage="solution_fill_leak_stop")
+        if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
+            await self._reconcile_recent_emergency_stop(
+                task=task,
+                plan=plan,
+                now=now,
+                expected={
+                    "valve_clean_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            )
+        if recent_event_type == "SOLUTION_FILL_COMPLETED":
+            return await self._completed_outcome(task=task, plan=plan, now=now)
+
+        try:
+            await self._probe_irr_state(
+                task=task, plan=plan, now=now,
+                expected={
+                    "valve_clean_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            )
+        except TaskExecutionError as exc:
+            if exc.code == "irr_state_mismatch":
+                raced_completion_event = await self._read_recent_storage_event(
+                    task=task,
+                    event_types=("SOLUTION_FILL_COMPLETED",),
+                    max_age_sec=86400,
+                )
+                raced_event_type = str((raced_completion_event or {}).get("event_type") or "").strip().upper()
+                if raced_event_type == "SOLUTION_FILL_COMPLETED":
+                    _logger.info(
+                        "solution_fill_check: probe увидел уже выключенный fill-state, но node успела опубликовать completion; завершаем штатно zone_id=%s task_id=%s",
+                        task.zone_id,
+                        getattr(task, "id", None),
+                    )
+                    return await self._completed_outcome(task=task, plan=plan, now=now)
+            raise
 
         if pending_manual_step == "solution_fill_stop":
             if await self._should_finish_to_ready(task=task, plan=plan, now=now):
@@ -58,6 +117,50 @@ class SolutionFillCheckHandler(BaseStageHandler):
                 kind="poll",
                 due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
             )
+
+        clean_min_check_delay_ms = int(fail_safe_guards.get("solution_fill_clean_min_check_delay_ms", 5000) or 0)
+        if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_min_check_delay_ms):
+            clean_min = await self._read_level(
+                task=task,
+                zone_id=task.zone_id,
+                labels=runtime["clean_min_sensor_labels"],
+                threshold=runtime["level_switch_on_threshold"],
+                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                unavailable_error="two_tank_clean_min_level_unavailable",
+                stale_error="two_tank_clean_min_level_stale",
+                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+                prefer_probe_snapshot=True,
+            )
+            if not clean_min["is_triggered"]:
+                self._observe_fail_safe_transition(
+                    task=task,
+                    reason="solution_fill_source_empty",
+                    source="sensor",
+                    next_stage="solution_fill_source_empty_stop",
+                )
+                return StageOutcome(kind="transition", next_stage="solution_fill_source_empty_stop")
+
+        solution_min_check_delay_ms = int(fail_safe_guards.get("solution_fill_solution_min_check_delay_ms", 15000) or 0)
+        if self._stage_elapsed_ms(task=task, now=now) >= max(0, solution_min_check_delay_ms):
+            solution_min = await self._read_level(
+                task=task,
+                zone_id=task.zone_id,
+                labels=runtime["solution_min_sensor_labels"],
+                threshold=runtime["level_switch_on_threshold"],
+                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                unavailable_error="two_tank_solution_min_level_unavailable",
+                stale_error="two_tank_solution_min_level_stale",
+                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+                prefer_probe_snapshot=True,
+            )
+            if not solution_min["is_triggered"]:
+                self._observe_fail_safe_transition(
+                    task=task,
+                    reason="solution_fill_leak_detected",
+                    source="sensor",
+                    next_stage="solution_fill_leak_stop",
+                )
+                return StageOutcome(kind="transition", next_stage="solution_fill_leak_stop")
 
         solution_max = await self._read_level(
             task=task,
@@ -72,32 +175,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         )
 
         if solution_max["is_triggered"]:
-            # Бак полон: проверить согласованность датчиков
-            await self._check_sensor_consistency(
-                task=task,
-                runtime=runtime,
-                min_labels_key="solution_min_sensor_labels",
-                min_unavailable_error="two_tank_solution_min_level_unavailable",
-                min_stale_error="two_tank_solution_min_level_stale",
-                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
-                prefer_probe_snapshot=True,
-            )
-
-            if await self._targets_reached(task=task, plan=plan, now=now):
-                _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)
-                return StageOutcome(
-                    kind="transition",
-                    next_stage="solution_fill_stop_to_ready",
-                )
-
-            _logger.info(
-                "solution_fill_check: бак заполнен, но цели не достигнуты; переход в prepare recirculation zone_id=%s",
-                task.zone_id,
-            )
-            return StageOutcome(
-                kind="transition",
-                next_stage="solution_fill_stop_to_prepare",
-            )
+            return await self._completed_outcome(task=task, plan=plan, now=now)
 
         # Проверка дедлайна
         deadline = task.workflow.stage_deadline_at
@@ -183,6 +261,34 @@ class SolutionFillCheckHandler(BaseStageHandler):
             prefer_probe_snapshot=True,
         )
         return await self._targets_reached(task=task, plan=plan, now=now)
+
+    async def _completed_outcome(self, *, task: Any, plan: Any, now: datetime) -> StageOutcome:
+        runtime = plan.runtime
+        await self._check_sensor_consistency(
+            task=task,
+            runtime=runtime,
+            min_labels_key="solution_min_sensor_labels",
+            min_unavailable_error="two_tank_solution_min_level_unavailable",
+            min_stale_error="two_tank_solution_min_level_stale",
+            stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+            prefer_probe_snapshot=True,
+        )
+
+        if await self._targets_reached(task=task, plan=plan, now=now):
+            _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)
+            return StageOutcome(
+                kind="transition",
+                next_stage="solution_fill_stop_to_ready",
+            )
+
+        _logger.info(
+            "solution_fill_check: бак заполнен, но цели не достигнуты; переход в prepare recirculation zone_id=%s",
+            task.zone_id,
+        )
+        return StageOutcome(
+            kind="transition",
+            next_stage="solution_fill_stop_to_prepare",
+        )
 
     def _build_correction_state(
         self,

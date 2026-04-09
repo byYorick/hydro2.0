@@ -539,6 +539,31 @@ export function applyAutomationFromRecipe(targetsInput: unknown, forms: ZoneAuto
   if (startupCleanFillRetryCycles !== null) {
     waterForm.startupCleanFillRetryCycles = clamp(Math.round(startupCleanFillRetryCycles), 0, 20)
   }
+  const failSafeGuards = asRecord(diagnosticsExecutionResolved?.fail_safe_guards)
+  const cleanFillMinCheckDelayMs = readNumber(failSafeGuards?.clean_fill_min_check_delay_ms)
+  if (cleanFillMinCheckDelayMs !== null) {
+    waterForm.cleanFillMinCheckDelayMs = clamp(Math.round(cleanFillMinCheckDelayMs), 0, 3600000)
+  }
+  const solutionFillCleanMinCheckDelayMs = readNumber(failSafeGuards?.solution_fill_clean_min_check_delay_ms)
+  if (solutionFillCleanMinCheckDelayMs !== null) {
+    waterForm.solutionFillCleanMinCheckDelayMs = clamp(Math.round(solutionFillCleanMinCheckDelayMs), 0, 3600000)
+  }
+  const solutionFillSolutionMinCheckDelayMs = readNumber(failSafeGuards?.solution_fill_solution_min_check_delay_ms)
+  if (solutionFillSolutionMinCheckDelayMs !== null) {
+    waterForm.solutionFillSolutionMinCheckDelayMs = clamp(Math.round(solutionFillSolutionMinCheckDelayMs), 0, 3600000)
+  }
+  const recirculationStopOnSolutionMin = readBoolean(failSafeGuards?.recirculation_stop_on_solution_min)
+  if (recirculationStopOnSolutionMin !== null) {
+    waterForm.recirculationStopOnSolutionMin = recirculationStopOnSolutionMin
+  }
+  const irrigationStopOnSolutionMinFailSafe = readBoolean(failSafeGuards?.irrigation_stop_on_solution_min)
+  if (irrigationStopOnSolutionMinFailSafe !== null) {
+    waterForm.stopOnSolutionMin = irrigationStopOnSolutionMinFailSafe
+  }
+  const estopDebounceMs = readNumber(failSafeGuards?.estop_debounce_ms)
+  if (estopDebounceMs !== null) {
+    waterForm.estopDebounceMs = clamp(Math.round(estopDebounceMs), 20, 5000)
+  }
 
   const correction = asRecord(diagnosticsExecutionResolved?.correction)
   const correctionMaxEcCorrectionAttempts = readNumber(correction?.max_ec_correction_attempts)

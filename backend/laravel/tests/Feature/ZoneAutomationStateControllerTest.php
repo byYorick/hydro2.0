@@ -130,6 +130,40 @@ class ZoneAutomationStateControllerTest extends TestCase
             );
     }
 
+    public function test_automation_state_humanizes_new_fail_safe_terminal_code(): void
+    {
+        Cache::flush();
+
+        $user = User::factory()->create(['role' => 'viewer']);
+        $token = $user->createToken('test')->plainTextToken;
+        $zone = Zone::factory()->create();
+        $apiUrl = $this->automationEngineUrl();
+
+        Http::fake([
+            "{$apiUrl}/zones/{$zone->id}/state" => Http::response([
+                'zone_id' => $zone->id,
+                'state' => 'IDLE',
+                'state_label' => 'Ожидание',
+                'state_details' => [
+                    'failed' => true,
+                    'error_code' => 'solution_fill_leak_detected',
+                    'error_message' => 'Solution minimum level dropped during solution fill',
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/state");
+
+        $response->assertOk()
+            ->assertJsonPath('state_details.error_code', 'solution_fill_leak_detected')
+            ->assertJsonPath(
+                'state_details.human_error_message',
+                'Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.'
+            );
+    }
+
     public function test_automation_state_returns_upstream_unavailable_on_request_exception(): void
     {
         Cache::flush();

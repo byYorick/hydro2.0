@@ -66,6 +66,12 @@ Breaking-change: несовместимые изменения в защищён
 #### [ae3lite.md](ae3lite.md)
 Каноническая спецификация AE3-Lite (`DB-first`, `LISTEN/NOTIFY + fallback polling`, ручной rollout/rollback — раздел 10).
 
+#### [AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md](AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md)
+Детализирующий контракт интеграции AE3 с channel-level `level_* /event` от `storage_irrigation_node`.
+
+#### [AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md](AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md)
+Контракт дублирования в AE3 защитной логики IRR-ноды: fail-safe guards, `E-Stop`, mirror конфигов и stop-semantics.
+
 #### [HISTORY_LOGGER_API.md](HISTORY_LOGGER_API.md)
 Контракт REST API публикации команд в MQTT через history-logger.
 
@@ -106,6 +112,8 @@ Breaking-change: несовместимые изменения в защищён
 как приоритетные источники.
 
 Для AE3 единственный нормативный документ в этом разделе: `ae3lite.md` (см. также `../ARCHITECTURE_FLOWS.md`).
+`AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` уточняет integration-contract и не переопределяет `ae3lite.md`.
+`AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` дополняет его правилами дублирования fail-safe логики в AE3.
 
 ---
 

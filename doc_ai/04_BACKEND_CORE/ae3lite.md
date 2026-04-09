@@ -82,6 +82,11 @@ AE3-Lite v1 не включает:
 
 Связка «цикл → готовность → полив» не должна обходить этот контракт: нельзя полагаться на устаревший snapshot без poll/reconcile.
 
+Детализация integration-contract для channel-level событий `level_* /event` от
+`storage_irrigation_node` вынесена в `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md`.
+Детализация fail-safe/e-stop mirror-contract для IRR-ноды вынесена в
+`AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md`.
+
 ---
 
 ## 3. Контракт одного ИИ-агента
@@ -287,9 +292,14 @@ Terminal:
 10. Только `DONE` переводит execution к следующему step.
 11. Любой другой terminal завершает task как `failed`.
 12. После terminal task lease освобождается.
-13. Если зона была в `ready`, но `solution_min` датчик сработал, runtime обязан
-    auto-reset `zone_workflow_state` обратно в `idle/startup`, чтобы зона больше
-    не считалась готовой к поливу до следующего `cycle_start`.
+13. Если зона была в `ready`, но канонический monitor уровней больше не подтверждает
+    наличие раствора по `solution_min` (датчик не активен / `is_triggered=false`),
+    runtime обязан auto-reset `zone_workflow_state` обратно в `idle/startup`, чтобы
+    зона больше не считалась готовой к поливу до следующего `cycle_start`.
+14. Для IRR-ноды runtime принимает fast-path node events только через
+    `history-logger -> zone_events -> PostgreSQL NOTIFY ae_zone_event -> worker.kick()`;
+    после wake-up решение всё равно принимается только по DB read-model
+    (`telemetry_last`, `zone_events`, `zone_workflow_state`, при необходимости `commands`).
 
 ### 4.2 Execution policy
 
@@ -312,12 +322,21 @@ Terminal:
 1. `HistoryLoggerClient` в `v1` может сделать ровно один дополнительный HTTP retry только для transient transport error или `HTTP 5xx`, затем runtime обязан fail-closed.
 2. Polling ожидания terminal статуса команды должен быть bounded: старт от `AE_RECONCILE_POLL_INTERVAL_SEC`, backoff `x1.5`, верхняя граница `5s`.
 3. `scheduler_intent_terminal` `LISTEN/NOTIFY` используется как fast-path для `worker.kick()`, но не заменяет canonical DB state и обязательный polling fallback.
-4. Runtime обязан жёстко ограничивать tracked background tasks; переполнение registry не может игнорироваться и должно отклоняться fail-closed.
-5. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.
-6. Timeout whole-task execution обязан идти по fail-closed path: worker отменяет run с внутренней причиной `ae3_task_execution_timeout`, runtime выполняет fail-safe shutdown актуаторов, затем завершает task/intent как `failed`.
-7. Обычная отмена процесса/loop shutdown не должна маскироваться под timeout: recovery path после restart остаётся отдельным механизмом.
-8. Fail-safe shutdown команды публикуются как publish-only batch: они не должны повторно переводить уже terminal/closing task в `waiting_command` и не должны искажать `ae_commands` ложным `publish_failed`, если устройство реально подтвердило shutdown после terminal failure основной задачи.
-9. Перед fail-closed terminal transition runtime обязан синхронизировать `zone_workflow_state` обратно в `workflow_phase='idle'`, чтобы stale phase не переживала terminal failure task.
+4. `ae_zone_event` `LISTEN/NOTIFY` используется как fast-path только для node runtime events (`LEVEL_SWITCH_CHANGED`, `storage_state/event` и связанных aggregate событий).
+5. `initial=true` от level-switch runtime event не считается самостоятельным основанием для stage-complete; он используется для wake-up/observability и допускается для `ready/startup guard`, если depletion подтверждён DB read-model.
+6. `storage_state/event` от IRR-ноды используется как shortcut для reconcile только через `zone_events` read-model:
+   `clean_fill_source_empty` -> `clean_fill_retry_stop` два раза, затем `clean_fill_source_empty_stop`;
+   `solution_fill_source_empty` -> `solution_fill_source_empty_stop`;
+   `solution_fill_leak_detected` -> `solution_fill_leak_stop`;
+   `recirculation_solution_low` -> `prepare_recirculation_solution_low_stop`;
+   `irrigation_solution_low` -> тот же replay/setup path, что и `solution_min=false` в `irrigation_check`.
+7. `emergency_stop_activated` не завершает stage автоматически: AE3 обязан сначала попытаться перепроверить ожидаемый hardware snapshot через reconcile; continuation допустим только если актуаторы вернулись в ожидаемое состояние.
+8. Runtime обязан жёстко ограничивать tracked background tasks; переполнение registry не может игнорироваться и должно отклоняться fail-closed.
+9. Полное исполнение `ExecuteTaskUseCase.run()` должно быть ограничено `AE_MAX_TASK_EXECUTION_SEC` (default `900s`); timeout не может оставлять task в подвешенном active state.
+10. Timeout whole-task execution обязан идти по fail-closed path: worker отменяет run с внутренней причиной `ae3_task_execution_timeout`, runtime выполняет fail-safe shutdown актуаторов, затем завершает task/intent как `failed`.
+11. Обычная отмена процесса/loop shutdown не должна маскироваться под timeout: recovery path после restart остаётся отдельным механизмом.
+12. Fail-safe shutdown команды публикуются как publish-only batch: они не должны повторно переводить уже terminal/closing task в `waiting_command` и не должны искажать `ae_commands` ложным `publish_failed`, если устройство реально подтвердило shutdown после terminal failure основной задачи.
+13. Перед fail-closed terminal transition runtime обязан синхронизировать `zone_workflow_state` обратно в `workflow_phase='idle'`, чтобы stale phase не переживала terminal failure task.
 
 ---
 
@@ -523,6 +542,7 @@ Canonical status endpoint для зон на `ae3`.
 1. они не публикуют команды напрямую и работают только поверх canonical AE3 task path;
 2. public backward-compatible `FORCE_IRRIGATION` в Laravel обязан маршрутизироваться в
    `POST /zones/{id}/start-irrigation`, а не в direct device command.
+3. `control_mode='manual'` запрещает только автоматические `start/stop` переходы, инициируемые самим AE3 по обычному poll-loop; hardware-originated safe/runtime events (`*_completed`, `*_source_empty`, `*_solution_low`, `emergency_stop_activated`) обязаны продолжать проходить через reconcile.
 
 ---
 
@@ -566,10 +586,16 @@ Prometheus runtime минимум для lifecycle intents:
 2. `ae3_command_dispatch_duration_seconds`
 3. `ae3_command_terminal_total`
 4. `ae3_tick_duration_seconds`
+5. `ae3_fail_safe_transition_total{topology,stage,reason,source}`
+6. `ae3_emergency_stop_reconcile_total{topology,stage,outcome}`
+7. `ae3_node_runtime_event_kick_total{event_type,channel}`
 
 Минимальные event/log точки для irrigation observability:
 1. `AE_TASK_STARTED` включает `bundle_revision` и locked irrigation decision strategy при наличии
 2. `IRRIGATION_DECISION_SNAPSHOT_LOCKED` фиксирует strategy/config/bundle_revision для текущего irrigation task; на первом run event эмитится даже если snapshot уже был записан в `ae_tasks` на create-path
+3. fail-safe stop path обязан писать service-log `AE3 fail-safe transition selected` с `zone_id/task_id/topology/stage/reason/source/next_stage`
+4. reconcile после `EMERGENCY_STOP_ACTIVATED` обязан писать service-log с outcome `restored` или `failed`
+5. wake-up по node runtime event обязан инкрементировать `ae3_node_runtime_event_kick_total` и писать service-log `AE3 worker.kick by node runtime event`
 
 ---
 

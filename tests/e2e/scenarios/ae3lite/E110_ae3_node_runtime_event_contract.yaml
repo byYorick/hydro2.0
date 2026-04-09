@@ -1,0 +1,281 @@
+# E110: AE3 node runtime events -> zone_events/metrics/state timeline
+# DoD:
+# - node_sim публикует channel-level LEVEL_SWITCH_CHANGED и aggregate storage_state/event
+# - history-logger сохраняет оба события в zone_events
+# - automation-engine фиксирует wake-up через /metrics
+# - Laravel /api/zones/{id}/state показывает оба события в timeline
+
+name: E110_ae3_node_runtime_event_contract
+description: |
+  Contract-smoke для node runtime event path:
+  1) запускаем irrigation node_sim на тестовой зоне,
+  2) принудительно включаем для зоны runtime `ae3`,
+  3) публикуем `level_switch_changed` и `irrigation_solution_low`,
+  4) ждём запись нормализованных событий в `zone_events`,
+  5) проверяем observability через AE3 `/metrics`,
+  6) проверяем, что `/api/zones/{id}/state` показывает оба runtime event в timeline.
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: ${TEST_NODE_UID}
+        hardware_id: esp32-test-irr-runtime-001
+        node_type: irrigation
+        mode: configured
+        channels:
+          - level_clean_min
+          - level_clean_max
+          - level_solution_min
+          - level_solution_max
+        actuators:
+          - pump_main
+          - valve_solution_supply
+          - valve_irrigation
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${TEST_NODE_GH_UID}
+    test_zone_uid: ${TEST_NODE_ZONE_UID}
+    test_node_uid: ${TEST_NODE_UID}
+
+  - step: fetch_node_and_zone
+    type: database_query
+    query: |
+      SELECT
+        n.id AS node_id,
+        COALESCE(n.zone_id, z.id) AS zone_id
+      FROM nodes n
+      LEFT JOIN zones z ON z.uid = :zone_uid
+      WHERE n.uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+      zone_uid: ${test_zone_uid}
+    expected_rows: 1
+    save: node_row
+
+  - step: set_zone_and_node
+    type: set
+    zone_id: ${node_row.0.zone_id}
+    node_id: ${node_row.0.node_id}
+
+  - step: fetch_previous_zone_runtime
+    type: database_query
+    query: |
+      SELECT automation_runtime
+      FROM zones
+      WHERE id = :zone_id
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+    save: zone_runtime_row
+
+  - step: set_previous_zone_runtime
+    type: set
+    previous_automation_runtime: ${zone_runtime_row.0.automation_runtime}
+
+  - step: force_zone_runtime_ae3
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET automation_runtime = 'ae3',
+          updated_at = NOW()
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+
+  - step: cleanup_old_runtime_events
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type IN ('LEVEL_SWITCH_CHANGED', 'IRRIGATION_SOLUTION_LOW')
+    params:
+      zone_id: ${zone_id}
+
+  - step: publish_level_switch_event
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/level_solution_min/event
+    payload:
+      event_code: level_switch_changed
+      channel: level_solution_min
+      state: false
+      initial: false
+      ts: ${TIMESTAMP_MS}
+      snapshot:
+        level_solution_min: 0
+        level_solution_max: 0
+        level_clean_min: 1
+    qos: 1
+    wait_seconds: 1
+
+  - step: wait_level_switch_zone_event
+    type: db.wait
+    query: |
+      SELECT
+        type,
+        payload_json->>'channel' AS channel,
+        payload_json->>'state' AS state
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'LEVEL_SWITCH_CHANGED'
+        AND payload_json->>'channel' = 'level_solution_min'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: publish_irrigation_solution_low_event
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/storage_state/event
+    payload:
+      event_code: irrigation_solution_low
+      cmd_id: e110-${TIMESTAMP_MS}
+      snapshot:
+        solution_level_min: false
+        pump_main: false
+        valve_solution_supply: false
+        valve_irrigation: false
+    qos: 1
+    wait_seconds: 1
+
+  - step: wait_irrigation_solution_low_zone_event
+    type: db.wait
+    query: |
+      SELECT
+        type,
+        payload_json->'snapshot'->>'solution_level_min' AS solution_level_min
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'IRRIGATION_SOLUTION_LOW'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 20.0
+    expected_rows: 1
+
+  - step: wait_runtime_settle
+    type: sleep
+    seconds: 2
+
+  - step: fetch_ae_metrics
+    type: http_request
+    method: GET
+    url: http://${AUTOMATION_ENGINE_HOST}:${AUTOMATION_ENGINE_API_PORT}/metrics/
+    retries: 3
+    retry_delay_seconds: 1
+    capture_response: ae_metrics
+
+  - step: fetch_zone_state
+    type: api_get
+    endpoint: /api/zones/${zone_id}/state
+    retries: 3
+    retry_delay_seconds: 1
+    save: zone_state
+
+assertions:
+  - name: level_switch_event_written_to_zone_events
+    type: database_query
+    query: |
+      SELECT type
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'LEVEL_SWITCH_CHANGED'
+        AND payload_json->>'channel' = 'level_solution_min'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: type
+        operator: equals
+        value: LEVEL_SWITCH_CHANGED
+
+  - name: irrigation_solution_low_written_to_zone_events
+    type: database_query
+    query: |
+      SELECT type
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'IRRIGATION_SOLUTION_LOW'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+    expected:
+      - field: type
+        operator: equals
+        value: IRRIGATION_SOLUTION_LOW
+
+  - name: ae_metrics_include_node_runtime_kick_counter
+    type: custom_assert
+    condition: >
+      (
+        "ae3_node_runtime_event_kick_total" in str((context.get("ae_metrics") or {}).get("text") or "")
+        and "LEVEL_SWITCH_CHANGED" in str((context.get("ae_metrics") or {}).get("text") or "")
+        and "level_solution_min" in str((context.get("ae_metrics") or {}).get("text") or "")
+      )
+
+  - name: zone_state_timeline_contains_level_switch_event
+    type: custom_assert
+    condition: >
+      any(
+        item.get("event") == "LEVEL_SWITCH_CHANGED"
+        for item in ((context.get("zone_state") or {}).get("timeline") or [])
+      )
+
+  - name: zone_state_timeline_contains_irrigation_low_event
+    type: custom_assert
+    condition: >
+      any(
+        item.get("event") == "IRRIGATION_SOLUTION_LOW"
+        for item in ((context.get("zone_state") or {}).get("timeline") or [])
+      )
+
+cleanup:
+  - step: restore_previous_zone_runtime
+    type: database_execute
+    optional: true
+    query: |
+      UPDATE zones
+      SET automation_runtime = :automation_runtime,
+          updated_at = NOW()
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+      automation_runtime: ${previous_automation_runtime}
+
+  - step: cleanup_runtime_events
+    type: database_execute
+    optional: true
+    query: |
+      DELETE FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type IN ('LEVEL_SWITCH_CHANGED', 'IRRIGATION_SOLUTION_LOW')
+    params:
+      zone_id: ${zone_id}
+
+  - step: stop_node_simulator
+    type: stop_simulator

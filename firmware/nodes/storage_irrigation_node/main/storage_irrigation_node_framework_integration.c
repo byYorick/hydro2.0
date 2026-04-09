@@ -37,8 +37,7 @@
 static const char *TAG = "storage_irrigation_node_framework";
 static const uint32_t STORAGE_IRRIGATION_NODE_PUMP_MAIN_DRY_RUN_MAX_MS = 3000;
 static bool s_storage_event_time_wait_logged = false;
-static bool s_clean_fill_completion_latched = false;
-static bool s_solution_fill_completion_latched = false;
+static bool s_level_switch_event_time_wait_logged = false;
 
 // Forward declaration для callback safe_mode
 static esp_err_t storage_irrigation_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -91,6 +90,47 @@ typedef struct {
     int64_t candidate_since_us;
 } storage_irrigation_node_level_switch_debounce_t;
 
+typedef struct {
+    uint32_t clean_fill_min_check_delay_ms;
+    uint32_t solution_fill_clean_min_check_delay_ms;
+    uint32_t solution_fill_solution_min_check_delay_ms;
+    bool recirculation_solution_min_guard_enabled;
+    bool irrigation_solution_min_guard_enabled;
+    uint32_t estop_debounce_ms;
+} storage_irrigation_node_fail_safe_config_t;
+
+typedef struct {
+    bool active;
+    bool paused_by_estop;
+    bool min_check_completed;
+    bool terminal_event_emitted;
+    uint32_t elapsed_before_pause_ms;
+    int64_t started_at_us;
+} storage_irrigation_node_clean_fill_guard_state_t;
+
+typedef struct {
+    bool active;
+    bool paused_by_estop;
+    bool clean_min_check_completed;
+    bool solution_min_check_completed;
+    bool terminal_event_emitted;
+    uint32_t elapsed_before_pause_ms;
+    int64_t started_at_us;
+} storage_irrigation_node_solution_fill_guard_state_t;
+
+typedef struct {
+    bool active;
+    bool paused_by_estop;
+    bool low_event_emitted;
+} storage_irrigation_node_binary_guard_state_t;
+
+typedef struct {
+    bool initialized;
+    bool pressed;
+    bool candidate_pressed;
+    int64_t candidate_since_us;
+} storage_irrigation_node_estop_debounce_t;
+
 static storage_irrigation_node_cmd_t s_cmd_queue[STORAGE_IRRIGATION_NODE_CMD_QUEUE_MAX] = {0};
 static size_t s_cmd_queue_head = 0;
 static size_t s_cmd_queue_tail = 0;
@@ -108,7 +148,27 @@ static storage_irrigation_node_actuator_runtime_t s_actuator_runtime[PUMP_DRIVER
 static storage_irrigation_node_level_switch_debounce_t s_level_switch_debounce[GPIO_NUM_MAX] = {0};
 static bool s_sensor_log_initialized[GPIO_NUM_MAX] = {0};
 static bool s_sensor_logged_state[GPIO_NUM_MAX] = {0};
+static bool s_level_switch_event_initialized[GPIO_NUM_MAX] = {0};
+static bool s_level_switch_event_published_state[GPIO_NUM_MAX] = {0};
 static size_t s_actuator_runtime_count = 0;
+static bool s_level_switch_event_session_connected = false;
+static storage_irrigation_node_fail_safe_config_t s_fail_safe_config = {
+    .clean_fill_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
+    .solution_fill_clean_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
+    .solution_fill_solution_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+    .recirculation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
+    .irrigation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
+    .estop_debounce_ms = STORAGE_IRRIGATION_NODE_ESTOP_DEBOUNCE_MS,
+};
+static storage_irrigation_node_clean_fill_guard_state_t s_clean_fill_guard = {0};
+static storage_irrigation_node_solution_fill_guard_state_t s_solution_fill_guard = {0};
+static storage_irrigation_node_binary_guard_state_t s_recirculation_guard = {0};
+static storage_irrigation_node_binary_guard_state_t s_irrigation_guard = {0};
+static storage_irrigation_node_estop_debounce_t s_estop_debounce = {0};
+static bool s_estop_input_ready = false;
+static bool s_estop_active = false;
+static bool s_estop_restore_valid = false;
+static bool s_estop_restore_states[PUMP_DRIVER_MAX_CHANNELS] = {0};
 
 static void storage_irrigation_node_cmd_queue_task(void *pvParameters);
 static void storage_irrigation_node_done_task(void *pvParameters);
@@ -135,12 +195,21 @@ static bool storage_irrigation_node_get_actuator_state_locked(const char *channe
 static bool storage_irrigation_node_is_pump_main_dry_run_allowed(const char *channel, bool target_state, bool has_duration, uint32_t duration_ms);
 static bool storage_irrigation_node_is_clean_fill_active_locked(void);
 static bool storage_irrigation_node_is_solution_fill_active_locked(void);
+static bool storage_irrigation_node_is_prepare_recirculation_active_locked(void);
+static bool storage_irrigation_node_is_irrigation_active_locked(void);
 static bool storage_irrigation_node_is_main_pump_interlock_satisfied_locked(void);
 static void storage_irrigation_node_append_main_pump_interlock_error(cJSON *details);
 static bool storage_irrigation_node_read_switch_state_by_name(const char *sensor_name, bool *state_out);
 static void storage_irrigation_node_update_oled_runtime(void);
 static cJSON *storage_irrigation_node_build_irr_state_snapshot(void);
 static cJSON *storage_irrigation_node_build_legacy_state_payload(void);
+static void storage_irrigation_node_reset_level_switch_event_session(void);
+static esp_err_t storage_irrigation_node_publish_level_switch_event(
+    const storage_irrigation_node_sensor_channel_t *sensor,
+    bool state,
+    bool initial
+);
+static void storage_irrigation_node_publish_level_switch_events_if_needed(void);
 static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t handle_storage_state(const char *channel, const cJSON *params, cJSON **response, void *user_ctx);
 static esp_err_t storage_irrigation_node_publish_storage_event(const char *event_code, const char *cmd_id);
@@ -152,7 +221,7 @@ static esp_err_t storage_irrigation_node_publish_terminal_response(
     const char *error_message,
     cJSON *details
 );
-static void storage_irrigation_node_check_fill_completion_events(void);
+static void storage_irrigation_node_process_fail_safe_guards(void);
 static esp_err_t storage_irrigation_node_publish_level_switch_telemetry_snapshot(void);
 static bool storage_irrigation_node_parse_timeout_ms(const cJSON *item, uint32_t *timeout_ms_out);
 static bool storage_irrigation_node_parse_duration_ms(const cJSON *item, uint32_t *duration_ms_out);
@@ -161,8 +230,23 @@ static storage_irrigation_node_stage_guard_t *storage_irrigation_node_get_stage_
 static esp_err_t storage_irrigation_node_arm_stage_guard_locked(const char *stage, const char *cmd_id, uint32_t timeout_ms);
 static bool storage_irrigation_node_complete_stage_guard_for_channel_locked(const char *channel, char *cmd_id_out, size_t cmd_id_out_size);
 static bool storage_irrigation_node_stop_stage_path_locked(const char *stage);
+static bool storage_irrigation_node_stop_clean_fill_path_locked(void);
+static bool storage_irrigation_node_stop_irrigation_path_locked(void);
+static bool storage_irrigation_node_stop_all_paths_locked(void);
 static const char *storage_irrigation_node_timeout_event_code_for_stage(const char *stage);
 static void storage_irrigation_node_process_stage_timeouts(void);
+static void storage_irrigation_node_reload_fail_safe_config_from_storage(void);
+static esp_err_t storage_irrigation_node_init_estop_input(void);
+static bool storage_irrigation_node_read_estop_pressed(void);
+static void storage_irrigation_node_pause_stage_guards_locked(void);
+static void storage_irrigation_node_resume_stage_guards_locked(void);
+static void storage_irrigation_node_handle_estop_transition(bool pressed);
+static void storage_irrigation_node_update_clean_fill_guard_state(bool flow_active, bool paused);
+static void storage_irrigation_node_update_solution_fill_guard_state(bool flow_active, bool paused);
+static uint32_t storage_irrigation_node_clean_fill_elapsed_ms(void);
+static uint32_t storage_irrigation_node_solution_fill_elapsed_ms(void);
+static void storage_irrigation_node_update_binary_guard_state(storage_irrigation_node_binary_guard_state_t *state, bool flow_active, bool paused);
+static bool storage_irrigation_node_restore_estop_snapshot_locked(void);
 
 static bool s_level_switch_inputs_ready = false;
 
@@ -379,6 +463,157 @@ static bool storage_irrigation_node_is_solution_fill_active_locked(void) {
     return pump_main && valve_clean_supply && valve_solution_fill;
 }
 
+static bool storage_irrigation_node_is_prepare_recirculation_active_locked(void) {
+    bool pump_main = false;
+    bool valve_solution_supply = false;
+    bool valve_solution_fill = false;
+    if (!storage_irrigation_node_get_actuator_state_locked("pump_main", &pump_main)) {
+        return false;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_solution_supply", &valve_solution_supply)) {
+        return false;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_solution_fill", &valve_solution_fill)) {
+        return false;
+    }
+    return pump_main && valve_solution_supply && valve_solution_fill;
+}
+
+static bool storage_irrigation_node_is_irrigation_active_locked(void) {
+    bool pump_main = false;
+    bool valve_solution_supply = false;
+    bool valve_irrigation = false;
+    if (!storage_irrigation_node_get_actuator_state_locked("pump_main", &pump_main)) {
+        return false;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_solution_supply", &valve_solution_supply)) {
+        return false;
+    }
+    if (!storage_irrigation_node_get_actuator_state_locked("valve_irrigation", &valve_irrigation)) {
+        return false;
+    }
+    return pump_main && valve_solution_supply && valve_irrigation;
+}
+
+static uint32_t storage_irrigation_node_clean_fill_elapsed_ms(void) {
+    uint32_t elapsed_ms = s_clean_fill_guard.elapsed_before_pause_ms;
+    if (!s_clean_fill_guard.active || s_clean_fill_guard.paused_by_estop || s_clean_fill_guard.started_at_us <= 0) {
+        return elapsed_ms;
+    }
+    int64_t delta_us = esp_timer_get_time() - s_clean_fill_guard.started_at_us;
+    if (delta_us <= 0) {
+        return elapsed_ms;
+    }
+    uint64_t total_ms = (uint64_t)elapsed_ms + (uint64_t)(delta_us / 1000LL);
+    return total_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)total_ms;
+}
+
+static uint32_t storage_irrigation_node_solution_fill_elapsed_ms(void) {
+    uint32_t elapsed_ms = s_solution_fill_guard.elapsed_before_pause_ms;
+    if (!s_solution_fill_guard.active || s_solution_fill_guard.paused_by_estop || s_solution_fill_guard.started_at_us <= 0) {
+        return elapsed_ms;
+    }
+    int64_t delta_us = esp_timer_get_time() - s_solution_fill_guard.started_at_us;
+    if (delta_us <= 0) {
+        return elapsed_ms;
+    }
+    uint64_t total_ms = (uint64_t)elapsed_ms + (uint64_t)(delta_us / 1000LL);
+    return total_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)total_ms;
+}
+
+static void storage_irrigation_node_update_clean_fill_guard_state(bool flow_active, bool paused) {
+    if (paused) {
+        if (flow_active && s_clean_fill_guard.active && !s_clean_fill_guard.paused_by_estop && s_clean_fill_guard.started_at_us > 0) {
+            int64_t delta_us = esp_timer_get_time() - s_clean_fill_guard.started_at_us;
+            if (delta_us > 0) {
+                uint64_t total_ms = (uint64_t)s_clean_fill_guard.elapsed_before_pause_ms + (uint64_t)(delta_us / 1000LL);
+                s_clean_fill_guard.elapsed_before_pause_ms = total_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)total_ms;
+            }
+            s_clean_fill_guard.started_at_us = 0;
+            s_clean_fill_guard.paused_by_estop = true;
+        }
+        return;
+    }
+
+    if (flow_active) {
+        if (!s_clean_fill_guard.active) {
+            memset(&s_clean_fill_guard, 0, sizeof(s_clean_fill_guard));
+            s_clean_fill_guard.active = true;
+            s_clean_fill_guard.started_at_us = esp_timer_get_time();
+            return;
+        }
+        if (s_clean_fill_guard.paused_by_estop) {
+            s_clean_fill_guard.paused_by_estop = false;
+            s_clean_fill_guard.started_at_us = esp_timer_get_time();
+        }
+        return;
+    }
+
+    if (!s_clean_fill_guard.paused_by_estop) {
+        memset(&s_clean_fill_guard, 0, sizeof(s_clean_fill_guard));
+    }
+}
+
+static void storage_irrigation_node_update_solution_fill_guard_state(bool flow_active, bool paused) {
+    if (paused) {
+        if (flow_active && s_solution_fill_guard.active && !s_solution_fill_guard.paused_by_estop && s_solution_fill_guard.started_at_us > 0) {
+            int64_t delta_us = esp_timer_get_time() - s_solution_fill_guard.started_at_us;
+            if (delta_us > 0) {
+                uint64_t total_ms = (uint64_t)s_solution_fill_guard.elapsed_before_pause_ms + (uint64_t)(delta_us / 1000LL);
+                s_solution_fill_guard.elapsed_before_pause_ms = total_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)total_ms;
+            }
+            s_solution_fill_guard.started_at_us = 0;
+            s_solution_fill_guard.paused_by_estop = true;
+        }
+        return;
+    }
+
+    if (flow_active) {
+        if (!s_solution_fill_guard.active) {
+            memset(&s_solution_fill_guard, 0, sizeof(s_solution_fill_guard));
+            s_solution_fill_guard.active = true;
+            s_solution_fill_guard.started_at_us = esp_timer_get_time();
+            return;
+        }
+        if (s_solution_fill_guard.paused_by_estop) {
+            s_solution_fill_guard.paused_by_estop = false;
+            s_solution_fill_guard.started_at_us = esp_timer_get_time();
+        }
+        return;
+    }
+
+    if (!s_solution_fill_guard.paused_by_estop) {
+        memset(&s_solution_fill_guard, 0, sizeof(s_solution_fill_guard));
+    }
+}
+
+static void storage_irrigation_node_update_binary_guard_state(
+    storage_irrigation_node_binary_guard_state_t *state,
+    bool flow_active,
+    bool paused
+) {
+    if (!state) {
+        return;
+    }
+    if (paused) {
+        if (flow_active && state->active) {
+            state->paused_by_estop = true;
+        }
+        return;
+    }
+    if (flow_active) {
+        if (!state->active) {
+            state->active = true;
+            state->low_event_emitted = false;
+        }
+        state->paused_by_estop = false;
+        return;
+    }
+    if (!state->paused_by_estop) {
+        memset(state, 0, sizeof(*state));
+    }
+}
+
 static storage_irrigation_node_stage_guard_t *storage_irrigation_node_get_stage_guard(const char *stage, bool create) {
     if (!stage || stage[0] == '\0') {
         return NULL;
@@ -497,6 +732,94 @@ static bool storage_irrigation_node_stop_stage_path_locked(const char *stage) {
     return all_ok;
 }
 
+static bool storage_irrigation_node_stop_clean_fill_path_locked(void) {
+    int idx = storage_irrigation_node_find_actuator_index("valve_clean_fill");
+    if (idx < 0) {
+        return false;
+    }
+    esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)idx, false);
+    if (stop_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to stop clean fill path: %s", esp_err_to_name(stop_err));
+        return false;
+    }
+    return true;
+}
+
+static bool storage_irrigation_node_stop_irrigation_path_locked(void) {
+    const char *channels[] = {"pump_main", "valve_irrigation", "valve_solution_supply"};
+    bool all_ok = true;
+    for (size_t i = 0; i < sizeof(channels) / sizeof(channels[0]); i++) {
+        int idx = storage_irrigation_node_find_actuator_index(channels[i]);
+        if (idx < 0) {
+            all_ok = false;
+            continue;
+        }
+        esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)idx, false);
+        if (stop_err != ESP_OK) {
+            all_ok = false;
+            ESP_LOGE(TAG, "Failed to stop irrigation path %s: %s", channels[i], esp_err_to_name(stop_err));
+        }
+    }
+    return all_ok;
+}
+
+static bool storage_irrigation_node_stop_all_paths_locked(void) {
+    bool all_ok = true;
+    for (size_t i = 0; i < s_actuator_runtime_count; i++) {
+        esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked(i, false);
+        if (stop_err != ESP_OK) {
+            all_ok = false;
+            const char *channel = s_actuator_runtime[i].cfg ? s_actuator_runtime[i].cfg->name : "unknown";
+            ESP_LOGE(TAG, "Failed to stop actuator %s during e-stop: %s", channel, esp_err_to_name(stop_err));
+        }
+    }
+    return all_ok;
+}
+
+static void storage_irrigation_node_pause_stage_guards_locked(void) {
+    int64_t now_us = esp_timer_get_time();
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        storage_irrigation_node_stage_guard_t *guard = &s_stage_guards[i];
+        if (!guard->active) {
+            continue;
+        }
+        uint32_t elapsed_ms = 0;
+        if (guard->timeout_ms > 0 && guard->timeout_pending == false && now_us > 0 && guard->active) {
+            if (guard->timeout_ms > 0 && guard->timeout_ms <= UINT32_MAX) {
+                if (guard->timer && xTimerIsTimerActive(guard->timer) != pdFALSE) {
+                    TickType_t expiry_tick = xTimerGetExpiryTime(guard->timer);
+                    TickType_t now_tick = xTaskGetTickCount();
+                    if (expiry_tick > now_tick) {
+                        guard->timeout_ms = (uint32_t)pdTICKS_TO_MS(expiry_tick - now_tick);
+                    } else {
+                        guard->timeout_ms = 1;
+                    }
+                }
+            }
+            (void)elapsed_ms;
+        }
+        xTimerStop(guard->timer, 0);
+    }
+}
+
+static void storage_irrigation_node_resume_stage_guards_locked(void) {
+    for (size_t i = 0; i < sizeof(s_stage_guards) / sizeof(s_stage_guards[0]); i++) {
+        storage_irrigation_node_stage_guard_t *guard = &s_stage_guards[i];
+        if (!guard->active || guard->timeout_pending || guard->timeout_ms == 0) {
+            continue;
+        }
+        if (xTimerChangePeriod(guard->timer, pdMS_TO_TICKS(guard->timeout_ms), 0) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to resume paused stage guard %s", guard->stage);
+            guard->timeout_pending = true;
+            continue;
+        }
+        if (xTimerStart(guard->timer, 0) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to start resumed stage guard %s", guard->stage);
+            guard->timeout_pending = true;
+        }
+    }
+}
+
 static const char *storage_irrigation_node_timeout_event_code_for_stage(const char *stage) {
     if (!stage) {
         return NULL;
@@ -557,6 +880,226 @@ static bool storage_irrigation_node_read_switch_state_by_name(const char *sensor
         }
     }
     return false;
+}
+
+static void storage_irrigation_node_reload_fail_safe_config_from_storage(void) {
+    storage_irrigation_node_fail_safe_config_t next = {
+        .clean_fill_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
+        .solution_fill_clean_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
+        .solution_fill_solution_min_check_delay_ms = STORAGE_IRRIGATION_NODE_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+        .recirculation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
+        .irrigation_solution_min_guard_enabled = STORAGE_IRRIGATION_NODE_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
+        .estop_debounce_ms = STORAGE_IRRIGATION_NODE_ESTOP_DEBOUNCE_MS,
+    };
+
+    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE] = {0};
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        s_fail_safe_config = next;
+        return;
+    }
+
+    cJSON *root = cJSON_Parse(config_json);
+    if (!root) {
+        s_fail_safe_config = next;
+        return;
+    }
+
+    const cJSON *guards = cJSON_GetObjectItem(root, "fail_safe_guards");
+    if (guards && cJSON_IsObject(guards)) {
+        const cJSON *item = cJSON_GetObjectItem(guards, "clean_fill_min_check_delay_ms");
+        if (item && cJSON_IsNumber(item)) {
+            double value = cJSON_GetNumberValue(item);
+            if (value >= 0.0 && value <= 3600000.0) {
+                next.clean_fill_min_check_delay_ms = (uint32_t)value;
+            }
+        }
+        item = cJSON_GetObjectItem(guards, "solution_fill_clean_min_check_delay_ms");
+        if (item && cJSON_IsNumber(item)) {
+            double value = cJSON_GetNumberValue(item);
+            if (value >= 0.0 && value <= 3600000.0) {
+                next.solution_fill_clean_min_check_delay_ms = (uint32_t)value;
+            }
+        }
+        item = cJSON_GetObjectItem(guards, "solution_fill_solution_min_check_delay_ms");
+        if (item && cJSON_IsNumber(item)) {
+            double value = cJSON_GetNumberValue(item);
+            if (value >= 0.0 && value <= 3600000.0) {
+                next.solution_fill_solution_min_check_delay_ms = (uint32_t)value;
+            }
+        }
+        item = cJSON_GetObjectItem(guards, "recirculation_solution_min_guard_enabled");
+        if (item && cJSON_IsBool(item)) {
+            next.recirculation_solution_min_guard_enabled = cJSON_IsTrue(item);
+        }
+        item = cJSON_GetObjectItem(guards, "irrigation_solution_min_guard_enabled");
+        if (item && cJSON_IsBool(item)) {
+            next.irrigation_solution_min_guard_enabled = cJSON_IsTrue(item);
+        }
+        item = cJSON_GetObjectItem(guards, "estop_debounce_ms");
+        if (item && cJSON_IsNumber(item)) {
+            double value = cJSON_GetNumberValue(item);
+            if (value >= 20.0 && value <= 5000.0) {
+                next.estop_debounce_ms = (uint32_t)value;
+            }
+        }
+    }
+
+    cJSON_Delete(root);
+    s_fail_safe_config = next;
+}
+
+static esp_err_t storage_irrigation_node_init_estop_input(void) {
+    if (s_estop_input_ready) {
+        return ESP_OK;
+    }
+
+    if (!GPIO_IS_VALID_GPIO(STORAGE_IRRIGATION_NODE_ESTOP_GPIO)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << (uint32_t)STORAGE_IRRIGATION_NODE_ESTOP_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = STORAGE_IRRIGATION_NODE_ESTOP_ACTIVE_LOW ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_down_en = STORAGE_IRRIGATION_NODE_ESTOP_ACTIVE_LOW ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&io_conf);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    int raw = gpio_get_level((gpio_num_t)STORAGE_IRRIGATION_NODE_ESTOP_GPIO);
+    bool pressed = STORAGE_IRRIGATION_NODE_ESTOP_ACTIVE_LOW ? (raw == 0) : (raw != 0);
+    s_estop_debounce.initialized = true;
+    s_estop_debounce.pressed = pressed;
+    s_estop_debounce.candidate_pressed = pressed;
+    s_estop_debounce.candidate_since_us = esp_timer_get_time();
+    s_estop_input_ready = true;
+    return ESP_OK;
+}
+
+static bool storage_irrigation_node_read_estop_pressed(void) {
+    if (!s_estop_input_ready && storage_irrigation_node_init_estop_input() != ESP_OK) {
+        return false;
+    }
+
+    int raw = gpio_get_level((gpio_num_t)STORAGE_IRRIGATION_NODE_ESTOP_GPIO);
+    bool pressed = STORAGE_IRRIGATION_NODE_ESTOP_ACTIVE_LOW ? (raw == 0) : (raw != 0);
+    int64_t now_us = esp_timer_get_time();
+    int64_t debounce_us = (int64_t)(s_fail_safe_config.estop_debounce_ms > 0 ? s_fail_safe_config.estop_debounce_ms : STORAGE_IRRIGATION_NODE_ESTOP_DEBOUNCE_MS) * 1000LL;
+
+    if (!s_estop_debounce.initialized) {
+        s_estop_debounce.initialized = true;
+        s_estop_debounce.pressed = pressed;
+        s_estop_debounce.candidate_pressed = pressed;
+        s_estop_debounce.candidate_since_us = now_us;
+        return pressed;
+    }
+
+    if (pressed != s_estop_debounce.pressed) {
+        if (pressed != s_estop_debounce.candidate_pressed) {
+            s_estop_debounce.candidate_pressed = pressed;
+            s_estop_debounce.candidate_since_us = now_us;
+        } else if ((now_us - s_estop_debounce.candidate_since_us) >= debounce_us) {
+            s_estop_debounce.pressed = s_estop_debounce.candidate_pressed;
+        }
+    } else {
+        s_estop_debounce.candidate_pressed = pressed;
+        s_estop_debounce.candidate_since_us = now_us;
+    }
+
+    return s_estop_debounce.pressed;
+}
+
+static bool storage_irrigation_node_restore_estop_snapshot_locked(void) {
+    if (!s_estop_restore_valid) {
+        return true;
+    }
+
+    static const char *restore_order[] = {
+        "valve_clean_fill",
+        "valve_clean_supply",
+        "valve_solution_fill",
+        "valve_solution_supply",
+        "valve_irrigation",
+        "pump_main",
+    };
+
+    bool all_ok = true;
+    for (size_t i = 0; i < sizeof(restore_order) / sizeof(restore_order[0]); i++) {
+        int idx = storage_irrigation_node_find_actuator_index(restore_order[i]);
+        if (idx < 0) {
+            all_ok = false;
+            continue;
+        }
+        if (!s_estop_restore_states[idx]) {
+            continue;
+        }
+        esp_err_t set_err = storage_irrigation_node_set_actuator_state_locked((size_t)idx, true);
+        if (set_err != ESP_OK) {
+            all_ok = false;
+            ESP_LOGE(TAG, "Failed to restore actuator after e-stop: %s (%s)", restore_order[i], esp_err_to_name(set_err));
+        }
+    }
+    return all_ok;
+}
+
+static void storage_irrigation_node_handle_estop_transition(bool pressed) {
+    if (pressed == s_estop_active) {
+        if (pressed && s_actuator_mutex && xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            (void)storage_irrigation_node_stop_all_paths_locked();
+            xSemaphoreGive(s_actuator_mutex);
+        }
+        return;
+    }
+
+    if (!s_actuator_mutex || xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to acquire actuator lock for e-stop transition");
+        return;
+    }
+
+    if (pressed) {
+        memset(s_estop_restore_states, 0, sizeof(s_estop_restore_states));
+        for (size_t i = 0; i < s_actuator_runtime_count; i++) {
+            const storage_irrigation_node_actuator_channel_t *cfg = s_actuator_runtime[i].cfg;
+            bool state = false;
+            if (cfg && storage_irrigation_node_get_actuator_state_locked(cfg->name, &state)) {
+                s_estop_restore_states[i] = state;
+            }
+        }
+        s_estop_restore_valid = true;
+        storage_irrigation_node_pause_stage_guards_locked();
+        storage_irrigation_node_update_clean_fill_guard_state(storage_irrigation_node_is_clean_fill_active_locked(), true);
+        storage_irrigation_node_update_solution_fill_guard_state(storage_irrigation_node_is_solution_fill_active_locked(), true);
+        storage_irrigation_node_update_binary_guard_state(&s_recirculation_guard, storage_irrigation_node_is_prepare_recirculation_active_locked(), true);
+        storage_irrigation_node_update_binary_guard_state(&s_irrigation_guard, storage_irrigation_node_is_irrigation_active_locked(), true);
+        (void)storage_irrigation_node_stop_all_paths_locked();
+        s_estop_active = true;
+        xSemaphoreGive(s_actuator_mutex);
+        storage_irrigation_node_update_oled_runtime();
+        (void)storage_irrigation_node_publish_storage_event("emergency_stop_activated", NULL);
+        return;
+    }
+
+    s_estop_active = false;
+    bool restored = storage_irrigation_node_restore_estop_snapshot_locked();
+    storage_irrigation_node_resume_stage_guards_locked();
+    bool clean_fill_active = storage_irrigation_node_is_clean_fill_active_locked();
+    bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
+    bool recirculation_active = storage_irrigation_node_is_prepare_recirculation_active_locked();
+    bool irrigation_active = storage_irrigation_node_is_irrigation_active_locked();
+    storage_irrigation_node_update_clean_fill_guard_state(clean_fill_active, false);
+    storage_irrigation_node_update_solution_fill_guard_state(solution_fill_active, false);
+    storage_irrigation_node_update_binary_guard_state(&s_recirculation_guard, recirculation_active, false);
+    storage_irrigation_node_update_binary_guard_state(&s_irrigation_guard, irrigation_active, false);
+    s_estop_restore_valid = false;
+    xSemaphoreGive(s_actuator_mutex);
+
+    if (!restored) {
+        node_state_manager_report_error(ERROR_LEVEL_WARNING, "emergency_stop", ESP_FAIL, "Failed to restore one or more actuators after e-stop release");
+    }
+    storage_irrigation_node_update_oled_runtime();
 }
 
 static void storage_irrigation_node_oled_push_bool_channel(
@@ -727,6 +1270,113 @@ static cJSON *storage_irrigation_node_build_legacy_state_payload(void) {
         cJSON_AddBoolToObject(legacy, "level_solution_min", solution_level_min);
     }
     return legacy;
+}
+
+static void storage_irrigation_node_reset_level_switch_event_session(void) {
+    memset(s_level_switch_event_initialized, 0, sizeof(s_level_switch_event_initialized));
+    memset(s_level_switch_event_published_state, 0, sizeof(s_level_switch_event_published_state));
+    s_level_switch_event_time_wait_logged = false;
+}
+
+static esp_err_t storage_irrigation_node_publish_level_switch_event(
+    const storage_irrigation_node_sensor_channel_t *sensor,
+    bool state,
+    bool initial
+) {
+    if (!sensor || !sensor->name || sensor->name[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!mqtt_manager_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!node_utils_is_time_synced()) {
+        if (!s_level_switch_event_time_wait_logged) {
+            ESP_LOGW(TAG, "Level-switch event publish suppressed until time synchronization completes");
+            s_level_switch_event_time_wait_logged = true;
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_level_switch_event_time_wait_logged = false;
+
+    mqtt_node_info_t node_info = {0};
+    esp_err_t info_err = mqtt_manager_get_node_info(&node_info);
+    if (info_err != ESP_OK || !node_info.gh_uid || !node_info.zone_uid || !node_info.node_uid) {
+        return info_err != ESP_OK ? info_err : ESP_ERR_INVALID_STATE;
+    }
+
+    char topic[192] = {0};
+    int written = snprintf(
+        topic,
+        sizeof(topic),
+        "hydro/%s/%s/%s/%s/%s",
+        node_info.gh_uid,
+        node_info.zone_uid,
+        node_info.node_uid,
+        sensor->name,
+        "event"
+    );
+    if (written <= 0 || (size_t)written >= sizeof(topic)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    cJSON *payload = cJSON_CreateObject();
+    if (!payload) {
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddStringToObject(payload, "event_code", "level_switch_changed");
+    cJSON_AddStringToObject(payload, "channel", sensor->name);
+    cJSON_AddBoolToObject(payload, "state", state);
+    cJSON_AddBoolToObject(payload, "initial", initial);
+    cJSON_AddNumberToObject(payload, "ts", (double)node_utils_get_timestamp_seconds());
+
+    cJSON *snapshot = storage_irrigation_node_build_irr_state_snapshot();
+    if (snapshot) {
+        cJSON_AddItemToObject(payload, "snapshot", snapshot);
+    }
+
+    char *json_str = cJSON_PrintUnformatted(payload);
+    cJSON_Delete(payload);
+    if (!json_str) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t pub_err = mqtt_manager_publish_raw(topic, json_str, 1, 0);
+    free(json_str);
+    return pub_err;
+}
+
+static void storage_irrigation_node_publish_level_switch_events_if_needed(void) {
+    bool mqtt_connected = mqtt_manager_is_connected();
+    if (!mqtt_connected) {
+        if (s_level_switch_event_session_connected) {
+            storage_irrigation_node_reset_level_switch_event_session();
+            s_level_switch_event_session_connected = false;
+        }
+        return;
+    }
+
+    if (!s_level_switch_event_session_connected) {
+        storage_irrigation_node_reset_level_switch_event_session();
+        s_level_switch_event_session_connected = true;
+    }
+
+    for (size_t i = 0; i < STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS_COUNT; i++) {
+        const storage_irrigation_node_sensor_channel_t *sensor = &STORAGE_IRRIGATION_NODE_SENSOR_CHANNELS[i];
+        bool state = storage_irrigation_node_read_level_switch(sensor, NULL) >= 0.5f;
+        bool initial = !s_level_switch_event_initialized[sensor->gpio];
+        bool changed = initial || (s_level_switch_event_published_state[sensor->gpio] != state);
+
+        if (!changed) {
+            continue;
+        }
+
+        esp_err_t pub_err = storage_irrigation_node_publish_level_switch_event(sensor, state, initial);
+        if (pub_err == ESP_OK) {
+            s_level_switch_event_initialized[sensor->gpio] = true;
+            s_level_switch_event_published_state[sensor->gpio] = state;
+        }
+    }
 }
 
 static esp_err_t handle_set_relay(const char *channel, const cJSON *params, cJSON **response, void *user_ctx) {
@@ -1205,7 +1855,12 @@ esp_err_t storage_irrigation_node_sensor_cycle(bool publish_telemetry) {
         }
     }
 
-    storage_irrigation_node_check_fill_completion_events();
+    bool estop_pressed = storage_irrigation_node_read_estop_pressed();
+    storage_irrigation_node_handle_estop_transition(estop_pressed);
+    storage_irrigation_node_publish_level_switch_events_if_needed();
+    if (!s_estop_active) {
+        storage_irrigation_node_process_fail_safe_guards();
+    }
     storage_irrigation_node_update_oled_runtime();
 
     return ESP_OK;
@@ -1308,56 +1963,106 @@ static esp_err_t storage_irrigation_node_publish_terminal_response(
     return ESP_OK;
 }
 
-static void storage_irrigation_node_check_fill_completion_events(void) {
+static void storage_irrigation_node_process_fail_safe_guards(void) {
+    const char *events[5] = {0};
+    size_t event_count = 0;
+    bool clean_level_min = false;
     bool clean_level_max = false;
+    bool solution_level_min = false;
     bool solution_level_max = false;
-    bool clean_level_max_ok = false;
-    bool solution_level_max_ok = false;
-    bool emit_clean_completed = false;
-    bool emit_solution_completed = false;
-
-    clean_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max);
-    solution_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max);
+    bool clean_level_min_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_min", &clean_level_min);
+    bool clean_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_clean_max", &clean_level_max);
+    bool solution_level_min_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_min", &solution_level_min);
+    bool solution_level_max_ok = storage_irrigation_node_read_switch_state_by_name("level_solution_max", &solution_level_max);
 
     if (!s_actuator_mutex || xSemaphoreTake(s_actuator_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return;
     }
 
     bool clean_fill_active = storage_irrigation_node_is_clean_fill_active_locked();
-    bool clean_completion_ready = clean_level_max_ok && clean_level_max && clean_fill_active;
-    if (!clean_fill_active) {
-        s_clean_fill_completion_latched = false;
-    }
-    if (clean_completion_ready && !s_clean_fill_completion_latched) {
-        int valve_clean_fill_idx = storage_irrigation_node_find_actuator_index("valve_clean_fill");
-        if (valve_clean_fill_idx >= 0) {
-            esp_err_t stop_err = storage_irrigation_node_set_actuator_state_locked((size_t)valve_clean_fill_idx, false);
-            if (stop_err == ESP_OK) {
-                s_clean_fill_completion_latched = true;
-                emit_clean_completed = true;
-            } else {
-                ESP_LOGE(TAG, "Failed to stop valve_clean_fill on level_clean_max: %s", esp_err_to_name(stop_err));
+    bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
+    bool recirculation_active = storage_irrigation_node_is_prepare_recirculation_active_locked();
+    bool irrigation_active = storage_irrigation_node_is_irrigation_active_locked();
+
+    storage_irrigation_node_update_clean_fill_guard_state(clean_fill_active, false);
+    storage_irrigation_node_update_solution_fill_guard_state(solution_fill_active, false);
+    storage_irrigation_node_update_binary_guard_state(&s_recirculation_guard, recirculation_active, false);
+    storage_irrigation_node_update_binary_guard_state(&s_irrigation_guard, irrigation_active, false);
+
+    if (clean_fill_active && !s_clean_fill_guard.terminal_event_emitted) {
+        if (!s_clean_fill_guard.min_check_completed &&
+            storage_irrigation_node_clean_fill_elapsed_ms() >= s_fail_safe_config.clean_fill_min_check_delay_ms) {
+            s_clean_fill_guard.min_check_completed = true;
+            if (clean_level_min_ok && !clean_level_min && storage_irrigation_node_stop_clean_fill_path_locked()) {
+                s_clean_fill_guard.terminal_event_emitted = true;
+                events[event_count++] = "clean_fill_source_empty";
+                clean_fill_active = false;
             }
+        }
+        if (clean_fill_active &&
+            clean_level_max_ok &&
+            clean_level_max &&
+            storage_irrigation_node_stop_clean_fill_path_locked()) {
+            s_clean_fill_guard.terminal_event_emitted = true;
+            events[event_count++] = "clean_fill_completed";
         }
     }
 
-    bool solution_fill_active = storage_irrigation_node_is_solution_fill_active_locked();
-    bool solution_completion_ready = solution_level_max_ok && solution_level_max && solution_fill_active;
-    if (!solution_fill_active) {
-        s_solution_fill_completion_latched = false;
+    if (solution_fill_active && !s_solution_fill_guard.terminal_event_emitted) {
+        if (!s_solution_fill_guard.clean_min_check_completed &&
+            storage_irrigation_node_solution_fill_elapsed_ms() >= s_fail_safe_config.solution_fill_clean_min_check_delay_ms) {
+            s_solution_fill_guard.clean_min_check_completed = true;
+            if (clean_level_min_ok && !clean_level_min && storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
+                s_solution_fill_guard.terminal_event_emitted = true;
+                events[event_count++] = "solution_fill_source_empty";
+                solution_fill_active = false;
+            }
+        }
+
+        if (solution_fill_active &&
+            !s_solution_fill_guard.solution_min_check_completed &&
+            storage_irrigation_node_solution_fill_elapsed_ms() >= s_fail_safe_config.solution_fill_solution_min_check_delay_ms) {
+            s_solution_fill_guard.solution_min_check_completed = true;
+            if (solution_level_min_ok && !solution_level_min && storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
+                s_solution_fill_guard.terminal_event_emitted = true;
+                events[event_count++] = "solution_fill_leak_detected";
+                solution_fill_active = false;
+            }
+        }
+
+        if (solution_fill_active &&
+            solution_level_max_ok &&
+            solution_level_max &&
+            storage_irrigation_node_stop_stage_path_locked("solution_fill")) {
+            s_solution_fill_guard.terminal_event_emitted = true;
+            events[event_count++] = "solution_fill_completed";
+        }
     }
-    if (solution_completion_ready && !s_solution_fill_completion_latched) {
-        s_solution_fill_completion_latched = true;
-        emit_solution_completed = true;
+
+    if (recirculation_active &&
+        s_fail_safe_config.recirculation_solution_min_guard_enabled &&
+        !s_recirculation_guard.low_event_emitted &&
+        solution_level_min_ok &&
+        !solution_level_min &&
+        storage_irrigation_node_stop_stage_path_locked("prepare_recirculation")) {
+        s_recirculation_guard.low_event_emitted = true;
+        events[event_count++] = "recirculation_solution_low";
+    }
+
+    if (irrigation_active &&
+        s_fail_safe_config.irrigation_solution_min_guard_enabled &&
+        !s_irrigation_guard.low_event_emitted &&
+        solution_level_min_ok &&
+        !solution_level_min &&
+        storage_irrigation_node_stop_irrigation_path_locked()) {
+        s_irrigation_guard.low_event_emitted = true;
+        events[event_count++] = "irrigation_solution_low";
     }
 
     xSemaphoreGive(s_actuator_mutex);
 
-    if (emit_clean_completed) {
-        (void)storage_irrigation_node_publish_storage_event("clean_fill_completed", NULL);
-    }
-    if (emit_solution_completed) {
-        (void)storage_irrigation_node_publish_storage_event("solution_fill_completed", NULL);
+    for (size_t i = 0; i < event_count; i++) {
+        (void)storage_irrigation_node_publish_storage_event(events[i], NULL);
     }
 }
 
@@ -1376,6 +2081,7 @@ static void storage_irrigation_node_stage_guard_timer_cb(TimerHandle_t timer) {
 static void storage_irrigation_node_config_handler_wrapper(const char *topic, const char *data, int data_len, void *user_ctx) {
     if (data == NULL || data_len <= 0) {
         node_config_handler_process(topic, data, data_len, user_ctx);
+        storage_irrigation_node_reload_fail_safe_config_from_storage();
         return;
     }
 
@@ -1383,10 +2089,12 @@ static void storage_irrigation_node_config_handler_wrapper(const char *topic, co
     char *patched = storage_irrigation_node_build_patched_config(data, (size_t)data_len, true, &changed);
     if (!patched) {
         node_config_handler_process(topic, data, data_len, user_ctx);
+        storage_irrigation_node_reload_fail_safe_config_from_storage();
         return;
     }
 
     node_config_handler_process(topic, patched, (int)strlen(patched), user_ctx);
+    storage_irrigation_node_reload_fail_safe_config_from_storage();
     free(patched);
 }
 
@@ -1790,6 +2498,12 @@ esp_err_t storage_irrigation_node_framework_init_integration(void) {
     err = storage_irrigation_node_init_level_switch_inputs();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize level-switch inputs: %s", esp_err_to_name(err));
+        return err;
+    }
+    storage_irrigation_node_reload_fail_safe_config_from_storage();
+    err = storage_irrigation_node_init_estop_input();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize e-stop input: %s", esp_err_to_name(err));
         return err;
     }
 

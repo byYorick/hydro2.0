@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
+use App\Jobs\PublishNodeConfigJob;
 use App\Models\AutomationConfigVersion;
+use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\GrowCycle;
 use App\Models\Zone;
@@ -110,6 +112,7 @@ class AutomationConfigController extends Controller
                 is_array($document->payload) ? $document->payload : [],
                 $request->user()?->id
             );
+            $this->republishAffectedNodeConfigs($namespace, $scopeType, $scopeId);
 
             return response()->json([
                 'status' => 'ok',
@@ -633,5 +636,18 @@ class AutomationConfigController extends Controller
             'updated_by' => $preset['updated_by'] ?? null,
             'updated_at' => $preset['updated_at'] ?? null,
         ];
+    }
+
+    private function republishAffectedNodeConfigs(string $namespace, string $scopeType, int $scopeId): void
+    {
+        if ($scopeType !== AutomationConfigRegistry::SCOPE_ZONE || $namespace !== AutomationConfigRegistry::NAMESPACE_ZONE_LOGIC_PROFILE) {
+            return;
+        }
+
+        DeviceNode::query()
+            ->where('zone_id', $scopeId)
+            ->where('type', 'irrig')
+            ->pluck('id')
+            ->each(static fn (int $nodeId): mixed => PublishNodeConfigJob::dispatch($nodeId));
     }
 }

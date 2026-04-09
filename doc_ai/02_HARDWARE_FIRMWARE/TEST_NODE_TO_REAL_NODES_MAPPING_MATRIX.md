@@ -72,11 +72,11 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 | `pump_irrigation` (service alias) | `storage_irrigation_node` | `Alias/Adapter` | В real-node нужен явный канал в NodeConfig; в test-node это внутренний transient-контур. |
 | `pump_bus_current` (service/probe) | `storage_irrigation_node` | `Missing` | В каноническом IRR-профиле `storage_irrigation_node` этот канал не публикуется; используются `level_*` switch-каналы. |
 | `water_level` / `flow_present` (service/probe) | отдельная sensor-node / расширение irrig-node | `Missing` | В текущих real-node прошивках нет готового прямого канала с такой семантикой. |
-| `storage_state` | `storage_irrigation_node/storage_state` | `Direct` | Реальная IRR-нода публикует `storage_state/event` и обслуживает `storage_state/state` для two-tank runtime. |
+| `storage_state` | `storage_irrigation_node/storage_state` | `Direct` | Реальная IRR-нода публикует `storage_state/event`, обслуживает `storage_state/state`, а `test_node` теперь повторяет тот же набор fail-safe event-кодов и `state/snapshot` payload для virtual IRR runtime. |
 
 Критично:
 
-- `test_node` имеет interlock и staged-сценарии 2-баковой модели; в текущих real-node этого поведения как единого контракта нет.
+- `test_node` имеет staged passive-drift для детерминированных HIL/E2E прогонов; это тестовый механизм симуляции, а не отличие MQTT-контракта от актуальной real `storage_irrigation_node`.
 
 ## 4.2. `nd-test-ph-1` (`type=ph`)
 

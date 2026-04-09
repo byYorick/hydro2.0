@@ -379,6 +379,120 @@ async def test_state_timeline_labels_solution_fill_self_transition_as_inflow_cor
     assert result["timeline"][0]["label"] == "Коррекция раствора при наполнении"
 
 
+async def test_state_timeline_labels_new_fail_safe_transitions() -> None:
+    task = SimpleNamespace(
+        id=55,
+        status="failed",
+        error_code="solution_fill_leak_detected",
+        error_message="Solution minimum level dropped during solution fill",
+        workflow=WorkflowState(
+            current_stage="solution_fill_leak_stop",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return []
+        if "FROM zone_events" in query:
+            return []
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(
+            active_task=task,
+            transitions=[
+                {
+                    "from_stage": "clean_fill_check",
+                    "to_stage": "clean_fill_retry_stop",
+                    "triggered_at": NOW.replace(tzinfo=None),
+                },
+                {
+                    "from_stage": "solution_fill_check",
+                    "to_stage": "solution_fill_leak_stop",
+                    "triggered_at": (NOW + timedelta(seconds=1)).replace(tzinfo=None),
+                },
+            ],
+        ),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=7)
+
+    assert result["timeline"][0]["event"] == "CLEAN_FILL_SOURCE_EMPTY"
+    assert "безопасная остановка и повтор" in result["timeline"][0]["label"]
+    assert result["timeline"][1]["event"] == "SOLUTION_FILL_LEAK_DETECTED"
+    assert "нижний уровень раствора пропал" in result["timeline"][1]["label"]
+
+
+async def test_state_timeline_includes_node_level_switch_events() -> None:
+    task = SimpleNamespace(
+        id=22,
+        status="pending",
+        updated_at=NOW.replace(tzinfo=None),
+        error_code=None,
+        error_message=None,
+        workflow=WorkflowState(
+            current_stage="solution_fill_check",
+            workflow_phase="tank_filling",
+            stage_deadline_at=None,
+            stage_retry_count=0,
+            stage_entered_at=NOW.replace(tzinfo=None),
+            clean_fill_cycle=0,
+            control_mode="auto",
+            pending_manual_step=None,
+        ),
+        correction=None,
+    )
+
+    transitions = [
+        {
+            "from_stage": "solution_fill_start",
+            "to_stage": "solution_fill_check",
+            "workflow_phase": "tank_filling",
+            "triggered_at": NOW.replace(tzinfo=None),
+            "metadata": {},
+        }
+    ]
+
+    async def fetch_fn(query, *args):
+        if "FROM zone_events" in query:
+            return [
+                {
+                    "type": "LEVEL_SWITCH_CHANGED",
+                    "created_at": NOW.replace(tzinfo=None) + timedelta(seconds=2),
+                    "payload": {
+                        "channel": "level_solution_max",
+                        "state": True,
+                        "initial": False,
+                    },
+                }
+            ]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(active_task=task, transitions=transitions),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert len(result["timeline"]) == 2
+    assert result["timeline"][0]["event"] == "SOLUTION_FILL_IN_PROGRESS"
+    assert result["timeline"][1]["event"] == "LEVEL_SWITCH_CHANGED"
+    assert "Верхний уровень раствора" in result["timeline"][1]["label"]
+    assert result["timeline"][1]["active"] is True
+
+
 async def test_state_prefers_solution_max_over_solution_min_for_full_tank() -> None:
     workflow = ZoneWorkflow(
         zone_id=1,
@@ -407,6 +521,141 @@ async def test_state_prefers_solution_max_over_solution_min_for_full_tank() -> N
     result = await use_case.run(zone_id=1)
 
     assert result["current_levels"]["nutrient_tank_level_percent"] == 100
+
+
+async def test_workflow_state_timeline_includes_node_runtime_events_without_active_task() -> None:
+    workflow = ZoneWorkflow(
+        zone_id=7,
+        workflow_phase="ready",
+        version=5,
+        scheduler_task_id="21",
+        started_at=NOW.replace(tzinfo=None),
+        updated_at=NOW.replace(tzinfo=None),
+        payload={"ae3_cycle_start_stage": "complete_ready"},
+    )
+
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return []
+        if "FROM zone_events" in query:
+            return [
+                {
+                    "type": "LEVEL_SWITCH_CHANGED",
+                    "created_at": NOW.replace(tzinfo=None) + timedelta(seconds=1),
+                    "payload": {
+                        "channel": "level_solution_min",
+                        "state": False,
+                        "initial": False,
+                    },
+                }
+            ]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=_WorkflowRepo(workflow),
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=7)
+
+    assert len(result["timeline"]) == 1
+    assert result["timeline"][0]["event"] == "LEVEL_SWITCH_CHANGED"
+    assert "Нижний уровень раствора" in result["timeline"][0]["label"]
+    assert result["timeline"][0]["active"] is True
+
+
+async def test_state_reports_mid_level_when_solution_min_is_active_but_solution_max_is_not() -> None:
+    workflow = ZoneWorkflow(
+        zone_id=1,
+        workflow_phase="ready",
+        version=3,
+        scheduler_task_id="11",
+        started_at=NOW.replace(tzinfo=None),
+        updated_at=NOW.replace(tzinfo=None),
+        payload={"ae3_cycle_start_stage": "complete_ready"},
+    )
+
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return [
+                {"label": "level_solution_max", "type": "WATER_LEVEL_SWITCH", "last_value": 0.0, "last_ts": NOW, "last_quality": "GOOD"},
+                {"label": "level_solution_min", "type": "WATER_LEVEL_SWITCH", "last_value": 1.0, "last_ts": NOW, "last_quality": "GOOD"},
+            ]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=_WorkflowRepo(workflow),
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=1)
+
+    assert result["current_levels"]["nutrient_tank_level_percent"] == 50
+
+
+async def test_idle_state_timeline_includes_recent_node_runtime_events() -> None:
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return []
+        if "FROM zone_events" in query:
+            return [
+                {
+                    "type": "SOLUTION_FILL_COMPLETED",
+                    "created_at": NOW.replace(tzinfo=None) - timedelta(minutes=1),
+                    "payload": {},
+                }
+            ]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=3)
+
+    assert result["state"] == "IDLE"
+    assert len(result["timeline"]) == 1
+    assert result["timeline"][0]["event"] == "SOLUTION_FILL_COMPLETED"
+    assert result["timeline"][0]["label"] == "Событие ноды: раствор заполнен"
+
+
+async def test_idle_state_timeline_labels_emergency_stop_and_fail_safe_events() -> None:
+    async def fetch_fn(query, *args):
+        if "FROM sensors s" in query:
+            return []
+        if "FROM zone_events" in query:
+            return [
+                {
+                    "type": "EMERGENCY_STOP_ACTIVATED",
+                    "created_at": NOW.replace(tzinfo=None),
+                    "payload": {"channel": "storage_state"},
+                },
+                {
+                    "type": "RECIRCULATION_SOLUTION_LOW",
+                    "created_at": (NOW + timedelta(seconds=5)).replace(tzinfo=None),
+                    "payload": {"channel": "storage_state"},
+                },
+            ]
+        return []
+
+    use_case = GetZoneAutomationStateUseCase(
+        task_repository=_TaskRepo(),
+        workflow_repository=None,
+        fetch_fn=fetch_fn,
+    )
+
+    result = await use_case.run(zone_id=7)
+
+    assert [item["event"] for item in result["timeline"]] == [
+        "EMERGENCY_STOP_ACTIVATED",
+        "RECIRCULATION_SOLUTION_LOW",
+    ]
+    assert result["timeline"][0]["label"] == "Событие ноды: активирован аварийный стоп"
+    assert result["timeline"][1]["label"] == "Событие ноды: рециркуляция остановлена по низкому уровню раствора"
 
 
 async def test_state_prefers_terminal_last_task_over_stale_active_workflow_snapshot() -> None:

@@ -20,7 +20,7 @@
     {
       "name": "valve_clean_fill",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
+      "actuator_type": "VALVE",
       "gpio": 26,
       "safe_limits": {
         "max_duration_ms": 30000,
@@ -30,7 +30,7 @@
     {
       "name": "valve_clean_supply",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
+      "actuator_type": "VALVE",
       "gpio": 27,
       "safe_limits": {
         "max_duration_ms": 30000,
@@ -40,7 +40,7 @@
     {
       "name": "valve_solution_fill",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
+      "actuator_type": "VALVE",
       "gpio": 32,
       "safe_limits": {
         "max_duration_ms": 30000,
@@ -50,7 +50,7 @@
     {
       "name": "valve_solution_supply",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
+      "actuator_type": "VALVE",
       "gpio": 33,
       "safe_limits": {
         "max_duration_ms": 30000,
@@ -60,8 +60,8 @@
     {
       "name": "valve_irrigation",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
-      "gpio": 23,
+      "actuator_type": "VALVE",
+      "gpio": 14,
       "safe_limits": {
         "max_duration_ms": 30000,
         "min_off_ms": 5000
@@ -74,7 +74,7 @@
       "poll_interval_ms": 5000,
       "unit": "bool",
       "gpio": 16,
-      "active_low": false
+      "active_low": true
     },
     {
       "name": "level_clean_max",
@@ -83,7 +83,7 @@
       "poll_interval_ms": 5000,
       "unit": "bool",
       "gpio": 17,
-      "active_low": false
+      "active_low": true
     },
     {
       "name": "level_solution_min",
@@ -92,7 +92,7 @@
       "poll_interval_ms": 5000,
       "unit": "bool",
       "gpio": 18,
-      "active_low": false
+      "active_low": true
     },
     {
       "name": "level_solution_max",
@@ -101,9 +101,17 @@
       "poll_interval_ms": 5000,
       "unit": "bool",
       "gpio": 19,
-      "active_low": false
+      "active_low": true
     }
   ],
+  "fail_safe_guards": {
+    "clean_fill_min_check_delay_ms": 5000,
+    "solution_fill_clean_min_check_delay_ms": 5000,
+    "solution_fill_solution_min_check_delay_ms": 15000,
+    "recirculation_solution_min_guard_enabled": true,
+    "irrigation_solution_min_guard_enabled": true,
+    "estop_debounce_ms": 80
+  },
   "wifi": {
     "ssid": "HydroFarm",
     "pass": "12345678"

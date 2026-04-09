@@ -884,6 +884,26 @@ actions:
     cmd_id: ${reset_state_response_confirm.data.cmd_id}
   timeout: 30.0
   expected_rows: 1
+  optional: true
+- step: reset_test_node_state_final
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: reset_state
+    params: {}
+  save: reset_state_response_final
+- step: wait_reset_state_done_final
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${reset_state_response_final.data.cmd_id}
+  timeout: 30.0
+  expected_rows: 1
 - step: wait_zero_level_telemetry
   type: db.wait
   query: "SELECT COUNT(*)::int AS zero_levels\nFROM sensors s\nJOIN telemetry_last\
@@ -966,7 +986,7 @@ actions:
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  topology AS mode,\n  current_stage AS stage,\n\
     \  error_code,\n  error_message\nFROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n\
-    \  AND status IN ('pending', 'completed', 'failed')\nLIMIT 1\n"
+    \  AND status = 'pending'\n  AND current_stage = 'clean_fill_check'\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 20.0
@@ -1080,7 +1100,7 @@ actions:
       level_clean_min_override: true
       level_clean_max_override: true
       level_solution_min_override: true
-      level_solution_max_override: true
+      level_solution_max_override: false
   save: force_solution_tank_full_response
 - step: wait_force_solution_tank_full_done
   type: db.wait
@@ -1109,6 +1129,29 @@ actions:
     task_id: ${task_id}
   expected_rows: 0
   save: fill_ph_correction_rows
+- step: complete_solution_fill_after_ec_correction
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: true
+  save: complete_solution_fill_after_ec_correction_response
+- step: wait_complete_solution_fill_after_ec_correction_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${complete_solution_fill_after_ec_correction_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_prepare_recirculation_stage
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
@@ -1399,7 +1442,27 @@ actions:
     \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
   params:
     cmd_id: ${reset_state_second_response.data.cmd_id}
-  timeout: 20.0
+  timeout: 30.0
+  expected_rows: 1
+  optional: true
+- step: reset_test_node_state_second_run_confirm
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: reset_state
+    params: {}
+  save: reset_state_second_confirm_response
+- step: wait_reset_state_second_confirm_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${reset_state_second_confirm_response.data.cmd_id}
+  timeout: 30.0
   expected_rows: 1
 - step: wait_zero_level_telemetry_second_run
   type: db.wait
@@ -1442,6 +1505,14 @@ actions:
   timeout: 30.0
   expected_rows: 1
   save: irr_state_second_run_row
+- step: wait_second_cycle_active_before_start
+  type: db.wait
+  query: "SELECT id, status, current_phase_id\nFROM grow_cycles\nWHERE id = CAST(:grow_cycle_id_2 AS bigint)\n  AND status IN ('PLANNED', 'RUNNING', 'PAUSED')\n  AND current_phase_id IS NOT NULL\nLIMIT 1\n"
+  params:
+    grow_cycle_id_2: ${grow_cycle_id_2}
+  timeout: 30.0
+  expected_rows: 1
+  save: second_cycle_active_row
 - step: insert_scheduler_like_intent_second
   type: database_execute
   query: "INSERT INTO zone_automation_intents (\n  zone_id,\n  intent_type,\n  payload,\n\
@@ -1498,7 +1569,7 @@ actions:
       level_clean_min_override: true
       level_clean_max_override: true
       level_solution_min_override: true
-      level_solution_max_override: true
+      level_solution_max_override: false
   save: force_solution_tank_full_second_response
 - step: wait_force_solution_tank_full_second_done
   type: db.wait
@@ -1527,6 +1598,29 @@ actions:
     task_id_2: ${task_id_2}
   expected_rows: 0
   save: fill_ph_correction_second_rows
+- step: complete_solution_fill_after_ec_correction_second
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: true
+  save: complete_solution_fill_after_ec_correction_second_response
+- step: wait_complete_solution_fill_after_ec_correction_second_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${complete_solution_fill_after_ec_correction_second_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_prepare_recirculation_stage_second
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
@@ -1690,23 +1784,39 @@ cleanup:
 - step: cleanup_runtime_ae_commands
   type: database_execute
   optional: true
-  query: 'DELETE FROM ae_commands
-
-    WHERE task_id = CAST(:task_id AS bigint)
-
-    '
+  query: |
+    DELETE FROM ae_commands
+    WHERE task_id IN (
+      SELECT value::bigint
+      FROM unnest(
+        ARRAY[
+          NULLIF(CAST(:task_id AS text), ''),
+          NULLIF(CAST(:task_id_2 AS text), '')
+        ]
+      ) AS value
+      WHERE value IS NOT NULL
+    )
   params:
     task_id: ${task_id}
+    task_id_2: ${task_id_2}
 - step: cleanup_runtime_ae_task
   type: database_execute
   optional: true
-  query: 'DELETE FROM ae_tasks
-
-    WHERE id = CAST(:task_id AS bigint)
-
-    '
+  query: |
+    DELETE FROM ae_tasks
+    WHERE id IN (
+      SELECT value::bigint
+      FROM unnest(
+        ARRAY[
+          NULLIF(CAST(:task_id AS text), ''),
+          NULLIF(CAST(:task_id_2 AS text), '')
+        ]
+      ) AS value
+      WHERE value IS NOT NULL
+    )
   params:
     task_id: ${task_id}
+    task_id_2: ${task_id_2}
 - step: cleanup_runtime_ae_leases
   type: database_execute
   optional: true

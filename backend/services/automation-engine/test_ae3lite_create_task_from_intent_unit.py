@@ -9,6 +9,7 @@ import pytest
 from ae3lite.application.adapters import LegacyIntentMapper
 from ae3lite.application.use_cases import CreateTaskFromIntentUseCase
 from ae3lite.api.contracts import StartCycleRequest
+from ae3lite.domain.errors import TaskCreateError
 from ae3lite.domain.entities import AutomationTask
 
 
@@ -168,6 +169,12 @@ class _AlertRepo:
 @pytest.mark.asyncio
 async def test_create_task_from_intent_uses_shared_locked_connection_for_checks_and_insert() -> None:
     conn = _FakeConn()
+    conn.fetchrow_results = [
+        {
+            "grow_cycle_id": 55,
+            "current_phase_id": 77,
+        },
+    ]
     use_case = CreateTaskFromIntentUseCase(
         task_repository=_TaskRepo(conn),
         zone_lease_repository=_LeaseRepo(conn),
@@ -207,6 +214,10 @@ async def test_create_task_from_intent_uses_shared_locked_connection_for_checks_
 async def test_create_task_from_intent_locks_irrigation_decision_snapshot_before_worker_claim() -> None:
     conn = _FakeConn()
     conn.fetchrow_results = [
+        {
+            "grow_cycle_id": 55,
+            "current_phase_id": 70,
+        },
         {
             "grow_cycle_id": 55,
             "cycle_settings": {"bundle_revision": "bundle-1"},
@@ -273,3 +284,41 @@ async def test_create_task_from_intent_locks_irrigation_decision_snapshot_before
     assert create_pending_call[2] == "smart_soil_v1"
     assert create_pending_call[3] == {"lookback_sec": 1800, "min_samples": 3}
     assert create_pending_call[4] == "bundle-1"
+
+
+@pytest.mark.asyncio
+async def test_create_task_from_intent_fails_closed_without_active_grow_cycle() -> None:
+    conn = _FakeConn()
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=_TaskRepo(conn),
+        zone_lease_repository=_LeaseRepo(conn),
+        legacy_intent_mapper=LegacyIntentMapper(),
+        zone_alert_repository=_AlertRepo(conn),
+    )
+
+    with patch(
+        "ae3lite.application.use_cases.create_task_from_intent.get_pool",
+        return_value=_FakePool(conn),
+    ):
+        with pytest.raises(TaskCreateError) as exc:
+            await use_case.run(
+                zone_id=7,
+                source="laravel_scheduler",
+                idempotency_key="idem-missing-cycle",
+                intent_row={
+                    "id": 12,
+                    "zone_id": 7,
+                    "intent_type": "diagnostics_tick",
+                    "retry_count": 0,
+                    "payload": {
+                        "workflow": "cycle_start",
+                        "task_type": "diagnostics",
+                        "source": "laravel_scheduler",
+                        "topology": "two_tank",
+                    },
+                    "idempotency_key": "idem-missing-cycle",
+                },
+                now=NOW,
+            )
+
+    assert exc.value.code == "ae3_snapshot_no_active_grow_cycle"

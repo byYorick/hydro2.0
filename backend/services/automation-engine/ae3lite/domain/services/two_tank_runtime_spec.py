@@ -276,10 +276,11 @@ def resolve_two_tank_runtime(snapshot: Any) -> dict[str, Any]:
         "correction": dict(default_correction_cfg),
         "correction_by_phase": correction_by_phase,
         "command_specs": {},
+        "fail_safe_guards": _build_fail_safe_guards(execution),
         "irrigation_execution": _build_irrigation_execution(snapshot),
         "irrigation_decision": _build_irrigation_decision(snapshot),
         "irrigation_recovery": _build_irrigation_recovery(snapshot),
-        "irrigation_safety": _build_irrigation_safety(snapshot),
+        "irrigation_safety": _build_irrigation_safety(snapshot, execution),
         "soil_moisture_target": _build_soil_moisture_target(snapshot),
     }
     _validate_prepare_recirculation_timing(runtime)
@@ -830,11 +831,49 @@ def _build_irrigation_recovery(snapshot: Any) -> dict[str, Any]:
     }
 
 
-def _build_irrigation_safety(snapshot: Any) -> dict[str, Any]:
+def _build_fail_safe_guards(execution: Mapping[str, Any]) -> dict[str, Any]:
+    guards = _to_mapping(execution.get("fail_safe_guards"))
+    return {
+        "clean_fill_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("clean_fill_min_check_delay_ms"),
+            5000,
+            0,
+            3600000,
+        ),
+        "solution_fill_clean_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("solution_fill_clean_min_check_delay_ms"),
+            5000,
+            0,
+            3600000,
+        ),
+        "solution_fill_solution_min_check_delay_ms": _resolve_bounded_int(
+            guards.get("solution_fill_solution_min_check_delay_ms"),
+            15000,
+            0,
+            3600000,
+        ),
+        "recirculation_stop_on_solution_min": bool(guards.get("recirculation_stop_on_solution_min", True)),
+        "irrigation_stop_on_solution_min": bool(guards.get("irrigation_stop_on_solution_min", True)),
+        "estop_debounce_ms": _resolve_bounded_int(
+            guards.get("estop_debounce_ms"),
+            80,
+            20,
+            5000,
+        ),
+    }
+
+
+def _build_irrigation_safety(snapshot: Any, execution: Mapping[str, Any] | None = None) -> dict[str, Any]:
     subsystem = _irrigation_subsystem(snapshot)
     safety = _to_mapping(subsystem.get("safety"))
+    fail_safe_guards = _build_fail_safe_guards(execution or {})
     return {
-        "stop_on_solution_min": bool(safety.get("stop_on_solution_min", True)),
+        "stop_on_solution_min": bool(
+            safety.get(
+                "stop_on_solution_min",
+                fail_safe_guards.get("irrigation_stop_on_solution_min", True),
+            )
+        ),
     }
 
 

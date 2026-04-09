@@ -121,6 +121,27 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   if (form.startupCleanFillRetryCycles === undefined || !Number.isFinite(Number(form.startupCleanFillRetryCycles))) {
     form.startupCleanFillRetryCycles = automationDefaults.value.water_startup_clean_fill_retry_cycles
   }
+  if (form.cleanFillMinCheckDelayMs === undefined || !Number.isFinite(Number(form.cleanFillMinCheckDelayMs))) {
+    form.cleanFillMinCheckDelayMs = automationDefaults.value.water_clean_fill_min_check_delay_ms
+  }
+  if (
+    form.solutionFillCleanMinCheckDelayMs === undefined ||
+    !Number.isFinite(Number(form.solutionFillCleanMinCheckDelayMs))
+  ) {
+    form.solutionFillCleanMinCheckDelayMs = automationDefaults.value.water_solution_fill_clean_min_check_delay_ms
+  }
+  if (
+    form.solutionFillSolutionMinCheckDelayMs === undefined ||
+    !Number.isFinite(Number(form.solutionFillSolutionMinCheckDelayMs))
+  ) {
+    form.solutionFillSolutionMinCheckDelayMs = automationDefaults.value.water_solution_fill_solution_min_check_delay_ms
+  }
+  if (form.recirculationStopOnSolutionMin === undefined) {
+    form.recirculationStopOnSolutionMin = automationDefaults.value.water_recirculation_stop_on_solution_min
+  }
+  if (form.estopDebounceMs === undefined || !Number.isFinite(Number(form.estopDebounceMs))) {
+    form.estopDebounceMs = automationDefaults.value.water_estop_debounce_ms
+  }
   if (form.irrigationDecisionStrategy !== 'task' && form.irrigationDecisionStrategy !== 'smart_soil_v1') {
     form.irrigationDecisionStrategy = automationDefaults.value.water_irrigation_decision_strategy
   }
@@ -197,6 +218,10 @@ function normalizeWaterRuntimeFields(form: WaterFormState): void {
   form.startupSolutionFillTimeoutSeconds = clamp(Math.round(form.startupSolutionFillTimeoutSeconds), 30, 86400)
   form.startupPrepareRecirculationTimeoutSeconds = clamp(Math.round(form.startupPrepareRecirculationTimeoutSeconds), 30, 86400)
   form.startupCleanFillRetryCycles = clamp(Math.round(form.startupCleanFillRetryCycles), 0, 20)
+  form.cleanFillMinCheckDelayMs = clamp(Math.round(form.cleanFillMinCheckDelayMs), 0, 3600000)
+  form.solutionFillCleanMinCheckDelayMs = clamp(Math.round(form.solutionFillCleanMinCheckDelayMs), 0, 3600000)
+  form.solutionFillSolutionMinCheckDelayMs = clamp(Math.round(form.solutionFillSolutionMinCheckDelayMs), 0, 3600000)
+  form.estopDebounceMs = clamp(Math.round(form.estopDebounceMs), 20, 5000)
   form.irrigationDecisionLookbackSeconds = clamp(Math.round(form.irrigationDecisionLookbackSeconds), 60, 86400)
   form.irrigationDecisionMinSamples = clamp(Math.round(form.irrigationDecisionMinSamples), 1, 100)
   form.irrigationDecisionStaleAfterSeconds = clamp(Math.round(form.irrigationDecisionStaleAfterSeconds), 30, 86400)

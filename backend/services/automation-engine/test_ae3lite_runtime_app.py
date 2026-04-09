@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from contextlib import suppress
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,9 @@ from starlette.responses import JSONResponse
 os.environ.setdefault("HISTORY_LOGGER_API_TOKEN", "test-token")
 
 import ae3lite.runtime.app as runtime_app_module
+
+
+NOW = datetime(2026, 4, 9, 12, 0, 0, tzinfo=timezone.utc)
 
 
 @pytest.mark.asyncio
@@ -59,6 +63,131 @@ async def test_intent_listener_callback_kicks_worker() -> None:
     await callback({"intent_id": 11, "zone_id": 22, "status": "completed"})
 
     assert kicks == ["kick"]
+
+
+@pytest.mark.asyncio
+async def test_zone_event_listener_callback_kicks_worker_and_runs_solution_tank_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kicks: list[str] = []
+    guard_calls: list[dict[str, object]] = []
+    service_logs: list[dict[str, object]] = []
+
+    class _Worker:
+        def kick(self) -> None:
+            kicks.append("kick")
+
+    class _Guard:
+        async def run(self, *, zone_id: int, now):
+            guard_calls.append({"zone_id": zone_id, "now": now})
+            return {"reset": True, "reason": "solution_tank_depleted"}
+
+    monkeypatch.setattr(
+        runtime_app_module,
+        "send_service_log",
+        lambda **kwargs: service_logs.append(dict(kwargs)),
+    )
+
+    callback = runtime_app_module._build_zone_event_listener_callback(
+        worker=_Worker(),
+        solution_tank_startup_guard_use_case=_Guard(),
+        now_fn=lambda: NOW.replace(tzinfo=None),
+        logger=logging.getLogger("ae3-runtime-test"),
+    )
+
+    await callback(
+        {
+            "source": "node_event",
+            "zone_id": 22,
+            "event_type": "LEVEL_SWITCH_CHANGED",
+            "channel": "level_solution_min",
+            "state": False,
+            "initial": False,
+        }
+    )
+
+    assert kicks == ["kick"]
+    assert len(guard_calls) == 1
+    assert guard_calls[0]["zone_id"] == 22
+    assert len(service_logs) == 1
+    assert service_logs[0]["message"] == "AE3 worker.kick by node runtime event"
+
+
+@pytest.mark.asyncio
+async def test_zone_event_listener_callback_accepts_storage_state_fail_safe_event_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kicks: list[str] = []
+    guard_calls: list[dict[str, object]] = []
+
+    class _Worker:
+        def kick(self) -> None:
+            kicks.append("kick")
+
+    class _Guard:
+        async def run(self, *, zone_id: int, now):
+            guard_calls.append({"zone_id": zone_id, "now": now})
+            return {"reset": True, "reason": "solution_tank_depleted"}
+
+    monkeypatch.setattr(runtime_app_module, "send_service_log", lambda **_kwargs: None)
+
+    callback = runtime_app_module._build_zone_event_listener_callback(
+        worker=_Worker(),
+        solution_tank_startup_guard_use_case=_Guard(),
+        now_fn=lambda: NOW.replace(tzinfo=None),
+        logger=logging.getLogger("ae3-runtime-test"),
+    )
+
+    await callback(
+        {
+            "source": "node_event",
+            "zone_id": 22,
+            "event_type": "IRRIGATION_SOLUTION_LOW",
+            "channel": "storage_state",
+            "snapshot": {"solution_level_min": False},
+        }
+    )
+
+    assert kicks == ["kick"]
+    assert len(guard_calls) == 1
+    assert guard_calls[0]["zone_id"] == 22
+
+
+@pytest.mark.asyncio
+async def test_zone_event_listener_callback_ignores_irrelevant_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kicks: list[str] = []
+    service_logs: list[dict[str, object]] = []
+
+    class _Worker:
+        def kick(self) -> None:
+            kicks.append("kick")
+
+    monkeypatch.setattr(
+        runtime_app_module,
+        "send_service_log",
+        lambda **kwargs: service_logs.append(dict(kwargs)),
+    )
+
+    callback = runtime_app_module._build_zone_event_listener_callback(
+        worker=_Worker(),
+        solution_tank_startup_guard_use_case=None,
+        now_fn=lambda: NOW.replace(tzinfo=None),
+        logger=logging.getLogger("ae3-runtime-test"),
+    )
+
+    await callback(
+        {
+            "source": "ae3_runtime",
+            "zone_id": 22,
+            "event_type": "PID_OUTPUT",
+            "channel": "pid",
+        }
+    )
+
+    assert kicks == []
+    assert service_logs == []
 
 
 def test_critical_background_tasks_health_reports_crashed_task() -> None:

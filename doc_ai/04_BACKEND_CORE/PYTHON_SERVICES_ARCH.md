@@ -1,8 +1,8 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0 (AE3)
 
-**Версия:** 3.2  
-**Дата обновления:** 2026-04-04  
+**Версия:** 3.3
+**Дата обновления:** 2026-04-09
 **Статус:** Актуально (канонично для runtime)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -117,6 +117,16 @@ Payload-contract:
 - reconcile polling (`commands`, `telemetry_last`, `zone_events`).
 - при burst/перегрузке listener runtime переключается на polling-first до стабилизации.
 
+Для production IRR two-tank runtime:
+- `storage_irrigation_node` публикует channel-level `level_* /event` с `event_code=level_switch_changed`;
+- `history-logger` сохраняет их в `zone_events`;
+- `history-logger` после успешной записи node runtime event публикует PostgreSQL `NOTIFY ae_zone_event`;
+- AE3 может использовать их только как fast-path wake-up/reconcile signal;
+- canonical stage decision остаётся DB-first.
+
+Детальный контракт см. `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md`.
+Контракт дублирования fail-safe/e-stop логики см. `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md`.
+
 Источник истины:
 - таблицы PostgreSQL; не runtime HTTP запросы в Laravel API.
 
@@ -136,6 +146,8 @@ Payload-contract:
 
 Для AE3-совместимого runtime path действуют дополнительные правила:
 - `scheduler_intent_terminal` используется только как fast-path для `worker.kick()`; source of truth остаётся в PostgreSQL.
+- `ae_zone_event` используется только как fast-path invalidation/wake-up для node runtime events; решение принимается только после повторного чтения `zone_events` / `telemetry_last`.
+- `initial=true` из `LEVEL_SWITCH_CHANGED` будит reconcile и может использоваться для `ready/startup guard`, но не должен сам по себе завершать active stage без повторного DB confirmation.
 - reconcile polling при ожидании terminal статуса в `commands` использует bounded exponential backoff: старт от `reconcile_poll_interval_sec`, множитель `1.5`, верхняя граница `5s`.
 - публикация команды в `history-logger` допускает не более одного transient retry с backoff `1s` для transport error или `HTTP 5xx`; далее runtime fail-closed.
 - registry background tasks должен быть hard-limited; overflow не может продолжаться в режиме best-effort.

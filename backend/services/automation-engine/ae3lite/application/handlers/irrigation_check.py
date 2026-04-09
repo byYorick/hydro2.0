@@ -43,6 +43,15 @@ class IrrigationCheckHandler(BaseStageHandler):
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
         topology = str(getattr(task, "topology", "") or "")
         deadline = task.workflow.stage_deadline_at
+        recovery = runtime.get("irrigation_recovery") if isinstance(runtime.get("irrigation_recovery"), dict) else {}
+        safety = runtime.get("irrigation_safety") if isinstance(runtime.get("irrigation_safety"), dict) else {}
+        solution_min_guard_enabled = bool(safety.get("stop_on_solution_min", True))
+        recent_storage_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("IRRIGATION_SOLUTION_LOW", "EMERGENCY_STOP_ACTIVATED"),
+            max_age_sec=86400,
+        )
+        recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
 
         def _observe_duration(stop_reason: str) -> None:
             entered = getattr(task.workflow, "stage_entered_at", None)
@@ -63,6 +72,27 @@ class IrrigationCheckHandler(BaseStageHandler):
             _observe_duration("recovery")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
 
+        if recent_event_type == "IRRIGATION_SOLUTION_LOW" and solution_min_guard_enabled:
+            return await self._solution_min_low_outcome(
+                task=task,
+                topology=topology,
+                recovery=recovery,
+                now=now,
+                observe_duration=_observe_duration,
+                source="node_event",
+            )
+        if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
+            await self._reconcile_recent_emergency_stop(
+                task=task,
+                plan=plan,
+                now=now,
+                expected={
+                    "valve_solution_supply": True,
+                    "valve_irrigation": True,
+                    "pump_main": True,
+                },
+            )
+
         await self._probe_irr_state(
             task=task,
             plan=plan,
@@ -77,9 +107,7 @@ class IrrigationCheckHandler(BaseStageHandler):
         if control_mode == "manual":
             return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
 
-        safety = runtime.get("irrigation_safety") if isinstance(runtime.get("irrigation_safety"), dict) else {}
-        recovery = runtime.get("irrigation_recovery") if isinstance(runtime.get("irrigation_recovery"), dict) else {}
-        if bool(safety.get("stop_on_solution_min", True)):
+        if solution_min_guard_enabled:
             solution_min = await self._read_level(
                 task=task,
                 zone_id=task.zone_id,
@@ -92,88 +120,14 @@ class IrrigationCheckHandler(BaseStageHandler):
                 prefer_probe_snapshot=True,
             )
             if not solution_min["is_triggered"]:
-                IRRIGATION_SOLUTION_MIN.labels(topology=topology).inc()
-                try:
-                    await create_zone_event(
-                        int(task.zone_id),
-                        "IRRIGATION_SOLUTION_MIN_DETECTED",
-                        {
-                            "task_id": int(getattr(task, "id", 0) or 0),
-                            "stage": "irrigation_check",
-                            "topology": topology,
-                        },
-                    )
-                except Exception:
-                    _logger.warning(
-                        "AE3 не смог записать IRRIGATION_SOLUTION_MIN_DETECTED zone_id=%s task_id=%s",
-                        int(getattr(task, "zone_id", 0) or 0),
-                        int(getattr(task, "id", 0) or 0),
-                        exc_info=True,
-                    )
-                try:
-                    await send_biz_alert(
-                        code="biz_irrigation_solution_min",
-                        alert_type="AE3 Irrigation Solution Min",
-                        message="Во время полива сработал нижний датчик уровня раствора.",
-                        severity="warning",
-                        zone_id=int(task.zone_id),
-                        details={
-                            "task_id": int(getattr(task, "id", 0) or 0),
-                            "topology": topology,
-                            "stage": "irrigation_check",
-                            "irrigation_replay_count": int(getattr(task, "irrigation_replay_count", 0) or 0),
-                        },
-                        scope_parts=("stage:irrigation_check",),
-                    )
-                except Exception:
-                    _logger.warning(
-                        "AE3 не смог отправить alert biz_irrigation_solution_min zone_id=%s task_id=%s",
-                        int(getattr(task, "zone_id", 0) or 0),
-                        int(getattr(task, "id", 0) or 0),
-                        exc_info=True,
-                    )
-                max_replays = int(recovery.get("max_setup_replays") or 0)
-                next_replay_count = int(getattr(task, "irrigation_replay_count", 0) or 0) + 1
-                if next_replay_count > max_replays:
-                    try:
-                        await send_biz_alert(
-                            code="biz_irrigation_replay_exhausted",
-                            alert_type="AE3 Irrigation Replay Exhausted",
-                            message="Исчерпан бюджет повторов после повторных срабатываний нижнего уровня раствора.",
-                            severity="error",
-                            zone_id=int(task.zone_id),
-                            details={
-                                "task_id": int(getattr(task, "id", 0) or 0),
-                                "topology": topology,
-                                "stage": "irrigation_check",
-                                "next_replay_count": next_replay_count,
-                                "max_setup_replays": max_replays,
-                            },
-                            scope_parts=("stage:irrigation_check",),
-                        )
-                    except Exception:
-                        _logger.warning(
-                            "AE3 не смог отправить alert biz_irrigation_replay_exhausted zone_id=%s task_id=%s",
-                            int(getattr(task, "zone_id", 0) or 0),
-                            int(getattr(task, "id", 0) or 0),
-                            exc_info=True,
-                        )
-                    return StageOutcome(
-                        kind="fail",
-                        error_code="irrigation_solution_min_replay_exhausted",
-                        error_message="Нижний уровень раствора снова сработал после исчерпания бюджета повторов setup",
-                    )
-                updated = await self._task_repository.update_irrigation_runtime(
-                    task_id=int(task.id),
-                    owner=str(task.claimed_by or ""),
+                return await self._solution_min_low_outcome(
+                    task=task,
+                    topology=topology,
+                    recovery=recovery,
                     now=now,
-                    irrigation_replay_count=next_replay_count,
+                    observe_duration=_observe_duration,
+                    source="sensor",
                 )
-                if updated is None:
-                    raise TaskExecutionError("irrigation_replay_persist_failed", "Не удалось сохранить счётчик повторов полива")
-                IRRIGATION_REPLAY.labels(topology=topology).inc()
-                _observe_duration("setup")
-                return StageOutcome(kind="transition", next_stage="irrigation_stop_to_setup")
 
         execution = (
             runtime.get("irrigation_execution")
@@ -233,3 +187,102 @@ class IrrigationCheckHandler(BaseStageHandler):
                 return StageOutcome(kind="enter_correction", correction=corr)
 
         return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
+
+    async def _solution_min_low_outcome(
+        self,
+        *,
+        task: Any,
+        topology: str,
+        recovery: dict[str, Any],
+        now: datetime,
+        observe_duration: Any,
+        source: str,
+    ) -> StageOutcome:
+        self._observe_fail_safe_transition(
+            task=task,
+            reason="irrigation_solution_low",
+            source=source,
+            next_stage="irrigation_stop_to_setup",
+        )
+        IRRIGATION_SOLUTION_MIN.labels(topology=topology).inc()
+        try:
+            await create_zone_event(
+                int(task.zone_id),
+                "IRRIGATION_SOLUTION_MIN_DETECTED",
+                {
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "stage": "irrigation_check",
+                    "topology": topology,
+                },
+            )
+        except Exception:
+            _logger.warning(
+                "AE3 не смог записать IRRIGATION_SOLUTION_MIN_DETECTED zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+        try:
+            await send_biz_alert(
+                code="biz_irrigation_solution_min",
+                alert_type="AE3 Irrigation Solution Min",
+                message="Во время полива сработал нижний датчик уровня раствора.",
+                severity="warning",
+                zone_id=int(task.zone_id),
+                details={
+                    "task_id": int(getattr(task, "id", 0) or 0),
+                    "topology": topology,
+                    "stage": "irrigation_check",
+                    "irrigation_replay_count": int(getattr(task, "irrigation_replay_count", 0) or 0),
+                },
+                scope_parts=("stage:irrigation_check",),
+            )
+        except Exception:
+            _logger.warning(
+                "AE3 не смог отправить alert biz_irrigation_solution_min zone_id=%s task_id=%s",
+                int(getattr(task, "zone_id", 0) or 0),
+                int(getattr(task, "id", 0) or 0),
+                exc_info=True,
+            )
+        max_replays = int(recovery.get("max_setup_replays") or 0)
+        next_replay_count = int(getattr(task, "irrigation_replay_count", 0) or 0) + 1
+        if next_replay_count > max_replays:
+            try:
+                await send_biz_alert(
+                    code="biz_irrigation_replay_exhausted",
+                    alert_type="AE3 Irrigation Replay Exhausted",
+                    message="Исчерпан бюджет повторов после повторных срабатываний нижнего уровня раствора.",
+                    severity="error",
+                    zone_id=int(task.zone_id),
+                    details={
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "topology": topology,
+                        "stage": "irrigation_check",
+                        "next_replay_count": next_replay_count,
+                        "max_setup_replays": max_replays,
+                    },
+                    scope_parts=("stage:irrigation_check",),
+                )
+            except Exception:
+                _logger.warning(
+                    "AE3 не смог отправить alert biz_irrigation_replay_exhausted zone_id=%s task_id=%s",
+                    int(getattr(task, "zone_id", 0) or 0),
+                    int(getattr(task, "id", 0) or 0),
+                    exc_info=True,
+                )
+            return StageOutcome(
+                kind="fail",
+                error_code="irrigation_solution_min_replay_exhausted",
+                error_message="Нижний уровень раствора снова сработал после исчерпания бюджета повторов setup",
+            )
+        updated = await self._task_repository.update_irrigation_runtime(
+            task_id=int(task.id),
+            owner=str(task.claimed_by or ""),
+            now=now,
+            irrigation_replay_count=next_replay_count,
+        )
+        if updated is None:
+            raise TaskExecutionError("irrigation_replay_persist_failed", "Не удалось сохранить счётчик повторов полива")
+        IRRIGATION_REPLAY.labels(topology=topology).inc()
+        observe_duration("setup")
+        return StageOutcome(kind="transition", next_stage="irrigation_stop_to_setup")

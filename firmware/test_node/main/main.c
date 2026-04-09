@@ -40,7 +40,12 @@ void app_main(void) {
     if (ui_err != ESP_OK) {
         test_node_ui_show_step("UI init failed, running headless");
     }
-    
+
+    ESP_LOGI(
+        TAG,
+        "Main task stack watermark before return: %u bytes",
+        (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t))
+    );
     ESP_LOGI(TAG, "Test node started successfully");
     test_node_ui_show_step("8) Startup complete");
 }

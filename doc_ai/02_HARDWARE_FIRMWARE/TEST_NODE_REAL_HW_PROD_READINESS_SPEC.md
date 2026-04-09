@@ -2,7 +2,7 @@
 # Спецификация test_node для доведения реальных нод до боевого режима
 
 **Версия:** 1.0  
-**Дата обновления:** 2026-03-04  
+**Дата обновления:** 2026-04-09
 **Статус:** Актуально (источник истины для `firmware/test_node`)
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -125,6 +125,7 @@ Channel-level:
 
 - `hydro/{gh}/{zone}/{node}/{channel}/telemetry`
 - `hydro/{gh}/{zone}/{node}/{channel}/command_response`
+- `hydro/{gh}/{zone}/{node}/{level_channel}/event` (`nd-test-irrig-1`, только `level_*`)
 - `hydro/{gh}/{zone}/{node}/storage_state/event`
 
 Системный:
@@ -214,6 +215,7 @@ Pipeline:
 
 - `level_clean_min_override`, `level_clean_max_override`
 - `level_solution_min_override`, `level_solution_max_override`
+- `estop_pressed` -> виртуальное нажатие/отпускание `E-Stop` для `nd-test-irrig-1`
 - `ph_value` -> принудительное текущее значение `ph_sensor` в диапазоне `4.0..8.0`
 - `ec_value` -> принудительное текущее значение `ec_sensor` в диапазоне `0.4..3.2`
 
@@ -223,6 +225,16 @@ Pipeline:
 
 - принудительно устанавливает текущее значение `soil_moisture` в диапазоне `0..100`;
 - при изменении test-node также публикует immediate telemetry snapshot.
+
+Для `nd-test-irrig-1` входящий `.../config` payload может содержать top-level объект `fail_safe_guards`.
+Он применяется только для виртуальной IRR-ноды и затем отражается в её `config_report` и `storage_state/state`:
+
+- `clean_fill_min_check_delay_ms`
+- `solution_fill_clean_min_check_delay_ms`
+- `solution_fill_solution_min_check_delay_ms`
+- `recirculation_solution_min_guard_enabled`
+- `irrigation_solution_min_guard_enabled`
+- `estop_debounce_ms`
 
 ---
 
@@ -413,13 +425,41 @@ Transient-overlap правило для `pump_main`:
 
 События:
 
+- `level_switch_changed` в `hydro/{gh}/{zone}/nd-test-irrig-1/{level_channel}/event`
+  для каждого подтверждённого изменения `level_clean_min`, `level_clean_max`,
+  `level_solution_min`, `level_solution_max`, а также один раз после boot/MQTT reconnect
+  c `initial=true`
+- `clean_fill_source_empty`
 - `clean_fill_completed`
+- `solution_fill_source_empty`
+- `solution_fill_leak_detected`
 - `solution_fill_completed`
+- `recirculation_solution_low`
+- `irrigation_solution_low`
+- `emergency_stop_activated`
 - при fault-mode:
   - `clean_fill_timeout`
   - `solution_fill_timeout`
 
 Публикация: `hydro/{gh}/{zone}/nd-test-irrig-1/storage_state/event`.
+
+Fail-safe семантика `nd-test-irrig-1` выровнена с real `storage_irrigation_node`:
+
+- `clean_fill`: через `clean_fill_min_check_delay_ms` проверяется `level_clean_min`; если датчик не активен,
+  path останавливается и публикуется `clean_fill_source_empty`; при `level_clean_max=1`
+  path останавливается и публикуется `clean_fill_completed`.
+- `solution_fill`: через `solution_fill_clean_min_check_delay_ms` проверяется `level_clean_min`; если датчик не активен,
+  path останавливается и публикуется `solution_fill_source_empty`; через
+  `solution_fill_solution_min_check_delay_ms` проверяется `level_solution_min`; если датчик не активен,
+  path останавливается и публикуется `solution_fill_leak_detected`; при `level_solution_max=1`
+  path останавливается и публикуется `solution_fill_completed`.
+- `prepare_recirculation`: при включённом `recirculation_solution_min_guard_enabled` и `level_solution_min=0`
+  path останавливается и публикуется `recirculation_solution_low`.
+- `irrigation`: при включённом `irrigation_solution_min_guard_enabled` и `level_solution_min=0`
+  path останавливается и публикуется `irrigation_solution_low`.
+- виртуальный `E-Stop` управляется через `storage_state/set_fault_mode { estop_pressed: true|false }`;
+  при нажатии все IRR-актуаторы немедленно выключаются и публикуется `emergency_stop_activated`,
+  при отпускании восстанавливается прерванный runtime-path.
 
 ## 6.3. Interlock для `pump_main`
 

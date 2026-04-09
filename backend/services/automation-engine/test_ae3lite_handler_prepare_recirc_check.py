@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from unittest.mock import AsyncMock
 
 from ae3lite.application.handlers.prepare_recirc import PrepareRecircCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -51,6 +52,9 @@ RUNTIME = {
             "transport_delay_sec": 4,
             "settle_sec": 4,
         },
+    },
+    "fail_safe_guards": {
+        "recirculation_stop_on_solution_min": True,
     },
 }
 
@@ -106,6 +110,7 @@ class _Monitor:
         ec_stale: bool = False,
         irr_state: dict | None = None,
         irr_states: list[dict] | None = None,
+        recent_storage_event: dict[str, Any] | None = None,
     ) -> None:
         self._ph = {"has_value": has_ph, "is_stale": False, "value": ph}
         self._ec = {"has_value": has_ec, "is_stale": False, "value": ec}
@@ -117,6 +122,7 @@ class _Monitor:
         self._irr_states: list[dict] = list(irr_states) if irr_states else []
         self._irr_state = irr_state if irr_state is not None else dict(_IRR_MATCH)
         self.irr_reads = 0
+        self._recent_storage_event = recent_storage_event
 
     @staticmethod
     def _build_window(*, values: list[float]) -> tuple[dict[str, Any], ...]:
@@ -157,6 +163,9 @@ class _Monitor:
 
     async def read_level_switch(self, **_kw: Any) -> dict:
         return {"has_level": True, "is_stale": False, "is_triggered": True}
+
+    async def read_latest_zone_event(self, **_kw: Any) -> dict[str, Any] | None:
+        return dict(self._recent_storage_event) if self._recent_storage_event is not None else None
 
 
 class _MockGateway:
@@ -539,3 +548,87 @@ async def test_correction_uses_stage_def_on_corr_fail() -> None:
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_CustomStageDef(), now=NOW)
     assert outcome.correction.return_stage_success == "custom_success"
     assert outcome.correction.return_stage_fail == "custom_fail"
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_recent_solution_low_event_transitions_to_terminal_stop() -> None:
+    handler = _make_handler(
+        monitor=_Monitor(
+            recent_storage_event={
+                "event_type": "RECIRCULATION_SOLUTION_LOW",
+                "event_id": 31,
+                "created_at": NOW,
+                "payload": {"channel": "storage_state"},
+            }
+        )
+    )
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_ignores_solution_low_event_when_guard_disabled() -> None:
+    handler = _make_handler(
+        monitor=_Monitor(
+            recent_storage_event={
+                "event_type": "RECIRCULATION_SOLUTION_LOW",
+                "event_id": 33,
+                "created_at": NOW,
+                "payload": {"channel": "storage_state"},
+            }
+        )
+    )
+    runtime = {
+        **RUNTIME,
+        "fail_safe_guards": {
+            "recirculation_stop_on_solution_min": False,
+        },
+    }
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_solution_min_sensor_fallback_transitions_to_terminal_stop() -> None:
+    class _LowLevelMonitor(_Monitor):
+        async def read_level_switch(self, **_kw: Any) -> dict:
+            return {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            }
+
+    handler = _make_handler(monitor=_LowLevelMonitor())
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_solution_low_stop"
+
+
+@pytest.mark.asyncio
+async def test_prepare_recirculation_recent_estop_reconcile_failure_raises_emergency_stop() -> None:
+    handler = _make_handler(
+        monitor=_Monitor(
+            recent_storage_event={
+                "event_type": "EMERGENCY_STOP_ACTIVATED",
+                "event_id": 32,
+                "created_at": NOW,
+                "payload": {"channel": "storage_state"},
+            }
+        )
+    )
+    handler._probe_irr_state = AsyncMock(side_effect=TaskExecutionError("irr_state_mismatch", "pump off"))
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=_make_task(), plan=_MockPlan(), stage_def=_StageDef(), now=NOW)
+
+    assert exc_info.value.code == "emergency_stop_activated"

@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 _state_lock = threading.Lock()
 _pools: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncpg.pool.Pool]" = weakref.WeakKeyDictionary()
 _pool_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+_ZONE_EVENT_NOTIFY_CHANNEL = "ae_zone_event"
+_LEVEL_SWITCH_CHANGED_DEDUP_WINDOW_SEC = max(
+    1,
+    int(os.getenv("ZONE_EVENT_LEVEL_SWITCH_DEDUP_WINDOW_SEC", "2")),
+)
 _STALE_SCHEMA_ERROR_FRAGMENTS = (
     "could not open relation with oid",
     "cache lookup failed for relation",
@@ -312,10 +317,37 @@ async def upsert_unassigned_node_error(
         )
 
 
-async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None):
+def _coerce_optional_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if float(value) == 1.0:
+            return True
+        if float(value) == 0.0:
+            return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _payload_field(payload: Mapping[str, Any], key: str) -> Any:
+    value = payload.get(key)
+    if value is not None:
+        return value
+    nested = payload.get("payload")
+    if isinstance(nested, Mapping):
+        return nested.get(key)
+    return None
+
+
+async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None) -> bool:
     """Create a zone event according to DATA_MODEL_REFERENCE.md section 8.1."""
-    if await _should_skip_duplicate_ae_task_started(zone_id=zone_id, event_type=event_type, details=details):
-        return
+    if await _should_skip_duplicate_zone_event(zone_id=zone_id, event_type=event_type, details=details):
+        return False
     # Только payload_json: колонка details (если есть) — GENERATED ALWAYS AS (payload_json) STORED
     await execute(
         """
@@ -325,6 +357,42 @@ async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dic
         zone_id,
         event_type,
         details,
+    )
+    return True
+
+
+async def notify_zone_event_ingested(
+    *,
+    zone_id: int,
+    event_type: str,
+    payload: Optional[Mapping[str, Any]] = None,
+) -> None:
+    notify_payload: Dict[str, Any] = {
+        "zone_id": int(zone_id),
+        "event_type": str(event_type or "").strip(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if isinstance(payload, Mapping):
+        notify_payload.update(payload)
+    await execute(
+        "SELECT pg_notify($1, $2)",
+        _ZONE_EVENT_NOTIFY_CHANNEL,
+        json.dumps(notify_payload, default=str),
+    )
+
+
+async def _should_skip_duplicate_zone_event(
+    *,
+    zone_id: int,
+    event_type: str,
+    details: Optional[Mapping[str, Any]],
+) -> bool:
+    if await _should_skip_duplicate_ae_task_started(zone_id=zone_id, event_type=event_type, details=details):
+        return True
+    return await _should_skip_duplicate_level_switch_changed(
+        zone_id=zone_id,
+        event_type=event_type,
+        details=details,
     )
 
 
@@ -371,6 +439,53 @@ async def _should_skip_duplicate_ae_task_started(
 
     previous_stage = str(payload.get("stage") or "").strip()
     return previous_stage == stage
+
+
+async def _should_skip_duplicate_level_switch_changed(
+    *,
+    zone_id: int,
+    event_type: str,
+    details: Optional[Mapping[str, Any]],
+) -> bool:
+    if str(event_type or "").strip().upper() != "LEVEL_SWITCH_CHANGED":
+        return False
+    if not isinstance(details, Mapping):
+        return False
+
+    channel = str(_payload_field(details, "channel") or "").strip().lower()
+    state = _coerce_optional_bool(_payload_field(details, "state"))
+    initial = _coerce_optional_bool(_payload_field(details, "initial"))
+    if not channel or state is None:
+        return False
+
+    rows = await fetch(
+        """
+        SELECT COALESCE(details, payload_json) AS payload
+        FROM zone_events
+        WHERE zone_id = $1
+          AND type = 'LEVEL_SWITCH_CHANGED'
+          AND LOWER(TRIM(COALESCE(details->>'channel', payload_json->>'channel', ''))) = $3
+          AND created_at >= NOW() - ($2::int * INTERVAL '1 second')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        zone_id,
+        _LEVEL_SWITCH_CHANGED_DEDUP_WINDOW_SEC,
+        channel,
+    )
+    if not rows:
+        return False
+
+    payload = rows[0].get("payload")
+    if not isinstance(payload, Mapping):
+        return False
+
+    previous_channel = str(_payload_field(payload, "channel") or "").strip().lower()
+    previous_state = _coerce_optional_bool(_payload_field(payload, "state"))
+    previous_initial = _coerce_optional_bool(_payload_field(payload, "initial"))
+    if previous_channel != channel or previous_state is None:
+        return False
+    return previous_state == state and previous_initial == initial
 
 
 async def create_ai_log(zone_id: Optional[int], action: str, details: Optional[Dict[str, Any]] = None):

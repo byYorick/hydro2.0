@@ -48,6 +48,11 @@ export interface WaterFormState {
   startupSolutionFillTimeoutSeconds?: number
   startupPrepareRecirculationTimeoutSeconds?: number
   startupCleanFillRetryCycles?: number
+  cleanFillMinCheckDelayMs?: number
+  solutionFillCleanMinCheckDelayMs?: number
+  solutionFillSolutionMinCheckDelayMs?: number
+  recirculationStopOnSolutionMin?: boolean
+  estopDebounceMs?: number
   irrigationDecisionStrategy?: 'task' | 'smart_soil_v1'
   irrigationDecisionLookbackSeconds?: number
   irrigationDecisionMinSamples?: number

@@ -344,6 +344,7 @@ services:
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
     - PG_USER=${POSTGRES_USER:-hydro}
     - PG_PASS=${POSTGRES_PASSWORD:-hydro_e2e}
+    - AE_DB_DSN=postgresql://${POSTGRES_USER:-hydro}:${POSTGRES_PASSWORD:-hydro_e2e}@postgres:5432/${POSTGRES_DB:-hydro_e2e}
     - LARAVEL_API_URL=http://laravel
     - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
     - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}

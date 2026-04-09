@@ -48,7 +48,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   "wifi": {...},
   "mqtt": {...},
   "limits": {...},
-  "calibration": {...}
+  "calibration": {...},
+  "fail_safe_guards": {...}
 }
 ```
 
@@ -66,6 +67,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 | `mqtt` | object | Да | Параметры MQTT подключения |
 | `limits` | object | Нет | Безопасные лимиты (ток, время работы и т.д.) |
 | `calibration` | object | Нет | Параметры калибровки (pH, EC) |
+| `fail_safe_guards` | object | Нет | Локальные fail-safe guard-параметры узла; для `irrig` используются как mirror от `zone.logic_profile` |
 
 ---
 
@@ -373,10 +375,10 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   "zone_uid": "zn-3",
   "channels": [
     {
-      "name": "pump_in",
+      "name": "pump_main",
       "type": "ACTUATOR",
       "actuator_type": "PUMP",
-      "channel": "pump_in",
+      "channel": "pump_main",
       "safe_limits": {
         "max_duration_ms": 60000,
         "min_off_ms": 5000,
@@ -384,17 +386,32 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
       }
     },
     {
-      "name": "pump_out",
+      "name": "valve_clean_fill",
       "type": "ACTUATOR",
-      "actuator_type": "PUMP",
-      "channel": "pump_out",
+      "actuator_type": "VALVE",
+      "channel": "valve_clean_fill",
       "safe_limits": {
         "max_duration_ms": 60000,
         "min_off_ms": 5000,
         "fail_safe_mode": "NO"
       }
+    },
+    {
+      "name": "level_clean_min",
+      "type": "SENSOR",
+      "metric": "WATER_LEVEL_SWITCH",
+      "poll_interval_ms": 5000,
+      "unit": "bool"
     }
   ],
+  "fail_safe_guards": {
+    "clean_fill_min_check_delay_ms": 5000,
+    "solution_fill_clean_min_check_delay_ms": 5000,
+    "solution_fill_solution_min_check_delay_ms": 15000,
+    "recirculation_solution_min_guard_enabled": true,
+    "irrigation_solution_min_guard_enabled": true,
+    "estop_debounce_ms": 80
+  },
   "wifi": {
     "ssid": "HydroFarm",
     "pass": "12345678"
@@ -412,6 +429,12 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
   }
 }
 ```
+
+Примечание для `irrig`:
+- `fail_safe_guards` не задаёт GPIO или channel map и не может переопределить firmware-locked каналы;
+- backend зеркалирует сюда значения из `zone.logic_profile.active_profile.subsystems.diagnostics.execution.fail_safe_guards`;
+- поля `recirculation_solution_min_guard_enabled` и `irrigation_solution_min_guard_enabled` являются firmware mirror
+  для frontend/AE3-полей `recirculation_stop_on_solution_min` и `irrigation_stop_on_solution_min`.
 
 ### 4.3. Климатическая нода (climate)
 

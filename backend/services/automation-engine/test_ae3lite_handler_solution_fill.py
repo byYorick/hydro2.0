@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from unittest.mock import AsyncMock
 
 from ae3lite.application.handlers.solution_fill import SolutionFillCheckHandler
 from ae3lite.domain.entities.automation_task import AutomationTask
@@ -26,6 +27,7 @@ PAST = NOW - timedelta(hours=1)
 FUTURE = NOW + timedelta(hours=1)
 
 _RUNTIME = {
+    "clean_min_sensor_labels": ["clean_min"],
     "solution_max_sensor_labels": ["sol_max"],
     "solution_min_sensor_labels": ["sol_min"],
     "level_switch_on_threshold": 0.5,
@@ -48,6 +50,10 @@ _RUNTIME = {
             "settle_sec": 4,
         },
     },
+    "fail_safe_guards": {
+        "solution_fill_clean_min_check_delay_ms": 5000,
+        "solution_fill_solution_min_check_delay_ms": 15000,
+    },
 }
 
 _GOOD_IRR = {
@@ -63,6 +69,7 @@ def _make_task(
     stage_retry_count: int = 0,
     control_mode: str = "auto",
     pending_manual_step: str | None = None,
+    stage_entered_at: datetime = NOW,
 ) -> AutomationTask:
     return AutomationTask.from_row({
         "id": 2, "zone_id": 20, "task_type": "cycle_start", "status": "running",
@@ -74,7 +81,7 @@ def _make_task(
         "intent_id": None, "intent_meta": {},
         "current_stage": "solution_fill_check", "workflow_phase": "solution_fill",
         "stage_deadline_at": deadline, "stage_retry_count": stage_retry_count,
-        "stage_entered_at": NOW, "clean_fill_cycle": 1,
+        "stage_entered_at": stage_entered_at, "clean_fill_cycle": 1,
         "control_mode_snapshot": control_mode,
         "pending_manual_step": pending_manual_step,
         "corr_step": None,
@@ -99,6 +106,7 @@ class _Monitor:
         ph_stale: bool = False,
         ec_stale: bool = False,
         irr_state: dict | None = None,
+        recent_storage_event: dict[str, Any] | None = None,
     ) -> None:
         self._level_call = 0
         self._max_triggered = max_triggered
@@ -114,6 +122,7 @@ class _Monitor:
         self._ec_window_state = {"has_sensor": has_ec, "is_stale": ec_stale, "samples": self._ec_window}
         self._irr = irr_state if irr_state is not None else dict(_GOOD_IRR)
         self._irr_reads = 0
+        self._recent_storage_event = recent_storage_event
 
     @staticmethod
     def _build_window(*, values: list[float]) -> tuple[dict[str, Any], ...]:
@@ -143,6 +152,9 @@ class _Monitor:
     async def read_latest_irr_state(self, **_kw: Any) -> dict:
         self._irr_reads += 1
         return self._irr
+
+    async def read_latest_zone_event(self, **_kw: Any) -> dict[str, Any] | None:
+        return dict(self._recent_storage_event) if self._recent_storage_event is not None else None
 
     async def read_metric(self, *, sensor_type: str, **_kw: Any) -> dict:
         return self._ph if sensor_type == "PH" else self._ec
@@ -318,6 +330,236 @@ async def test_deadline_exceeded_transitions_to_timeout() -> None:
     assert outcome.next_stage == "solution_fill_timeout_stop"
 
 
+@pytest.mark.asyncio
+async def test_recent_solution_fill_source_empty_event_transitions_to_terminal_stop() -> None:
+    monitor = _Monitor(
+        recent_storage_event={
+            "event_type": "SOLUTION_FILL_SOURCE_EMPTY",
+            "event_id": 21,
+            "created_at": NOW,
+            "payload": {"channel": "storage_state"},
+        }
+    )
+
+    outcome = await _handler(monitor).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_source_empty_stop"
+
+
+@pytest.mark.asyncio
+async def test_recent_solution_fill_leak_event_transitions_to_terminal_stop() -> None:
+    monitor = _Monitor(
+        recent_storage_event={
+            "event_type": "SOLUTION_FILL_LEAK_DETECTED",
+            "event_id": 22,
+            "created_at": NOW,
+            "payload": {"channel": "storage_state"},
+        }
+    )
+
+    outcome = await _handler(monitor).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_leak_stop"
+
+
+@pytest.mark.asyncio
+async def test_recent_solution_fill_completed_event_finishes_without_level_sensor() -> None:
+    monitor = _Monitor(
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+            {
+                "has_level": False,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+        ],
+        ph=5.8,
+        ec=1.4,
+        recent_storage_event={
+            "event_type": "SOLUTION_FILL_COMPLETED",
+            "event_id": 23,
+            "created_at": NOW,
+            "payload": {"channel": "storage_state"},
+        },
+    )
+
+    outcome = await _handler(monitor).run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+    assert monitor._level_call == 1
+
+
+@pytest.mark.asyncio
+async def test_manual_solution_fill_still_obeys_completed_event() -> None:
+    monitor = _Monitor(
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            }
+        ],
+        ph=5.8,
+        ec=1.4,
+        recent_storage_event={
+            "event_type": "SOLUTION_FILL_COMPLETED",
+            "event_id": 25,
+            "created_at": NOW,
+            "payload": {"channel": "storage_state"},
+        },
+    )
+
+    outcome = await _handler(monitor).run(
+        task=_make_task(control_mode="manual"),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_recent_estop_reconcile_failure_raises_emergency_stop() -> None:
+    monitor = _Monitor(
+        recent_storage_event={
+            "event_type": "EMERGENCY_STOP_ACTIVATED",
+            "event_id": 24,
+            "created_at": NOW,
+            "payload": {"channel": "storage_state"},
+        }
+    )
+    handler = _handler(monitor)
+    handler._probe_irr_state = AsyncMock(side_effect=TaskExecutionError("irr_state_mismatch", "pump off"))
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await handler.run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
+    assert exc_info.value.code == "emergency_stop_activated"
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_probe_mismatch_yields_to_raced_completed_event() -> None:
+    monitor = _Monitor(
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+        ],
+        ph=5.8,
+        ec=1.4,
+    )
+    handler = _handler(monitor)
+    handler._read_recent_storage_event = AsyncMock(
+        side_effect=[
+            None,
+            {
+                "event_type": "SOLUTION_FILL_COMPLETED",
+                "event_id": 27,
+                "created_at": NOW,
+                "payload": {"channel": "storage_state"},
+            },
+        ]
+    )
+    handler._probe_irr_state = AsyncMock(side_effect=TaskExecutionError("irr_state_mismatch", "pump off"))
+
+    outcome = await handler.run(task=_make_task(), plan=_Plan(), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_low_clean_min_after_guard_delay_stops_with_source_empty() -> None:
+    monitor = _Monitor(
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+        ],
+        ph=5.8,
+        ec=1.4,
+    )
+    outcome = await _handler(monitor).run(
+        task=_make_task(stage_entered_at=NOW - timedelta(seconds=6)),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_source_empty_stop"
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_low_solution_min_after_guard_delay_stops_with_leak() -> None:
+    monitor = _Monitor(
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": False,
+                "sample_ts": NOW,
+                "sample_age_sec": 0.0,
+            },
+        ],
+        ph=5.8,
+        ec=1.4,
+    )
+    outcome = await _handler(monitor).run(
+        task=_make_task(stage_entered_at=NOW - timedelta(seconds=20)),
+        plan=_Plan(),
+        stage_def=_StageDef(),
+        now=NOW,
+    )
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_leak_stop"
+
+
 # ── 5. Still filling + targets reached → poll ────────────────────────────────
 
 @pytest.mark.asyncio
@@ -426,7 +668,55 @@ async def test_solution_fill_uses_probe_snapshot_for_level_switches() -> None:
     outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime), stage_def=_StageDef(), now=NOW)
     assert outcome.kind == "transition"
     assert outcome.next_stage == "solution_fill_stop_to_ready"
-    assert m._level_call == 0
+    assert m._level_call == 2
+
+
+@pytest.mark.asyncio
+async def test_solution_fill_prefers_newer_runtime_level_over_stale_probe_snapshot() -> None:
+    runtime = {
+        **_RUNTIME,
+        "solution_max_sensor_labels": ["level_solution_max"],
+        "solution_min_sensor_labels": ["level_solution_min"],
+    }
+    m = _Monitor(
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW + timedelta(seconds=10),
+                "sample_age_sec": 0.0,
+                "source": "zone_event_level_switch",
+            },
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": NOW + timedelta(seconds=10),
+                "sample_age_sec": 0.0,
+                "source": "zone_event_level_switch",
+            },
+        ],
+        irr_state={
+            "has_snapshot": True,
+            "is_stale": False,
+            "sample_age_sec": 0.0,
+            "created_at": NOW,
+            "snapshot": {
+                "valve_clean_supply": True,
+                "valve_solution_fill": True,
+                "pump_main": True,
+                "level_solution_max": False,
+                "level_solution_min": False,
+            },
+        },
+        ph=5.8,
+        ec=1.4,
+    )
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime), stage_def=_StageDef(), now=NOW)
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_ready"
+    assert m._level_call == 2
 
 
 @pytest.mark.asyncio

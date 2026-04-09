@@ -939,11 +939,59 @@ Backend никогда не остаётся "в неизвестности": п
    - нода держит flow-path включённым до явного `pump_main OFF` или до истечения `timeout_ms`;
    - при timeout нода локально останавливает stage-path и публикует terminal `ERROR`
      по исходному `cmd_id` с `error_code=stage_timeout`.
-3. `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует
+3. Для `clean_fill` после `clean_fill_min_check_delay_ms` нода обязана проверить `level_clean_min`;
+   если датчик остаётся `0`, нода локально закрывает `valve_clean_fill`
+   и публикует `clean_fill_source_empty`.
+4. `level_clean_max` локально завершает `clean_fill` (`valve_clean_fill -> OFF`) и публикует
    `clean_fill_completed` один раз на эпизод `clean_fill`.
-4. `level_solution_max` публикует `solution_fill_completed` один раз на эпизод `solution_fill`, но не выключает локально
-   `pump_main/valve_solution_fill/valve_clean_supply`: переход в `prepare_recirculation` завершает AE3.
-5. Дополнительно нода публикует событие (канал `storage_state`):
+5. Для `solution_fill` после `solution_fill_clean_min_check_delay_ms` нода обязана проверить `level_clean_min`;
+   если датчик `0`, нода локально выключает `pump_main/valve_solution_fill/valve_clean_supply`
+   и публикует `solution_fill_source_empty`.
+6. Для `solution_fill` после `solution_fill_solution_min_check_delay_ms` нода обязана проверить `level_solution_min`;
+   если датчик `0`, нода локально выключает `pump_main/valve_solution_fill/valve_clean_supply`
+   и публикует `solution_fill_leak_detected`.
+7. `level_solution_max` локально завершает `solution_fill`
+   (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_completed`
+   один раз на эпизод `solution_fill`.
+8. Для `prepare_recirculation` при включённом `recirculation_solution_min_guard_enabled`
+   нода обязана остановить stage по `level_solution_min=0` и опубликовать `recirculation_solution_low`.
+9. Для `irrigation` при включённом `irrigation_solution_min_guard_enabled`
+   нода обязана остановить stage по `level_solution_min=0` и опубликовать `irrigation_solution_low`.
+10. Пока физическая кнопка `E-Stop` удерживается нажатой, нода обязана держать все актуаторы в `OFF`;
+    на момент нажатия публикуется `emergency_stop_activated`.
+11. Для каждого подтверждённого изменения любого `level_*` датчика нода публикует отдельное channel-level событие:
+
+Топик:
+```text
+hydro/{gh}/{zone}/{node}/{level_channel}/event
+```
+
+Payload:
+```json
+{
+  "event_code": "level_switch_changed",
+  "channel": "level_clean_min",
+  "state": true,
+  "initial": false,
+  "ts": 1710003398,
+  "snapshot": {
+    "clean_level_min": true,
+    "clean_level_max": false,
+    "solution_level_min": false,
+    "solution_level_max": false,
+    "pump_main": false
+  }
+}
+```
+
+Правила:
+- событие публикуется на оба фронта: `0 -> 1` и `1 -> 0`;
+- `state` содержит уже подтверждённое debounce-состояние;
+- после boot/reconnect нода обязана один раз опубликовать initial-state событие для каждого
+  из четырёх `level_*` каналов после завершения time sync;
+- `snapshot` использует тот же `IRR_STATE_SNAPSHOT`, что и `storage_state/event`.
+
+12. Дополнительно нода публикует aggregate событие (канал `storage_state`):
 
 Топик:
 ```text
@@ -971,10 +1019,18 @@ Payload:
 }
 ```
 
-Для stage timeout `event_code` принимает одно из значений:
+Для `storage_state/event` `event_code` принимает, в том числе, одно из значений:
 
+- `clean_fill_source_empty`
+- `clean_fill_completed`
+- `solution_fill_source_empty`
+- `solution_fill_leak_detected`
+- `solution_fill_completed`
+- `recirculation_solution_low`
+- `irrigation_solution_low`
 - `solution_fill_timeout`
 - `prepare_recirculation_timeout`
+- `emergency_stop_activated`
 
 Нормализация в backend (`history-logger`):
 - `event_code` (или fallback-поля `event`/`type`) преобразуется в `zone_events.type`;
@@ -985,7 +1041,7 @@ Payload:
   детерминированно и получит suffix `_{SHA1_10}` (первые 10 hex-символов SHA1).
 
 Метрика приёма событий (`node_event_received_total{event_code=...}`):
-- в label попадают только whitelisted коды событий двухбакового контура;
+- в label попадают только whitelisted коды событий двухбакового контура, включая `level_switch_changed`;
 - все остальные коды агрегируются в `event_code="OTHER"` для контроля кардинальности Prometheus.
 
 Назначение:

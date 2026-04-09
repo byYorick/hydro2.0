@@ -19,6 +19,7 @@ async def test_handle_node_event_stores_zone_event_from_numeric_zone_uid():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -30,6 +31,7 @@ async def test_handle_node_event_stores_zone_event_from_numeric_zone_uid():
         assert call_args[1] == "CLEAN_FILL_COMPLETED"
         assert call_args[2]["channel"] == "storage_state"
         assert call_args[2]["node_uid"] == "nd-irrig-1"
+        mock_notify_zone_event.assert_awaited_once()
         mock_event_received.labels.assert_called_once_with(event_code="CLEAN_FILL_COMPLETED")
         mock_event_unknown.inc.assert_not_called()
 
@@ -57,6 +59,7 @@ async def test_handle_node_event_storage_state_state_fallback_persists_irr_snaps
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -75,6 +78,7 @@ async def test_handle_node_event_storage_state_state_fallback_persists_irr_snaps
         assert snapshot_args[2]["snapshot"]["clean_level_max"] is True
         assert snapshot_args[2]["snapshot"]["pump_main"] is False
 
+        mock_notify_zone_event.assert_awaited_once()
         mock_event_received.labels.assert_called_once_with(event_code="CLEAN_FILL_COMPLETED")
         mock_event_unknown.inc.assert_not_called()
 
@@ -106,6 +110,7 @@ async def test_handle_node_event_storage_state_snapshot_persists_irr_snapshot_ev
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -124,8 +129,43 @@ async def test_handle_node_event_storage_state_snapshot_persists_irr_snapshot_ev
         assert snapshot_args[2]["snapshot"]["pump_main"] is False
         assert "valve_irrigation" not in snapshot_args[2]["snapshot"]
 
+        mock_notify_zone_event.assert_awaited_once()
         mock_event_received.labels.assert_called_once_with(event_code="CLEAN_FILL_COMPLETED")
         mock_event_unknown.inc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_node_event_irrigation_solution_low_notifies_payload_for_ae_runtime():
+    """Fail-safe storage_state/event должен публиковать notify payload, пригодный для AE3 runtime callback."""
+    from mqtt_handlers import handle_node_event
+
+    topic = "hydro/gh-1/zn-7/nd-irrig-1/storage_state/event"
+    payload = json.dumps(
+        {
+            "event_code": "irrigation_solution_low",
+            "cmd_id": "cmd-state-event-2",
+            "snapshot": {
+                "solution_level_min": False,
+                "pump_main": False,
+                "valve_solution_supply": False,
+                "valve_irrigation": False,
+            },
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event:
+        await handle_node_event(topic, payload)
+
+        mock_fetch.assert_not_awaited()
+        assert mock_create_zone_event.await_count == 2
+        notify_kwargs = mock_notify_zone_event.await_args.kwargs
+        assert notify_kwargs["zone_id"] == 7
+        assert notify_kwargs["event_type"] == "IRRIGATION_SOLUTION_LOW"
+        assert notify_kwargs["payload"]["channel"] == "storage_state"
+        assert notify_kwargs["payload"]["snapshot"]["solution_level_min"] is False
+        assert notify_kwargs["payload"]["cmd_id"] == "cmd-state-event-2"
 
 
 @pytest.mark.asyncio
@@ -137,7 +177,8 @@ async def test_handle_node_event_resolves_zone_via_db_uid_lookup():
     payload = json.dumps({"event_code": "solution_fill_completed"}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock):
         mock_fetch.side_effect = [
             [{"id": 42}],
         ]
@@ -161,6 +202,7 @@ async def test_handle_node_event_skips_when_zone_not_resolved():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_ERROR") as mock_event_error:
         # Сначала lookup по zones.uid, затем fallback lookup по nodes.uid
         mock_fetch.side_effect = [
@@ -184,7 +226,8 @@ async def test_handle_node_event_resolves_zone_via_node_uid_fallback():
     payload = json.dumps({"event_code": "irrigation_recovery_started"}).encode("utf-8")
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event:
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock):
         mock_fetch.side_effect = [
             [],  # lookup по zones.uid
             [{"zone_id": 77}],  # fallback lookup по nodes.uid
@@ -209,6 +252,7 @@ async def test_handle_node_event_normalizes_event_type_symbols():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -232,6 +276,7 @@ async def test_handle_node_event_handler_exception_increments_metric():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_ERROR") as mock_event_error:
         mock_create_zone_event.side_effect = RuntimeError("db write failed")
 
@@ -252,6 +297,7 @@ async def test_handle_node_event_unknown_metric_code_falls_back_to_other():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -275,6 +321,7 @@ async def test_handle_node_event_prepare_recirculation_timeout_uses_dedicated_me
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -289,6 +336,30 @@ async def test_handle_node_event_prepare_recirculation_timeout_uses_dedicated_me
 
 
 @pytest.mark.asyncio
+async def test_handle_node_event_emergency_stop_uses_dedicated_metric_code():
+    """emergency_stop_activated должен попадать в метрику без fallback OTHER."""
+    from mqtt_handlers import handle_node_event
+
+    topic = "hydro/gh-1/zn-8/nd-irrig-1/storage_state/event"
+    payload = json.dumps({"event_code": "emergency_stop_activated"}).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
+         patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
+         patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        await handle_node_event(topic, payload)
+
+        mock_fetch.assert_not_awaited()
+        mock_create_zone_event.assert_awaited_once()
+        call_args = mock_create_zone_event.await_args.args
+        assert call_args[0] == 8
+        assert call_args[1] == "EMERGENCY_STOP_ACTIVATED"
+        mock_event_received.labels.assert_called_once_with(event_code="EMERGENCY_STOP_ACTIVATED")
+        mock_event_unknown.inc.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_handle_node_event_truncates_long_event_type_with_hash_suffix():
     """Слишком длинный event_code должен безопасно усекаться до лимита БД."""
     from mqtt_handlers import handle_node_event
@@ -299,6 +370,7 @@ async def test_handle_node_event_truncates_long_event_type_with_hash_suffix():
 
     with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
          patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock), \
          patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
          patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
         await handle_node_event(topic, payload)
@@ -315,3 +387,78 @@ async def test_handle_node_event_truncates_long_event_type_with_hash_suffix():
         assert all(ch in "0123456789ABCDEF" for ch in suffix)
         mock_event_received.labels.assert_called_once_with(event_code="OTHER")
         mock_event_unknown.inc.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_node_event_level_switch_changed_persists_normalized_payload_and_notifies():
+    from mqtt_handlers import handle_node_event
+
+    topic = "hydro/gh-1/zn-7/nd-irrig-1/level_solution_min/event"
+    payload = json.dumps(
+        {
+            "event_code": "level_switch_changed",
+            "channel": "level_solution_min",
+            "state": False,
+            "initial": False,
+            "ts": 1737979200014,
+            "snapshot": {
+                "level_solution_min": 0,
+                "level_solution_max": 0,
+                "level_clean_min": 1,
+            },
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
+         patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
+         patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        await handle_node_event(topic, payload)
+
+        mock_fetch.assert_not_awaited()
+        mock_create_zone_event.assert_awaited_once()
+        call_args = mock_create_zone_event.await_args.args
+        assert call_args[0] == 7
+        assert call_args[1] == "LEVEL_SWITCH_CHANGED"
+        assert call_args[2]["channel"] == "level_solution_min"
+        assert call_args[2]["state"] is False
+        assert call_args[2]["initial"] is False
+        assert call_args[2]["snapshot"]["solution_level_min"] is False
+        assert call_args[2]["payload"]["snapshot"]["level_clean_min"] == 1
+        mock_notify_zone_event.assert_awaited_once()
+        notify_kwargs = mock_notify_zone_event.await_args.kwargs
+        assert notify_kwargs["zone_id"] == 7
+        assert notify_kwargs["event_type"] == "LEVEL_SWITCH_CHANGED"
+        assert notify_kwargs["payload"]["channel"] == "level_solution_min"
+        assert notify_kwargs["payload"]["state"] is False
+        mock_event_received.labels.assert_called_once_with(event_code="LEVEL_SWITCH_CHANGED")
+        mock_event_unknown.inc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_node_event_skips_notify_when_deduped_insert_not_written():
+    from mqtt_handlers import handle_node_event
+
+    topic = "hydro/gh-1/zn-7/nd-irrig-1/level_solution_min/event"
+    payload = json.dumps(
+        {
+            "event_code": "level_switch_changed",
+            "channel": "level_solution_min",
+            "state": True,
+            "initial": False,
+        }
+    ).encode("utf-8")
+
+    with patch("mqtt_handlers.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("mqtt_handlers.create_zone_event", new_callable=AsyncMock, return_value=False) as mock_create_zone_event, \
+         patch("mqtt_handlers.notify_zone_event_ingested", new_callable=AsyncMock) as mock_notify_zone_event, \
+         patch("mqtt_handlers.NODE_EVENT_RECEIVED") as mock_event_received, \
+         patch("mqtt_handlers.NODE_EVENT_UNKNOWN") as mock_event_unknown:
+        await handle_node_event(topic, payload)
+
+        mock_fetch.assert_not_awaited()
+        mock_create_zone_event.assert_awaited_once()
+        mock_notify_zone_event.assert_not_awaited()
+        mock_event_received.labels.assert_called_once_with(event_code="LEVEL_SWITCH_CHANGED")
+        mock_event_unknown.inc.assert_not_called()

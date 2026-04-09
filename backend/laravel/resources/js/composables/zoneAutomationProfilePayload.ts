@@ -157,6 +157,38 @@ export function buildGrowthCycleConfigPayload(
     0,
     20
   )
+  const cleanFillMinCheckDelayMs = clamp(
+    Math.round(normalizeNumber(waterForm.cleanFillMinCheckDelayMs, automationDefaults.water_clean_fill_min_check_delay_ms)),
+    0,
+    3600000
+  )
+  const solutionFillCleanMinCheckDelayMs = clamp(
+    Math.round(
+      normalizeNumber(
+        waterForm.solutionFillCleanMinCheckDelayMs,
+        automationDefaults.water_solution_fill_clean_min_check_delay_ms
+      )
+    ),
+    0,
+    3600000
+  )
+  const solutionFillSolutionMinCheckDelayMs = clamp(
+    Math.round(
+      normalizeNumber(
+        waterForm.solutionFillSolutionMinCheckDelayMs,
+        automationDefaults.water_solution_fill_solution_min_check_delay_ms
+      )
+    ),
+    0,
+    3600000
+  )
+  const recirculationStopOnSolutionMin =
+    waterForm.recirculationStopOnSolutionMin ?? automationDefaults.water_recirculation_stop_on_solution_min
+  const estopDebounceMs = clamp(
+    Math.round(normalizeNumber(waterForm.estopDebounceMs, automationDefaults.water_estop_debounce_ms)),
+    20,
+    5000
+  )
   const irrigationRecoveryMaxContinueAttempts = clamp(
     Math.round(
       normalizeNumber(waterForm.irrigationRecoveryMaxContinueAttempts, automationDefaults.water_irrigation_recovery_max_continue_attempts)
@@ -310,6 +342,14 @@ export function buildGrowthCycleConfigPayload(
         ec_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ec_pct,
         ph_pct: automationDefaults.water_irrigation_recovery_degraded_tolerance_ph_pct,
       },
+    }
+    diagnosticsExecution.fail_safe_guards = {
+      clean_fill_min_check_delay_ms: cleanFillMinCheckDelayMs,
+      solution_fill_clean_min_check_delay_ms: solutionFillCleanMinCheckDelayMs,
+      solution_fill_solution_min_check_delay_ms: solutionFillSolutionMinCheckDelayMs,
+      recirculation_stop_on_solution_min: Boolean(recirculationStopOnSolutionMin),
+      irrigation_stop_on_solution_min: Boolean(irrigationStopOnSolutionMin),
+      estop_debounce_ms: estopDebounceMs,
     }
     if (options?.automationCommandTemplates) {
       diagnosticsExecution.two_tank_commands = twoTankCommandsFromTemplates(options.automationCommandTemplates)

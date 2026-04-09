@@ -298,3 +298,262 @@ async def test_read_metric_window_includes_boundary_second_when_since_ts_has_mic
         assert [round(sample["value"], 1) for sample in result["samples"]] == [17.0, 16.5]
     finally:
         await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_level_switch_uses_fresh_level_switch_event_when_telemetry_is_stale() -> None:
+    prefix = f"ae3-level-event-{uuid4().hex[:8]}"
+    monitor = PgZoneRuntimeMonitor()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+
+        sensor_rows = await fetch(
+            """
+            INSERT INTO sensors (
+                greenhouse_id, zone_id, scope, type, label, unit, is_active, created_at, updated_at
+            )
+            VALUES ($1, $2, 'inside', 'WATER_LEVEL', 'level_solution_min', 'state', TRUE, NOW(), NOW())
+            RETURNING id
+            """,
+            greenhouse_id,
+            zone_id,
+        )
+        sensor_id = int(sensor_rows[0]["id"])
+
+        await execute(
+            """
+            INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+            VALUES ($1, 1.0, NOW() - INTERVAL '120 seconds', 'GOOD', NOW() - INTERVAL '120 seconds')
+            ON CONFLICT (sensor_id)
+            DO UPDATE SET
+                last_value = EXCLUDED.last_value,
+                last_ts = EXCLUDED.last_ts,
+                last_quality = EXCLUDED.last_quality,
+                updated_at = EXCLUDED.updated_at
+            """,
+            sensor_id,
+        )
+        await execute(
+            """
+            INSERT INTO zone_events (zone_id, type, payload_json, created_at)
+            VALUES (
+                $1,
+                'LEVEL_SWITCH_CHANGED',
+                '{
+                    "channel":"level_solution_min",
+                    "state":false,
+                    "initial":false,
+                    "snapshot":{"solution_level_min":false}
+                }'::jsonb,
+                NOW()
+            )
+            """,
+            zone_id,
+        )
+
+        level = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=("level_solution_min",),
+            threshold=0.5,
+            telemetry_max_age_sec=30,
+        )
+
+        assert level["has_level"] is True
+        assert level["source"] == "zone_event_level_switch"
+        assert level["is_triggered"] is False
+        assert level["is_initial_event"] is False
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_level_switch_ignores_initial_event_by_default_but_can_allow_it() -> None:
+    prefix = f"ae3-level-initial-{uuid4().hex[:8]}"
+    monitor = PgZoneRuntimeMonitor()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+
+        await execute(
+            """
+            INSERT INTO zone_events (zone_id, type, payload_json, created_at)
+            VALUES (
+                $1,
+                'LEVEL_SWITCH_CHANGED',
+                '{
+                    "channel":"level_solution_max",
+                    "state":true,
+                    "initial":true,
+                    "snapshot":{"solution_level_max":true}
+                }'::jsonb,
+                NOW()
+            )
+            """,
+            zone_id,
+        )
+
+        ignored = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=("level_solution_max",),
+            threshold=0.5,
+            telemetry_max_age_sec=30,
+        )
+        allowed = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=("level_solution_max",),
+            threshold=0.5,
+            telemetry_max_age_sec=30,
+            allow_initial_event=True,
+        )
+
+        assert ignored["has_level"] is False
+        assert allowed["has_level"] is True
+        assert allowed["source"] == "zone_event_level_switch"
+        assert allowed["is_triggered"] is True
+        assert allowed["is_initial_event"] is True
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_level_switch_uses_initial_event_only_as_stale_fallback() -> None:
+    prefix = f"ae3-level-initial-fallback-{uuid4().hex[:8]}"
+    monitor = PgZoneRuntimeMonitor()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+
+        sensor_rows = await fetch(
+            """
+            INSERT INTO sensors (
+                greenhouse_id, zone_id, scope, type, label, unit, is_active, created_at, updated_at
+            )
+            VALUES ($1, $2, 'inside', 'WATER_LEVEL', 'level_solution_max', 'state', TRUE, NOW(), NOW())
+            RETURNING id
+            """,
+            greenhouse_id,
+            zone_id,
+        )
+        sensor_id = int(sensor_rows[0]["id"])
+
+        await execute(
+            """
+            INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+            VALUES ($1, 0.0, NOW() - INTERVAL '120 seconds', 'GOOD', NOW() - INTERVAL '120 seconds')
+            ON CONFLICT (sensor_id)
+            DO UPDATE SET
+                last_value = EXCLUDED.last_value,
+                last_ts = EXCLUDED.last_ts,
+                last_quality = EXCLUDED.last_quality,
+                updated_at = EXCLUDED.updated_at
+            """,
+            sensor_id,
+        )
+        await execute(
+            """
+            INSERT INTO zone_events (zone_id, type, payload_json, created_at)
+            VALUES (
+                $1,
+                'LEVEL_SWITCH_CHANGED',
+                '{
+                    "channel":"level_solution_max",
+                    "state":true,
+                    "initial":true,
+                    "snapshot":{"solution_level_max":true}
+                }'::jsonb,
+                NOW()
+            )
+            """,
+            zone_id,
+        )
+
+        fallback = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=("level_solution_max",),
+            threshold=0.5,
+            telemetry_max_age_sec=30,
+            allow_initial_event_fallback=True,
+        )
+
+        assert fallback["has_level"] is True
+        assert fallback["source"] == "zone_event_level_switch"
+        assert fallback["is_triggered"] is True
+        assert fallback["is_initial_event"] is True
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_level_switch_does_not_override_fresh_telemetry_with_initial_fallback() -> None:
+    prefix = f"ae3-level-initial-fresh-{uuid4().hex[:8]}"
+    monitor = PgZoneRuntimeMonitor()
+
+    try:
+        greenhouse_id = await _insert_greenhouse(prefix)
+        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
+
+        sensor_rows = await fetch(
+            """
+            INSERT INTO sensors (
+                greenhouse_id, zone_id, scope, type, label, unit, is_active, created_at, updated_at
+            )
+            VALUES ($1, $2, 'inside', 'WATER_LEVEL', 'level_solution_max', 'state', TRUE, NOW(), NOW())
+            RETURNING id
+            """,
+            greenhouse_id,
+            zone_id,
+        )
+        sensor_id = int(sensor_rows[0]["id"])
+
+        await execute(
+            """
+            INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+            VALUES ($1, 0.0, NOW(), 'GOOD', NOW())
+            ON CONFLICT (sensor_id)
+            DO UPDATE SET
+                last_value = EXCLUDED.last_value,
+                last_ts = EXCLUDED.last_ts,
+                last_quality = EXCLUDED.last_quality,
+                updated_at = EXCLUDED.updated_at
+            """,
+            sensor_id,
+        )
+        await execute(
+            """
+            INSERT INTO zone_events (zone_id, type, payload_json, created_at)
+            VALUES (
+                $1,
+                'LEVEL_SWITCH_CHANGED',
+                '{
+                    "channel":"level_solution_max",
+                    "state":true,
+                    "initial":true,
+                    "snapshot":{"solution_level_max":true}
+                }'::jsonb,
+                NOW() + INTERVAL '1 second'
+            )
+            """,
+            zone_id,
+        )
+
+        level = await monitor.read_level_switch(
+            zone_id=zone_id,
+            sensor_labels=("level_solution_max",),
+            threshold=0.5,
+            telemetry_max_age_sec=30,
+            allow_initial_event_fallback=True,
+        )
+
+        assert level["has_level"] is True
+        assert level["source"] == "telemetry_last"
+        assert level["is_triggered"] is False
+    finally:
+        await _cleanup(prefix)

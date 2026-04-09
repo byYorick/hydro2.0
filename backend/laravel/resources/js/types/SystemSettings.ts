@@ -112,6 +112,11 @@ export interface AutomationDefaultsSettings {
   water_startup_level_switch_on_threshold: number
   water_startup_clean_max_sensor_label: string
   water_startup_solution_max_sensor_label: string
+  water_clean_fill_min_check_delay_ms: number
+  water_solution_fill_clean_min_check_delay_ms: number
+  water_solution_fill_solution_min_check_delay_ms: number
+  water_recirculation_stop_on_solution_min: boolean
+  water_estop_debounce_ms: number
   water_irrigation_recovery_max_continue_attempts: number
   water_irrigation_recovery_timeout_sec: number
   water_irrigation_recovery_target_tolerance_ec_pct: number

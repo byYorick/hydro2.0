@@ -1399,21 +1399,6 @@
                       :disabled="!canConfigure"
                     />
                   </label>
-                  <label
-                    class="text-xs text-[color:var(--text-muted)] md:col-span-2 xl:col-span-2"
-                    :title="fieldHelp('water.stopOnSolutionMin')"
-                  >
-                    Stop on solution min
-                    <select
-                      v-model="waterForm.stopOnSolutionMin"
-                      data-test="irrigation-stop-on-solution-min"
-                      class="input-select mt-1 w-full"
-                      :disabled="!canConfigure"
-                    >
-                      <option :value="true">Fail-closed при low solution</option>
-                      <option :value="false">Не останавливать irrigation workflow</option>
-                    </select>
-                  </label>
                 </div>
               </div>
 
@@ -1642,6 +1627,103 @@
                       class="input-field mt-1 w-full"
                       :disabled="!canConfigure"
                     />
+                  </label>
+                </div>
+              </div>
+
+              <div class="rounded-xl border border-[color:var(--border-muted)] p-3">
+                <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  Fail-safe guards
+                </h5>
+                <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.cleanFillMinCheckDelayMs')"
+                  >
+                    Clean fill: задержка проверки min (мс)
+                    <input
+                      v-model.number="waterForm.cleanFillMinCheckDelayMs"
+                      type="number"
+                      min="0"
+                      max="3600000"
+                      step="10"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.solutionFillCleanMinCheckDelayMs')"
+                  >
+                    Solution fill: задержка clean_min (мс)
+                    <input
+                      v-model.number="waterForm.solutionFillCleanMinCheckDelayMs"
+                      type="number"
+                      min="0"
+                      max="3600000"
+                      step="10"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.solutionFillSolutionMinCheckDelayMs')"
+                  >
+                    Solution fill: leak-check по solution_min (мс)
+                    <input
+                      v-model.number="waterForm.solutionFillSolutionMinCheckDelayMs"
+                      type="number"
+                      min="0"
+                      max="3600000"
+                      step="10"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)]"
+                    :title="fieldHelp('water.estopDebounceMs')"
+                  >
+                    E-stop debounce (мс)
+                    <input
+                      v-model.number="waterForm.estopDebounceMs"
+                      type="number"
+                      min="20"
+                      max="5000"
+                      step="10"
+                      class="input-field mt-1 w-full"
+                      :disabled="!canConfigure"
+                    />
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)] md:col-span-2 xl:col-span-2"
+                    :title="fieldHelp('water.recirculationStopOnSolutionMin')"
+                  >
+                    Recirculation: stop on solution min
+                    <select
+                      v-model="waterForm.recirculationStopOnSolutionMin"
+                      class="input-select mt-1 w-full"
+                      :disabled="!canConfigure"
+                    >
+                      <option :value="true">Fail-closed при low solution</option>
+                      <option :value="false">Не останавливать recirculation</option>
+                    </select>
+                  </label>
+                  <label
+                    class="text-xs text-[color:var(--text-muted)] md:col-span-2 xl:col-span-2"
+                    :title="fieldHelp('water.stopOnSolutionMin')"
+                  >
+                    Irrigation: stop on solution min
+                    <select
+                      v-model="waterForm.stopOnSolutionMin"
+                      data-test="irrigation-stop-on-solution-min"
+                      class="input-select mt-1 w-full"
+                      :disabled="!canConfigure"
+                    >
+                      <option :value="true">Fail-closed при low solution</option>
+                      <option :value="false">Не останавливать irrigation workflow</option>
+                    </select>
                   </label>
                 </div>
               </div>
@@ -2553,6 +2635,11 @@ const FIELD_HELP: Record<string, string> = {
   'water.startupSolutionFillTimeoutSeconds': 'Fail-closed таймаут на набор раствора при startup workflow.',
   'water.startupPrepareRecirculationTimeoutSeconds': 'Максимальное время ожидания стадии prepare recirculation до аварийного завершения.',
   'water.startupCleanFillRetryCycles': 'Сколько раз startup workflow может повторить clean fill перед отказом.',
+  'water.cleanFillMinCheckDelayMs': 'Через сколько миллисекунд после открытия valve_clean_fill нода проверяет level_clean_min и fail-closed останавливает набор, если источник пуст.',
+  'water.solutionFillCleanMinCheckDelayMs': 'Через сколько миллисекунд после старта solution_fill нода проверяет level_clean_min и fail-closed останавливает набор при отсутствии clean source.',
+  'water.solutionFillSolutionMinCheckDelayMs': 'Через сколько миллисекунд после старта solution_fill выполняется leak-check по level_solution_min.',
+  'water.recirculationStopOnSolutionMin': 'Fail-closed guard: prepare recirculation должен останавливаться при lower solution level.',
+  'water.estopDebounceMs': 'Debounce физической кнопки аварийной остановки. Пока кнопка нажата, node принудительно держит все актуаторы OFF.',
   'water.irrigationDecisionStrategy': 'Decision-controller штатного полива: task принудительно выполняет запуск по плану, smart_soil_v1 сначала оценивает soil moisture и качество телеметрии.',
   'water.irrigationDecisionLookbackSeconds': 'Глубина окна истории телеметрии, из которого decision-controller берёт soil moisture samples.',
   'water.irrigationDecisionMinSamples': 'Минимум samples в lookback-окне, без которого smart_soil_v1 должен деградировать или skip-нуть запуск.',

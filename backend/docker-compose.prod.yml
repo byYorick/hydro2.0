@@ -258,6 +258,7 @@ services:
       - PG_DB=hydro
       - PG_USER=hydro
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - AE_DB_DSN=postgresql://hydro:${POSTGRES_PASSWORD:-change-me}@db:5432/hydro
       - LARAVEL_API_URL=http://laravel
       # ВАЖНО: Токены для безопасности сервисов
       - SCHEDULER_API_TOKEN=${AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN:-${PY_INGEST_TOKEN:?AUTOMATION_LARAVEL_SCHEDULER_API_TOKEN or PY_INGEST_TOKEN must be set}}

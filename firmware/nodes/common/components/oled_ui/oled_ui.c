@@ -1235,8 +1235,15 @@ static void render_normal_screen(void) {
         frame_buffer_draw_line(4, "Channels:");
         for (size_t i = 0; i < s_ui.model.channel_count && i < 2; i++) {
             char line[22];
+            char short_name[11] = {0};
+            const char *channel_name = s_ui.model.channels[i].name[0] != '\0'
+                ? s_ui.model.channels[i].name
+                : "chan";
+
+            strncpy(short_name, channel_name, sizeof(short_name) - 1);
+            short_name[sizeof(short_name) - 1] = '\0';
             snprintf(line, sizeof(line), "%s: %.2f",
-                    s_ui.model.channels[i].name,
+                    short_name,
                     s_ui.model.channels[i].value);
             frame_buffer_draw_line(5 + i, line);
         }

@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Optional
+
+from ae3lite.application.level_monitor import (
+    coarse_clean_tank_level_percent,
+    coarse_solution_tank_level_percent,
+    load_zone_level_monitor_config,
+    summarize_zone_telemetry_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +39,15 @@ _STAGE_LABELS: dict[str, str] = {
     "clean_fill_start": "Запуск наполнения чистой водой",
     "clean_fill_check": "Наполнение чистой водой",
     "clean_fill_stop_to_solution": "Остановка наполнения чистой водой",
+    "clean_fill_source_empty_stop": "Остановка наполнения: источник чистой воды пуст",
     "solution_fill_start": "Запуск наполнения раствором",
     "solution_fill_check": "Наполнение раствором",
+    "solution_fill_source_empty_stop": "Остановка наполнения раствором: источник пуст",
+    "solution_fill_leak_stop": "Остановка наполнения раствором: обнаружена утечка/низкий уровень",
     "solution_fill_stop_to_prepare": "Остановка наполнения раствором",
     "prepare_recirculation_start": "Запуск рециркуляции",
     "prepare_recirculation_check": "Подготовка рециркуляции",
+    "prepare_recirculation_solution_low_stop": "Остановка рециркуляции: низкий уровень раствора",
     "complete_ready": "Готов к поливу",
     "await_ready": "Ожидание готового раствора",
     "decision_gate": "Принятие решения о поливе",
@@ -53,13 +64,18 @@ _STAGE_LABELS: dict[str, str] = {
 _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("startup", "clean_fill_start"): ("CLEAN_FILL_STARTED", "Запуск наполнения чистой водой"),
     ("clean_fill_start", "clean_fill_check"): ("CLEAN_FILL_IN_PROGRESS", "Наполнение чистой водой"),
+    ("clean_fill_check", "clean_fill_retry_stop"): ("CLEAN_FILL_SOURCE_EMPTY", "Источник чистой воды пуст, выполняется безопасная остановка и повтор"),
+    ("clean_fill_check", "clean_fill_source_empty_stop"): ("CLEAN_FILL_SOURCE_EMPTY", "Наполнение остановлено: источник чистой воды пуст"),
     ("clean_fill_check", "clean_fill_stop_to_solution"): ("CLEAN_FILL_COMPLETED", "Чистая вода заполнена"),
     ("clean_fill_stop_to_solution", "solution_fill_start"): ("SOLUTION_FILL_STARTED", "Запуск наполнения раствором"),
     ("solution_fill_start", "solution_fill_check"): ("SOLUTION_FILL_IN_PROGRESS", "Наполнение раствором"),
     ("solution_fill_check", "solution_fill_check"): ("SOLUTION_FILL_CORRECTION", "Коррекция раствора при наполнении"),
+    ("solution_fill_check", "solution_fill_source_empty_stop"): ("SOLUTION_FILL_SOURCE_EMPTY", "Наполнение раствором остановлено: источник чистой воды пуст"),
+    ("solution_fill_check", "solution_fill_leak_stop"): ("SOLUTION_FILL_LEAK_DETECTED", "Наполнение раствором остановлено: нижний уровень раствора пропал"),
     ("solution_fill_check", "solution_fill_stop_to_prepare"): ("SOLUTION_FILL_COMPLETED", "Раствор заполнен"),
     ("solution_fill_stop_to_prepare", "prepare_recirculation_start"): ("RECIRC_STARTED", "Запуск рециркуляции"),
     ("prepare_recirculation_start", "prepare_recirculation_check"): ("RECIRC_IN_PROGRESS", "Рециркуляция"),
+    ("prepare_recirculation_check", "prepare_recirculation_solution_low_stop"): ("RECIRCULATION_SOLUTION_LOW", "Рециркуляция остановлена по низкому уровню раствора"),
     ("prepare_recirculation_check", "prepare_recirculation_stop_to_ready"): ("RECIRC_COMPLETED", "Рециркуляция завершена"),
     ("prepare_recirculation_stop_to_ready", "complete_ready"): ("READY", "Готов к поливу"),
     ("prepare_recirculation_check", "complete_ready"): ("READY", "Готов к поливу"),
@@ -75,14 +91,44 @@ _TRANSITION_EVENT_MAP: dict[tuple[str, str], tuple[str, str]] = {
     ("irrigation_recovery_check", "irrigation_recovery_stop_to_ready"): ("IRRIGATION_RECOVERY_COMPLETED", "Recovery после полива завершён"),
 }
 
-# Метки телеметрических сенсоров, несущих данные pH/EC/level
-_PH_LABELS = frozenset({"ph_sensor", "ph"})
-_EC_LABELS = frozenset({"ec_sensor", "ec"})
-_CLEAN_MAX_LABELS = frozenset({"level_clean_max", "clean_level_max", "clean_max"})
-_SOLUTION_MAX_LABELS = frozenset({"level_solution_max", "solution_level_max", "solution_max"})
-_SOLUTION_MIN_LABELS = frozenset({"level_solution_min", "solution_level_min", "solution_min"})
 _EC_CORRECTION_STEPS = frozenset({"corr_dose_ec", "corr_wait_ec"})
 _PH_CORRECTION_STEPS = frozenset({"corr_dose_ph", "corr_wait_ph"})
+_TIMELINE_NODE_EVENT_TYPES = (
+    "LEVEL_SWITCH_CHANGED",
+    "CLEAN_FILL_SOURCE_EMPTY",
+    "CLEAN_FILL_COMPLETED",
+    "SOLUTION_FILL_SOURCE_EMPTY",
+    "SOLUTION_FILL_LEAK_DETECTED",
+    "SOLUTION_FILL_COMPLETED",
+    "SOLUTION_FILL_TIMEOUT",
+    "PREPARE_RECIRCULATION_TIMEOUT",
+    "RECIRCULATION_SOLUTION_LOW",
+    "IRRIGATION_SOLUTION_LOW",
+    "EMERGENCY_STOP_ACTIVATED",
+)
+_LEVEL_CHANNEL_LABELS = {
+    "level_clean_min": "Нижний уровень чистой воды",
+    "clean_level_min": "Нижний уровень чистой воды",
+    "level_clean_max": "Верхний уровень чистой воды",
+    "clean_level_max": "Верхний уровень чистой воды",
+    "level_solution_min": "Нижний уровень раствора",
+    "solution_level_min": "Нижний уровень раствора",
+    "level_solution_max": "Верхний уровень раствора",
+    "solution_level_max": "Верхний уровень раствора",
+}
+_NODE_EVENT_LABELS = {
+    "CLEAN_FILL_SOURCE_EMPTY": "Событие ноды: источник чистой воды пуст",
+    "CLEAN_FILL_COMPLETED": "Событие ноды: чистая вода заполнена",
+    "SOLUTION_FILL_SOURCE_EMPTY": "Событие ноды: источник чистой воды пуст при наполнении раствором",
+    "SOLUTION_FILL_LEAK_DETECTED": "Событие ноды: обнаружен провал нижнего уровня раствора",
+    "SOLUTION_FILL_COMPLETED": "Событие ноды: раствор заполнен",
+    "SOLUTION_FILL_TIMEOUT": "Событие ноды: таймаут наполнения раствора",
+    "PREPARE_RECIRCULATION_TIMEOUT": "Событие ноды: таймаут подготовки рециркуляции",
+    "RECIRCULATION_SOLUTION_LOW": "Событие ноды: рециркуляция остановлена по низкому уровню раствора",
+    "IRRIGATION_SOLUTION_LOW": "Событие ноды: полив остановлен по низкому уровню раствора",
+    "EMERGENCY_STOP_ACTIVATED": "Событие ноды: активирован аварийный стоп",
+}
+_IDLE_NODE_EVENT_LOOKBACK_SEC = 15 * 60
 
 
 class GetZoneAutomationStateUseCase:
@@ -155,7 +201,7 @@ class GetZoneAutomationStateUseCase:
             workflow_state=workflow_state,
             last_task=last_task,
         ):
-            return self._build_workflow_state(
+            return await self._build_workflow_state(
                 zone_id=zone_id,
                 workflow_state=workflow_state,
                 telemetry=telemetry,
@@ -165,7 +211,7 @@ class GetZoneAutomationStateUseCase:
         if task is None:
             task = last_task
 
-        return self._build_state(
+        return await self._build_state(
             zone_id=zone_id,
             task=task,
             transitions=transitions,
@@ -180,6 +226,7 @@ class GetZoneAutomationStateUseCase:
         Возвращает ``(levels_dict, ok)``, где ``ok`` равно ``False``, если SQL-чтение не удалось.
         """
         try:
+            level_cfg = await load_zone_level_monitor_config(zone_id=zone_id, fetch_fn=self._fetch_fn)
             rows = await self._fetch_fn(
                 """
                 SELECT s.label, s.type, tl.last_value, tl.last_ts, tl.last_quality
@@ -187,7 +234,7 @@ class GetZoneAutomationStateUseCase:
                 JOIN telemetry_last tl ON tl.sensor_id = s.id
                 WHERE s.zone_id = $1
                   AND s.is_active = TRUE
-                  AND s.type IN ('PH', 'EC', 'WATER_LEVEL')
+                  AND s.type IN ('PH', 'EC', 'WATER_LEVEL', 'WATER_LEVEL_SWITCH')
                 ORDER BY s.type, s.label
                 """,
                 zone_id,
@@ -200,34 +247,75 @@ class GetZoneAutomationStateUseCase:
             )
             return {}, False
 
-        result: dict[str, Any] = {}
-        clean_max_triggered: bool | None = None
-        solution_max_triggered: bool | None = None
-        solution_min_triggered: bool | None = None
-        for row in rows:
-            label = str(row["label"] or "").strip().lower()
-            value = float(row["last_value"]) if row["last_value"] is not None else None
-            if label in _PH_LABELS:
-                result["ph"] = value
-            elif label in _EC_LABELS:
-                result["ec"] = value
-            elif label in _CLEAN_MAX_LABELS:
-                clean_max_triggered = value == 1.0
-            elif label in _SOLUTION_MAX_LABELS:
-                solution_max_triggered = value == 1.0
-            elif label in _SOLUTION_MIN_LABELS:
-                solution_min_triggered = value is not None and value >= 1.0
-        if clean_max_triggered is not None:
-            result["clean_tank_level_percent"] = 100 if clean_max_triggered else 0
-        if solution_max_triggered:
-            result["nutrient_tank_level_percent"] = 100
-        elif solution_min_triggered:
-            result["nutrient_tank_level_percent"] = 0
-        elif solution_max_triggered is not None:
-            result["nutrient_tank_level_percent"] = 0
-        return result, True
+        return summarize_zone_telemetry_rows(rows, config=level_cfg), True
 
-    def _build_timeline(self, transitions: list[dict]) -> list[dict]:
+    async def _fetch_recent_node_runtime_events(self, *, zone_id: int, since_ts: datetime | None) -> list[dict[str, Any]]:
+        if self._fetch_fn is None:
+            return []
+        try:
+            rows = await self._fetch_fn(
+                """
+                SELECT type, created_at, COALESCE(details, payload_json) AS payload
+                FROM zone_events
+                WHERE zone_id = $1
+                  AND type = ANY($2::text[])
+                  AND ($3::timestamp IS NULL OR created_at >= $3)
+                ORDER BY created_at ASC, id ASC
+                LIMIT 32
+                """,
+                zone_id,
+                list(_TIMELINE_NODE_EVENT_TYPES),
+                since_ts,
+            )
+        except Exception:
+            logger.warning(
+                "AE3 automation state: node runtime events fetch failed for zone_id=%s",
+                zone_id,
+                exc_info=True,
+            )
+            return []
+
+        events: list[dict[str, Any]] = []
+        for row in rows:
+            event = self._build_node_runtime_timeline_event(row)
+            if event is not None:
+                events.append(event)
+        return events
+
+    def _build_node_runtime_timeline_event(self, row: Mapping[str, Any]) -> dict[str, Any] | None:
+        event_type = str(row.get("type") or "").strip().upper()
+        payload = row.get("payload")
+        payload_map = payload if isinstance(payload, Mapping) else {}
+        ts = row.get("created_at")
+
+        if event_type == "LEVEL_SWITCH_CHANGED":
+            channel = str(payload_map.get("channel") or "").strip().lower()
+            state = payload_map.get("state")
+            initial = payload_map.get("initial")
+            channel_label = _LEVEL_CHANNEL_LABELS.get(channel, channel or "датчик уровня")
+            normalized_state = state if isinstance(state, bool) else str(state).strip().lower() in {"1", "true", "yes", "on"}
+            normalized_initial = initial if isinstance(initial, bool) else str(initial).strip().lower() in {"1", "true", "yes", "on"}
+            state_label = "сработал" if normalized_state else "отпущен"
+            prefix = "Начальное состояние ноды" if normalized_initial else "Сигнал датчика"
+            label = f"{prefix}: {channel_label} {state_label}"
+        else:
+            label = _NODE_EVENT_LABELS.get(event_type, event_type)
+
+        return {
+            "event": event_type,
+            "label": label,
+            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+            "active": False,
+            "source": "node_event",
+        }
+
+    async def _build_timeline(
+        self,
+        *,
+        zone_id: int,
+        transitions: list[dict],
+        since_ts: datetime | None,
+    ) -> list[dict]:
         events = []
         for t in transitions:
             from_s = str(t.get("from_stage") or "")
@@ -240,13 +328,16 @@ class GetZoneAutomationStateUseCase:
                 "label": label,
                 "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
                 "active": False,
+                "source": "transition",
             })
+        events.extend(await self._fetch_recent_node_runtime_events(zone_id=zone_id, since_ts=since_ts))
+        events.sort(key=lambda item: str(item.get("timestamp") or ""))
         # Пометить последнее событие как активное
         if events:
             events[-1]["active"] = True
         return events
 
-    def _build_state(
+    async def _build_state(
         self,
         *,
         zone_id: int,
@@ -257,7 +348,7 @@ class GetZoneAutomationStateUseCase:
         solution_tank_guard: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if task is None:
-            return self._idle_state(
+            return await self._idle_state(
                 zone_id=zone_id,
                 telemetry_fetch_ok=telemetry_fetch_ok,
                 solution_tank_guard=solution_tank_guard,
@@ -277,7 +368,11 @@ class GetZoneAutomationStateUseCase:
         if is_failed:
             state = "IDLE"
 
-        timeline = self._build_timeline(transitions)
+        timeline = await self._build_timeline(
+            zone_id=zone_id,
+            transitions=transitions,
+            since_ts=self._timeline_since(task=task),
+        )
         active_processes = self._build_active_processes(
             workflow_phase=workflow_phase,
             is_active=is_active,
@@ -306,8 +401,18 @@ class GetZoneAutomationStateUseCase:
                 "nutrient_tank_capacity_l": None,
             },
             "current_levels": {
-                "clean_tank_level_percent": telemetry.get("clean_tank_level_percent", 0),
-                "nutrient_tank_level_percent": telemetry.get("nutrient_tank_level_percent", 0),
+                "clean_tank_level_percent": telemetry.get(
+                    "clean_tank_level_percent",
+                    coarse_clean_tank_level_percent(clean_max_triggered=False) or 0,
+                ),
+                "nutrient_tank_level_percent": telemetry.get(
+                    "nutrient_tank_level_percent",
+                    coarse_solution_tank_level_percent(
+                        solution_max_triggered=False,
+                        solution_min_triggered=False,
+                    )
+                    or 0,
+                ),
                 "buffer_tank_level_percent": None,
                 "ph": telemetry.get("ph"),
                 "ec": telemetry.get("ec"),
@@ -322,7 +427,7 @@ class GetZoneAutomationStateUseCase:
             "telemetry_fetch_ok": telemetry_fetch_ok,
         }
 
-    def _build_workflow_state(
+    async def _build_workflow_state(
         self,
         *,
         zone_id: int,
@@ -347,6 +452,11 @@ class GetZoneAutomationStateUseCase:
         state_label = _STATE_LABELS.get(state, "Ожидание")
         if workflow_phase == "idle" and str(current_stage or "").strip().lower() == "startup":
             state_label = "Инициализация"
+        timeline = await self._build_timeline(
+            zone_id=zone_id,
+            transitions=[],
+            since_ts=self._timeline_since_workflow(workflow_state=workflow_state),
+        )
 
         return {
             "zone_id": zone_id,
@@ -370,8 +480,18 @@ class GetZoneAutomationStateUseCase:
                 "nutrient_tank_capacity_l": None,
             },
             "current_levels": {
-                "clean_tank_level_percent": telemetry.get("clean_tank_level_percent", 0),
-                "nutrient_tank_level_percent": telemetry.get("nutrient_tank_level_percent", 0),
+                "clean_tank_level_percent": telemetry.get(
+                    "clean_tank_level_percent",
+                    coarse_clean_tank_level_percent(clean_max_triggered=False) or 0,
+                ),
+                "nutrient_tank_level_percent": telemetry.get(
+                    "nutrient_tank_level_percent",
+                    coarse_solution_tank_level_percent(
+                        solution_max_triggered=False,
+                        solution_min_triggered=False,
+                    )
+                    or 0,
+                ),
                 "buffer_tank_level_percent": None,
                 "ph": telemetry.get("ph"),
                 "ec": telemetry.get("ec"),
@@ -382,7 +502,7 @@ class GetZoneAutomationStateUseCase:
                 "ph_correction": False,
                 "ec_correction": False,
             },
-            "timeline": [],
+            "timeline": timeline,
             "next_state": None,
             "estimated_completion_sec": None,
             "irr_node_state": None,
@@ -391,13 +511,18 @@ class GetZoneAutomationStateUseCase:
             "telemetry_fetch_ok": telemetry_fetch_ok,
         }
 
-    def _idle_state(
+    async def _idle_state(
         self,
         *,
         zone_id: int,
         telemetry_fetch_ok: bool = True,
         solution_tank_guard: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        timeline = await self._build_timeline(
+            zone_id=zone_id,
+            transitions=[],
+            since_ts=self._idle_timeline_since(),
+        )
         return {
             "zone_id": zone_id,
             "state": "IDLE",
@@ -432,7 +557,7 @@ class GetZoneAutomationStateUseCase:
                 "ph_correction": False,
                 "ec_correction": False,
             },
-            "timeline": [],
+            "timeline": timeline,
             "next_state": None,
             "estimated_completion_sec": None,
             "irr_node_state": None,
@@ -483,6 +608,31 @@ class GetZoneAutomationStateUseCase:
         workflow_cmp = self._normalize_utc_naive(workflow_updated_at)
         task_cmp = self._normalize_utc_naive(task_updated_at)
         return task_cmp >= workflow_cmp
+
+    def _timeline_since(self, *, task: Any | None) -> datetime | None:
+        if task is None:
+            return None
+        for field_name in ("created_at", "updated_at"):
+            value = getattr(task, field_name, None)
+            if isinstance(value, datetime):
+                return self._normalize_utc_naive(value)
+        workflow = getattr(task, "workflow", None)
+        entered = getattr(workflow, "stage_entered_at", None)
+        if isinstance(entered, datetime):
+            return self._normalize_utc_naive(entered)
+        return None
+
+    def _timeline_since_workflow(self, *, workflow_state: Any | None) -> datetime | None:
+        if workflow_state is None:
+            return self._idle_timeline_since()
+        for field_name in ("updated_at", "started_at"):
+            value = getattr(workflow_state, field_name, None)
+            if isinstance(value, datetime):
+                return self._normalize_utc_naive(value)
+        return self._idle_timeline_since()
+
+    def _idle_timeline_since(self) -> datetime:
+        return self._now() - timedelta(seconds=_IDLE_NODE_EVENT_LOOKBACK_SEC)
 
     def _now(self) -> Any:
         from common.utils.time import utcnow_naive

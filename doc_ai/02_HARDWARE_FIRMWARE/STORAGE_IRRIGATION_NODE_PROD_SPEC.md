@@ -1,8 +1,8 @@
 # STORAGE_IRRIGATION_NODE_PROD_SPEC.md
 # Production-спецификация ноды накопления и полива (`storage_irrigation_node`)
 
-**Версия:** 1.1  
-**Дата обновления:** 2026-03-02  
+**Версия:** 1.3
+**Дата обновления:** 2026-04-09
 **Статус:** Актуально
 
 Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0.
@@ -89,10 +89,29 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - при попытке нарушения interlock возвращается `ERROR` + `error_code=pump_interlock_blocked`;
 - `level_clean_max` локально завершает только `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_completed`
   один раз на эпизод `clean_fill`;
-- `level_solution_max` публикует `solution_fill_completed` в `storage_state/event` со snapshot
-  один раз на эпизод `solution_fill`,
-  но не выключает `pump_main/valve_solution_fill/valve_clean_supply`: завершением `solution_fill`
-  и переходом в `prepare_recirculation` управляет AE3.
+- через `clean_fill_min_check_delay_ms` нода проверяет `level_clean_min`; если датчик остаётся `0`,
+  локально завершает `clean_fill` (`valve_clean_fill -> OFF`) и публикует `clean_fill_source_empty`;
+- через `solution_fill_clean_min_check_delay_ms` нода проверяет `level_clean_min`; если датчик `0`,
+  локально завершает `solution_fill`
+  (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_source_empty`;
+- через `solution_fill_solution_min_check_delay_ms` нода проверяет `level_solution_min`; если датчик `0`,
+  локально завершает `solution_fill`
+  (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_leak_detected`;
+- `level_solution_max` локально завершает `solution_fill`
+  (`pump_main/valve_solution_fill/valve_clean_supply -> OFF`) и публикует `solution_fill_completed`
+  один раз на эпизод `solution_fill`;
+- при включённом `recirculation_solution_min_guard_enabled` нода завершает `prepare_recirculation`
+  по `level_solution_min=0` с событием `recirculation_solution_low`;
+- при включённом `irrigation_solution_min_guard_enabled` нода завершает `irrigation`
+  по `level_solution_min=0` с событием `irrigation_solution_low`;
+- отдельная физическая кнопка `E-Stop` на `GPIO23` (active-low, pull-up) пока удерживается в нажатом состоянии
+  принудительно выключает все 6 актуаторов; на нажатие нода публикует `emergency_stop_activated`,
+  на отпускание локально восстанавливает предыдущий снимок actuator-состояний.
+- каждый `level_*` канал дополнительно публикует `.../{channel}/event` с
+  `event_code=level_switch_changed`, полями `channel`, `state`, `initial` и полным `snapshot`;
+- channel-level событие отправляется на оба фронта (`0 -> 1`, `1 -> 0`) после debounce-подтверждения;
+- после boot/reconnect нода повторно публикует initial-state событие по каждому `level_*` каналу
+  после завершения time sync.
 
 Неизвестная команда:
 - `ERROR` + `error_code=unknown_command`.
@@ -108,6 +127,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 Фактические публикации:
 
 - `.../{channel}/telemetry`
+- `.../{level_channel}/event`
 - `.../{channel}/command_response`
 - `.../diagnostics`
 - `.../storage_state/event`
@@ -135,6 +155,7 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - I2C SDA: `GPIO21`
 - I2C SCL: `GPIO22`
 - Factory reset button: `GPIO0` (active-low)
+- E-Stop button: `GPIO23` (active-low, pull-up)
 
 Примечание:
 - `GPIO21/22` используются для INA209 и OLED;
@@ -156,6 +177,28 @@ Runtime-валидация `pump_driver` сохраняется:
 - принимаются только `GPIO_IS_VALID_OUTPUT_GPIO(...)`;
 - дублирующиеся GPIO для насосных каналов отклоняются.
 
+Top-level секция `fail_safe_guards` допускается и используется как firmware mirror:
+
+```json
+{
+  "fail_safe_guards": {
+    "clean_fill_min_check_delay_ms": 5000,
+    "solution_fill_clean_min_check_delay_ms": 5000,
+    "solution_fill_solution_min_check_delay_ms": 15000,
+    "recirculation_solution_min_guard_enabled": true,
+    "irrigation_solution_min_guard_enabled": true,
+    "estop_debounce_ms": 80
+  }
+}
+```
+
+Источник истины для frontend/AE3:
+- `zone.logic_profile.active_profile.subsystems.diagnostics.execution.fail_safe_guards`
+
+Mirror в NodeConfig:
+- `recirculation_stop_on_solution_min` -> `recirculation_solution_min_guard_enabled`
+- `irrigation_stop_on_solution_min` -> `irrigation_solution_min_guard_enabled`
+
 ---
 
 ## 6. Режимы работы
@@ -169,7 +212,8 @@ Runtime-валидация `pump_driver` сохраняется:
 - публикует `config_report`;
 - при temp/unbound конфиге публикует `node_hello`.
 
-До получения `hydro/time/response` нода не публикует `telemetry`, `status` и `storage_state/event` с полем `ts`.
+До получения `hydro/time/response` нода не публикует `telemetry`, `status`,
+`.../{level_channel}/event` и `storage_state/event` с полем `ts`.
 
 ---
 
@@ -184,6 +228,8 @@ Runtime-валидация `pump_driver` сохраняется:
   использоваться как auto-stop для `set_relay` в production `storage_irrigation_node`.
 - Stage-level timeout для `solution_fill` и `prepare_recirculation` приходит из backend в
   `pump_main/set_relay` через `params.timeout_ms` и исполняется локальным guard'ом ноды.
+- `fail_safe_guards` может обновляться с фронта через `zone.logic_profile`, после чего backend обязан
+  пересобрать `NodeConfig` IRR-ноды и репаблишить новый mirror в ноду.
 
 ---
 

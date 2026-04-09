@@ -26,6 +26,10 @@ from typing import Any, Mapping, Optional
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.level_monitor import (
+    coarse_solution_tank_level_percent,
+    solution_tank_has_solution,
+)
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
@@ -34,7 +38,6 @@ from ae3lite.infrastructure.metrics import CORRECTION_ATTEMPT, CORRECTION_CAP_IG
 from ae3lite.infrastructure.metrics import IRRIGATION_EC_COMPONENT_DOSE
 from common.db import create_zone_event
 from common.biz_alerts import send_biz_alert
-from common.water_flow import check_water_level
 
 _logger = logging.getLogger(__name__)
 
@@ -391,9 +394,18 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=retry_delay_sec,
             )
 
-        workflow_phase = str(getattr(task.workflow, "workflow_phase", "") or "").strip().lower() or None
-        wl_ok, wl_level = await check_water_level(task.zone_id, workflow_phase=workflow_phase)
-        if not wl_ok:
+        solution_min = await self._read_level(
+            task=task,
+            zone_id=task.zone_id,
+            labels=runtime["solution_min_sensor_labels"],
+            threshold=runtime["level_switch_on_threshold"],
+            telemetry_max_age_sec=max_age,
+            unavailable_error="two_tank_solution_min_level_unavailable",
+            stale_error="two_tank_solution_min_level_stale",
+            stale_recheck_delay_sec=0.25,
+            prefer_probe_snapshot=True,
+        )
+        if not solution_tank_has_solution(solution_min):
             retry_delay_sec = self._correction_retry_delay_sec(
                 correction_cfg=correction_cfg,
                 key="low_water_retry_sec",
@@ -405,7 +417,13 @@ class CorrectionHandler(BaseStageHandler):
                 task=task,
                 corr=corr,
                 payload={
-                    "water_level_pct": (wl_level or 0.0) * 100.0,
+                    "water_level_pct": float(
+                        coarse_solution_tank_level_percent(
+                            solution_max_triggered=None,
+                            solution_min_triggered=bool(solution_min.get("is_triggered")),
+                        )
+                        or 0
+                    ),
                     "retry_after_sec": retry_delay_sec,
                     "current_ph": current_ph,
                     "current_ec": current_ec,
@@ -419,7 +437,15 @@ class CorrectionHandler(BaseStageHandler):
             )
             _logger.warning(
                 "zone %s: water level %.0f%% is below threshold; skipping correction for %.1fs",
-                task.zone_id, (wl_level or 0.0) * 100, retry_delay_sec,
+                task.zone_id,
+                float(
+                    coarse_solution_tank_level_percent(
+                        solution_max_triggered=None,
+                        solution_min_triggered=bool(solution_min.get("is_triggered")),
+                    )
+                    or 0
+                ),
+                retry_delay_sec,
             )
             return self._enter_correction_after_delay_or_interrupt(
                 task=task,

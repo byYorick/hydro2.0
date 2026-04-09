@@ -1151,8 +1151,16 @@ zone_events_zone_id_id_idx
 Примечание:
 - Основной payload хранится в `payload_json`.
 - `details` используется как совместимый read-layer и в актуальной схеме генерируется из `payload_json`.
-- Для событий от MQTT (`hydro/{gh}/{zone}/{node}/storage_state/event`) поле `type` получает нормализованный `event_code`;
+- Для событий от MQTT (`hydro/{gh}/{zone}/{node}/storage_state/event` и `hydro/{gh}/{zone}/{node}/{channel}/event`)
+  поле `type` получает нормализованный `event_code`;
   при длине >255 значение детерминированно усекается до 255 символов.
+- Для two-tank IRR-контракта в `zone_events.type` допустимы, в том числе:
+  `LEVEL_SWITCH_CHANGED`, `CLEAN_FILL_SOURCE_EMPTY`, `CLEAN_FILL_COMPLETED`,
+  `SOLUTION_FILL_SOURCE_EMPTY`, `SOLUTION_FILL_LEAK_DETECTED`, `SOLUTION_FILL_COMPLETED`,
+  `RECIRCULATION_SOLUTION_LOW`, `IRRIGATION_SOLUTION_LOW`, `SOLUTION_FILL_TIMEOUT`,
+  `PREPARE_RECIRCULATION_TIMEOUT`, `EMERGENCY_STOP_ACTIVATED`.
+- Для `LEVEL_SWITCH_CHANGED` в `payload_json` должны сохраняться как минимум
+  `channel`, `state`, `initial`, `snapshot`, `ts`.
 - Для runtime invalidation effective targets используется событие
   `AUTOMATION_LOGIC_PROFILE_UPDATED` (source: upsert active automation profile).
 - Correction-runtime события (`CORRECTION_COMPLETE`, `CORRECTION_SKIPPED_COOLDOWN`,

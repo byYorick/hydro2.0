@@ -62,6 +62,13 @@ describe('errorCatalog', () => {
     })).toBe('Отсутствует обязательное поле correction_config.')
   })
 
+  it('берёт русское описание новых fail-safe кодов из каталога', () => {
+    expect(resolveHumanErrorMessage({
+      code: 'solution_fill_leak_detected',
+      message: 'Solution minimum level dropped during solution fill',
+    })).toBe('Наполнение раствором остановлено: нижний уровень раствора пропал после guard-delay, возможна утечка или неправильная гидравлика.')
+  })
+
   it('локализует ошибки recovery command gateway', () => {
     expect(resolveHumanErrorMessage({
       message: 'Task 41 has no ae_command for recovery',

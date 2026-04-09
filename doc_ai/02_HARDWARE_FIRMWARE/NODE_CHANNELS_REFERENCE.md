@@ -139,6 +139,22 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 }
 ```
 
+Для production `storage_irrigation_node` эти же каналы дополнительно публикуют MQTT event
+`hydro/{gh}/{zone}/{node}/{channel}/event` с payload вида:
+
+```json
+{
+  "event_code": "level_switch_changed",
+  "channel": "level_clean_max",
+  "state": true,
+  "initial": false,
+  "snapshot": {
+    "clean_level_max": true
+  },
+  "ts": 1737355600
+}
+```
+
 ### 2.10. Датчики субстрата (soil)
 
 Канонические ключи:
@@ -329,16 +345,30 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 }
 ```
 
-### 3.4. Правило локального авто-стопа наполнения бака
+### 3.4. Правило локальных fail-safe guard'ов для two-tank IRR
 
 Для production `storage_irrigation_node` нода обязана:
 
-1. При активном наполнении контролировать датчики `level_clean_max` / `level_solution_max`.
-2. При `level_clean_max` локально закрыть `valve_clean_fill` и опубликовать `clean_fill_completed`
-   один раз на эпизод `clean_fill`.
-3. При `level_solution_max` опубликовать `solution_fill_completed` один раз на эпизод `solution_fill`, но не выключать локально flow-path
-   (`pump_main`, `valve_solution_fill`, `valve_clean_supply`): завершением stage владеет AE3.
-4. `set_relay {state:true}` на IRR-actuator path работает как latched `ON/OFF` и остаётся включенным до явного `OFF`.
+1. Для `clean_fill` после задержки `clean_fill_min_check_delay_ms` проверить `level_clean_min`:
+   если датчик остаётся `0`, локально закрыть `valve_clean_fill` и опубликовать `clean_fill_source_empty`.
+2. Для `clean_fill` при `level_clean_max=1` локально закрыть `valve_clean_fill`
+   и опубликовать `clean_fill_completed`.
+3. Для `solution_fill` после задержки `solution_fill_clean_min_check_delay_ms` проверить `level_clean_min`:
+   если датчик `0`, локально выключить `pump_main`, `valve_clean_supply`, `valve_solution_fill`
+   и опубликовать `solution_fill_source_empty`.
+4. Для `solution_fill` после задержки `solution_fill_solution_min_check_delay_ms` проверить `level_solution_min`:
+   если датчик `0`, локально выключить тот же flow-path и опубликовать `solution_fill_leak_detected`.
+5. Для `solution_fill` при `level_solution_max=1` локально выключить `pump_main`,
+   `valve_clean_supply`, `valve_solution_fill` и опубликовать `solution_fill_completed`.
+6. Для `prepare_recirculation` при включённом `recirculation_solution_min_guard_enabled`
+   следить за `level_solution_min`; при `0` локально выключить `pump_main`,
+   `valve_solution_fill`, `valve_solution_supply` и опубликовать `recirculation_solution_low`.
+7. Для `irrigation` при включённом `irrigation_solution_min_guard_enabled`
+   следить за `level_solution_min`; при `0` локально выключить `pump_main`,
+   `valve_solution_supply`, `valve_irrigation` и опубликовать `irrigation_solution_low`.
+8. `set_relay {state:true}` на IRR-actuator path работает как latched `ON/OFF` и остаётся включенным до явного `OFF`.
+9. На отдельном физическом входе `E-Stop` нода должна держать все актуаторы в `OFF`, пока кнопка нажата,
+   и публиковать `emergency_stop_activated` в `storage_state/event` на факт нажатия.
 
 ### 3.5. Канал суммарного тока насосов (SENSOR + связь с актуаторами)
 

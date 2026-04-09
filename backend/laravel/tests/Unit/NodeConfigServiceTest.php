@@ -2,7 +2,9 @@
 
 namespace Tests\Unit;
 
+use App\Models\AutomationEffectiveBundle;
 use App\Models\DeviceNode;
+use App\Models\Zone;
 use App\Services\NodeConfigService;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
@@ -142,5 +144,65 @@ class NodeConfigServiceTest extends TestCase
         $config = $service->generateNodeConfig($node, null, true, false);
 
         $this->assertSame('NC', $config['channels'][0]['relay_type']);
+    }
+
+    public function test_generate_node_config_mirrors_fail_safe_guards_from_zone_logic_profile_bundle(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'irrig',
+            'config' => [
+                'node_id' => 'nd-irrig-1',
+                'version' => 1,
+                'type' => 'irrig',
+                'channels' => [],
+            ],
+        ]);
+
+        AutomationEffectiveBundle::query()->create([
+            'scope_type' => 'zone',
+            'scope_id' => $zone->id,
+            'bundle_revision' => 'test-rev',
+            'schema_revision' => '1',
+            'status' => 'valid',
+            'inputs_checksum' => 'test-checksum',
+            'config' => [
+                'zone' => [
+                    'logic_profile' => [
+                        'active_mode' => 'working',
+                        'active_profile' => [
+                            'subsystems' => [
+                                'diagnostics' => [
+                                    'execution' => [
+                                        'fail_safe_guards' => [
+                                            'clean_fill_min_check_delay_ms' => 9000,
+                                            'solution_fill_clean_min_check_delay_ms' => 11000,
+                                            'solution_fill_solution_min_check_delay_ms' => 17000,
+                                            'recirculation_stop_on_solution_min' => false,
+                                            'irrigation_stop_on_solution_min' => true,
+                                            'estop_debounce_ms' => 120,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        /** @var NodeConfigService $service */
+        $service = $this->app->make(NodeConfigService::class);
+        $config = $service->generateNodeConfig($node, null, true, false);
+
+        $this->assertSame([
+            'clean_fill_min_check_delay_ms' => 9000,
+            'solution_fill_clean_min_check_delay_ms' => 11000,
+            'solution_fill_solution_min_check_delay_ms' => 17000,
+            'recirculation_solution_min_guard_enabled' => false,
+            'irrigation_solution_min_guard_enabled' => true,
+            'estop_debounce_ms' => 120,
+        ], $config['fail_safe_guards']);
     }
 }

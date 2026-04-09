@@ -124,6 +124,7 @@ class TestSuite:
             str(base_path / "ae3lite" / "E97_ae3_restart_waiting_command_recovered.yaml"),
             str(base_path / "ae3lite" / "E98_ae3_runtime_switch_denied_busy_zone.yaml"),
             str(base_path / "ae3lite" / "E99_ae3_double_execution_guard.yaml"),
+            str(base_path / "ae3lite" / "E110_ae3_node_runtime_event_contract.yaml"),
         ]
         ae3lite_testnode_realhw_core = [
             str(base_path / "ae3lite" / "E100_ae3_two_tank_realhw_smoke.yaml"),

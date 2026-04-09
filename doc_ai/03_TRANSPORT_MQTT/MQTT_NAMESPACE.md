@@ -140,6 +140,26 @@ hydro/{gh}/{zone}/{node}/{channel}/event
 - `PH_DRIFT_TOO_HIGH`, `EC_OUT_OF_RANGE`.
 
 Для канала `storage_state` (контур `2 бака`) payload события должен включать `event_code`.
+Для level-switch каналов `level_clean_min|level_clean_max|level_solution_min|level_solution_max`
+production `storage_irrigation_node` публикует channel-level события в
+`hydro/{gh}/{zone}/{node}/{channel}/event` с `event_code="level_switch_changed"` и полями:
+- `channel` — firmware channel id датчика;
+- `state` — новое подтверждённое bool-состояние после debounce;
+- `initial` — `true` для первой публикации состояния после boot/reconnect+time-sync, иначе `false`;
+- `snapshot` — полный `IRR_STATE_SNAPSHOT` на момент события.
+
+Для aggregate-канала `storage_state/event` production `storage_irrigation_node` использует как минимум коды:
+- `clean_fill_source_empty`
+- `clean_fill_completed`
+- `solution_fill_source_empty`
+- `solution_fill_leak_detected`
+- `solution_fill_completed`
+- `recirculation_solution_low`
+- `irrigation_solution_low`
+- `solution_fill_timeout`
+- `prepare_recirculation_timeout`
+- `emergency_stop_activated`
+
 На стороне backend (`history-logger`) `event_code` нормализуется в `zone_events.type`:
 - `UPPERCASE`, замена не `[A-Z0-9]` на `_`, схлопывание повторов `_`;
 - если после нормализации длина >255, тип усекётся детерминированно с suffix `_{SHA1_10}`;

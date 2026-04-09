@@ -250,6 +250,7 @@ services:
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
+      - AE_DB_DSN=postgresql://hydro:hydro@db:5432/hydro_dev
       - LARAVEL_API_URL=http://laravel
       - MQTT_ZONE_FORMAT=uid
       # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!

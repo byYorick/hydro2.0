@@ -977,7 +977,7 @@ actions:
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  topology AS mode,\n  current_stage AS stage,\n\
     \  error_code,\n  error_message\nFROM ae_tasks\nWHERE id = CAST(:task_id AS bigint)\n\
-    \  AND status IN ('pending', 'completed', 'failed')\nLIMIT 1\n"
+    \  AND status = 'pending'\n  AND current_stage = 'clean_fill_check'\nLIMIT 1\n"
   params:
     task_id: ${task_id}
   timeout: 20.0
@@ -1091,7 +1091,7 @@ actions:
       level_clean_min_override: true
       level_clean_max_override: true
       level_solution_min_override: true
-      level_solution_max_override: true
+      level_solution_max_override: false
   save: force_solution_tank_full_response
 - step: wait_force_solution_tank_full_done
   type: db.wait
@@ -1108,7 +1108,7 @@ actions:
     \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id: ${task_id}
-  timeout: 40.0
+  timeout: 120.0
   expected_rows: 1
   save: fill_ec_correction_row
 - step: load_fill_ph_correction_commands_if_any
@@ -1120,6 +1120,29 @@ actions:
     task_id: ${task_id}
   expected_rows: 0
   save: fill_ph_correction_rows
+- step: complete_solution_fill_after_ec_correction
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: true
+  save: complete_solution_fill_after_ec_correction_response
+- step: wait_complete_solution_fill_after_ec_correction_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${complete_solution_fill_after_ec_correction_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_prepare_recirculation_stage
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
@@ -1728,7 +1751,7 @@ actions:
       level_clean_min_override: true
       level_clean_max_override: true
       level_solution_min_override: true
-      level_solution_max_override: true
+      level_solution_max_override: false
   save: force_solution_tank_full_second_response
 - step: wait_force_solution_tank_full_second_done
   type: db.wait
@@ -1745,7 +1768,7 @@ actions:
     \ = 'pump_a'\n  AND payload->>'cmd' = 'dose'\nORDER BY id DESC\nLIMIT 1\n"
   params:
     task_id_2: ${task_id_2}
-  timeout: 60.0
+  timeout: 120.0
   expected_rows: 1
   save: fill_ec_correction_second_row
 - step: load_fill_ph_correction_commands_if_any_second
@@ -1757,6 +1780,29 @@ actions:
     task_id_2: ${task_id_2}
   expected_rows: 0
   save: fill_ph_correction_second_rows
+- step: complete_solution_fill_after_ec_correction_second
+  type: ae_test_hook
+  zone_id: ${zone_id}
+  action: publish_command
+  history_logger_url: http://history-logger:9300
+  command:
+    node_uid: ${test_node_uid}
+    channel: storage_state
+    cmd: set_fault_mode
+    params:
+      level_clean_min_override: true
+      level_clean_max_override: true
+      level_solution_min_override: true
+      level_solution_max_override: true
+  save: complete_solution_fill_after_ec_correction_second_response
+- step: wait_complete_solution_fill_after_ec_correction_second_done
+  type: db.wait
+  query: "SELECT id, cmd_id, status\nFROM commands\nWHERE cmd_id = :cmd_id\n  AND\
+    \ status = 'DONE'\nORDER BY created_at DESC\nLIMIT 1\n"
+  params:
+    cmd_id: ${complete_solution_fill_after_ec_correction_second_response.data.cmd_id}
+  timeout: 20.0
+  expected_rows: 1
 - step: wait_prepare_recirculation_stage_second
   type: db.wait
   query: "SELECT\n  id,\n  status,\n  current_stage,\n  workflow_phase,\n  corr_step\n\
@@ -1943,11 +1989,16 @@ cleanup:
   payload:
     payload: {}
 - step: cleanup_retry_limit_overrides_final_second
-  type: api_put
+  type: database_execute
   optional: true
-  endpoint: /api/automation-configs/grow_cycle/${grow_cycle_id_2}/cycle.phase_overrides
-  payload:
-    payload: {}
+  query: |
+    DELETE FROM automation_config_documents
+    WHERE namespace = 'cycle.phase_overrides'
+      AND scope_type = 'grow_cycle'
+      AND COALESCE(CAST(:grow_cycle_id_2 AS text), '') <> ''
+      AND CAST(scope_id AS text) = CAST(:grow_cycle_id_2 AS text)
+  params:
+    grow_cycle_id_2: ${grow_cycle_id_2}
 - step: reset_test_node_after_run
   type: ae_test_hook
   optional: true

@@ -33,6 +33,8 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
+        fail_safe_guards = runtime.get("fail_safe_guards") if isinstance(runtime.get("fail_safe_guards"), dict) else {}
+        solution_min_guard_enabled = bool(fail_safe_guards.get("recirculation_stop_on_solution_min", True))
 
         # Fail-fast перед новой probe-командой. Иначе stage, у которого уже
         # закончилось время, может опубликовать новый storage_state request и упасть
@@ -61,6 +63,32 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 stage_retry_count=task.workflow.stage_retry_count + 1,
             )
 
+        recent_storage_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("RECIRCULATION_SOLUTION_LOW", "EMERGENCY_STOP_ACTIVATED"),
+            max_age_sec=86400,
+        )
+        recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
+        if recent_event_type == "RECIRCULATION_SOLUTION_LOW" and solution_min_guard_enabled:
+            self._observe_fail_safe_transition(
+                task=task,
+                reason="recirculation_solution_low",
+                source="node_event",
+                next_stage="prepare_recirculation_solution_low_stop",
+            )
+            return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
+        if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
+            await self._reconcile_recent_emergency_stop(
+                task=task,
+                plan=plan,
+                now=now,
+                expected={
+                    "valve_solution_supply": True,
+                    "valve_solution_fill": True,
+                    "pump_main": True,
+                },
+            )
+
         await self._probe_irr_state(
             task=task, plan=plan, now=now,
             expected={
@@ -81,6 +109,26 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 kind="poll",
                 due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
             )
+
+        if solution_min_guard_enabled:
+            solution_min = await self._read_level(
+                task=task,
+                zone_id=task.zone_id,
+                labels=runtime["solution_min_sensor_labels"],
+                threshold=runtime["level_switch_on_threshold"],
+                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                unavailable_error="two_tank_solution_min_level_unavailable",
+                stale_error="two_tank_solution_min_level_stale",
+                prefer_probe_snapshot=True,
+            )
+            if not solution_min["is_triggered"]:
+                self._observe_fail_safe_transition(
+                    task=task,
+                    reason="recirculation_solution_low",
+                    source="sensor",
+                    next_stage="prepare_recirculation_solution_low_stop",
+                )
+                return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
 
         if await self._targets_reached(task=task, plan=plan, now=now):
             _logger.debug("prepare_recirculation_check: цели достигнуты zone_id=%s", task.zone_id)

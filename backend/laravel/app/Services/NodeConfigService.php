@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AutomationEffectiveBundle;
 use App\Models\DeviceNode;
 
 class NodeConfigService
@@ -45,6 +46,8 @@ class NodeConfigService
                 $config['node_secret'] = config('app.node_default_secret') ?? config('app.key');
             }
         }
+
+        $config = $this->mergeIrrigationFailSafeMirror($node, $config);
 
         return $config;
     }
@@ -144,5 +147,119 @@ class NodeConfigService
         }
 
         return $config;
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @return array<string, mixed>
+     */
+    private function mergeIrrigationFailSafeMirror(DeviceNode $node, array $config): array
+    {
+        $nodeType = strtolower(trim((string) ($node->type ?? $config['type'] ?? '')));
+        if ($nodeType !== 'irrig') {
+            return $config;
+        }
+
+        $zoneId = (int) ($node->zone_id ?: $node->pending_zone_id ?: 0);
+        $failSafeGuards = $this->defaultIrrigationFailSafeGuards();
+
+        if ($zoneId > 0) {
+            $bundle = AutomationEffectiveBundle::query()
+                ->where('scope_type', AutomationConfigRegistry::SCOPE_ZONE)
+                ->where('scope_id', $zoneId)
+                ->first();
+            $bundleConfig = is_array($bundle?->config) ? $bundle->config : [];
+            $activeProfile = data_get($bundleConfig, 'zone.logic_profile.active_profile');
+            $activeProfile = is_array($activeProfile) && ! array_is_list($activeProfile) ? $activeProfile : [];
+            $profileGuards = data_get($activeProfile, 'subsystems.diagnostics.execution.fail_safe_guards');
+            $profileGuards = is_array($profileGuards) && ! array_is_list($profileGuards) ? $profileGuards : [];
+
+            $irrigationSafety = data_get($activeProfile, 'subsystems.irrigation.safety');
+            $irrigationSafety = is_array($irrigationSafety) && ! array_is_list($irrigationSafety) ? $irrigationSafety : [];
+
+            $failSafeGuards['clean_fill_min_check_delay_ms'] = $this->toBoundedInt(
+                $profileGuards['clean_fill_min_check_delay_ms'] ?? null,
+                $failSafeGuards['clean_fill_min_check_delay_ms'],
+                0,
+                3600000
+            );
+            $failSafeGuards['solution_fill_clean_min_check_delay_ms'] = $this->toBoundedInt(
+                $profileGuards['solution_fill_clean_min_check_delay_ms'] ?? null,
+                $failSafeGuards['solution_fill_clean_min_check_delay_ms'],
+                0,
+                3600000
+            );
+            $failSafeGuards['solution_fill_solution_min_check_delay_ms'] = $this->toBoundedInt(
+                $profileGuards['solution_fill_solution_min_check_delay_ms'] ?? null,
+                $failSafeGuards['solution_fill_solution_min_check_delay_ms'],
+                0,
+                3600000
+            );
+            $failSafeGuards['recirculation_solution_min_guard_enabled'] = $this->toBool(
+                $profileGuards['recirculation_stop_on_solution_min'] ?? null,
+                $failSafeGuards['recirculation_solution_min_guard_enabled']
+            );
+            $failSafeGuards['irrigation_solution_min_guard_enabled'] = $this->toBool(
+                $profileGuards['irrigation_stop_on_solution_min'] ?? $irrigationSafety['stop_on_solution_min'] ?? null,
+                $failSafeGuards['irrigation_solution_min_guard_enabled']
+            );
+            $failSafeGuards['estop_debounce_ms'] = $this->toBoundedInt(
+                $profileGuards['estop_debounce_ms'] ?? null,
+                $failSafeGuards['estop_debounce_ms'],
+                20,
+                5000
+            );
+        }
+
+        $config['fail_safe_guards'] = $failSafeGuards;
+
+        return $config;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultIrrigationFailSafeGuards(): array
+    {
+        return [
+            'clean_fill_min_check_delay_ms' => 5000,
+            'solution_fill_clean_min_check_delay_ms' => 5000,
+            'solution_fill_solution_min_check_delay_ms' => 15000,
+            'recirculation_solution_min_guard_enabled' => true,
+            'irrigation_solution_min_guard_enabled' => true,
+            'estop_debounce_ms' => 80,
+        ];
+    }
+
+    private function toBoundedInt(mixed $value, int $fallback, int $min, int $max): int
+    {
+        if (! is_numeric($value)) {
+            return $fallback;
+        }
+
+        return max($min, min($max, (int) round((float) $value)));
+    }
+
+    private function toBool(mixed $value, bool $fallback): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value !== 0;
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'off'], true)) {
+                return false;
+            }
+        }
+
+        return $fallback;
     }
 }

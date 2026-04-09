@@ -82,6 +82,15 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("clean_fill_stop",),
         next_stage="clean_fill_start",
     ),
+    "clean_fill_source_empty_stop": StageDef(
+        "clean_fill_source_empty_stop", "command",
+        workflow_phase="tank_filling",
+        command_plans=("clean_fill_stop",),
+        terminal_error=(
+            "clean_fill_source_empty",
+            "Source tank became empty during clean fill",
+        ),
+    ),
     "clean_fill_timeout_stop": StageDef(
         "clean_fill_timeout_stop", "command",
         workflow_phase="tank_filling",
@@ -119,6 +128,24 @@ TWO_TANK: Mapping[str, StageDef] = {
         command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
         next_stage="prepare_recirculation_start",
     ),
+    "solution_fill_source_empty_stop": StageDef(
+        "solution_fill_source_empty_stop", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
+        terminal_error=(
+            "solution_fill_source_empty",
+            "Clean source became empty during solution fill",
+        ),
+    ),
+    "solution_fill_leak_stop": StageDef(
+        "solution_fill_leak_stop", "command",
+        workflow_phase="tank_filling",
+        command_plans=("solution_fill_stop", "sensor_mode_deactivate"),
+        terminal_error=(
+            "solution_fill_leak_detected",
+            "Solution minimum level dropped during solution fill",
+        ),
+    ),
     "solution_fill_timeout_stop": StageDef(
         "solution_fill_timeout_stop", "command",
         workflow_phase="tank_filling",
@@ -153,6 +180,15 @@ TWO_TANK: Mapping[str, StageDef] = {
         workflow_phase="ready",
         command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
         next_stage="complete_ready",
+    ),
+    "prepare_recirculation_solution_low_stop": StageDef(
+        "prepare_recirculation_solution_low_stop", "command",
+        workflow_phase="tank_recirc",
+        command_plans=("prepare_recirculation_stop", "sensor_mode_deactivate"),
+        terminal_error=(
+            "recirculation_solution_low",
+            "Solution minimum level dropped during prepare recirculation",
+        ),
     ),
     # === Irrigation path ===
     "await_ready": StageDef("await_ready", "await_ready", workflow_phase="ready"),

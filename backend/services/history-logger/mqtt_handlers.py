@@ -15,7 +15,13 @@ from common.command_status_queue import (
     deliver_status_to_laravel,
     normalize_status,
 )
-from common.db import create_zone_event, execute, fetch, upsert_unassigned_node_error
+from common.db import (
+    create_zone_event,
+    execute,
+    fetch,
+    notify_zone_event_ingested,
+    upsert_unassigned_node_error,
+)
 from common.env import get_settings
 from common.error_handler import get_error_handler
 from common.mqtt import get_mqtt_client
@@ -70,15 +76,22 @@ _PROTECTED_NODE_CHANNEL_CONFIG_KEYS = frozenset(
 _NODE_EVENT_METRIC_FALLBACK = "OTHER"
 _NODE_EVENT_METRIC_ALLOWED_CODES = {
     "NODE_EVENT",
+    "LEVEL_SWITCH_CHANGED",
+    "CLEAN_FILL_SOURCE_EMPTY",
     "CLEAN_FILL_STARTED",
     "CLEAN_FILL_COMPLETED",
     "CLEAN_FILL_TIMEOUT",
     "CLEAN_FILL_FAILED",
+    "SOLUTION_FILL_SOURCE_EMPTY",
+    "SOLUTION_FILL_LEAK_DETECTED",
     "SOLUTION_FILL_STARTED",
     "SOLUTION_FILL_COMPLETED",
     "SOLUTION_FILL_TIMEOUT",
     "SOLUTION_FILL_FAILED",
     "PREPARE_RECIRCULATION_TIMEOUT",
+    "RECIRCULATION_SOLUTION_LOW",
+    "IRRIGATION_SOLUTION_LOW",
+    "EMERGENCY_STOP_ACTIVATED",
     "SOLUTION_PREP_STARTED",
     "SOLUTION_PREP_COMPLETED",
     "SOLUTION_PREP_FAILED",
@@ -295,6 +308,62 @@ def _metric_event_code_label(event_type: str) -> str:
     if event_type in _NODE_EVENT_METRIC_ALLOWED_CODES:
         return event_type
     return _NODE_EVENT_METRIC_FALLBACK
+
+
+def _normalize_node_event_payload(
+    *,
+    topic: str,
+    gh_uid: Optional[str],
+    zone_uid: Optional[str],
+    node_uid: Optional[str],
+    channel: Optional[str],
+    event_code: str,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    normalized_snapshot = _normalize_irr_state_snapshot(data.get("snapshot"))
+    if normalized_snapshot is None:
+        normalized_snapshot = _normalize_irr_state_snapshot(data.get("state"))
+    normalized_state = _to_optional_bool(data.get("state"))
+    normalized_initial = _to_optional_bool(data.get("initial"))
+    payload: Dict[str, Any] = {
+        "source": "node_event",
+        "topic": topic,
+        "gh_uid": gh_uid,
+        "zone_uid": zone_uid,
+        "node_uid": node_uid,
+        "channel": channel,
+        "event_code": event_code,
+        "payload": data,
+    }
+    if normalized_state is not None:
+        payload["state"] = normalized_state
+    if normalized_initial is not None:
+        payload["initial"] = normalized_initial
+    if normalized_snapshot is not None:
+        payload["snapshot"] = normalized_snapshot
+    if data.get("ts") is not None:
+        payload["ts"] = data.get("ts")
+    cmd_id = str(data.get("cmd_id") or "").strip()
+    if cmd_id:
+        payload["cmd_id"] = cmd_id
+    return payload
+
+
+def _build_node_event_notify_payload(
+    *,
+    channel: Optional[str],
+    event_type: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    notify_payload: Dict[str, Any] = {
+        "source": "node_event",
+        "channel": channel,
+        "event_type": event_type,
+    }
+    for field_name in ("state", "initial", "node_uid", "topic", "cmd_id", "ts", "snapshot"):
+        if field_name in payload:
+            notify_payload[field_name] = payload[field_name]
+    return notify_payload
 
 
 async def _resolve_zone_id_for_node_event(zone_uid: Optional[str], node_uid: Optional[str]) -> Optional[int]:
@@ -1096,24 +1165,30 @@ async def handle_node_event(topic: str, payload: bytes) -> None:
             NODE_EVENT_ERROR.labels(reason="zone_not_resolved").inc()
             return
 
-        details = {
-            "source": "node_event",
-            "topic": topic,
-            "gh_uid": gh_uid,
-            "zone_uid": zone_uid,
-            "node_uid": node_uid,
-            "channel": channel,
-            "event_code": event_code,
-            "payload": data,
-        }
-        await create_zone_event(zone_id, event_type, details)
+        details = _normalize_node_event_payload(
+            topic=topic,
+            gh_uid=gh_uid,
+            zone_uid=zone_uid,
+            node_uid=node_uid,
+            channel=channel,
+            event_code=event_code,
+            data=data,
+        )
+        inserted = await create_zone_event(zone_id, event_type, details)
+        if inserted:
+            await notify_zone_event_ingested(
+                zone_id=zone_id,
+                event_type=event_type,
+                payload=_build_node_event_notify_payload(
+                    channel=channel,
+                    event_type=event_type,
+                    payload=details,
+                ),
+            )
 
         channel_normalized = str(channel or "").strip().lower()
         if channel_normalized == "storage_state":
-            snapshot_source = data.get("snapshot")
-            if not isinstance(snapshot_source, dict):
-                snapshot_source = data.get("state")
-            snapshot = _normalize_irr_state_snapshot(snapshot_source)
+            snapshot = details.get("snapshot") if isinstance(details.get("snapshot"), dict) else None
             if snapshot is not None:
                 snapshot_payload = {
                     "source": "node_event_storage_state",

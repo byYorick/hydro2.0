@@ -232,6 +232,24 @@ STAGE_DEADLINE_EXCEEDED = Counter(
     ["topology", "stage"],
 )
 
+FAIL_SAFE_TRANSITION = Counter(
+    "ae3_fail_safe_transition_total",
+    "Fail-safe transitions triggered by AE3 stage logic",
+    ["topology", "stage", "reason", "source"],
+)
+
+EMERGENCY_STOP_RECONCILE = Counter(
+    "ae3_emergency_stop_reconcile_total",
+    "Emergency-stop reconcile outcomes after node runtime event",
+    ["topology", "stage", "outcome"],
+)
+
+NODE_RUNTIME_EVENT_KICK = Counter(
+    "ae3_node_runtime_event_kick_total",
+    "Worker kicks caused by node runtime events",
+    ["event_type", "channel"],
+)
+
 CORRECTION_EXHAUSTED = Counter(
     "ae3_correction_exhausted_total",
     "Total correction cycles that exhausted all dose attempts",

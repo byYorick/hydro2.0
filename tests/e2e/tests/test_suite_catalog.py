@@ -37,6 +37,7 @@ class TestSuiteCatalog(unittest.TestCase):
         for suffix in [
             "scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml",
             "scenarios/ae3lite/E99_ae3_double_execution_guard.yaml",
+            "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml",
             "scenarios/ae3lite/E107_ae3_irrigation_runtime_test_node.yaml",
             "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml",
             "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml",
@@ -61,6 +62,7 @@ class TestSuiteCatalog(unittest.TestCase):
 
         self.assert_contains_scenario(contract, "scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml")
         self.assert_contains_scenario(contract, "scenarios/ae3lite/E99_ae3_double_execution_guard.yaml")
+        self.assert_contains_scenario(contract, "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml")
         self.assert_contains_scenario(realhw_core, "scenarios/ae3lite/E100_ae3_two_tank_realhw_smoke.yaml")
         self.assert_contains_scenario(
             realhw_irrigation,
@@ -102,6 +104,10 @@ class TestSuiteCatalog(unittest.TestCase):
         self.assert_contains_scenario(
             discovered,
             "scenarios/ae3lite/E95_ae3_start_cycle_done_completed.yaml",
+        )
+        self.assert_contains_scenario(
+            discovered,
+            "scenarios/ae3lite/E110_ae3_node_runtime_event_contract.yaml",
         )
         self.assert_contains_scenario(
             discovered,

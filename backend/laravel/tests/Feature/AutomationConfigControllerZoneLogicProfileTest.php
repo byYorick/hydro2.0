@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\PublishNodeConfigJob;
 use App\Models\AutomationEffectiveBundle;
+use App\Models\DeviceNode;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\AutomationConfigDocumentService;
 use App\Services\AutomationConfigRegistry;
+use Illuminate\Support\Facades\Queue;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
@@ -18,6 +21,11 @@ class AutomationConfigControllerZoneLogicProfileTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'admin']);
         $zone = Zone::factory()->create();
+        $irrigNode = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'type' => 'irrig',
+        ]);
+        Queue::fake([PublishNodeConfigJob::class]);
 
         $payload = [
             'active_mode' => 'setup',
@@ -99,6 +107,9 @@ class AutomationConfigControllerZoneLogicProfileTest extends TestCase
             1,
             data_get($bundle->config, 'zone.logic_profile.active_profile.command_plans.plans.diagnostics.steps', [])
         );
+        Queue::assertPushed(PublishNodeConfigJob::class, function (PublishNodeConfigJob $job) use ($irrigNode) {
+            return $job->nodeId === $irrigNode->id;
+        });
     }
 
     public function test_update_rejects_invalid_two_tank_command_contract(): void

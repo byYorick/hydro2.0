@@ -449,23 +449,66 @@ sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 Статусы `ACCEPTED` и `FAILED` (вне канона) запрещены.
 Статус `SEND_FAILED` фиксируется на backend-слое при ошибке публикации и не приходит от ноды как `command_response`.
 
-## 11.4. Подтверждение авто-остановки наполнения (2-бака)
+## 11.4. Подтверждение fail-safe событий two-tank IRR
 
-При достижении верхнего уровня бака нода обязана публиковать событие состояния:
+Для production `storage_irrigation_node` нода обязана публиковать события состояния по следующим правилам:
 
 1. `level_clean_max`:
    - локально закрыть `valve_clean_fill`;
    - опубликовать `clean_fill_completed` один раз на эпизод `clean_fill`.
 2. `level_solution_max`:
-   - опубликовать `solution_fill_completed` один раз на эпизод `solution_fill`;
-   - не выключать локально `pump_main/valve_solution_fill/valve_clean_supply`, если path удерживается AE3 для
-     последующего `prepare_recirculation`.
-3. `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживает stage-level timeout guard только для
+   - локально выключить `pump_main/valve_solution_fill/valve_clean_supply`;
+   - опубликовать `solution_fill_completed` один раз на эпизод `solution_fill`.
+3. Для `clean_fill` через `clean_fill_min_check_delay_ms` нода обязана проверить `level_clean_min`;
+    если датчик остаётся `0`, локально закрыть `valve_clean_fill` и опубликовать `clean_fill_source_empty`.
+4. Для `solution_fill` через `solution_fill_clean_min_check_delay_ms` нода обязана проверить `level_clean_min`;
+    если датчик `0`, локально выключить `pump_main/valve_solution_fill/valve_clean_supply`
+    и опубликовать `solution_fill_source_empty`.
+5. Для `solution_fill` через `solution_fill_solution_min_check_delay_ms` нода обязана проверить `level_solution_min`;
+    если датчик `0`, локально выключить `pump_main/valve_solution_fill/valve_clean_supply`
+    и опубликовать `solution_fill_leak_detected`.
+6. Для `prepare_recirculation` при включённом `recirculation_solution_min_guard_enabled` нода обязана
+    остановить `pump_main/valve_solution_fill/valve_solution_supply` по `level_solution_min=0`
+    и опубликовать `recirculation_solution_low`.
+7. Для `irrigation` при включённом `irrigation_solution_min_guard_enabled` нода обязана
+    остановить `pump_main/valve_solution_supply/valve_irrigation` по `level_solution_min=0`
+    и опубликовать `irrigation_solution_low`.
+8. Пока физическая кнопка `E-Stop` удерживается нажатой, нода обязана держать все 6 актуаторов в `OFF`;
+    на факт нажатия публикуется `emergency_stop_activated`.
+9. Для каждого подтверждённого изменения `level_clean_min|level_clean_max|level_solution_min|level_solution_max`
+    нода обязана публиковать channel-level событие:
+
+```text
+hydro/{gh}/{zone}/{node}/{level_channel}/event
+```
+
+```json
+{
+  "event_code": "level_switch_changed",
+  "channel": "level_solution_min",
+  "state": true,
+  "initial": false,
+  "ts": 1710012929,
+  "snapshot": {
+    "clean_level_min": true,
+    "clean_level_max": false,
+    "solution_level_min": true,
+    "solution_level_max": false
+  }
+}
+```
+
+Требования:
+- событие публикуется на переходах `0 -> 1` и `1 -> 0`;
+- `state` содержит debounce-подтверждённое состояние;
+- после boot/reconnect нода обязана один раз опубликовать initial-state событие для каждого
+  `level_*` канала после завершения time sync.
+10. `pump_main/set_relay {state:true, timeout_ms, stage}` поддерживает stage-level timeout guard только для
    `stage in {"solution_fill", "prepare_recirculation"}`:
    - immediate ответ ноды: `ACK`;
    - поздний terminal по тому же `cmd_id`: `DONE`, если stage явно остановлен командой `pump_main OFF`,
      либо `ERROR` + `error_code=stage_timeout`, если истёк `timeout_ms`.
-4. Остальной `set_relay` для production `storage_irrigation_node` остаётся immediate terminal командой `DONE/ERROR`.
+11. Остальной `set_relay` для production `storage_irrigation_node` остаётся immediate terminal командой `DONE/ERROR`.
 
 Топик события:
 
@@ -494,10 +537,18 @@ Payload:
 }
 ```
 
-Для stage timeout нода публикует одно из событий:
+Для fail-safe и stage timeout нода публикует события из набора:
 
+- `clean_fill_source_empty`
+- `clean_fill_completed`
+- `solution_fill_source_empty`
+- `solution_fill_leak_detected`
+- `solution_fill_completed`
+- `recirculation_solution_low`
+- `irrigation_solution_low`
 - `solution_fill_timeout`
 - `prepare_recirculation_timeout`
+- `emergency_stop_activated`
 
 ## 11.5. Ответ `command_response` для `cmd=state` (IRR)
 
@@ -539,13 +590,17 @@ Payload:
 
 Ограничение кардинальности метрик backend:
 - `history-logger` инкрементирует `node_event_received_total{event_code=...}` только для
-  разрешённого набора кодов;
+  разрешённого набора кодов, включая `level_switch_changed`, `clean_fill_source_empty`,
+  `solution_fill_source_empty`, `solution_fill_leak_detected`, `recirculation_solution_low`,
+  `irrigation_solution_low`, `emergency_stop_activated`;
 - неизвестные/кастомные коды агрегируются в `event_code="OTHER"`.
 
 Backend обязан:
 - принимать оба канала подтверждения (response + event);
 - сохранять событие в `zone_events`;
 - для `storage_state/event` извлекать `IRR_STATE_SNAPSHOT` из `snapshot` (основное поле) или `state` (fallback);
+- для `level_*/event` сохранять `payload_json.channel`, `payload_json.state`, `payload_json.initial`
+  и использовать общий `snapshot` как canonical runtime snapshot;
 - использовать poll как fallback-контроль при потере event.
 
 ---

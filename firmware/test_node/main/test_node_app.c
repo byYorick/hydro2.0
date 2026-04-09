@@ -111,6 +111,12 @@ static const char *CMD_TAG = "test_node_cmd";
 #define MIN_VALID_UNIX_TS_SEC 1000000000LL
 #define COMMAND_DEDUP_WINDOW_SEC 180
 #define COMMAND_DEDUP_CACHE_SIZE 32
+#define VIRTUAL_IRR_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS 5000U
+#define VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS 5000U
+#define VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS 15000U
+#define VIRTUAL_IRR_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN true
+#define VIRTUAL_IRR_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN true
+#define VIRTUAL_IRR_FAIL_SAFE_ESTOP_DEBOUNCE_MS 80U
 
 #ifndef PROJECT_VER
 #define PROJECT_VER "unknown"
@@ -186,6 +192,60 @@ typedef struct {
     int64_t solution_fill_started_at;
 } virtual_state_t;
 
+typedef struct {
+    uint32_t clean_fill_min_check_delay_ms;
+    uint32_t solution_fill_clean_min_check_delay_ms;
+    uint32_t solution_fill_solution_min_check_delay_ms;
+    bool recirculation_solution_min_guard_enabled;
+    bool irrigation_solution_min_guard_enabled;
+    uint32_t estop_debounce_ms;
+} virtual_irr_fail_safe_config_t;
+
+typedef struct {
+    bool min_check_completed;
+    bool terminal_event_emitted;
+} virtual_clean_fill_guard_t;
+
+typedef struct {
+    bool clean_min_check_completed;
+    bool solution_min_check_completed;
+    bool terminal_event_emitted;
+} virtual_solution_fill_guard_t;
+
+typedef struct {
+    bool low_event_emitted;
+} virtual_binary_guard_t;
+
+typedef struct {
+    bool valid;
+    bool initial_publish_pending;
+    bool clean_min;
+    bool clean_max;
+    bool solution_min;
+    bool solution_max;
+} virtual_irrig_level_event_cache_t;
+
+typedef struct {
+    bool active;
+    bool restore_valid;
+    bool pump_main_on;
+    bool valve_clean_fill_on;
+    bool valve_clean_supply_on;
+    bool valve_solution_fill_on;
+    bool valve_solution_supply_on;
+    bool valve_irrigation_on;
+    bool tank_fill_on;
+    bool tank_drain_on;
+    bool irrigation_on;
+    bool clean_fill_stage_active;
+    bool solution_fill_stage_active;
+    bool clean_max_latched;
+    bool solution_max_latched;
+    int64_t clean_fill_started_at;
+    int64_t solution_fill_started_at;
+    int64_t pressed_at_ms;
+} virtual_irrig_estop_state_t;
+
 typedef enum {
     COMMAND_KIND_SENSOR_PROBE = 0,
     COMMAND_KIND_ACTUATOR = 1,
@@ -241,6 +301,8 @@ typedef struct {
     float ec_value;
     bool soil_moisture_present;
     float soil_moisture;
+    bool estop_pressed_present;
+    bool estop_pressed;
     int execute_delay_ms;
 } pending_command_t;
 
@@ -333,6 +395,12 @@ static esp_err_t publish_status_for_node(const char *node_uid, const char *statu
 static esp_err_t publish_node_hello_for_node(const virtual_node_t *node);
 static bool perform_virtual_node_reannounce_batch(bool with_spacing);
 static void task_mqtt_reannounce(void *pv_parameters);
+static void publish_current_virtual_sensor_snapshot(bool include_levels, bool include_ph, bool include_ec, bool include_soil);
+static bool is_irrigation_active(void);
+static void sync_virtual_irrigation_runtime(bool force_initial_level_events);
+static void reload_virtual_irr_fail_safe_config_from_storage(void);
+static void publish_irrig_level_switch_events(bool force_initial);
+static void publish_irrig_node_event(const char *event_code);
 
 typedef struct {
     char cmd_id[96];
@@ -340,6 +408,31 @@ typedef struct {
 } recent_cmd_id_entry_t;
 
 static recent_cmd_id_entry_t s_recent_cmd_ids[COMMAND_DEDUP_CACHE_SIZE] = {0};
+static const virtual_irr_fail_safe_config_t DEFAULT_VIRTUAL_IRR_FAIL_SAFE_CONFIG = {
+    .clean_fill_min_check_delay_ms = VIRTUAL_IRR_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
+    .solution_fill_clean_min_check_delay_ms = VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
+    .solution_fill_solution_min_check_delay_ms = VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+    .recirculation_solution_min_guard_enabled = VIRTUAL_IRR_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
+    .irrigation_solution_min_guard_enabled = VIRTUAL_IRR_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
+    .estop_debounce_ms = VIRTUAL_IRR_FAIL_SAFE_ESTOP_DEBOUNCE_MS,
+};
+static virtual_irr_fail_safe_config_t s_virtual_irr_fail_safe_config = {
+    .clean_fill_min_check_delay_ms = VIRTUAL_IRR_FAIL_SAFE_CLEAN_FILL_MIN_CHECK_DELAY_MS,
+    .solution_fill_clean_min_check_delay_ms = VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_CLEAN_MIN_CHECK_DELAY_MS,
+    .solution_fill_solution_min_check_delay_ms = VIRTUAL_IRR_FAIL_SAFE_SOLUTION_FILL_SOLUTION_MIN_CHECK_DELAY_MS,
+    .recirculation_solution_min_guard_enabled = VIRTUAL_IRR_FAIL_SAFE_RECIRCULATION_STOP_ON_SOLUTION_MIN,
+    .irrigation_solution_min_guard_enabled = VIRTUAL_IRR_FAIL_SAFE_IRRIGATION_STOP_ON_SOLUTION_MIN,
+    .estop_debounce_ms = VIRTUAL_IRR_FAIL_SAFE_ESTOP_DEBOUNCE_MS,
+};
+static virtual_clean_fill_guard_t s_virtual_clean_fill_guard = {0};
+static virtual_solution_fill_guard_t s_virtual_solution_fill_guard = {0};
+static virtual_binary_guard_t s_virtual_recirculation_guard = {0};
+static virtual_binary_guard_t s_virtual_irrigation_guard = {0};
+static virtual_irrig_level_event_cache_t s_virtual_irrig_level_events = {
+    .valid = false,
+    .initial_publish_pending = true,
+};
+static virtual_irrig_estop_state_t s_virtual_irrig_estop = {0};
 
 static const virtual_state_t DEFAULT_VIRTUAL_STATE = {
     .flow_rate = 0.0f,
@@ -509,6 +602,13 @@ static int64_t get_uptime_ms_precise(void) {
 
 static void reset_virtual_state_runtime(void) {
     s_virtual_state = DEFAULT_VIRTUAL_STATE;
+    memset(&s_virtual_clean_fill_guard, 0, sizeof(s_virtual_clean_fill_guard));
+    memset(&s_virtual_solution_fill_guard, 0, sizeof(s_virtual_solution_fill_guard));
+    memset(&s_virtual_recirculation_guard, 0, sizeof(s_virtual_recirculation_guard));
+    memset(&s_virtual_irrigation_guard, 0, sizeof(s_virtual_irrigation_guard));
+    memset(&s_virtual_irrig_estop, 0, sizeof(s_virtual_irrig_estop));
+    s_virtual_irrig_level_events.valid = false;
+    s_virtual_irrig_level_events.initial_publish_pending = true;
 }
 
 static void maybe_calibrate_timestamp_offset_from_command_ts(int64_t command_ts_raw) {
@@ -537,6 +637,103 @@ static void maybe_calibrate_timestamp_offset_from_command_ts(int64_t command_ts_
             (long long)s_timestamp_offset_sec
         );
     }
+}
+
+static bool parse_json_bool_value(const cJSON *item, bool *out_value) {
+    if (!item || !out_value) {
+        return false;
+    }
+    if (cJSON_IsBool(item)) {
+        *out_value = cJSON_IsTrue(item);
+        return true;
+    }
+    if (cJSON_IsNumber(item)) {
+        *out_value = cJSON_GetNumberValue(item) > 0.0;
+        return true;
+    }
+    return false;
+}
+
+static void apply_virtual_irr_fail_safe_config_from_root(const cJSON *root) {
+    virtual_irr_fail_safe_config_t next = DEFAULT_VIRTUAL_IRR_FAIL_SAFE_CONFIG;
+    const cJSON *guards;
+    const cJSON *item;
+
+    if (!root || !cJSON_IsObject(root)) {
+        s_virtual_irr_fail_safe_config = next;
+        return;
+    }
+
+    guards = cJSON_GetObjectItem(root, "fail_safe_guards");
+    if (!guards || !cJSON_IsObject(guards)) {
+        s_virtual_irr_fail_safe_config = next;
+        return;
+    }
+
+    item = cJSON_GetObjectItem(guards, "clean_fill_min_check_delay_ms");
+    if (item && cJSON_IsNumber(item)) {
+        double value = cJSON_GetNumberValue(item);
+        if (value >= 0.0 && value <= 3600000.0) {
+            next.clean_fill_min_check_delay_ms = (uint32_t)value;
+        }
+    }
+
+    item = cJSON_GetObjectItem(guards, "solution_fill_clean_min_check_delay_ms");
+    if (item && cJSON_IsNumber(item)) {
+        double value = cJSON_GetNumberValue(item);
+        if (value >= 0.0 && value <= 3600000.0) {
+            next.solution_fill_clean_min_check_delay_ms = (uint32_t)value;
+        }
+    }
+
+    item = cJSON_GetObjectItem(guards, "solution_fill_solution_min_check_delay_ms");
+    if (item && cJSON_IsNumber(item)) {
+        double value = cJSON_GetNumberValue(item);
+        if (value >= 0.0 && value <= 3600000.0) {
+            next.solution_fill_solution_min_check_delay_ms = (uint32_t)value;
+        }
+    }
+
+    item = cJSON_GetObjectItem(guards, "recirculation_solution_min_guard_enabled");
+    if (!parse_json_bool_value(item, &next.recirculation_solution_min_guard_enabled)) {
+        item = cJSON_GetObjectItem(guards, "recirculation_stop_on_solution_min");
+        (void)parse_json_bool_value(item, &next.recirculation_solution_min_guard_enabled);
+    }
+
+    item = cJSON_GetObjectItem(guards, "irrigation_solution_min_guard_enabled");
+    if (!parse_json_bool_value(item, &next.irrigation_solution_min_guard_enabled)) {
+        item = cJSON_GetObjectItem(guards, "irrigation_stop_on_solution_min");
+        (void)parse_json_bool_value(item, &next.irrigation_solution_min_guard_enabled);
+    }
+
+    item = cJSON_GetObjectItem(guards, "estop_debounce_ms");
+    if (item && cJSON_IsNumber(item)) {
+        double value = cJSON_GetNumberValue(item);
+        if (value >= 20.0 && value <= 5000.0) {
+            next.estop_debounce_ms = (uint32_t)value;
+        }
+    }
+
+    s_virtual_irr_fail_safe_config = next;
+}
+
+static void reload_virtual_irr_fail_safe_config_from_storage(void) {
+    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE] = {0};
+    cJSON *root;
+
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        s_virtual_irr_fail_safe_config = DEFAULT_VIRTUAL_IRR_FAIL_SAFE_CONFIG;
+        return;
+    }
+
+    root = cJSON_Parse(config_json);
+    if (!root) {
+        s_virtual_irr_fail_safe_config = DEFAULT_VIRTUAL_IRR_FAIL_SAFE_CONFIG;
+        return;
+    }
+
+    apply_virtual_irr_fail_safe_config_from_root(root);
+    cJSON_Delete(root);
 }
 
 static bool is_duplicate_cmd_id(const char *cmd_id) {
@@ -1166,12 +1363,93 @@ static float resolve_solution_min_switch_value(void) {
     return level_switch_from_threshold(s_virtual_state.solution_level, 0.18f, true);
 }
 
+static bool resolve_clean_min_switch_active(void) {
+    return resolve_clean_min_switch_value() >= 0.5f;
+}
+
+static bool resolve_clean_max_switch_active(void) {
+    return resolve_clean_max_switch_value() >= 0.5f;
+}
+
+static bool resolve_solution_min_switch_active(void) {
+    return resolve_solution_min_switch_value() >= 0.5f;
+}
+
+static bool resolve_solution_max_switch_active(void) {
+    return resolve_solution_max_switch_value() >= 0.5f;
+}
+
+static bool is_prepare_recirculation_active(void) {
+    return s_virtual_state.main_pump_on &&
+        s_virtual_state.valve_solution_supply_on &&
+        s_virtual_state.valve_solution_fill_on;
+}
+
+static void stop_clean_fill_path(void) {
+    s_virtual_state.valve_clean_fill_on = false;
+    s_virtual_state.tank_fill_on = false;
+    s_virtual_state.clean_fill_stage_active = false;
+    s_virtual_state.clean_fill_started_at = 0;
+}
+
+static void stop_solution_fill_path(void) {
+    s_virtual_state.main_pump_on = false;
+    s_virtual_state.valve_clean_supply_on = false;
+    s_virtual_state.valve_solution_fill_on = false;
+    s_virtual_state.solution_fill_stage_active = false;
+    s_virtual_state.solution_fill_started_at = 0;
+}
+
+static void stop_prepare_recirculation_path(void) {
+    s_virtual_state.main_pump_on = false;
+    s_virtual_state.valve_solution_fill_on = false;
+    s_virtual_state.valve_solution_supply_on = false;
+}
+
+static void stop_irrigation_path(void) {
+    s_virtual_state.main_pump_on = false;
+    s_virtual_state.valve_solution_supply_on = false;
+    s_virtual_state.valve_irrigation_on = false;
+    s_virtual_state.irrigation_on = false;
+}
+
+static void stop_all_virtual_irrigation_paths(void) {
+    s_virtual_state.main_pump_on = false;
+    s_virtual_state.valve_clean_fill_on = false;
+    s_virtual_state.valve_clean_supply_on = false;
+    s_virtual_state.valve_solution_fill_on = false;
+    s_virtual_state.valve_solution_supply_on = false;
+    s_virtual_state.valve_irrigation_on = false;
+    s_virtual_state.tank_fill_on = false;
+    s_virtual_state.tank_drain_on = false;
+    s_virtual_state.irrigation_on = false;
+    s_virtual_state.clean_fill_stage_active = false;
+    s_virtual_state.solution_fill_stage_active = false;
+    s_virtual_state.clean_fill_started_at = 0;
+    s_virtual_state.solution_fill_started_at = 0;
+}
+
+static int64_t clean_fill_elapsed_ms(void) {
+    if (!s_virtual_state.clean_fill_stage_active || s_virtual_state.clean_fill_started_at <= 0) {
+        return 0;
+    }
+    return (get_timestamp_seconds() - s_virtual_state.clean_fill_started_at) * 1000LL;
+}
+
+static int64_t solution_fill_elapsed_ms(void) {
+    if (!s_virtual_state.solution_fill_stage_active || s_virtual_state.solution_fill_started_at <= 0) {
+        return 0;
+    }
+    return (get_timestamp_seconds() - s_virtual_state.solution_fill_started_at) * 1000LL;
+}
+
 static void publish_current_virtual_sensor_snapshot(bool include_levels, bool include_ph, bool include_ec, bool include_soil) {
     if (!mqtt_manager_is_connected()) {
         return;
     }
 
     if (include_levels) {
+        sync_virtual_irrigation_runtime(false);
         publish_telemetry_for_node(
             "nd-test-irrig-1",
             "level_clean_min",
@@ -1227,6 +1505,168 @@ static bool is_irrigation_active(void) {
             && s_virtual_state.valve_solution_supply_on
             && s_virtual_state.valve_irrigation_on
         );
+}
+
+static void process_virtual_irrigation_fail_safe_guards(void) {
+    bool clean_fill_active = is_clean_fill_active();
+    bool solution_fill_active = is_solution_fill_active();
+    bool recirculation_active = is_prepare_recirculation_active();
+    bool irrigation_active = is_irrigation_active();
+    bool clean_level_min = resolve_clean_min_switch_active();
+    bool clean_level_max = resolve_clean_max_switch_active();
+    bool solution_level_min = resolve_solution_min_switch_active();
+    bool solution_level_max = resolve_solution_max_switch_active();
+
+    if (!clean_fill_active) {
+        memset(&s_virtual_clean_fill_guard, 0, sizeof(s_virtual_clean_fill_guard));
+    } else if (!s_virtual_clean_fill_guard.terminal_event_emitted) {
+        if (!s_virtual_clean_fill_guard.min_check_completed &&
+            clean_fill_elapsed_ms() >= (int64_t)s_virtual_irr_fail_safe_config.clean_fill_min_check_delay_ms) {
+            s_virtual_clean_fill_guard.min_check_completed = true;
+            if (!clean_level_min) {
+                stop_clean_fill_path();
+                s_virtual_clean_fill_guard.terminal_event_emitted = true;
+                publish_irrig_node_event("clean_fill_source_empty");
+                clean_fill_active = false;
+            }
+        }
+        if (clean_fill_active && clean_level_max) {
+            if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
+                s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
+            }
+            s_virtual_state.clean_max_latched = true;
+            stop_clean_fill_path();
+            s_virtual_clean_fill_guard.terminal_event_emitted = true;
+            publish_irrig_node_event("clean_fill_completed");
+        }
+    }
+
+    if (!solution_fill_active) {
+        memset(&s_virtual_solution_fill_guard, 0, sizeof(s_virtual_solution_fill_guard));
+    } else if (!s_virtual_solution_fill_guard.terminal_event_emitted) {
+        if (!s_virtual_solution_fill_guard.clean_min_check_completed &&
+            solution_fill_elapsed_ms() >= (int64_t)s_virtual_irr_fail_safe_config.solution_fill_clean_min_check_delay_ms) {
+            s_virtual_solution_fill_guard.clean_min_check_completed = true;
+            if (!clean_level_min) {
+                stop_solution_fill_path();
+                s_virtual_solution_fill_guard.terminal_event_emitted = true;
+                publish_irrig_node_event("solution_fill_source_empty");
+                solution_fill_active = false;
+            }
+        }
+        if (solution_fill_active &&
+            !s_virtual_solution_fill_guard.solution_min_check_completed &&
+            solution_fill_elapsed_ms() >= (int64_t)s_virtual_irr_fail_safe_config.solution_fill_solution_min_check_delay_ms) {
+            s_virtual_solution_fill_guard.solution_min_check_completed = true;
+            if (!solution_level_min) {
+                stop_solution_fill_path();
+                s_virtual_solution_fill_guard.terminal_event_emitted = true;
+                publish_irrig_node_event("solution_fill_leak_detected");
+                solution_fill_active = false;
+            }
+        }
+        if (solution_fill_active && solution_level_max) {
+            if (s_virtual_state.solution_level < SOLUTION_MAX_LATCH_LEVEL) {
+                s_virtual_state.solution_level = SOLUTION_MAX_LATCH_LEVEL;
+            }
+            s_virtual_state.solution_max_latched = true;
+            stop_solution_fill_path();
+            s_virtual_solution_fill_guard.terminal_event_emitted = true;
+            publish_irrig_node_event("solution_fill_completed");
+        }
+    }
+
+    if (!recirculation_active) {
+        memset(&s_virtual_recirculation_guard, 0, sizeof(s_virtual_recirculation_guard));
+    } else if (
+        s_virtual_irr_fail_safe_config.recirculation_solution_min_guard_enabled &&
+        !s_virtual_recirculation_guard.low_event_emitted &&
+        !solution_level_min
+    ) {
+        stop_prepare_recirculation_path();
+        s_virtual_recirculation_guard.low_event_emitted = true;
+        publish_irrig_node_event("recirculation_solution_low");
+    }
+
+    if (!irrigation_active) {
+        memset(&s_virtual_irrigation_guard, 0, sizeof(s_virtual_irrigation_guard));
+    } else if (
+        s_virtual_irr_fail_safe_config.irrigation_solution_min_guard_enabled &&
+        !s_virtual_irrigation_guard.low_event_emitted &&
+        !solution_level_min
+    ) {
+        stop_irrigation_path();
+        s_virtual_irrigation_guard.low_event_emitted = true;
+        publish_irrig_node_event("irrigation_solution_low");
+    }
+}
+
+static void handle_virtual_irrigation_estop(bool pressed) {
+    if (pressed == s_virtual_irrig_estop.active) {
+        if (pressed) {
+            stop_all_virtual_irrigation_paths();
+        }
+        return;
+    }
+
+    if (pressed) {
+        s_virtual_irrig_estop.pump_main_on = s_virtual_state.main_pump_on;
+        s_virtual_irrig_estop.valve_clean_fill_on = s_virtual_state.valve_clean_fill_on;
+        s_virtual_irrig_estop.valve_clean_supply_on = s_virtual_state.valve_clean_supply_on;
+        s_virtual_irrig_estop.valve_solution_fill_on = s_virtual_state.valve_solution_fill_on;
+        s_virtual_irrig_estop.valve_solution_supply_on = s_virtual_state.valve_solution_supply_on;
+        s_virtual_irrig_estop.valve_irrigation_on = s_virtual_state.valve_irrigation_on;
+        s_virtual_irrig_estop.tank_fill_on = s_virtual_state.tank_fill_on;
+        s_virtual_irrig_estop.tank_drain_on = s_virtual_state.tank_drain_on;
+        s_virtual_irrig_estop.irrigation_on = s_virtual_state.irrigation_on;
+        s_virtual_irrig_estop.clean_fill_stage_active = s_virtual_state.clean_fill_stage_active;
+        s_virtual_irrig_estop.solution_fill_stage_active = s_virtual_state.solution_fill_stage_active;
+        s_virtual_irrig_estop.clean_max_latched = s_virtual_state.clean_max_latched;
+        s_virtual_irrig_estop.solution_max_latched = s_virtual_state.solution_max_latched;
+        s_virtual_irrig_estop.clean_fill_started_at = s_virtual_state.clean_fill_started_at;
+        s_virtual_irrig_estop.solution_fill_started_at = s_virtual_state.solution_fill_started_at;
+        s_virtual_irrig_estop.pressed_at_ms = get_timestamp_ms();
+        s_virtual_irrig_estop.restore_valid = true;
+        s_virtual_irrig_estop.active = true;
+        stop_all_virtual_irrigation_paths();
+        publish_irrig_node_event("emergency_stop_activated");
+        return;
+    }
+
+    s_virtual_irrig_estop.active = false;
+    if (s_virtual_irrig_estop.restore_valid) {
+        int64_t pause_ms = get_timestamp_ms() - s_virtual_irrig_estop.pressed_at_ms;
+        int64_t pause_sec = pause_ms > 0 ? ((pause_ms + 999LL) / 1000LL) : 0;
+
+        s_virtual_state.main_pump_on = s_virtual_irrig_estop.pump_main_on;
+        s_virtual_state.valve_clean_fill_on = s_virtual_irrig_estop.valve_clean_fill_on;
+        s_virtual_state.valve_clean_supply_on = s_virtual_irrig_estop.valve_clean_supply_on;
+        s_virtual_state.valve_solution_fill_on = s_virtual_irrig_estop.valve_solution_fill_on;
+        s_virtual_state.valve_solution_supply_on = s_virtual_irrig_estop.valve_solution_supply_on;
+        s_virtual_state.valve_irrigation_on = s_virtual_irrig_estop.valve_irrigation_on;
+        s_virtual_state.tank_fill_on = s_virtual_irrig_estop.tank_fill_on;
+        s_virtual_state.tank_drain_on = s_virtual_irrig_estop.tank_drain_on;
+        s_virtual_state.irrigation_on = s_virtual_irrig_estop.irrigation_on;
+        s_virtual_state.clean_fill_stage_active = s_virtual_irrig_estop.clean_fill_stage_active;
+        s_virtual_state.solution_fill_stage_active = s_virtual_irrig_estop.solution_fill_stage_active;
+        s_virtual_state.clean_max_latched = s_virtual_irrig_estop.clean_max_latched;
+        s_virtual_state.solution_max_latched = s_virtual_irrig_estop.solution_max_latched;
+        s_virtual_state.clean_fill_started_at = s_virtual_irrig_estop.clean_fill_started_at > 0
+            ? (s_virtual_irrig_estop.clean_fill_started_at + pause_sec)
+            : 0;
+        s_virtual_state.solution_fill_started_at = s_virtual_irrig_estop.solution_fill_started_at > 0
+            ? (s_virtual_irrig_estop.solution_fill_started_at + pause_sec)
+            : 0;
+    }
+}
+
+static void sync_virtual_irrigation_runtime(bool force_initial_level_events) {
+    publish_irrig_level_switch_events(force_initial_level_events);
+    if (s_virtual_irrig_estop.active) {
+        stop_all_virtual_irrigation_paths();
+        return;
+    }
+    process_virtual_irrigation_fail_safe_guards();
 }
 
 static bool is_soil_wetting_active(void) {
@@ -1806,6 +2246,19 @@ static esp_err_t publish_config_report_for_node(const virtual_node_t *node) {
     if (mqtt) {
         cJSON_AddBoolToObject(mqtt, "configured", true);
         cJSON_AddItemToObject(json, "mqtt", mqtt);
+    }
+
+    if (strcmp(node->node_uid, DEFAULT_MQTT_NODE_UID) == 0) {
+        cJSON *fail_safe_guards = cJSON_CreateObject();
+        if (fail_safe_guards) {
+            cJSON_AddNumberToObject(fail_safe_guards, "clean_fill_min_check_delay_ms", s_virtual_irr_fail_safe_config.clean_fill_min_check_delay_ms);
+            cJSON_AddNumberToObject(fail_safe_guards, "solution_fill_clean_min_check_delay_ms", s_virtual_irr_fail_safe_config.solution_fill_clean_min_check_delay_ms);
+            cJSON_AddNumberToObject(fail_safe_guards, "solution_fill_solution_min_check_delay_ms", s_virtual_irr_fail_safe_config.solution_fill_solution_min_check_delay_ms);
+            cJSON_AddBoolToObject(fail_safe_guards, "recirculation_solution_min_guard_enabled", s_virtual_irr_fail_safe_config.recirculation_solution_min_guard_enabled);
+            cJSON_AddBoolToObject(fail_safe_guards, "irrigation_solution_min_guard_enabled", s_virtual_irr_fail_safe_config.irrigation_solution_min_guard_enabled);
+            cJSON_AddNumberToObject(fail_safe_guards, "estop_debounce_ms", s_virtual_irr_fail_safe_config.estop_debounce_ms);
+            cJSON_AddItemToObject(json, "fail_safe_guards", fail_safe_guards);
+        }
     }
 
     payload_buf = (char *)malloc(payload_buf_size);
@@ -2446,10 +2899,100 @@ static cJSON *build_irr_state_snapshot(void) {
     return snapshot;
 }
 
+static cJSON *build_irr_state_legacy_state(void) {
+    cJSON *state = cJSON_CreateObject();
+    if (!state) {
+        return NULL;
+    }
+
+    cJSON_AddNumberToObject(state, "level_clean_min", resolve_clean_min_switch_active() ? 1 : 0);
+    cJSON_AddNumberToObject(state, "level_clean_max", resolve_clean_max_switch_active() ? 1 : 0);
+    cJSON_AddNumberToObject(state, "level_solution_min", resolve_solution_min_switch_active() ? 1 : 0);
+    cJSON_AddNumberToObject(state, "level_solution_max", resolve_solution_max_switch_active() ? 1 : 0);
+    return state;
+}
+
+static void publish_irrig_level_switch_event(const char *channel, bool state, bool initial) {
+    char topic[192];
+    cJSON *json;
+    cJSON *snapshot;
+
+    if (!channel || channel[0] == '\0' || !mqtt_manager_is_connected()) {
+        return;
+    }
+    if (build_topic(topic, sizeof(topic), DEFAULT_MQTT_NODE_UID, channel, "event") != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to build level event topic for %s", channel);
+        return;
+    }
+
+    json = cJSON_CreateObject();
+    if (!json) {
+        return;
+    }
+
+    cJSON_AddStringToObject(json, "event_code", "level_switch_changed");
+    cJSON_AddStringToObject(json, "channel", channel);
+    cJSON_AddBoolToObject(json, "state", state);
+    cJSON_AddBoolToObject(json, "initial", initial);
+    cJSON_AddNumberToObject(json, "ts", (double)get_timestamp_seconds());
+    snapshot = build_irr_state_snapshot();
+    if (snapshot) {
+        cJSON_AddItemToObject(json, "snapshot", snapshot);
+    }
+
+    publish_json_payload(topic, json, 1, 0);
+    ui_logf(DEFAULT_MQTT_NODE_UID, "event %s=%d%s", channel, state ? 1 : 0, initial ? " init" : "");
+    cJSON_Delete(json);
+}
+
+static void publish_irrig_level_switch_events(bool force_initial) {
+    bool clean_min = resolve_clean_min_switch_active();
+    bool clean_max = resolve_clean_max_switch_active();
+    bool solution_min = resolve_solution_min_switch_active();
+    bool solution_max = resolve_solution_max_switch_active();
+    bool publish_initial = force_initial || s_virtual_irrig_level_events.initial_publish_pending || !s_virtual_irrig_level_events.valid;
+
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+
+    if (publish_initial) {
+        publish_irrig_level_switch_event("level_clean_min", clean_min, true);
+        publish_irrig_level_switch_event("level_clean_max", clean_max, true);
+        publish_irrig_level_switch_event("level_solution_min", solution_min, true);
+        publish_irrig_level_switch_event("level_solution_max", solution_max, true);
+        s_virtual_irrig_level_events.clean_min = clean_min;
+        s_virtual_irrig_level_events.clean_max = clean_max;
+        s_virtual_irrig_level_events.solution_min = solution_min;
+        s_virtual_irrig_level_events.solution_max = solution_max;
+        s_virtual_irrig_level_events.valid = true;
+        s_virtual_irrig_level_events.initial_publish_pending = false;
+        return;
+    }
+
+    if (clean_min != s_virtual_irrig_level_events.clean_min) {
+        publish_irrig_level_switch_event("level_clean_min", clean_min, false);
+        s_virtual_irrig_level_events.clean_min = clean_min;
+    }
+    if (clean_max != s_virtual_irrig_level_events.clean_max) {
+        publish_irrig_level_switch_event("level_clean_max", clean_max, false);
+        s_virtual_irrig_level_events.clean_max = clean_max;
+    }
+    if (solution_min != s_virtual_irrig_level_events.solution_min) {
+        publish_irrig_level_switch_event("level_solution_min", solution_min, false);
+        s_virtual_irrig_level_events.solution_min = solution_min;
+    }
+    if (solution_max != s_virtual_irrig_level_events.solution_max) {
+        publish_irrig_level_switch_event("level_solution_max", solution_max, false);
+        s_virtual_irrig_level_events.solution_max = solution_max;
+    }
+}
+
 static void publish_irrig_node_event(const char *event_code) {
     char topic[192];
     cJSON *json;
     cJSON *snapshot;
+    cJSON *legacy_state;
 
     if (!event_code || event_code[0] == '\0') {
         return;
@@ -2472,6 +3015,10 @@ static void publish_irrig_node_event(const char *event_code) {
     snapshot = build_irr_state_snapshot();
     if (snapshot) {
         cJSON_AddItemToObject(json, "snapshot", snapshot);
+    }
+    legacy_state = build_irr_state_legacy_state();
+    if (legacy_state) {
+        cJSON_AddItemToObject(json, "state", legacy_state);
     }
 
     publish_json_payload(topic, json, 1, 0);
@@ -2723,6 +3270,14 @@ static void extract_command_params(cJSON *command_json, pending_command_t *job) 
     if (soil_moisture && cJSON_IsNumber(soil_moisture)) {
         job->soil_moisture_present = true;
         job->soil_moisture = (float)cJSON_GetNumberValue(soil_moisture);
+    }
+
+    cJSON *estop_pressed = cJSON_GetObjectItem(params, "estop_pressed");
+    if (estop_pressed && (cJSON_IsBool(estop_pressed) || cJSON_IsNumber(estop_pressed))) {
+        job->estop_pressed_present = true;
+        job->estop_pressed = cJSON_IsBool(estop_pressed)
+            ? cJSON_IsTrue(estop_pressed)
+            : (cJSON_GetNumberValue(estop_pressed) > 0.0);
     }
 
     job->execute_delay_ms = resolve_command_delay_ms(job->kind, job, params);
@@ -3077,23 +3632,24 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
                 s_virtual_state.soil_moisture = clamp_soil_moisture_param(job->soil_moisture);
                 publish_soil = true;
             }
+            if (job->estop_pressed_present) {
+                handle_virtual_irrigation_estop(job->estop_pressed);
+            }
             if (s_virtual_state.level_clean_max_override > 0 && s_virtual_state.clean_fill_stage_active) {
-                s_virtual_state.clean_fill_stage_active = false;
-                s_virtual_state.clean_fill_started_at = 0;
                 s_virtual_state.clean_max_latched = true;
                 if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
                     s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
                 }
+                stop_clean_fill_path();
                 publish_irrig_node_event("clean_fill_completed");
                 cJSON_AddBoolToObject(details, "clean_fill_forced_complete", true);
             }
             if (s_virtual_state.level_solution_max_override > 0 && s_virtual_state.solution_fill_stage_active) {
-                s_virtual_state.solution_fill_stage_active = false;
-                s_virtual_state.solution_fill_started_at = 0;
                 s_virtual_state.solution_max_latched = true;
                 if (s_virtual_state.solution_level < SOLUTION_MAX_LATCH_LEVEL) {
                     s_virtual_state.solution_level = SOLUTION_MAX_LATCH_LEVEL;
                 }
+                stop_solution_fill_path();
                 publish_irrig_node_event("solution_fill_completed");
                 cJSON_AddBoolToObject(details, "solution_fill_forced_complete", true);
             }
@@ -3106,6 +3662,13 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
             cJSON_AddStringToObject(details, "level_clean_max_override", switch_override_label(s_virtual_state.level_clean_max_override));
             cJSON_AddStringToObject(details, "level_solution_min_override", switch_override_label(s_virtual_state.level_solution_min_override));
             cJSON_AddStringToObject(details, "level_solution_max_override", switch_override_label(s_virtual_state.level_solution_max_override));
+            cJSON_AddBoolToObject(details, "estop_pressed", s_virtual_irrig_estop.active);
+            cJSON_AddNumberToObject(details, "clean_fill_min_check_delay_ms", s_virtual_irr_fail_safe_config.clean_fill_min_check_delay_ms);
+            cJSON_AddNumberToObject(details, "solution_fill_clean_min_check_delay_ms", s_virtual_irr_fail_safe_config.solution_fill_clean_min_check_delay_ms);
+            cJSON_AddNumberToObject(details, "solution_fill_solution_min_check_delay_ms", s_virtual_irr_fail_safe_config.solution_fill_solution_min_check_delay_ms);
+            cJSON_AddBoolToObject(details, "recirculation_solution_min_guard_enabled", s_virtual_irr_fail_safe_config.recirculation_solution_min_guard_enabled);
+            cJSON_AddBoolToObject(details, "irrigation_solution_min_guard_enabled", s_virtual_irr_fail_safe_config.irrigation_solution_min_guard_enabled);
+            cJSON_AddNumberToObject(details, "estop_debounce_ms", s_virtual_irr_fail_safe_config.estop_debounce_ms);
             if (job->ph_value_present) {
                 cJSON_AddNumberToObject(details, "ph_value", s_virtual_state.ph_value);
             }
@@ -3203,6 +3766,7 @@ static void update_virtual_state_from_command(const pending_command_t *job, cJSO
         }
     }
 
+    sync_virtual_irrigation_runtime(false);
     *status_out = status;
 }
 
@@ -3312,6 +3876,7 @@ static void execute_pending_command(const pending_command_t *job) {
             cJSON_AddItemToObject(details, "probe", probe);
         }
     } else if (job->kind == COMMAND_KIND_STATE_QUERY) {
+        sync_virtual_irrigation_runtime(false);
         cJSON *snapshot = build_irr_state_snapshot();
         if (snapshot) {
             cJSON_AddItemToObject(details, "snapshot", snapshot);
@@ -3326,10 +3891,21 @@ static void execute_pending_command(const pending_command_t *job) {
             cJSON_AddStringToObject(fault_modes, "level_clean_max_override", switch_override_label(s_virtual_state.level_clean_max_override));
             cJSON_AddStringToObject(fault_modes, "level_solution_min_override", switch_override_label(s_virtual_state.level_solution_min_override));
             cJSON_AddStringToObject(fault_modes, "level_solution_max_override", switch_override_label(s_virtual_state.level_solution_max_override));
+            cJSON_AddBoolToObject(fault_modes, "estop_pressed", s_virtual_irrig_estop.active);
             cJSON_AddNumberToObject(fault_modes, "ph_value", s_virtual_state.ph_value);
             cJSON_AddNumberToObject(fault_modes, "ec_value", s_virtual_state.ec_value);
             cJSON_AddNumberToObject(fault_modes, "soil_moisture_pct", s_virtual_state.soil_moisture);
             cJSON_AddItemToObject(details, "fault_modes", fault_modes);
+        }
+        cJSON *fail_safe_guards = cJSON_CreateObject();
+        if (fail_safe_guards) {
+            cJSON_AddNumberToObject(fail_safe_guards, "clean_fill_min_check_delay_ms", s_virtual_irr_fail_safe_config.clean_fill_min_check_delay_ms);
+            cJSON_AddNumberToObject(fail_safe_guards, "solution_fill_clean_min_check_delay_ms", s_virtual_irr_fail_safe_config.solution_fill_clean_min_check_delay_ms);
+            cJSON_AddNumberToObject(fail_safe_guards, "solution_fill_solution_min_check_delay_ms", s_virtual_irr_fail_safe_config.solution_fill_solution_min_check_delay_ms);
+            cJSON_AddBoolToObject(fail_safe_guards, "recirculation_solution_min_guard_enabled", s_virtual_irr_fail_safe_config.recirculation_solution_min_guard_enabled);
+            cJSON_AddBoolToObject(fail_safe_guards, "irrigation_solution_min_guard_enabled", s_virtual_irr_fail_safe_config.irrigation_solution_min_guard_enabled);
+            cJSON_AddNumberToObject(fail_safe_guards, "estop_debounce_ms", s_virtual_irr_fail_safe_config.estop_debounce_ms);
+            cJSON_AddItemToObject(details, "fail_safe_guards", fail_safe_guards);
         }
         cJSON_AddNumberToObject(details, "sample_ts", (double)get_timestamp_seconds());
         cJSON_AddNumberToObject(details, "age_sec", 0);
@@ -3769,6 +4345,13 @@ static void config_callback(const char *topic, const char *data, int data_len, v
         snprintf(next_zone_uid, sizeof(next_zone_uid), "%s", topic_zone_uid);
     }
 
+    if (
+        strcmp(topic_node_uid, DEFAULT_MQTT_NODE_UID) == 0 &&
+        cJSON_IsObject(cJSON_GetObjectItem(config_json, "fail_safe_guards"))
+    ) {
+        apply_virtual_irr_fail_safe_config_from_root(config_json);
+    }
+
     cJSON_Delete(config_json);
 
     if (next_gh_uid[0] == '\0' || next_zone_uid[0] == '\0') {
@@ -3839,37 +4422,33 @@ static void apply_passive_drift(void) {
     if (s_virtual_state.clean_fill_stage_active && s_virtual_state.clean_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.clean_fill_started_at) >= CLEAN_FILL_DELAY_SEC) {
             if (s_virtual_state.simulate_clean_fill_timeout) {
+                stop_clean_fill_path();
                 publish_irrig_node_event("clean_fill_timeout");
             } else {
                 if (s_virtual_state.water_level < CLEAN_MAX_LATCH_LEVEL) {
                     s_virtual_state.water_level = CLEAN_MAX_LATCH_LEVEL;
                 }
-                if (!s_virtual_state.clean_max_latched) {
-                    ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay clean_fill done max=1");
-                    publish_irrig_node_event("clean_fill_completed");
-                }
                 s_virtual_state.clean_max_latched = true;
+                stop_clean_fill_path();
+                ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay clean_fill done max=1");
+                publish_irrig_node_event("clean_fill_completed");
             }
-            s_virtual_state.clean_fill_stage_active = false;
-            s_virtual_state.clean_fill_started_at = 0;
         }
     }
     if (s_virtual_state.solution_fill_stage_active && s_virtual_state.solution_fill_started_at > 0) {
         if ((now_sec - s_virtual_state.solution_fill_started_at) >= SOLUTION_FILL_DELAY_SEC) {
             if (s_virtual_state.simulate_solution_fill_timeout) {
+                stop_solution_fill_path();
                 publish_irrig_node_event("solution_fill_timeout");
             } else {
                 if (s_virtual_state.solution_level < SOLUTION_MAX_LATCH_LEVEL) {
                     s_virtual_state.solution_level = SOLUTION_MAX_LATCH_LEVEL;
                 }
-                if (!s_virtual_state.solution_max_latched) {
-                    ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay solution_fill done max=1");
-                    publish_irrig_node_event("solution_fill_completed");
-                }
                 s_virtual_state.solution_max_latched = true;
+                stop_solution_fill_path();
+                ui_logf(DEFAULT_MQTT_NODE_UID, "cmd delay solution_fill done max=1");
+                publish_irrig_node_event("solution_fill_completed");
             }
-            s_virtual_state.solution_fill_stage_active = false;
-            s_virtual_state.solution_fill_started_at = 0;
         }
     }
 
@@ -3951,6 +4530,7 @@ static void apply_passive_drift(void) {
 
 static void publish_virtual_telemetry_batch(void) {
     apply_passive_drift();
+    sync_virtual_irrigation_runtime(s_virtual_irrig_level_events.initial_publish_pending);
 
     publish_telemetry_for_node(
         "nd-test-irrig-1",
@@ -4172,6 +4752,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
         // При разрыве соединения сохраняем отложенный флаг,
         // чтобы после reconnect гарантированно перепослать config_report.
         s_config_report_on_connect_pending = true;
+        s_virtual_irrig_level_events.initial_publish_pending = true;
         test_node_ui_set_mqtt_status(false, "X");
         ui_logf(NULL, "mqtt disconnected");
         for (index = 0; index < VIRTUAL_NODE_COUNT; index++) {
@@ -4185,6 +4766,7 @@ static void mqtt_connected_callback(bool connected, void *user_ctx) {
     test_node_ui_set_mqtt_status(true, "OK");
     ui_logf(NULL, "mqtt connected");
     test_node_ui_show_step("MQTT connected: subscribing");
+    s_virtual_irrig_level_events.initial_publish_pending = true;
 
     if (!mqtt_manager_is_connected()) {
         ESP_LOGW(TAG, "MQTT callback(connected=true) ignored: manager is already disconnected");
@@ -4683,6 +5265,8 @@ esp_err_t test_node_app_init(void) {
     test_node_ui_show_step("App init: topic mutex OK");
 
     init_virtual_namespaces(mqtt_node_info.gh_uid, mqtt_node_info.zone_uid);
+    reload_virtual_irr_fail_safe_config_from_storage();
+    reset_virtual_state_runtime();
     ui_sync_all_virtual_nodes(true);
 
     s_command_queue = xQueueCreate(COMMAND_QUEUE_LENGTH, sizeof(pending_command_t));

@@ -25,6 +25,7 @@ class CleanFillCheckHandler(BaseStageHandler):
     """
 
     _STALE_RECHECK_DELAY_SEC = 0.25
+    _SOURCE_EMPTY_RETRY_CYCLES = 2
 
     async def run(
         self,
@@ -37,6 +38,42 @@ class CleanFillCheckHandler(BaseStageHandler):
         runtime = plan.runtime
         control_mode = str(getattr(task.workflow, "control_mode", "") or "auto").strip().lower()
         pending_manual_step = str(getattr(task.workflow, "pending_manual_step", "") or "")
+        fail_safe_guards = runtime.get("fail_safe_guards") if isinstance(runtime.get("fail_safe_guards"), dict) else {}
+
+        recent_storage_event = await self._read_recent_storage_event(
+            task=task,
+            event_types=("CLEAN_FILL_SOURCE_EMPTY", "CLEAN_FILL_COMPLETED", "EMERGENCY_STOP_ACTIVATED"),
+            max_age_sec=86400,
+        )
+        recent_event_type = str((recent_storage_event or {}).get("event_type") or "").strip().upper()
+        if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
+            await self._reconcile_recent_emergency_stop(
+                task=task,
+                plan=plan,
+                now=now,
+                expected={"valve_clean_fill": True},
+            )
+        if recent_event_type == "CLEAN_FILL_SOURCE_EMPTY":
+            self._observe_fail_safe_transition(
+                task=task,
+                reason="clean_fill_source_empty",
+                source="node_event",
+                next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",
+            )
+            return self._source_empty_outcome(task=task)
+        if recent_event_type == "CLEAN_FILL_COMPLETED":
+            await self._check_sensor_consistency(
+                task=task,
+                runtime=runtime,
+                min_labels_key="clean_min_sensor_labels",
+                min_unavailable_error="two_tank_clean_min_level_unavailable",
+                min_stale_error="two_tank_clean_min_level_stale",
+            )
+            _logger.debug(
+                "clean_fill_check: completion event confirmed, выполняется переход zone_id=%s",
+                task.zone_id,
+            )
+            return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
 
         if pending_manual_step == "clean_fill_stop":
             _logger.info("clean_fill_check: запрошена ручная остановка zone_id=%s", task.zone_id)
@@ -69,6 +106,27 @@ class CleanFillCheckHandler(BaseStageHandler):
             )
             _logger.debug("clean_fill_check: бак чистой воды заполнен, выполняется переход zone_id=%s", task.zone_id)
             return StageOutcome(kind="transition", next_stage="clean_fill_stop_to_solution")
+
+        clean_fill_min_check_delay_ms = int(fail_safe_guards.get("clean_fill_min_check_delay_ms", 5000) or 0)
+        if self._stage_elapsed_ms(task=task, now=now) >= max(0, clean_fill_min_check_delay_ms):
+            clean_min = await self._read_level(
+                task=task,
+                zone_id=task.zone_id,
+                labels=runtime["clean_min_sensor_labels"],
+                threshold=runtime["level_switch_on_threshold"],
+                telemetry_max_age_sec=int(runtime["telemetry_max_age_sec"]),
+                unavailable_error="two_tank_clean_min_level_unavailable",
+                stale_error="two_tank_clean_min_level_stale",
+                stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
+            )
+            if not clean_min["is_triggered"]:
+                self._observe_fail_safe_transition(
+                    task=task,
+                    reason="clean_fill_source_empty",
+                    source="sensor",
+                    next_stage="clean_fill_retry_stop" if max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1)) < 3 else "clean_fill_source_empty_stop",
+                )
+                return self._source_empty_outcome(task=task)
 
         # Проверка дедлайна
         deadline = task.workflow.stage_deadline_at
@@ -121,3 +179,14 @@ class CleanFillCheckHandler(BaseStageHandler):
             kind="poll",
             due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
         )
+
+    def _source_empty_outcome(self, *, task: Any) -> StageOutcome:
+        cycle = max(1, int(getattr(task.workflow, "clean_fill_cycle", 1) or 1))
+        retry_limit = 1 + self._SOURCE_EMPTY_RETRY_CYCLES
+        if cycle < retry_limit:
+            return StageOutcome(
+                kind="transition",
+                next_stage="clean_fill_retry_stop",
+                clean_fill_cycle=cycle + 1,
+            )
+        return StageOutcome(kind="transition", next_stage="clean_fill_source_empty_stop")

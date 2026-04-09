@@ -13,16 +13,60 @@ from common.db import execute, fetch
 
 
 async def _insert_zone(prefix: str) -> int:
-    rows = await fetch(
+    greenhouse_name = prefix[:40]
+    greenhouse_uid = f"gh-{uuid4().hex[:20]}"
+    provisioning_token = f"gh_{uuid4().hex[:24]}"
+    greenhouse_rows = await fetch(
         """
-        INSERT INTO zones (name, uid, status, automation_runtime, created_at, updated_at)
-        VALUES ($1, $2, 'online', 'ae3', NOW(), NOW())
+        INSERT INTO greenhouses (uid, name, timezone, provisioning_token, created_at, updated_at)
+        VALUES ($1, $2, 'UTC', $3, NOW(), NOW())
         RETURNING id
         """,
-        prefix,
-        f"{prefix}-uid",
+        greenhouse_uid,
+        greenhouse_name,
+        provisioning_token,
+    )
+    greenhouse_id = int(greenhouse_rows[0]["id"])
+    zone_name = prefix[:48]
+    zone_uid = f"zn-{uuid4().hex[:20]}"
+    rows = await fetch(
+        """
+        INSERT INTO zones (greenhouse_id, name, uid, status, automation_runtime, created_at, updated_at)
+        VALUES ($1, $2, $3, 'online', 'ae3', NOW(), NOW())
+        RETURNING id
+        """,
+        greenhouse_id,
+        zone_name,
+        zone_uid,
     )
     return int(rows[0]["id"])
+
+
+async def _insert_recipe_revision(prefix: str) -> int:
+    recipe_rows = await fetch(
+        """
+        INSERT INTO recipes (name, metadata, created_at, updated_at)
+        VALUES ($1, '{}'::jsonb, NOW(), NOW())
+        RETURNING id
+        """,
+        f"{prefix[:40]}-recipe",
+    )
+    recipe_id = int(recipe_rows[0]["id"])
+    revision_rows = await fetch(
+        """
+        INSERT INTO recipe_revisions (
+            recipe_id,
+            revision_number,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, 1, 'PUBLISHED', NOW(), NOW())
+        RETURNING id
+        """,
+        recipe_id,
+    )
+    return int(revision_rows[0]["id"])
 
 
 async def _cleanup(prefix: str) -> None:
@@ -38,6 +82,88 @@ async def _cleanup(prefix: str) -> None:
         f"{prefix}%",
     )
     await execute("DELETE FROM zones WHERE name LIKE $1", f"{prefix}%")
+    await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
+    await execute("DELETE FROM recipes WHERE name LIKE $1", f"{prefix[:40]}%")
+
+
+async def _insert_active_grow_cycle(zone_id: int, prefix: str) -> int:
+    recipe_revision_id = await _insert_recipe_revision(prefix)
+    cycle_rows = await fetch(
+        """
+        INSERT INTO grow_cycles (
+            greenhouse_id,
+            zone_id,
+            recipe_revision_id,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            (SELECT greenhouse_id FROM zones WHERE id = $1),
+            $1,
+            $2,
+            'RUNNING',
+            NOW(),
+            NOW()
+        )
+        RETURNING id
+        """,
+        zone_id,
+        recipe_revision_id,
+    )
+    grow_cycle_id = int(cycle_rows[0]["id"])
+    phase_rows = await fetch(
+        """
+        INSERT INTO grow_cycle_phases (
+            grow_cycle_id,
+            phase_index,
+            name,
+            ph_target,
+            ph_min,
+            ph_max,
+            ec_target,
+            ec_min,
+            ec_max,
+            irrigation_mode,
+            irrigation_interval_sec,
+            irrigation_duration_sec,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            $1,
+            0,
+            'VEG',
+            5.5,
+            5.2,
+            5.8,
+            2.0,
+            1.8,
+            2.2,
+            'SUBSTRATE',
+            600,
+            45,
+            NOW(),
+            NOW()
+        )
+        RETURNING id
+        """,
+        grow_cycle_id,
+    )
+    phase_id = int(phase_rows[0]["id"])
+    await execute(
+        """
+        UPDATE grow_cycles
+        SET current_phase_id = $2,
+            started_at = NOW(),
+            recipe_started_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        """,
+        grow_cycle_id,
+        phase_id,
+    )
+    return grow_cycle_id
 
 
 def _intent_row(zone_id: int, prefix: str) -> dict[str, object]:
@@ -86,6 +212,7 @@ async def test_create_task_from_intent_creates_canonical_pending_task() -> None:
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
         result = await use_case.run(
             zone_id=zone_id,
             source="laravel_scheduler",
@@ -115,6 +242,7 @@ async def test_create_task_from_intent_persists_irrigation_runtime_columns() -> 
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
         result = await use_case.run(
             zone_id=zone_id,
             source="zone_ui",
@@ -173,6 +301,7 @@ async def test_create_task_from_intent_deduplicates_same_idempotency_key() -> No
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
         first = await use_case.run(
             zone_id=zone_id,
             source="laravel_scheduler",
@@ -208,6 +337,8 @@ async def test_create_task_from_intent_allows_same_idempotency_key_in_other_zone
     try:
         first_zone_id = await _insert_zone(f"{prefix}-a")
         second_zone_id = await _insert_zone(f"{prefix}-b")
+        await _insert_active_grow_cycle(first_zone_id, f"{prefix}-a")
+        await _insert_active_grow_cycle(second_zone_id, f"{prefix}-b")
 
         first = await use_case.run(
             zone_id=first_zone_id,
@@ -245,6 +376,7 @@ async def test_create_task_from_intent_rejects_active_zone_lease() -> None:
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
         await execute(
             """
             INSERT INTO ae_zone_leases (zone_id, owner, leased_until, updated_at)
@@ -283,6 +415,7 @@ async def test_create_task_from_intent_rejects_zone_with_active_blocking_alert()
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
         await execute(
             """
             INSERT INTO alerts (
@@ -323,6 +456,7 @@ async def test_create_task_from_intent_terminal_mode_fails_closed_when_task_miss
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
 
         with pytest.raises(TaskCreateError) as exc:
             await use_case.run(
@@ -352,6 +486,7 @@ async def test_create_task_from_intent_rejects_missing_topology() -> None:
 
     try:
         zone_id = await _insert_zone(prefix)
+        await _insert_active_grow_cycle(zone_id, prefix)
 
         with pytest.raises(TaskCreateError) as exc:
             await use_case.run(
@@ -375,5 +510,32 @@ async def test_create_task_from_intent_rejects_missing_topology() -> None:
 
         assert exc.value.code == "start_cycle_intent_topology_missing"
         assert exc.value.details["intent_id"] == 991
+    finally:
+        await _cleanup(prefix)
+
+
+@pytest.mark.asyncio
+async def test_create_task_from_intent_rejects_zone_without_active_grow_cycle() -> None:
+    prefix = f"ae3-create-task-no-cycle-{uuid4().hex}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    use_case = CreateTaskFromIntentUseCase(
+        task_repository=PgAutomationTaskRepository(),
+        zone_lease_repository=PgZoneLeaseRepository(),
+        legacy_intent_mapper=LegacyIntentMapper(),
+    )
+
+    try:
+        zone_id = await _insert_zone(prefix)
+
+        with pytest.raises(TaskCreateError) as exc:
+            await use_case.run(
+                zone_id=zone_id,
+                source="laravel_scheduler",
+                idempotency_key=f"{prefix}-idem",
+                intent_row=_intent_row(zone_id, prefix),
+                now=now,
+            )
+
+        assert exc.value.code == "ae3_snapshot_no_active_grow_cycle"
     finally:
         await _cleanup(prefix)

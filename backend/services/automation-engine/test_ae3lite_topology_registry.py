@@ -77,8 +77,8 @@ class TestTwoTankGraphIntegrity:
                 )
 
     def test_expected_stage_count(self):
-        assert len(TWO_TANK) == 29, (
-            f"Expected 29 stages, got {len(TWO_TANK)}"
+        assert len(TWO_TANK) == 33, (
+            f"Expected 33 stages, got {len(TWO_TANK)}"
         )
 
 
@@ -126,11 +126,15 @@ class TestTopologyRegistryLookup:
 
     def test_stages_returns_full_graph(self, registry: TopologyRegistry):
         stages = registry.stages("two_tank")
-        assert len(stages) == 29
+        assert len(stages) == 33
         assert "startup" in stages
         assert "complete_ready" in stages
         assert "prepare_recirculation_window_exhausted" in stages
         assert "irrigation_recovery_stop_failed" in stages
+        assert "clean_fill_source_empty_stop" in stages
+        assert "solution_fill_source_empty_stop" in stages
+        assert "solution_fill_leak_stop" in stages
+        assert "prepare_recirculation_solution_low_stop" in stages
         assert "prepare_recirculation_timeout_stop" not in stages
 
     def test_stages_unknown_topology_raises(self, registry: TopologyRegistry):
@@ -182,7 +186,7 @@ class TestTopologyRegistryValidate:
         }
         reg = TopologyRegistry({"broken": broken})
         errors = reg.validate("broken")
-        assert any("missing" in e and "on_corr_success" in e for e in errors)
+        assert any("has_correction=True" in e and "on_corr_success/on_corr_fail" in e for e in errors)
 
     def test_validate_terminal_and_next(self):
         broken = {
@@ -194,7 +198,7 @@ class TestTopologyRegistryValidate:
         }
         reg = TopologyRegistry({"broken": broken})
         errors = reg.validate("broken")
-        assert any("terminal_error and next_stage" in e for e in errors)
+        assert any("terminal_error и next_stage" in e for e in errors)
 
     def test_validate_broken_corr_refs(self):
         broken = {

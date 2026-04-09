@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Mapping, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -19,12 +19,15 @@ from ae3lite.api import (
     bind_start_irrigation_route,
     bind_start_lighting_tick_route,
 )
+from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.api.rate_limit import SlidingWindowRateLimiter
 from ae3lite.api.responses import build_start_cycle_response
 from ae3lite.api.security import validate_scheduler_security_baseline
 from ae3lite.api.validation import validate_scheduler_zone
 from ae3lite.domain.errors import ManualControlError
 from ae3lite.infrastructure.intent_status_listener import IntentStatusListener
+from ae3lite.infrastructure.metrics import NODE_RUNTIME_EVENT_KICK
+from ae3lite.infrastructure.zone_event_listener import ZoneEventListener
 from ae3lite.runtime.bootstrap import build_ae3_runtime_bundle
 from ae3lite.runtime.config import Ae3RuntimeConfig
 from common.db import fetch, get_pool
@@ -184,6 +187,115 @@ def _build_intent_listener_callback(*, worker: Any, logger: logging.Logger) -> A
     return _on_terminal_intent
 
 
+def _coerce_optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if float(value) == 1.0:
+            return True
+        if float(value) == 0.0:
+            return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _is_runtime_zone_event_relevant(data: Mapping[str, Any]) -> bool:
+    if str(data.get("source") or "").strip().lower() != "node_event":
+        return False
+    event_type = str(data.get("event_type") or "").strip().upper()
+    channel = str(data.get("channel") or "").strip().lower()
+    return event_type == "LEVEL_SWITCH_CHANGED" or channel == "storage_state"
+
+
+def _zone_event_indicates_solution_min_depletion(data: Mapping[str, Any]) -> bool:
+    channel = str(data.get("channel") or "").strip().lower()
+    state = _coerce_optional_bool(data.get("state"))
+    if channel and channel in level_snapshot_aliases("level_solution_min") and state is False:
+        return True
+
+    snapshot = data.get("snapshot")
+    if not isinstance(snapshot, Mapping):
+        return False
+    for alias in level_snapshot_aliases("level_solution_min"):
+        if alias not in snapshot:
+            continue
+        if _coerce_optional_bool(snapshot.get(alias)) is False:
+            return True
+    return False
+
+
+def _build_zone_event_listener_callback(
+    *,
+    worker: Any,
+    solution_tank_startup_guard_use_case: Any | None,
+    now_fn: Any,
+    logger: logging.Logger,
+) -> Any:
+    async def _on_zone_event(data: dict[str, Any]) -> None:
+        if not _is_runtime_zone_event_relevant(data):
+            return
+
+        zone_id_raw = data.get("zone_id")
+        try:
+            zone_id = int(zone_id_raw)
+        except (TypeError, ValueError):
+            zone_id = 0
+        event_type = str(data.get("event_type") or "").strip().upper()
+        channel = str(data.get("channel") or "").strip().lower()
+
+        if zone_id > 0 and solution_tank_startup_guard_use_case is not None and _zone_event_indicates_solution_min_depletion(data):
+            try:
+                guard_result = await solution_tank_startup_guard_use_case.run(zone_id=zone_id, now=now_fn())
+                logger.info(
+                    "ZoneEventListener: solution tank guard evaluated zone_id=%s reset=%s reason=%s",
+                    zone_id,
+                    bool(guard_result.get("reset")),
+                    guard_result.get("reason"),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ZoneEventListener: startup guard failed for zone_id=%s event_type=%s channel=%s error=%s",
+                    zone_id,
+                    event_type,
+                    channel,
+                    exc,
+                    exc_info=True,
+                )
+
+        logger.info(
+            "ZoneEventListener: node runtime event received zone_id=%s event_type=%s channel=%s state=%s initial=%s; kicking worker",
+            zone_id if zone_id > 0 else None,
+            event_type,
+            channel or None,
+            data.get("state"),
+            data.get("initial"),
+        )
+        NODE_RUNTIME_EVENT_KICK.labels(
+            event_type=event_type or "UNKNOWN",
+            channel=channel or "unknown",
+        ).inc()
+        send_service_log(
+            service="automation-engine",
+            level="info",
+            message="AE3 worker.kick by node runtime event",
+            context={
+                "zone_id": zone_id if zone_id > 0 else None,
+                "event_type": event_type,
+                "channel": channel or None,
+                "state": data.get("state"),
+                "initial": data.get("initial"),
+            },
+        )
+        worker.kick()
+
+    return _on_zone_event
+
+
 def _validate_runtime_config(runtime_config: Any) -> None:
     validate = getattr(runtime_config, "validate", None)
     if callable(validate):
@@ -252,6 +364,8 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
         # Запустить listener статусов intent, если доступен DB DSN.
         intent_listener_task: Optional[asyncio.Task] = None
         intent_listener: Optional[IntentStatusListener] = None
+        zone_event_listener_task: Optional[asyncio.Task] = None
+        zone_event_listener: Optional[ZoneEventListener] = None
         if runtime_config.db_dsn:
             intent_listener = IntentStatusListener(
                 dsn=runtime_config.db_dsn,
@@ -263,12 +377,29 @@ def create_app(config: Optional[Ae3RuntimeConfig] = None) -> FastAPI:
                 task_name="ae3-intent-status-listener",
             )
             critical_background_tasks["ae3-intent-status-listener"] = intent_listener_task
+            zone_event_listener = ZoneEventListener(
+                dsn=runtime_config.db_dsn,
+                on_zone_event=_build_zone_event_listener_callback(
+                    worker=bundle.worker,
+                    solution_tank_startup_guard_use_case=bundle.solution_tank_startup_guard_use_case,
+                    now_fn=_utcnow,
+                    logger=logger,
+                ),
+            )
+            zone_event_listener_task = _spawn_background_task(
+                zone_event_listener.run(),
+                background_tasks=background_tasks,
+                task_name="ae3-zone-event-listener",
+            )
+            critical_background_tasks["ae3-zone-event-listener"] = zone_event_listener_task
 
         try:
             yield
         finally:
             if intent_listener_task is not None and not intent_listener_task.done():
                 intent_listener.stop()
+            if zone_event_listener_task is not None and not zone_event_listener_task.done():
+                zone_event_listener.stop()
             await _drain_background_tasks(background_tasks)
             await bundle.http_client.aclose()
 

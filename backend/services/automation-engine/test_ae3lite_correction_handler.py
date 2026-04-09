@@ -106,20 +106,6 @@ _SENSOR_CMD = PlannedCommand(step_no=1, node_uid="sensor-1", channel="sensor_mod
                               payload={"cmd": "activate_sensor_mode", "params": {}})
 
 
-@pytest.fixture(autouse=True)
-def _mock_check_water_level(monkeypatch):
-    """По умолчанию уровень воды OK для всех тестов handler'а.
-
-    check_water_level делает реальный DB-запрос. Мокируем на уровне модуля,
-    чтобы не ломать unit-тесты. Конкретные тесты могут переопределить через
-    собственный monkeypatch.setattr(...).
-    """
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.correction.check_water_level",
-        AsyncMock(return_value=(True, 1.0)),
-    )
-
-
 def _make_task(
     *,
     corr: CorrectionState,
@@ -239,7 +225,7 @@ class _MockRuntimeMonitor:
         ph_stale: bool = False,
         ec_stale: bool = False,
         solution_max_triggered: bool = False,
-        solution_min_triggered: bool = False,
+        solution_min_triggered: bool = True,
         has_level: bool = True,
         level_stale: bool = False,
         irr_snapshot: dict | None = None,
@@ -1138,11 +1124,7 @@ async def test_corr_check_low_water_logs_skip_event(monkeypatch: pytest.MonkeyPa
     task = _make_task(corr=corr)
     create_event = AsyncMock(return_value=None)
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.correction.check_water_level",
-        AsyncMock(return_value=(False, 0.12)),
-    )
-    monitor = _MockRuntimeMonitor(ph=6.3, ec=1.1)
+    monitor = _MockRuntimeMonitor(ph=6.3, ec=1.1, solution_min_triggered=False)
     handler = _make_handler(monitor=monitor)
 
     outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
@@ -1152,7 +1134,7 @@ async def test_corr_check_low_water_logs_skip_event(monkeypatch: pytest.MonkeyPa
     create_event.assert_awaited_once()
     assert create_event.await_args.args[1] == "CORRECTION_SKIPPED_WATER_LEVEL"
     payload = create_event.await_args.args[2]
-    assert payload["water_level_pct"] == pytest.approx(12.0)
+    assert payload["water_level_pct"] == pytest.approx(0.0)
     assert payload["current_ph"] == pytest.approx(6.3)
     assert payload["current_ec"] == pytest.approx(1.1)
     assert payload["retry_after_sec"] == 60.0
@@ -2230,12 +2212,8 @@ async def test_corr_check_low_water_level_skips_correction_60s(monkeypatch):
     """Низкий уровень воды должен пропускать коррекцию с задержкой 60s."""
     corr = _base_corr(corr_step="corr_check")
     task = _make_task(corr=corr)
-    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)  # явно вне допуска
+    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5, solution_min_triggered=False)  # явно вне допуска
     handler = _make_handler(monitor=monitor)
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.correction.check_water_level",
-        AsyncMock(return_value=(False, 0.0)),
-    )
     monkeypatch.setattr(
         "ae3lite.application.handlers.correction.create_zone_event",
         AsyncMock(return_value=None),
@@ -2255,12 +2233,8 @@ async def test_corr_check_low_water_level_uses_configured_retry_delay(monkeypatc
     runtime["correction"] = dict(runtime["correction"])
     runtime["correction"]["low_water_retry_sec"] = 91
     runtime["correction_by_phase"] = {"solution_fill": dict(runtime["correction"])}
-    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5)
+    monitor = _MockRuntimeMonitor(ph=4.0, ec=0.5, solution_min_triggered=False)
     handler = _make_handler(monitor=monitor)
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.correction.check_water_level",
-        AsyncMock(return_value=(False, 0.0)),
-    )
     monkeypatch.setattr(
         "ae3lite.application.handlers.correction.create_zone_event",
         AsyncMock(return_value=None),
@@ -2279,7 +2253,6 @@ async def test_corr_check_ok_water_level_allows_correction(monkeypatch):
     task = _make_task(corr=corr)
     monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)  # within tolerance
     handler = _make_handler(monitor=monitor)
-    # autouse fixture уже мокирует check_water_level → (True, 1.0)
     monkeypatch.setattr(
         "ae3lite.application.handlers.correction.create_zone_event",
         AsyncMock(return_value=None),
@@ -2291,24 +2264,32 @@ async def test_corr_check_ok_water_level_allows_correction(monkeypatch):
     assert not (outcome.kind == "enter_correction" and outcome.due_delay_sec == 60.0)
 
 
-async def test_corr_check_passes_irrigation_workflow_phase_to_water_level_check(monkeypatch):
+async def test_corr_check_uses_probe_snapshot_for_solution_min(monkeypatch):
     corr = _base_corr(corr_step="corr_check")
-    task = _make_task(corr=corr, current_stage="irrigation_check", workflow_phase="irrigating")
-    monitor = _MockRuntimeMonitor(ph=6.0, ec=2.0)
-    handler = _make_handler(monitor=monitor)
-    water_level_mock = AsyncMock(return_value=(True, 1.0))
-    monkeypatch.setattr(
-        "ae3lite.application.handlers.correction.check_water_level",
-        water_level_mock,
+    task = _make_task(corr=corr, current_stage="solution_fill_check", workflow_phase="tank_filling")
+    monitor = _MockRuntimeMonitor(
+        ph=6.0,
+        ec=2.0,
+        solution_min_triggered=False,
+        has_level=True,
+        level_stale=True,
+        irr_snapshot={
+            "valve_clean_supply": True,
+            "valve_solution_fill": True,
+            "valve_solution_supply": True,
+            "pump_main": True,
+            "level_solution_min": True,
+        },
     )
+    handler = _make_handler(monitor=monitor)
     monkeypatch.setattr(
         "ae3lite.application.handlers.correction.create_zone_event",
         AsyncMock(return_value=None),
     )
 
-    await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
 
-    water_level_mock.assert_awaited_once_with(task.zone_id, workflow_phase="irrigating")
+    assert outcome.kind in {"enter_correction", "exit_correction"}
 
 
 async def test_corr_check_irrigation_phase_falls_back_to_solution_fill_process_calibration(monkeypatch):

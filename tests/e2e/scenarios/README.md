@@ -42,6 +42,7 @@
 - `ae3lite/E97_ae3_restart_waiting_command_recovered.yaml` — recovery после рестарта runtime
 - `ae3lite/E98_ae3_runtime_switch_denied_busy_zone.yaml` — runtime switch guard
 - `ae3lite/E99_ae3_double_execution_guard.yaml` — защита от двойного исполнения
+- `ae3lite/E110_ae3_node_runtime_event_contract.yaml` — node runtime events -> `zone_events` -> AE3 metrics/state timeline
 - `ae3lite/E100_ae3_two_tank_realhw_smoke.yaml` — AE3-Lite two-tank smoke на реальной test-node
 - `ae3lite/E107_ae3_irrigation_runtime_test_node.yaml` — smart-irrigation runtime path на реальной test-node
 - `ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml` — soil-moisture ingest-contract для smart-irrigation

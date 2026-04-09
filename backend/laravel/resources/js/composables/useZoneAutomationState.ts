@@ -187,6 +187,52 @@ function sanitizeWaterForm(
       0,
       20
     ),
+    cleanFillMinCheckDelayMs: clamp(
+      toRoundedNumber(
+        raw?.cleanFillMinCheckDelayMs,
+        typeof fallback.cleanFillMinCheckDelayMs === 'number'
+          ? fallback.cleanFillMinCheckDelayMs
+          : defaults.water_clean_fill_min_check_delay_ms
+      ),
+      0,
+      3600000
+    ),
+    solutionFillCleanMinCheckDelayMs: clamp(
+      toRoundedNumber(
+        raw?.solutionFillCleanMinCheckDelayMs,
+        typeof fallback.solutionFillCleanMinCheckDelayMs === 'number'
+          ? fallback.solutionFillCleanMinCheckDelayMs
+          : defaults.water_solution_fill_clean_min_check_delay_ms
+      ),
+      0,
+      3600000
+    ),
+    solutionFillSolutionMinCheckDelayMs: clamp(
+      toRoundedNumber(
+        raw?.solutionFillSolutionMinCheckDelayMs,
+        typeof fallback.solutionFillSolutionMinCheckDelayMs === 'number'
+          ? fallback.solutionFillSolutionMinCheckDelayMs
+          : defaults.water_solution_fill_solution_min_check_delay_ms
+      ),
+      0,
+      3600000
+    ),
+    recirculationStopOnSolutionMin: toBoolean(
+      raw?.recirculationStopOnSolutionMin,
+      typeof fallback.recirculationStopOnSolutionMin === 'boolean'
+        ? fallback.recirculationStopOnSolutionMin
+        : defaults.water_recirculation_stop_on_solution_min
+    ),
+    estopDebounceMs: clamp(
+      toRoundedNumber(
+        raw?.estopDebounceMs,
+        typeof fallback.estopDebounceMs === 'number'
+          ? fallback.estopDebounceMs
+          : defaults.water_estop_debounce_ms
+      ),
+      20,
+      5000
+    ),
     irrigationDecisionStrategy:
       raw?.irrigationDecisionStrategy === 'task' || raw?.irrigationDecisionStrategy === 'smart_soil_v1'
         ? raw.irrigationDecisionStrategy

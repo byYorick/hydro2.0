@@ -120,6 +120,8 @@ Breaking-change: обратная совместимость со старыми
 Контракт `GET /api/zones/{id}/state`:
 - `active_processes.ph_correction` и `active_processes.ec_correction` для `automation_runtime='ae3'` отражают активный correction sub-machine (`corr_dose_*` / `corr_wait_*`), а не только top-level stage.
 - поле `solution_tank_guard` (если присутствует) отражает последний non-blocking startup guard по solution tank: `checked`, `reset`, `reason`, `sensor_label`, `sample_ts`.
+- `current_levels.nutrient_tank_level_percent` для AE3 строится по канонической level-semantics:
+  `100` при активном `solution_max`, `50` при активном `solution_min` без `solution_max`, `0` если `solution_min` не активен;
 - если `zone_workflow_state` ссылается на уже terminal `ae_task` или отстаёт от `ae_tasks.updated_at`, endpoint обязан считать такой workflow snapshot stale и возвращать состояние по последней terminal task, а не показывать ложную active phase.
 - для irrigation workflow endpoint обязан честно отражать `IRRIGATING` и `IRRIG_RECIRC`,
   а также last decision metadata (`strategy`, `config`, `bundle_revision`, `reason_code`, `degraded`) при наличии canonical `ae_task`.
@@ -479,10 +481,11 @@ Preset rules:
   с `active_task_id` и `active_task_status`;
 - при блокирующей `workflow_phase` без активного execution run endpoint выполняет auto-heal/reset в `idle`,
   если возраст фазы превышает `AE_START_CYCLE_ORPHAN_PHASE_AUTO_HEAL_SEC` (по умолчанию 600 сек);
-- если зона была в `ready`, но сработал `solution_min` датчик бака раствора, AE3 перед
-  обработкой wake-up сбрасывает `zone_workflow_state` в `idle` с
-  `payload.ae3_cycle_start_stage='startup'`, чтобы зона перестала считаться готовой к поливу
-  и следующий `cycle_start` шёл через refill/startup path;
+- если зона была в `ready`, но канонический monitor больше не подтверждает наличие
+  раствора по `solution_min` (`is_triggered=false`), AE3 перед обработкой wake-up
+  сбрасывает `zone_workflow_state` в `idle` с `payload.ae3_cycle_start_stage='startup'`,
+  чтобы зона перестала считаться готовой к поливу и следующий `cycle_start`
+  шёл через refill/startup path;
 - если execution самого `solution_tank` startup guard завершился инфраструктурной ошибкой,
   endpoint fail-closed отвечает `503 start_cycle_solution_tank_guard_failed`
   и не claim-ит новый intent/task;
@@ -500,8 +503,10 @@ Preset rules:
 - неизвестная irrigation decision strategy считается ошибкой конфигурации, завершает task fail-closed с `irrigation_decision_strategy_unknown` и поднимает `biz_irrigation_decision_fail`;
 - `mode=force` пропускает decision-gate, но остаётся canonical `ae_task`;
 - при `decision=skip` runtime завершает task успешно без device-command publish;
-- при `solution_min` во время irrigation runtime обязан остановить irrigation path, вернуть зону в setup через `cycle_start` path и выполнить не более одного auto-replay исходного полива;
-- второй `solution_min` после replay завершает task ошибкой `irrigation_solution_min_replay_exhausted`;
+- если во время irrigation `solution_min` перестал подтверждать наличие раствора
+  (`is_triggered=false`), runtime обязан остановить irrigation path, вернуть зону
+  в setup через `cycle_start` path и выполнить не более одного auto-replay исходного полива;
+- второе такое срабатывание после replay завершает task ошибкой `irrigation_solution_min_replay_exhausted`;
 - при active task зоны endpoint возвращает `409 irrigation_zone_busy`.
 
 Контракт `POST /zones/{id}/start-relay-autotune`:
