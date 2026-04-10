@@ -188,23 +188,6 @@ class _MockWorkflowRepoRaises(_MockWorkflowRepo):
         raise RuntimeError("workflow repo unavailable")
 
 
-class _MockReconcileUseCase:
-    def __init__(self, *, state: str = "waiting_command"):
-        self._state = state
-
-    async def run(self, *, task, now):
-        from ae3lite.application.dto.command_reconcile_result import CommandReconcileResult
-        if self._state == "waiting_command":
-            return CommandReconcileResult(
-                task=task, ae_command_id=0, external_id=None, legacy_cmd_id=None,
-                is_terminal=False, terminal_status=None, legacy_status="waiting_command",
-            )
-        return CommandReconcileResult(
-            task=task, ae_command_id=0, external_id=None, legacy_cmd_id=None,
-            is_terminal=True, terminal_status="DONE", legacy_status=None,
-        )
-
-
 class _MockCommandGateway:
     def __init__(self, *, recover_state: str = "done"):
         self._state = recover_state
@@ -226,13 +209,11 @@ def _make_use_case(
     *,
     tasks: list[AutomationTask],
     gateway_state: str = "done",
-    reconcile_state: str = "waiting_command",
 ) -> tuple[StartupRecoveryUseCase, _MockTaskRepo]:
     repo = _MockTaskRepo(tasks=tasks)
     uc = StartupRecoveryUseCase(
         task_repository=repo,
         lease_repository=_MockLeaseRepo(),
-        reconcile_command_use_case=_MockReconcileUseCase(state=reconcile_state),
         command_gateway=_MockCommandGateway(recover_state=gateway_state),
         workflow_repository=None,
         topology_registry=TopologyRegistry(),
@@ -293,7 +274,6 @@ async def test_recovery_workflow_repo_failure_does_not_abort_otherwise_valid_tra
     uc = StartupRecoveryUseCase(
         task_repository=repo,
         lease_repository=_MockLeaseRepo(),
-        reconcile_command_use_case=_MockReconcileUseCase(state="waiting_command"),
         command_gateway=_MockCommandGateway(recover_state="done"),
         workflow_repository=_MockWorkflowRepoRaises(),
         topology_registry=TopologyRegistry(),
@@ -341,7 +321,6 @@ async def test_recovery_missing_ae_command_fails_gracefully():
     uc = StartupRecoveryUseCase(
         task_repository=repo,
         lease_repository=_MockLeaseRepo(),
-        reconcile_command_use_case=_MockReconcileUseCase(),
         command_gateway=_GatewayRaisesOnRecover(),
         workflow_repository=None,
         topology_registry=TopologyRegistry(),
@@ -361,7 +340,6 @@ async def test_recovery_unknown_stage_syncs_workflow_idle_before_fail() -> None:
     uc = StartupRecoveryUseCase(
         task_repository=repo,
         lease_repository=_MockLeaseRepo(),
-        reconcile_command_use_case=_MockReconcileUseCase(),
         command_gateway=_MockCommandGateway(recover_state="done"),
         workflow_repository=workflow_repo,
         topology_registry=TopologyRegistry(),

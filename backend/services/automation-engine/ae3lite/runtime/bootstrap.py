@@ -17,7 +17,6 @@ from ae3lite.application.use_cases import (
     GetZoneAutomationStateUseCase,
     GetZoneControlStateUseCase,
     RequestManualStepUseCase,
-    ReconcileCommandUseCase,
     SetControlModeUseCase,
     StartupRecoveryUseCase,
 )
@@ -86,10 +85,6 @@ def build_ae3_runtime_bundle(
         legacy_intent_mapper=LegacyIntentMapper(),
         zone_alert_repository=zone_alert_repository,
     )
-    reconcile_command_use_case = ReconcileCommandUseCase(
-        task_repository=task_repository,
-        command_repository=command_repository,
-    )
     command_gateway = SequentialCommandGateway(
         task_repository=task_repository,
         command_repository=command_repository,
@@ -137,7 +132,6 @@ def build_ae3_runtime_bundle(
         startup_recovery_use_case=StartupRecoveryUseCase(
             task_repository=task_repository,
             lease_repository=zone_lease_repository,
-            reconcile_command_use_case=reconcile_command_use_case,
             command_gateway=command_gateway,
             workflow_repository=workflow_repository,
             topology_registry=topology_registry,

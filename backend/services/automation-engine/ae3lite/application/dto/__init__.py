@@ -1,6 +1,5 @@
 """DTO-модели AE3-Lite."""
 
-from .command_reconcile_result import CommandReconcileResult
 from .command_plan import CommandPlan
 from .stage_outcome import StageOutcome
 from .startup_recovery_result import StartupRecoveryResult, StartupRecoveryTerminalOutcome
@@ -10,7 +9,6 @@ from .zone_snapshot import ZoneActuatorRef, ZoneSnapshot
 
 __all__ = [
     "CommandPlan",
-    "CommandReconcileResult",
     "StageOutcome",
     "StartupRecoveryResult",
     "StartupRecoveryTerminalOutcome",

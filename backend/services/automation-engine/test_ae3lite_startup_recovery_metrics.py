@@ -28,7 +28,7 @@ async def test_startup_recovery_records_pass_and_task_outcome_metrics(monkeypatc
     use_case = StartupRecoveryUseCase(
         task_repository=_TaskRepoStub(),
         lease_repository=_LeaseRepoStub(),
-        reconcile_command_use_case=object(),
+        command_gateway=object(),
     )
 
     outcomes = iter(

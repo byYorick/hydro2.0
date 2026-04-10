@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Optional
 
 from ae3lite.application.dto import StartupRecoveryResult, StartupRecoveryTerminalOutcome
 from ae3lite.domain.entities import AutomationTask
 from ae3lite.domain.entities.workflow_state import WorkflowState
-from ae3lite.domain.errors import CommandReconcileError, StartupRecoveryError, TaskExecutionError
+from ae3lite.domain.errors import StartupRecoveryError, TaskExecutionError
 from ae3lite.domain.services.topology_registry import TopologyRegistry
 from ae3lite.infrastructure.metrics import STARTUP_RECOVERY_RUN, STARTUP_RECOVERY_TASK
 
@@ -27,14 +27,12 @@ class StartupRecoveryUseCase:
         *,
         task_repository: Any,
         lease_repository: Any,
-        reconcile_command_use_case: Any,
-        command_gateway: Any | None = None,
+        command_gateway: Any,
         workflow_repository: Any | None = None,
         topology_registry: Optional[TopologyRegistry] = None,
     ) -> None:
         self._task_repository = task_repository
         self._lease_repository = lease_repository
-        self._reconcile_command_use_case = reconcile_command_use_case
         self._command_gateway = command_gateway
         self._workflow_repository = workflow_repository
         self._registry = topology_registry or TopologyRegistry()
@@ -98,50 +96,7 @@ class StartupRecoveryUseCase:
             )
             return "failed", self._build_terminal_outcome(task=failed_task)
 
-        if self._command_gateway is not None and self._is_two_tank_task(task):
-            return await self._recover_native_two_tank_task(task=task, now=now)
-
-        try:
-            result = await self._reconcile_command_use_case.run(task=task, now=now)
-        except CommandReconcileError as exc:
-            failed_task = await self._fail_task(
-                task=task,
-                error_code=self._reconcile_error_code(task),
-                error_message=str(exc),
-                now=now,
-            )
-            return "failed", self._build_terminal_outcome(task=failed_task)
-
-        if result.is_terminal:
-            if result.terminal_status == "DONE":
-                return "completed", self._build_terminal_outcome(task=result.task)
-            return "failed", self._build_terminal_outcome(task=result.task)
-
-        if result.legacy_status is None:
-            failed_task = await self._fail_task(
-                task=task,
-                error_code=self._missing_command_error_code(task),
-                error_message=self._missing_command_error_message(task),
-                now=now,
-            )
-            return "failed", self._build_terminal_outcome(task=failed_task)
-
-        if task.status in {"claimed", "running"}:
-            recovered_task = await self._task_repository.recover_waiting_command(
-                task_id=task.id,
-                now=now,
-            )
-            if recovered_task is None:
-                logger.error(
-                    "Startup recovery: recover_waiting_command returned None task_id=%s zone_id=%s status=%s",
-                    task.id,
-                    task.zone_id,
-                    task.status,
-                )
-                raise StartupRecoveryError(f"Не удалось перевести task_id={task.id} в waiting_command во время recovery")
-            return "recovered_waiting_command", None
-
-        return "waiting_command", None
+        return await self._recover_native_two_tank_task(task=task, now=now)
 
     async def _recover_native_two_tank_task(
         self,
@@ -423,21 +378,6 @@ class StartupRecoveryUseCase:
                 exc_info=True,
             )
 
-    def _missing_command_error_code(self, task: AutomationTask) -> str:
-        if task.status == "waiting_command":
-            return "startup_recovery_inconsistent_command_state"
-        return "startup_recovery_unconfirmed_command"
-
-    def _reconcile_error_code(self, task: AutomationTask) -> str:
-        if task.status == "waiting_command":
-            return "startup_recovery_inconsistent_command_state"
-        return "startup_recovery_unconfirmed_command"
-
-    def _missing_command_error_message(self, task: AutomationTask) -> str:
-        if task.status == "waiting_command":
-            return f"Задача {task.id} находится в waiting_command без разрешимой legacy command"
-        return f"У задачи {task.id} отсутствует подтверждённая внешняя команда во время startup recovery"
-
     def _build_terminal_outcome(self, *, task: AutomationTask) -> StartupRecoveryTerminalOutcome | None:
         intent_id = task.intent_id or 0
         if intent_id <= 0:
@@ -449,6 +389,3 @@ class StartupRecoveryUseCase:
             error_code=task.error_code,
             error_message=task.error_message,
         )
-
-    def _is_two_tank_task(self, task: AutomationTask) -> bool:
-        return task.topology in ("two_tank", "two_tank_drip_substrate_trays")

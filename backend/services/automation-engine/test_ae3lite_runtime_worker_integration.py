@@ -335,8 +335,6 @@ def _build_worker(
             command_gateway=command_gateway,
         ),
     )
-    async def _noop(**kwargs):
-        return None
 
     return Ae3RuntimeWorker(
         owner="worker-ae3-test",
@@ -350,7 +348,6 @@ def _build_worker(
         startup_recovery_use_case=StartupRecoveryUseCase(
             task_repository=task_repository,
             lease_repository=lease_repository,
-            reconcile_command_use_case=type("ReconcileNoop", (), {"run": staticmethod(_noop)})(),
             command_gateway=command_gateway,
             workflow_repository=workflow_repository,
             topology_registry=TopologyRegistry(),

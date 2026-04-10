@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from ae3lite.application.use_cases import ReconcileCommandUseCase, StartupRecoveryUseCase
+from ae3lite.application.use_cases import StartupRecoveryUseCase
 from ae3lite.domain.services.topology_registry import TopologyRegistry
 from ae3lite.infrastructure.gateways import SequentialCommandGateway
 from ae3lite.infrastructure.repositories import (
@@ -252,217 +252,27 @@ async def _cleanup(prefix: str) -> None:
     await execute("DELETE FROM greenhouses WHERE name LIKE $1", f"{prefix}%")
 
 
-def _build_use_case() -> tuple[StartupRecoveryUseCase, PgAutomationTaskRepository, PgAeCommandRepository, PgZoneLeaseRepository]:
-    task_repo = PgAutomationTaskRepository()
-    command_repo = PgAeCommandRepository()
-    lease_repo = PgZoneLeaseRepository()
-    reconcile_use_case = ReconcileCommandUseCase(task_repository=task_repo, command_repository=command_repo)
-    recovery_use_case = StartupRecoveryUseCase(
-        task_repository=task_repo,
-        lease_repository=lease_repo,
-        reconcile_command_use_case=reconcile_use_case,
-    )
-    return recovery_use_case, task_repo, command_repo, lease_repo
-
-
 class _UnusedHistoryLoggerClient:
     async def publish(self, **kwargs):
         raise AssertionError("history-logger publish must not be used during startup recovery")
 
 
-@pytest.mark.asyncio
-async def test_startup_recovery_completes_waiting_command_task_on_done() -> None:
-    prefix = f"ae3-recovery-done-{uuid4().hex}"
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
-    baseline_scanned = await _count_active_recovery_tasks()
-
-    try:
-        greenhouse_id = await _insert_greenhouse(prefix)
-        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
-        intent_id = await _insert_intent(zone_id=zone_id, prefix=prefix, status="running", now=now)
-        task_id = await _insert_task(
-            zone_id,
-            prefix=prefix,
-            task_status="waiting_command",
-            now=now,
-            intent_id=intent_id,
-        )
-        legacy_id = await _insert_legacy_command(
-            zone_id=zone_id,
-            cmd_id="ae3-recovery-done-1",
-            status="DONE",
-            ack_at=now + timedelta(seconds=5),
-            now=now + timedelta(seconds=5),
-        )
-        await _insert_ae_command(
-            task_id=task_id,
-            now=now,
-            cmd_id="ae3-recovery-done-1",
-            external_id=str(legacy_id),
-        )
-
-        result = await recovery_use_case.run(now=now + timedelta(seconds=6))
-
-        updated_task = await task_repo.get_by_id(task_id=task_id)
-        ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == baseline_scanned + 1
-        assert result.completed_tasks == 1
-        assert result.failed_tasks == 0
-        assert len(result.terminal_outcomes) == 1
-        assert result.terminal_outcomes[0].task_id == task_id
-        assert result.terminal_outcomes[0].intent_id == intent_id
-        assert result.terminal_outcomes[0].success is True
-        assert result.terminal_outcomes[0].error_code is None
-        assert updated_task is not None
-        assert updated_task.status == "completed"
-        assert updated_task.error_code is None
-        assert ae_command is not None
-        assert ae_command["terminal_status"] == "DONE"
-        assert await _count_ae_commands(task_id=task_id) == 1
-    finally:
-        await _cleanup(prefix)
-
-
-@pytest.mark.asyncio
-async def test_startup_recovery_fails_waiting_command_task_on_timeout() -> None:
-    prefix = f"ae3-recovery-timeout-{uuid4().hex}"
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
-    baseline_scanned = await _count_active_recovery_tasks()
-
-    try:
-        greenhouse_id = await _insert_greenhouse(prefix)
-        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
-        task_id = await _insert_task(zone_id, prefix=prefix, task_status="waiting_command", now=now)
-        legacy_id = await _insert_legacy_command(
-            zone_id=zone_id,
-            cmd_id="ae3-recovery-timeout-1",
-            status="TIMEOUT",
-            failed_at=now + timedelta(seconds=8),
-            error_message="restart_timeout",
-            now=now + timedelta(seconds=8),
-        )
-        await _insert_ae_command(
-            task_id=task_id,
-            now=now,
-            cmd_id="ae3-recovery-timeout-1",
-            external_id=str(legacy_id),
-        )
-
-        result = await recovery_use_case.run(now=now + timedelta(seconds=9))
-
-        updated_task = await task_repo.get_by_id(task_id=task_id)
-        ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == baseline_scanned + 1
-        assert result.completed_tasks == 0
-        assert result.failed_tasks == 1
-        assert updated_task is not None
-        assert updated_task.status == "failed"
-        assert updated_task.error_code == "command_timeout"
-        assert "restart_timeout" in str(updated_task.error_message)
-        assert ae_command is not None
-        assert ae_command["terminal_status"] == "TIMEOUT"
-        assert await _count_ae_commands(task_id=task_id) == 1
-    finally:
-        await _cleanup(prefix)
-
-
-@pytest.mark.asyncio
-async def test_startup_recovery_fail_closed_syncs_zone_workflow_state_to_idle() -> None:
-    prefix = f"ae3-recovery-workflow-fail-{uuid4().hex}"
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+def _build_use_case() -> tuple[StartupRecoveryUseCase, PgAutomationTaskRepository, PgAeCommandRepository, PgZoneLeaseRepository]:
     task_repo = PgAutomationTaskRepository()
     command_repo = PgAeCommandRepository()
     lease_repo = PgZoneLeaseRepository()
-    workflow_repo = PgZoneWorkflowRepository()
-    reconcile_use_case = ReconcileCommandUseCase(task_repository=task_repo, command_repository=command_repo)
+    gateway = SequentialCommandGateway(
+        task_repository=task_repo,
+        command_repository=command_repo,
+        history_logger_client=_UnusedHistoryLoggerClient(),
+        poll_interval_sec=0.05,
+    )
     recovery_use_case = StartupRecoveryUseCase(
         task_repository=task_repo,
         lease_repository=lease_repo,
-        reconcile_command_use_case=reconcile_use_case,
-        workflow_repository=workflow_repo,
-        topology_registry=TopologyRegistry(),
+        command_gateway=gateway,
     )
-    baseline_scanned = await _count_active_recovery_tasks()
-
-    try:
-        greenhouse_id = await _insert_greenhouse(prefix)
-        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
-        await workflow_repo.upsert_phase(
-            zone_id=zone_id,
-            workflow_phase="tank_filling",
-            payload={"ae3_cycle_start_stage": "solution_fill_start"},
-            scheduler_task_id="999",
-            now=now,
-        )
-        task_id = await _insert_task(
-            zone_id,
-            prefix=prefix,
-            task_status="waiting_command",
-            now=now,
-            topology="two_tank",
-            current_stage="solution_fill_start",
-            workflow_phase="tank_filling",
-        )
-
-        result = await recovery_use_case.run(now=now + timedelta(seconds=5))
-
-        updated_task = await task_repo.get_by_id(task_id=task_id)
-        workflow_row = await workflow_repo.get(zone_id=zone_id)
-        assert result.scanned_tasks == baseline_scanned + 1
-        assert result.failed_tasks == 1
-        assert updated_task is not None
-        assert updated_task.status == "failed"
-        assert updated_task.error_code == "startup_recovery_inconsistent_command_state"
-        assert workflow_row is not None
-        assert workflow_row.workflow_phase == "idle"
-        assert workflow_row.scheduler_task_id == str(task_id)
-        assert workflow_row.payload["ae3_cycle_start_stage"] == "failed"
-        assert await _count_ae_commands(task_id=task_id) == 0
-    finally:
-        await _cleanup(prefix)
-
-
-@pytest.mark.asyncio
-async def test_startup_recovery_recovers_running_task_with_non_terminal_command_without_double_publish() -> None:
-    prefix = f"ae3-recovery-ack-{uuid4().hex}"
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    recovery_use_case, task_repo, command_repo, _lease_repo = _build_use_case()
-    baseline_scanned = await _count_active_recovery_tasks()
-    baseline_waiting = await _count_waiting_command_tasks()
-
-    try:
-        greenhouse_id = await _insert_greenhouse(prefix)
-        zone_id = await _insert_zone(prefix, greenhouse_id=greenhouse_id)
-        task_id = await _insert_task(zone_id, prefix=prefix, task_status="running", now=now)
-        legacy_id = await _insert_legacy_command(
-            zone_id=zone_id,
-            cmd_id="ae3-recovery-ack-1",
-            status="ACK",
-            ack_at=now + timedelta(seconds=4),
-            now=now + timedelta(seconds=4),
-        )
-        await _insert_ae_command(task_id=task_id, now=now, cmd_id="ae3-recovery-ack-1")
-
-        result = await recovery_use_case.run(now=now + timedelta(seconds=5))
-
-        updated_task = await task_repo.get_by_id(task_id=task_id)
-        ae_command = await command_repo.get_by_task_step(task_id=task_id, step_no=1)
-        assert result.scanned_tasks == baseline_scanned + 1
-        assert result.waiting_command_tasks == baseline_waiting + 1
-        assert result.recovered_waiting_command_tasks == 1
-        assert updated_task is not None
-        assert updated_task.status == "waiting_command"
-        assert updated_task.completed_at is None
-        assert ae_command is not None
-        assert ae_command["external_id"] == str(legacy_id)
-        assert ae_command["publish_status"] == "accepted"
-        assert ae_command["terminal_status"] is None
-        assert ae_command["ack_received_at"] is not None
-        assert await _count_ae_commands(task_id=task_id) == 1
-    finally:
-        await _cleanup(prefix)
+    return recovery_use_case, task_repo, command_repo, lease_repo
 
 
 @pytest.mark.asyncio
@@ -561,7 +371,6 @@ async def test_startup_recovery_native_two_tank_done_requeues_next_stage_without
     recovery_use_case = StartupRecoveryUseCase(
         task_repository=task_repo,
         lease_repository=lease_repo,
-        reconcile_command_use_case=type("ReconcileNoop", (), {"run": staticmethod(lambda **kwargs: None)})(),
         command_gateway=gateway,
         workflow_repository=workflow_repo,
         topology_registry=TopologyRegistry(),

@@ -187,10 +187,6 @@ class CommandPublishError(Ae3LiteError):
     """Выбрасывается, когда AE3-Lite не может безопасно опубликовать planned command."""
 
 
-class CommandReconcileError(Ae3LiteError):
-    """Выбрасывается, когда AE3-Lite не может безопасно reconcile waiting-команду."""
-
-
 class StartupRecoveryError(Ae3LiteError):
     """Выбрасывается, когда AE3-Lite не может безопасно восстановить in-flight состояние после старта."""
 

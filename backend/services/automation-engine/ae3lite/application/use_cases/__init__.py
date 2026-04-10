@@ -9,7 +9,6 @@ from .get_zone_automation_state import GetZoneAutomationStateUseCase
 from .get_zone_control_state import GetZoneControlStateUseCase
 from .publish_planned_command import PublishPlannedCommandUseCase
 from .request_manual_step import RequestManualStepUseCase
-from .reconcile_command import ReconcileCommandUseCase
 from .set_control_mode import SetControlModeUseCase
 from .startup_recovery import StartupRecoveryUseCase
 from .workflow_router import WorkflowRouter
@@ -24,7 +23,6 @@ __all__ = [
     "GetZoneControlStateUseCase",
     "PublishPlannedCommandUseCase",
     "RequestManualStepUseCase",
-    "ReconcileCommandUseCase",
     "SetControlModeUseCase",
     "StartupRecoveryUseCase",
     "WorkflowRouter",
