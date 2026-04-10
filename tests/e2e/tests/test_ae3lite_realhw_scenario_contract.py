@@ -790,20 +790,22 @@ class TestAe3LiteInlineCorrectionNodeSimScenarioContract(unittest.TestCase):
         self.assertNotIn("wait_zone_event", text)
         self.assertIn("wait_correction_decision_for_dual_gap", text)
         self.assertIn("type = 'CORRECTION_DECISION_MADE'", text)
-        self.assertIn("details->>'selected_action' = 'ec'", text)
-        self.assertIn("details->>'needs_ec' = 'true'", text)
-        self.assertIn("details->>'needs_ph_down' = 'true'", text)
-        self.assertIn("details->>'workflow_phase' IN ('irrigating', 'irrig_recirc')", text)
+        self.assertIn("COALESCE(details, payload_json)->>'selected_action' = 'ec'", text)
+        self.assertIn("COALESCE(details, payload_json)->>'needs_ec' = 'true'", text)
+        self.assertIn("COALESCE(details, payload_json)->>'needs_ph_down' = 'true'", text)
+        self.assertIn("COALESCE(details, payload_json)->>'workflow_phase' IN ('irrigating', 'irrig_recirc')", text)
 
     def test_inline_irrigation_scenario_asserts_ec_dose_with_active_main_pump(self) -> None:
         text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")
 
         self.assertIn("type = 'EC_DOSING'", text)
-        self.assertIn("details->>'channel' = 'pump_a'", text)
+        self.assertIn("COALESCE(details, payload_json)->>'channel' = 'pump_a'", text)
+        self.assertIn("snapshot_event_id", text)
         self.assertIn("wait_main_pump_snapshot_before_ec_dose", text)
         self.assertIn("type = 'IRR_STATE_SNAPSHOT'", text)
+        self.assertIn("COALESCE(snap.details, snap.payload_json)", text)
         self.assertIn("snapshot'->>'pump_main", text)
-        self.assertIn("created_at <= CAST(:ec_dose_created_at AS timestamptz)", text)
+        self.assertIn("snap.id = CAST(:snapshot_event_id AS bigint)", text)
 
     def test_inline_irrigation_scenario_asserts_ec_first_for_dual_gap(self) -> None:
         text = INLINE_CORRECTION_SCENARIO_PATH.read_text(encoding="utf-8")

@@ -39,6 +39,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Backend:** `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`, `backend/README.md`
 - **Python сервисы:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`, `backend/services/README.md`
+- **AE3 (automation-engine):** `doc_ai/04_BACKEND_CORE/ae3lite.md`, `AE3_RUNTIME_EVENT_CONTRACT.md`, `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md`, `AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md`, `AUTOMATION_CONFIG_AUTHORITY.md`
 - **history-logger API:** `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md` — REST API спецификация
 - **Прошивки:** `doc_ai/02_HARDWARE_FIRMWARE/`, `firmware/README.md`
 - **MQTT протокол:** `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
@@ -160,7 +161,8 @@ make logs SERVICE=<имя>  # произвольный сервис
 **Python микросервисы** (расположены в `backend/services/`):
 - `mqtt-bridge` — FastAPI мост для REST→MQTT (порт 9000)
 - `history-logger` — подписчик MQTT, пишет телеметрию в PostgreSQL, **единственная точка публикации команд в MQTT** (порт 9300)
-- `automation-engine` — контроллер зон, проверяет targets, отправляет команды через history-logger REST API (порт 9405)
+- `automation-engine` — контроллер зон, проверяет targets, отправляет команды через history-logger REST API (порт 9405).
+  **Канонический runtime — `ae3lite/`** (AE2/`ae2lite` удалён). См. `doc_ai/04_BACKEND_CORE/ae3lite.md`, `AE3_RUNTIME_EVENT_CONTRACT.md`, `AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md`.
 - расписания полива/освещения из фаз рецептов планирует **Laravel** (`automation:dispatch-schedules`, intents в БД, wake-up через `POST /zones/{id}/start-cycle`)
 
 **Архитектура потока команд:**
@@ -277,6 +279,30 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 ## Правила совместимости и архитектурные ограничения
 
+### Приоритет правил (от общего к частному)
+
+1. Корневой `AGENTS.md` / `CLAUDE.md`
+2. Спецификации слоя в `doc_ai/0X_.../*`
+3. Локальный `AGENTS.md` в подкаталоге задачи
+4. Гайды ИИ в `doc_ai/10_AI_DEV_GUIDES/`
+
+Локальные правила могут **уточнять** базовые, но не **противоречить** спецификациям слоя. При конфликте или сомнении — следовать более строгому требованию и запросить уточнение у пользователя.
+
+### Обязательный минимум перед работой
+
+- Проверить наличие локального `AGENTS.md` в подкаталоге задачи (может содержать специфичные правила для компонента).
+- Открыть 2-3 ключевых документа своего слоя из `doc_ai/`.
+- Backend / Python-сервисы / БД / e2e — команды выполнять **внутри Docker-контейнеров** проекта (ESP-IDF прошивки собираются вне Docker).
+
+**Docker-compose файлы проекта:**
+- `backend/docker-compose.dev.yml` — основной dev (Linux/macOS)
+- `backend/docker-compose.dev.win.yml` — dev для Windows
+- `backend/docker-compose.ci.yml` — CI окружение
+- `backend/docker-compose.prod.yml` — production
+- `tests/e2e/docker-compose.e2e.yml` — e2e сценарии workflow/automation
+- `tests/node_sim/Dockerfile` — симулятор узлов
+- `infra/hil/docker-compose.hil.yml` — Hardware-in-the-Loop
+
 ### Источники истины
 
 - **`doc_ai/`** — source of truth (единственный источник правды), всегда редактируй здесь
@@ -300,7 +326,13 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 4. При изменении API/Inertia props — обновить соответствующий фронтенд
 
-5. Добавить в commit/PR строку совместимости:
+5. Если затронут путь публикации команд — обновить `doc_ai/04_BACKEND_CORE/HISTORY_LOGGER_API.md`
+
+6. Если затронуты циклы коррекции pH/EC — обновить `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` и `EFFECTIVE_TARGETS_SPEC.md`
+
+7. Если добавлена телеметрия — обеспечить запись в `telemetry_samples` и `telemetry_last`
+
+8. Добавить в commit/PR строку совместимости:
    ```
    Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
    ```
@@ -320,16 +352,39 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 1. **ESP32 прошивки:**
    - НЕ использовать динамическое выделение памяти в горячих путях (критично для стабильности)
 
-2. **Backend:**
+2. **Backend / Laravel:**
    - Laravel НЕ обращается к MQTT напрямую — только через Python-сервисы
    - Все изменения БД ТОЛЬКО через Laravel-миграции (не ручной DDL)
+   - НЕ менять `auth/roles` без явной необходимости (см. `doc_ai/10_AI_DEV_GUIDES/BACKEND_LARAVEL_PG_AI_GUIDE.md`)
+   - Новые публичные API документировать **до или вместе** с кодом
 
-3. **MQTT:**
+3. **PostgreSQL:**
+   - Все изменения через Laravel-миграции; ручной DDL запрещён (см. `doc_ai/10_AI_DEV_GUIDES/DATABASE_SCHEMA_AI_GUIDE.md`)
+   - Новые сущности/поля сначала описывать в `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`, затем миграция
+   - НЕ менять типы полей телеметрии без согласования всех слоёв пайплайна
+   - Избегать циклических FK-зависимостей
+   - Не удалять обязательные поля без миграции данных
+
+4. **MQTT:**
    - Формат топиков СТРОГО: `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`
    - НЕ менять существующие форматы сообщений без обновления ВСЕГО пайплайна
+   - Новые `message_type` / `channel` только при одновременном обновлении `NODE_CHANNELS_REFERENCE.md`, `DATA_MODEL_REFERENCE.md` и обработчиков Python
 
-4. **Команды к узлам:**
+5. **Команды к узлам:**
    - Отправка ТОЛЬКО через history-logger → MQTT (не обходить штатный dispatch и HL)
+   - Запрещено публиковать команды в MQTT напрямую из Laravel или automation-engine в обход history-logger
+
+6. **Телеметрия:**
+   - При добавлении новых метрик — обязательная запись в `telemetry_samples` **и** `telemetry_last` (см. `doc_ai/05_DATA_AND_STORAGE`)
+
+### Поведение ИИ-агента
+
+- Следовать `doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md` как базовому чек-листу
+- **Не придумывать архитектуру заново** и не игнорировать спецификации `doc_ai/`
+- Если изменение затрагивает пайплайн `ESP32 → MQTT → Python → PG → Laravel → Vue` или схемы взаимодействия и выглядит **несовместимым или неочевидным** — **остановиться и запросить подтверждение** у пользователя
+- Если данных недостаточно — требовать список вопросов, а не домысливать
+- Для сложных задач — сначала предоставить план и список затронутых файлов, потом реализация
+- Всегда отвечать на русском языке; английские термины — только как технические идентификаторы (API, протоколы, имена функций)
 
 ### Работа с ИИ-агентами
 
@@ -345,6 +400,164 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 4. Ожидаемый результат (конкретные файлы, функции)
 5. Ограничения (что нельзя менять)
 6. Критерии приёмки (как проверить)
+
+## Детальные правила и инварианты проекта
+
+Ниже сводка конкретных инвариантов, извлечённых из `doc_ai/`. При работе над задачей **всегда** уточняй детали в соответствующей спецификации — это компактная памятка, а не замена документов.
+
+### AE3 (automation-engine) — критичные инварианты
+
+- **Канонический runtime — `ae3lite/`**, монолитный AE удалён; `ae2lite` удалён. См. `doc_ai/04_BACKEND_CORE/ae3lite.md`.
+- Прямой MQTT-publish из AE или Laravel **запрещён** — только через `history-logger` `POST /commands`.
+- **Одна активная execution task на зону** — гарантируется partial unique index + `ZoneLease`.
+- Единственный внешний ingress AE3: `POST /zones/{id}/start-cycle` (+ `POST /zones/{id}/start-irrigation` для штатного полива).
+- Единственный internal status endpoint: `GET /internal/tasks/{task_id}`.
+- Runtime AE3 читает zone state **напрямую из PostgreSQL read-model** — никаких runtime HTTP-запросов к Laravel.
+- Успешный terminal outcome mutating-команды — только `DONE`; `NO_EFFECT|ERROR|INVALID|BUSY|TIMEOUT|SEND_FAILED` = fail для v1.
+- Task FSM: `pending → claimed → running → waiting_command → completed/failed`. Two-tank requeue: `running → pending` через `requeue_pending`.
+- Переключение `zones.automation_runtime='ae3'` **запрещено** при активной task или active lease.
+- Hardcoded default targets **запрещены** — отсутствие target во фразе рецепта = `PlannerConfigurationError` (fail-closed).
+- `ae3lite/*` **не импортирует** legacy runtime пакеты.
+- Error codes: `ae3_task_create_conflict`, `ae3_lease_claim_failed`, `ae3_complete_transition_failed`, `ae3_requeue_failed`, `cycle_start_blocked_nodes_unavailable`, `irr_state_unavailable`, `two_tank_prepare_targets_unavailable`.
+
+### Команды к узлам и валидация
+
+- Канонические `cmd` значения: `run_pump`, `dose`, `set_relay`, `set_pwm`, `calibrate`, `test_sensor`, `restart`, `state`.
+- Статусы команд: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`, `TIMEOUT`. Статусы `ACCEPTED`/`FAILED` **запрещены**.
+- Timestamp валидация: `abs(now - ts) < 10 секунд` на всех уровнях.
+- HMAC-SHA256: canonical JSON с lexicographic sort ключей, порядок массивов сохранён, без whitespace, числа в формате cJSON, UTF-8, unescaped slashes. `node_secret` — 32 байта на узел.
+- `command_response.ts` — в **миллисекундах**.
+- Ограничения: pH dose interval ≥ 20 сек, EC dose ≥ 10 сек, max pump duration = 60000 мс, доза = 0.1–5.0 мл.
+- `test_sensor` обязателен для SENSOR-каналов; `restart` и `state` обязательны для всех узлов.
+- 3 последовательных `no-effect` для одного `pid_type` → alert + fail-closed correction window. Обычные correction attempts и `no-effect` — независимые лимиты.
+
+### MQTT — дополнительные правила
+
+- QoS=1, Retain=false для `telemetry/commands/responses/config_report`; Retain=true для `status/lwt`.
+- Порядок сегментов топика менять **запрещено**; смешивать системные и зональные топики (писать телеметрию в `hydro/system/`) **запрещено**.
+- До получения `hydro/time/response` узел **не должен** публиковать telemetry/status/event с полем `ts`.
+- Для 2-бакового контура (`level_switch`) узел обязан публиковать `event_code="level_switch_changed"` + поля `channel`, `state`, `initial`, `snapshot`.
+- Event code → `zone_events.type`: UPPERCASE + замена `[^A-Z0-9]` → `_`, усечение до 255 с suffix `_{SHA1_10}`.
+- MQTT как произвольное «лог-хранилище» больших JSON **запрещено**.
+
+### Телеметрия и Effective Targets
+
+- Обязательные поля telemetry: `metric_type` (UPPERCASE), `value`, `ts` (в **секундах**). Опциональные: `unit`, `raw`, `stub`, `stable`, `flow_active`, `corrections_allowed`.
+- Python резолвит `sensor_id` через таблицу `sensors` по (`zone_id, node_id, metric_type, channel, scope`).
+- **pH/EC target|min|max** — canonical source **только** active recipe phase; `cycle.phase_overrides` и `zone.logic_profile` **не переопределяют** chemical setpoints. Отсутствие target = ошибка конфигурации (fail-closed).
+- Effective targets **не кэшируются** постоянно — пересчитываются при смене фазы, update recipe, изменении параметров зоны.
+- `volume_ml` в effective targets остаётся доменным полем — AE3 не переводит автоматически мл→длительность без калибровок.
+- Для `lighting.mode="TASK"` параметры irrigation (`mode/interval/duration`) — recipe-owned, zone override игнорируется.
+
+### Политика хранения данных
+
+| Категория | Hot (online) | Warm/agg | Cold archive |
+|-----------|--------------|----------|--------------|
+| Сырая телеметрия | 30 дней (Laravel `telemetry:cleanup-raw`) / 90 дней (Python `RETENTION_SAMPLES_DAYS`) | agg_1m, agg_1h, daily 6-12 мес | 5 лет S3 |
+| Команды | 90 дней | — | 3 года |
+| События | 180 дней | — | 5 лет |
+| Алерты | 365 дней | — | автоудаление resolved/acknowledged/TTL |
+| Логи | 7-30 дней | 1 год (gz) | 5 лет cold |
+
+- `telemetry:aggregate` — каждые 15 мин (Laravel, `ON CONFLICT DO NOTHING`); Python — `ON CONFLICT DO UPDATE`.
+- При удалении зоны: `telemetry_last`/raw удаляются; agg/daily **анонимизируются**; events/logs **архивируются**.
+- Обновлять retention одновременно в `routes/console.php` (Laravel) и `.env` (Python).
+
+### Backend / Laravel — специфика
+
+- **Версии (authoritative):** PHP 8.2.29, Laravel 12, Inertia 2, Vue 3, Tailwind 3, PHPUnit 11.
+- **Структура Laravel 11+:** `bootstrap/app.php` для middleware/exceptions/routing, `bootstrap/providers.php` для service providers; нет `app/Console/Kernel.php` — команды в `app/Console/Commands/` auto-register.
+- **Валидация:** всегда через Form Request classes, **не inline** в контроллере.
+- **БД доступ:** использовать Eloquent models/relationships, **избегать** `DB::`; `Model::query()`. Eager loading для N+1.
+- **Config:** `env()` только в config-файлах; в коде — `config('app.name')`.
+- **Routing:** `route()` + named routes, не хардкод URL.
+- **Inertia:** компоненты в `resources/js/Pages`; `Inertia::render()` вместо Blade; `<Form>` компонент / `useForm` helper; использовать v2-фичи (polling, prefetching, deferred props, lazy loading).
+- **Тяжёлые задачи:** через `ShouldQueue`; тяжёлую ML/симуляцию в Laravel **не встраивать** — выносить в Python-сервис.
+- **Вызовы Python-сервиса** централизованы, не размазаны по контроллерам.
+- **PHP стиль:** `vendor/bin/pint --dirty` перед финализацией; constructor property promotion; обязательные return types; `{}` даже для однострочных control structures; PHPDoc вместо inline комментариев; enum keys в TitleCase.
+- **Тесты:** PHPUnit (не Pest); каждое изменение покрывать тестом; запускать `--filter=`; при изменении column в migration **включать все предыдущие атрибуты**.
+- **Artisan:** `make:` команды для всех файлов; `--no-interaction` + `--options`; `list-artisan-commands` перед вызовом.
+
+### Frontend / Vue — специфика
+
+- **`<script setup>`** синтаксис, **не** Options API.
+- Компонент Vue **один root-элемент**; навигация через `router.visit()`/`<Link>`, не classic links.
+- Shared-компоненты зоны переиспользуются и в `/setup/wizard`, и в zone edit — один UX.
+- Events UI группирует по causal-context: `correction_window_id → task_id → snapshot_event_id/caused_by_event_id`.
+- Automation tab **не смешивает** operator flow с scheduler/execution detail view.
+- Manual-step controls рендерятся **только** из `allowed_manual_steps`, не из хардкода.
+- **Роли:** Dashboard рендерится по роли (`AgronomistDashboard`/`AdminDashboard`/`EngineerDashboard`/`OperatorDashboard`/`ViewerDashboard`); использовать `useRole()` composable; пункты меню условно рендерятся, не удаляются.
+- **Стили:** Tailwind 3 classes (только v3-совместимые); gap utilities вместо margins; все новые страницы поддерживают dark mode (`dark:` классы); dark theme — по умолчанию.
+- **Deferred props** — всегда с animated skeleton empty state.
+- **Тесты:** Vitest + Vue Test Utils; один тест = одна проверка; моки минимальные (только внешние зависимости); Playwright E2E — реальные HTTP/WebSocket.
+
+### Прошивки ESP32 / C
+
+- Язык **только C99**, C++ **запрещён**. ESP-IDF 5.x.
+- **Нейминг:** файлы `snake_case.{c,h}`, функции/переменные `snake_case` с префиксом компонента, типы `snake_case_t`, макросы `UPPER_SNAKE_CASE`.
+- **Стиль:** 4 пробела (табы запрещены), K&R (открывающая `{` на той же строке).
+- **Обработка ошибок:** все функции возвращают `esp_err_t`, никаких тихих провалов, логировать контекст.
+- **Логирование:** в каждом компоненте `static const char *TAG = "component_name"`; уровни: `ESP_LOGE` (ошибки), `LOGW` (потенциальные), `LOGI` (ключевые), `LOGD` (отладка), `LOGV` (подробно). Секреты/пароли **не логировать**.
+- **Публичный API** каждого компонента — в `include/<component_name>.h`.
+- **FreeRTOS:** одна логическая подсистема = одна task (`wifi_task`, `mqtt_task`, `sensor_task`); обмен через очереди/Event Groups; глобальные разделяемые структуры без mutex **запрещены**.
+- **I2C:** один общий `hw_i2c` компонент с **mutex** для сериализации доступа.
+- **NVS:** все операции — только через `node_config` компонент.
+- **Тестируемость:** бизнес-логика независима от железа (интерфейсы/колбэки).
+- **Запрет динамического выделения памяти** в горячих путях.
+
+### NodeConfig
+
+- JSON-конфиг с обязательными: `node_id`, `version`, `type`, `gh_uid`, `zone_uid`, `channels`, `wifi`, `mqtt`. Версия формата — **3**.
+- Каналы: `SENSOR` (с `metric`, `poll_interval_ms`, `unit`, `precision`) и `ACTUATOR` (с `actuator_type`, `safe_limits`).
+- Калибровка pH — 2-3 точки (raw/value); EC — K-value + temperature compensation.
+- `fail_safe_guards` для `irrig` — **зеркало** значений из `zone.logic_profile`.
+- Узел обязан валидировать NodeConfig, применять локально и публиковать `config_report` как ACK.
+- HMAC подпись конфига — timestamp не старше 60 секунд (команды — не старше 30).
+
+### Безопасность
+
+- Каждый узел имеет уникальный `node_secret` (32 байта) для HMAC.
+- OTA защищена: SHA256, версия, signed URL, HMAC запроса.
+- MQTT должен быть закрыт для внешних сетей; Wi-Fi — скрытый, WPA2/WPA3.
+- Pessimistic locking (`SELECT FOR UPDATE`) при публикации конфигов; PostgreSQL advisory lock для дедупликации; кэш-дедупликация 60 сек.
+- Rate limiting: 60 req/min/IP стандартно; регистрация узлов — 10 req/min/node_uid + burst 120/min/IP; IP whitelist (`services.node_registration.allowed_ips`).
+- Docker network — `internal: true` для отключения внешней доступности.
+- **Роли/авторизацию (`auth/roles`) не менять** без явной необходимости и тестов.
+
+### Локальные AGENTS.md (обязательно читать при работе в подкаталоге)
+
+- `backend/laravel/docs/AGENTS.md` — подробные Laravel-правила (версии, Eloquent, Inertia, тесты, стиль).
+- `backend/services/AGENTS.md` — разделение Laravel scheduler-dispatch ↔ AE ↔ history-logger; запреты на прямой MQTT из AE/Laravel.
+- `backend/services/automation-engine/AGENT.md` — canonical AE3-Lite контракт, error codes, task FSM, команды для тестов.
+
+### Документация — конвенции
+
+- Основной язык — русский; английские термины только как технические идентификаторы.
+- Стандартные разделы: Цель, Контекст, Требования, Архитектура/Дизайн, Протоколы/Интерфейсы, Сценарии использования, Ограничения и риски, Планы развития.
+- Версия/дата/автор — в заголовке, **не** в имени файла.
+- Структура папок `01_...12_` — единая живая версия, **не** создавать `v3/v4` папки.
+- Новые файлы логически попадают в существующие папки; если места нет — сначала обновить архитектурный документ с обоснованием.
+- **Документацию (.md)** создавать только по явному запросу пользователя.
+
+### Где искать детали правил (source of truth)
+
+| Тема | Документ |
+|------|----------|
+| AE3 runtime и контракт | `doc_ai/04_BACKEND_CORE/ae3lite.md`, `AE3_RUNTIME_EVENT_CONTRACT.md` |
+| Irrigation failsafe, E-STOP | `doc_ai/04_BACKEND_CORE/AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md` |
+| Level switch events | `doc_ai/04_BACKEND_CORE/AE3_IRR_LEVEL_SWITCH_EVENT_CONTRACT.md` |
+| MQTT топики/payload | `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`, `MQTT_SPEC_FULL.md`, `BACKEND_NODE_CONTRACT_FULL.md` |
+| Валидация команд | `doc_ai/03_TRANSPORT_MQTT/COMMAND_VALIDATION_ENGINE.md` |
+| Модель данных | `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` |
+| Retention | `doc_ai/05_DATA_AND_STORAGE/DATA_RETENTION_POLICY.md` |
+| Коррекция pH/EC | `doc_ai/06_DOMAIN_ZONES_RECIPES/CORRECTION_CYCLE_SPEC.md` |
+| Effective targets | `doc_ai/06_DOMAIN_ZONES_RECIPES/EFFECTIVE_TARGETS_SPEC.md` |
+| Error codes | `doc_ai/04_BACKEND_CORE/ERROR_CODE_CATALOG.md` |
+| Frontend UI/UX | `doc_ai/07_FRONTEND/FRONTEND_UI_UX_SPEC.md`, `ROLE_BASED_UI_SPEC.md` |
+| ESP32 C-стиль | `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md` |
+| NodeConfig спец | `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` |
+| Безопасность | `doc_ai/08_SECURITY_AND_OPS/SECURITY_ARCHITECTURE.md`, `AUTH_SYSTEM.md` |
+| AI-гайды (чек-листы) | `doc_ai/10_AI_DEV_GUIDES/AI_ASSISTANT_DEV_GUIDE.md`, `BACKEND_LARAVEL_PG_AI_GUIDE.md`, `DATABASE_SCHEMA_AI_GUIDE.md` |
 
 ## Разработка прошивок ESP-IDF
 
@@ -464,18 +677,6 @@ make protocol-check
 ```bash
 ./backend/scripts/check_monitoring.sh
 ```
-
-### Просмотр логов
-
-```bash
-# Логи сервиса
-docker compose -f backend/docker-compose.dev.yml logs -f <сервис>
-
-# Все логи Python сервисов
-docker compose -f backend/docker-compose.dev.yml logs -f mqtt-bridge history-logger automation-engine
-```
-
-См. `backend/docs/LOGS_VIEWING.md` для детального руководства по просмотру логов.
 
 ### Дашборды Grafana
 

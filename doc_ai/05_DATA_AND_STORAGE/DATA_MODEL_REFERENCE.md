@@ -978,6 +978,10 @@ corr_ec_amount_ml NUMERIC(12,3) NULL
 corr_ec_dose_sequence_json JSONB NULL
 corr_ec_current_seq_index INT NOT NULL DEFAULT 0
 corr_ph_amount_ml NUMERIC(12,3) NULL
+corr_snapshot_event_id BIGINT NULL
+corr_snapshot_created_at TIMESTAMPTZ NULL
+corr_snapshot_cmd_id VARCHAR(191) NULL
+corr_snapshot_source_event_type VARCHAR(64) NULL
 corr_limit_policy_logged BOOLEAN NOT NULL DEFAULT FALSE
 corr_ec_attempt SMALLINT NULL
 corr_ec_max_attempts SMALLINT NULL
@@ -1010,9 +1014,12 @@ ae_tasks_topology_stage_idx (topology, current_stage) WHERE status IN ('running'
 - не более одной active task на зону;
 - `idempotency_key` уникален только в рамках `zone_id`;
 - correction amount-поля (`corr_ec_amount_ml`, `corr_ph_amount_ml`) хранятся с точностью `NUMERIC(12,3)`;
+- `corr_snapshot_*` хранит causal link на последний подтверждённый `IRR_STATE_SNAPSHOT`, который должен переживать `enter_correction`, requeue и process restart;
 - `corr_limit_policy_logged=true` означает, что `CORRECTION_LIMIT_POLICY_APPLIED` уже был записан для текущего correction-window и повторно эмитироваться не должен;
 - `task_type IN ('cycle_start', 'irrigation_start')` фиксируется DB check constraint.
 - `workflow_phase` допускает `idle|tank_filling|tank_recirc|irrigating|irrig_recirc|ready`.
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 - irrigation decision/replay/runtime state хранится в explicit columns, а не в свободном JSON.
 - canonical stage progress читается из `topology/current_stage/workflow_phase`, а не из произвольного JSON в `payload`.
 

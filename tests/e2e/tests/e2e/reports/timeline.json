@@ -1,11 +1,11 @@
 {
-  "test_suite": "E109_ae3_irrigation_inline_correction_test_node",
-  "generated_at": "2026-04-10T06:34:33.187531",
+  "test_suite": "E100_ae3_two_tank_realhw_smoke",
+  "generated_at": "2026-04-10T15:14:28.925353",
   "test_cases": [
     {
       "name": "set_test_context",
       "status": "passed",
-      "duration": 2.6702880859375e-05,
+      "duration": 4.100799560546875e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.563584"
+      "timestamp": "2026-04-10T15:14:21.342301"
+    },
+    {
+      "name": "capture_scenario_window",
+      "status": "passed",
+      "duration": 0.003687143325805664,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "capture_scenario_window",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:21.346026"
     },
     {
       "name": "load_zone_context",
       "status": "passed",
-      "duration": 0.008670806884765625,
+      "duration": 0.0052602291107177734,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.572302"
+      "timestamp": "2026-04-10T15:14:21.351390"
     },
     {
       "name": "set_zone_context",
       "status": "passed",
-      "duration": 8.106231689453125e-06,
+      "duration": 1.049041748046875e-05,
       "error_message": null,
       "steps": [
         {
@@ -39,64 +52,51 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.572398"
+      "timestamp": "2026-04-10T15:14:21.351484"
     },
     {
-      "name": "set_runtime_api_url",
+      "name": "resolve_irrig_node",
       "status": "passed",
-      "duration": 0.2148585319519043,
+      "duration": 0.0022459030151367188,
       "error_message": null,
       "steps": [
         {
-          "name": "set_runtime_api_url",
+          "name": "resolve_irrig_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.787281"
+      "timestamp": "2026-04-10T15:14:21.353777"
     },
     {
-      "name": "load_irrig_node",
+      "name": "resolve_ph_node",
       "status": "passed",
-      "duration": 0.003253936767578125,
+      "duration": 0.0005023479461669922,
       "error_message": null,
       "steps": [
         {
-          "name": "load_irrig_node",
+          "name": "resolve_ph_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.790608"
+      "timestamp": "2026-04-10T15:14:21.354358"
     },
     {
-      "name": "load_ph_node",
+      "name": "resolve_ec_node",
       "status": "passed",
-      "duration": 0.003657817840576172,
+      "duration": 0.00044608116149902344,
       "error_message": null,
       "steps": [
         {
-          "name": "load_ph_node",
+          "name": "resolve_ec_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.794370"
-    },
-    {
-      "name": "load_ec_node",
-      "status": "passed",
-      "duration": 0.0009765625,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_ec_node",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:09.795457"
+      "timestamp": "2026-04-10T15:14:21.354865"
     },
     {
       "name": "set_node_ids",
       "status": "passed",
-      "duration": 3.814697265625e-06,
+      "duration": 1.52587890625e-05,
       "error_message": null,
       "steps": [
         {
@@ -104,64 +104,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.795507"
-    },
-    {
-      "name": "load_ec_pump_channel",
-      "status": "passed",
-      "duration": 0.00035643577575683594,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_ec_pump_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:09.795892"
-    },
-    {
-      "name": "load_ph_up_channel",
-      "status": "passed",
-      "duration": 0.0015163421630859375,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_ph_up_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:09.797447"
-    },
-    {
-      "name": "load_ph_down_channel",
-      "status": "passed",
-      "duration": 0.00041794776916503906,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_ph_down_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:09.797937"
-    },
-    {
-      "name": "set_correction_channel_ids",
-      "status": "passed",
-      "duration": 4.0531158447265625e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_correction_channel_ids",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:09.797993"
+      "timestamp": "2026-04-10T15:14:21.354963"
     },
     {
       "name": "publish_irrig_node_config",
       "status": "passed",
-      "duration": 0.2003772258758545,
+      "duration": 0.21554827690124512,
       "error_message": null,
       "steps": [
         {
@@ -169,12 +117,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:09.998396"
+      "timestamp": "2026-04-10T15:14:21.570538"
     },
     {
       "name": "publish_ph_node_config",
       "status": "passed",
-      "duration": 0.19749832153320312,
+      "duration": 0.24305200576782227,
       "error_message": null,
       "steps": [
         {
@@ -182,12 +130,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:10.195943"
+      "timestamp": "2026-04-10T15:14:21.817336"
     },
     {
       "name": "publish_ec_node_config",
       "status": "passed",
-      "duration": 0.23715424537658691,
+      "duration": 0.3118093013763428,
       "error_message": null,
       "steps": [
         {
@@ -195,12 +143,77 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:10.433160"
+      "timestamp": "2026-04-10T15:14:22.129237"
+    },
+    {
+      "name": "wait_irrigation_level_sensors_registered",
+      "status": "passed",
+      "duration": 0.00677037239074707,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_irrigation_level_sensors_registered",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.136167"
+    },
+    {
+      "name": "load_ec_pump_channel",
+      "status": "passed",
+      "duration": 0.001739501953125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ec_pump_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.138004"
+    },
+    {
+      "name": "load_ph_up_channel",
+      "status": "passed",
+      "duration": 0.000823974609375,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ph_up_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.138942"
+    },
+    {
+      "name": "load_ph_down_channel",
+      "status": "passed",
+      "duration": 0.0007641315460205078,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_ph_down_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.139804"
+    },
+    {
+      "name": "set_correction_channel_ids",
+      "status": "passed",
+      "duration": 8.106231689453125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_correction_channel_ids",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.139906"
     },
     {
       "name": "wait_zone_ae_runtime_idle_before_cleanup",
       "status": "passed",
-      "duration": 0.003535032272338867,
+      "duration": 0.003843069076538086,
       "error_message": null,
       "steps": [
         {
@@ -208,12 +221,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:10.436774"
+      "timestamp": "2026-04-10T15:14:22.143808"
     },
     {
       "name": "cleanup_zone_ae_commands",
       "status": "passed",
-      "duration": 0.0025942325592041016,
+      "duration": 0.01204061508178711,
       "error_message": null,
       "steps": [
         {
@@ -221,12 +234,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:10.439422"
+      "timestamp": "2026-04-10T15:14:22.157036"
     },
     {
       "name": "cleanup_zone_ae_tasks",
       "status": "passed",
-      "duration": 0.001994609832763672,
+      "duration": 0.003337860107421875,
       "error_message": null,
       "steps": [
         {
@@ -234,12 +247,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:10.441472"
+      "timestamp": "2026-04-10T15:14:22.160476"
     },
     {
       "name": "cleanup_zone_ae_leases",
       "status": "passed",
-      "duration": 0.0004143714904785156,
+      "duration": 0.0006630420684814453,
       "error_message": null,
       "steps": [
         {
@@ -247,506 +260,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:10.441948"
-    },
-    {
-      "name": "complete_existing_cycles",
-      "status": "passed",
-      "duration": 0.0026094913482666016,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "complete_existing_cycles",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.444624"
-    },
-    {
-      "name": "switch_zone_to_ae3",
-      "status": "passed",
-      "duration": 0.00174713134765625,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "switch_zone_to_ae3",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.446456"
-    },
-    {
-      "name": "load_test_node_correction_preset",
-      "status": "passed",
-      "duration": 0.0009980201721191406,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_test_node_correction_preset",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.447512"
-    },
-    {
-      "name": "apply_test_node_correction_preset",
-      "status": "passed",
-      "duration": 0.19892597198486328,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "apply_test_node_correction_preset",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.647093"
-    },
-    {
-      "name": "cleanup_existing_correction_bindings",
-      "status": "passed",
-      "duration": 0.002023935317993164,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "cleanup_existing_correction_bindings",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.649182"
-    },
-    {
-      "name": "cleanup_existing_correction_infra",
-      "status": "passed",
-      "duration": 0.0018985271453857422,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "cleanup_existing_correction_infra",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.651138"
-    },
-    {
-      "name": "cleanup_existing_e2e_calibrations",
-      "status": "passed",
-      "duration": 0.0014963150024414062,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "cleanup_existing_e2e_calibrations",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.652702"
-    },
-    {
-      "name": "insert_correction_infrastructure",
-      "status": "passed",
-      "duration": 0.0010523796081542969,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_correction_infrastructure",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.653809"
-    },
-    {
-      "name": "insert_correction_bindings",
-      "status": "passed",
-      "duration": 0.0020377635955810547,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_correction_bindings",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.655917"
-    },
-    {
-      "name": "insert_correction_calibrations",
-      "status": "passed",
-      "duration": 0.0015254020690917969,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "insert_correction_calibrations",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.657516"
-    },
-    {
-      "name": "wait_runtime_level_sensors_registered",
-      "status": "passed",
-      "duration": 0.0024726390838623047,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_runtime_level_sensors_registered",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.660055"
-    },
-    {
-      "name": "activate_ph_sensor_mode",
-      "status": "passed",
-      "duration": 0.23122048377990723,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "activate_ph_sensor_mode",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:10.891324"
-    },
-    {
-      "name": "wait_activate_ph_sensor_mode_done",
-      "status": "passed",
-      "duration": 0.2219982147216797,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_activate_ph_sensor_mode_done",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.113402"
-    },
-    {
-      "name": "activate_ec_sensor_mode",
-      "status": "passed",
-      "duration": 0.22759008407592773,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "activate_ec_sensor_mode",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.341073"
-    },
-    {
-      "name": "wait_activate_ec_sensor_mode_done",
-      "status": "passed",
-      "duration": 0.3087759017944336,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_activate_ec_sensor_mode_done",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.649921"
-    },
-    {
-      "name": "wait_runtime_ph_ec_telemetry_available",
-      "status": "passed",
-      "duration": 0.0018601417541503906,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_runtime_ph_ec_telemetry_available",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.651886"
-    },
-    {
-      "name": "cleanup_runtime_telemetry",
-      "status": "passed",
-      "duration": 0.0020956993103027344,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "cleanup_runtime_telemetry",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.654024"
-    },
-    {
-      "name": "cleanup_runtime_telemetry_last",
-      "status": "passed",
-      "duration": 0.0012378692626953125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "cleanup_runtime_telemetry_last",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.655302"
-    },
-    {
-      "name": "apply_task_logic_profile",
-      "status": "passed",
-      "duration": 0.24039578437805176,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "apply_task_logic_profile",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.895968"
-    },
-    {
-      "name": "create_recipe",
-      "status": "passed",
-      "duration": 0.0016558170318603516,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_recipe",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.897711"
-    },
-    {
-      "name": "load_recipe",
-      "status": "passed",
-      "duration": 0.0005924701690673828,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_recipe",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.898364"
-    },
-    {
-      "name": "set_recipe_id",
-      "status": "passed",
-      "duration": 2.86102294921875e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_recipe_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.898394"
-    },
-    {
-      "name": "create_recipe_revision",
-      "status": "passed",
-      "duration": 0.0014908313751220703,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_recipe_revision",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.899912"
-    },
-    {
-      "name": "load_recipe_revision",
-      "status": "passed",
-      "duration": 0.0007631778717041016,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_recipe_revision",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.900720"
-    },
-    {
-      "name": "set_recipe_revision_id",
-      "status": "passed",
-      "duration": 3.5762786865234375e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_recipe_revision_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.900781"
-    },
-    {
-      "name": "create_grow_cycle",
-      "status": "passed",
-      "duration": 0.002521038055419922,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_grow_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.903351"
-    },
-    {
-      "name": "load_grow_cycle",
-      "status": "passed",
-      "duration": 0.0005855560302734375,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_grow_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.904040"
-    },
-    {
-      "name": "set_grow_cycle_id",
-      "status": "passed",
-      "duration": 2.86102294921875e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_grow_cycle_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.904072"
-    },
-    {
-      "name": "create_phase",
-      "status": "passed",
-      "duration": 0.002124786376953125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_phase",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.906236"
-    },
-    {
-      "name": "load_phase",
-      "status": "passed",
-      "duration": 0.000690460205078125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "load_phase",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.906990"
-    },
-    {
-      "name": "set_phase_id",
-      "status": "passed",
-      "duration": 3.337860107421875e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_phase_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.907025"
-    },
-    {
-      "name": "activate_grow_cycle",
-      "status": "passed",
-      "duration": 0.0015773773193359375,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "activate_grow_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:11.908643"
-    },
-    {
-      "name": "apply_cycle_start_snapshot",
-      "status": "passed",
-      "duration": 0.21637678146362305,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "apply_cycle_start_snapshot",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:12.125075"
-    },
-    {
-      "name": "apply_cycle_phase_overrides",
-      "status": "passed",
-      "duration": 0.2068488597869873,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "apply_cycle_phase_overrides",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:12.331971"
-    },
-    {
-      "name": "wait_grow_cycle_bundle_ready",
-      "status": "passed",
-      "duration": 0.0012874603271484375,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_grow_cycle_bundle_ready",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:12.333358"
-    },
-    {
-      "name": "set_ready_levels_and_targets",
-      "status": "passed",
-      "duration": 0.2421882152557373,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_ready_levels_and_targets",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:12.575606"
-    },
-    {
-      "name": "wait_ready_levels_done",
-      "status": "passed",
-      "duration": 0.3098490238189697,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_ready_levels_done",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:12.885543"
-    },
-    {
-      "name": "wait_ready_seed_telemetry",
-      "status": "passed",
-      "duration": 0.003115415573120117,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_ready_seed_telemetry",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-04-10T06:33:12.888757"
+      "timestamp": "2026-04-10T15:14:22.161235"
     },
     {
       "name": "cleanup_zone_workflow_state",
       "status": "passed",
-      "duration": 0.0013887882232666016,
+      "duration": 0.003648996353149414,
       "error_message": null,
       "steps": [
         {
@@ -754,201 +273,759 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:12.890209"
+      "timestamp": "2026-04-10T15:14:22.164954"
     },
     {
-      "name": "insert_ready_workflow_state",
+      "name": "cleanup_zone_pid_state",
       "status": "passed",
-      "duration": 0.0009925365447998047,
+      "duration": 0.0034568309783935547,
       "error_message": null,
       "steps": [
         {
-          "name": "insert_ready_workflow_state",
+          "name": "cleanup_zone_pid_state",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:12.891247"
+      "timestamp": "2026-04-10T15:14:22.168504"
     },
     {
-      "name": "wait_ready_workflow_state",
+      "name": "cleanup_blocking_ae_alerts",
       "status": "passed",
-      "duration": 0.0005340576171875,
+      "duration": 0.0018682479858398438,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_ready_workflow_state",
+          "name": "cleanup_blocking_ae_alerts",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:12.891833"
+      "timestamp": "2026-04-10T15:14:22.170476"
     },
     {
-      "name": "enable_inline_correction_during_irrigation",
+      "name": "complete_existing_cycles",
       "status": "passed",
-      "duration": 0.0013098716735839844,
+      "duration": 0.01709127426147461,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_inline_correction_during_irrigation",
+          "name": "complete_existing_cycles",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:12.893194"
+      "timestamp": "2026-04-10T15:14:22.187670"
     },
     {
-      "name": "seed_off_target_for_irrigation_check",
+      "name": "switch_zone_to_ae3",
       "status": "passed",
-      "duration": 0.23285794258117676,
+      "duration": 0.0065457820892333984,
       "error_message": null,
       "steps": [
         {
-          "name": "seed_off_target_for_irrigation_check",
+          "name": "switch_zone_to_ae3",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:13.126122"
+      "timestamp": "2026-04-10T15:14:22.194405"
     },
     {
-      "name": "wait_seed_done",
+      "name": "cleanup_existing_correction_bindings",
       "status": "passed",
-      "duration": 0.30434226989746094,
+      "duration": 0.0025370121002197266,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_seed_done",
+          "name": "cleanup_existing_correction_bindings",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:13.430557"
+      "timestamp": "2026-04-10T15:14:22.197045"
     },
     {
-      "name": "start_irrigation_inline",
+      "name": "cleanup_existing_correction_infra",
       "status": "passed",
-      "duration": 0.2717745304107666,
+      "duration": 0.0025551319122314453,
       "error_message": null,
       "steps": [
         {
-          "name": "start_irrigation_inline",
+          "name": "cleanup_existing_correction_infra",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:13.702399"
+      "timestamp": "2026-04-10T15:14:22.199708"
     },
     {
-      "name": "set_irrig_task_id",
+      "name": "cleanup_existing_e2e_calibrations",
       "status": "passed",
-      "duration": 3.0994415283203125e-06,
+      "duration": 0.0019605159759521484,
       "error_message": null,
       "steps": [
         {
-          "name": "set_irrig_task_id",
+          "name": "cleanup_existing_e2e_calibrations",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:13.702444"
+      "timestamp": "2026-04-10T15:14:22.201793"
     },
     {
-      "name": "wait_irrigation_started_commands",
+      "name": "insert_correction_infrastructure",
       "status": "passed",
-      "duration": 3.6316745281219482,
+      "duration": 0.0018038749694824219,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_irrigation_started_commands",
+          "name": "insert_correction_infrastructure",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:17.334156"
+      "timestamp": "2026-04-10T15:14:22.203730"
     },
     {
-      "name": "wait_correction_decision_for_dual_gap",
+      "name": "insert_correction_bindings",
       "status": "passed",
-      "duration": 12.733627557754517,
+      "duration": 0.004473447799682617,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_correction_decision_for_dual_gap",
+          "name": "insert_correction_bindings",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:30.067873"
+      "timestamp": "2026-04-10T15:14:22.208366"
     },
     {
-      "name": "wait_ec_dose_command_during_irrigation",
+      "name": "insert_correction_calibrations",
       "status": "passed",
-      "duration": 3.0616421699523926,
+      "duration": 0.0034325122833251953,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_ec_dose_command_during_irrigation",
+          "name": "insert_correction_calibrations",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:33:33.129621"
+      "timestamp": "2026-04-10T15:14:22.211978"
     },
     {
-      "name": "wait_main_pump_snapshot_before_ec_dose",
-      "status": "failed",
-      "duration": 60.04722881317139,
-      "error_message": "Timeout waiting for DB condition: SELECT snap.id, snap.created_at\nFROM zone_events snap\nWHERE snap.zone_id = :zone_id\n  AND snap.type = 'IRR_STATE_SNAPSHOT'\n  AND COALESCE(snap.details->'snapshot'->>'pump_main', 'false') = 'true'\n  AND snap.created_at <= CAST(:ec_dose_created_at AS timestamptz)\nORDER BY snap.created_at DESC\nLIMIT 1\n",
-      "steps": [
-        {
-          "name": "wait_main_pump_snapshot_before_ec_dose",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT snap.id, snap.created_at\nFROM zone_events snap\nWHERE snap.zone_id = :zone_id\n  AND snap.type = 'IRR_STATE_SNAPSHOT'\n  AND COALESCE(snap.details->'snapshot'->>'pump_main', 'false') = 'true'\n  AND snap.created_at <= CAST(:ec_dose_created_at AS timestamptz)\nORDER BY snap.created_at DESC\nLIMIT 1\n"
-        }
-      ],
-      "timestamp": "2026-04-10T06:34:33.177004"
-    },
-    {
-      "name": "inline_correction_decision_keeps_dual_gap_and_ec_first",
+      "name": "verify_active_correction_calibrations",
       "status": "passed",
-      "duration": 0.0024750232696533203,
+      "duration": 0.0015637874603271484,
       "error_message": null,
       "steps": [
         {
-          "name": "inline_correction_decision_keeps_dual_gap_and_ec_first",
+          "name": "verify_active_correction_calibrations",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:34:33.179517"
+      "timestamp": "2026-04-10T15:14:22.213671"
     },
     {
-      "name": "inline_correction_keeps_main_pump_active_at_ec_dose",
-      "status": "failed",
-      "duration": 0.0013453960418701172,
-      "error_message": "Expected field 'cnt' >= 1, got 0",
+      "name": "apply_ae3_logic_profile",
+      "status": "passed",
+      "duration": 0.3081023693084717,
+      "error_message": null,
       "steps": [
         {
-          "name": "inline_correction_keeps_main_pump_active_at_ec_dose",
-          "status": "failed",
-          "error": "Expected field 'cnt' >= 1, got 0"
+          "name": "apply_ae3_logic_profile",
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-04-10T06:34:33.180894"
+      "timestamp": "2026-04-10T15:14:22.523198"
+    },
+    {
+      "name": "create_recipe",
+      "status": "passed",
+      "duration": 0.0019378662109375,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.525242"
+    },
+    {
+      "name": "load_recipe",
+      "status": "passed",
+      "duration": 0.0008592605590820312,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recipe",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.526197"
+    },
+    {
+      "name": "set_recipe_id",
+      "status": "passed",
+      "duration": 4.5299530029296875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_recipe_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.526254"
+    },
+    {
+      "name": "create_recipe_revision",
+      "status": "passed",
+      "duration": 0.0020935535430908203,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.528386"
+    },
+    {
+      "name": "load_recipe_revision",
+      "status": "passed",
+      "duration": 0.0006711483001708984,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_recipe_revision",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.529141"
+    },
+    {
+      "name": "set_recipe_revision_id",
+      "status": "passed",
+      "duration": 4.5299530029296875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_recipe_revision_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.529191"
+    },
+    {
+      "name": "create_grow_cycle",
+      "status": "passed",
+      "duration": 0.002526521682739258,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.531772"
+    },
+    {
+      "name": "load_grow_cycle",
+      "status": "passed",
+      "duration": 0.0005965232849121094,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.532469"
+    },
+    {
+      "name": "set_grow_cycle_id",
+      "status": "passed",
+      "duration": 4.0531158447265625e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_grow_cycle_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.532513"
+    },
+    {
+      "name": "create_phase",
+      "status": "passed",
+      "duration": 0.0043985843658447266,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.536957"
+    },
+    {
+      "name": "load_phase",
+      "status": "passed",
+      "duration": 0.0008862018585205078,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.537940"
+    },
+    {
+      "name": "set_phase_id",
+      "status": "passed",
+      "duration": 4.291534423828125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_phase_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.537991"
+    },
+    {
+      "name": "activate_grow_cycle",
+      "status": "passed",
+      "duration": 0.0012638568878173828,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "activate_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.539301"
+    },
+    {
+      "name": "apply_cycle_start_snapshot",
+      "status": "passed",
+      "duration": 0.3974924087524414,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_cycle_start_snapshot",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:22.936940"
+    },
+    {
+      "name": "apply_cycle_phase_overrides",
+      "status": "passed",
+      "duration": 0.2940247058868408,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "apply_cycle_phase_overrides",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:23.231049"
+    },
+    {
+      "name": "wait_grow_cycle_bundle_ready",
+      "status": "passed",
+      "duration": 0.00417017936706543,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_grow_cycle_bundle_ready",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:23.235330"
+    },
+    {
+      "name": "reset_test_node_state",
+      "status": "passed",
+      "duration": 0.6015453338623047,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_test_node_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:23.836996"
+    },
+    {
+      "name": "wait_reset_state_done",
+      "status": "passed",
+      "duration": 0.645880937576294,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_reset_state_done",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.482978"
+    },
+    {
+      "name": "wait_zero_level_telemetry",
+      "status": "passed",
+      "duration": 0.002567768096923828,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_zero_level_telemetry",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.485647"
+    },
+    {
+      "name": "cleanup_grow_cycle_start_scheduler_snapshots",
+      "status": "passed",
+      "duration": 0.002312183380126953,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_grow_cycle_start_scheduler_snapshots",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.488047"
+    },
+    {
+      "name": "cleanup_grow_cycle_start_ae_commands",
+      "status": "passed",
+      "duration": 0.0010294914245605469,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_grow_cycle_start_ae_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.489166"
+    },
+    {
+      "name": "cleanup_grow_cycle_start_ae_tasks",
+      "status": "passed",
+      "duration": 0.0007078647613525391,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_grow_cycle_start_ae_tasks",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.489943"
+    },
+    {
+      "name": "cleanup_grow_cycle_start_intents",
+      "status": "passed",
+      "duration": 0.0004994869232177734,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_grow_cycle_start_intents",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.490504"
+    },
+    {
+      "name": "insert_scheduler_like_intent",
+      "status": "passed",
+      "duration": 0.0014138221740722656,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "insert_scheduler_like_intent",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.492005"
+    },
+    {
+      "name": "start_cycle_http",
+      "status": "passed",
+      "duration": 0.05633044242858887,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_http",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.548471"
+    },
+    {
+      "name": "set_task_id",
+      "status": "passed",
+      "duration": 5.245208740234375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_task_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.548532"
+    },
+    {
+      "name": "wait_ae_command_accepted",
+      "status": "passed",
+      "duration": 0.4116504192352295,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_ae_command_accepted",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:24.960237"
+    },
+    {
+      "name": "wait_expected_ae_commands_published",
+      "status": "passed",
+      "duration": 2.5638926029205322,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_expected_ae_commands_published",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:27.524221"
+    },
+    {
+      "name": "wait_runtime_irr_state_snapshot",
+      "status": "passed",
+      "duration": 0.01607203483581543,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_runtime_irr_state_snapshot",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:27.540427"
+    },
+    {
+      "name": "wait_task_requeued_clean_fill_check",
+      "status": "passed",
+      "duration": 0.5157308578491211,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_task_requeued_clean_fill_check",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.056421"
+    },
+    {
+      "name": "wait_workflow_tank_filling",
+      "status": "passed",
+      "duration": 0.004547119140625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_workflow_tank_filling",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.061079"
+    },
+    {
+      "name": "count_task_commands",
+      "status": "passed",
+      "duration": 0.0016181468963623047,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "count_task_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.062776"
+    },
+    {
+      "name": "load_expected_ae_command_counts",
+      "status": "passed",
+      "duration": 0.0013470649719238281,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "load_expected_ae_command_counts",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.064242"
+    },
+    {
+      "name": "get_internal_task_status",
+      "status": "passed",
+      "duration": 0.1387021541595459,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_internal_task_status",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203075"
+    },
+    {
+      "name": "reset_zero_level_telemetry_ready",
+      "status": "passed",
+      "duration": 0.00011301040649414062,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reset_zero_level_telemetry_ready",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203211"
+    },
+    {
+      "name": "start_cycle_http_200",
+      "status": "passed",
+      "duration": 6.008148193359375e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_http_200",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203283"
+    },
+    {
+      "name": "start_cycle_response_active",
+      "status": "passed",
+      "duration": 3.838539123535156e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_cycle_response_active",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203328"
+    },
+    {
+      "name": "runtime_task_not_failed",
+      "status": "passed",
+      "duration": 5.5789947509765625e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "runtime_task_not_failed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203389"
+    },
+    {
+      "name": "runtime_task_pending_clean_fill_check",
+      "status": "passed",
+      "duration": 0.00011730194091796875,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "runtime_task_pending_clean_fill_check",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203513"
+    },
+    {
+      "name": "workflow_phase_tank_filling",
+      "status": "passed",
+      "duration": 4.863739013671875e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "workflow_phase_tank_filling",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203568"
+    },
+    {
+      "name": "at_least_two_ae_commands_logged",
+      "status": "passed",
+      "duration": 4.220008850097656e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "at_least_two_ae_commands_logged",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203616"
+    },
+    {
+      "name": "irr_state_probe_logged",
+      "status": "passed",
+      "duration": 3.933906555175781e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "irr_state_probe_logged",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203660"
+    },
+    {
+      "name": "clean_fill_start_logged",
+      "status": "passed",
+      "duration": 3.743171691894531e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "clean_fill_start_logged",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203703"
+    },
+    {
+      "name": "internal_task_pending",
+      "status": "passed",
+      "duration": 5.269050598144531e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "internal_task_pending",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-04-10T15:14:28.203761"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E109_ae3_irrigation_inline_correction_test_node": {
+    "E100_ae3_two_tank_realhw_smoke": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
         "node_id": 1,
+        "scheduler_trace_id": "ae3-realhw-trace-1775823260000",
         "greenhouse_id": 1,
         "irrig_node_id": 1,
-        "ph_node_id": 2,
-        "ec_node_id": 3,
-        "ec_pump_channel_id": 16,
-        "ph_up_channel_id": 13,
-        "ph_down_channel_id": 12,
-        "recipe_id": 30,
-        "recipe_revision_id": 30,
-        "grow_cycle_id": 32,
-        "phase_id": 33,
-        "task_id": 34
+        "ph_node_id": 4,
+        "ec_node_id": 5,
+        "ec_pump_channel_id": 23,
+        "ph_up_channel_id": 20,
+        "ph_down_channel_id": 19,
+        "recipe_id": 35,
+        "recipe_revision_id": 35,
+        "grow_cycle_id": 39,
+        "phase_id": 39,
+        "task_id": 40
       }
     }
   }

@@ -1016,7 +1016,10 @@ actions:
   - step: wait_ec_dose_command_during_irrigation
     type: db.wait
     query: |
-      SELECT id, created_at
+      SELECT
+        id,
+        created_at,
+        COALESCE(details, payload_json)->>'snapshot_event_id' AS snapshot_event_id
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'EC_DOSING'
@@ -1038,14 +1041,14 @@ actions:
       SELECT snap.id, snap.created_at
       FROM zone_events snap
       WHERE snap.zone_id = :zone_id
+        AND snap.id = CAST(:snapshot_event_id AS bigint)
         AND snap.type = 'IRR_STATE_SNAPSHOT'
-        AND COALESCE(snap.details->'snapshot'->>'pump_main', 'false') = 'true'
-        AND snap.created_at <= CAST(:ec_dose_created_at AS timestamptz)
+        AND COALESCE((COALESCE(snap.details, snap.payload_json)->'snapshot'->>'pump_main')::boolean, FALSE) = TRUE
       ORDER BY snap.created_at DESC
       LIMIT 1
     params:
       zone_id: ${zone_id}
-      ec_dose_created_at: ${ec_dose_event_row.0.created_at}
+      snapshot_event_id: ${ec_dose_event_row.0.snapshot_event_id}
     timeout: 60.0
     expected_rows: 1
     save: pump_main_snapshot_row
@@ -1090,12 +1093,12 @@ assertions:
       SELECT COUNT(*)::int AS cnt
       FROM zone_events snap
       WHERE snap.zone_id = :zone_id
+        AND snap.id = CAST(:snapshot_event_id AS bigint)
         AND snap.type = 'IRR_STATE_SNAPSHOT'
-        AND COALESCE(snap.details->'snapshot'->>'pump_main', 'false') = 'true'
-        AND snap.created_at <= CAST(:ec_dose_created_at AS timestamptz)
+        AND COALESCE((COALESCE(snap.details, snap.payload_json)->'snapshot'->>'pump_main')::boolean, FALSE) = TRUE
     params:
       zone_id: ${zone_id}
-      ec_dose_created_at: ${ec_dose_event_row.0.created_at}
+      snapshot_event_id: ${ec_dose_event_row.0.snapshot_event_id}
     expected_rows: 1
     expected:
       - field: cnt

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -165,7 +166,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
         overall_attempt_limit = int(
             correction_cfg.get("prepare_recirculation_max_correction_attempts", per_pid_attempt_limit)
         )
-        return CorrectionState(
+        corr = CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             attempt=0,
             max_attempts=min(overall_attempt_limit, per_pid_attempt_limit),
@@ -190,3 +191,4 @@ class PrepareRecircCheckHandler(BaseStageHandler):
             wait_until=None,
             limit_policy_logged=False,
         )
+        return replace(corr, **self._probe_snapshot_correction_fields(task=task))

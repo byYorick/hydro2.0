@@ -51,7 +51,16 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
             '"scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"',
             self.script,
         )
-        self.assertIn("--set=<automation|workflow|ae3lite|smart_irrigation|calibration|full>", self.script)
+        self.assertIn('INLINE_IRRIGATION_SCENARIOS=(', self.script)
+        self.assertIn(
+            '"scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml"',
+            self.script,
+        )
+        self.assertIn(
+            '"scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"',
+            self.script,
+        )
+        self.assertIn("--set=<automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full>", self.script)
 
     def test_real_hardware_launcher_cleans_stale_blocking_ae3_alerts(self) -> None:
         self.assertIn("Удаляю stale AE3 blocking alerts для тестовой зоны", self.script)
@@ -62,6 +71,15 @@ class TestRealHardwareLauncherContract(unittest.TestCase):
     def test_real_hardware_launcher_suppresses_expected_psql_notice_noise(self) -> None:
         self.assertIn("client_min_messages=warning", self.script)
         self.assertIn("psql -qX", self.script)
+
+    def test_real_hardware_launcher_prints_runtime_audit_summary(self) -> None:
+        self.assertIn("runtime_event_counts_window=", self.script)
+        self.assertIn("runtime_event_schema_version_missing_window=", self.script)
+        self.assertIn("runtime_event_schema_versions_window=", self.script)
+        self.assertIn("irrigation_snapshot_causality_gaps_window=", self.script)
+        self.assertIn("alerts_new_window=", self.script)
+        self.assertIn("alerts_new_codes_window=", self.script)
+        self.assertIn("alerts_open_codes_total=", self.script)
 
 
 if __name__ == "__main__":

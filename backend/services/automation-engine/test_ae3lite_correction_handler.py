@@ -152,6 +152,10 @@ def _make_task(
         "corr_ec_dose_sequence_json": corr.ec_dose_sequence_json,
         "corr_ec_current_seq_index": corr.ec_current_seq_index,
         "corr_ph_amount_ml": corr.ph_amount_ml,
+        "corr_snapshot_event_id": corr.snapshot_event_id,
+        "corr_snapshot_created_at": corr.snapshot_created_at,
+        "corr_snapshot_cmd_id": corr.snapshot_cmd_id,
+        "corr_snapshot_source_event_type": corr.snapshot_source_event_type,
         "corr_limit_policy_logged": corr.limit_policy_logged,
     })
 
@@ -180,6 +184,10 @@ def _base_corr(**kwargs) -> CorrectionState:
         ph_channel=None,
         ph_duration_ms=None,
         wait_until=None,
+        snapshot_event_id=None,
+        snapshot_created_at=None,
+        snapshot_cmd_id=None,
+        snapshot_source_event_type=None,
         limit_policy_logged=False,
     )
     defaults.update(kwargs)
@@ -303,6 +311,7 @@ class _MockRuntimeMonitor:
     async def read_latest_irr_state(self, *, zone_id, max_age_sec, expected_cmd_id=None):
         self.irr_reads += 1
         return {
+            "event_id": 501,
             "has_snapshot": self._irr_has_snapshot,
             "is_stale": self._irr_is_stale,
             "snapshot": dict(self._irr_snapshot) if self._irr_has_snapshot else None,
@@ -792,6 +801,20 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
     handler = _make_handler(gateway=gateway)
+    handler._last_probe_state = {
+        "zone_id": 60,
+        "task_id": 6,
+        "stage": "solution_fill_check",
+        "state": {
+            "has_snapshot": True,
+            "is_stale": False,
+            "snapshot": {"pump_main": True},
+            "sample_age_sec": 0.2,
+            "created_at": NOW,
+            "cmd_id": "probe-cmd-1",
+            "event_id": 777,
+        },
+    }
     try:
         outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
     finally:
@@ -831,6 +854,47 @@ async def test_corr_dose_ec_issues_command_and_goes_wait_ec():
     assert payload["observe_seq"] == 1
     assert payload["attempt"] == 1
     assert payload["ec_attempt"] == 1
+    assert payload["current_stage"] == "solution_fill_check"
+    assert payload["event_schema_version"] == 2
+    assert payload["snapshot_event_id"] == 501
+    assert "snapshot_cmd_id" not in payload
+    assert payload["caused_by_event_id"] == 501
+
+
+async def test_corr_dose_ec_uses_persisted_snapshot_context_when_probe_belongs_to_other_handler():
+    corr = _base_corr(
+        corr_step="corr_dose_ec",
+        needs_ec=True,
+        ec_node_uid="ec-node",
+        ec_channel="ec_pump",
+        ec_amount_ml=2.0,
+        ec_duration_ms=2000,
+        snapshot_event_id=888,
+        snapshot_created_at=NOW,
+        snapshot_cmd_id="probe-cmd-persisted",
+        snapshot_source_event_type="IRR_STATE_SNAPSHOT",
+    )
+    task = _make_task(corr=corr, current_stage="irrigation_check", workflow_phase="irrigating")
+    gateway = _MockGateway()
+    create_event = AsyncMock(return_value=None)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("ae3lite.application.handlers.correction.create_zone_event", create_event)
+    handler = _make_handler(gateway=gateway, pid_repo=_MockPidStateRepository())
+
+    try:
+        outcome = await handler.run(task=task, plan=_MockPlan(), stage_def=None, now=NOW)
+    finally:
+        monkeypatch.undo()
+
+    assert outcome.kind == "enter_correction"
+    dose_call = create_event.await_args_list[-1]
+    assert dose_call.args[1] == "EC_DOSING"
+    payload = dose_call.args[2]
+    assert payload["event_schema_version"] == 2
+    assert payload["snapshot_event_id"] == 888
+    assert payload["snapshot_cmd_id"] == "probe-cmd-persisted"
+    assert payload["snapshot_source_event_type"] == "IRR_STATE_SNAPSHOT"
+    assert payload["caused_by_event_id"] == 888
 
 
 async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
@@ -888,6 +952,7 @@ async def test_corr_dose_ph_issues_volume_command_and_goes_wait_ph():
     assert payload["observe_seq"] == 1
     assert payload["attempt"] == 1
     assert payload["ph_attempt"] == 1
+    assert payload["event_schema_version"] == 2
 
 
 async def test_corr_wait_ec_observes_response_and_returns_to_check():

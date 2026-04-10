@@ -524,6 +524,7 @@ class PgZoneRuntimeMonitor:
             row = await conn.fetchrow(
                 """
                 SELECT
+                    id,
                     payload_json,
                     details,
                     created_at,
@@ -551,6 +552,7 @@ class PgZoneRuntimeMonitor:
         age_sec = self._age_sec(row.get("created_at"))
         is_stale = bool((age_sec or 0.0) > max(0, int(max_age_sec)))
         return {
+            "event_id": row.get("id"),
             "has_snapshot": isinstance(snapshot, Mapping),
             "is_stale": is_stale,
             "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else None,

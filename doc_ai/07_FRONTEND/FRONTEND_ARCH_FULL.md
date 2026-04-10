@@ -305,6 +305,12 @@ Tabs:
 
 Фильтры по типу, дате, пользователю.
 
+Для AE3/runtime observability лог зоны не должен быть только плоской лентой:
+- связанные события группируются по `correction_window_id`, затем по `task_id`;
+- если window/task отсутствуют, UI использует fallback на `snapshot_event_id` или `caused_by_event_id`;
+- группа должна визуально показывать causal-цепочку решения и исполнения:
+  `decision snapshot -> correction started -> dosing -> snapshot linkage`.
+
 ---
 
 # 3.4. Devices (Nodes)

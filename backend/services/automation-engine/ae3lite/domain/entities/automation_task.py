@@ -132,6 +132,22 @@ class AutomationTask:
                 ),
                 ec_current_seq_index=int(row.get("corr_ec_current_seq_index") or 0),
                 ph_amount_ml=float(row["corr_ph_amount_ml"]) if row.get("corr_ph_amount_ml") is not None else None,
+                snapshot_event_id=(
+                    int(row["corr_snapshot_event_id"])
+                    if row.get("corr_snapshot_event_id") is not None
+                    else None
+                ),
+                snapshot_created_at=_naive(row.get("corr_snapshot_created_at")),
+                snapshot_cmd_id=(
+                    str(row["corr_snapshot_cmd_id"])
+                    if row.get("corr_snapshot_cmd_id") is not None
+                    else None
+                ),
+                snapshot_source_event_type=(
+                    str(row["corr_snapshot_source_event_type"])
+                    if row.get("corr_snapshot_source_event_type") is not None
+                    else None
+                ),
                 limit_policy_logged=bool(row.get("corr_limit_policy_logged")),
             )
 

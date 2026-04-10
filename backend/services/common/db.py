@@ -23,6 +23,10 @@ _LEVEL_SWITCH_CHANGED_DEDUP_WINDOW_SEC = max(
     1,
     int(os.getenv("ZONE_EVENT_LEVEL_SWITCH_DEDUP_WINDOW_SEC", "2")),
 )
+_IRRIGATION_DECISION_SNAPSHOT_LOCKED_DEDUP_WINDOW_SEC = max(
+    1,
+    int(os.getenv("ZONE_EVENT_IRRIGATION_SNAPSHOT_LOCKED_DEDUP_WINDOW_SEC", "30")),
+)
 _STALE_SCHEMA_ERROR_FRAGMENTS = (
     "could not open relation with oid",
     "cache lookup failed for relation",
@@ -389,6 +393,12 @@ async def _should_skip_duplicate_zone_event(
 ) -> bool:
     if await _should_skip_duplicate_ae_task_started(zone_id=zone_id, event_type=event_type, details=details):
         return True
+    if await _should_skip_duplicate_irrigation_decision_snapshot_locked(
+        zone_id=zone_id,
+        event_type=event_type,
+        details=details,
+    ):
+        return True
     return await _should_skip_duplicate_level_switch_changed(
         zone_id=zone_id,
         event_type=event_type,
@@ -486,6 +496,68 @@ async def _should_skip_duplicate_level_switch_changed(
     if previous_channel != channel or previous_state is None:
         return False
     return previous_state == state and previous_initial == initial
+
+
+async def _should_skip_duplicate_irrigation_decision_snapshot_locked(
+    *,
+    zone_id: int,
+    event_type: str,
+    details: Optional[Mapping[str, Any]],
+) -> bool:
+    if str(event_type or "").strip().upper() != "IRRIGATION_DECISION_SNAPSHOT_LOCKED":
+        return False
+    if not isinstance(details, Mapping):
+        return False
+
+    task_id = details.get("task_id")
+    if task_id is None:
+        return False
+    try:
+        task_id_value = int(task_id)
+    except (TypeError, ValueError):
+        return False
+
+    current_stage = str(details.get("current_stage") or details.get("stage") or "").strip()
+    workflow_phase = str(details.get("workflow_phase") or "").strip()
+    strategy = str(details.get("strategy") or "").strip().lower()
+    bundle_revision = str(details.get("bundle_revision") or "").strip()
+    config = details.get("config") if isinstance(details.get("config"), Mapping) else None
+
+    rows = await fetch(
+        """
+        SELECT COALESCE(details, payload_json) AS payload
+        FROM zone_events
+        WHERE zone_id = $1
+          AND type = 'IRRIGATION_DECISION_SNAPSHOT_LOCKED'
+          AND COALESCE(details->>'task_id', payload_json->>'task_id') = $2
+          AND created_at >= NOW() - ($3::int * INTERVAL '1 second')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        zone_id,
+        str(task_id_value),
+        _IRRIGATION_DECISION_SNAPSHOT_LOCKED_DEDUP_WINDOW_SEC,
+    )
+    if not rows:
+        return False
+
+    payload = rows[0].get("payload")
+    if not isinstance(payload, Mapping):
+        return False
+
+    previous_stage = str(payload.get("current_stage") or payload.get("stage") or "").strip()
+    previous_workflow_phase = str(payload.get("workflow_phase") or "").strip()
+    previous_strategy = str(payload.get("strategy") or "").strip().lower()
+    previous_bundle_revision = str(payload.get("bundle_revision") or "").strip()
+    previous_config = payload.get("config") if isinstance(payload.get("config"), Mapping) else None
+
+    return (
+        previous_stage == current_stage
+        and previous_workflow_phase == workflow_phase
+        and previous_strategy == strategy
+        and previous_bundle_revision == bundle_revision
+        and previous_config == config
+    )
 
 
 async def create_ai_log(zone_id: Optional[int], action: str, details: Optional[Dict[str, Any]] = None):

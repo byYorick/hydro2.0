@@ -426,6 +426,7 @@ intent metadata и workflow state. Произвольный JSON в `payload` н
 3. не более одной активной task на `zone_id`
 4. terminal task не может вернуться в active status
 5. runtime state irrigation decision/replay хранится в explicit typed columns, а не в произвольном JSON `payload`
+6. correction runtime сохраняет causal snapshot context в explicit columns `corr_snapshot_*`, чтобы `EC_DOSING` / `PH_CORRECTED` могли ссылаться на конкретный `IRR_STATE_SNAPSHOT` после requeue/restart
 
 ### 6.2 `ae_commands`
 
@@ -598,6 +599,10 @@ Prometheus runtime минимум для lifecycle intents:
 3. fail-safe stop path обязан писать service-log `AE3 fail-safe transition selected` с `zone_id/task_id/topology/stage/reason/source/next_stage`
 4. reconcile после `EMERGENCY_STOP_ACTIVATED` обязан писать service-log с outcome `restored` или `failed`
 5. wake-up по node runtime event обязан инкрементировать `ae3_node_runtime_event_kick_total` и писать service-log `AE3 worker.kick by node runtime event`
+6. `IRRIGATION_CORRECTION_STARTED`, `CORRECTION_DECISION_MADE`, `EC_DOSING`, `PH_CORRECTED` обязаны нести `current_stage`; при наличии probe-context обязаны также нести `snapshot_event_id` и `caused_by_event_id`
+7. Для irrigation inline correction `snapshot_event_id` обязан ссылаться на `zone_events.id` события `IRR_STATE_SNAPSHOT`, по которому подтверждён активный flow path (`pump_main=true`)
+
+Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Frontend >=3.0
 
 ---
 

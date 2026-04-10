@@ -18,32 +18,48 @@
         v-else
         class="h-[520px]"
       >
-        <VirtualList
-          v-if="useVirtual"
-          :items="filteredEvents"
-          :item-size="64"
-          class="h-full"
-          key-field="id"
-        >
-          <template #default="{ item }">
-            <EventRow
-              :item="item"
-              :expanded="isExpanded(item.id)"
-              @toggle="toggleExpanded(item.id)"
-            />
-          </template>
-        </VirtualList>
-        <div
-          v-else
-          class="max-h-[520px] space-y-0 overflow-y-auto divide-y divide-[color:var(--border-muted)]"
-        >
-          <EventRow
-            v-for="item in filteredEvents"
-            :key="item.id"
-            :item="item"
-            :expanded="isExpanded(item.id)"
-            @toggle="toggleExpanded(item.id)"
-          />
+        <div class="max-h-[520px] space-y-4 overflow-y-auto pr-1">
+          <section
+            v-for="group in groupedEvents"
+            :key="group.id"
+            class="rounded-2xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/40"
+            :class="group.isCorrelated ? 'shadow-[0_0_0_1px_rgba(34,211,238,0.06)]' : ''"
+          >
+            <header class="flex flex-wrap items-start justify-between gap-3 border-b border-[color:var(--border-muted)] px-4 py-3">
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  {{ group.title }}
+                </div>
+                <div
+                  v-if="group.subtitle"
+                  class="mt-1 text-xs text-[color:var(--text-dim)]"
+                >
+                  {{ group.subtitle }}
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-dim)]">
+                <span
+                  v-if="group.badge"
+                  class="rounded-full border border-[color:var(--border-muted)] px-2 py-1"
+                >
+                  {{ group.badge }}
+                </span>
+                <span>
+                  {{ formatGroupTimestamp(group.latestOccurredAt) }}
+                </span>
+              </div>
+            </header>
+
+            <div class="divide-y divide-[color:var(--border-muted)]">
+              <EventRow
+                v-for="item in group.events"
+                :key="item.id"
+                :item="item"
+                :expanded="isExpanded(item.id)"
+                @toggle="toggleExpanded(item.id)"
+              />
+            </div>
+          </section>
         </div>
       </div>
     </section>
@@ -52,10 +68,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import VirtualList from '@/Components/VirtualList.vue'
 import EventFilterBar from '@/Components/Events/EventFilterBar.vue'
 import EventRow from '@/Components/Events/EventRow.vue'
 import { classifyEventKind } from '@/utils/i18n'
+import { groupZoneEvents } from '@/utils/eventGroups'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
 interface Props {
@@ -86,7 +102,7 @@ const filteredEvents = computed(() => {
   })
 })
 
-const useVirtual = computed(() => filteredEvents.value.length > 200)
+const groupedEvents = computed(() => groupZoneEvents(filteredEvents.value))
 
 function isExpanded(id: number): boolean {
   return expandedIds.value.has(id)
@@ -118,5 +134,13 @@ function exportEvents(): void {
   link.download = `${fileLabel}-events.csv`
   link.click()
   URL.revokeObjectURL(url)
+}
+
+function formatGroupTimestamp(value: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? '—'
+    : date.toLocaleString('ru-RU')
 }
 </script>

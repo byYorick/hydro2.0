@@ -6,6 +6,29 @@ setup('authenticate', async ({ page }) => {
   const email = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
   const password = process.env.E2E_AUTH_PASSWORD || 'password';
   const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
+  const readyIndicators = [
+    page.locator('[data-testid="dashboard-zones-count"]'),
+    page.locator('[data-testid^="zone-card-"]').first(),
+    page.locator('nav a[href="/zones"]'),
+    page.locator('nav a[href="/alerts"]'),
+  ];
+
+  const isAuthenticated = async (): Promise<boolean> => {
+    for (const locator of readyIndicators) {
+      if (await locator.isVisible().catch(() => false)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  await page.goto(`${baseURL}/testing/login?email=${encodeURIComponent(email)}`, { waitUntil: 'load' });
+  await page.waitForSelector('#app[data-page]', { state: 'attached', timeout: 30000 });
+
+  if (!page.url().includes('/login') || await isAuthenticated()) {
+    await page.context().storageState({ path: authFile });
+    return;
+  }
 
   // Переходим на страницу логина
   await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' });
@@ -30,8 +53,6 @@ setup('authenticate', async ({ page }) => {
   await page.click('[data-testid="login-submit"]');
   
   // Ждем появления признаков авторизации (URL может остаться /login из-за preserveUrl)
-  const dashboardIndicator = page.locator('[data-testid="dashboard-zones-count"]')
-    .or(page.locator('nav a[href="/zones"]'));
   let authenticated = false;
 
   for (let i = 0; i < 20; i++) {
@@ -43,8 +64,7 @@ setup('authenticate', async ({ page }) => {
       throw new Error(`Login failed: ${errorText || 'Unknown error'}`);
     }
 
-    const dashboardVisible = await dashboardIndicator.first().isVisible().catch(() => false);
-    if (dashboardVisible) {
+    if (await isAuthenticated()) {
       authenticated = true;
       break;
     }
@@ -61,8 +81,13 @@ setup('authenticate', async ({ page }) => {
   // Ждем загрузки dashboard
   await page.waitForLoadState('networkidle', { timeout: 20000 });
   
-  // Проверяем, что мы авторизованы - ищем заголовок или любой элемент dashboard
-  await page.waitForSelector('h1, [data-testid="dashboard-zones-count"]', { timeout: 15000 });
+  await expect.poll(
+    isAuthenticated,
+    {
+      timeout: 20000,
+      message: 'Dashboard did not expose any stable authenticated indicator after login',
+    },
+  ).toBe(true);
 
   // Сохраняем состояние авторизации
   await page.context().storageState({ path: authFile });

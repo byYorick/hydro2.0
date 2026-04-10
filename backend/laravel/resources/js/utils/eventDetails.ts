@@ -98,6 +98,9 @@ function appendCorrectionTrace(rows: DetailRow[], payload: Payload): void {
   const stage = readString(payload, 'stage')
   const observeSeq = readNumber(payload, 'observe_seq')
   const decisionReason = readString(payload, 'decision_reason')
+  const snapshotEventId = readNumber(payload, 'snapshot_event_id')
+  const causedByEventId = readNumber(payload, 'caused_by_event_id')
+  const schemaVersion = readNumber(payload, 'event_schema_version')
 
   if (windowId) rows.push(row('Окно коррекции', windowId))
   if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
@@ -105,6 +108,9 @@ function appendCorrectionTrace(rows: DetailRow[], payload: Payload): void {
   if (stage) rows.push(row('Стадия', stage))
   if (observeSeq !== null) rows.push(row('Наблюдение', `#${observeSeq}`))
   if (decisionReason) rows.push(row('Причина выбора', decisionReason))
+  if (snapshotEventId !== null) rows.push(row('Snapshot event ID', String(snapshotEventId)))
+  if (causedByEventId !== null) rows.push(row('Причинное событие ID', String(causedByEventId)))
+  if (schemaVersion !== null) rows.push(row('Schema version', String(schemaVersion)))
 }
 
 function appendIrrigationDecisionConfigRows(rows: DetailRow[], payload: Payload): void {
@@ -156,8 +162,16 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
   if (event.kind === 'IRR_STATE_SNAPSHOT') {
     const nodeUid = readString(payload, 'node_uid')
     const cmdId = readString(payload, 'cmd_id')
+    const taskId = readNumber(payload, 'task_id')
+    const workflowPhase = readString(payload, 'workflow_phase')
+    const stage = readString(payload, 'stage')
+    const schemaVersion = readNumber(payload, 'event_schema_version')
     if (nodeUid) rows.push(row('Нода', nodeUid))
     if (cmdId) rows.push(row('Команда', cmdId))
+    if (taskId !== null) rows.push(row('Задача ID', String(taskId)))
+    if (workflowPhase) rows.push(row('Фаза', workflowPhase))
+    if (stage) rows.push(row('Стадия', stage))
+    if (schemaVersion !== null) rows.push(row('Schema version', String(schemaVersion)))
     buildIrrSnapshot(payload).forEach(r => rows.push(row(r.label, r.value)))
   }
   else if (event.kind === 'COMMAND_TIMEOUT') {
@@ -257,6 +271,15 @@ export function buildEventDetails(event: ZoneEvent): DetailRow[] {
     rows.push(row('Потребность EC', needsEc ? 'да' : 'нет'))
     rows.push(row('Потребность pH+', needsPhUp ? 'да' : 'нет'))
     rows.push(row('Потребность pH-', needsPhDown ? 'да' : 'нет'))
+  }
+  else if (event.kind === 'IRRIGATION_CORRECTION_STARTED') {
+    appendCorrectionTrace(rows, payload)
+    const selectedAction = readString(payload, 'selected_action')
+    const channel = readString(payload, 'channel')
+    const nodeUid = readString(payload, 'node_uid')
+    if (selectedAction) rows.push(row('Выбранный контур', selectedAction))
+    if (channel) rows.push(row('Канал', channel))
+    if (nodeUid) rows.push(row('Нода', nodeUid))
   }
   else if (event.kind === 'CORRECTION_OBSERVATION_EVALUATED') {
     const pidType = readString(payload, 'pid_type')

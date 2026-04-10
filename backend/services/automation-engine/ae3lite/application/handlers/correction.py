@@ -30,6 +30,7 @@ from ae3lite.application.level_monitor import (
     coarse_solution_tank_level_percent,
     solution_tank_has_solution,
 )
+from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
@@ -899,12 +900,12 @@ class CorrectionHandler(BaseStageHandler):
                 await create_zone_event(
                     int(task.zone_id),
                     "IRRIGATION_EC_MULTI_DOSE",
-                    {
+                    with_runtime_event_contract({
                         "task_id": int(getattr(task, "id", 0) or 0),
                         "stage": "irrigation_check",
                         "topology": str(getattr(task, "topology", "") or ""),
                         "dose_sequence": seq,
-                    },
+                    }),
                 )
             except Exception:
                 _logger.debug("Не удалось создать zone event IRRIGATION_EC_MULTI_DOSE", exc_info=True)
@@ -2189,7 +2190,7 @@ class CorrectionHandler(BaseStageHandler):
         corr: CorrectionState | None = None,
         payload: Mapping[str, Any] | None = None,
     ) -> None:
-        event_payload: dict[str, Any] = dict(payload or {})
+        event_payload: dict[str, Any] = with_runtime_event_contract(payload)
         if task is not None:
             task_id = getattr(task, "id", None)
             stage = str(getattr(task, "current_stage", "") or "").strip()
@@ -2201,6 +2202,7 @@ class CorrectionHandler(BaseStageHandler):
                 event_payload.setdefault("task_id", int(task_id))
             if stage:
                 event_payload.setdefault("stage", stage)
+                event_payload.setdefault("current_stage", stage)
             if workflow_phase:
                 event_payload.setdefault("workflow_phase", workflow_phase)
             correction_window_id = self._correction_window_id(task=task)
@@ -2210,6 +2212,13 @@ class CorrectionHandler(BaseStageHandler):
                 event_payload.setdefault("stage_entered_at", stage_entered_at)
             if topology:
                 event_payload.setdefault("topology", topology)
+            snapshot_ctx = self._event_snapshot_context(task=task, corr=corr)
+            if isinstance(snapshot_ctx, Mapping):
+                snapshot_event_id = snapshot_ctx.get("snapshot_event_id")
+                if snapshot_event_id is not None:
+                    event_payload.setdefault("caused_by_event_id", snapshot_event_id)
+                for key, value in snapshot_ctx.items():
+                    event_payload.setdefault(key, value)
         if corr is not None:
             if corr.corr_step:
                 event_payload.setdefault("corr_step", corr.corr_step)
@@ -2222,6 +2231,31 @@ class CorrectionHandler(BaseStageHandler):
             await create_zone_event(zone_id, event_type, event_payload)
         except Exception:
             _logger.warning("Не удалось записать zone event %s", event_type, exc_info=True)
+
+    def _event_snapshot_context(
+        self,
+        *,
+        task: Any,
+        corr: CorrectionState | None,
+    ) -> Mapping[str, Any] | None:
+        snapshot_ctx = self._probe_snapshot_context(task=task)
+        if isinstance(snapshot_ctx, Mapping) and snapshot_ctx:
+            return snapshot_ctx
+        if corr is None:
+            return None
+
+        created_at = corr.snapshot_created_at.isoformat() if isinstance(corr.snapshot_created_at, datetime) else None
+        cmd_id = str(corr.snapshot_cmd_id or "").strip() or None
+        source_event_type = str(corr.snapshot_source_event_type or "").strip() or None
+        event_id = corr.snapshot_event_id if isinstance(corr.snapshot_event_id, int) else None
+        context = {
+            "snapshot_event_id": event_id if event_id and event_id > 0 else None,
+            "snapshot_created_at": created_at,
+            "snapshot_cmd_id": cmd_id,
+            "snapshot_source_event_type": source_event_type,
+        }
+        filtered = {key: value for key, value in context.items() if value is not None}
+        return filtered or None
 
     def _correction_window_id(self, *, task: Any | None) -> str | None:
         if task is None:
@@ -2362,7 +2396,7 @@ class CorrectionHandler(BaseStageHandler):
             else:
                 return
 
-            payload = {k: v for k, v in detail.items() if v is not None}
+            payload = with_runtime_event_contract({k: v for k, v in detail.items() if v is not None})
             await create_zone_event(zone_id, "PID_OUTPUT", payload)
         except Exception:
             _logger.debug("Не удалось записать PID_OUTPUT zone event", exc_info=True)

@@ -170,6 +170,10 @@ SMART_IRRIGATION_SCENARIOS=(
   "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml"
   "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
 )
+INLINE_IRRIGATION_SCENARIOS=(
+  "scenarios/ae3lite/E108_ae3_irrigation_inline_correction_contract.yaml"
+  "scenarios/ae3lite/E109_ae3_irrigation_inline_correction_test_node.yaml"
+)
 CALIBRATION_SCENARIOS=(
   "scenarios/calibration/E110_sensor_calibration_realhw_create_cancel.yaml"
   "scenarios/calibration/E111_sensor_calibration_realhw_unsupported_command.yaml"
@@ -178,10 +182,10 @@ CALIBRATION_SCENARIOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|smart_irrigation|calibration|full] [--list]
+  tests/e2e/run_automation_engine_real_hardware.sh [--set automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full] [--list]
 
 Env:
-  SCENARIO_SET=automation|workflow|ae3lite|smart_irrigation|calibration|full   # default: full
+  SCENARIO_SET=automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full   # default: full
   TEST_NODE_UID/TEST_WORKFLOW_NODE_UID/TEST_PH_NODE_UID/TEST_EC_NODE_UID/TEST_SOIL_NODE_UID=auto|<uid>
   REAL_HW_REBOOT_CMD=restart|reboot       # default: restart
   E2E_NODE_UID_REGEX=<regex>              # default: ^nd-test-
@@ -242,6 +246,9 @@ resolve_scenarios() {
     smart_irrigation)
       SCENARIOS=("${SMART_IRRIGATION_SCENARIOS[@]}")
       ;;
+    inline_irrigation)
+      SCENARIOS=("${INLINE_IRRIGATION_SCENARIOS[@]}")
+      ;;
     calibration)
       SCENARIOS=("${CALIBRATION_SCENARIOS[@]}")
       ;;
@@ -281,7 +288,7 @@ for arg in "$@"; do
       SCENARIO_SET="${arg#--set=}"
       ;;
     --set)
-      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|smart_irrigation|calibration|full>"
+      echo "❌ Используйте формат --set=<automation|workflow|ae3lite|smart_irrigation|inline_irrigation|calibration|full>"
       exit 1
       ;;
     --list)
@@ -404,6 +411,94 @@ scenario_db_metrics_since_epoch() {
       WHERE zone_id = ${zid}
         AND type = 'COMMAND_FAILED'
         AND created_at >= to_timestamp(${start_epoch});
+
+      SELECT 'runtime_event_counts_window=' || COALESCE(
+        (
+          SELECT string_agg(type || ':' || cnt, ',' ORDER BY type)
+          FROM (
+            SELECT type, COUNT(*)::int AS cnt
+            FROM zone_events
+            WHERE zone_id = ${zid}
+              AND created_at >= to_timestamp(${start_epoch})
+              AND type IN (
+                'IRRIGATION_DECISION_SNAPSHOT_LOCKED',
+                'IRRIGATION_CORRECTION_STARTED',
+                'CORRECTION_DECISION_MADE',
+                'EC_DOSING',
+                'PH_CORRECTED',
+                'IRR_STATE_SNAPSHOT'
+              )
+            GROUP BY type
+          ) AS runtime_counts
+        ),
+        'none'
+      );
+
+      SELECT 'runtime_event_schema_version_missing_window=' || COUNT(*)
+      FROM zone_events
+      WHERE zone_id = ${zid}
+        AND created_at >= to_timestamp(${start_epoch})
+        AND type IN (
+          'IRRIGATION_DECISION_SNAPSHOT_LOCKED',
+          'IRRIGATION_CORRECTION_STARTED',
+          'CORRECTION_DECISION_MADE',
+          'EC_DOSING',
+          'PH_CORRECTED'
+        )
+        AND NULLIF(COALESCE(COALESCE(details, payload_json)->>'event_schema_version', ''), '') IS NULL;
+
+      SELECT 'runtime_event_schema_versions_window=' || COALESCE(
+        (
+          SELECT string_agg(version, ',' ORDER BY version)
+          FROM (
+            SELECT DISTINCT NULLIF(COALESCE(COALESCE(details, payload_json)->>'event_schema_version', ''), '') AS version
+            FROM zone_events
+            WHERE zone_id = ${zid}
+              AND created_at >= to_timestamp(${start_epoch})
+              AND type IN (
+                'IRRIGATION_DECISION_SNAPSHOT_LOCKED',
+                'IRRIGATION_CORRECTION_STARTED',
+                'CORRECTION_DECISION_MADE',
+                'EC_DOSING',
+                'PH_CORRECTED'
+              )
+          ) AS versions
+          WHERE version IS NOT NULL
+        ),
+        'none'
+      );
+
+      SELECT 'irrigation_snapshot_causality_gaps_window=' || COUNT(*)
+      FROM zone_events
+      WHERE zone_id = ${zid}
+        AND created_at >= to_timestamp(${start_epoch})
+        AND type IN (
+          'IRRIGATION_CORRECTION_STARTED',
+          'CORRECTION_DECISION_MADE',
+          'EC_DOSING',
+          'PH_CORRECTED'
+        )
+        AND COALESCE(COALESCE(details, payload_json)->>'workflow_phase', '') IN ('irrigating', 'irrig_recirc')
+        AND NULLIF(COALESCE(COALESCE(details, payload_json)->>'snapshot_event_id', ''), '') IS NULL;
+
+      SELECT 'alerts_new_window=' || COUNT(*)
+      FROM alerts
+      WHERE zone_id = ${zid}
+        AND created_at >= to_timestamp(${start_epoch});
+
+      SELECT 'alerts_new_codes_window=' || COALESCE(
+        (
+          SELECT string_agg(code || ':' || cnt, ',' ORDER BY code)
+          FROM (
+            SELECT COALESCE(code, 'unknown') AS code, COUNT(*)::int AS cnt
+            FROM alerts
+            WHERE zone_id = ${zid}
+              AND created_at >= to_timestamp(${start_epoch})
+            GROUP BY COALESCE(code, 'unknown')
+          ) AS alert_codes
+        ),
+        'none'
+      );
     " || true
   done
 
@@ -419,6 +514,21 @@ scenario_db_metrics_since_epoch() {
     WHERE (UPPER(COALESCE(status, '')) = 'ACTIVE'
        OR LOWER(COALESCE(status, '')) = 'open')
       AND LOWER(COALESCE(severity, '')) = 'info';
+
+    SELECT 'alerts_open_codes_total=' || COALESCE(
+      (
+        SELECT string_agg(code || ':' || cnt, ',' ORDER BY code)
+        FROM (
+          SELECT COALESCE(code, 'unknown') AS code, COUNT(*)::int AS cnt
+          FROM alerts
+          WHERE (UPPER(COALESCE(status, '')) = 'ACTIVE'
+             OR LOWER(COALESCE(status, '')) = 'open')
+            AND LOWER(COALESCE(severity, '')) <> 'info'
+          GROUP BY COALESCE(code, 'unknown')
+        ) AS open_codes
+      ),
+      'none'
+    );
   " || true
 }
 

@@ -145,3 +145,58 @@ async def test_create_zone_event_skips_level_switch_duplicate_even_with_intermed
     fetch_args = mock_fetch.await_args.args
     assert fetch_args[3] == "level_solution_min"
     mock_execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_zone_event_skips_duplicate_irrigation_decision_snapshot_locked():
+    current = {
+        "task_id": 15,
+        "stage": "decision_gate",
+        "current_stage": "decision_gate",
+        "workflow_phase": "ready",
+        "strategy": "smart_soil_v1",
+        "bundle_revision": "bundle-live-123",
+        "config": {"lookback_sec": 1800},
+    }
+
+    with patch(
+        "common.db.fetch",
+        new=AsyncMock(return_value=[{"payload": dict(current)}]),
+    ) as mock_fetch, patch("common.db.execute", new=AsyncMock()) as mock_execute:
+        inserted = await create_zone_event(7, "IRRIGATION_DECISION_SNAPSHOT_LOCKED", current)
+
+    assert inserted is False
+    mock_fetch.assert_awaited_once()
+    mock_execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_zone_event_allows_irrigation_decision_snapshot_locked_when_payload_changes():
+    previous = {
+        "task_id": 15,
+        "stage": "decision_gate",
+        "current_stage": "decision_gate",
+        "workflow_phase": "ready",
+        "strategy": "smart_soil_v1",
+        "bundle_revision": "bundle-live-123",
+        "config": {"lookback_sec": 1800},
+    }
+    current = {
+        "task_id": 15,
+        "stage": "decision_gate",
+        "current_stage": "decision_gate",
+        "workflow_phase": "ready",
+        "strategy": "smart_soil_v1",
+        "bundle_revision": "bundle-live-124",
+        "config": {"lookback_sec": 1800},
+    }
+
+    with patch(
+        "common.db.fetch",
+        new=AsyncMock(return_value=[{"payload": previous}]),
+    ) as mock_fetch, patch("common.db.execute", new=AsyncMock()) as mock_execute:
+        inserted = await create_zone_event(7, "IRRIGATION_DECISION_SNAPSHOT_LOCKED", current)
+
+    assert inserted is True
+    mock_fetch.assert_awaited_once()
+    mock_execute.assert_awaited_once()

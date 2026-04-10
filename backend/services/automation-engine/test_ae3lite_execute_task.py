@@ -672,6 +672,7 @@ async def test_execute_task_first_run_emits_start_readiness_event_and_service_lo
 
     assert result.status == "completed"
     assert [event_type for _, event_type, _ in recorded_events] == ["AE_TASK_STARTED"]
+    assert recorded_events[0][2]["event_schema_version"] == 2
 
 
 @pytest.mark.asyncio
@@ -716,6 +717,7 @@ async def test_execute_task_irrigation_first_run_locks_decision_snapshot_and_emi
     assert snapshot_payload["grow_cycle_id"] == 19
     assert snapshot_payload["strategy"] == "smart_soil_v1"
     assert snapshot_payload["bundle_revision"] == "bundle-live-1234567890"
+    assert snapshot_payload["event_schema_version"] == 2
     assert snapshot_payload["config"] == {
         "lookback_sec": 1800,
         "min_samples": 3,
@@ -764,6 +766,7 @@ async def test_execute_task_irrigation_first_run_emits_lock_event_for_prelocked_
     assert result.irrigation_decision_strategy == "smart_soil_v1"
     assert task_repo.update_irrigation_runtime_calls == []
     snapshot_payload = next(payload for _, event_type, payload in recorded_events if event_type == "IRRIGATION_DECISION_SNAPSHOT_LOCKED")
+    assert snapshot_payload["event_schema_version"] == 2
     assert snapshot_payload["strategy"] == "smart_soil_v1"
     assert snapshot_payload["bundle_revision"] == "bundle-locked-123456"
     assert snapshot_payload["config"] == {

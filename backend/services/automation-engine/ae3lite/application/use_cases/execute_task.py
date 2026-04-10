@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import Any, Mapping
 
 from ae3lite.application.use_cases.finalize_task import FinalizeTaskUseCase
+from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from common.db import create_zone_event
 from common.infra_alerts import send_infra_alert
 from common.service_logs import send_service_log
@@ -474,7 +475,7 @@ class ExecuteTaskUseCase:
     ) -> None:
         zone_id = int(getattr(task, "zone_id", 0) or 0)
         try:
-            await create_zone_event(zone_id, event_type, dict(details))
+            await create_zone_event(zone_id, event_type, with_runtime_event_contract(details))
         except Exception:
             logger.warning(
                 "AE3 не смог записать observability event retry snapshot zone_id=%s task_id=%s event_type=%s",
@@ -516,7 +517,7 @@ class ExecuteTaskUseCase:
             await create_zone_event(
                 int(getattr(task, "zone_id", 0) or 0),
                 "AE_TASK_STARTED",
-                details,
+                with_runtime_event_contract(details),
             )
         except Exception:
             logger.warning(
@@ -607,6 +608,7 @@ class ExecuteTaskUseCase:
             "task_id": int(getattr(task, "id", 0) or 0),
             "zone_id": int(getattr(task, "zone_id", 0) or 0),
             "stage": str(getattr(task, "current_stage", "") or ""),
+            "current_stage": str(getattr(task, "current_stage", "") or ""),
             "workflow_phase": str(getattr(task, "workflow_phase", "") or ""),
             "strategy": strategy,
             "bundle_revision": bundle_revision,
@@ -620,7 +622,7 @@ class ExecuteTaskUseCase:
             await create_zone_event(
                 int(getattr(task, "zone_id", 0) or 0),
                 "IRRIGATION_DECISION_SNAPSHOT_LOCKED",
-                details,
+                with_runtime_event_contract(details),
             )
         except Exception:
             logger.warning(

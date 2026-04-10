@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
+from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.domain.entities.workflow_state import CorrectionState
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.infrastructure.metrics import (
@@ -191,16 +193,26 @@ class IrrigationCheckHandler(BaseStageHandler):
                     wait_until=None,
                     limit_policy_logged=False,
                 )
+                corr = replace(corr, **self._probe_snapshot_correction_fields(task=task))
                 IRRIGATION_CORRECTION_ENTERED.labels(topology=topology).inc()
                 try:
+                    details = {
+                        "task_id": int(getattr(task, "id", 0) or 0),
+                        "stage": "irrigation_check",
+                        "current_stage": "irrigation_check",
+                        "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
+                        "topology": topology,
+                    }
+                    snapshot_ctx = self._probe_snapshot_context(task=task)
+                    if isinstance(snapshot_ctx, Mapping):
+                        snapshot_event_id = snapshot_ctx.get("snapshot_event_id")
+                        if snapshot_event_id is not None:
+                            details.setdefault("caused_by_event_id", snapshot_event_id)
+                        details.update(snapshot_ctx)
                     await create_zone_event(
                         int(task.zone_id),
                         "IRRIGATION_CORRECTION_STARTED",
-                        {
-                            "task_id": int(getattr(task, "id", 0) or 0),
-                            "stage": "irrigation_check",
-                            "topology": topology,
-                        },
+                        with_runtime_event_contract(details),
                     )
                 except Exception:
                     _logger.warning(

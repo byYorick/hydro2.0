@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -82,4 +83,5 @@ class IrrigationRecoveryCheckHandler(BaseStageHandler):
             wait_until=None,
             limit_policy_logged=False,
         )
+        corr = replace(corr, **self._probe_snapshot_correction_fields(task=task))
         return StageOutcome(kind="enter_correction", correction=corr)

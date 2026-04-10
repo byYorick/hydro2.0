@@ -11,6 +11,7 @@ from time import monotonic
 from typing import Any, Mapping, Optional, Sequence
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
+from ae3lite.application.runtime_event_contract import with_runtime_event_contract
 from ae3lite.domain.errors import TaskExecutionError
 from ae3lite.application.level_monitor import level_snapshot_aliases
 from ae3lite.infrastructure.metrics import EMERGENCY_STOP_RECONCILE, FAIL_SAFE_TRANSITION
@@ -424,7 +425,7 @@ class BaseStageHandler:
             await create_zone_event(
                 int(task.zone_id),
                 "IRR_STATE_PROBE_FAILED",
-                {
+                with_runtime_event_contract({
                     "stage": str(getattr(task, "current_stage", "") or ""),
                     "workflow_phase": str(getattr(task.workflow, "workflow_phase", "") or ""),
                     "reason": str(reason or ""),
@@ -434,7 +435,7 @@ class BaseStageHandler:
                     "is_stale": bool(state.get("is_stale")),
                     "cmd_id": state.get("cmd_id"),
                     "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else {},
-                },
+                }),
             )
         except Exception:
             _logger.warning(
@@ -461,17 +462,11 @@ class BaseStageHandler:
                 "sample_age_sec": state.get("sample_age_sec"),
                 "created_at": state.get("created_at"),
                 "cmd_id": state.get("cmd_id"),
+                "event_id": state.get("event_id"),
             },
         }
 
-    def _read_probe_level_snapshot(
-        self,
-        *,
-        task: Any,
-        labels: Sequence[str],
-        threshold: float,
-        telemetry_max_age_sec: int,
-    ) -> Mapping[str, Any] | None:
+    def _probe_state_for_task(self, *, task: Any) -> Mapping[str, Any] | None:
         probe_ctx = self._last_probe_state
         if not isinstance(probe_ctx, Mapping):
             return None
@@ -482,6 +477,65 @@ class BaseStageHandler:
         if str(probe_ctx.get("stage", "") or "") != str(getattr(task, "current_stage", "") or ""):
             return None
         state = probe_ctx.get("state")
+        return state if isinstance(state, Mapping) else None
+
+    def _probe_snapshot_context(self, *, task: Any) -> Mapping[str, Any] | None:
+        state = self._probe_state_for_task(task=task)
+        if not isinstance(state, Mapping):
+            return None
+        if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):
+            return None
+
+        event_id_raw = state.get("event_id")
+        try:
+            event_id = int(event_id_raw) if event_id_raw is not None else None
+        except (TypeError, ValueError):
+            event_id = None
+
+        created_at = state.get("created_at")
+        created_at_iso = created_at.isoformat() if isinstance(created_at, datetime) else None
+        cmd_id = str(state.get("cmd_id") or "").strip() or None
+
+        context = {
+            "snapshot_event_id": event_id if event_id and event_id > 0 else None,
+            "snapshot_created_at": created_at_iso,
+            "snapshot_cmd_id": cmd_id,
+            "snapshot_source_event_type": "IRR_STATE_SNAPSHOT",
+        }
+        return {key: value for key, value in context.items() if value is not None}
+
+    def _probe_snapshot_correction_fields(self, *, task: Any) -> Mapping[str, Any]:
+        state = self._probe_state_for_task(task=task)
+        if not isinstance(state, Mapping):
+            return {}
+        if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):
+            return {}
+
+        event_id_raw = state.get("event_id")
+        try:
+            event_id = int(event_id_raw) if event_id_raw is not None else None
+        except (TypeError, ValueError):
+            event_id = None
+
+        created_at = state.get("created_at")
+        cmd_id = str(state.get("cmd_id") or "").strip() or None
+        fields = {
+            "snapshot_event_id": event_id if event_id and event_id > 0 else None,
+            "snapshot_created_at": created_at if isinstance(created_at, datetime) else None,
+            "snapshot_cmd_id": cmd_id,
+            "snapshot_source_event_type": "IRR_STATE_SNAPSHOT",
+        }
+        return {key: value for key, value in fields.items() if value is not None}
+
+    def _read_probe_level_snapshot(
+        self,
+        *,
+        task: Any,
+        labels: Sequence[str],
+        threshold: float,
+        telemetry_max_age_sec: int,
+    ) -> Mapping[str, Any] | None:
+        state = self._probe_state_for_task(task=task)
         if not isinstance(state, Mapping):
             return None
         if not bool(state.get("has_snapshot")) or bool(state.get("is_stale")):

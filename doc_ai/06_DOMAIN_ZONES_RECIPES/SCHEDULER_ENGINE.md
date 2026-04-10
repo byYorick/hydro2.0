@@ -32,7 +32,7 @@ Laravel (cron / schedule:work / automation:dispatch-schedules)
 | Тип расписания (`task_type`) | HTTP endpoint в AE | Примечание |
 |------------------------------|---------------------|------------|
 | `irrigation` | `POST /zones/{id}/start-irrigation` | intent/task `irrigation_start`, опционально `requested_duration_sec` из payload расписания |
-| `lighting` | `POST /zones/{id}/start-lighting-tick` | только при `zones.automation_runtime='ae3'`; intent/task `lighting_tick` (см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH_TBD.md`, C1) |
+| `lighting` | `POST /zones/{id}/start-lighting-tick` | только при `zones.automation_runtime='ae3'`; intent/task `lighting_tick` (см. `SCHEDULER_AE3_NON_IRRIGATION_DISPATCH.md`, C1) |
 | `diagnostics` | `POST /zones/{id}/start-cycle` | на AE3 идёт через compat-path `diagnostics / cycle_start`; intent `DIAGNOSTICS_TICK`, task `cycle_start` |
 | прочие (`climate`, `mist`, `ventilation`, …) | `POST /zones/{id}/start-cycle` | на зонах с **`automation_runtime='ae3'`** планировщик эти типы **не диспатчит** (остаются в плане как `non_executable_planned_task_types`) |
 

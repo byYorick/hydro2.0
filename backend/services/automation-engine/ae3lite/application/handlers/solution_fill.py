@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -302,7 +303,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
         correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
         ec_max_attempts = int(correction_cfg.get("max_ec_correction_attempts", 5))
         ph_max_attempts = int(correction_cfg.get("max_ph_correction_attempts", 5))
-        return CorrectionState(
+        corr = CorrectionState(
             corr_step="corr_check" if sensors_already_active else "corr_activate",
             attempt=0,
             max_attempts=max(ec_max_attempts, ph_max_attempts),
@@ -327,3 +328,4 @@ class SolutionFillCheckHandler(BaseStageHandler):
             wait_until=None,
             limit_policy_logged=False,
         )
+        return replace(corr, **self._probe_snapshot_correction_fields(task=task))

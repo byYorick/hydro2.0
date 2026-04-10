@@ -45,6 +45,10 @@ CORRECTION_OPTIONAL_FIELDS = (
     "ec_dose_sequence_json",
     "ec_current_seq_index",
     "ph_amount_ml",
+    "snapshot_event_id",
+    "snapshot_created_at",
+    "snapshot_cmd_id",
+    "snapshot_source_event_type",
 )
 
 class PgAutomationTaskRepository:
@@ -525,9 +529,13 @@ class PgAutomationTaskRepository:
                 corr_ec_dose_sequence_json = $35,
                 corr_ec_current_seq_index  = $36,
                 corr_ph_amount_ml         = $37,
-                corr_limit_policy_logged  = $38,
-                due_at     = $39,
-                updated_at = $40
+                corr_snapshot_event_id    = $38,
+                corr_snapshot_created_at  = $39,
+                corr_snapshot_cmd_id      = $40,
+                corr_snapshot_source_event_type = $41,
+                corr_limit_policy_logged  = $42,
+                due_at     = $43,
+                updated_at = $44
             WHERE id = $1
               AND claimed_by = $2
               AND status IN ('claimed', 'running', 'waiting_command')

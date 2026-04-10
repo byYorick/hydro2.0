@@ -209,6 +209,10 @@ resources/js/Pages/
 - сортировка по времени
 - цветовая кодировка типов событий
 - пагинация
+- AE3/runtime события на фронте должны группироваться по causal-context:
+  `correction_window_id -> task_id -> snapshot_event_id/caused_by_event_id`
+- для grouped runtime events UI обязан показывать оператору связку
+  `decision -> correction started -> dosing -> snapshot/causal ids`, а не только плоскую ленту
 
 ## 6.6. Automation Tab: Runtime Operations
 

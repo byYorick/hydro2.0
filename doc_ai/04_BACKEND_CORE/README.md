@@ -72,9 +72,6 @@ Breaking-change: несовместимые изменения в защищён
 #### [AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md](AE3_IRR_FAILSAFE_AND_ESTOP_CONTRACT.md)
 Контракт дублирования в AE3 защитной логики IRR-ноды: fail-safe guards, `E-Stop`, mirror конфигов и stop-semantics.
 
-#### [AE3_REALHW_AUTOMATION_LOGIC_GAPS.md](AE3_REALHW_AUTOMATION_LOGIC_GAPS.md)
-Аудит логических зазоров AE3, выявленных после real-hardware E2E прогонов на test node.
-
 #### [HISTORY_LOGGER_API.md](HISTORY_LOGGER_API.md)
 Контракт REST API публикации команд в MQTT через history-logger.
 

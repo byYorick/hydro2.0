@@ -94,7 +94,8 @@ export function classifyEventKind(kind) {
     kind === 'SOLUTION_FILL_COMPLETED' ||
     kind === 'AE_TASK_STARTED' ||
     kind === 'AE_TASK_COMPLETED' ||
-    kind === 'CORRECTION_COMPLETE'
+    kind === 'CORRECTION_COMPLETE' ||
+    kind === 'IRRIGATION_CORRECTION_STARTED'
   ) return 'ACTION'
 
   if (kind === 'COMMAND_TIMEOUT' || kind === 'AE_TASK_FAILED' || kind === 'CORRECTION_EXHAUSTED') return 'WARNING'
@@ -216,6 +217,7 @@ export function translateEventKind(kind) {
     // Irrigation / AE workflow events
     'IRR_STATE_SNAPSHOT': 'Снимок состояния ирригации',
     'IRRIGATION_DECISION_SNAPSHOT_LOCKED': 'Снимок decision-controller полива зафиксирован',
+    'IRRIGATION_CORRECTION_STARTED': 'Полив: окно inline-коррекции открыто',
     'COMMAND_TIMEOUT': 'Таймаут команды',
     'PUMP_CALIBRATION_FINISHED': 'Калибровка насоса завершена',
     'PUMP_CALIBRATION_RUN_SKIPPED': 'Калибровка насоса пропущена',

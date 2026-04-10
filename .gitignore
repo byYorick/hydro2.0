@@ -21,8 +21,14 @@ venv/
 # IDE
 .idea/
 .vscode/
+.qoder/
 .cache/clangd/
 **/.cache/clangd/
+
+# Generated reports / scratch artifacts
+artifacts/
+test-results/
+output/
 
 # CMake / ESP-IDF
 build/

@@ -1,6 +1,57 @@
 import { test, expect } from '../fixtures/test-data';
 import { TEST_IDS } from '../constants';
 
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function encodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+async function injectZoneEventsIntoInertiaPage(page: import('@playwright/test').Page, zoneId: number, events: Array<Record<string, unknown>>) {
+  await page.route(new RegExp(`/zones/${zoneId}(?:\\?.*)?$`), async (route) => {
+    const response = await route.fetch();
+    const html = await response.text();
+
+    const match = html.match(/id="app"[^>]*data-page="([^"]+)"/);
+    if (!match) {
+      await route.fulfill({ response, body: html });
+      return;
+    }
+
+    const pageJson = JSON.parse(decodeHtmlAttribute(match[1]));
+    pageJson.props = {
+      ...pageJson.props,
+      events,
+    };
+
+    const nextHtml = html.replace(
+      match[0],
+      match[0].replace(match[1], encodeHtmlAttribute(JSON.stringify(pageJson))),
+    );
+
+    await route.fulfill({
+      response,
+      body: nextHtml,
+      headers: {
+        ...response.headers(),
+        'content-type': 'text/html; charset=utf-8',
+      },
+    });
+  });
+}
+
 test.describe('Zone Detail', () => {
   test('should load zone detail page and display snapshot', async ({ page, testZone, testGreenhouse }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
@@ -51,6 +102,85 @@ test.describe('Zone Detail', () => {
 
     // Проверяем, что список событий все еще виден (новые события должны появиться)
     await expect(eventsList.first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test('should group correlated AE3 runtime events on events tab', async ({ page, testZone }) => {
+    await injectZoneEventsIntoInertiaPage(page, testZone.id, [
+      {
+        id: 9003,
+        kind: 'EC_DOSING',
+        message: 'EC: подача питания',
+        occurred_at: '2026-04-10T08:20:25Z',
+        payload: {
+          task_id: 28,
+          correction_window_id: 'task:28:irrigating:irrigation_check',
+          workflow_phase: 'irrigating',
+          stage: 'irrigation_check',
+          selected_action: 'ec',
+          snapshot_event_id: 1699,
+          event_schema_version: 2,
+        },
+      },
+      {
+        id: 9002,
+        kind: 'IRRIGATION_CORRECTION_STARTED',
+        message: 'Полив: окно inline-коррекции открыто',
+        occurred_at: '2026-04-10T08:20:22Z',
+        payload: {
+          task_id: 28,
+          correction_window_id: 'task:28:irrigating:irrigation_check',
+          workflow_phase: 'irrigating',
+          stage: 'irrigation_check',
+          selected_action: 'ec',
+          channel: 'pump_a',
+          node_uid: 'nd-test-ec-1',
+          snapshot_event_id: 1699,
+          caused_by_event_id: 1698,
+          event_schema_version: 2,
+        },
+      },
+      {
+        id: 9001,
+        kind: 'CORRECTION_DECISION_MADE',
+        message: 'Коррекция: выбран следующий шаг',
+        occurred_at: '2026-04-10T08:20:20Z',
+        payload: {
+          task_id: 28,
+          correction_window_id: 'task:28:irrigating:irrigation_check',
+          workflow_phase: 'irrigating',
+          stage: 'irrigation_check',
+          selected_action: 'ec',
+          decision_reason: 'ec_first_in_window',
+          needs_ec: true,
+          needs_ph_down: true,
+        },
+      },
+      {
+        id: 8999,
+        kind: 'ALERT_CREATED',
+        message: 'Тревога создана',
+        occurred_at: '2026-04-10T08:19:20Z',
+        payload: {
+          severity: 'warning',
+        },
+      },
+    ]);
+
+    await page.goto(`/zones/${testZone.id}?tab=events`, { waitUntil: 'networkidle' });
+    await expect(page.getByRole('tab', { name: 'События' })).toBeVisible({ timeout: 15000 });
+
+    await expect(page.getByText('AE задача #28 · Окно irrigation_check')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('irrigating / irrigation_check')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('3 события')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Тревога создана').first()).toBeVisible({ timeout: 15000 });
+
+    await page.getByText('Полив: окно inline-коррекции открыто').last().click();
+
+    await expect(page.getByText('Snapshot event ID:')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('1699')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Причинное событие ID:')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('1698')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Schema version:')).toBeVisible({ timeout: 15000 });
   });
 
   test('should open zone alert details from alerts tab', async ({ page }) => {

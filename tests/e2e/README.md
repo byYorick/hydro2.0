@@ -149,6 +149,9 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=ae3lite
 # Только smart-irrigation real-hardware tranche
 tests/e2e/run_automation_engine_real_hardware.sh --set=smart_irrigation
 
+# Только inline irrigation correction regression-набор
+tests/e2e/run_automation_engine_real_hardware.sh --set=inline_irrigation
+
 # Точечный wrapper над real-hardware harness для smart-irrigation
 tests/e2e/run_smart_irrigation_pipeline.sh
 
@@ -157,7 +160,7 @@ tests/e2e/run_automation_engine_real_hardware.sh --set=full
 ```
 
 По умолчанию `SCENARIO_SET=full`. Wrapper прогоняет все real-hardware entrypoints
-из compatibility-наборов `automation_engine`, `workflow`, `ae3lite`, `smart_irrigation` и `calibration`. Исторические имена наборов при этом
+из compatibility-наборов `automation_engine`, `workflow`, `ae3lite`, `smart_irrigation`, `inline_irrigation` и `calibration`. Исторические имена наборов при этом
 остаются отдельными YAML-файлами, но могут быть явно портированы на каноничные
 AE3 сценарии через `scenario_ref` внутри самих файлов.
 

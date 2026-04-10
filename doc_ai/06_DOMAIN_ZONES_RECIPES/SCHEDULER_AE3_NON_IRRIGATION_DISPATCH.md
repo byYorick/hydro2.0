@@ -1,5 +1,5 @@
-# SCHEDULER_AE3_NON_IRRIGATION_DISPATCH_TBD.md
-# Будущий dispatch света/климата/пр. для AE3 (C1) — черновик ТЗ
+# SCHEDULER_AE3_NON_IRRIGATION_DISPATCH
+# Dispatch света/климата/пр. для AE3 (C1)
 
 **Статус:** реализовано для **lighting** (C1): Laravel scheduler → `POST .../start-lighting-tick` → AE3 task `lighting_tick` → history-logger → MQTT. Для **diagnostics** включён compat-path через `POST .../start-cycle` → AE3 `cycle_start`. Климат/прочие типы по-прежнему вне dispatch.  
 **Связано с:** `SCHEDULER_ENGINE.md`, `ScheduleDispatcher.php`, `ae3lite.md`.

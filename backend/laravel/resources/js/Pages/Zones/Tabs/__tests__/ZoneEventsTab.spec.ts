@@ -15,6 +15,52 @@ function makeEvent(id: number, kind: string, message: string, payload: Record<st
 }
 
 describe('ZoneEventsTab.vue', () => {
+  it('группирует связанные runtime events по задаче и correction window', () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(
+            1,
+            'EC_DOSING',
+            'EC dosing',
+            {
+              task_id: 28,
+              correction_window_id: 'task:28:irrigating:irrigation_check',
+              workflow_phase: 'irrigating',
+              stage: 'irrigation_check',
+              snapshot_event_id: 1699,
+            },
+          ),
+          makeEvent(
+            2,
+            'CORRECTION_DECISION_MADE',
+            'Decision',
+            {
+              task_id: 28,
+              correction_window_id: 'task:28:irrigating:irrigation_check',
+              workflow_phase: 'irrigating',
+              stage: 'irrigation_check',
+            },
+          ),
+          makeEvent(
+            3,
+            'ALERT_CREATED',
+            'Alert',
+            {
+              severity: 'critical',
+            },
+          ),
+        ],
+      },
+    })
+
+    expect(wrapper.text()).toContain('AE задача #28 · Окно irrigation_check')
+    expect(wrapper.text()).toContain('irrigating / irrigation_check')
+    expect(wrapper.text()).toContain('2 события')
+    expect(wrapper.text()).toContain('Тревога создана')
+  })
+
   it('показывает детали correction skipped dose discarded', async () => {
     const wrapper = mount(ZoneEventsTab, {
       props: {
@@ -214,6 +260,44 @@ describe('ZoneEventsTab.vue', () => {
     expect(wrapper.text()).toContain('prioritize_pending_ph_after_ec_observe')
     expect(wrapper.text()).toContain('Наблюдение:')
     expect(wrapper.text()).toContain('#2')
+  })
+
+  it('показывает causal-поля для события старта inline-коррекции', async () => {
+    const wrapper = mount(ZoneEventsTab, {
+      props: {
+        zoneId: 42,
+        events: [
+          makeEvent(
+            7,
+            'IRRIGATION_CORRECTION_STARTED',
+            'Inline correction started',
+            {
+              task_id: 28,
+              correction_window_id: 'task:28:irrigating:irrigation_check',
+              workflow_phase: 'irrigating',
+              stage: 'irrigation_check',
+              selected_action: 'ec',
+              channel: 'pump_a',
+              node_uid: 'nd-test-ec-1',
+              snapshot_event_id: 1699,
+              caused_by_event_id: 1698,
+              event_schema_version: 2,
+            },
+          ),
+        ],
+      },
+    })
+
+    await wrapper.find('.cursor-pointer').trigger('click')
+
+    expect(wrapper.text()).toContain('Snapshot event ID:')
+    expect(wrapper.text()).toContain('1699')
+    expect(wrapper.text()).toContain('Причинное событие ID:')
+    expect(wrapper.text()).toContain('1698')
+    expect(wrapper.text()).toContain('Schema version:')
+    expect(wrapper.text()).toContain('2')
+    expect(wrapper.text()).toContain('Канал:')
+    expect(wrapper.text()).toContain('pump_a')
   })
 
   it('показывает детали события решения умного полива', async () => {

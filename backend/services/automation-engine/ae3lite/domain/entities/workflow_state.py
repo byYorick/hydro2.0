@@ -57,4 +57,8 @@ class CorrectionState:
     ec_dose_sequence_json: Optional[str] = None
     ec_current_seq_index: int = 0
     ph_amount_ml: Optional[float] = None
+    snapshot_event_id: Optional[int] = None
+    snapshot_created_at: Optional[datetime] = None
+    snapshot_cmd_id: Optional[str] = None
+    snapshot_source_event_type: Optional[str] = None
     limit_policy_logged: bool = False
