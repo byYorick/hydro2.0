@@ -354,4 +354,8 @@ class IrrigationCheckHandler(BaseStageHandler):
             raise TaskExecutionError("irrigation_replay_persist_failed", "Не удалось сохранить счётчик повторов полива")
         IRRIGATION_REPLAY.labels(topology=topology).inc()
         observe_duration("setup")
-        return StageOutcome(kind="transition", next_stage="irrigation_stop_to_setup")
+        return StageOutcome(
+            kind="transition",
+            next_stage="irrigation_stop_to_setup",
+            task_override=updated,
+        )

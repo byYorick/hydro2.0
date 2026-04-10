@@ -38,9 +38,10 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         attempt_limit = self._prepare_recirculation_max_attempts(plan=plan, task=task)
         limit_reached = retry_count >= attempt_limit
 
+        current_task = task
         try:
-            await self._run_commands(
-                task=task,
+            current_task = await self._run_commands(
+                task=current_task,
                 plan=plan,
                 plan_names=("prepare_recirculation_stop", "sensor_mode_deactivate"),
                 now=now,
@@ -63,7 +64,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
                 retry_count, attempt_limit, task.zone_id,
             )
             await self._emit_retry_limit_alert(
-                task=task,
+                task=current_task,
                 retry_count=retry_count,
                 attempt_limit=attempt_limit,
                 now=now,
@@ -72,17 +73,24 @@ class PrepareRecircWindowHandler(BaseStageHandler):
                 kind="fail",
                 error_code="prepare_recirculation_attempt_limit_reached",
                 error_message="Исчерпан лимит повторов подготовки рециркуляции",
+                task_override=current_task,
             )
 
         _logger.info(
             "prepare_recirc_window: окно перезапускается retry=%s/%s zone_id=%s",
             retry_count + 1, attempt_limit, task.zone_id,
         )
-        await self._run_commands(task=task, plan=plan, plan_names=("sensor_mode_activate", "prepare_recirculation_start"), now=now)
+        current_task = await self._run_commands(
+            task=current_task,
+            plan=plan,
+            plan_names=("sensor_mode_activate", "prepare_recirculation_start"),
+            now=now,
+        )
         return StageOutcome(
             kind="transition",
             next_stage="prepare_recirculation_check",
             stage_retry_count=retry_count + 1,
+            task_override=current_task,
         )
 
     def _prepare_recirculation_max_attempts(self, *, plan: Any, task: Any) -> int:
@@ -133,7 +141,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         plan: Any,
         plan_names: tuple[str, ...],
         now: datetime,
-    ) -> None:
+    ) -> Any:
         commands: list[Any] = []
         named = plan.named_plans if isinstance(plan.named_plans, Mapping) else {}
         for plan_name in plan_names:
@@ -146,6 +154,7 @@ class PrepareRecircWindowHandler(BaseStageHandler):
         result = await self._command_gateway.run_batch(task=task, commands=tuple(commands), now=now)
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+        return result.get("task") or task
 
     def _correction_config(self, *, plan: Any, task: Any) -> Mapping[str, Any]:
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}

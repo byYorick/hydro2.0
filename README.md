@@ -15,8 +15,8 @@
 
 ## Документация
 
-- `doc_ai/` — source of truth, правки вносятся здесь
-- `docs/` — mirror для совместимости, руками не редактируется
+- `doc_ai/` — единственный source of truth, все правки только здесь
+- `doc_ai/INDEX.md` — главный навигатор по разделам
 
 ## Структура репозитория
 
@@ -33,8 +33,10 @@
 ## Быстрый старт (backend dev)
 
 ```bash
-cd backend
-docker compose -f docker-compose.dev.yml up -d --build
+make up                # поднять dev-стек
+make migrate           # применить миграции
+make seed              # заполнить тестовыми данными (опционально)
+make logs-core         # хвост логов laravel + AE + HL + mqtt-bridge
 ```
 
 Основные сервисы:
@@ -42,10 +44,11 @@ docker compose -f docker-compose.dev.yml up -d --build
 - mqtt-bridge: http://localhost:9000
 - history-logger REST: http://localhost:9300
 - history-logger metrics: http://localhost:9301/metrics
+- automation-engine REST: http://localhost:9405
 - automation-engine metrics: http://localhost:9401/metrics
 - Laravel scheduler-dispatch metrics (Prometheus text): http://localhost:8080/api/system/scheduler/metrics
 
-Больше деталей: `backend/README.md` и `backend/services/README.md`.
+Поток команд к узлам (инвариант): `Laravel scheduler-dispatch → automation-engine → history-logger → MQTT → ESP32`. Подробнее: `QUICK_START.md`, `backend/README.md`, `doc_ai/ARCHITECTURE_FLOWS.md`.
 
 ## WebSocket (realtime)
 
@@ -68,5 +71,5 @@ docker compose -f docker-compose.dev.yml up -d --build
 - Контрактные проверки протокола: `make protocol-check`
 - Laravel тесты: `docker compose -f backend/docker-compose.dev.yml exec laravel php artisan test`
 - Python тесты: `docker compose -f backend/docker-compose.dev.yml exec mqtt-bridge pytest`
-- E2E сценарии: `tests/e2e/README.md`
-- Node simulator: `tests/node_sim/README.md`
+- E2E сценарии: `tests/e2e/README.md` (детали в `doc_ai/13_TESTING/`)
+- Node simulator: `tests/node_sim/README.md` (документация: `doc_ai/13_TESTING/NODE_SIM.md`)

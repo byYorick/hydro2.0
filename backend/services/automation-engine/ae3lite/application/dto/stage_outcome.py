@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Optional, Tuple
+from typing import Any, Literal, Optional, Tuple
 
 from ae3lite.domain.entities.planned_command import PlannedCommand
 from ae3lite.domain.entities.workflow_state import CorrectionState
@@ -46,3 +46,6 @@ class StageOutcome:
     # Информация об ошибке, задаётся при fail
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+
+    # Актуальная строка задачи после reconcile/publish command path.
+    task_override: Any | None = None

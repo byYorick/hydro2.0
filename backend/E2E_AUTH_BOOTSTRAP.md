@@ -123,5 +123,5 @@ export LARAVEL_API_TOKEN="$TOKEN"
 
 ## См. также
 
-- [E2E_GUIDE.md](../docs/testing/E2E_GUIDE.md) - Полное руководство по E2E тестам
+- [E2E_GUIDE.md](../doc_ai/13_TESTING/E2E_GUIDE.md) - Полное руководство по E2E тестам
 - [run_e2e.sh](../tools/testing/run_e2e.sh) - Скрипт запуска E2E тестов

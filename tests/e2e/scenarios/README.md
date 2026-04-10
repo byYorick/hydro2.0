@@ -28,7 +28,7 @@
 - `chaos/` — хаос‑тесты
 - `workflow/` — архив two-tank workflow сценариев до AE3, не входит в поддерживаемые AE3-suite'ы
 
-Полный список и DoD: `../../../docs/testing/E2E_SCENARIOS.md`.
+Полный список и DoD: `../../../doc_ai/13_TESTING/E2E_SCENARIOS.md`.
 
 Ключевые сценарии:
 - `core/E01_bootstrap.yaml` — telemetry в БД + ONLINE статус

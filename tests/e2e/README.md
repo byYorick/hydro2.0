@@ -86,7 +86,7 @@ tests/e2e/
 - `scenarios/core/E01_bootstrap.yaml` — telemetry в БД + ONLINE статус
 - `scenarios/commands/E10_command_happy.yaml` — команда → DONE + WS + zone_events
 
-Полный список сценариев и DoD: `../../docs/testing/E2E_SCENARIOS.md`.
+Полный список сценариев и DoD: `../../doc_ai/13_TESTING/E2E_SCENARIOS.md`.
 
 ## Инварианты пайплайна
 
@@ -280,5 +280,5 @@ docker compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub 
 
 ## Дополнительная документация
 
-- [E2E_GUIDE.md](../../docs/testing/E2E_GUIDE.md) - Подробное руководство по E2E тестам
-- [NODE_SIM.md](../../docs/testing/NODE_SIM.md) - Документация по симулятору узлов
+- [E2E_GUIDE.md](../../doc_ai/13_TESTING/E2E_GUIDE.md) - Подробное руководство по E2E тестам
+- [NODE_SIM.md](../../doc_ai/13_TESTING/NODE_SIM.md) - Документация по симулятору узлов

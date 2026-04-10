@@ -61,7 +61,11 @@ class CommandHandler(BaseStageHandler):
             )
 
         if stage_def.next_stage is not None:
-            return StageOutcome(kind="transition", next_stage=stage_def.next_stage)
+            return StageOutcome(
+                kind="transition",
+                next_stage=stage_def.next_stage,
+                task_override=result.get("task"),
+            )
 
         raise TaskExecutionError(
             "ae3_command_no_routing",

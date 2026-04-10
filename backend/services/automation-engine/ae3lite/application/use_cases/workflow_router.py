@@ -165,33 +165,32 @@ class WorkflowRouter:
         outcome: StageOutcome,
         now: datetime,
     ) -> Any:
-        topology = task.topology
-        owner = str(task.claimed_by or "")
+        current_task = outcome.task_override or task
 
         if outcome.kind == "poll":
-            return await self._apply_poll(task=task, outcome=outcome, now=now)
+            return await self._apply_poll(task=current_task, outcome=outcome, now=now)
 
         if outcome.kind == "transition":
             return await self._apply_transition(
-                task=task, plan=plan, outcome=outcome, now=now,
+                task=current_task, plan=plan, outcome=outcome, now=now,
             )
 
         if outcome.kind == "enter_correction":
             return await self._apply_enter_correction(
-                task=task, outcome=outcome, now=now,
+                task=current_task, outcome=outcome, now=now,
             )
 
         if outcome.kind == "exit_correction":
             return await self._apply_exit_correction(
-                task=task, plan=plan, outcome=outcome, now=now,
+                task=current_task, plan=plan, outcome=outcome, now=now,
             )
 
         if outcome.kind == "complete":
-            return await self._complete_task(task=task, now=now)
+            return await self._complete_task(task=current_task, now=now)
 
         if outcome.kind == "fail":
             return await self._fail_task(
-                task=task, now=now,
+                task=current_task, now=now,
                 error_code=outcome.error_code or "ae3_stage_failed",
                 error_message=outcome.error_message or "Этап завершился ошибкой",
             )

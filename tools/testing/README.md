@@ -150,6 +150,6 @@ cat tests/e2e/node-sim-config.yaml
 
 ## Дополнительная информация
 
-- Полная документация: `../../docs/testing/E2E_GUIDE.md`
-- Troubleshooting: `../../docs/testing/TROUBLESHOOTING.md`
-- Node Simulator: `../../docs/testing/NODE_SIM.md`
+- Полная документация: `../../doc_ai/13_TESTING/E2E_GUIDE.md`
+- Troubleshooting: `../../doc_ai/13_TESTING/TROUBLESHOOTING.md`
+- Node Simulator: `../../doc_ai/13_TESTING/NODE_SIM.md`

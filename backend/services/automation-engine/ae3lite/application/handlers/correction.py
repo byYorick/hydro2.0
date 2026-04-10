@@ -131,19 +131,22 @@ class CorrectionHandler(BaseStageHandler):
             plan=plan, cmd="activate_sensor_mode",
             params={"stabilization_time_sec": corr.stabilization_sec},
         )
+        current_task = task
         if sensor_cmds:
             result = await self._command_gateway.run_batch(
-                task=task, commands=sensor_cmds, now=now,
+                task=current_task, commands=sensor_cmds, now=now,
             )
             if not result["success"]:
                 raise TaskExecutionError(
                     str(result["error_code"]), str(result["error_message"]),
                 )
+            current_task = result.get("task") or current_task
         next_corr = replace(corr, corr_step="corr_wait_stable")
         return StageOutcome(
             kind="enter_correction",
             correction=next_corr,
             due_delay_sec=corr.stabilization_sec,
+            task_override=current_task if current_task is not task else None,
         )
 
     def _run_wait_stable(
@@ -804,7 +807,7 @@ class CorrectionHandler(BaseStageHandler):
                     ),
                 )
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step="corr_dose_ec").inc()
-        await self._ensure_sensor_mode_active_for_dosing(
+        current_task = await self._ensure_sensor_mode_active_for_dosing(
             task=task,
             plan=plan,
             corr=corr,
@@ -834,9 +837,10 @@ class CorrectionHandler(BaseStageHandler):
                     channel=str(item["channel"]),
                     payload={"cmd": "dose", "params": {"ml": float(item["amount_ml"])}},
                 )
-                result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
+                result = await self._command_gateway.run_batch(task=current_task, commands=(cmd,), now=now)
                 if not result["success"]:
                     raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+                current_task = result.get("task") or current_task
 
                 next_idx = start_idx + 1
                 if next_idx < len(seq):
@@ -845,6 +849,7 @@ class CorrectionHandler(BaseStageHandler):
                         kind="enter_correction",
                         correction=replace(corr, ec_current_seq_index=next_idx),
                         due_delay_sec=0,
+                        task_override=current_task if current_task is not task else None,
                     )
 
                 # Sequence complete; continue with standard post-dose hold window below.
@@ -859,9 +864,10 @@ class CorrectionHandler(BaseStageHandler):
                 channel=corr.ec_channel,
                 payload={"cmd": "dose", "params": {"ml": corr.ec_amount_ml}},
             )
-            result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
+            result = await self._command_gateway.run_batch(task=current_task, commands=(cmd,), now=now)
             if not result["success"]:
                 raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+            current_task = result.get("task") or current_task
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
@@ -948,6 +954,7 @@ class CorrectionHandler(BaseStageHandler):
             corr=next_corr,
             now=now,
             due_delay_sec=int(observe_cfg["hold_window_sec"]),
+            task_override=current_task if current_task is not task else None,
         )
 
     async def _run_wait_ec(
@@ -982,7 +989,7 @@ class CorrectionHandler(BaseStageHandler):
             )
         ph_step = "corr_dose_ph_up" if corr.needs_ph_up else "corr_dose_ph_down"
         CORRECTION_ATTEMPT.labels(topology=task.topology, corr_step=ph_step).inc()
-        await self._ensure_sensor_mode_active_for_dosing(
+        current_task = await self._ensure_sensor_mode_active_for_dosing(
             task=task,
             plan=plan,
             corr=corr,
@@ -997,9 +1004,10 @@ class CorrectionHandler(BaseStageHandler):
             channel=corr.ph_channel,
             payload={"cmd": "dose", "params": {"ml": corr.ph_amount_ml}},
         )
-        result = await self._command_gateway.run_batch(task=task, commands=(cmd,), now=now)
+        result = await self._command_gateway.run_batch(task=current_task, commands=(cmd,), now=now)
         if not result["success"]:
             raise TaskExecutionError(str(result["error_code"]), str(result["error_message"]))
+        current_task = result.get("task") or current_task
 
         runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
         # Read last_measured_value from DB (written by _persist_pid_state_updates in _run_check)
@@ -1061,6 +1069,7 @@ class CorrectionHandler(BaseStageHandler):
             corr=next_corr,
             now=now,
             due_delay_sec=int(observe_cfg["hold_window_sec"]),
+            task_override=current_task if current_task is not task else None,
         )
 
     async def _run_wait_ph(
@@ -1078,18 +1087,20 @@ class CorrectionHandler(BaseStageHandler):
     async def _run_deactivate(
         self, *, task: Any, plan: Any, corr: CorrectionState, now: datetime,
     ) -> StageOutcome:
+        current_task = task
         if corr.activated_here:
             sensor_cmds = self._build_sensor_mode_commands(
                 plan=plan, cmd="deactivate_sensor_mode", params={},
             )
             if sensor_cmds:
                 result = await self._command_gateway.run_batch(
-                    task=task, commands=sensor_cmds, now=now,
+                    task=current_task, commands=sensor_cmds, now=now,
                 )
                 if not result["success"]:
                     raise TaskExecutionError(
                         str(result["error_code"]), str(result["error_message"]),
                     )
+                current_task = result.get("task") or current_task
 
         next_corr = replace(corr, corr_step="corr_done")
         return self._enter_correction_after_delay_or_interrupt(
@@ -1098,6 +1109,7 @@ class CorrectionHandler(BaseStageHandler):
             corr=next_corr,
             now=now,
             due_delay_sec=0.0,
+            task_override=current_task if current_task is not task else None,
         )
 
     def _run_done(self, *, corr: CorrectionState) -> StageOutcome:
@@ -1117,14 +1129,14 @@ class CorrectionHandler(BaseStageHandler):
         failed_node_uid: str | None,
         failed_channel: str | None,
         retry_cmd: str,
-    ) -> None:
+    ) -> Any:
         sensor_cmds = self._build_sensor_mode_commands(
             plan=plan,
             cmd="activate_sensor_mode",
             params={"stabilization_time_sec": corr.stabilization_sec},
         )
         if not sensor_cmds:
-            return
+            return task
         result = await self._command_gateway.run_batch(
             task=task,
             commands=sensor_cmds,
@@ -1135,6 +1147,7 @@ class CorrectionHandler(BaseStageHandler):
                 str(result["error_code"]),
                 str(result["error_message"]),
             )
+        current_task = result.get("task") or task
 
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -1149,6 +1162,7 @@ class CorrectionHandler(BaseStageHandler):
                 "stabilization_sec": corr.stabilization_sec,
             },
         )
+        return current_task
 
     async def _assert_flow_path_active(
         self,
@@ -1221,6 +1235,7 @@ class CorrectionHandler(BaseStageHandler):
                 str(result["error_code"]),
                 str(result["error_message"]),
             )
+        current_task = result.get("task") or task
 
         await self._log_correction_event(
             zone_id=task.zone_id,
@@ -1245,6 +1260,7 @@ class CorrectionHandler(BaseStageHandler):
             kind="enter_correction",
             correction=next_corr,
             due_delay_sec=corr.stabilization_sec,
+            task_override=current_task if current_task is not task else None,
         )
 
     def _window_empty_for_sensor_reactivation(self, *, metric: Mapping[str, Any]) -> bool:
@@ -1445,12 +1461,14 @@ class CorrectionHandler(BaseStageHandler):
         corr: CorrectionState,
         now: datetime,
         due_delay_sec: float,
+        task_override: Any | None = None,
     ) -> StageOutcome:
         retry_deadline_outcome = self._interrupt_for_imminent_retry_then_probe_deadline(
-            task=task,
+            task=task_override or task,
             plan=plan,
             now=now,
             due_delay_sec=due_delay_sec,
+            task_override=task_override,
         )
         if retry_deadline_outcome is not None:
             return retry_deadline_outcome
@@ -1458,6 +1476,7 @@ class CorrectionHandler(BaseStageHandler):
             kind="enter_correction",
             correction=corr,
             due_delay_sec=due_delay_sec,
+            task_override=task_override,
         )
 
     def _interrupt_for_imminent_retry_then_probe_deadline(
@@ -1467,6 +1486,7 @@ class CorrectionHandler(BaseStageHandler):
         plan: Any,
         now: datetime,
         due_delay_sec: float,
+        task_override: Any | None = None,
     ) -> StageOutcome | None:
         current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
         if self._expected_flow_path_state(current_stage=current_stage) is None:
@@ -1486,11 +1506,13 @@ class CorrectionHandler(BaseStageHandler):
                 kind="transition",
                 next_stage="prepare_recirculation_window_exhausted",
                 stage_retry_count=task.workflow.stage_retry_count + 1,
+                task_override=task_override,
             )
         if current_stage == "solution_fill_check":
             return StageOutcome(
                 kind="transition",
                 next_stage="solution_fill_timeout_stop",
+                task_override=task_override,
             )
         return None
 

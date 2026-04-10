@@ -25,7 +25,7 @@ RUNTIME = {"solution_fill_timeout_sec": 3600, "clean_fill_timeout_sec": 1800}
 
 # ── Task factory ────────────────────────────────────────────────────
 
-def _make_task(
+def _make_task_row(
     *,
     stage: str = "startup",
     phase: str = "idle",
@@ -38,7 +38,7 @@ def _make_task(
     control_mode: str = "auto",
     pending_manual_step: str | None = None,
     irrigation_requested_duration_sec: int | None = None,
-) -> AutomationTask:
+) -> dict:
     corr_row: dict = {}
     if correction:
         corr_row = {
@@ -68,7 +68,7 @@ def _make_task(
     else:
         corr_row = {"corr_step": None}
 
-    return AutomationTask.from_row({
+    return {
         "id": 99, "zone_id": 99, "task_type": task_type, "status": "running",
         "idempotency_key": "k99", "scheduled_for": NOW, "due_at": NOW,
         "claimed_by": "w1", "claimed_at": NOW, "error_code": None, "error_message": None,
@@ -81,7 +81,11 @@ def _make_task(
         "control_mode_snapshot": control_mode, "pending_manual_step": pending_manual_step,
         "irrigation_requested_duration_sec": irrigation_requested_duration_sec,
         **corr_row,
-    })
+    }
+
+
+def _make_task(**kwargs) -> AutomationTask:
+    return AutomationTask.from_row(_make_task_row(**kwargs))
 
 
 class _MockPlan:
@@ -112,7 +116,7 @@ class _MockTaskRepo:
 
     async def update_stage(self, *, task_id, owner, workflow, correction, due_at, now):
         self.update_stage_calls.append({
-            "task_id": task_id, "workflow": workflow, "correction": correction,
+            "task_id": task_id, "owner": owner, "workflow": workflow, "correction": correction,
         })
         return self._return_task
 
@@ -250,6 +254,159 @@ async def test_router_applies_transition_outcome():
     # Audit trail
     assert len(tr.record_transition_calls) == 1
     assert tr.record_transition_calls[0]["to_stage"] == "clean_fill_check"
+
+
+async def test_router_transition_uses_task_override_owner_from_command_reconcile():
+    base_row = _make_task_row(stage="clean_fill_stop_to_solution", phase="tank_filling")
+    outcome = StageOutcome(
+        kind="transition",
+        next_stage="solution_fill_start",
+        task_override=AutomationTask.from_row({
+            **base_row,
+            "status": "running",
+            "claimed_by": "w-reconciled",
+            "claimed_at": NOW,
+        }),
+    )
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+        "claimed_at": NOW,
+    })
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["command"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "solution_fill_start"
+
+
+async def test_router_poll_uses_task_override_owner_from_command_reconcile():
+    base_row = _make_task_row(stage="clean_fill_check", phase="tank_filling")
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+        "claimed_at": NOW,
+    })
+    fresh = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-reconciled",
+        "claimed_at": NOW,
+    })
+    outcome = StageOutcome(kind="poll", due_delay_sec=5, task_override=fresh)
+    router, tr, _ = _make_router(clean_fill_outcome=outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
+
+
+async def test_router_enter_correction_uses_task_override_owner_from_command_reconcile():
+    corr = CorrectionState(
+        corr_step="corr_wait_stable", attempt=0, max_attempts=5,
+        ec_attempt=0, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
+        activated_here=True, stabilization_sec=60,
+        return_stage_success="solution_fill_stop_to_ready",
+        return_stage_fail="solution_fill_stop_to_prepare",
+        outcome_success=None, needs_ec=False, ec_node_uid=None, ec_channel=None,
+        ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+        ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+    )
+    base_row = _make_task_row(stage="solution_fill_check")
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+    })
+    fresh = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-reconciled",
+    })
+    outcome = StageOutcome(kind="enter_correction", correction=corr, task_override=fresh)
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["solution_fill"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
+    assert tr.update_stage_calls[0]["correction"].corr_step == "corr_wait_stable"
+
+
+async def test_router_exit_correction_uses_task_override_owner_from_command_reconcile():
+    corr = CorrectionState(
+        corr_step="corr_done", attempt=2, max_attempts=5,
+        ec_attempt=1, ec_max_attempts=5, ph_attempt=0, ph_max_attempts=5,
+        activated_here=True, stabilization_sec=60,
+        return_stage_success="solution_fill_stop_to_ready",
+        return_stage_fail="solution_fill_stop_to_prepare",
+        outcome_success=True, needs_ec=False, ec_node_uid=None, ec_channel=None,
+        ec_duration_ms=None, needs_ph_up=False, needs_ph_down=False,
+        ph_node_uid=None, ph_channel=None, ph_duration_ms=None, wait_until=None,
+    )
+    base_row = _make_task_row(stage="solution_fill_check", correction=corr)
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+    })
+    fresh = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-reconciled",
+    })
+    outcome = StageOutcome(
+        kind="exit_correction",
+        next_stage="solution_fill_stop_to_ready",
+        correction=corr,
+        task_override=fresh,
+    )
+    router, tr, _ = _make_router(correction_outcome=outcome, return_task=task)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert tr.update_stage_calls[0]["owner"] == "w-reconciled"
+    assert tr.update_stage_calls[0]["workflow"].current_stage == "solution_fill_stop_to_ready"
+
+
+async def test_router_complete_uses_task_override_owner_from_command_reconcile():
+    base_row = _make_task_row(stage="solution_fill_check")
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+    })
+    fresh = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-reconciled",
+    })
+    outcome = StageOutcome(kind="complete", task_override=fresh)
+    router, tr, _ = _make_router(return_task=task)
+    router._handlers["solution_fill"] = _StubHandler(outcome)
+
+    await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert tr.mark_completed_calls  # called through _complete_task
+
+
+async def test_router_fail_uses_task_override_for_metrics():
+    base_row = _make_task_row(stage="clean_fill_check")
+    task = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-stale",
+    })
+    fresh = AutomationTask.from_row({
+        **base_row,
+        "claimed_by": "w-reconciled",
+    })
+    outcome = StageOutcome(
+        kind="fail",
+        error_code="clean_fill_timeout",
+        error_message="bank did not fill in time",
+        task_override=fresh,
+    )
+    router, _, _ = _make_router(clean_fill_outcome=outcome, return_task=task)
+
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await router.run(task=task, plan=_MockPlan(runtime=RUNTIME), now=NOW)
+
+    assert exc_info.value.code == "clean_fill_timeout"
 
 
 async def test_router_returns_cancelled_task_when_transition_persist_races_with_abort():

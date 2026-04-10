@@ -20,7 +20,7 @@
 - Общаться с пользователем только на русском языке.
 - Перед работой открыть минимум: `doc_ai/INDEX.md`, `doc_ai/SYSTEM_ARCH_FULL.md`,
   `doc_ai/ARCHITECTURE_FLOWS.md`, `doc_ai/DEV_CONVENTIONS.md`.
-- `doc_ai/` — source of truth; `docs/` вручную не редактировать.
+- `doc_ai/` — единственный source of truth; папка `docs/` удалена.
 - Команды к узлам не публикуются напрямую в MQTT из Laravel или automation-engine (только через history-logger):
   единая точка публикации в MQTT — `history-logger`.
 - Базовый поток команд: `Laravel scheduler-dispatch -> Automation-Engine -> History-Logger -> MQTT -> ESP32`.
@@ -53,7 +53,7 @@
 ## 1) Источники истины и контекст
 
 - Архитектурная истина — в `doc_ai/SYSTEM_ARCH_FULL.md` и `doc_ai/01_SYSTEM/*`.
-- Документация в `doc_ai/` — источник истины (source of truth), `docs/` — зеркало без ручных правок.
+- Документация в `doc_ai/` — единственный источник истины (source of truth). Папка `docs/` удалена; уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/`, `doc_ai/07_FRONTEND/ui_refs/`.
 - Спецификации по слоям:
   - прошивки/железо: `doc_ai/02_HARDWARE_FIRMWARE`
   - MQTT/транспорт: `doc_ai/03_TRANSPORT_MQTT`

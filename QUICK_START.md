@@ -2,8 +2,7 @@
 
 ## 📚 Документация
 
-**Основная документация:** `doc_ai/` (source of truth, редактируется здесь)  
-**Mirror документации:** `docs/` (для совместимости, не редактируется вручную)
+**Единственный source of truth:** `doc_ai/` — все правки только здесь.
 
 ### Ключевые документы
 
@@ -16,12 +15,14 @@
 ### Специфические документы
 
 - **Backend (Laravel):** `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- **Python-сервисы:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md` (копия в `backend/services/PYTHON_SERVICES_ARCH.md` должна совпадать по смыслу)
+- **Python-сервисы:** `doc_ai/04_BACKEND_CORE/PYTHON_SERVICES_ARCH.md`
+- **AE3 (automation-engine):** `doc_ai/04_BACKEND_CORE/ae3lite.md`
 - **Firmware (ESP32):** `doc_ai/02_HARDWARE_FIRMWARE/`
 - **NodeConfig:** `firmware/NODE_CONFIG_SPEC.md`
 - **MQTT:** `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - **Frontend:** `doc_ai/07_FRONTEND/FRONTEND_ARCH_FULL.md`
 - **Android:** `doc_ai/12_ANDROID_APP/`
+- **Тестирование / E2E:** `doc_ai/13_TESTING/`
 
 ---
 
@@ -51,6 +52,18 @@ make refresh
 
 Поток команд к узлам (инвариант): `Laravel scheduler-dispatch → automation-engine → history-logger (POST /commands) → MQTT → ESP32` — см. `doc_ai/ARCHITECTURE_FLOWS.md`.
 
+### Просмотр логов
+
+```bash
+make logs-core      # laravel + automation-engine + history-logger + mqtt-bridge
+make logs-ae        # automation-engine
+make logs-hl        # history-logger
+make logs-laravel   # laravel
+make logs-mqttb     # mqtt-bridge
+```
+
+Endpoints AE3 для ручной проверки: `POST /zones/{id}/start-cycle`, `POST /zones/{id}/start-irrigation`, `POST /zones/{id}/start-lighting-tick`, `GET /zones/{id}/state`.
+
 ### Проверка работы
 
 ```bash
@@ -72,15 +85,15 @@ curl -X POST http://localhost:9000/bridge/zones/1/commands \
 
 ```
 hydro2.0/
-├── doc_ai/          # Source of truth документации
-├── docs/            # Mirror документации (без ручных правок)
+├── doc_ai/          # Source of truth документации (единственный)
 ├── backend/         # Backend сервисы
 │   ├── laravel/     # Laravel приложение (API Gateway)
-│   └── services/    # Python-сервисы
+│   └── services/    # Python-сервисы (history-logger, automation-engine, mqtt-bridge)
 ├── firmware/        # Прошивки ESP32
 ├── mobile/          # Мобильное приложение
 ├── infra/           # Инфраструктура
 ├── tools/           # Утилиты
+├── tests/           # E2E и интеграционные тесты
 └── configs/         # Конфигурации
 ```
 
@@ -101,13 +114,13 @@ hydro2.0/
 
 ## ⚠️ Важные замечания
 
-1. **Документацию правим в `doc_ai/`** — это source of truth
-2. **`docs/` не редактируем вручную** — это mirror для совместимости
-3. **При несоответствиях** приводим код/конфиги в соответствие с документацией
-4. **Статусы компонентов** указаны в README файлах (PLANNED, MVP_DONE и т.д.)
-5. **MQTT_EXTERNAL_HOST**: в dev по умолчанию используется `host.docker.internal`;
+1. **Документацию правим только в `doc_ai/`** — это единственный source of truth
+2. **При несоответствиях** приводим код/конфиги в соответствие с документацией
+3. **Статусы компонентов** указаны в README файлах (PLANNED, MVP_DONE и т.д.)
+4. **MQTT_EXTERNAL_HOST**: в dev по умолчанию используется `host.docker.internal`;
    для ESP32 в реальной сети укажите IP хоста в `MQTT_EXTERNAL_HOST` (на Linux может
    понадобиться явная настройка `host.docker.internal` или явный IP)
+5. **Команды узлам** идут только через `history-logger` — не публиковать MQTT напрямую из Laravel/AE
 
 ## 🛠️ Разработка
 

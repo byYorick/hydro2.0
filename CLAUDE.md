@@ -33,7 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `doc_ai/DEV_CONVENTIONS.md` — конвенции разработки
 - `README.md` — быстрые ссылки и обзор структуры
 
-**Примечание:** `doc_ai/` — это source of truth. `docs/` — это автоматически сгенерированное зеркало, не редактируй его вручную.
+**Примечание:** `doc_ai/` — это единственный source of truth для документации. Папка `docs/` удалена; все её уникальные материалы перенесены в `doc_ai/13_TESTING/`, `doc_ai/12_ANDROID_APP/` и `doc_ai/07_FRONTEND/ui_refs/`.
 
 ### Документация по компонентам
 
@@ -305,8 +305,7 @@ Laravel scheduler-dispatch → REST → Automation-Engine → REST → History-L
 
 ### Источники истины
 
-- **`doc_ai/`** — source of truth (единственный источник правды), всегда редактируй здесь
-- **`docs/`** — автоматически генерируемое зеркало, НЕ редактируй вручную
+- **`doc_ai/`** — единственный source of truth, всегда редактируй здесь (включая `13_TESTING/` для E2E-документации)
 - **Локальные `AGENTS.md`** — всегда проверяй их наличие в подкаталогах перед работой
 
 ### Чек-лист при изменении протоколов/данных
