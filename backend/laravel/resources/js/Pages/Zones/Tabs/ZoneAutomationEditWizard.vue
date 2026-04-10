@@ -11,9 +11,9 @@
       </div>
 
       <ZoneAutomationProfileSections
-        :water-form="draftWaterForm"
-        :lighting-form="draftLightingForm"
-        :zone-climate-form="draftZoneClimateForm"
+        v-model:water-form="draftWaterForm"
+        v-model:lighting-form="draftLightingForm"
+        v-model:zone-climate-form="draftZoneClimateForm"
         :can-configure="true"
         :is-system-type-locked="isSystemTypeLocked"
         :current-recipe-phase="props.currentRecipePhase ?? null"

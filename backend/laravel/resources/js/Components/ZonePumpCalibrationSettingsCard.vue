@@ -3,7 +3,9 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between gap-3">
         <div>
-          <div class="text-sm font-semibold">Pump Calibration Override</div>
+          <div class="text-sm font-semibold">
+            Pump Calibration Override
+          </div>
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             Переопределение системных порогов калибровки насосов только для этой зоны.
           </div>

@@ -5,12 +5,16 @@
   >
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">Инженерная диагностика</h4>
+        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">
+          Инженерная диагностика
+        </h4>
         <p class="text-sm text-[color:var(--text-dim)]">
           Отдельный diagnostics path для dispatcher state и `scheduler_logs`, без влияния на operator contract.
         </p>
       </div>
-      <Badge variant="secondary">engineer/admin</Badge>
+      <Badge variant="secondary">
+        engineer/admin
+      </Badge>
     </div>
 
     <p
@@ -32,17 +36,29 @@
       class="mt-4 space-y-4"
     >
       <div class="flex flex-wrap gap-2">
-        <Badge variant="info">tracked {{ diagnostics.summary.tracked_tasks_total }}</Badge>
-        <Badge variant="success">active {{ diagnostics.summary.active_tasks_total }}</Badge>
-        <Badge variant="warning">overdue {{ diagnostics.summary.overdue_tasks_total }}</Badge>
-        <Badge variant="danger">stale {{ diagnostics.summary.stale_tasks_total }}</Badge>
-        <Badge variant="secondary">logs {{ diagnostics.summary.recent_logs_total }}</Badge>
+        <Badge variant="info">
+          tracked {{ diagnostics.summary.tracked_tasks_total }}
+        </Badge>
+        <Badge variant="success">
+          active {{ diagnostics.summary.active_tasks_total }}
+        </Badge>
+        <Badge variant="warning">
+          overdue {{ diagnostics.summary.overdue_tasks_total }}
+        </Badge>
+        <Badge variant="danger">
+          stale {{ diagnostics.summary.stale_tasks_total }}
+        </Badge>
+        <Badge variant="secondary">
+          logs {{ diagnostics.summary.recent_logs_total }}
+        </Badge>
       </div>
 
       <div class="grid gap-4 xl:grid-cols-2">
         <div class="rounded-xl border border-[color:var(--border-muted)] p-4">
           <div class="flex items-center justify-between gap-3">
-            <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">Dispatcher tasks</h5>
+            <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Dispatcher tasks
+            </h5>
             <span class="text-xs text-[color:var(--text-muted)]">{{ diagnostics.dispatcher_tasks.length }} записей</span>
           </div>
           <div
@@ -62,7 +78,9 @@
             >
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-mono text-sm font-semibold text-[color:var(--text-primary)]">{{ task.task_id }}</span>
-                <Badge :variant="statusVariant(task.status)">{{ task.status || 'unknown' }}</Badge>
+                <Badge :variant="statusVariant(task.status)">
+                  {{ task.status || 'unknown' }}
+                </Badge>
                 <span class="text-[10px] uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
                   {{ laneLabel(task.task_type) }}
                 </span>
@@ -79,7 +97,9 @@
 
         <div class="rounded-xl border border-[color:var(--border-muted)] p-4">
           <div class="flex items-center justify-between gap-3">
-            <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">Scheduler logs</h5>
+            <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Scheduler logs
+            </h5>
             <span class="text-xs text-[color:var(--text-muted)]">{{ diagnostics.recent_logs.length }} записей</span>
           </div>
           <div
@@ -99,7 +119,9 @@
             >
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-mono text-sm font-semibold text-[color:var(--text-primary)]">{{ log.task_name || 'scheduler' }}</span>
-                <Badge :variant="statusVariant(log.status)">{{ log.status || 'unknown' }}</Badge>
+                <Badge :variant="statusVariant(log.status)">
+                  {{ log.status || 'unknown' }}
+                </Badge>
               </div>
               <p class="mt-1 text-xs text-[color:var(--text-dim)]">
                 {{ formatDateTime(log.created_at) }}

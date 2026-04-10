@@ -12,16 +12,28 @@
 
       <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          <div class="font-medium text-[color:var(--text-primary)]">1. Сенсоры</div>
-          <div class="mt-1">Сначала приведите в порядок pH/EC sensor calibration, чтобы дальнейшие настройки опирались на корректные измерения.</div>
+          <div class="font-medium text-[color:var(--text-primary)]">
+            1. Сенсоры
+          </div>
+          <div class="mt-1">
+            Сначала приведите в порядок pH/EC sensor calibration, чтобы дальнейшие настройки опирались на корректные измерения.
+          </div>
         </div>
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          <div class="font-medium text-[color:var(--text-primary)]">2. Насосы</div>
-          <div class="mt-1">После этого откалибруйте дозирующие насосы. Runtime bounds остаются в расширенных настройках pump calibration wizard и нужны только для нестандартных зон.</div>
+          <div class="font-medium text-[color:var(--text-primary)]">
+            2. Насосы
+          </div>
+          <div class="mt-1">
+            После этого откалибруйте дозирующие насосы. Runtime bounds остаются в расширенных настройках pump calibration wizard и нужны только для нестандартных зон.
+          </div>
         </div>
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3 text-xs text-[color:var(--text-dim)]">
-          <div class="font-medium text-[color:var(--text-primary)]">3. Process и PID</div>
-          <div class="mt-1">{{ processAndPidHint }}</div>
+          <div class="font-medium text-[color:var(--text-primary)]">
+            3. Process и PID
+          </div>
+          <div class="mt-1">
+            {{ processAndPidHint }}
+          </div>
         </div>
       </div>
     </section>

@@ -2,7 +2,9 @@
   <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
     <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
       <div class="space-y-2 min-w-0">
-        <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">workflow</p>
+        <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
+          workflow
+        </p>
         <div class="flex flex-wrap items-center gap-2">
           <Badge :variant="stateBadgeVariant">
             {{ stateCode }}
@@ -29,19 +31,27 @@
       v-if="hasFailed"
       class="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm space-y-0.5"
     >
-      <p class="font-semibold text-red-400">Ошибка выполнения</p>
+      <p class="font-semibold text-red-400">
+        Ошибка выполнения
+      </p>
       <p
         v-if="humanErrorMessage"
         class="text-xs text-red-300/80 break-words"
-      >{{ humanErrorMessage }}</p>
+      >
+        {{ humanErrorMessage }}
+      </p>
       <p
         v-if="errorCode"
         class="text-xs text-red-300/80 font-mono"
-      >{{ errorCode }}</p>
+      >
+        {{ errorCode }}
+      </p>
       <p
         v-if="errorMessage && errorMessage !== humanErrorMessage"
         class="text-xs text-red-300/70 break-words"
-      >{{ errorMessage }}</p>
+      >
+        {{ errorMessage }}
+      </p>
     </div>
 
     <!-- Current stage -->
@@ -73,7 +83,7 @@
         <div
           class="h-full bg-[color:var(--accent,#3b82f6)] transition-all duration-300"
           :style="{ width: `${progressPercent}%` }"
-        />
+        ></div>
       </div>
     </div>
 

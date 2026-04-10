@@ -4,7 +4,10 @@
       v-if="showRequiredDevicesSection && !isZoneBlockLayout"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
-      <details open class="group">
+      <details
+        open
+        class="group"
+      >
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -196,7 +199,10 @@
       v-if="showWaterContourSection"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
-      <details open class="group">
+      <details
+        open
+        class="group"
+      >
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -392,7 +398,10 @@
               >
                 <option value="drip">drip</option>
                 <option value="substrate_trays">substrate_trays</option>
-                <option disabled value="nft">nft (скоро)</option>
+                <option
+                  disabled
+                  value="nft"
+                >nft (скоро)</option>
               </select>
             </label>
 
@@ -449,10 +458,10 @@
             NFT пока не включен в основной сценарий мастера. Для агронома доступны drip и substrate_trays.
           </div>
 
-            <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
-              <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
-                Расширенные настройки
-              </summary>
+          <details class="rounded-xl border border-[color:var(--border-muted)] p-3">
+            <summary class="cursor-pointer text-sm font-semibold text-[color:var(--text-primary)]">
+              Расширенные настройки
+            </summary>
 
             <div class="mt-3 space-y-4">
               <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -946,7 +955,9 @@
                 <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                   <div>pH window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }}</span></div>
                   <div>EC window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}</span></div>
-                  <div class="md:col-span-2">EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span></div>
+                  <div class="md:col-span-2">
+                    EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1043,7 +1054,10 @@
       v-if="showIrrigationSection && !isZoneBlockLayout"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
-      <details open class="group">
+      <details
+        open
+        class="group"
+      >
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -1098,29 +1112,29 @@
               :title="fieldHelp('water.intervalMinutes')"
             >
               Интервал полива (мин)
-                <input
-                  v-model.number="waterForm.intervalMinutes"
-                  type="number"
-                  min="5"
-                  max="1440"
-                  class="input-field mt-1 w-full"
-                  :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
-                />
-              </label>
+              <input
+                v-model.number="waterForm.intervalMinutes"
+                type="number"
+                min="5"
+                max="1440"
+                class="input-field mt-1 w-full"
+                :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
+              />
+            </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.durationSeconds')"
             >
               Длительность полива (сек)
-                <input
-                  v-model.number="waterForm.durationSeconds"
-                  type="number"
-                  min="1"
-                  max="3600"
-                  class="input-field mt-1 w-full"
-                  :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
-                />
-              </label>
+              <input
+                v-model.number="waterForm.durationSeconds"
+                type="number"
+                min="1"
+                max="3600"
+                class="input-field mt-1 w-full"
+                :disabled="!canConfigure || waterForm.irrigationDecisionStrategy === 'task'"
+              />
+            </label>
             <label
               class="text-xs text-[color:var(--text-muted)]"
               :title="fieldHelp('water.irrigationBatchL')"
@@ -1802,7 +1816,10 @@
       v-if="showSolutionCorrectionSection && !isZoneBlockLayout"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
-      <details open class="group">
+      <details
+        open
+        class="group"
+      >
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -1856,7 +1873,9 @@
               <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                 <div>pH window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.phMin ?? '—' }}..{{ recipeChemistrySummary.phMax ?? '—' }}</span></div>
                 <div>EC window: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.ecMin ?? '—' }}..{{ recipeChemistrySummary.ecMax ?? '—' }}</span></div>
-                <div class="md:col-span-2">EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span></div>
+                <div class="md:col-span-2">
+                  EC strategy: <span class="font-mono text-[color:var(--text-primary)]">{{ recipeChemistrySummary.nutrientMode ?? 'ratio_ec_pid' }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1958,7 +1977,10 @@
       v-if="showLightingSection"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
-      <details :open="showLightingEnableToggle ? lightingForm.enabled : true" class="group">
+      <details
+        :open="showLightingEnableToggle ? lightingForm.enabled : true"
+        class="group"
+      >
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -2207,7 +2229,10 @@
       v-if="showZoneClimateSection"
       class="rounded-xl border border-[color:var(--border-muted)]"
     >
-      <details :open="showZoneClimateEnableToggle ? zoneClimateForm.enabled : true" class="group">
+      <details
+        :open="showZoneClimateEnableToggle ? zoneClimateForm.enabled : true"
+        class="group"
+      >
         <summary class="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
           <div>
             <h4 class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -2465,9 +2490,6 @@ export interface ZoneClimateFormState {
 }
 
 const props = withDefaults(defineProps<{
-  waterForm: WaterFormState
-  lightingForm: LightingFormState
-  zoneClimateForm: ZoneClimateFormState
   currentRecipePhase?: unknown | null
   layoutMode?: 'legacy' | 'zone_blocks'
   canConfigure?: boolean
@@ -2480,7 +2502,6 @@ const props = withDefaults(defineProps<{
   refreshDisabled?: boolean
   refreshingNodes?: boolean
   availableNodes?: SetupWizardNode[]
-  assignments?: ZoneAutomationSectionAssignments | null
   showCorrectionCalibrationStack?: boolean
   zoneId?: number | null
   sensorCalibrationSettings?: SensorCalibrationSettings | null
@@ -2510,7 +2531,6 @@ const props = withDefaults(defineProps<{
   refreshDisabled: false,
   refreshingNodes: false,
   availableNodes: () => [],
-  assignments: null,
   showCorrectionCalibrationStack: false,
   zoneId: null,
   sensorCalibrationSettings: null,
@@ -2528,6 +2548,11 @@ const props = withDefaults(defineProps<{
   showZoneClimateEnableToggle: true,
   showZoneClimateConfigFields: true,
 })
+
+const waterForm = defineModel<WaterFormState>('waterForm', { required: true })
+const lightingForm = defineModel<LightingFormState>('lightingForm', { required: true })
+const zoneClimateForm = defineModel<ZoneClimateFormState>('zoneClimateForm', { required: true })
+const assignments = defineModel<ZoneAutomationSectionAssignments | null>('assignments', { default: null })
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -2804,34 +2829,37 @@ const rootVentCandidates = computed(() => {
 })
 
 const requiredDevicesSelectedCount = computed(() => {
-  if (!props.assignments) {
+  const current = assignments.value
+  if (!current) {
     return 0
   }
 
   return [
-    props.assignments.irrigation,
-    props.assignments.ph_correction,
-    props.assignments.ec_correction,
+    current.irrigation,
+    current.ph_correction,
+    current.ec_correction,
   ].filter((value): value is number => typeof value === 'number' && value > 0).length
 })
 
 const hasLightingBinding = computed(() => {
-  if (!props.lightingForm.enabled) {
+  if (!lightingForm.value.enabled) {
     return true
   }
 
-  return typeof props.assignments?.light === 'number' && props.assignments.light > 0
+  const current = assignments.value
+  return typeof current?.light === 'number' && current.light > 0
 })
 
 const hasZoneClimateBinding = computed(() => {
-  if (!props.zoneClimateForm.enabled) {
+  if (!zoneClimateForm.value.enabled) {
     return true
   }
 
+  const current = assignments.value
   return [
-    props.assignments?.co2_sensor,
-    props.assignments?.co2_actuator,
-    props.assignments?.root_vent_actuator,
+    current?.co2_sensor,
+    current?.co2_actuator,
+    current?.root_vent_actuator,
   ].some((value) => typeof value === 'number' && value > 0)
 })
 

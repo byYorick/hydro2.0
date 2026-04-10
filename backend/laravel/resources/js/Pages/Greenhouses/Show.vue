@@ -88,15 +88,14 @@
         </div>
 
         <GreenhouseClimateConfiguration
-          :enabled="greenhouseClimateEnabled"
-          :climate-form="climateForm"
-          :bindings="greenhouseClimateBindings"
+          v-model:enabled="greenhouseClimateEnabled"
+          v-model:climate-form="climateForm"
+          v-model:bindings="greenhouseClimateBindings"
           :available-nodes="availableNodes"
           :can-configure="canOperateGreenhouse"
           :applying="climateSubmitting"
           :show-apply-button="true"
           apply-label="Сохранить климат теплицы"
-          @update:enabled="greenhouseClimateEnabled = $event"
           @apply="saveGreenhouseClimate"
         />
 

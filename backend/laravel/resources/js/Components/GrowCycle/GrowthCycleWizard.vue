@@ -20,7 +20,7 @@
                   ? 'bg-[color:var(--accent-cyan)] ring-2 ring-[color:var(--accent-cyan)]/30'
                   : 'bg-[color:var(--border-muted)]',
             ]"
-          />
+          ></div>
         </div>
         <p class="text-center text-sm text-[color:var(--text-muted)] mt-2">
           {{ steps[currentStep]?.label }} ({{ currentStep + 1 }} / {{ steps.length }})
@@ -199,7 +199,9 @@
         class="space-y-5"
       >
         <section class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] space-y-4">
-          <h3 class="text-sm font-semibold">Период цикла</h3>
+          <h3 class="text-sm font-semibold">
+            Период цикла
+          </h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="text-sm">
               <span class="block font-medium mb-2">Дата начала</span>
@@ -336,7 +338,9 @@
           <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-4 space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div class="text-sm font-semibold">Основной цикл полива, окна приготовления и рабочие объёмы контура</div>
+                <div class="text-sm font-semibold">
+                  Основной цикл полива, окна приготовления и рабочие объёмы контура
+                </div>
                 <div class="mt-1 text-xs text-[color:var(--text-muted)]">
                   {{ irrigationStrategyDescription }}
                 </div>
@@ -359,8 +363,12 @@
                       : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'"
                     @click="waterForm.irrigationDecisionStrategy = 'task'"
                   >
-                    <div class="text-sm font-semibold">По времени</div>
-                    <div class="mt-1 text-xs">Запуск по расписанию без оценки влажности субстрата.</div>
+                    <div class="text-sm font-semibold">
+                      По времени
+                    </div>
+                    <div class="mt-1 text-xs">
+                      Запуск по расписанию без оценки влажности субстрата.
+                    </div>
                   </button>
                   <button
                     type="button"
@@ -371,14 +379,20 @@
                       : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'"
                     @click="waterForm.irrigationDecisionStrategy = 'smart_soil_v1'"
                   >
-                    <div class="text-sm font-semibold">Умный полив</div>
-                    <div class="mt-1 text-xs">Перед стартом анализирует `SOIL_MOISTURE` и качество телеметрии.</div>
+                    <div class="text-sm font-semibold">
+                      Умный полив
+                    </div>
+                    <div class="mt-1 text-xs">
+                      Перед стартом анализирует `SOIL_MOISTURE` и качество телеметрии.
+                    </div>
                   </button>
                 </div>
               </div>
 
               <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3">
-                <div class="text-xs text-[color:var(--text-dim)]">Цели из рецепта</div>
+                <div class="text-xs text-[color:var(--text-dim)]">
+                  Цели из рецепта
+                </div>
                 <div class="mt-1 text-sm font-medium text-[color:var(--text-primary)]">
                   pH {{ waterForm.targetPh }}, EC {{ waterForm.targetEc }}
                 </div>
@@ -391,7 +405,9 @@
             <div class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 space-y-3">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div class="text-xs text-[color:var(--text-dim)]">Параметры цикла и контура</div>
+                  <div class="text-xs text-[color:var(--text-dim)]">
+                    Параметры цикла и контура
+                  </div>
                   <div class="mt-1 text-xs text-[color:var(--text-muted)]">
                     Интервал и длительность доходят в `automation profile` как `subsystems.irrigation.execution`, а объёмы и окна приготовления сохраняются в runtime-конфиге контура.
                   </div>
@@ -683,7 +699,9 @@
             <summary class="cursor-pointer list-none">
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div class="text-sm font-semibold">Расширенные runtime-настройки</div>
+                  <div class="text-sm font-semibold">
+                    Расширенные runtime-настройки
+                  </div>
                   <div class="mt-1 text-xs text-[color:var(--text-muted)]">
                     Диагностика, refill, смена раствора и low-level таймауты.
                   </div>
@@ -771,7 +789,6 @@
                       <option value="diagnostics">diagnostics</option>
                     </select>
                   </label>
-
                 </div>
               </div>
 
@@ -934,7 +951,9 @@
       >
         <div class="flex items-start justify-between gap-3">
           <div>
-            <h3 class="text-sm font-semibold">Калибровка насосов</h3>
+            <h3 class="text-sm font-semibold">
+              Калибровка насосов
+            </h3>
             <p class="text-xs text-[color:var(--text-muted)] mt-1">
               Используется тот же calibration flow, что и в setup wizard. Сохранённые значения берутся только из backend `pump_calibrations`.
             </p>
@@ -1035,7 +1054,9 @@
             v-if="calibratedChannels.length > 0"
             class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
           >
-            <div class="text-xs text-[color:var(--text-dim)] mb-2">Уже сохранено</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-2">
+              Уже сохранено
+            </div>
             <div class="space-y-1">
               <div
                 v-for="channel in calibratedChannels"
@@ -1053,7 +1074,9 @@
         v-if="currentStep === 6"
         class="space-y-4"
       >
-        <h3 class="text-sm font-semibold mb-1">Предпросмотр запуска</h3>
+        <h3 class="text-sm font-semibold mb-1">
+          Предпросмотр запуска
+        </h3>
 
         <ReadinessChecklist
           :zone-id="form.zoneId"
@@ -1063,13 +1086,21 @@
 
         <div class="space-y-3">
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Зона</div>
-            <div class="text-sm font-medium">{{ zoneName || `Зона #${form.zoneId}` }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Зона
+            </div>
+            <div class="text-sm font-medium">
+              {{ zoneName || `Зона #${form.zoneId}` }}
+            </div>
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Рецепт</div>
-            <div class="text-sm font-medium">{{ selectedRecipe?.name || "Не выбран" }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Рецепт
+            </div>
+            <div class="text-sm font-medium">
+              {{ selectedRecipe?.name || "Не выбран" }}
+            </div>
             <div
               v-if="totalDurationDays > 0"
               class="text-xs text-[color:var(--text-muted)] mt-1"
@@ -1079,8 +1110,12 @@
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Период</div>
-            <div class="text-sm font-medium">Старт: {{ formatDateTime(form.startedAt) }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Период
+            </div>
+            <div class="text-sm font-medium">
+              Старт: {{ formatDateTime(form.startedAt) }}
+            </div>
             <div
               v-if="form.expectedHarvestAt"
               class="text-xs text-[color:var(--text-muted)] mt-1"
@@ -1090,14 +1125,18 @@
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Автоматика</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Автоматика
+            </div>
             <div class="text-sm font-medium">
               Автоматика: pH {{ waterForm.targetPh }}, EC {{ waterForm.targetEc }}, система {{ waterForm.systemType }}
             </div>
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Полив</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Полив
+            </div>
             <div class="text-sm font-medium">
               {{ irrigationStrategyLabel }} · {{ waterForm.systemType }}
             </div>
@@ -1119,7 +1158,9 @@
           </div>
 
           <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Калибровка насосов</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Калибровка насосов
+            </div>
             <div class="text-sm font-medium">
               {{ calibratedChannels.length }} сохранено, {{ missingPumpComponents.length }} требуют внимания
             </div>
@@ -1129,7 +1170,9 @@
             v-if="selectedRevision"
             class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
           >
-            <div class="text-xs text-[color:var(--text-dim)] mb-2">План фаз:</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-2">
+              План фаз:
+            </div>
             <div class="space-y-2">
               <div
                 v-for="(phase, index) in selectedRevision.phases"

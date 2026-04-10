@@ -26,7 +26,7 @@
       class="input-field"
       placeholder="Ratio %"
       @input="onRatioInput($event)"
-    >
+    />
     <input
       :value="dose"
       type="number"
@@ -34,7 +34,7 @@
       class="input-field"
       placeholder="Доза мл/л"
       @input="onDoseInput($event)"
-    >
+    />
   </div>
 </template>
 

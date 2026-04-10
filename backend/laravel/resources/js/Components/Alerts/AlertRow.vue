@@ -3,7 +3,7 @@
     <span
       class="absolute left-0 top-0 h-full w-1 -ml-3"
       :class="severityRailClass(item)"
-    />
+    ></span>
     <Badge
       :variant="alertBadgeVariant(item.status)"
       class="text-xs shrink-0 mt-0.5"

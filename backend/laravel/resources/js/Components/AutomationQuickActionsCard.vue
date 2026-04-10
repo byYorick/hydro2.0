@@ -1,8 +1,12 @@
 <template>
   <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-4">
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-      <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Операционные команды</h3>
-      <div class="text-xs text-[color:var(--text-muted)]">Быстрые действия оператора</div>
+      <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+        Операционные команды
+      </h3>
+      <div class="text-xs text-[color:var(--text-muted)]">
+        Быстрые действия оператора
+      </div>
     </div>
 
     <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

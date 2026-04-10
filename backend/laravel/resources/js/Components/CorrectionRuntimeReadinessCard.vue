@@ -3,12 +3,17 @@
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <div class="text-sm font-semibold">Готовность correction runtime</div>
+          <div class="text-sm font-semibold">
+            Готовность correction runtime
+          </div>
           <div class="mt-1 text-xs text-[color:var(--text-dim)]">
             Агрегированная проверка process calibration, калибровок дозирующих насосов и сохранённых PID-конфигов зоны для in-flow correction.
           </div>
         </div>
-        <Badge :variant="overallStatus.variant" data-testid="correction-runtime-readiness-status">
+        <Badge
+          :variant="overallStatus.variant"
+          data-testid="correction-runtime-readiness-status"
+        >
           {{ overallStatus.label }}
         </Badge>
       </div>

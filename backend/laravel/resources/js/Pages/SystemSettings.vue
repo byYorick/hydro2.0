@@ -2,7 +2,9 @@
   <AppLayout>
     <div class="space-y-4">
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-        <h1 class="text-lg font-semibold">Системные настройки автоматики</h1>
+        <h1 class="text-lg font-semibold">
+          Системные настройки автоматики
+        </h1>
         <p class="text-sm text-[color:var(--text-dim)] mt-1">
           Системный source of truth для calibration и automation defaults.
         </p>
@@ -20,7 +22,10 @@
         </Button>
       </div>
 
-      <Card v-if="activePayload" class="space-y-4">
+      <Card
+        v-if="activePayload"
+        class="space-y-4"
+      >
         <div class="grid gap-4 md:grid-cols-2">
           <div
             v-for="field in activeFields"
@@ -45,7 +50,7 @@
               v-model="draft[field.path]"
               rows="8"
               class="input-field w-full font-mono text-xs"
-            />
+            ></textarea>
             <input
               v-else
               v-model="draft[field.path]"

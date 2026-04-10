@@ -2,7 +2,9 @@
   <Card>
     <div class="space-y-3">
       <div class="flex items-center justify-between gap-3">
-        <div class="text-sm font-semibold">Relay автотюнинг</div>
+        <div class="text-sm font-semibold">
+          Relay автотюнинг
+        </div>
         <div class="flex gap-1">
           <Button
             size="sm"

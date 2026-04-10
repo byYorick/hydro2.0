@@ -14,11 +14,10 @@
         :title="fieldHelp('climate.enabled')"
       >
         <input
-          :checked="enabled"
+          v-model="enabled"
           data-testid="greenhouse-climate-enabled"
           type="checkbox"
           :disabled="!canConfigure"
-          @change="$emit('update:enabled', ($event.target as HTMLInputElement).checked)"
         />
         Управлять климатом
       </label>
@@ -366,9 +365,6 @@ interface GreenhouseClimateBindingsState {
 }
 
 const props = withDefaults(defineProps<{
-  enabled: boolean
-  climateForm: ClimateFormState
-  bindings: GreenhouseClimateBindingsState
   availableNodes?: SetupWizardNode[]
   canConfigure?: boolean
   applying?: boolean
@@ -382,8 +378,11 @@ const props = withDefaults(defineProps<{
   applyLabel: 'Сохранить климат теплицы',
 })
 
-const emit = defineEmits<{
-  (e: 'update:enabled', value: boolean): void
+const enabled = defineModel<boolean>('enabled', { required: true })
+const climateForm = defineModel<ClimateFormState>('climateForm', { required: true })
+const bindings = defineModel<GreenhouseClimateBindingsState>('bindings', { required: true })
+
+defineEmits<{
   (e: 'apply'): void
 }>()
 
@@ -428,14 +427,14 @@ function matchesAnyChannel(node: SetupWizardNode, candidates: string[]): boolean
 }
 
 function toggleSelection(key: keyof GreenhouseClimateBindingsState, nodeId: number): void {
-  const current = props.bindings[key]
+  const current = bindings.value[key]
   const exists = current.includes(nodeId)
   if (exists) {
-    props.bindings[key] = current.filter((item) => item !== nodeId)
+    bindings.value[key] = current.filter((item) => item !== nodeId)
     return
   }
 
-  props.bindings[key] = [...current, nodeId]
+  bindings.value[key] = [...current, nodeId]
 }
 
 const climateSensorCandidates = computed(() => {

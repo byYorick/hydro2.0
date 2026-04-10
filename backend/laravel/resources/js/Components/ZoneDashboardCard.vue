@@ -12,7 +12,7 @@
           <div
             class="w-2 h-2 rounded-full shrink-0"
             :class="dotClass"
-          />
+          ></div>
           <Link
             :href="`/zones/${zone.id}`"
             class="text-lg font-semibold truncate hover:underline text-[color:var(--text-primary)]"
@@ -63,7 +63,7 @@
         <div
           class="h-full bg-[color:var(--accent-cyan)] rounded-full transition-all duration-500"
           :style="{ width: `${phaseStrip.progress}%` }"
-        />
+        ></div>
       </div>
     </div>
 
@@ -79,7 +79,7 @@
         <div
           class="h-full bg-[color:var(--accent-green)] transition-all"
           :style="{ width: `${zone.cycle.progress?.overall_pct ?? 0}%` }"
-        />
+        ></div>
       </div>
     </div>
 
@@ -99,7 +99,7 @@
           label="pH"
           :decimals="2"
         />
-        <div class="w-px self-stretch bg-[color:var(--border-muted)]" />
+        <div class="w-px self-stretch bg-[color:var(--border-muted)]"></div>
         <ZoneHealthGauge
           :value="zone.telemetry.ec"
           :target-min="resolveTarget('ec', 'min')"
@@ -108,7 +108,7 @@
           unit=" мСм"
           :decimals="2"
         />
-        <div class="w-px self-stretch bg-[color:var(--border-muted)]" />
+        <div class="w-px self-stretch bg-[color:var(--border-muted)]"></div>
         <ZoneHealthGauge
           :value="zone.telemetry.temperature"
           :target-min="resolveTarget('temperature', 'min')"

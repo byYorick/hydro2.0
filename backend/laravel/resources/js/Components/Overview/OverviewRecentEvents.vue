@@ -31,11 +31,11 @@
           <span
             class="mt-2 h-2 w-2 rounded-full"
             :class="eventDotClass(event.kind)"
-          />
+          ></span>
           <span
             v-if="index < events.length - 1"
             class="absolute bottom-0 top-3.5 w-px bg-[color:var(--border-muted)]"
-          />
+          ></span>
         </div>
 
         <div class="min-w-0 flex-1 py-1.5">

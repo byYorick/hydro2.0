@@ -1,5 +1,8 @@
 <template>
-  <Card class="pid-config-form" data-testid="pid-config-form">
+  <Card
+    class="pid-config-form"
+    data-testid="pid-config-form"
+  >
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div class="text-sm font-semibold">

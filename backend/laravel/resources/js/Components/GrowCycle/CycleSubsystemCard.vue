@@ -38,7 +38,7 @@
         <div
           class="w-2 h-2 rounded-full"
           :class="cycle.last_run ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
-        />
+        ></div>
         <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.last_run) }}</span>
       </div>
     </div>
@@ -50,7 +50,7 @@
       </div>
       <template v-if="cycle.next_run">
         <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)] animate-pulse" />
+          <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)] animate-pulse"></div>
           <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.next_run) }}</span>
         </div>
         <template v-if="cycle.last_run && cycle.interval">
@@ -58,7 +58,7 @@
             <div
               class="h-full bg-[color:var(--accent-amber)] transition-all duration-300"
               :style="{ width: `${progressPercent}%` }"
-            />
+            ></div>
           </div>
           <div class="text-xs text-[color:var(--text-dim)] mt-0.5">
             {{ timeUntilLabel }}

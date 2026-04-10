@@ -2,7 +2,9 @@
   <section class="surface-card surface-card--elevated rounded-[1.5rem] border border-[color:var(--border-muted)] p-4 md:p-5">
     <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
       <div>
-        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">Ближайшие исполнимые окна</h4>
+        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">
+          Ближайшие исполнимые окна
+        </h4>
         <p class="text-sm text-[color:var(--text-dim)]">
           Показываем только окна task types, которые runtime действительно умеет исполнять.
         </p>
@@ -33,11 +35,11 @@
             class="mt-2 h-2.5 w-2.5 rounded-full"
             :class="index === 0 ? 'bg-[color:var(--accent-cyan)]' : 'bg-[color:var(--text-muted)]'"
             :title="index === 0 ? 'Следующее окно' : 'Окно'"
-          />
+          ></span>
           <span
             v-if="index < windows.length - 1"
             class="absolute bottom-0 top-4 w-px bg-[color:var(--border-muted)]"
-          />
+          ></span>
         </div>
 
         <div
@@ -55,7 +57,9 @@
                 <span class="metric-pill">
                   {{ formatRelativeTrigger(window.trigger_at) }}
                 </span>
-                <Badge variant="success">{{ laneLabel(window.task_type) }}</Badge>
+                <Badge variant="success">
+                  {{ laneLabel(window.task_type) }}
+                </Badge>
                 <span class="metric-pill">
                   mode <span class="text-[color:var(--text-primary)]">{{ window.mode }}</span>
                 </span>
@@ -76,7 +80,9 @@
       v-if="configOnlyLanes.length > 0"
       class="mt-5 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/15 p-4"
     >
-      <p class="text-sm font-semibold text-[color:var(--text-primary)]">Сконфигурировано, но не исполняется этим runtime</p>
+      <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+        Сконфигурировано, но не исполняется этим runtime
+      </p>
       <div class="mt-3 flex flex-wrap gap-2">
         <Badge
           v-for="lane in configOnlyLanes"

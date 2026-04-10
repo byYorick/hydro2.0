@@ -9,7 +9,9 @@
       v-else
       class="rounded-xl border border-dashed border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-5"
     >
-      <p class="text-sm font-semibold text-[color:var(--text-primary)]">Целевые значения не настроены</p>
+      <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+        Целевые значения не настроены
+      </p>
       <p class="mt-1 text-xs text-[color:var(--text-muted)]">
         Настройте целевые значения для отслеживания параметров зоны
       </p>

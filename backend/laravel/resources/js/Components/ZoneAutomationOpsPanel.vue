@@ -49,7 +49,9 @@
     <div class="grid gap-4 xl:grid-cols-2">
       <!-- Быстрые команды -->
       <div class="space-y-2">
-        <p class="text-xs text-[color:var(--text-muted)]">Операционные команды</p>
+        <p class="text-xs text-[color:var(--text-muted)]">
+          Операционные команды
+        </p>
         <div class="grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
           <Button
             size="sm"

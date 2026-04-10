@@ -2,7 +2,9 @@
   <div>
     <header class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-1">
-        <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">автоматизация</p>
+        <p class="text-[11px] uppercase tracking-[0.22em] text-[color:var(--text-dim)]">
+          автоматизация
+        </p>
         <h3 class="text-base md:text-lg font-semibold text-[color:var(--text-primary)]">
           {{ stateLabel }}
         </h3>
@@ -35,7 +37,9 @@
 
     <section class="mt-3 rounded-xl border border-[color:var(--border-muted)]/60 bg-[color:var(--surface-card)]/45 p-3">
       <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-        <h4 class="text-xs uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Этапы workflow</h4>
+        <h4 class="text-xs uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
+          Этапы workflow
+        </h4>
         <p class="text-xs text-[color:var(--text-muted)]">
           Сейчас: {{ currentWorkflowStageLabel }}
         </p>
@@ -71,7 +75,7 @@
             class="pipeline-connector"
             :class="connectorClass(stage.status)"
             aria-hidden="true"
-          />
+          ></span>
         </li>
       </ul>
     </section>

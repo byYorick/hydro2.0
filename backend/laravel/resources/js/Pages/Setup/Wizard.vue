@@ -41,8 +41,12 @@
               ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]'
               : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)]'"
           >
-            <div class="font-semibold">{{ step.title }}</div>
-            <div class="mt-1">{{ step.hint }}</div>
+            <div class="font-semibold">
+              {{ step.title }}
+            </div>
+            <div class="mt-1">
+              {{ step.hint }}
+            </div>
           </li>
         </ul>
 
@@ -78,7 +82,9 @@
             :disabled="!canConfigure || loading.greenhouses"
             @change="selectGreenhouse"
           >
-            <option :value="null">Выберите теплицу</option>
+            <option :value="null">
+              Выберите теплицу
+            </option>
             <option
               v-for="greenhouse in availableGreenhouses"
               :key="greenhouse.id"
@@ -121,7 +127,9 @@
             class="input-select"
             :disabled="!canConfigure"
           >
-            <option :value="null">Выберите тип теплицы</option>
+            <option :value="null">
+              Выберите тип теплицы
+            </option>
             <option
               v-for="greenhouseType in availableGreenhouseTypes"
               :key="greenhouseType.id"
@@ -169,15 +177,14 @@
 
         <GreenhouseClimateConfiguration
           v-if="selectedGreenhouse"
-          :enabled="greenhouseClimateEnabled"
-          :climate-form="automationClimateForm"
-          :bindings="greenhouseClimateBindings"
+          v-model:enabled="greenhouseClimateEnabled"
+          v-model:climate-form="automationClimateForm"
+          v-model:bindings="greenhouseClimateBindings"
           :available-nodes="greenhouseClimateNodes"
           :can-configure="canConfigure"
           :applying="loading.stepGreenhouseClimate"
           :show-apply-button="true"
           apply-label="Сохранить климат теплицы"
-          @update:enabled="greenhouseClimateEnabled = $event"
           @apply="applyGreenhouseClimate"
         />
 
@@ -211,7 +218,9 @@
             :disabled="!canConfigure || loading.zones || !stepGreenhouseDone"
             @change="selectZone"
           >
-            <option :value="null">Выберите зону</option>
+            <option :value="null">
+              Выберите зону
+            </option>
             <option
               v-for="zone in availableZones"
               :key="zone.id"
@@ -305,7 +314,9 @@
             :disabled="!canConfigure || loading.plants"
             @change="selectPlant"
           >
-            <option :value="null">Выберите растение</option>
+            <option :value="null">
+              Выберите растение
+            </option>
             <option
               v-for="plant in availablePlants"
               :key="plant.id"
@@ -373,9 +384,10 @@
 
           <ZoneAutomationProfileSections
             :layout-mode="'zone_blocks'"
-            :water-form="automationWaterForm"
-            :lighting-form="automationLightingForm"
-            :zone-climate-form="zoneClimateForm"
+            v-model:water-form="automationWaterForm"
+            v-model:lighting-form="automationLightingForm"
+            v-model:zone-climate-form="zoneClimateForm"
+            v-model:assignments="deviceAssignments"
             :can-configure="canConfigure"
             :show-node-bindings="true"
             :show-bind-buttons="true"
@@ -385,7 +397,6 @@
             :refresh-disabled="loading.nodes || loading.stepDevices"
             :refreshing-nodes="loading.nodes"
             :available-nodes="availableNodes"
-            :assignments="deviceAssignments"
             :show-section-save-buttons="true"
             :save-disabled="loading.stepDevices || loading.stepAutomation"
             :saving-section="savingAutomationSection"
@@ -404,10 +415,16 @@
 
           <div class="flex flex-wrap items-center gap-2 text-xs text-[color:var(--text-muted)]">
             <span>Ожидается нод: {{ zoneAutomationExpectedNodeIds.length }}</span>
-            <span v-if="zoneAutomationAssignmentsReady && !zoneAutomationNodesReady" class="text-[color:var(--badge-warning-text)]">
+            <span
+              v-if="zoneAutomationAssignmentsReady && !zoneAutomationNodesReady"
+              class="text-[color:var(--badge-warning-text)]"
+            >
               Привязка нод ещё не подтверждена
             </span>
-            <span v-else-if="stepZoneDevicesDone" class="text-[color:var(--badge-success-text)]">
+            <span
+              v-else-if="stepZoneDevicesDone"
+              class="text-[color:var(--badge-success-text)]"
+            >
               Привязка нод подтверждена
             </span>
             <span v-else>

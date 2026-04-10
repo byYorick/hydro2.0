@@ -1,6 +1,13 @@
 {
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
+      "Bash(git:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(python:*)",
+      "Write(*)",
+      "Edit(*)",
       "Bash(grep:*)",
       "Bash(ls:*)",
       "Read(//home/georgiy/esp/hydro/hydro2.0/**)",

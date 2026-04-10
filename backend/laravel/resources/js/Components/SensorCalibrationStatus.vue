@@ -3,7 +3,9 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between gap-3">
         <div>
-          <div class="text-sm font-semibold">Калибровка сенсоров</div>
+          <div class="text-sm font-semibold">
+            Калибровка сенсоров
+          </div>
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             pH/EC calibration tracking и запуск калибровки через backend.
           </div>

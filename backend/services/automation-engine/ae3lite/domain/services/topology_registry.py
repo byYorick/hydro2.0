@@ -261,6 +261,17 @@ TWO_TANK: Mapping[str, StageDef] = {
 
 
 # ---------------------------------------------------------------------------
+# Topology generic_cycle_start (simple single-batch diagnostics)
+# ---------------------------------------------------------------------------
+
+GENERIC_CYCLE_START: Mapping[str, StageDef] = {
+    # startup: единственный stage для simple single-batch workflow.
+    # При DONE команды startup recovery завершает задачу (нет next_stage/terminal_error).
+    "startup": StageDef("startup", "command", workflow_phase="idle"),
+}
+
+
+# ---------------------------------------------------------------------------
 # Реестр
 # ---------------------------------------------------------------------------
 
@@ -268,6 +279,7 @@ TWO_TANK: Mapping[str, StageDef] = {
 _TOPOLOGIES: Mapping[str, Mapping[str, StageDef]] = {
     "two_tank_drip_substrate_trays": TWO_TANK,
     "two_tank": TWO_TANK,  # short alias used in legacy intents
+    "generic_cycle_start": GENERIC_CYCLE_START,
 }
 
 

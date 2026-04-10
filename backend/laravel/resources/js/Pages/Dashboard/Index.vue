@@ -104,7 +104,7 @@
                 v-model="query"
                 class="input-field flex-1"
                 placeholder="Поиск зоны, культуры или теплицы"
-              >
+              />
               <select
                 v-model="statusFilter"
                 class="input-select w-full sm:w-44"
@@ -249,7 +249,7 @@
                 v-model="harvestModal.batchLabel"
                 class="input-field mt-1 w-full"
                 placeholder="Например: Batch-042"
-              >
+              />
             </div>
           </div>
         </ConfirmModal>
@@ -272,7 +272,7 @@
                 v-model="abortModal.notes"
                 class="input-field mt-1 w-full h-20 resize-none"
                 placeholder="Короткое описание причины"
-              />
+              ></textarea>
             </div>
           </div>
         </ConfirmModal>
@@ -289,7 +289,7 @@
             Последние события
           </div>
           <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)]">
-            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse" />
+            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
             <span>Live</span>
           </div>
         </div>

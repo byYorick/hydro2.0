@@ -2,7 +2,9 @@
   <section class="surface-card surface-card--elevated rounded-[1.5rem] border border-[color:var(--border-muted)] p-4 md:p-5">
     <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
       <div>
-        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">Исполнения</h4>
+        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">
+          Исполнения
+        </h4>
         <p class="text-sm text-[color:var(--text-dim)]">
           Активный run и недавняя история по каноническим `ae_tasks`.
         </p>
@@ -55,7 +57,9 @@
 
       <div class="rounded-2xl border border-[color:var(--border-muted)] p-4">
         <div class="flex items-center justify-between gap-3">
-          <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">Недавние run</h5>
+          <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+            Недавние run
+          </h5>
           <span class="text-xs text-[color:var(--text-muted)]">{{ recentRuns.length }} записей</span>
         </div>
 
@@ -83,11 +87,13 @@
             <span
               class="absolute left-0 top-0 h-full w-1"
               :class="statusRailClass(run.status)"
-            />
+            ></span>
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-mono text-sm font-semibold text-[color:var(--text-primary)]">#{{ run.execution_id }}</span>
-                <Badge :variant="statusVariant(run.status)">{{ run.status }}</Badge>
+                <Badge :variant="statusVariant(run.status)">
+                  {{ run.status }}
+                </Badge>
                 <Badge
                   v-if="run.decision_outcome"
                   :variant="decisionVariant(run.decision_outcome, run.decision_degraded)"

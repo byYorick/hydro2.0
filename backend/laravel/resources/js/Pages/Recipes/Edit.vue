@@ -30,7 +30,7 @@
 
       <Card>
         <RecipeEditor
-          :form="form"
+          v-model:form="form"
           :plants="plants"
           :plants-loading="plantsLoading"
           :npk-products="npkProducts"

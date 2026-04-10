@@ -13,7 +13,9 @@
       v-else-if="activeGrowCycle"
       class="rounded-xl border border-dashed border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-5"
     >
-      <p class="text-sm font-semibold text-[color:var(--text-primary)]">Цикл выращивания активен</p>
+      <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+        Цикл выращивания активен
+      </p>
       <div class="mt-2 space-y-1 text-xs text-[color:var(--text-muted)]">
         <div v-if="zoneStatus">
           Статус зоны:
@@ -40,8 +42,10 @@
         <span
           class="ui-state-dot text-[color:var(--accent-cyan)]"
           title="Загрузка данных цикла"
-        />
-        <p class="text-sm font-semibold text-[color:var(--text-primary)]">Данные цикла ещё загружаются</p>
+        ></span>
+        <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+          Данные цикла ещё загружаются
+        </p>
       </div>
       <p class="mt-2 text-xs text-[color:var(--text-muted)]">
         Обновите данные зоны на вкладке «Цикл», чтобы синхронизировать активный цикл и таргеты
@@ -52,7 +56,9 @@
       v-else
       class="rounded-xl border border-dashed border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-5"
     >
-      <p class="text-sm font-semibold text-[color:var(--text-primary)]">Цикл выращивания не запущен</p>
+      <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+        Цикл выращивания не запущен
+      </p>
       <p class="mt-2 text-xs text-[color:var(--text-muted)]">
         Привяжите рецепт и запустите цикл выращивания для отслеживания прогресса
       </p>

@@ -8,7 +8,7 @@
       <span
         class="mt-1.5 h-2 w-2 rounded-full shrink-0"
         :class="eventDotClass(item.kind)"
-      />
+      ></span>
     </div>
 
     <div class="min-w-0 flex-1">

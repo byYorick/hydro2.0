@@ -28,7 +28,7 @@ module.exports = {
     'vue/multi-word-component-names': 'off',
     'vue/no-v-html': 'warn',
     'vue/no-side-effects-in-computed-properties': 'warn',
-    'vue/no-mutating-props': 'warn',
+    'vue/no-mutating-props': 'error',
     'vue/require-default-prop': 'off',
     'vue/require-explicit-emits': 'warn',
     'no-case-declarations': 'warn',
@@ -80,14 +80,6 @@ module.exports = {
       ],
       rules: {
         '@typescript-eslint/no-explicit-any': 'off',
-      },
-    },
-    {
-      files: [
-        'resources/js/Pages/Zones/ZoneDetailModals.vue',
-      ],
-      rules: {
-        'vue/no-mutating-props': 'off',
       },
     },
   ],

@@ -3,7 +3,9 @@
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
       <div>
         <div class="flex items-center gap-2">
-          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">Режим управления 2-баками</h3>
+          <h3 class="text-base font-semibold text-[color:var(--text-primary)]">
+            Режим управления 2-баками
+          </h3>
           <Badge
             v-if="!automationControlModeLoading"
             :variant="automationControlMode === 'auto' ? 'info' : 'warning'"

@@ -31,21 +31,33 @@
 
     <div class="ui-kpi-grid md:grid-cols-2 xl:grid-cols-4 mt-4">
       <article class="ui-kpi-card">
-        <div class="ui-kpi-label">Zone climate</div>
-        <div class="ui-kpi-value !text-lg">{{ zoneClimateEnabled ? 'enabled' : 'disabled' }}</div>
-        <div class="ui-kpi-hint">CO2 и прикорневая вентиляция</div>
+        <div class="ui-kpi-label">
+          Zone climate
+        </div>
+        <div class="ui-kpi-value !text-lg">
+          {{ zoneClimateEnabled ? 'enabled' : 'disabled' }}
+        </div>
+        <div class="ui-kpi-hint">
+          CO2 и прикорневая вентиляция
+        </div>
       </article>
 
       <article class="ui-kpi-card">
-        <div class="ui-kpi-label">Водный узел</div>
-        <div class="ui-kpi-value !text-lg">{{ waterForm.tanksCount }} бака · {{ waterForm.systemType }}</div>
+        <div class="ui-kpi-label">
+          Водный узел
+        </div>
+        <div class="ui-kpi-value !text-lg">
+          {{ waterForm.tanksCount }} бака · {{ waterForm.systemType }}
+        </div>
         <div class="ui-kpi-hint">
           {{ waterTopologyLabel }} · diag {{ waterForm.diagnosticsIntervalMinutes }} мин
         </div>
       </article>
 
       <article class="ui-kpi-card">
-        <div class="ui-kpi-label">Коррекция pH / EC</div>
+        <div class="ui-kpi-label">
+          Коррекция pH / EC
+        </div>
         <div class="ui-kpi-value !text-lg">
           pH {{ waterForm.targetPh.toFixed(2) }} · EC {{ waterForm.targetEc.toFixed(1) }}
         </div>
@@ -56,8 +68,12 @@
       </article>
 
       <article class="ui-kpi-card">
-        <div class="ui-kpi-label">Досветка</div>
-        <div class="ui-kpi-value !text-lg">{{ lightingForm.luxDay }} lux</div>
+        <div class="ui-kpi-label">
+          Досветка
+        </div>
+        <div class="ui-kpi-value !text-lg">
+          {{ lightingForm.luxDay }} lux
+        </div>
         <div class="ui-kpi-hint">
           {{ lightingForm.scheduleStart }}-{{ lightingForm.scheduleEnd }} · {{ lightingForm.intervalMinutes }} мин
         </div>

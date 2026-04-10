@@ -12,37 +12,61 @@
     >
       <div class="grid gap-4 md:grid-cols-2">
         <div class="space-y-1">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Тип</div>
-          <div class="font-semibold text-[color:var(--text-primary)]">{{ getAlertTitle(alert) }}</div>
+          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+            Тип
+          </div>
+          <div class="font-semibold text-[color:var(--text-primary)]">
+            {{ getAlertTitle(alert) }}
+          </div>
         </div>
         <div class="space-y-1">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Статус</div>
-          <div class="font-semibold text-[color:var(--text-primary)]">{{ translateStatus(alert.status) }}</div>
+          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+            Статус
+          </div>
+          <div class="font-semibold text-[color:var(--text-primary)]">
+            {{ translateStatus(alert.status) }}
+          </div>
         </div>
         <div
           v-if="alert.code"
           class="space-y-1"
         >
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Код</div>
-          <div class="font-mono text-[color:var(--text-primary)]">{{ alert.code }}</div>
+          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+            Код
+          </div>
+          <div class="font-mono text-[color:var(--text-primary)]">
+            {{ alert.code }}
+          </div>
         </div>
         <div
           v-if="alert.source"
           class="space-y-1"
         >
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Источник</div>
-          <div class="text-[color:var(--text-primary)]">{{ alert.source }}</div>
+          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+            Источник
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ alert.source }}
+          </div>
         </div>
         <div class="space-y-1">
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Создан</div>
-          <div class="text-[color:var(--text-primary)]">{{ formatAlertDate(alert.created_at) }}</div>
+          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+            Создан
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ formatAlertDate(alert.created_at) }}
+          </div>
         </div>
         <div
           v-if="alert.resolved_at"
           class="space-y-1"
         >
-          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Решён</div>
-          <div class="text-[color:var(--text-primary)]">{{ formatAlertDate(alert.resolved_at) }}</div>
+          <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+            Решён
+          </div>
+          <div class="text-[color:var(--text-primary)]">
+            {{ formatAlertDate(alert.resolved_at) }}
+          </div>
         </div>
       </div>
 
@@ -85,24 +109,36 @@
         v-if="message"
         class="space-y-1"
       >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Сообщение</div>
-        <div class="text-[color:var(--text-primary)]">{{ message }}</div>
+        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          Сообщение
+        </div>
+        <div class="text-[color:var(--text-primary)]">
+          {{ message }}
+        </div>
       </div>
 
       <div
         v-if="description"
         class="space-y-1"
       >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Описание</div>
-        <div class="text-[color:var(--text-primary)]">{{ description }}</div>
+        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          Описание
+        </div>
+        <div class="text-[color:var(--text-primary)]">
+          {{ description }}
+        </div>
       </div>
 
       <div
         v-if="recommendation"
         class="space-y-1"
       >
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Что делать</div>
-        <div class="text-[color:var(--text-primary)]">{{ recommendation }}</div>
+        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          Что делать
+        </div>
+        <div class="text-[color:var(--text-primary)]">
+          {{ recommendation }}
+        </div>
       </div>
 
       <div

@@ -9,7 +9,7 @@
           class="ui-state-dot"
           :class="active > 0 ? 'text-[color:var(--accent-cyan)]' : 'text-[color:var(--text-dim)]'"
           :title="active > 0 ? 'Есть активные исполнения' : 'Активных исполнений нет'"
-        />
+        ></span>
       </div>
       <div class="ui-kpi-value">
         {{ active }}
@@ -27,7 +27,7 @@
         <span
           class="ui-state-dot text-[color:var(--accent-green)]"
           title="Завершено успешно за 24 часа"
-        />
+        ></span>
       </div>
       <div class="ui-kpi-value">
         {{ completed24h }}
@@ -46,7 +46,7 @@
           class="ui-state-dot"
           :class="failed24h > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'"
           :title="failed24h > 0 ? 'Есть ошибки за 24 часа' : 'Ошибок за 24 часа нет'"
-        />
+        ></span>
       </div>
       <div class="ui-kpi-value">
         {{ failed24h }}
@@ -64,7 +64,7 @@
         <span
           class="ui-state-dot text-[color:var(--accent-amber)]"
           title="Исполнимые окна на горизонте"
-        />
+        ></span>
       </div>
       <div class="ui-kpi-value">
         {{ executableWindows }}

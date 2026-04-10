@@ -2,7 +2,9 @@
   <section class="surface-card surface-card--elevated rounded-[1.5rem] border border-[color:var(--border-muted)] p-4 md:p-5">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">Детали run</h4>
+        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">
+          Детали run
+        </h4>
         <p class="text-sm text-[color:var(--text-dim)]">
           Сжатый timeline без мусорных повторов `AE_TASK_STARTED`.
         </p>
@@ -32,8 +34,12 @@
     >
       <div class="grid gap-3 md:grid-cols-2">
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-4">
-          <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Run</p>
-          <p class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">#{{ selectedExecution.execution_id }}</p>
+          <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
+            Run
+          </p>
+          <p class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">
+            #{{ selectedExecution.execution_id }}
+          </p>
           <p class="mt-1 text-xs text-[color:var(--text-muted)]">
             {{ laneLabel(selectedExecution.task_type) }} · {{ selectedExecution.current_stage || 'stage не передан' }}
           </p>
@@ -59,7 +65,9 @@
           </p>
         </div>
         <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/25 p-4">
-          <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">Время</p>
+          <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--text-dim)]">
+            Время
+          </p>
           <p class="mt-1 text-sm font-semibold text-[color:var(--text-primary)]">
             updated {{ formatDateTime(selectedExecution.updated_at || selectedExecution.created_at || null) }}
           </p>
@@ -100,7 +108,9 @@
         v-if="selectedExecution.lifecycle && selectedExecution.lifecycle.length > 0"
         class="rounded-xl border border-[color:var(--border-muted)] p-4"
       >
-        <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">Lifecycle</h5>
+        <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+          Lifecycle
+        </h5>
         <div class="mt-3 space-y-2">
           <div
             v-for="(item, index) in selectedExecution.lifecycle"
@@ -108,7 +118,9 @@
             class="flex items-center justify-between gap-3 text-sm"
           >
             <div class="flex items-center gap-2">
-              <Badge :variant="statusVariant(item.status)">{{ item.status }}</Badge>
+              <Badge :variant="statusVariant(item.status)">
+                {{ item.status }}
+              </Badge>
               <span class="text-[color:var(--text-primary)]">{{ item.source || 'runtime' }}</span>
             </div>
             <span class="text-xs text-[color:var(--text-muted)]">{{ formatDateTime(item.at) }}</span>
@@ -117,7 +129,9 @@
       </div>
 
       <div class="rounded-xl border border-[color:var(--border-muted)] p-4">
-        <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">Timeline</h5>
+        <h5 class="text-sm font-semibold text-[color:var(--text-primary)]">
+          Timeline
+        </h5>
         <div
           v-if="condensedTimeline.length === 0"
           class="mt-3 text-sm text-[color:var(--text-dim)]"
@@ -137,18 +151,20 @@
               <span
                 class="mt-2 h-2.5 w-2.5 rounded-full"
                 :class="timelineDotClass(item)"
-              />
+              ></span>
               <span
                 v-if="index < condensedTimeline.length - 1"
                 class="absolute bottom-0 top-4 w-px bg-[color:var(--border-muted)]"
-              />
+              ></span>
             </div>
 
             <div class="min-w-0 flex-1 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--surface-card)]/20 px-3 py-3">
               <div class="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
-                    <Badge variant="info">{{ item.event_type }}</Badge>
+                    <Badge variant="info">
+                      {{ item.event_type }}
+                    </Badge>
                     <span class="text-sm font-medium text-[color:var(--text-primary)]">
                       {{ item.label }}
                     </span>

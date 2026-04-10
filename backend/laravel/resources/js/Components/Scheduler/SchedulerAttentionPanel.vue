@@ -1,7 +1,9 @@
 <template>
   <section class="surface-card surface-card--elevated rounded-[1.5rem] border border-[color:var(--border-muted)] p-4 md:p-5">
     <div>
-      <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">Требует внимания</h4>
+      <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">
+        Требует внимания
+      </h4>
       <p class="text-sm text-[color:var(--text-dim)]">
         Короткие сигналы для оператора без raw scheduler timeline.
       </p>
@@ -27,7 +29,7 @@
         <span
           class="absolute left-0 top-0 h-full w-1"
           :class="toneRailClass(item.tone)"
-        />
+        ></span>
         <div class="flex items-start gap-3">
           <div
             class="mt-0.5 flex h-7 w-7 items-center justify-center rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]/70 text-sm"
@@ -39,15 +41,15 @@
             <span v-else>i</span>
           </div>
           <div class="min-w-0">
-        <p class="text-sm font-semibold text-[color:var(--text-primary)]">
-          {{ item.title }}
-        </p>
-        <p
-          v-if="item.detail"
-          class="mt-1 text-xs text-[color:var(--text-dim)]"
-        >
-          {{ item.detail }}
-        </p>
+            <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+              {{ item.title }}
+            </p>
+            <p
+              v-if="item.detail"
+              class="mt-1 text-xs text-[color:var(--text-dim)]"
+            >
+              {{ item.detail }}
+            </p>
           </div>
         </div>
       </article>

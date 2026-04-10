@@ -36,7 +36,10 @@
       />
 
       <!-- Аккордеон 1: Профиль зоны -->
-      <ZoneAutomationAccordionSection title="Профиль зоны" :default-open="true">
+      <ZoneAutomationAccordionSection
+        title="Профиль зоны"
+        :default-open="true"
+      >
         <AutomationProfileCard
           :can-configure-automation="canConfigureAutomation"
           :telemetry-label="telemetryLabel"

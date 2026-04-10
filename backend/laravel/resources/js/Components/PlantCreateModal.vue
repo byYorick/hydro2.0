@@ -193,7 +193,7 @@
           Растение: <span class="text-[color:var(--text-primary)] font-semibold">{{ form.name }}</span>
         </div>
         <RecipeEditor
-          :form="recipeForm"
+          v-model:form="recipeForm"
           :plants="[]"
           :npk-products="npkProducts"
           :calcium-products="calciumProducts"

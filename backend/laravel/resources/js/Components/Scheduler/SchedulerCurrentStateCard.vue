@@ -2,7 +2,9 @@
   <section class="surface-card surface-card--elevated rounded-[1.5rem] border border-[color:var(--border-muted)] p-4 md:p-5">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">Что происходит сейчас</h4>
+        <h4 class="font-headline text-lg font-bold text-[color:var(--text-primary)]">
+          Что происходит сейчас
+        </h4>
         <p class="text-sm text-[color:var(--text-dim)]">
           Снимок фактического состояния зоны из canonical automation state.
         </p>
@@ -20,7 +22,7 @@
               class="ui-state-dot"
               :class="statusDotColor"
               :title="activeRun ? `run ${activeRun.status || 'unknown'}` : 'idle'"
-            />
+            ></span>
             <Badge :variant="activeRun ? statusVariant(activeRun.status) : 'secondary'">
               {{ activeRun ? activeRun.status : 'idle' }}
             </Badge>

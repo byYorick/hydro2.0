@@ -122,7 +122,10 @@ function togglePasswordVisibility(): void {
           class="relative hidden min-h-[720px] flex-col justify-between overflow-hidden p-12 text-white lg:flex"
           style="background: linear-gradient(135deg, #0b6148 0%, #2f7b60 100%);"
         >
-          <div class="pointer-events-none absolute inset-0 opacity-30" style="background-image: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.18) 0, transparent 28%), radial-gradient(circle at 80% 15%, rgba(255, 255, 255, 0.14) 0, transparent 22%), radial-gradient(circle at 85% 85%, rgba(255, 255, 255, 0.08) 0, transparent 24%);"></div>
+          <div
+            class="pointer-events-none absolute inset-0 opacity-30"
+            style="background-image: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.18) 0, transparent 28%), radial-gradient(circle at 80% 15%, rgba(255, 255, 255, 0.14) 0, transparent 22%), radial-gradient(circle at 85% 85%, rgba(255, 255, 255, 0.08) 0, transparent 24%);"
+          ></div>
           <div class="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.05),transparent_45%)]"></div>
 
           <div class="relative z-10">
@@ -143,7 +146,9 @@ function togglePasswordVisibility(): void {
 
           <div class="relative z-10 flex flex-wrap gap-10">
             <div>
-              <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/58">Статус</p>
+              <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/58">
+                Статус
+              </p>
               <div class="flex items-center gap-2">
                 <span class="h-2 w-2 rounded-full bg-[#aad0b1] shadow-[0_0_0_6px_rgba(170,208,177,0.15)]"></span>
                 <span class="text-sm font-semibold">Системы в норме</span>
@@ -151,13 +156,19 @@ function togglePasswordVisibility(): void {
             </div>
 
             <div>
-              <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/58">Активные узлы</p>
-              <p class="text-sm font-semibold">1 248 датчиков</p>
+              <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-white/58">
+                Активные узлы
+              </p>
+              <p class="text-sm font-semibold">
+                1 248 датчиков
+              </p>
             </div>
           </div>
 
           <div class="pointer-events-none absolute -bottom-20 -right-12 z-0 opacity-10">
-            <div class="select-none text-[18rem] font-black leading-none tracking-tight">GI</div>
+            <div class="select-none text-[18rem] font-black leading-none tracking-tight">
+              GI
+            </div>
           </div>
         </aside>
 
@@ -327,7 +338,7 @@ function togglePasswordVisibility(): void {
                     type="checkbox"
                     class="h-4 w-4 rounded border border-[rgba(120,140,118,0.55)] bg-white text-[#0b6148] focus:ring-2 focus:ring-[#2f9e5d]/20"
                     name="remember"
-                  >
+                  />
                   <span class="text-sm text-[#566456]">Запомнить меня</span>
                 </label>
               </div>

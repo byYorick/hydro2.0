@@ -9,7 +9,7 @@
         <h3 class="text-base font-semibold text-[color:var(--text-primary)] truncate">
           {{ title }}
         </h3>
-        <slot name="badge" />
+        <slot name="badge"></slot>
       </div>
       <svg
         class="shrink-0 w-4 h-4 text-[color:var(--text-dim)] transition-transform duration-200"
@@ -18,7 +18,11 @@
         viewBox="0 0 20 20"
         fill="currentColor"
       >
-        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+        <path
+          fill-rule="evenodd"
+          d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+          clip-rule="evenodd"
+        />
       </svg>
     </button>
 
@@ -27,7 +31,7 @@
       class="px-4 pb-4 space-y-4 border-t border-[color:var(--border-muted)]"
     >
       <div class="pt-4">
-        <slot />
+        <slot></slot>
       </div>
     </div>
   </section>

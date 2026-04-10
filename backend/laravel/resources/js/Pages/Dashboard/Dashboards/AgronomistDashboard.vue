@@ -111,7 +111,7 @@
               <div
                 class="w-2 h-2 rounded-full shrink-0 transition-all duration-500"
                 :class="zoneDotClass(zone)"
-              />
+              ></div>
               <Link
                 :href="`/zones/${zone.id}`"
                 class="text-sm font-semibold truncate hover:text-[color:var(--accent-cyan)] transition-colors"
@@ -151,7 +151,7 @@
             <div
               class="h-full bg-[color:var(--accent-cyan)] rounded-full transition-all duration-500"
               :style="{ width: `${zonePhaseInfo(zone)!.progress}%` }"
-            />
+            ></div>
           </div>
         </div>
 
@@ -168,7 +168,7 @@
               label="pH"
               :decimals="2"
             />
-            <div class="w-px self-stretch bg-[color:var(--border-muted)]" />
+            <div class="w-px self-stretch bg-[color:var(--border-muted)]"></div>
             <ZoneHealthGauge
               :value="zone.telemetry?.ec"
               :target-min="resolveTarget(zone, 'ec', 'min')"
@@ -180,7 +180,7 @@
               :decimals="2"
             />
             <template v-if="zone.telemetry?.temperature != null">
-              <div class="w-px self-stretch bg-[color:var(--border-muted)]" />
+              <div class="w-px self-stretch bg-[color:var(--border-muted)]"></div>
               <ZoneHealthGauge
                 :value="zone.telemetry.temperature"
                 :target-min="resolveTarget(zone, 'temperature', 'min')"

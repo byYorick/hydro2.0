@@ -99,58 +99,74 @@
     <div class="ui-kpi-grid mt-4 grid-cols-2 xl:grid-cols-4">
       <article class="ui-kpi-card">
         <div class="flex items-center justify-between">
-          <div class="ui-kpi-label">pH факт</div>
+          <div class="ui-kpi-label">
+            pH факт
+          </div>
           <span
             class="ui-state-dot"
             :class="metricDotClass(telemetry?.ph)"
-          />
+          ></span>
         </div>
         <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
           {{ formatMetric(telemetry?.ph, 2) }}
         </div>
-        <div class="ui-kpi-hint">Текущее значение</div>
+        <div class="ui-kpi-hint">
+          Текущее значение
+        </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="flex items-center justify-between">
-          <div class="ui-kpi-label">EC факт</div>
+          <div class="ui-kpi-label">
+            EC факт
+          </div>
           <span
             class="ui-state-dot"
             :class="metricDotClass(telemetry?.ec)"
-          />
+          ></span>
         </div>
         <div class="ui-kpi-value text-[color:var(--accent-cyan)]">
           {{ formatMetric(telemetry?.ec, 2) }}
         </div>
-        <div class="ui-kpi-hint">мСм/см</div>
+        <div class="ui-kpi-hint">
+          мСм/см
+        </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="flex items-center justify-between">
-          <div class="ui-kpi-label">Температура</div>
+          <div class="ui-kpi-label">
+            Температура
+          </div>
           <span
             class="ui-state-dot"
             :class="metricDotClass(telemetry?.temperature)"
-          />
+          ></span>
         </div>
         <div class="ui-kpi-value">
           {{ formatMetric(telemetry?.temperature, 1) }}
         </div>
-        <div class="ui-kpi-hint">°C воздух</div>
+        <div class="ui-kpi-hint">
+          °C воздух
+        </div>
       </article>
 
       <article class="ui-kpi-card">
         <div class="flex items-center justify-between">
-          <div class="ui-kpi-label">Влажность</div>
+          <div class="ui-kpi-label">
+            Влажность
+          </div>
           <span
             class="ui-state-dot"
             :class="metricDotClass(telemetry?.humidity)"
-          />
+          ></span>
         </div>
         <div class="ui-kpi-value">
           {{ formatMetric(telemetry?.humidity, 0) }}
         </div>
-        <div class="ui-kpi-hint">% относительная</div>
+        <div class="ui-kpi-hint">
+          % относительная
+        </div>
       </article>
     </div>
   </section>

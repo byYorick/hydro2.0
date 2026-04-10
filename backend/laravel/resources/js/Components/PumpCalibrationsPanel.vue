@@ -2,7 +2,9 @@
   <Card>
     <div class="space-y-3">
       <div class="flex items-center justify-between gap-2">
-        <div class="text-sm font-semibold">Калибровки насосов</div>
+        <div class="text-sm font-semibold">
+          Калибровки насосов
+        </div>
         <div class="flex items-center gap-2">
           <Badge
             v-if="hasUncalibrated"
@@ -69,12 +71,24 @@
           <table class="w-full min-w-[760px] text-xs">
             <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-dim)]">
               <tr class="border-b border-[color:var(--border-muted)]">
-                <th class="px-3 py-2 text-left font-medium">Роль</th>
-                <th class="px-3 py-2 text-left font-medium">Узел / канал</th>
-                <th class="px-3 py-2 text-left font-medium">Статус</th>
-                <th class="px-3 py-2 text-left font-medium">Источник</th>
-                <th class="px-3 py-2 text-left font-medium">Последнее событие</th>
-                <th class="px-3 py-2 text-left font-medium">Примечание</th>
+                <th class="px-3 py-2 text-left font-medium">
+                  Роль
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
+                  Узел / канал
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
+                  Статус
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
+                  Источник
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
+                  Последнее событие
+                </th>
+                <th class="px-3 py-2 text-left font-medium">
+                  Примечание
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -108,8 +122,12 @@
                 </td>
                 <td class="px-3 py-2 align-top text-[color:var(--text-dim)]">
                   <template v-if="historyByRole[pump.role]">
-                    <div class="text-[color:var(--text-primary)]">{{ historyByRole[pump.role]?.message }}</div>
-                    <div class="mt-1">{{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}</div>
+                    <div class="text-[color:var(--text-primary)]">
+                      {{ historyByRole[pump.role]?.message }}
+                    </div>
+                    <div class="mt-1">
+                      {{ formatDateTime(historyByRole[pump.role]?.occurredAt) }}
+                    </div>
                     <div v-if="historyByRole[pump.role]?.mlPerSec !== null">
                       {{ formatMlPerSec(historyByRole[pump.role]!.mlPerSec!) }} мл/с
                     </div>
@@ -118,7 +136,10 @@
                 </td>
                 <td class="px-3 py-2 align-top text-[color:var(--text-dim)]">
                   <div>Через визард</div>
-                  <div v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days" class="mt-1 text-[color:var(--badge-warning-text)]">
+                  <div
+                    v-if="Number(pump.calibration_age_days) > pumpSettings.age_warning_days"
+                    class="mt-1 text-[color:var(--badge-warning-text)]"
+                  >
                     Устарела: {{ pump.calibration_age_days }} дн
                   </div>
                 </td>

@@ -1,9 +1,14 @@
 <template>
-  <Card class="process-calibration-panel" data-testid="process-calibration-panel">
+  <Card
+    class="process-calibration-panel"
+    data-testid="process-calibration-panel"
+  >
     <div class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <div class="text-sm font-semibold">Калибровка процесса</div>
+          <div class="text-sm font-semibold">
+            Калибровка процесса
+          </div>
           <div class="mt-1 text-xs text-[color:var(--text-dim)]">
             Настройка окна наблюдения и коэффициентов отклика для in-flow correction.
           </div>

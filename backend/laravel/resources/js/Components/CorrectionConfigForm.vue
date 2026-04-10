@@ -3,7 +3,9 @@
     <div class="space-y-5">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div class="text-sm font-semibold">Correction Config</div>
+          <div class="text-sm font-semibold">
+            Correction Config
+          </div>
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             Единый контракт для PID, таймингов, retry windows, safety и hot-reload.
           </div>
@@ -23,9 +25,19 @@
               <label class="block text-xs font-medium text-[color:var(--text-muted)] mb-1">
                 Preset
               </label>
-              <select v-model="selectedPresetId" class="input-select w-full" data-testid="correction-config-preset-select">
-                <option :value="null">System default</option>
-                <option v-for="preset in presets" :key="preset.id" :value="preset.id">
+              <select
+                v-model="selectedPresetId"
+                class="input-select w-full"
+                data-testid="correction-config-preset-select"
+              >
+                <option :value="null">
+                  System default
+                </option>
+                <option
+                  v-for="preset in presets"
+                  :key="preset.id"
+                  :value="preset.id"
+                >
                   {{ preset.name }} ({{ preset.scope }})
                 </option>
               </select>
@@ -36,10 +48,22 @@
             </div>
 
             <div class="space-y-2">
-              <Button size="sm" variant="outline" class="w-full" data-testid="correction-config-apply-preset" @click="applySelectedPreset">
+              <Button
+                size="sm"
+                variant="outline"
+                class="w-full"
+                data-testid="correction-config-apply-preset"
+                @click="applySelectedPreset"
+              >
                 Применить preset в форму
               </Button>
-              <Button size="sm" variant="outline" class="w-full" data-testid="correction-config-reset-defaults" @click="resetToDefaults">
+              <Button
+                size="sm"
+                variant="outline"
+                class="w-full"
+                data-testid="correction-config-reset-defaults"
+                @click="resetToDefaults"
+              >
                 Сбросить к system default
               </Button>
               <Button
@@ -69,12 +93,17 @@
 
           <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
             <label class="flex items-center gap-2 text-sm">
-              <input v-model="advancedMode" type="checkbox" />
+              <input
+                v-model="advancedMode"
+                type="checkbox"
+              />
               Advanced mode
             </label>
 
             <div>
-              <div class="text-xs font-medium text-[color:var(--text-muted)] mb-2">Phase override</div>
+              <div class="text-xs font-medium text-[color:var(--text-muted)] mb-2">
+                Phase override
+              </div>
               <div class="grid gap-2">
                 <Button
                   v-for="phase in phases"
@@ -92,26 +121,55 @@
           </div>
 
           <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
-            <div class="text-xs font-medium text-[color:var(--text-muted)]">Сохранить как custom preset</div>
-            <input v-model="newPresetName" type="text" class="input-field w-full" placeholder="Название preset" data-testid="correction-config-new-preset-name" />
-            <textarea v-model="newPresetDescription" class="input-field w-full min-h-[88px]" placeholder="Описание" data-testid="correction-config-new-preset-description"></textarea>
-            <Button size="sm" class="w-full" data-testid="correction-config-save-preset" :disabled="loading || !newPresetName.trim()" @click="saveAsPreset">
+            <div class="text-xs font-medium text-[color:var(--text-muted)]">
+              Сохранить как custom preset
+            </div>
+            <input
+              v-model="newPresetName"
+              type="text"
+              class="input-field w-full"
+              placeholder="Название preset"
+              data-testid="correction-config-new-preset-name"
+            />
+            <textarea
+              v-model="newPresetDescription"
+              class="input-field w-full min-h-[88px]"
+              placeholder="Описание"
+              data-testid="correction-config-new-preset-description"
+            ></textarea>
+            <Button
+              size="sm"
+              class="w-full"
+              data-testid="correction-config-save-preset"
+              :disabled="loading || !newPresetName.trim()"
+              @click="saveAsPreset"
+            >
               Сохранить текущий config как preset
             </Button>
           </div>
 
           <div class="rounded-xl border border-[color:var(--border-muted)] p-3 space-y-3">
-            <div class="text-xs font-medium text-[color:var(--text-muted)]">History</div>
-            <div v-if="history.length === 0" class="text-xs text-[color:var(--text-dim)]">
+            <div class="text-xs font-medium text-[color:var(--text-muted)]">
+              History
+            </div>
+            <div
+              v-if="history.length === 0"
+              class="text-xs text-[color:var(--text-dim)]"
+            >
               Нет ревизий.
             </div>
-            <ul v-else class="space-y-2">
+            <ul
+              v-else
+              class="space-y-2"
+            >
               <li
                 v-for="item in history.slice(0, 6)"
                 :key="item.id"
                 class="rounded-lg bg-[color:var(--surface-muted)] px-3 py-2"
               >
-                <div class="text-xs font-medium">v{{ item.version }} · {{ item.change_type }}</div>
+                <div class="text-xs font-medium">
+                  v{{ item.version }} · {{ item.change_type }}
+                </div>
                 <div class="text-[11px] text-[color:var(--text-dim)]">
                   {{ item.preset?.name || 'System default' }} · {{ formatDate(item.changed_at) }}
                 </div>
@@ -123,7 +181,9 @@
         <div class="space-y-5">
           <section class="space-y-4">
             <div>
-              <div class="text-sm font-semibold">Base config</div>
+              <div class="text-sm font-semibold">
+                Base config
+              </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1">
                 Общие параметры коррекции для всех режимов до применения phase-specific overrides.
               </div>
@@ -135,8 +195,12 @@
               class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
             >
               <div>
-                <div class="text-sm font-medium">{{ section.label }}</div>
-                <div class="text-xs text-[color:var(--text-dim)] mt-1">{{ section.description }}</div>
+                <div class="text-sm font-medium">
+                  {{ section.label }}
+                </div>
+                <div class="text-xs text-[color:var(--text-dim)] mt-1">
+                  {{ section.description }}
+                </div>
               </div>
               <div
                 v-if="sectionRuntimeNote(section.key, baseForm)"
@@ -145,10 +209,17 @@
                 {{ sectionRuntimeNote(section.key, baseForm) }}
               </div>
               <div class="grid gap-4 md:grid-cols-2">
-                <div v-for="field in visibleFields(section.fields)" :key="`base-${field.path}`" class="space-y-1.5">
+                <div
+                  v-for="field in visibleFields(section.fields)"
+                  :key="`base-${field.path}`"
+                  class="space-y-1.5"
+                >
                   <label class="block text-xs font-medium text-[color:var(--text-muted)]">{{ field.label }}</label>
 
-                  <label v-if="field.type === 'boolean'" class="flex items-center gap-2 text-sm">
+                  <label
+                    v-if="field.type === 'boolean'"
+                    class="flex items-center gap-2 text-sm"
+                  >
                     <input
                       :checked="Boolean(getByPath(baseForm, field.path))"
                       :data-testid="`correction-config-base-${field.path}`"
@@ -166,7 +237,13 @@
                     :disabled="Boolean(field.readonly)"
                     @change="setByPath(baseForm, field.path, ($event.target as HTMLSelectElement).value)"
                   >
-                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                    <option
+                      v-for="option in field.options || []"
+                      :key="option"
+                      :value="option"
+                    >
+                      {{ option }}
+                    </option>
                   </select>
 
                   <input
@@ -182,7 +259,10 @@
                     @input="handleScalarInput(baseForm, field, $event)"
                   />
 
-                  <div v-if="field.type !== 'boolean'" class="text-[11px] text-[color:var(--text-dim)]">
+                  <div
+                    v-if="field.type !== 'boolean'"
+                    class="text-[11px] text-[color:var(--text-dim)]"
+                  >
                     {{ field.description }}
                   </div>
                 </div>
@@ -192,7 +272,9 @@
 
           <section class="space-y-4">
             <div>
-              <div class="text-sm font-semibold">Phase config: {{ selectedPhase }}</div>
+              <div class="text-sm font-semibold">
+                Phase config: {{ selectedPhase }}
+              </div>
               <div class="text-xs text-[color:var(--text-dim)] mt-1">
                 Effective-конфигурация для выбранной фазы. На сохранении backend преобразует её в phase override diff.
               </div>
@@ -204,7 +286,9 @@
             >
               <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <div class="text-sm font-medium">Effective preview: {{ selectedPhase }}</div>
+                  <div class="text-sm font-medium">
+                    Effective preview: {{ selectedPhase }}
+                  </div>
                   <div class="text-xs text-[color:var(--text-dim)] mt-1">
                     Что реально уходит в runtime для выбранной фазы и где phase config отходит от base.
                   </div>
@@ -231,17 +315,24 @@
                   :key="group.key"
                   class="rounded-xl bg-[color:var(--surface-muted)] px-3 py-3"
                 >
-                  <div class="text-xs font-medium text-[color:var(--text-muted)]">{{ group.label }}</div>
+                  <div class="text-xs font-medium text-[color:var(--text-muted)]">
+                    {{ group.label }}
+                  </div>
                   <dl class="mt-3 space-y-2">
                     <div
                       v-for="item in group.items"
                       :key="item.path"
                       class="flex items-start justify-between gap-3 text-sm"
                     >
-                      <dt class="text-[color:var(--text-dim)]">{{ item.label }}</dt>
+                      <dt class="text-[color:var(--text-dim)]">
+                        {{ item.label }}
+                      </dt>
                       <dd class="text-right font-medium">
                         <div>{{ item.value }}</div>
-                        <div v-if="item.overridden" class="text-[11px] font-normal text-[color:var(--text-dim)]">
+                        <div
+                          v-if="item.overridden"
+                          class="text-[11px] font-normal text-[color:var(--text-dim)]"
+                        >
                           base {{ item.baseValue }}
                         </div>
                       </dd>
@@ -257,14 +348,19 @@
                 Для этой фазы используется base config без phase override diff.
               </div>
 
-              <div v-else class="space-y-3">
+              <div
+                v-else
+                class="space-y-3"
+              >
                 <div
                   v-for="section in phaseOverrideSections"
                   :key="section.key"
                   class="rounded-xl border border-[color:var(--border-muted)] px-3 py-3"
                 >
                   <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <div class="text-xs font-medium">{{ section.label }}</div>
+                    <div class="text-xs font-medium">
+                      {{ section.label }}
+                    </div>
                     <div class="text-[11px] text-[color:var(--text-dim)]">
                       {{ section.totalOverrideCount }} override
                       <span v-if="section.totalOverrideCount !== 1">s</span>
@@ -272,14 +368,21 @@
                   </div>
 
                   <ul class="mt-3 space-y-2 text-sm">
-                    <li v-for="field in section.fields" :key="field.path" class="rounded-lg bg-[color:var(--surface-muted)] px-3 py-2">
+                    <li
+                      v-for="field in section.fields"
+                      :key="field.path"
+                      class="rounded-lg bg-[color:var(--surface-muted)] px-3 py-2"
+                    >
                       <span class="font-medium">{{ field.label }}:</span>
                       {{ field.effectiveValue }}
                       <span class="text-[11px] text-[color:var(--text-dim)]"> · base {{ field.baseValue }}</span>
                     </li>
                   </ul>
 
-                  <div v-if="section.hiddenOverrideCount > 0" class="mt-3 text-[11px] text-[color:var(--text-dim)]">
+                  <div
+                    v-if="section.hiddenOverrideCount > 0"
+                    class="mt-3 text-[11px] text-[color:var(--text-dim)]"
+                  >
                     И ещё {{ section.hiddenOverrideCount }} hidden advanced override.
                   </div>
                 </div>
@@ -292,8 +395,12 @@
               class="rounded-xl border border-[color:var(--border-muted)] p-4 space-y-4"
             >
               <div>
-                <div class="text-sm font-medium">{{ section.label }}</div>
-                <div class="text-xs text-[color:var(--text-dim)] mt-1">{{ section.description }}</div>
+                <div class="text-sm font-medium">
+                  {{ section.label }}
+                </div>
+                <div class="text-xs text-[color:var(--text-dim)] mt-1">
+                  {{ section.description }}
+                </div>
               </div>
               <div
                 v-if="sectionRuntimeNote(section.key, activePhaseForm)"
@@ -302,10 +409,17 @@
                 {{ sectionRuntimeNote(section.key, activePhaseForm) }}
               </div>
               <div class="grid gap-4 md:grid-cols-2">
-                <div v-for="field in visibleFields(section.fields)" :key="`phase-${selectedPhase}-${field.path}`" class="space-y-1.5">
+                <div
+                  v-for="field in visibleFields(section.fields)"
+                  :key="`phase-${selectedPhase}-${field.path}`"
+                  class="space-y-1.5"
+                >
                   <label class="block text-xs font-medium text-[color:var(--text-muted)]">{{ field.label }}</label>
 
-                  <label v-if="field.type === 'boolean'" class="flex items-center gap-2 text-sm">
+                  <label
+                    v-if="field.type === 'boolean'"
+                    class="flex items-center gap-2 text-sm"
+                  >
                     <input
                       :checked="Boolean(getByPath(activePhaseForm, field.path))"
                       :data-testid="`correction-config-phase-${selectedPhase}-${field.path}`"
@@ -323,7 +437,13 @@
                     :disabled="Boolean(field.readonly)"
                     @change="setByPath(activePhaseForm, field.path, ($event.target as HTMLSelectElement).value)"
                   >
-                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                    <option
+                      v-for="option in field.options || []"
+                      :key="option"
+                      :value="option"
+                    >
+                      {{ option }}
+                    </option>
                   </select>
 
                   <input
@@ -339,7 +459,10 @@
                     @input="handleScalarInput(activePhaseForm, field, $event)"
                   />
 
-                  <div v-if="field.type !== 'boolean'" class="text-[11px] text-[color:var(--text-dim)]">
+                  <div
+                    v-if="field.type !== 'boolean'"
+                    class="text-[11px] text-[color:var(--text-dim)]"
+                  >
                     {{ field.description }}
                   </div>
                 </div>
@@ -350,10 +473,22 @@
       </div>
 
       <div class="flex justify-end gap-2 border-t border-[color:var(--border-muted)] pt-4">
-        <Button type="button" variant="outline" size="sm" data-testid="correction-config-reload" @click="reload">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="correction-config-reload"
+          @click="reload"
+        >
           Перезагрузить
         </Button>
-        <Button type="button" size="sm" data-testid="correction-config-save" :disabled="loading" @click="save">
+        <Button
+          type="button"
+          size="sm"
+          data-testid="correction-config-save"
+          :disabled="loading"
+          @click="save"
+        >
           {{ loading ? 'Сохранение...' : 'Сохранить correction config' }}
         </Button>
       </div>

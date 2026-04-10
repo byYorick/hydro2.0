@@ -529,7 +529,6 @@ import type { PlantOption, RecipeEditorFormState, RecipePhaseFormState } from '@
 import { normalizePhaseRatios, nutrientRatioSum } from '@/composables/recipeEditorShared'
 
 interface Props {
-  form: RecipeEditorFormState
   plants: PlantOption[]
   plantsLoading?: boolean
   npkProducts: NutrientProduct[]
@@ -540,11 +539,13 @@ interface Props {
   lockedPlantLabel?: string | null
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   plantsLoading: false,
   hidePlantSelect: false,
   lockedPlantLabel: null,
 })
+
+const form = defineModel<RecipeEditorFormState>('form', { required: true })
 
 defineEmits<{
   'add-phase': []
@@ -552,6 +553,6 @@ defineEmits<{
 }>()
 
 const sortedPhases = computed<RecipePhaseFormState[]>(() => {
-  return [...props.form.phases].sort((left, right) => left.phase_index - right.phase_index)
+  return [...form.value.phases].sort((left, right) => left.phase_index - right.phase_index)
 })
 </script>

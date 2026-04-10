@@ -13,7 +13,9 @@
         </div>
 
         <div class="space-y-2">
-          <div class="text-sm font-medium">Шаг 1. Подготовка</div>
+          <div class="text-sm font-medium">
+            Шаг 1. Подготовка
+          </div>
           <div class="text-xs text-[color:var(--text-dim)]">
             Рекомендуемые значения: {{ defaults.point_1_value }} и {{ defaults.point_2_value }}.
           </div>
@@ -38,7 +40,9 @@
           class="space-y-4"
         >
           <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
-            <div class="text-sm font-medium">Шаг 2. Точка 1</div>
+            <div class="text-sm font-medium">
+              Шаг 2. Точка 1
+            </div>
             <label
               class="text-xs text-[color:var(--text-muted)] block"
               :title="fieldHelp('point_1_reference')"
@@ -71,7 +75,9 @@
           </div>
 
           <div class="rounded-lg border border-[color:var(--border-muted)] p-3 space-y-3">
-            <div class="text-sm font-medium">Шаг 3. Точка 2</div>
+            <div class="text-sm font-medium">
+              Шаг 3. Точка 2
+            </div>
             <label
               class="text-xs text-[color:var(--text-muted)] block"
               :title="fieldHelp('point_2_reference')"

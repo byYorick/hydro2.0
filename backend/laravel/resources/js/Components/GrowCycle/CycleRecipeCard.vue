@@ -11,7 +11,10 @@
         data-testid="recipe-attach-btn"
         @click="handleAction"
       >
-        <span v-if="!hasCycle" data-testid="zone-start-btn">Запустить цикл</span>
+        <span
+          v-if="!hasCycle"
+          data-testid="zone-start-btn"
+        >Запустить цикл</span>
         <span v-else-if="hasDetailedCycle">Сменить ревизию</span>
         <span v-else>Обновить данные</span>
       </Button>
