@@ -260,7 +260,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             stale_recheck_delay_sec=self._STALE_RECHECK_DELAY_SEC,
             prefer_probe_snapshot=True,
         )
-        return await self._targets_reached(task=task, plan=plan, now=now)
+        return await self._workflow_ready_reached(task=task, plan=plan, now=now)
 
     async def _completed_outcome(self, *, task: Any, plan: Any, now: datetime) -> StageOutcome:
         runtime = plan.runtime
@@ -274,7 +274,7 @@ class SolutionFillCheckHandler(BaseStageHandler):
             prefer_probe_snapshot=True,
         )
 
-        if await self._targets_reached(task=task, plan=plan, now=now):
+        if await self._workflow_ready_reached(task=task, plan=plan, now=now):
             _logger.debug("solution_fill_check: цели достигнуты, заполнение останавливается zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",

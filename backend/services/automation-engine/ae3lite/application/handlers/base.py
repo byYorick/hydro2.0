@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from statistics import median
 from time import monotonic
@@ -712,9 +713,7 @@ class BaseStageHandler:
         ec_target = float(runtime["target_ec"])
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
-        # Parent-stage readiness should be aligned with correction success:
-        # we aim for the canonical target, not merely the lower edge of the
-        # recipe min/max window.
+        # Correction success stays aligned with the canonical target tolerance.
         ph_tol = abs(ph_target) * (float(tolerance.get("ph_pct", 15)) / 100.0)
         ec_tol = abs(ec_target) * (float(tolerance.get("ec_pct", 25)) / 100.0)
         ph_min = ph_target - ph_tol
@@ -722,6 +721,85 @@ class BaseStageHandler:
         ec_min = ec_target - ec_tol
         ec_max = ec_target + ec_tol
         return ph_min <= current_ph <= ph_max and ec_min <= current_ec <= ec_max
+
+    async def _workflow_ready_reached(self, *, task: Any, plan: Any, now: datetime) -> bool:
+        runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
+        max_age = int(runtime.get("telemetry_max_age_sec") or 300)
+        correction_cfg = self._correction_config_for_task(task=task, runtime=runtime)
+        process_cfg = self._process_cfg_for_task(task=task, runtime=runtime)
+        ph = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="PH",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ph", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        ec = await self._read_target_metric_window(
+            zone_id=task.zone_id,
+            sensor_type="EC",
+            telemetry_max_age_sec=max_age,
+            config=self._observation_config(kind="ec", correction_cfg=correction_cfg, process_cfg=process_cfg),
+            unavailable_error="two_tank_prepare_targets_unavailable",
+            stale_error="two_tank_prepare_targets_stale",
+            now=now,
+        )
+        if not ph["ready"] or not ec["ready"]:
+            return False
+        return self._workflow_ready_values_match(
+            task=task,
+            runtime=runtime,
+            current_ph=float(ph["value"]),
+            current_ec=float(ec["value"]),
+        )
+
+    def _workflow_ready_values_match(
+        self,
+        *,
+        task: Any,
+        runtime: Mapping[str, Any],
+        current_ph: float,
+        current_ec: float,
+    ) -> bool:
+        tolerance = self._prepare_tolerance_for_task(task=task, runtime=runtime)
+        ph_target = float(runtime["target_ph"])
+        ec_target = float(runtime["target_ec"])
+        ph_ok = self._value_matches_ready_band(
+            current=current_ph,
+            target=ph_target,
+            tolerance_pct=float(tolerance.get("ph_pct", 15) or 15),
+            explicit_min=self._coerce_float(runtime.get("target_ph_min")),
+            explicit_max=self._coerce_float(runtime.get("target_ph_max")),
+        )
+        ec_ok = self._value_matches_ready_band(
+            current=current_ec,
+            target=ec_target,
+            tolerance_pct=float(tolerance.get("ec_pct", 25) or 25),
+            explicit_min=self._coerce_float(runtime.get("target_ec_min")),
+            explicit_max=self._coerce_float(runtime.get("target_ec_max")),
+        )
+        return ph_ok and ec_ok
+
+    def _value_matches_ready_band(
+        self,
+        *,
+        current: float,
+        target: float,
+        tolerance_pct: float,
+        explicit_min: float | None,
+        explicit_max: float | None,
+    ) -> bool:
+        if (
+            explicit_min is not None
+            and explicit_max is not None
+            and math.isfinite(explicit_min)
+            and math.isfinite(explicit_max)
+            and explicit_min <= explicit_max
+        ):
+            return explicit_min <= current <= explicit_max
+        tolerance = abs(target) * (float(tolerance_pct) / 100.0)
+        return (target - tolerance) <= current <= (target + tolerance)
 
     async def _read_target_metric_window(
         self,

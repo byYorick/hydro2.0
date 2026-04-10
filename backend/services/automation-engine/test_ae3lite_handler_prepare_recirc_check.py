@@ -284,7 +284,22 @@ async def test_targets_reached_within_tolerance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_targets_reached_does_not_treat_explicit_min_as_success() -> None:
+async def test_targets_soft_tolerance_without_explicit_ready_band_enters_correction() -> None:
+    runtime = dict(RUNTIME)
+    runtime["target_ph_min"] = 5.6
+    runtime["target_ph_max"] = 6.0
+    runtime["target_ec_min"] = 1.2
+    runtime["target_ec_max"] = 1.45
+    handler = _make_handler(monitor=_Monitor(ph=5.8, ec=1.5))
+
+    outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+
+
+@pytest.mark.asyncio
+async def test_targets_reached_uses_explicit_ready_band_when_present() -> None:
     runtime = dict(RUNTIME)
     runtime["prepare_tolerance"] = {"ph_pct": 1, "ec_pct": 1}
     runtime["target_ec_min"] = 1.9
@@ -293,8 +308,8 @@ async def test_targets_reached_does_not_treat_explicit_min_as_success() -> None:
 
     outcome = await handler.run(task=_make_task(), plan=_MockPlan(runtime=runtime), stage_def=_StageDef(), now=NOW)
 
-    assert outcome.kind == "enter_correction"
-    assert outcome.correction is not None
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "prepare_recirculation_stop_to_ready"
 
 
 @pytest.mark.asyncio

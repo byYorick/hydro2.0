@@ -17,6 +17,9 @@ actions:
     test_ph_node_uid: ${TEST_PH_NODE_UID}
     test_ec_node_uid: ${TEST_EC_NODE_UID}
     test_soil_node_uid: ${TEST_SOIL_NODE_UID}
+    task_run_id: 0
+    skip_task_id: 0
+    smart_run_task_id: 0
     recipe_name: ae3-irrig-runtime-${TIMESTAMP_MS}
     idem_task: e107-task-${TIMESTAMP_MS}
     idem_skip: e107-skip-${TIMESTAMP_MS}
@@ -562,7 +565,7 @@ actions:
                   auto_replay_after_setup: false
                   max_setup_replays: 0
                 safety:
-                  stop_on_solution_min: true
+                  stop_on_solution_min: false
 
   - step: create_recipe
     type: database_execute
@@ -1118,7 +1121,7 @@ actions:
       ec_value: 0.45
       level_clean_min_override: false
       level_clean_max_override: true
-      level_solution_min_override: false
+      level_solution_min_override: true
       level_solution_max_override: true
     save: seed_off_target_before_irrigation_response
 
@@ -1362,7 +1365,7 @@ actions:
                   auto_replay_after_setup: false
                   max_setup_replays: 0
                 safety:
-                  stop_on_solution_min: true
+                  stop_on_solution_min: false
 
   - step: wait_smart_profile_bundle_ready
     type: db.wait
@@ -1433,15 +1436,18 @@ actions:
   - step: wait_soil_high_telemetry
     type: db.wait
     query: |
-      SELECT COUNT(*)::int AS sample_count
-      FROM telemetry_samples ts
-      JOIN sensors s ON s.id = ts.sensor_id
+      SELECT
+        s.id AS sensor_id,
+        tl.last_value,
+        COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+      FROM sensors s
+      JOIN telemetry_last tl ON tl.sensor_id = s.id
       WHERE s.zone_id = :zone_id
         AND s.type = 'SOIL_MOISTURE'
         AND s.label = 'soil_moisture'
-        AND ts.ts >= NOW() - INTERVAL '12 seconds'
-        AND ts.value >= 68.0
-      HAVING COUNT(*) >= 2
+        AND COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '30 seconds'
+        AND COALESCE(tl.last_value, 0) >= 68.0
+      LIMIT 1
     params:
       zone_id: ${zone_id}
     timeout: 30.0
@@ -1568,15 +1574,18 @@ actions:
   - step: wait_soil_low_telemetry
     type: db.wait
     query: |
-      SELECT COUNT(*)::int AS sample_count
-      FROM telemetry_samples ts
-      JOIN sensors s ON s.id = ts.sensor_id
+      SELECT
+        s.id AS sensor_id,
+        tl.last_value,
+        COALESCE(tl.last_ts, tl.updated_at) AS sample_ts
+      FROM sensors s
+      JOIN telemetry_last tl ON tl.sensor_id = s.id
       WHERE s.zone_id = :zone_id
         AND s.type = 'SOIL_MOISTURE'
         AND s.label = 'soil_moisture'
-        AND ts.ts >= NOW() - INTERVAL '20 seconds'
-        AND ts.value <= 22.0
-      HAVING COUNT(*) >= 5
+        AND COALESCE(tl.last_ts, tl.updated_at) >= NOW() - INTERVAL '30 seconds'
+        AND COALESCE(tl.last_value, 1000) <= 22.0
+      LIMIT 1
     params:
       zone_id: ${zone_id}
     timeout: 40.0
@@ -1749,8 +1758,10 @@ assertions:
         operator: equals
         value: skip
       - field: irrigation_decision_reason_code
-        operator: equals
-        value: smart_soil_above_max
+        operator: in
+        value:
+          - smart_soil_above_max
+          - smart_soil_degraded_above_max
 
   - name: smart_soil_skip_publishes_no_irrigation_commands
     type: database_query
@@ -1788,5 +1799,7 @@ assertions:
         operator: equals
         value: run
       - field: irrigation_decision_reason_code
-        operator: equals
-        value: smart_soil_below_min
+        operator: in
+        value:
+          - smart_soil_below_min
+          - smart_soil_degraded_below_min

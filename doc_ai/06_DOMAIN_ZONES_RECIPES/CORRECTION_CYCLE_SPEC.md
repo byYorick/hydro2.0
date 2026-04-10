@@ -197,10 +197,12 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
 - `cycle.phase_overrides`, `cycle.manual_overrides` и `zone.logic_profile` не могут менять
   canonical `target_ph/target_ec` и их windows; runtime допускает из них только execution/config
   параметры, не chemical setpoints.
-- success/fail логика correction и parent-stage readiness должны стремиться к canonical
-  `target_ph/target_ec` с phase `prepare_tolerance`; `target_*_min/max` используются как
-  recipe bounds/observability metadata и не могут считаться ранним success только потому,
-  что значение вошло в нижнюю/верхнюю границу окна.
+- correction success должен стремиться к canonical `target_ph/target_ec` с phase `prepare_tolerance`;
+- `workflow_ready` для переходов в `READY` может быть строже correction-success:
+  если runtime уже имеет явные `target_*_min/max`, именно они используются как explicit ready band;
+- fallback на `prepare_tolerance` для `workflow_ready` допустим только если explicit ready band отсутствует;
+- `target_*_min/max` не считаются ранним success сами по себе внутри correction sub-machine:
+  они используются только для финального решения о `workflow_ready`.
 - `no-effect` определяется по факту наблюдаемой реакции на дозу (`peak_effect` в observe-window),
   а не только по tail-median; это нужно для проточных систем, где отклик может быть волнообразным.
 - learned runtime metrics (`gain_ema`, `retention_ema`, `wave_score_ema`, learned timing) сохраняются
@@ -225,8 +227,10 @@ Compatible-With: Protocol 2.0, Backend >=3.0, Python >=3.0, Database >=3.0, Fron
    - parent-stage не создаёт новое correction-window на каждом таком шаге: весь fill-stage работает в одном окне коррекции.
 7. Возврат correction в `solution_fill_check` не открывает новый timeout-window:
    - действует исходный `solution_fill_timeout_sec` для всего stage целиком.
-   - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
-     stage остаётся в одном correction window до `solution_fill_timeout_sec` либо до fail-closed по `no-effect`.
+    - attempt-based exhaustion внутри `solution_fill` не должна останавливать коррекцию раньше времени:
+      stage остаётся в одном correction window до `solution_fill_timeout_sec` либо до fail-closed по `no-effect`;
+    - fail-closed по `no-effect` в `solution_fill` реализуется как переход в `solution_fill_timeout_stop`,
+      а не как silent poll без новой correction window.
 8. Когда `solution_max` сработал:
    - если targets достигнуты → `READY`, stop fill, deactivate sensors;
    - если targets НЕ достигнуты → stop fill и переход в `TANK_RECIRC`.

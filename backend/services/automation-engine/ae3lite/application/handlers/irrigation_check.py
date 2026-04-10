@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 from ae3lite.application.dto.stage_outcome import StageOutcome
 from ae3lite.application.handlers.base import BaseStageHandler
@@ -46,6 +46,11 @@ class IrrigationCheckHandler(BaseStageHandler):
         recovery = runtime.get("irrigation_recovery") if isinstance(runtime.get("irrigation_recovery"), dict) else {}
         safety = runtime.get("irrigation_safety") if isinstance(runtime.get("irrigation_safety"), dict) else {}
         solution_min_guard_enabled = bool(safety.get("stop_on_solution_min", True))
+        expected_irrigation_state = {
+            "valve_solution_supply": True,
+            "valve_irrigation": True,
+            "pump_main": True,
+        }
         recent_storage_event = await self._read_recent_storage_event(
             task=task,
             event_types=("IRRIGATION_SOLUTION_LOW", "EMERGENCY_STOP_ACTIVATED"),
@@ -72,37 +77,57 @@ class IrrigationCheckHandler(BaseStageHandler):
             _observe_duration("recovery")
             return StageOutcome(kind="transition", next_stage="irrigation_stop_to_recovery")
 
+        probe_verified = False
         if recent_event_type == "IRRIGATION_SOLUTION_LOW" and solution_min_guard_enabled:
-            return await self._solution_min_low_outcome(
-                task=task,
-                topology=topology,
-                recovery=recovery,
-                now=now,
-                observe_duration=_observe_duration,
-                source="node_event",
+            if self._recent_solution_low_event_confirms_active_low(
+                event=recent_storage_event,
+                expected=expected_irrigation_state,
+            ):
+                return await self._solution_min_low_outcome(
+                    task=task,
+                    topology=topology,
+                    recovery=recovery,
+                    now=now,
+                    observe_duration=_observe_duration,
+                    source="node_event",
+                )
+            try:
+                await self._probe_irr_state(
+                    task=task,
+                    plan=plan,
+                    now=now,
+                    expected=expected_irrigation_state,
+                )
+                probe_verified = True
+            except TaskExecutionError:
+                return await self._solution_min_low_outcome(
+                    task=task,
+                    topology=topology,
+                    recovery=recovery,
+                    now=now,
+                    observe_duration=_observe_duration,
+                    source="node_event",
+                )
+            _logger.info(
+                "irrigation_check: игнорирую stale IRRIGATION_SOLUTION_LOW event zone_id=%s task_id=%s",
+                task.zone_id,
+                getattr(task, "id", None),
             )
         if recent_event_type == "EMERGENCY_STOP_ACTIVATED":
             await self._reconcile_recent_emergency_stop(
                 task=task,
                 plan=plan,
                 now=now,
-                expected={
-                    "valve_solution_supply": True,
-                    "valve_irrigation": True,
-                    "pump_main": True,
-                },
+                expected=expected_irrigation_state,
             )
 
-        await self._probe_irr_state(
-            task=task,
-            plan=plan,
-            now=now,
-            expected={
-                "valve_solution_supply": True,
-                "valve_irrigation": True,
-                "pump_main": True,
-            },
-        )
+        if not probe_verified:
+            await self._probe_irr_state(
+                task=task,
+                plan=plan,
+                now=now,
+                expected=expected_irrigation_state,
+            )
 
         if control_mode == "manual":
             return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
@@ -187,6 +212,38 @@ class IrrigationCheckHandler(BaseStageHandler):
                 return StageOutcome(kind="enter_correction", correction=corr)
 
         return StageOutcome(kind="poll", due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)))
+
+    def _recent_solution_low_event_confirms_active_low(
+        self,
+        *,
+        event: Mapping[str, Any] | None,
+        expected: Mapping[str, bool],
+    ) -> bool:
+        payload = self._storage_event_payload(event)
+        snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), Mapping) else None
+        state = payload.get("state") if isinstance(payload.get("state"), Mapping) else None
+        if not isinstance(snapshot, Mapping):
+            return False
+        for key, value in expected.items():
+            if key not in snapshot or bool(snapshot.get(key)) != bool(value):
+                return False
+        level_min_state = self._event_bool(state, ("level_solution_min", "solution_level_min"))
+        if level_min_state is None:
+            level_min_state = self._event_bool(snapshot, ("level_solution_min", "solution_level_min"))
+        # Для solution_min runtime трактует low-condition как деактивированный нижний switch.
+        return level_min_state is False
+
+    def _event_bool(
+        self,
+        mapping: Mapping[str, Any] | None,
+        keys: tuple[str, ...],
+    ) -> bool | None:
+        if not isinstance(mapping, Mapping):
+            return None
+        for key in keys:
+            if key in mapping:
+                return bool(mapping.get(key))
+        return None
 
     async def _solution_min_low_outcome(
         self,

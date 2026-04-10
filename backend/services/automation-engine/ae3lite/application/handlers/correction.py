@@ -201,8 +201,8 @@ class CorrectionHandler(BaseStageHandler):
         except TaskExecutionError:
             return None
 
-        targets_reached = await self._targets_reached(task=task, plan=plan, now=now)
-        next_stage = "solution_fill_stop_to_ready" if targets_reached else "solution_fill_stop_to_prepare"
+        workflow_ready = await self._workflow_ready_reached(task=task, plan=plan, now=now)
+        next_stage = "solution_fill_stop_to_ready" if workflow_ready else "solution_fill_stop_to_prepare"
         await self._log_correction_event(
             zone_id=task.zone_id,
             event_type="CORRECTION_INTERRUPTED_STAGE_COMPLETE",
@@ -210,7 +210,7 @@ class CorrectionHandler(BaseStageHandler):
             corr=corr,
             payload={
                 "next_stage": next_stage,
-                "targets_reached": targets_reached,
+                "targets_reached": workflow_ready,
                 "reason": "solution_tank_full",
             },
         )
@@ -375,6 +375,13 @@ class CorrectionHandler(BaseStageHandler):
 
         current_ph = float(ph["value"])
         current_ec = float(ec["value"])
+        workflow_ready = self._workflow_ready_values_match(
+            task=task,
+            runtime=runtime,
+            current_ph=current_ph,
+            current_ec=current_ec,
+        )
+        current_stage = str(getattr(task, "current_stage", "") or "").strip().lower()
 
         if not math.isfinite(current_ph) or not math.isfinite(current_ec):
             retry_delay_sec = self._correction_retry_delay_sec(
@@ -455,7 +462,7 @@ class CorrectionHandler(BaseStageHandler):
                 due_delay_sec=retry_delay_sec,
             )
 
-        if self._planner.is_within_tolerance(
+        correction_targets_reached = self._planner.is_within_tolerance(
             current_ph=current_ph, current_ec=current_ec,
             target_ph=target_ph, target_ec=target_ec,
             ph_tolerance_pct=ph_tol_pct, ec_tolerance_pct=ec_tol_pct,
@@ -463,7 +470,13 @@ class CorrectionHandler(BaseStageHandler):
             ph_max=self._coerce_float(runtime.get("target_ph_max")),
             ec_min=self._coerce_float(runtime.get("target_ec_min")),
             ec_max=self._coerce_float(runtime.get("target_ec_max")),
-        ):
+        )
+        success_reached = (
+            correction_targets_reached and workflow_ready
+            if current_stage == "prepare_recirculation_check"
+            else correction_targets_reached
+        )
+        if success_reached:
             await self._log_correction_event(
                 zone_id=task.zone_id,
                 event_type="CORRECTION_COMPLETE",
@@ -476,6 +489,7 @@ class CorrectionHandler(BaseStageHandler):
                     "target_ph_max": runtime.get("target_ph_max"),
                     "target_ec_min": runtime.get("target_ec_min"),
                     "target_ec_max": runtime.get("target_ec_max"),
+                    "workflow_ready": workflow_ready,
                 },
             )
             return self._transition_to_deactivate_or_return(corr=corr, success=True)
@@ -589,6 +603,15 @@ class CorrectionHandler(BaseStageHandler):
                         "target_ec_min": runtime.get("target_ec_min"),
                         "target_ec_max": runtime.get("target_ec_max"),
                     },
+                )
+            if current_stage == "prepare_recirculation_check" and not workflow_ready:
+                next_corr = replace(corr, corr_step="corr_check")
+                return self._enter_correction_after_delay_or_interrupt(
+                    task=task,
+                    plan=plan,
+                    corr=next_corr,
+                    now=now,
+                    due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
                 )
             await self._log_correction_event(
                 zone_id=task.zone_id,
@@ -2151,12 +2174,9 @@ class CorrectionHandler(BaseStageHandler):
                 stage_retry_count=task.workflow.stage_retry_count + 1,
             )
         if current_stage == "solution_fill_check":
-            runtime = plan.runtime if isinstance(plan.runtime, Mapping) else {}
             return StageOutcome(
                 kind="transition",
-                next_stage="solution_fill_check",
-                stage_retry_count=task.workflow.stage_retry_count + 1,
-                due_delay_sec=int(runtime.get("level_poll_interval_sec", 10)),
+                next_stage="solution_fill_timeout_stop",
             )
         return self._transition_to_deactivate_or_return(corr=corr, success=False)
 

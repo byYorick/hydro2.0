@@ -230,6 +230,21 @@ async def test_tank_full_targets_within_tolerance() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tank_full_soft_tolerance_without_explicit_ready_band_routes_to_prepare() -> None:
+    runtime = dict(_RUNTIME)
+    runtime["target_ph_min"] = 5.6
+    runtime["target_ph_max"] = 6.0
+    runtime["target_ec_min"] = 1.2
+    runtime["target_ec_max"] = 1.45
+    m = _Monitor(max_triggered=True, min_triggered=True, ph=5.8, ec=1.5)
+
+    outcome = await _handler(m).run(task=_make_task(), plan=_Plan(runtime=runtime), stage_def=_StageDef(), now=NOW)
+
+    assert outcome.kind == "transition"
+    assert outcome.next_stage == "solution_fill_stop_to_prepare"
+
+
+@pytest.mark.asyncio
 async def test_tank_full_uses_window_median_not_single_latest_sample() -> None:
     m = _Monitor(
         max_triggered=True,

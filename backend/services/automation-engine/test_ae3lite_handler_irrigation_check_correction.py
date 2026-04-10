@@ -290,7 +290,7 @@ async def test_irrigation_check_uses_probe_snapshot_for_solution_min() -> None:
     out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
 
     assert out.kind == "poll"
-    assert monitor.level_call_count == 0
+    assert monitor.level_call_count == 1
 
 
 @pytest.mark.asyncio
@@ -464,7 +464,18 @@ async def test_irrigation_check_recent_solution_low_event_uses_setup_replay_path
             "event_type": "IRRIGATION_SOLUTION_LOW",
             "event_id": 41,
             "created_at": now,
-            "payload": {"channel": "storage_state"},
+            "payload": {
+                "channel": "storage_state",
+                "snapshot": {
+                    "valve_solution_supply": True,
+                    "valve_irrigation": True,
+                    "pump_main": True,
+                    "solution_level_min": False,
+                },
+                "state": {
+                    "level_solution_min": 0,
+                },
+            },
         },
     )
     task_repo = _TaskRepoStub()
@@ -512,6 +523,106 @@ async def test_irrigation_check_recent_solution_low_event_uses_setup_replay_path
     assert out.kind == "transition"
     assert out.next_stage == "irrigation_stop_to_setup"
     task_repo.update_irrigation_runtime.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_irrigation_check_ignores_stale_solution_low_event_when_probe_and_level_are_healthy(monkeypatch) -> None:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    monitor = _RuntimeMonitorStub(
+        irr_state={
+            "has_snapshot": True,
+            "is_stale": False,
+            "sample_age_sec": 0.0,
+            "created_at": now,
+            "cmd_id": "probe-1",
+            "snapshot": {
+                "valve_solution_supply": True,
+                "valve_irrigation": True,
+                "pump_main": True,
+                "solution_level_min": True,
+            },
+        },
+        recent_storage_event={
+            "event_type": "IRRIGATION_SOLUTION_LOW",
+            "event_id": 44,
+            "created_at": now,
+            "payload": {
+                "channel": "storage_state",
+                "snapshot": {
+                    "valve_solution_supply": False,
+                    "valve_irrigation": False,
+                    "pump_main": False,
+                    "solution_level_min": False,
+                },
+                "state": {
+                    "level_solution_min": 0,
+                },
+            },
+        },
+        level_states=[
+            {
+                "has_level": True,
+                "is_stale": False,
+                "is_triggered": True,
+                "sample_ts": now,
+                "sample_age_sec": 0.0,
+            }
+        ],
+    )
+    task_repo = _TaskRepoStub()
+    task_repo.update_irrigation_runtime = AsyncMock(return_value=True)
+    handler = IrrigationCheckHandler(
+        runtime_monitor=monitor,
+        command_gateway=_ProbeGatewayStub(),
+        task_repository=task_repo,
+    )
+    monkeypatch.setattr(handler, "_targets_reached", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        handler,
+        "_correction_config_for_task",
+        lambda **_kwargs: {
+            "max_ec_correction_attempts": 2,
+            "max_ph_correction_attempts": 2,
+            "stabilization_sec": 1,
+        },
+    )
+    task = SimpleNamespace(
+        id=1,
+        zone_id=7,
+        topology="two_tank",
+        claimed_by="worker",
+        irrigation_replay_count=0,
+        workflow=SimpleNamespace(
+            control_mode="auto",
+            pending_manual_step=None,
+            stage_deadline_at=now + timedelta(seconds=60),
+            stage_retry_count=0,
+            stage_entered_at=now - timedelta(seconds=10),
+        ),
+    )
+    plan = SimpleNamespace(
+        named_plans={"irr_state_probe": ("probe_cmd",)},
+        runtime={
+            "level_poll_interval_sec": 5,
+            "level_switch_on_threshold": 0.5,
+            "telemetry_max_age_sec": 10,
+            "solution_min_sensor_labels": ["level_solution_min"],
+            "irr_state_max_age_sec": 60,
+            "irr_state_wait_timeout_sec": 0.0,
+            "irr_state_wait_poll_interval_sec": 0.05,
+            "irrigation_execution": {"correction_during_irrigation": True},
+            "irrigation_safety": {"stop_on_solution_min": True},
+            "irrigation_recovery": {"max_setup_replays": 0},
+        },
+    )
+    stage_def = SimpleNamespace(on_corr_success="irrigation_check", on_corr_fail="irrigation_check")
+
+    out = await handler.run(task=task, plan=plan, stage_def=stage_def, now=now)
+
+    assert out.kind == "enter_correction"
+    assert out.correction is not None
+    assert out.correction.corr_step == "corr_check"
+    task_repo.update_irrigation_runtime.assert_not_awaited()
 
 
 @pytest.mark.asyncio

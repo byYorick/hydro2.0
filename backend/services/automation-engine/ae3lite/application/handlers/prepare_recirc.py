@@ -130,7 +130,7 @@ class PrepareRecircCheckHandler(BaseStageHandler):
                 )
                 return StageOutcome(kind="transition", next_stage="prepare_recirculation_solution_low_stop")
 
-        if await self._targets_reached(task=task, plan=plan, now=now):
+        if await self._workflow_ready_reached(task=task, plan=plan, now=now):
             _logger.debug("prepare_recirculation_check: цели достигнуты zone_id=%s", task.zone_id)
             return StageOutcome(
                 kind="transition",

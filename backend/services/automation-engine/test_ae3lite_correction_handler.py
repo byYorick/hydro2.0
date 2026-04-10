@@ -283,7 +283,15 @@ class _MockRuntimeMonitor:
             "sample_age_sec": 0.0,
         }
 
-    async def read_level_switch(self, *, zone_id, sensor_labels, threshold, telemetry_max_age_sec):
+    async def read_level_switch(
+        self,
+        *,
+        zone_id,
+        sensor_labels,
+        threshold,
+        telemetry_max_age_sec,
+        allow_initial_event_fallback=False,
+    ):
         labels = [str(label) for label in sensor_labels]
         is_max = "level_solution_max" in labels
         return {
@@ -379,6 +387,63 @@ async def test_corr_check_within_tolerance_exits_success():
     assert outcome.next_stage == "solution_fill_stop_to_ready"
     assert outcome.correction is not None
     assert outcome.correction.outcome_success is True
+
+
+async def test_corr_check_prepare_recirc_soft_tolerance_without_ready_band_keeps_dosing():
+    corr = _base_corr(
+        corr_step="corr_check",
+        attempt=1,
+        max_attempts=5,
+        return_stage_success="prepare_recirculation_stop_to_ready",
+        return_stage_fail="prepare_recirculation_window_exhausted",
+    )
+    task = _make_task(
+        corr=corr,
+        current_stage="prepare_recirculation_check",
+        workflow_phase="tank_recirc",
+    )
+    runtime = deepcopy(RUNTIME)
+    runtime["target_ph_min"] = 5.6
+    runtime["target_ph_max"] = 6.0
+    runtime["target_ec_min"] = 1.6
+    runtime["target_ec_max"] = 1.8
+    runtime["correction"]["controllers"]["ec"].update(
+        {
+            "kp": 1.0,
+            "ki": 0.0,
+            "kd": 0.0,
+            "deadband": 0.01,
+            "max_dose_ml": 10.0,
+            "min_interval_sec": 0,
+            "max_integral": 20.0,
+        }
+    )
+    runtime["correction"]["actuators"] = {
+        "ec": {
+            "node_uid": "ec-node",
+            "channel": "ec_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_up": {
+            "node_uid": "ph-node",
+            "channel": "ph_up_pump",
+            "calibration": {"ml_per_sec": 2.0, "min_effective_ml": 0.0},
+        },
+        "ph_down": None,
+    }
+    runtime["correction"]["pump_calibration"] = {
+        "min_dose_ms": 50,
+        "ml_per_sec_min": 0.01,
+        "ml_per_sec_max": 100.0,
+    }
+    monitor = _MockRuntimeMonitor(ph=5.8, ec=1.85)
+    handler = _make_handler(monitor=monitor)
+
+    outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
+
+    assert outcome.kind == "enter_correction"
+    assert outcome.correction is not None
+    assert outcome.correction.corr_step == "corr_dose_ec"
 
 
 async def test_corr_check_inside_explicit_window_below_target_keeps_dosing(monkeypatch: pytest.MonkeyPatch):
@@ -1178,7 +1243,7 @@ async def test_corr_wait_ph_observes_response_and_clears_dose_plan():
     assert c.ph_node_uid is None
 
 
-async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: pytest.MonkeyPatch):
+async def test_corr_wait_ec_three_no_effect_attempts_fail_closed_solution_fill(monkeypatch: pytest.MonkeyPatch):
     corr = _base_corr(
         corr_step="corr_wait_ec",
         attempt=2,
@@ -1213,7 +1278,7 @@ async def test_corr_wait_ec_three_no_effect_attempts_raise_alert(monkeypatch: py
     outcome = await handler.run(task=task, plan=_MockPlan(runtime=runtime), stage_def=None, now=NOW)
 
     assert outcome.kind == "transition"
-    assert outcome.next_stage == "solution_fill_check"
+    assert outcome.next_stage == "solution_fill_timeout_stop"
     send_alert.assert_awaited_once()
     assert send_alert.await_args.kwargs["message"] == (
         "Коррекция EC не дала наблюдаемого эффекта 3 раз подряд."

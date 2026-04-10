@@ -70,7 +70,7 @@ actions:
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'COMMAND_ZONE_NODE_MISMATCH'
-        AND details->>'node_uid' = :node_uid
+        AND COALESCE(details, payload_json)->>'node_uid' = :node_uid
     params:
       zone_id: ${zone_id}
       node_uid: ${test_node_uid}
@@ -134,8 +134,8 @@ actions:
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'COMMAND_ZONE_NODE_MISMATCH'
-        AND details->>'reason' = 'zone_mismatch'
-        AND details->>'node_uid' = :node_uid
+        AND COALESCE(details, payload_json)->>'reason' = 'zone_mismatch'
+        AND COALESCE(details, payload_json)->>'node_uid' = :node_uid
         AND id > :baseline_event_id
       ORDER BY id DESC
       LIMIT 1
@@ -181,8 +181,8 @@ assertions:
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'COMMAND_ZONE_NODE_MISMATCH'
-        AND details->>'reason' = 'zone_mismatch'
-        AND details->>'node_uid' = :node_uid
+        AND COALESCE(details, payload_json)->>'reason' = 'zone_mismatch'
+        AND COALESCE(details, payload_json)->>'node_uid' = :node_uid
         AND id > :baseline_event_id
     params:
       zone_id: ${zone_id}

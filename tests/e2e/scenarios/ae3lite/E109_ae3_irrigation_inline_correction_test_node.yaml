@@ -618,7 +618,7 @@ actions:
                   auto_replay_after_setup: false
                   max_setup_replays: 0
                 safety:
-                  stop_on_solution_min: true
+                  stop_on_solution_min: false
 
   - step: create_recipe
     type: database_execute
@@ -937,7 +937,7 @@ actions:
       ec_value: 0.45
       level_clean_min_override: false
       level_clean_max_override: true
-      level_solution_min_override: false
+      level_solution_min_override: true
       level_solution_max_override: true
     save: seed_off_target_response
 
@@ -990,20 +990,20 @@ actions:
       SELECT
         id,
         type,
-        details->>'selected_action' AS selected_action,
-        details->>'decision_reason' AS decision_reason,
-        details->>'needs_ec' AS needs_ec,
-        details->>'needs_ph_down' AS needs_ph_down,
-        details->>'workflow_phase' AS workflow_phase,
+        COALESCE(details, payload_json)->>'selected_action' AS selected_action,
+        COALESCE(details, payload_json)->>'decision_reason' AS decision_reason,
+        COALESCE(details, payload_json)->>'needs_ec' AS needs_ec,
+        COALESCE(details, payload_json)->>'needs_ph_down' AS needs_ph_down,
+        COALESCE(details, payload_json)->>'workflow_phase' AS workflow_phase,
         created_at
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'CORRECTION_DECISION_MADE'
-        AND details->>'task_id' = CAST(:task_id AS text)
-        AND details->>'selected_action' = 'ec'
-        AND details->>'needs_ec' = 'true'
-        AND details->>'needs_ph_down' = 'true'
-        AND details->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
+        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+        AND COALESCE(details, payload_json)->>'selected_action' = 'ec'
+        AND COALESCE(details, payload_json)->>'needs_ec' = 'true'
+        AND COALESCE(details, payload_json)->>'needs_ph_down' = 'true'
+        AND COALESCE(details, payload_json)->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -1020,9 +1020,9 @@ actions:
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'EC_DOSING'
-        AND details->>'task_id' = CAST(:task_id AS text)
-        AND details->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
-        AND details->>'channel' = 'pump_a'
+        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
+        AND COALESCE(details, payload_json)->>'workflow_phase' IN ('irrigating', 'irrig_recirc')
+        AND COALESCE(details, payload_json)->>'channel' = 'pump_a'
       ORDER BY created_at DESC
       LIMIT 1
     params:
@@ -1055,15 +1055,15 @@ assertions:
     type: database_query
     query: |
       SELECT
-        details->>'selected_action' AS selected_action,
-        details->>'decision_reason' AS decision_reason,
-        COALESCE((details->>'needs_ec')::boolean, false) AS needs_ec,
-        COALESCE((details->>'needs_ph_down')::boolean, false) AS needs_ph_down,
-        details->>'workflow_phase' AS workflow_phase
+        COALESCE(details, payload_json)->>'selected_action' AS selected_action,
+        COALESCE(details, payload_json)->>'decision_reason' AS decision_reason,
+        COALESCE((COALESCE(details, payload_json)->>'needs_ec')::boolean, false) AS needs_ec,
+        COALESCE((COALESCE(details, payload_json)->>'needs_ph_down')::boolean, false) AS needs_ph_down,
+        COALESCE(details, payload_json)->>'workflow_phase' AS workflow_phase
       FROM zone_events
       WHERE zone_id = :zone_id
         AND type = 'CORRECTION_DECISION_MADE'
-        AND details->>'task_id' = CAST(:task_id AS text)
+        AND COALESCE(details, payload_json)->>'task_id' = CAST(:task_id AS text)
       ORDER BY created_at DESC
       LIMIT 1
     params:

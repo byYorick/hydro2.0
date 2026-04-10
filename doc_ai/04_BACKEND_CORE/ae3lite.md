@@ -209,7 +209,9 @@ Correction runtime invariants:
 8. ordinary correction attempts и `no-effect` attempts считаются раздельно.
 9. устаревшие timing wait-поля и секция adaptive timing отсутствуют в authority/runtime contract; базовое окно наблюдения определяется через `zone_process_calibrations.transport_delay_sec + settle_sec` и controller observe config, но AE3 может только удлинять его на основе persisted runtime-learning в `pid_state.stats.adaptive.timing`.
 9. correction retry caps принимают только явные конечные значения внутри контрактных верхних границ; magic sentinel values не поддерживаются ни runtime, ни API.
-10. для `solution_fill_check` attempt caps не закрывают correction window: stage живёт под общим `solution_fill_timeout_sec` и останавливает коррекцию только по `no-effect` fail-closed или по stage timeout.
+10. для `solution_fill_check` attempt caps не закрывают correction window: stage живёт под общим `solution_fill_timeout_sec` и останавливает коррекцию только по `no-effect` fail-closed или по stage timeout;
+    текущая canonical fail-closed реализация для `no-effect` — переход в `solution_fill_timeout_stop` без повторного входа в correction.
+11. `workflow_ready` строже correction-success: если runtime уже содержит явные `target_ph_min/max` и `target_ec_min/max`, переходы в `*_stop_to_ready` обязаны подтверждать именно этот explicit ready band; fallback на `prepare_tolerance` допустим только при отсутствии explicit band.
 
 #### `PlannedCommand`
 
