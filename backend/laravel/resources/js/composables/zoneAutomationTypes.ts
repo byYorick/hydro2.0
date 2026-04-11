@@ -100,6 +100,37 @@ export interface ZoneAutomationForms {
   zoneClimateForm?: ZoneClimateFormState
 }
 
+// ─── Zone Automation Section types ────────────────────────────────────────────
+
+export interface ZoneAutomationSectionAssignments {
+  irrigation: number | null
+  ph_correction: number | null
+  ec_correction: number | null
+  light: number | null
+  soil_moisture_sensor: number | null
+  co2_sensor: number | null
+  co2_actuator: number | null
+  root_vent_actuator: number | null
+}
+
+export type ZoneAutomationBindRole =
+  | 'irrigation'
+  | 'ph_correction'
+  | 'ec_correction'
+  | 'light'
+  | 'soil_moisture_sensor'
+  | 'co2_sensor'
+  | 'co2_actuator'
+  | 'root_vent_actuator'
+
+export type ZoneAutomationSectionSaveKey =
+  | 'required_devices'
+  | 'water_contour'
+  | 'irrigation'
+  | 'solution_correction'
+  | 'lighting'
+  | 'zone_climate'
+
 // ─── Zone Automation Tab types ────────────────────────────────────────────────
 
 import type { ZoneTargets as ZoneTargetsType, ZoneTelemetry } from '@/types'

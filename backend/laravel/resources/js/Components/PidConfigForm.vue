@@ -371,7 +371,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { resolveRecipePhasePidTargets, type RecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { usePidConfig } from '@/composables/usePidConfig'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import {
   normalizeRuntimeTuningBundleDocument,
@@ -448,7 +448,6 @@ const pidConfigSavedState = ref<Record<'ph' | 'ec', boolean>>({
   ph: false,
   ec: false,
 })
-const { api } = useApi()
 const automationConfig = useAutomationConfig()
 const { getPidConfig, getAllPidConfigs, loading } = usePidConfig()
 const runtimeTuningBundle = ref<RuntimeTuningBundlePayload | null>(null)
@@ -606,8 +605,8 @@ async function hydratePhaseTargets(): Promise<void> {
   }
 
   try {
-    const response = await api.get<{ status: string; data?: unknown }>(`/zones/${props.zoneId}`)
-    resolvedPhaseTargets.value = resolveRecipePhasePidTargets(extractCurrentPhase(response.data.data))
+    const payload = await api.zones.getDetail(props.zoneId)
+    resolvedPhaseTargets.value = resolveRecipePhasePidTargets(extractCurrentPhase(payload))
   } catch (error) {
     logger.error('[PidConfigForm] Failed to load current recipe phase targets:', error)
     resolvedPhaseTargets.value = null

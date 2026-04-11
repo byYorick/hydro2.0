@@ -3,9 +3,9 @@
  */
 import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { useApi, type ToastHandler } from './useApi'
+import type { ToastHandler } from '@/services/api'
 import { useErrorHandler } from './useErrorHandler'
-import { extractData } from '@/utils/apiHelpers'
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type { Zone } from '@/types'
 
@@ -34,7 +34,6 @@ function cleanupCache(): void {
  * Composable для работы с зонами
  */
 export function useZones(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
@@ -57,15 +56,14 @@ export function useZones(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ data?: Zone[] } | Zone[]>('/api/zones')
-      const zones = extractData<Zone[]>(response.data) || []
-      
+      const zones = await api.zones.list()
+
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
         data: zones,
         timestamp: Date.now()
       })
-      
+
       cleanupCache()
       return zones
     } catch (err) {
@@ -98,15 +96,14 @@ export function useZones(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ data?: Zone } | Zone>(`/api/zones/${zoneId}`)
-      const zone = extractData<Zone>(response.data) as Zone
-      
+      const zone = await api.zones.getById(zoneId)
+
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
         data: zone,
         timestamp: Date.now()
       })
-      
+
       cleanupCache()
       return zone
     } catch (err) {

@@ -91,7 +91,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import LoadingState from '@/Components/LoadingState.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -125,7 +125,6 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-const { api } = useApi()
 const { showToast } = useToast()
 
 const getSeverityVariant = (severity: string | undefined): 'danger' | 'warning' | 'info' => {
@@ -159,21 +158,15 @@ const fetchErrors = async () => {
     
     if (props.zoneId) {
       // Загружаем ошибки для конкретной зоны
-      const response = await api.get<{ data: UnassignedError[], meta: any }>(`/api/zones/${props.zoneId}/unassigned-errors`, {
-        params: {
-          per_page: props.limit
-        }
-      })
-      errors.value = response.data?.data || []
+      const response = await api.zones.unassignedErrors(props.zoneId, { per_page: props.limit })
+      errors.value = (response?.data as UnassignedError[]) || []
     } else {
       // Загружаем все неназначенные ошибки
-      const response = await api.get<{ data: UnassignedError[], meta: any }>('/api/unassigned-node-errors', {
-        params: {
-          unassigned_only: true,
-          per_page: props.limit
-        }
+      const response = await api.infrastructure.unassignedNodeErrors({
+        unassigned_only: true,
+        per_page: props.limit,
       })
-      errors.value = response.data?.data || []
+      errors.value = (response?.data as unknown as UnassignedError[]) || []
     }
   } catch (err: any) {
     error.value = err?.response?.data?.message || 'Ошибка загрузки данных'

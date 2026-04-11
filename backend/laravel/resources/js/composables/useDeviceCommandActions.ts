@@ -3,17 +3,12 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { normalizeStatus } from '@/composables/useCommands'
 import { logger } from '@/utils/logger'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
+import { api } from '@/services/api'
 import type { Device } from '@/types'
-import type { ToastHandler } from '@/composables/useApi'
-
-interface DeviceApi {
-  get: <T = unknown>(url: string, config?: Record<string, unknown>) => Promise<{ data?: T }>
-  post: <T = unknown>(url: string, payload?: Record<string, unknown>) => Promise<{ data?: T }>
-}
+import type { ToastHandler } from '@/services/api'
 
 interface UseDeviceCommandActionsOptions {
   device: Ref<Device>
-  api: DeviceApi
   showToast: ToastHandler
   upsertDevice: (device: Device) => void
 }
@@ -82,7 +77,6 @@ function isIrrigationActuatorChannel(nodeType: string, channelName: string, chan
 
 export function useDeviceCommandActions({
   device,
-  api,
   showToast,
   upsertDevice,
 }: UseDeviceCommandActionsOptions): {
@@ -113,18 +107,15 @@ export function useDeviceCommandActions({
     let lastStatus: string | null = null
     for (let i = 0; i < maxAttempts; i++) {
       try {
-        const response = await api.get<{
-          status: string
-        data?: {
-          status: string
+        const payload = await api.commands.getStatus(cmdId) as {
+          status?: string
           error_message?: string | null
           error_code?: string | null
           human_error_message?: string | null
         }
-      }>(`/commands/${cmdId}/status`)
 
-        if (response.data?.status === 'ok' && response.data?.data) {
-          const normalizedStatus = normalizeStatus(response.data.data.status)
+        if (payload && typeof payload.status === 'string') {
+          const normalizedStatus = normalizeStatus(payload.status)
           if (normalizedStatus !== lastStatus) {
             lastStatus = normalizedStatus
             onStatusChange?.(normalizedStatus)
@@ -133,9 +124,9 @@ export function useDeviceCommandActions({
             return { success: true, status: normalizedStatus }
           }
           if (['ERROR', 'INVALID', 'BUSY', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
-            const errorMessage = response.data.data.error_message || undefined
-            const errorCode = response.data.data.error_code || undefined
-            const humanErrorMessage = (response.data.data as { human_error_message?: string | null }).human_error_message || undefined
+            const errorMessage = payload.error_message || undefined
+            const errorCode = payload.error_code || undefined
+            const humanErrorMessage = payload.human_error_message || undefined
             return {
               success: false,
               status: normalizedStatus,
@@ -198,16 +189,13 @@ export function useDeviceCommandActions({
 
   async function onRestart(): Promise<void> {
     try {
-      const response = await api.post<{ status: string; data?: { command_id?: string } }>(
-        `/nodes/${device.value.id}/commands`,
-        {
-          type: 'restart',
-          params: {},
-        }
-      )
+      const response = await api.commands.sendNodeCommand(device.value.id, {
+        type: 'restart',
+        params: {},
+      }) as { command_id?: string | number; id?: string | number }
 
-      if (response.data?.status === 'ok' && response.data?.data?.command_id) {
-        const cmdId = response.data.data.command_id
+      const cmdId = response?.command_id ?? response?.id
+      if (cmdId) {
         showToast('Команда перезапуска отправлена', 'success', TOAST_TIMEOUT.NORMAL)
 
         let executionNotified = false
@@ -250,23 +238,18 @@ export function useDeviceCommandActions({
 
     detaching.value = true
     try {
-      const response = await api.post<{ status: string; data?: Device }>(
-        `/nodes/${device.value.id}/detach`,
-        {}
-      )
+      const updatedDevice = await api.nodes.detach(device.value.id)
 
-      if (response.data?.status === 'ok') {
-        showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
+      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
 
-        const updatedDevice = response.data?.data || {
-          ...device.value,
-          zone_id: undefined,
-          zone: undefined,
-        }
+      const nextDevice = updatedDevice || {
+        ...device.value,
+        zone_id: undefined,
+        zone: undefined,
+      }
 
-        if (updatedDevice?.id) {
-          upsertDevice(updatedDevice)
-        }
+      if (nextDevice?.id) {
+        upsertDevice(nextDevice as Device)
       }
     } catch (err) {
       logger.error('[Devices/Show] Failed to detach node:', err)
@@ -321,17 +304,14 @@ export function useDeviceCommandActions({
         params = { state: true, duration_ms: 3000 }
       }
 
-      const response = await api.post<{ status: string; data?: { command_id: string | number } }>(
-        `/nodes/${device.value.id}/commands`,
-        {
-          type: commandType,
-          channel: channelName,
-          params,
-        }
-      )
+      const response = await api.commands.sendNodeCommand(device.value.id, {
+        type: commandType as never,
+        channel: channelName,
+        params: params as never,
+      }) as { command_id?: string | number; id?: string | number }
 
-      if (response.data?.status === 'ok' && response.data?.data?.command_id) {
-        const cmdId = response.data.data.command_id
+      const cmdId = response?.command_id ?? response?.id
+      if (cmdId) {
         let executionNotified = false
         const result = await checkCommandStatus(cmdId, 30, (status) => {
           if (status === 'ACK' && !executionNotified) {

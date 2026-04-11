@@ -1,7 +1,8 @@
 import { computed, ref } from 'vue'
 import { logger } from '@/utils/logger'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
-import type { ToastHandler } from '@/composables/useApi'
+import { api } from '@/services/api'
+import type { ToastHandler } from '@/services/api'
 import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 import type { AutomationState } from '@/types/Automation'
 import type {
@@ -17,7 +18,6 @@ import type {
 } from '@/composables/zoneScheduleWorkspaceTypes'
 
 export interface ZoneScheduleWorkspaceDeps {
-  get: <T = unknown>(url: string, config?: unknown) => Promise<{ data: T }>
   showToast: ToastHandler
 }
 
@@ -39,9 +39,7 @@ interface DecisionDescriptorInput {
   details?: Record<string, unknown> | null
 }
 
-export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: ZoneScheduleWorkspaceDeps) {
-  const { get } = deps
-
+export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, _deps: ZoneScheduleWorkspaceDeps) {
   const horizon = ref<'24h' | '7d'>('24h')
   const workspace = ref<ScheduleWorkspace | null>(null)
   const automationState = ref<AutomationState | null>(null)
@@ -178,10 +176,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     error.value = null
 
     try {
-      const response = await get<ScheduleWorkspaceResponse>(`/api/zones/${props.zoneId}/schedule-workspace`, {
-        params: { horizon: horizon.value },
-      })
-      workspace.value = response.data?.data ?? null
+      const response = await api.zones.scheduleWorkspace<ScheduleWorkspaceResponse>(props.zoneId, { horizon: horizon.value })
+      workspace.value = response?.data ?? null
       updatedAt.value = new Date().toISOString()
 
       const nextSelectedExecutionId = selectedExecution.value?.execution_id?.trim()
@@ -209,10 +205,10 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     }
 
     try {
-      const response = await get<AutomationState | { data?: AutomationState }>(`/api/zones/${props.zoneId}/state`)
-      const payload = isRecord(response.data) && isRecord(response.data.data)
-        ? response.data.data as AutomationState
-        : response.data as AutomationState
+      const response = await api.zones.getState<AutomationState | { data?: AutomationState }>(props.zoneId)
+      const payload = isRecord(response) && isRecord((response as { data?: AutomationState }).data)
+        ? (response as { data: AutomationState }).data
+        : response as AutomationState
       automationState.value = payload
     } catch (fetchError) {
       logger.warn('[ZoneSchedulerTab] Failed to fetch automation state', { fetchError, zoneId: props.zoneId })
@@ -233,8 +229,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     }
 
     try {
-      const response = await get<ExecutionResponse>(`/api/zones/${props.zoneId}/executions/${encodeURIComponent(normalizedExecutionId)}`)
-      selectedExecution.value = response.data?.data ?? null
+      const response = await api.zones.getExecution<ExecutionResponse>(props.zoneId, normalizedExecutionId)
+      selectedExecution.value = response?.data ?? null
     } catch (fetchError) {
       logger.warn('[ZoneSchedulerTab] Failed to fetch execution detail', { fetchError, zoneId: props.zoneId, executionId: normalizedExecutionId })
       if (!options?.silent) {
@@ -262,8 +258,8 @@ export function useZoneScheduleWorkspace(props: ZoneAutomationTabProps, deps: Zo
     diagnosticsError.value = null
 
     try {
-      const response = await get<SchedulerDiagnosticsResponse>(`/api/zones/${props.zoneId}/scheduler-diagnostics`)
-      diagnostics.value = response.data?.data ?? null
+      const response = await api.zones.schedulerDiagnostics<SchedulerDiagnosticsResponse>(props.zoneId)
+      diagnostics.value = response?.data ?? null
     } catch (fetchError) {
       logger.warn('[ZoneSchedulerTab] Failed to fetch scheduler diagnostics', { fetchError, zoneId: props.zoneId })
       diagnostics.value = null

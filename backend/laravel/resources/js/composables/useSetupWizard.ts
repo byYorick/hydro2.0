@@ -1,9 +1,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
-import { extractData } from '@/utils/apiHelpers'
 import { generateUid } from '@/utils/transliterate'
 import { createSetupWizardDataFlows } from './setupWizardDataFlows'
 import { createSetupWizardRecipeAutomationFlows } from './setupWizardRecipeAutomationFlows'
@@ -180,7 +179,6 @@ export function useSetupWizard() {
   const canConfigure = computed(() => role.value === 'agronomist' || role.value === 'admin')
 
   const { showToast } = useToast()
-  const { api } = useApi(showToast)
   const automationConfig = useAutomationConfig(showToast)
 
   const loading = reactive<SetupWizardLoadingState & { stepGreenhouseClimate: boolean }>({
@@ -439,7 +437,6 @@ export function useSetupWizard() {
   })
 
   const dataFlows = createSetupWizardDataFlows({
-    api,
     loading,
     canConfigure,
     showToast,
@@ -465,7 +462,6 @@ export function useSetupWizard() {
   })
 
   const recipeAutomationFlows = createSetupWizardRecipeAutomationFlows({
-    api,
     loading,
     canConfigure,
     showToast,
@@ -662,8 +658,7 @@ export function useSetupWizard() {
     zoneLaunchReadinessLoading.value = true
 
     try {
-      const response = await api.get(`/zones/${zoneId}/health`)
-      const payload = extractData<ZoneHealthResponse | ZoneLaunchReadiness>(response.data)
+      const payload = await api.zones.getHealth<ZoneHealthResponse | ZoneLaunchReadiness>(zoneId)
       zoneLaunchReadiness.value = (payload as ZoneHealthResponse | null)?.readiness
         ?? (payload as ZoneLaunchReadiness | null)
     } catch {
@@ -792,10 +787,10 @@ export function useSetupWizard() {
       }
 
       if (greenhouseClimateEnabled.value) {
-        await api.post('/setup-wizard/validate-greenhouse-climate-devices', bindingsPayload)
+        await api.setupWizard.validateGreenhouseClimateDevices(bindingsPayload)
       }
 
-      await api.post('/setup-wizard/apply-greenhouse-climate-bindings', bindingsPayload)
+      await api.setupWizard.applyGreenhouseClimateBindings(bindingsPayload)
       const currentDocument = await automationConfig.getDocument('greenhouse', selectedGreenhouse.value.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
       const currentPayload = payloadFromGreenhouseLogicDocument(currentDocument)
       const response = await automationConfig.updateDocument('greenhouse', selectedGreenhouse.value.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE, {
@@ -895,13 +890,13 @@ export function useSetupWizard() {
       const payload = buildZoneAssignmentsPayload()
       const selectedNodeIdsPayload = zoneAutomationExpectedNodeIds.value
 
-      await api.post('/setup-wizard/validate-devices', {
+      await api.setupWizard.validateDevices({
         zone_id: selectedZone.value.id,
         assignments: payload,
         selected_node_ids: selectedNodeIdsPayload,
       })
 
-      await api.post('/setup-wizard/apply-device-bindings', {
+      await api.setupWizard.applyDeviceBindings({
         zone_id: selectedZone.value.id,
         assignments: payload,
         selected_node_ids: selectedNodeIdsPayload,

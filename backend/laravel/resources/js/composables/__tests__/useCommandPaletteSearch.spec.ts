@@ -1,12 +1,19 @@
 import { nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useCommandPaletteSearch } from '../useCommandPaletteSearch'
+import { api } from '@/services/api'
+
+// useCommandPaletteSearch теперь импортирует api.zones/nodes/recipes.list
+// напрямую — мокаем services/api, а не старый useApi.
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: { list: vi.fn().mockResolvedValue([]) },
+    nodes: { list: vi.fn().mockResolvedValue([]) },
+    recipes: { list: vi.fn().mockResolvedValue([]) },
+  },
+}))
 
 function createDeps() {
-  const api = {
-    get: vi.fn().mockResolvedValue({ data: { data: [] } }),
-  }
-
   const handlers = {
     navigate: vi.fn(),
     zoneAction: vi.fn(),
@@ -15,7 +22,6 @@ function createDeps() {
   }
 
   return {
-    api,
     handlers,
     role: ref('admin'),
     history: ref([]),
@@ -25,7 +31,7 @@ function createDeps() {
 describe('useCommandPaletteSearch', () => {
   it('highlightMatch корректно сегментирует совпадения', () => {
     const deps = createDeps()
-    const state = useCommandPaletteSearch(deps)
+    const state = useCommandPaletteSearch(deps as never)
 
     const segments = state.highlightMatch('Test Zone', 'zone')
     const matched = segments.find((segment) => segment.match)
@@ -35,13 +41,12 @@ describe('useCommandPaletteSearch', () => {
 
   it('выполняет debounce-поиск и заполняет searchResults', async () => {
     vi.useFakeTimers()
-    const deps = createDeps()
-    deps.api.get
-      .mockResolvedValueOnce({ data: { data: [{ id: 1, name: 'Zone A' }] } })
-      .mockResolvedValueOnce({ data: { data: [{ id: 11, name: 'Node A' }] } })
-      .mockResolvedValueOnce({ data: { data: [{ id: 21, name: 'Recipe A' }] } })
+    vi.mocked(api.zones.list).mockResolvedValue([{ id: 1, name: 'Zone A' }] as never)
+    vi.mocked(api.nodes.list).mockResolvedValue([{ id: 11, name: 'Node A' }] as never)
+    vi.mocked(api.recipes.list).mockResolvedValue([{ id: 21, name: 'Recipe A' }] as never)
 
-    const state = useCommandPaletteSearch(deps)
+    const deps = createDeps()
+    const state = useCommandPaletteSearch(deps as never)
     state.q.value = 'zo'
     await nextTick()
 
@@ -49,7 +54,9 @@ describe('useCommandPaletteSearch', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(deps.api.get).toHaveBeenCalledTimes(3)
+    expect(api.zones.list).toHaveBeenCalledWith({ search: 'zo' })
+    expect(api.nodes.list).toHaveBeenCalledWith({ search: 'zo' })
+    expect(api.recipes.list).toHaveBeenCalledWith({ search: 'zo' })
     expect(state.searchResults.value.zones).toHaveLength(1)
     expect(state.searchResults.value.nodes).toHaveLength(1)
     expect(state.searchResults.value.recipes).toHaveLength(1)
@@ -59,7 +66,7 @@ describe('useCommandPaletteSearch', () => {
 
   it('строит groupedResults и учитывает навигационный минимум', () => {
     const deps = createDeps()
-    const state = useCommandPaletteSearch(deps)
+    const state = useCommandPaletteSearch(deps as never)
     state.q.value = ''
 
     expect(state.commandItems.value.length).toBeGreaterThan(0)

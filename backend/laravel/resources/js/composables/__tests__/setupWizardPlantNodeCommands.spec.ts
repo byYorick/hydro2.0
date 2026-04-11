@@ -1,15 +1,30 @@
 import { computed, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  canSelectPlant,
-  createSetupWizardPlantNodeCommands,
-  resolveSelectedPlant,
-} from '@/composables/setupWizardPlantNodeCommands'
-import type { Plant, SetupWizardLoadingState } from '@/composables/setupWizardTypes'
 
 const canAssignToZoneMock = vi.hoisted(() => vi.fn())
 const getStateLabelMock = vi.hoisted(() => vi.fn())
 const handleErrorMock = vi.hoisted(() => vi.fn())
+const nodesListMock = vi.hoisted(() => vi.fn().mockResolvedValue([]))
+const nodesUpdateMock = vi.hoisted(() => vi.fn())
+const plantsCreateMock = vi.hoisted(() => vi.fn())
+const validateDevicesMock = vi.hoisted(() => vi.fn().mockResolvedValue({}))
+const applyDeviceBindingsMock = vi.hoisted(() => vi.fn().mockResolvedValue({}))
+
+vi.mock('@/services/api', () => ({
+  api: {
+    nodes: {
+      list: nodesListMock,
+      update: nodesUpdateMock,
+    },
+    plants: {
+      create: plantsCreateMock,
+    },
+    setupWizard: {
+      validateDevices: validateDevicesMock,
+      applyDeviceBindings: applyDeviceBindingsMock,
+    },
+  },
+}))
 
 vi.mock('@/composables/useNodeLifecycle', () => ({
   useNodeLifecycle: () => ({
@@ -23,6 +38,13 @@ vi.mock('@/composables/useErrorHandler', () => ({
     handleError: handleErrorMock,
   }),
 }))
+
+import {
+  canSelectPlant,
+  createSetupWizardPlantNodeCommands,
+  resolveSelectedPlant,
+} from '@/composables/setupWizardPlantNodeCommands'
+import type { Plant, SetupWizardLoadingState } from '@/composables/setupWizardTypes'
 
 function createLoadingState(): SetupWizardLoadingState {
   return {
@@ -212,46 +234,20 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
   it('считает привязку завершенной после подтверждения и применяет биндинги в массовом режиме', async () => {
     canAssignToZoneMock.mockResolvedValue(true)
     getStateLabelMock.mockReturnValue('Зарегистрирован')
+    nodesListMock.mockReset().mockResolvedValue([])
+    nodesUpdateMock.mockReset()
+      .mockResolvedValueOnce({ id: 101, zone_id: null, pending_zone_id: 20 })
+      .mockResolvedValueOnce({ id: 102, zone_id: null, pending_zone_id: 20 })
+      .mockResolvedValueOnce({ id: 103, zone_id: null, pending_zone_id: 20 })
+    validateDevicesMock.mockReset().mockResolvedValue({ validated: true })
+    applyDeviceBindingsMock.mockReset().mockResolvedValue({ applied: true })
 
     const showToast = vi.fn()
-    const apiPost = vi.fn()
-      .mockResolvedValueOnce({ data: { status: 'ok', data: { validated: true } } })
-      .mockResolvedValueOnce({ data: { status: 'ok', data: { applied: true } } })
-    const apiPatch = vi.fn()
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 101, zone_id: null, pending_zone_id: 20 },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 102, zone_id: null, pending_zone_id: 20 },
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: { id: 103, zone_id: null, pending_zone_id: 20 },
-        },
-      })
-    const apiGet = vi.fn().mockResolvedValue({
-      data: {
-        status: 'ok',
-        data: [],
-      },
-    })
     const loadAvailableNodes = vi.fn().mockResolvedValue(undefined)
     const attachedNodesCount = ref(0)
     const selectedNodeIds = ref<number[]>([101, 102, 103])
 
     const commands = createSetupWizardPlantNodeCommands({
-      api: {
-        get: apiGet,
-        post: apiPost,
-        patch: apiPatch,
-      },
       loading: createLoadingState(),
       canConfigure: computed(() => true),
       showToast,
@@ -286,16 +282,10 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
       light: null,
     })
 
-    expect(apiPost).toHaveBeenCalledWith(
-      '/setup-wizard/validate-devices',
+    expect(validateDevicesMock).toHaveBeenCalledWith(
       expect.objectContaining({
         zone_id: 20,
         selected_node_ids: [101, 102, 103],
-      })
-    )
-    expect(apiPost).toHaveBeenCalledWith(
-      '/setup-wizard/validate-devices',
-      expect.objectContaining({
         assignments: expect.objectContaining({
           irrigation: 101,
           ph_correction: 102,
@@ -304,14 +294,13 @@ describe('setupWizardPlantNodeCommands.attachNodesToZone', () => {
         }),
       })
     )
-    expect(apiPost).toHaveBeenCalledWith(
-      '/setup-wizard/apply-device-bindings',
+    expect(applyDeviceBindingsMock).toHaveBeenCalledWith(
       expect.objectContaining({
         zone_id: 20,
       })
     )
-    expect(apiGet).toHaveBeenCalledWith('/nodes', { params: { unassigned: true } })
-    expect(apiPatch).toHaveBeenCalledTimes(3)
+    expect(nodesListMock).toHaveBeenCalledWith({ unassigned: true })
+    expect(nodesUpdateMock).toHaveBeenCalledTimes(3)
     expect(attachedNodesCount.value).toBe(3)
     expect(loadAvailableNodes).toHaveBeenCalled()
   })

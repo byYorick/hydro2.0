@@ -173,7 +173,7 @@ import { computed, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import { useToast } from '@/composables/useToast'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
 
@@ -198,7 +198,6 @@ const emit = defineEmits<{
 }>()
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const editableChannels = ref<EditableChannel[]>([])
 const loading = ref(false)
@@ -286,21 +285,18 @@ async function publishConfig() {
       channelsCount: sanitizedChannels.length,
     })
 
-    const response = await api.post(`/nodes/${props.nodeId}/config/publish`, {
+    await api.nodes.publishConfig(props.nodeId, {
       config: {
         channels: sanitizedChannels,
       },
     })
 
-    if (response.data?.status === 'ok') {
-      logger.info('[RelayConfigWizard] Config publish accepted', {
-        nodeId: props.nodeId,
-        status: response.data?.status,
-      })
-      showToast('Конфиг отправлен на ноду', 'success', TOAST_TIMEOUT.NORMAL)
-      emit('published')
-      emit('close')
-    }
+    logger.info('[RelayConfigWizard] Config publish accepted', {
+      nodeId: props.nodeId,
+    })
+    showToast('Конфиг отправлен на ноду', 'success', TOAST_TIMEOUT.NORMAL)
+    emit('published')
+    emit('close')
   } catch (error) {
     logger.error('[RelayConfigWizard] Failed to publish config', {
       nodeId: props.nodeId,

@@ -145,7 +145,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import Card from './Card.vue'
 import Badge from './Badge.vue'
@@ -185,7 +185,6 @@ interface PredictionResponse {
   message?: string
 }
 
-const { api } = useApi()
 const { showToast } = useToast()
 
 const prediction = ref<Prediction | null>(null)
@@ -285,24 +284,24 @@ async function fetchPrediction(): Promise<void> {
   error.value = null
 
   try {
-    const response = await api.post<PredictionResponse>('/api/ai/predict', {
+    const result = await api.ai.predict({
       zone_id: requestedZoneId,
       metric_type: props.metricType,
       horizon_minutes: props.horizonMinutes,
-    })
+    }) as unknown as PredictionResponse
 
     if (props.zoneId !== requestedZoneId) return
 
-    if (response.data?.status === 'ok' && response.data?.data) {
-      prediction.value = response.data.data
+    if (result?.status === 'ok' && result?.data) {
+      prediction.value = result.data
       error.value = null
       logger.debug('[AIPredictionCard] Prediction fetched', {
         zoneId: requestedZoneId,
         metricType: props.metricType,
-        predictedValue: response.data.data.predicted_value,
+        predictedValue: result.data.predicted_value,
       })
     } else {
-      const message = response.data?.message || 'Не удалось получить прогноз'
+      const message = result?.message || 'Не удалось получить прогноз'
       throw new Error(message)
     }
   } catch (err: any) {

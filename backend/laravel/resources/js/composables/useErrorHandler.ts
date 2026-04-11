@@ -6,7 +6,7 @@ import { logger } from '@/utils/logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { resolveHumanErrorMessage } from '@/utils/errorCatalog'
-import type { ToastHandler } from './useApi'
+import type { ToastHandler } from '@/services/api'
 
 /**
  * Типизированные классы ошибок

@@ -1,48 +1,49 @@
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import type { SensorCalibration, SensorCalibrationOverview } from '@/types/SensorCalibration'
 
 export function useSensorCalibration(zoneId: number) {
-  const { api } = useApi()
-
   async function fetchStatus(): Promise<SensorCalibrationOverview[]> {
-    const response = await api.get(`/api/zones/${zoneId}/sensor-calibrations/status`)
-    return response.data.data as SensorCalibrationOverview[]
+    const response = await api.zones.sensorCalibrationStatus(zoneId) as { data?: SensorCalibrationOverview[] } | SensorCalibrationOverview[]
+    if (Array.isArray(response)) return response
+    return (response?.data as SensorCalibrationOverview[]) ?? []
   }
 
   async function fetchHistory(options: { sensorType?: string; nodeChannelId?: number; limit?: number } = {}): Promise<SensorCalibration[]> {
-    const response = await api.get(`/api/zones/${zoneId}/sensor-calibrations`, {
-      params: {
-        sensor_type: options.sensorType,
-        node_channel_id: options.nodeChannelId,
-        limit: options.limit ?? 20,
-      },
-    })
-    return response.data.data as SensorCalibration[]
+    const response = await api.zones.sensorCalibrationsList(zoneId, {
+      sensor_type: options.sensorType,
+      node_channel_id: options.nodeChannelId,
+      limit: options.limit ?? 20,
+    }) as { data?: SensorCalibration[] } | SensorCalibration[]
+    if (Array.isArray(response)) return response
+    return (response?.data as SensorCalibration[]) ?? []
   }
 
   async function getCalibration(calibrationId: number): Promise<SensorCalibration> {
-    const response = await api.get(`/api/zones/${zoneId}/sensor-calibrations/${calibrationId}`)
-    return response.data.data as SensorCalibration
+    const response = await api.zones.sensorCalibration(zoneId, calibrationId) as { data?: SensorCalibration } | SensorCalibration
+    return ((response as { data?: SensorCalibration })?.data ?? response) as SensorCalibration
   }
 
-  async function startCalibration(nodeChannelId: number, sensorType: 'ph' | 'ec'): Promise<{ calibration: SensorCalibration; defaults: { point_1_value: number; point_2_value: number } }> {
-    const response = await api.post(`/api/zones/${zoneId}/sensor-calibrations`, {
+  async function startCalibration(
+    nodeChannelId: number,
+    sensorType: 'ph' | 'ec',
+  ): Promise<{ calibration: SensorCalibration; defaults: { point_1_value: number; point_2_value: number } }> {
+    const response = await api.zones.sensorCalibrationStart(zoneId, {
       node_channel_id: nodeChannelId,
       sensor_type: sensorType,
-    })
-    return response.data.data as { calibration: SensorCalibration; defaults: { point_1_value: number; point_2_value: number } }
+    }) as { data?: { calibration: SensorCalibration; defaults: { point_1_value: number; point_2_value: number } } }
+    return response.data ?? (response as never)
   }
 
   async function submitPoint(calibrationId: number, stage: 1 | 2, referenceValue: number): Promise<SensorCalibration> {
-    const response = await api.post(`/api/zones/${zoneId}/sensor-calibrations/${calibrationId}/point`, {
+    const response = await api.zones.sensorCalibrationAddPoint(zoneId, calibrationId, {
       stage,
       reference_value: referenceValue,
-    })
-    return response.data.data as SensorCalibration
+    }) as { data?: SensorCalibration }
+    return (response.data ?? response) as SensorCalibration
   }
 
   async function cancelCalibration(calibrationId: number): Promise<void> {
-    await api.post(`/api/zones/${zoneId}/sensor-calibrations/${calibrationId}/cancel`)
+    await api.zones.sensorCalibrationCancel(zoneId, calibrationId)
   }
 
   return {

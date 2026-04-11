@@ -1,6 +1,6 @@
 import { computed, reactive, ref } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { NutrientProduct, Recipe } from '@/types'
@@ -17,7 +17,6 @@ import {
   type RecipeEditorFormState,
   type RecipePhaseFormState,
 } from '@/composables/recipeEditorShared'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 
 interface SaveRecipeOptions {
@@ -32,7 +31,6 @@ interface EnsureDraftRevisionResult {
 
 export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   const { showToast } = useToast()
-  const { api } = useApi(showToast)
 
   const form = reactive<RecipeEditorFormState>(createRecipeEditorFormState(initialRecipe ?? null))
   const recipeId = ref<number | null>(typeof initialRecipe?.id === 'number' ? initialRecipe.id : null)
@@ -61,16 +59,13 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   async function loadPlants(): Promise<void> {
     try {
       plantsLoading.value = true
-      const response = await api.get('/plants')
-      const payload = extractData<Record<string, unknown>[]>(response.data) ?? []
-      plants.value = Array.isArray(payload)
-        ? payload
-          .map((plant) => ({
-            id: typeof plant.id === 'number' ? plant.id : 0,
-            name: String(plant.name ?? ''),
-          }))
-          .filter((plant) => plant.id > 0 && plant.name.trim().length > 0)
-        : []
+      const payload = await api.plants.list()
+      plants.value = payload
+        .map((plant) => ({
+          id: typeof plant.id === 'number' ? plant.id : 0,
+          name: String(plant.name ?? ''),
+        }))
+        .filter((plant) => plant.id > 0 && plant.name.trim().length > 0)
 
       if (!form.plant_id && plants.value.length === 1) {
         form.plant_id = plants.value[0].id
@@ -86,20 +81,7 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   async function loadNutrientProducts(): Promise<void> {
     try {
       nutrientProductsLoading.value = true
-      const response = await api.get('/nutrient-products')
-      const payload = extractData<Record<string, unknown>[]>(response.data) ?? []
-      nutrientProducts.value = Array.isArray(payload)
-        ? payload.map((item) => ({
-          id: item.id as number,
-          manufacturer: String(item.manufacturer ?? ''),
-          name: String(item.name ?? ''),
-          component: item.component as NutrientProduct['component'],
-          composition: (item.composition as string | null) ?? null,
-          recommended_stage: (item.recommended_stage as string | null) ?? null,
-          notes: (item.notes as string | null) ?? null,
-          metadata: (item.metadata as Record<string, unknown> | null) ?? null,
-        }))
-        : []
+      nutrientProducts.value = await api.nutrientProducts.list()
     } catch (error) {
       logger.error('Failed to load nutrient products', { error })
       showToast('Не удалось загрузить список удобрений', 'error', TOAST_TIMEOUT.NORMAL)
@@ -183,22 +165,18 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
   }
 
   async function ensureRecipeShell(): Promise<number> {
-    if (recipeId.value) {
-      await api.patch(`/recipes/${recipeId.value}`, {
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        plant_id: form.plant_id,
-      })
-      return recipeId.value
-    }
-
-    const response = await api.post('/recipes', {
+    const shellPayload = {
       name: form.name.trim(),
       description: form.description.trim() || null,
       plant_id: form.plant_id,
-    })
+    }
 
-    const recipe = extractData<Record<string, unknown>>(response.data)
+    if (recipeId.value) {
+      await api.recipes.update(recipeId.value, shellPayload)
+      return recipeId.value
+    }
+
+    const recipe = await api.recipes.create(shellPayload)
     const nextRecipeId = typeof recipe?.id === 'number' ? recipe.id : null
     if (!nextRecipeId) {
       throw new Error('Recipe ID missing')
@@ -221,12 +199,11 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
     const cloneFromRevisionId = typeof initialRecipe?.latest_published_revision_id === 'number'
       ? initialRecipe.latest_published_revision_id
       : null
-    const response = await api.post(`/recipes/${currentRecipeId}/revisions`, {
+    const revision = await api.recipes.createRevision(currentRecipeId, {
       clone_from_revision_id: cloneFromRevisionId,
       description: recipeId.value ? 'Updated via unified editor' : 'Initial revision',
     })
 
-    const revision = extractData<Record<string, unknown>>(response.data)
     const nextRevisionId = typeof revision?.id === 'number' ? revision.id : null
     if (!nextRevisionId) {
       throw new Error('Recipe revision ID missing')
@@ -265,7 +242,7 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
 
       if (draftRevision.createdFromClone && draftRevision.clonedPhaseIds.length > 0) {
         for (const phaseId of draftRevision.clonedPhaseIds) {
-          await api.delete(`/recipe-revision-phases/${phaseId}`)
+          await api.recipes.deletePhase(phaseId)
         }
 
         initialPhaseIds.value = []
@@ -279,11 +256,10 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
       for (const phase of sortedPhases.value) {
         const payload = buildRecipePhasePayload(phase)
         if (phase.id) {
-          await api.patch(`/recipe-revision-phases/${phase.id}`, payload)
+          await api.recipes.updatePhase(phase.id, payload)
           persistedPhaseIds.add(phase.id)
         } else {
-          const response = await api.post(`/recipe-revisions/${currentRevisionId}/phases`, payload)
-          const createdPhase = extractData<Record<string, unknown>>(response.data)
+          const createdPhase = await api.recipes.createPhase(currentRevisionId, payload)
           const phaseId = typeof createdPhase?.id === 'number' ? createdPhase.id : null
           if (phaseId) {
             phase.id = phaseId
@@ -294,13 +270,12 @@ export function useRecipeEditor(initialRecipe?: Partial<Recipe> | null) {
 
       for (const phaseId of initialPhaseIds.value) {
         if (!persistedPhaseIds.has(phaseId)) {
-          await api.delete(`/recipe-revision-phases/${phaseId}`)
+          await api.recipes.deletePhase(phaseId)
         }
       }
 
-      await api.post(`/recipe-revisions/${currentRevisionId}/publish`)
-      const detailResponse = await api.get(`/recipes/${currentRecipeId}`)
-      const recipe = extractData<Recipe>(detailResponse.data)
+      await api.recipes.publishRevision(currentRevisionId)
+      const recipe = await api.recipes.getById(currentRecipeId)
       if (!recipe?.id) {
         throw new Error('Recipe details not returned')
       }

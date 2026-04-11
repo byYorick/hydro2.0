@@ -1,8 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiGetMock = vi.hoisted(() => vi.fn())
-const apiPutMock = vi.hoisted(() => vi.fn())
+const automationConfigGetMock = vi.hoisted(() => vi.fn())
+const automationConfigUpdateMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
 const defaultPumpSettings = vi.hoisted(() => ({
   ml_per_sec_min: 0.001,
@@ -49,13 +49,13 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
-      put: apiPutMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    automationConfigs: {
+      get: automationConfigGetMock,
+      update: automationConfigUpdateMock,
     },
-  }),
+  },
 }))
 
 vi.mock('@/composables/useToast', () => ({
@@ -80,8 +80,8 @@ import ZonePumpCalibrationSettingsCard from '../ZonePumpCalibrationSettingsCard.
 
 describe('ZonePumpCalibrationSettingsCard.vue', () => {
   beforeEach(() => {
-    apiGetMock.mockReset()
-    apiPutMock.mockReset()
+    automationConfigGetMock.mockReset()
+    automationConfigUpdateMock.mockReset()
     showToastMock.mockReset()
     pumpSettingsState.value = {
       ml_per_sec_min: 0.01,
@@ -89,32 +89,30 @@ describe('ZonePumpCalibrationSettingsCard.vue', () => {
       age_warning_days: 30,
     }
 
-    apiGetMock.mockResolvedValue({
-      data: {
-        data: {
-          preset: { id: 1 },
-          base_config: {
-            pump_calibration: {},
-          },
-          phase_overrides: {},
-          meta: {
-            pump_calibration_field_catalog: [
-              {
-                key: 'pump',
-                label: 'Pump',
-                description: 'Pump settings',
-                fields: [
-                  {
-                    path: 'ml_per_sec_min',
-                    label: 'Мин. скорость',
-                    description: 'Нижний системный порог',
-                    type: 'number',
-                    step: 0.001,
-                  },
-                ],
-              },
-            ],
-          },
+    automationConfigGetMock.mockResolvedValue({
+      payload: {
+        preset: { id: 1 },
+        base_config: {
+          pump_calibration: {},
+        },
+        phase_overrides: {},
+        meta: {
+          pump_calibration_field_catalog: [
+            {
+              key: 'pump',
+              label: 'Pump',
+              description: 'Pump settings',
+              fields: [
+                {
+                  path: 'ml_per_sec_min',
+                  label: 'Мин. скорость',
+                  description: 'Нижний системный порог',
+                  type: 'number',
+                  step: 0.001,
+                },
+              ],
+            },
+          ],
         },
       },
     })

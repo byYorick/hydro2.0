@@ -37,12 +37,10 @@ export interface UnifiedZone extends ZoneSummary {
   crop: string | null
 }
 
-type ApiLike = Parameters<typeof useCycleCenterActions>[0]['api']
 type ToastLike = Parameters<typeof useCycleCenterActions>[0]['showToast']
 
 export function useUnifiedDashboard(options: {
   zones: Ref<UnifiedZone[]>
-  api: ApiLike
   showToast: ToastLike
 }): ReturnType<typeof useCycleCenterView> & ReturnType<typeof useCycleCenterActions> & {
   sparklines: Ref<Record<number, number[]>>
@@ -60,7 +58,6 @@ export function useUnifiedDashboard(options: {
 
   const view = useCycleCenterView({ zones: zonesAsSummary, statusFilterMode: 'zone' })
   const actions = useCycleCenterActions({
-    api: options.api,
     showToast: options.showToast,
     reloadCenter: reloadUnified,
   })

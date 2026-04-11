@@ -1,4 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
+
+const pauseMock = vi.hoisted(() => vi.fn())
+const resumeMock = vi.hoisted(() => vi.fn())
+const harvestMock = vi.hoisted(() => vi.fn())
+const abortMock = vi.hoisted(() => vi.fn())
+const startIrrigationMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/services/api', () => ({
+  api: {
+    growCycles: {
+      pause: pauseMock,
+      resume: resumeMock,
+      harvest: harvestMock,
+      abort: abortMock,
+    },
+    zones: {
+      startIrrigation: startIrrigationMock,
+    },
+  },
+}))
+
 import { useCycleCenterActions } from '../useCycleCenterActions'
 import type { ZoneSummary } from '../useCycleCenterView'
 
@@ -28,46 +49,44 @@ function buildZone(overrides: Partial<ZoneSummary> = {}): ZoneSummary {
 
 describe('useCycleCenterActions', () => {
   it('pauseCycle выставляет loading и завершает его после успеха', async () => {
-    const api = { post: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) }
+    pauseMock.mockReset().mockResolvedValue(undefined)
     const showToast = vi.fn()
     const reloadCenter = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
+    const actions = useCycleCenterActions({ showToast, reloadCenter })
     const zone = buildZone()
 
     await actions.pauseCycle(zone)
 
-    expect(api.post).toHaveBeenCalledWith('/api/grow-cycles/77/pause')
+    expect(pauseMock).toHaveBeenCalledWith(77)
     expect(reloadCenter).toHaveBeenCalled()
     expect(showToast).toHaveBeenCalledWith('Цикл приостановлен', 'success', expect.any(Number))
     expect(actions.isActionLoading(zone.id, 'pause')).toBe(false)
   })
 
   it('управляет harvest modal и обрабатывает неуспешный статус', async () => {
-    const api = { post: vi.fn().mockResolvedValue({ data: { status: 'fail' } }) }
+    harvestMock.mockReset().mockRejectedValue(new Error('Не удалось зафиксировать урожай'))
     const showToast = vi.fn()
     const reloadCenter = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
+    const actions = useCycleCenterActions({ showToast, reloadCenter })
     const zone = buildZone()
     actions.openHarvestModal(zone)
     actions.harvestModal.batchLabel = 'BATCH-1'
 
     await actions.confirmHarvest()
 
-    expect(api.post).toHaveBeenCalledWith('/api/grow-cycles/77/harvest', {
-      batch_label: 'BATCH-1',
-    })
+    expect(harvestMock).toHaveBeenCalledWith(77, { batch_label: 'BATCH-1' })
     expect(showToast).toHaveBeenCalledWith('Не удалось зафиксировать урожай', 'error', expect.any(Number))
     expect(actions.harvestModal.open).toBe(true)
     expect(actions.isActionLoading(zone.id, 'harvest')).toBe(false)
   })
 
   it('submitAction запускает normal irrigation через public endpoint', async () => {
-    const api = { post: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) }
+    startIrrigationMock.mockReset().mockResolvedValue(undefined)
     const showToast = vi.fn()
     const reloadCenter = vi.fn().mockResolvedValue(undefined)
-    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
+    const actions = useCycleCenterActions({ showToast, reloadCenter })
     const zone = buildZone()
 
     actions.openActionModal(zone, 'START_IRRIGATION')
@@ -76,7 +95,7 @@ describe('useCycleCenterActions', () => {
       params: { duration_sec: 45 },
     })
 
-    expect(api.post).toHaveBeenCalledWith('/api/zones/1/start-irrigation', {
+    expect(startIrrigationMock).toHaveBeenCalledWith(1, {
       mode: 'normal',
       source: 'cycle_center',
       requested_duration_sec: 45,
@@ -87,10 +106,10 @@ describe('useCycleCenterActions', () => {
   })
 
   it('submitAction запускает force irrigation через тот же AE3 endpoint', async () => {
-    const api = { post: vi.fn().mockResolvedValue({ data: { status: 'ok' } }) }
+    startIrrigationMock.mockReset().mockResolvedValue(undefined)
     const showToast = vi.fn()
     const reloadCenter = vi.fn().mockResolvedValue(undefined)
-    const actions = useCycleCenterActions({ api, showToast, reloadCenter })
+    const actions = useCycleCenterActions({ showToast, reloadCenter })
     const zone = buildZone()
 
     actions.openActionModal(zone, 'FORCE_IRRIGATION')
@@ -99,7 +118,7 @@ describe('useCycleCenterActions', () => {
       params: { duration_sec: 90 },
     })
 
-    expect(api.post).toHaveBeenCalledWith('/api/zones/1/start-irrigation', {
+    expect(startIrrigationMock).toHaveBeenCalledWith(1, {
       mode: 'force',
       source: 'cycle_center',
       requested_duration_sec: 90,

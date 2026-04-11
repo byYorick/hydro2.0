@@ -1,7 +1,7 @@
 import type { ComputedRef, Ref } from 'vue'
+import { api } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
@@ -9,10 +9,8 @@ import type {
   GreenhouseFormState,
   SetupWizardLoadingState,
 } from './setupWizardTypes'
-import type { SetupWizardDataApiClient } from './setupWizardDataLoaders'
 
 interface SetupWizardGreenhouseCommandsOptions {
-  api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
@@ -43,7 +41,6 @@ export function createSetupWizardGreenhouseCommands(
   options: SetupWizardGreenhouseCommandsOptions
 ): SetupWizardGreenhouseCommandActions {
   const {
-    api,
     loading,
     canConfigure,
     showToast,
@@ -61,12 +58,10 @@ export function createSetupWizardGreenhouseCommands(
 
     loading.stepGreenhouse = true
     try {
-      const response = await api.post('/greenhouses', {
+      const greenhouse = await api.greenhouses.create({
         ...greenhouseForm,
         uid: generatedGreenhouseUid.value,
-      })
-
-      const greenhouse = extractData<Greenhouse>(response.data)
+      }) as Greenhouse
       if (!greenhouse?.id) {
         throw new Error('Greenhouse not returned from API')
       }
@@ -92,8 +87,7 @@ export function createSetupWizardGreenhouseCommands(
 
     loading.stepGreenhouse = true
     try {
-      const response = await api.get(`/greenhouses/${selectedGreenhouseId.value}`)
-      const greenhouse = extractData<Greenhouse>(response.data)
+      const greenhouse = await api.greenhouses.getById(selectedGreenhouseId.value as number) as Greenhouse
       if (!greenhouse?.id) {
         throw new Error('Greenhouse not found')
       }

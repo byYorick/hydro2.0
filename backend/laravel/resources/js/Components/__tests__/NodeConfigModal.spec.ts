@@ -39,16 +39,10 @@ vi.mock('axios', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosGetMock(finalUrl, config)
-      },
-    },
-  }),
-}))
+// Компонент ходит через api.nodes.getConfig (services/api.nodes), который
+// использует apiClient.get. axios замокан через axios.create → mockAxiosInstance,
+// так что axiosGetMock ловит все вызовы напрямую. Interceptor не срабатывает
+// в тестах, поэтому URL проверяется без префикса `/api`.
 
 vi.mock('@/utils/logger', () => ({
   logger: {
@@ -119,7 +113,9 @@ describe('NodeConfigModal.vue', () => {
     await wrapper.vm.$nextTick()
 
     expect(axiosGetMock).toHaveBeenCalled()
-    expect(axiosGetMock.mock.calls[0][0]).toContain('/api/nodes/1/config')
+    // После миграции на services/api interceptor не применяется в тестах,
+    // поэтому URL проверяется без префикса `/api`.
+    expect(axiosGetMock.mock.calls[0][0]).toContain('/nodes/1/config')
   })
 
   it('отображает каналы и JSON', async () => {

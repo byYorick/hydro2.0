@@ -374,7 +374,6 @@ import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneDashboardCard from '@/Components/ZoneDashboardCard.vue'
 import { formatTime } from '@/utils/formatTime'
-import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useTheme } from '@/composables/useTheme'
 import { useDashboardRealtimeFeed } from '@/composables/useDashboardRealtimeFeed'
@@ -401,7 +400,6 @@ const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includ
 const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const { theme } = useTheme()
 const latestAlertsRef = toRef(props, 'latestAlerts')
 const selectedZoneId = ref<number | null>(null)
@@ -444,7 +442,6 @@ const {
   submitAction,
 } = useUnifiedDashboard({
   zones: zonesRef,
-  api,
   showToast,
 })
 

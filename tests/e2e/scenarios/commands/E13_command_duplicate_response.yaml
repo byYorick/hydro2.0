@@ -117,7 +117,7 @@ actions:
   - step: set_command_id_from_db
     type: set
     command_id: ${command_from_db.0.cmd_id}
-    condition: ${command_from_db && len(command_from_db) > 0 && command_from_db[0].cmd_id}
+    condition: ${(!command_id || command_id == '' || command_id == null) && command_from_db && len(command_from_db) > 0 && command_from_db[0].cmd_id}
 
   # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
   - step: node_sends_done_first

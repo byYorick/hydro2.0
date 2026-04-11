@@ -123,11 +123,25 @@ vi.mock('@/composables/useCommands', () => ({
   }),
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    get: apiGetMock,
-    post: apiPostMock,
-  }),
+async function unwrapEnvelope(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {
+    return (raw as { data: unknown }).data
+  }
+  return raw
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      getControlMode: (zoneId: number) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/control-mode`)),
+      setControlMode: (zoneId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock(`/api/zones/${zoneId}/control-mode`, payload)),
+      runManualStep: (zoneId: number, payload: Record<string, unknown>) =>
+        apiPostMock(`/api/zones/${zoneId}/manual-step`, payload),
+    },
+  },
 }))
 
 vi.mock('@/utils/logger', () => ({

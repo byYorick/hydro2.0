@@ -277,14 +277,12 @@ import { logger } from '@/utils/logger'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useToast } from '@/composables/useToast'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useLoading } from '@/composables/useLoading'
-import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Device, Greenhouse, Zone } from '@/types'
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 const page = usePage<{ auth?: { user?: { role?: string } } }>()
 const canConfigureDevices = computed(() => {
@@ -310,21 +308,6 @@ const lifecycleNodesCount = computed(() => newNodes.value.filter((node) => Boole
 const readyToAssignCount = computed(() =>
   newNodes.value.filter((node) => Boolean(assignmentForms[node.id]?.zone_id)).length
 )
-
-function unwrapListResponse<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) {
-    return payload as T[]
-  }
-
-  if (payload && typeof payload === 'object' && 'data' in payload) {
-    const inner = (payload as { data?: unknown }).data
-    if (Array.isArray(inner)) {
-      return inner as T[]
-    }
-  }
-
-  return []
-}
 
 function formatDate(dateString: string | null | undefined) {
   if (!dateString) return '-'
@@ -370,13 +353,7 @@ async function loadNewNodes(): Promise<void> {
   try {
     const previousNodes = new Map(newNodes.value.map(node => [node.id, node]))
 
-    const response = await api.get<{ data?: Device[] } | Device[]>(
-      '/nodes',
-      { params: { unassigned: true } }
-    )
-    
-    const data = extractData<unknown>(response.data)
-    newNodes.value = unwrapListResponse<Device>(data)
+    newNodes.value = await api.nodes.list({ unassigned: true })
     
     // Инициализировать формы для каждой ноды
     newNodes.value.forEach(node => {
@@ -416,24 +393,18 @@ async function loadNewNodes(): Promise<void> {
 
 async function loadGreenhouses(): Promise<void> {
   try {
-    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
-    
-    const data = extractData<unknown>(response.data)
-    greenhouses.value = unwrapListResponse<Greenhouse>(data)
+    greenhouses.value = await api.greenhouses.list()
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
+    // Ошибка уже обработана в apiClient через глобальный showToast
     logger.error('[Devices/Add] Failed to load greenhouses:', err)
   }
 }
 
 async function loadZones(): Promise<void> {
   try {
-    const response = await api.get<{ data?: Zone[] } | Zone[]>('/zones')
-    
-    const data = extractData<unknown>(response.data)
-    zones.value = unwrapListResponse<Zone>(data)
+    zones.value = await api.zones.list()
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
+    // Ошибка уже обработана в apiClient через глобальный showToast
     logger.error('[Devices/Add] Failed to load zones:', err)
   }
 }
@@ -485,15 +456,10 @@ async function assignNode(node: any) {
       zone_id: form.zone_id,
       name: form.name || node.name || node.uid,
     }
-    
-    const response = await api.patch<{ status: string; data?: Device }>(
-      `/nodes/${node.id}`,
-      updateData
-    )
-    
-    if (response.data?.status === 'ok' && response.data?.data) {
-      const updatedNode = response.data.data
-      
+
+    const updatedNode = await api.nodes.update(node.id, updateData)
+
+    if (updatedNode) {
       // Проверяем состояние привязки:
       // - Если pending_zone_id установлен (а zone_id = NULL) → привязка в процессе
       // - Если zone_id установлен (а pending_zone_id = NULL) → привязка завершена (lifecycle может измениться позже)
@@ -595,7 +561,7 @@ async function deleteNode(node: Device): Promise<void> {
 
   deleting[node.id] = true
   try {
-    await api.delete(`/nodes/${node.id}`)
+    await api.nodes.delete(node.id)
     showToast(`Нода "${label}" удалена.`, 'success', TOAST_TIMEOUT.NORMAL)
 
     newNodes.value = newNodes.value.filter(n => n.id !== node.id)

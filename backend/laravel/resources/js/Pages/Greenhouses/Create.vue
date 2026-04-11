@@ -120,13 +120,12 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { generateUid } from '@/utils/transliterate'
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
 const loadingTypes = ref<boolean>(false)
@@ -151,9 +150,7 @@ const generatedUid = computed(() => {
 async function loadGreenhouseTypes(): Promise<void> {
   loadingTypes.value = true
   try {
-    const response = await api.get('/greenhouse-types')
-    const payload = (response.data as any)?.data ?? []
-    greenhouseTypes.value = Array.isArray(payload) ? payload : []
+    greenhouseTypes.value = await api.greenhouses.types()
 
     if (!form.greenhouse_type_id && greenhouseTypes.value.length > 0) {
       form.greenhouse_type_id = greenhouseTypes.value[0].id
@@ -179,13 +176,13 @@ async function onSubmit() {
   
   try {
     const uid = generatedUid.value
-    
-    const response = await api.post('/greenhouses', {
+
+    const greenhouse = await api.greenhouses.create({
       ...form,
-      uid: uid
-    })
-    
-    logger.info('Greenhouse created:', response.data)
+      uid,
+    } as never)
+
+    logger.info('Greenhouse created:', greenhouse)
     showToast('Теплица успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
     router.visit('/')
   } catch (error: any) {

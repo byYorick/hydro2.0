@@ -83,7 +83,7 @@
 import { ref, computed, watch } from 'vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { GROW_STAGES, getStageForPhase, type GrowStage } from '@/utils/growStages'
 
@@ -100,7 +100,6 @@ interface Props {
 const props = defineProps<Props>()
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const stageMap = ref<Array<{ phase_index: number; stage: GrowStage }>>([])
 const originalStageMap = ref<Array<{ phase_index: number; stage: GrowStage }>>([])
@@ -121,19 +120,16 @@ watch(() => props.recipeId, async (recipeId) => {
 
 async function loadStageMap() {
   try {
-    const response = await api.get(`/recipes/${props.recipeId}/stage-map`)
-    if (response.data?.status === 'ok') {
-      stageMap.value = response.data.data.stage_map || []
+    const payload = await api.recipes.getStageMap(props.recipeId)
+    stageMap.value = (payload?.stage_map || []) as Array<{ phase_index: number; stage: GrowStage }>
+    originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
+
+    if (stageMap.value.length === 0 && props.phases.length > 0) {
+      stageMap.value = props.phases.map(phase => ({
+        phase_index: phase.phase_index,
+        stage: getStageForPhase(phase.name, phase.phase_index, props.phases.length) ?? 'veg',
+      }))
       originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
-      
-      // Если нет stage-map, генерируем автоматически
-      if (stageMap.value.length === 0 && props.phases.length > 0) {
-        stageMap.value = props.phases.map(phase => ({
-          phase_index: phase.phase_index,
-          stage: getStageForPhase(phase.name, phase.phase_index, props.phases.length) ?? 'veg',
-        }))
-        originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
-      }
     }
   } catch (error) {
     console.error('Failed to load stage map:', error)
@@ -174,14 +170,11 @@ function resetChanges() {
 async function saveChanges() {
   saving.value = true
   try {
-    const response = await api.put(`/recipes/${props.recipeId}/stage-map`, {
+    await api.recipes.updateStageMap(props.recipeId, {
       stage_map: stageMap.value,
     })
-    
-    if (response.data?.status === 'ok') {
-      originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
-      showToast('Маппинг стадий сохранен', 'success')
-    }
+    originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
+    showToast('Маппинг стадий сохранен', 'success')
   } catch (error) {
     console.error('Failed to save stage map:', error)
     showToast('Ошибка при сохранении', 'error')

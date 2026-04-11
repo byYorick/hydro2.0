@@ -25,23 +25,40 @@ vi.mock('@/Components/Badge.vue', () => ({
   default: { name: 'Badge', props: ['variant'], template: '<span><slot /></span>' },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return apiGetMock(finalUrl, config)
-      },
-      patch: (url: string, data?: any, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return apiPatchMock(finalUrl, data, config)
-      },
-      delete: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return apiDeleteMock(finalUrl, config)
-      },
+async function unwrapEnvelope(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  // Эмулируем apiGet из services/api/_client: axios выдаёт `response.data` (снимаем
+  // первый `data` от mock-raw), затем extractData снимает ещё один уровень.
+  if (!raw || typeof raw !== 'object') return raw
+  const afterAxios = 'data' in (raw as Record<string, unknown>) ? (raw as { data: unknown }).data : raw
+  // extractData logic
+  if (afterAxios && typeof afterAxios === 'object' && 'data' in (afterAxios as Record<string, unknown>)) {
+    const inner = (afterAxios as { data: unknown }).data
+    if (inner && typeof inner === 'object' && 'data' in (inner as Record<string, unknown>)) {
+      return (inner as { data: unknown }).data
+    }
+    return inner
+  }
+  return afterAxios
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    nodes: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock('/api/nodes', { params })),
+      update: (nodeId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPatchMock(`/api/nodes/${nodeId}`, payload, undefined)),
+      delete: (nodeId: number) =>
+        unwrapEnvelope(apiDeleteMock(`/api/nodes/${nodeId}`, undefined)),
     },
-  }),
+    greenhouses: {
+      list: () => unwrapEnvelope(apiGetMock('/api/greenhouses', undefined)),
+    },
+    zones: {
+      list: () => unwrapEnvelope(apiGetMock('/api/zones', undefined)),
+    },
+  },
 }))
 
 vi.mock('@/composables/useToast', () => ({

@@ -162,7 +162,7 @@ import { computed, ref, watch } from 'vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import Card from '@/Components/Card.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { usePidConfig } from '@/composables/usePidConfig'
 import { usePumpCalibrationSettings } from '@/composables/usePumpCalibrationSettings'
 import type { PumpCalibration } from '@/types/PidConfig'
@@ -203,7 +203,6 @@ const calibrations = ref<PumpCalibration[]>([])
 const loading = ref(true)
 const historyEvents = ref<PumpCalibrationHistoryItem[]>([])
 
-const { api } = useApi()
 const { getPumpCalibrations } = usePidConfig()
 const pumpSettings = usePumpCalibrationSettings()
 
@@ -348,13 +347,11 @@ function toHistoryItem(raw: ZoneApiEvent, pumps: PumpCalibration[]): PumpCalibra
 }
 
 async function loadHistory(): Promise<ZoneApiEvent[]> {
-  const response = await api.get<{ status: string; data: ZoneApiEvent[] }>(`/api/zones/${props.zoneId}/events`, {
-    params: {
-      limit: 80,
-    },
-  })
-
-  return Array.isArray(response.data.data) ? response.data.data : []
+  const response = await api.zones.events(props.zoneId, { limit: 80 }) as ZoneApiEvent[] | { data?: ZoneApiEvent[] }
+  if (Array.isArray(response)) {
+    return response
+  }
+  return Array.isArray(response?.data) ? response.data : []
 }
 
 async function loadCalibrations(): Promise<void> {

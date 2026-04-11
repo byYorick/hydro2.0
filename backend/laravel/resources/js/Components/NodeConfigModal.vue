@@ -117,8 +117,7 @@ import { ref, watch, computed } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
-import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
 
 interface Props {
   show: boolean
@@ -141,9 +140,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
 }>()
-
-const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
 const nodeConfigData = ref<Record<string, any> | null>(null)
@@ -201,11 +197,10 @@ async function loadNodeConfig() {
   errorMessage.value = ''
 
   try {
-    const response = await api.get<{ data?: Record<string, unknown> }>(`/nodes/${props.nodeId}/config`)
-    const payload = response.data?.data
+    const payload = await api.nodes.getConfig(props.nodeId)
     nodeConfigData.value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null
   } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
+    // Ошибка уже обработана в apiClient через глобальный showToast
     logger.error('Failed to load node config:', error)
     errorMessage.value = 'Не удалось загрузить конфигурацию. Попробуйте позже.'
     nodeConfigData.value = null

@@ -15,13 +15,11 @@ import type {
 } from './setupWizardTypes'
 import {
   createSetupWizardDataLoaders,
-  type SetupWizardDataApiClient,
   type SetupWizardDataLoaderActions,
 } from './setupWizardDataLoaders'
 import { createSetupWizardEntityCommands } from './setupWizardEntityCommands'
 
 interface SetupWizardDataFlowsOptions {
-  api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
@@ -60,7 +58,6 @@ export type SetupWizardDataFlowActions = SetupWizardDataLoaderActions & {
 
 export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions): SetupWizardDataFlowActions {
   const loaders = createSetupWizardDataLoaders({
-    api: options.api,
     loading: options.loading,
     showToast: options.showToast,
     availableGreenhouses: options.availableGreenhouses,
@@ -76,7 +73,6 @@ export function createSetupWizardDataFlows(options: SetupWizardDataFlowsOptions)
   })
 
   const commands = createSetupWizardEntityCommands({
-    api: options.api,
     loading: options.loading,
     canConfigure: options.canConfigure,
     showToast: options.showToast,

@@ -4,14 +4,14 @@ import ZoneAIPredictionHint from '../ZoneAIPredictionHint.vue'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-const axiosPostMock = vi.hoisted(() => vi.fn())
+const aiPredictMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      post: axiosPostMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    ai: {
+      predict: aiPredictMock,
     },
-  }),
+  },
 }))
 
 vi.mock('@/utils/logger', () => ({
@@ -22,14 +22,12 @@ vi.mock('@/utils/logger', () => ({
 
 function makePrediction(predicted_value: number, confidence = 0.85) {
   return {
+    status: 'ok',
     data: {
-      status: 'ok',
-      data: {
-        predicted_value,
-        confidence,
-        predicted_at: '2025-01-01T00:00:00Z',
-        horizon_minutes: 90,
-      },
+      predicted_value,
+      confidence,
+      predicted_at: '2025-01-01T00:00:00Z',
+      horizon_minutes: 90,
     },
   }
 }
@@ -52,7 +50,7 @@ describe('ZoneAIPredictionHint', () => {
   // ─── Visibility ─────────────────────────────────────────────────────────
 
   it('не рендерит ничего пока API ещё не ответил', () => {
-    axiosPostMock.mockReturnValue(new Promise(() => {})) // зависает навсегда
+    aiPredictMock.mockReturnValue(new Promise(() => {})) // зависает навсегда
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
 
@@ -61,7 +59,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('не рендерит ничего когда API вернул пустой data', async () => {
-    axiosPostMock.mockResolvedValue({ data: { status: 'ok', data: null } })
+    aiPredictMock.mockResolvedValue({ status: 'ok', data: null })
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -70,7 +68,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('не рендерит ничего при ошибке API', async () => {
-    axiosPostMock.mockRejectedValue(new Error('Network error'))
+    aiPredictMock.mockRejectedValue(new Error('Network error'))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -80,7 +78,7 @@ describe('ZoneAIPredictionHint', () => {
 
   it('не рендерит ничего когда confidence низкий и значение в норме', async () => {
     // In range, but confidence < 0.75 → hintText = null
-    axiosPostMock.mockResolvedValue(makePrediction(6.0, 0.5))
+    aiPredictMock.mockResolvedValue(makePrediction(6.0, 0.5))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -92,7 +90,7 @@ describe('ZoneAIPredictionHint', () => {
 
   it('показывает stable хинт для уверенного прогноза в норме', async () => {
     // 6.0 ∈ [5.8, 6.2], не у границы (span=0.4, margin=0.04 → near if >6.16 or <5.84)
-    axiosPostMock.mockResolvedValue(makePrediction(6.0, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(6.0, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -104,7 +102,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('показывает время прогноза в часах (≥60 мин)', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(6.0, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(6.0, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, {
       props: { ...defaultProps, horizonMinutes: 90 },
@@ -115,7 +113,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('показывает время прогноза в минутах (<60 мин)', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(6.0, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(6.0, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, {
       props: { ...defaultProps, horizonMinutes: 30 },
@@ -129,7 +127,7 @@ describe('ZoneAIPredictionHint', () => {
 
   it('показывает хинт "у границы" для значения у верхней границы', async () => {
     // span=0.4, margin=0.04; near edge if v > 6.2-0.04=6.16
-    axiosPostMock.mockResolvedValue(makePrediction(6.18, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(6.18, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -140,7 +138,7 @@ describe('ZoneAIPredictionHint', () => {
 
   it('показывает хинт "у границы" для значения у нижней границы', async () => {
     // near edge if v < 5.8+0.04=5.84
-    axiosPostMock.mockResolvedValue(makePrediction(5.82, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(5.82, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -152,7 +150,7 @@ describe('ZoneAIPredictionHint', () => {
   // ─── Out of range hint ────────────────────────────────────────────────────
 
   it('показывает хинт "выйдет ↑" когда прогноз выше max', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(6.5, 0.9))
+    aiPredictMock.mockResolvedValue(makePrediction(6.5, 0.9))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -163,7 +161,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('показывает хинт "выйдет ↓" когда прогноз ниже min', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(5.3, 0.9))
+    aiPredictMock.mockResolvedValue(makePrediction(5.3, 0.9))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -175,7 +173,7 @@ describe('ZoneAIPredictionHint', () => {
   // ─── EC metric ────────────────────────────────────────────────────────────
 
   it('показывает EC label и единицы для metricType=EC', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(1.7, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(1.7, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, {
       props: { zoneId: 1, metricType: 'EC', targetMin: 1.4, targetMax: 1.8, horizonMinutes: 90 },
@@ -189,14 +187,14 @@ describe('ZoneAIPredictionHint', () => {
   // ─── API call parameters ─────────────────────────────────────────────────
 
   it('вызывает API с корректными параметрами', async () => {
-    axiosPostMock.mockResolvedValue({ data: { status: 'ok', data: null } })
+    aiPredictMock.mockResolvedValue({ status: 'ok', data: null })
 
     mount(ZoneAIPredictionHint, {
       props: { zoneId: 42, metricType: 'EC', targetMin: 1.4, targetMax: 1.8, horizonMinutes: 60 },
     })
     await flushPromises()
 
-    expect(axiosPostMock).toHaveBeenCalledWith('/api/ai/predict', {
+    expect(aiPredictMock).toHaveBeenCalledWith({
       zone_id: 42,
       metric_type: 'EC',
       horizon_minutes: 60,
@@ -204,35 +202,34 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('вызывает API один раз при монтировании', async () => {
-    axiosPostMock.mockResolvedValue({ data: { status: 'ok', data: null } })
+    aiPredictMock.mockResolvedValue({ status: 'ok', data: null })
 
     mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
 
-    expect(axiosPostMock).toHaveBeenCalledTimes(1)
+    expect(aiPredictMock).toHaveBeenCalledTimes(1)
   })
 
   // ─── Reactivity ──────────────────────────────────────────────────────────
 
   it('повторно запрашивает API при смене zoneId', async () => {
-    axiosPostMock.mockResolvedValue({ data: { status: 'ok', data: null } })
+    aiPredictMock.mockResolvedValue({ status: 'ok', data: null })
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
-    expect(axiosPostMock).toHaveBeenCalledTimes(1)
+    expect(aiPredictMock).toHaveBeenCalledTimes(1)
 
     await wrapper.setProps({ zoneId: 2 })
     await flushPromises()
 
-    expect(axiosPostMock).toHaveBeenCalledTimes(2)
-    expect(axiosPostMock).toHaveBeenLastCalledWith(
-      '/api/ai/predict',
+    expect(aiPredictMock).toHaveBeenCalledTimes(2)
+    expect(aiPredictMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ zone_id: 2 }),
     )
   })
 
   it('повторно запрашивает API при смене metricType', async () => {
-    axiosPostMock.mockResolvedValue({ data: { status: 'ok', data: null } })
+    aiPredictMock.mockResolvedValue({ status: 'ok', data: null })
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -240,18 +237,17 @@ describe('ZoneAIPredictionHint', () => {
     await wrapper.setProps({ metricType: 'EC' })
     await flushPromises()
 
-    expect(axiosPostMock).toHaveBeenCalledTimes(2)
-    expect(axiosPostMock).toHaveBeenLastCalledWith(
-      '/api/ai/predict',
+    expect(aiPredictMock).toHaveBeenCalledTimes(2)
+    expect(aiPredictMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ metric_type: 'EC' }),
     )
   })
 
   it('сбрасывает prediction при смене zoneId', async () => {
     // Первый вызов — данные есть
-    axiosPostMock.mockResolvedValueOnce(makePrediction(6.0, 0.85))
+    aiPredictMock.mockResolvedValueOnce(makePrediction(6.0, 0.85))
     // Второй вызов — данных нет
-    axiosPostMock.mockResolvedValueOnce({ data: { status: 'ok', data: null } })
+    aiPredictMock.mockResolvedValueOnce({ status: 'ok', data: null })
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -265,7 +261,7 @@ describe('ZoneAIPredictionHint', () => {
   // ─── CSS classes ─────────────────────────────────────────────────────────
 
   it('применяет нейтральный стиль для stable хинта', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(6.0, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(6.0, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -278,7 +274,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('применяет warning стиль для хинта у границы', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(6.18, 0.85))
+    aiPredictMock.mockResolvedValue(makePrediction(6.18, 0.85))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()
@@ -288,7 +284,7 @@ describe('ZoneAIPredictionHint', () => {
   })
 
   it('применяет danger стиль для хинта выхода за границу', async () => {
-    axiosPostMock.mockResolvedValue(makePrediction(7.0, 0.9))
+    aiPredictMock.mockResolvedValue(makePrediction(7.0, 0.9))
 
     const wrapper = mount(ZoneAIPredictionHint, { props: defaultProps })
     await flushPromises()

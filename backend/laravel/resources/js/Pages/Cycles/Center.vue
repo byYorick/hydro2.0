@@ -464,7 +464,6 @@ import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateStatus } from '@/utils/i18n'
 import { getCycleStatusLabel, getCycleStatusVariant } from '@/utils/growCycleStatus'
-import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import {
   useCycleCenterView,
@@ -487,7 +486,6 @@ const canConfigureCycle = computed(() => ['admin', 'agronomist'].includes(role.v
 const canManageCycle = computed(() => ['admin', 'agronomist', 'operator'].includes(role.value))
 const canIssueZoneCommands = computed(() => ['admin', 'operator', 'agronomist', 'engineer'].includes(role.value))
 
-const { api } = useApi()
 const { showToast } = useToast()
 
 const zonesRef = computed(() => props.zones)
@@ -528,7 +526,6 @@ const {
   closeActionModal,
   submitAction,
 } = useCycleCenterActions({
-  api,
   showToast,
   reloadCenter,
 })

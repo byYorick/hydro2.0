@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiGetMock = vi.hoisted(() => vi.fn())
+const zoneEventsMock = vi.hoisted(() => vi.fn())
 const getPumpCalibrationsMock = vi.hoisted(() => vi.fn())
 const updatePumpCalibrationMock = vi.hoisted(() => vi.fn())
 const defaultPumpSettings = vi.hoisted(() => ({
@@ -49,12 +49,12 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      events: zoneEventsMock,
     },
-  }),
+  },
 }))
 
 vi.mock('@/composables/usePidConfig', () => ({
@@ -80,7 +80,7 @@ import PumpCalibrationsPanel from '../PumpCalibrationsPanel.vue'
 
 describe('PumpCalibrationsPanel.vue', () => {
   beforeEach(() => {
-    apiGetMock.mockReset()
+    zoneEventsMock.mockReset()
     getPumpCalibrationsMock.mockReset()
     updatePumpCalibrationMock.mockReset()
     pumpSettingsState.value = {
@@ -119,25 +119,20 @@ describe('PumpCalibrationsPanel.vue', () => {
         calibration_age_days: null,
       },
     ])
-    apiGetMock.mockResolvedValue({
-      data: {
-        status: 'ok',
-        data: [
-          {
-            event_id: 11,
-            type: 'PUMP_CALIBRATION_FINISHED',
-            message: 'Калибровка насоса завершена: 0.55 мл/с',
-            created_at: '2026-03-17T09:10:00Z',
-            payload: {
-              component: 'ph_down',
-              node_channel_id: 101,
-              source: 'manual',
-              ml_per_sec: 0.55,
-            },
-          },
-        ],
+    zoneEventsMock.mockResolvedValue([
+      {
+        event_id: 11,
+        type: 'PUMP_CALIBRATION_FINISHED',
+        message: 'Калибровка насоса завершена: 0.55 мл/с',
+        created_at: '2026-03-17T09:10:00Z',
+        payload: {
+          component: 'ph_down',
+          node_channel_id: 101,
+          source: 'manual',
+          ml_per_sec: 0.55,
+        },
       },
-    })
+    ])
   })
 
   it('показывает history по роли насоса', async () => {
@@ -148,11 +143,7 @@ describe('PumpCalibrationsPanel.vue', () => {
     await flushPromises()
 
     expect(getPumpCalibrationsMock).toHaveBeenCalledWith(7)
-    expect(apiGetMock).toHaveBeenCalledWith('/api/zones/7/events', {
-      params: {
-        limit: 80,
-      },
-    })
+    expect(zoneEventsMock).toHaveBeenCalledWith(7, { limit: 80 })
     expect(wrapper.text()).toContain('Калибровка насоса завершена: 0.55 мл/с')
     expect(wrapper.text()).toContain('Вручную')
     expect(wrapper.text()).toContain('0.55 мл/с')
@@ -193,31 +184,21 @@ describe('PumpCalibrationsPanel.vue', () => {
           calibration_age_days: 0,
         },
       ])
-    apiGetMock
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: [],
+    zoneEventsMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          event_id: 21,
+          type: 'PUMP_CALIBRATION_FINISHED',
+          message: 'Калибровка насоса завершена: 0.50 мл/с',
+          created_at: '2026-03-23T10:00:00Z',
+          payload: {
+            component: 'ph_up',
+            node_channel_id: 102,
+            ml_per_sec: 0.5,
+          },
         },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'ok',
-          data: [
-            {
-              event_id: 21,
-              type: 'PUMP_CALIBRATION_FINISHED',
-              message: 'Калибровка насоса завершена: 0.50 мл/с',
-              created_at: '2026-03-23T10:00:00Z',
-              payload: {
-                component: 'ph_up',
-                node_channel_id: 102,
-                ml_per_sec: 0.5,
-              },
-            },
-          ],
-        },
-      })
+      ])
 
     const wrapper = mount(PumpCalibrationsPanel, {
       props: { zoneId: 7, saveSuccessSeq: 0 },

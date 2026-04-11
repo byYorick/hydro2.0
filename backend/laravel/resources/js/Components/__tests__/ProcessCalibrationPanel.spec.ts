@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiGetMock = vi.hoisted(() => vi.fn())
+const zoneEventsMock = vi.hoisted(() => vi.fn())
 const getDocumentMock = vi.hoisted(() => vi.fn())
 const updateDocumentMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
@@ -30,12 +30,12 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      events: zoneEventsMock,
     },
-  }),
+  },
 }))
 
 vi.mock('@/composables/useAutomationConfig', () => ({
@@ -187,7 +187,7 @@ function installDocumentMocks(overrides: Partial<Record<'generic' | 'solution_fi
 
 describe('ProcessCalibrationPanel.vue', () => {
   beforeEach(() => {
-    apiGetMock.mockReset()
+    zoneEventsMock.mockReset()
     getDocumentMock.mockReset()
     updateDocumentMock.mockReset()
     showToastMock.mockReset()
@@ -196,18 +196,7 @@ describe('ProcessCalibrationPanel.vue', () => {
       solution_fill: calibration('solution_fill'),
     })
 
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/7/events') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [],
-          },
-        })
-      }
-
-      return Promise.reject(new Error(`Unexpected GET ${url}`))
-    })
+    zoneEventsMock.mockResolvedValue([])
 
     updateDocumentMock.mockResolvedValue(
       runtimeTuningBundleDocument({
@@ -337,45 +326,34 @@ describe('ProcessCalibrationPanel.vue', () => {
     installDocumentMocks({
       tank_recirc: calibration('tank_recirc', { confidence: 0.74 }),
     })
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/7/events') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [
-              {
-                event_id: 12,
-                type: 'PROCESS_CALIBRATION_SAVED',
-                message: 'Process calibration обновлена (tank_recirc): окно 20+45 сек, confidence 0.91, EC=0.110',
-                created_at: '2026-03-17T10:20:00Z',
-                payload: {
-                  mode: 'tank_recirc',
-                  source: 'hil_manual',
-                  confidence: 0.91,
-                  transport_delay_sec: 20,
-                  settle_sec: 45,
-                },
-              },
-              {
-                event_id: 11,
-                type: 'PROCESS_CALIBRATION_SAVED',
-                message: 'Process calibration обновлена (generic): окно 18+30 сек, confidence 0.75, EC=0.090',
-                created_at: '2026-03-17T09:00:00Z',
-                payload: {
-                  mode: 'generic',
-                  source: 'manual',
-                  confidence: 0.75,
-                  transport_delay_sec: 18,
-                  settle_sec: 30,
-                },
-              },
-            ],
-          },
-        })
-      }
-
-      return Promise.reject(new Error(`Unexpected GET ${url}`))
-    })
+    zoneEventsMock.mockResolvedValue([
+      {
+        event_id: 12,
+        type: 'PROCESS_CALIBRATION_SAVED',
+        message: 'Process calibration обновлена (tank_recirc): окно 20+45 сек, confidence 0.91, EC=0.110',
+        created_at: '2026-03-17T10:20:00Z',
+        payload: {
+          mode: 'tank_recirc',
+          source: 'hil_manual',
+          confidence: 0.91,
+          transport_delay_sec: 20,
+          settle_sec: 45,
+        },
+      },
+      {
+        event_id: 11,
+        type: 'PROCESS_CALIBRATION_SAVED',
+        message: 'Process calibration обновлена (generic): окно 18+30 сек, confidence 0.75, EC=0.090',
+        created_at: '2026-03-17T09:00:00Z',
+        payload: {
+          mode: 'generic',
+          source: 'manual',
+          confidence: 0.75,
+          transport_delay_sec: 18,
+          settle_sec: 30,
+        },
+      },
+    ])
 
     const wrapper = mount(ProcessCalibrationPanel, {
       props: { zoneId: 7 },

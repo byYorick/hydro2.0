@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiGetMock = vi.hoisted(() => vi.fn())
+const zoneEventsMock = vi.hoisted(() => vi.fn())
 const getDocumentMock = vi.hoisted(() => vi.fn())
 const getAllPidConfigsMock = vi.hoisted(() => vi.fn())
 const getPumpCalibrationsMock = vi.hoisted(() => vi.fn())
@@ -21,12 +21,12 @@ vi.mock('@/Components/Badge.vue', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      events: zoneEventsMock,
     },
-  }),
+  },
 }))
 
 vi.mock('@/composables/useAutomationConfig', () => ({
@@ -113,25 +113,14 @@ function installProcessDocuments(overrides: Partial<Record<'generic' | 'solution
 
 describe('CorrectionRuntimeReadinessCard.vue', () => {
   beforeEach(() => {
-    apiGetMock.mockReset()
+    zoneEventsMock.mockReset()
     getDocumentMock.mockReset()
     getAllPidConfigsMock.mockReset()
     getPumpCalibrationsMock.mockReset()
 
     installProcessDocuments({})
 
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/42/events') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [],
-          },
-        })
-      }
-
-      return Promise.reject(new Error(`Unexpected url: ${url}`))
-    })
+    zoneEventsMock.mockResolvedValue([])
   })
 
   it('показывает готовность с generic fallback, когда насосы откалиброваны', async () => {
@@ -158,11 +147,7 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
     await flushPromises()
 
     expect(getDocumentMock).toHaveBeenCalledWith('zone', 42, 'zone.process_calibration.generic')
-    expect(apiGetMock).toHaveBeenCalledWith('/api/zones/42/events', {
-      params: {
-        limit: 80,
-      },
-    })
+    expect(zoneEventsMock).toHaveBeenCalledWith(42, { limit: 80 })
     expect(getAllPidConfigsMock).toHaveBeenCalledWith(42)
     expect(getPumpCalibrationsMock).toHaveBeenCalledWith(42)
     expect(wrapper.text()).toContain('Готово с fallback')
@@ -228,54 +213,43 @@ describe('CorrectionRuntimeReadinessCard.vue', () => {
       tank_recirc: savedPayload('tank_recirc', 0.88),
       irrigation: savedPayload('irrigation', 0.84),
     })
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/api/zones/42/events') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [
-              {
-                id: 13,
-                type: 'CORRECTION_NO_EFFECT',
-                message: 'Коррекция: нет наблюдаемого эффекта (EC, эффект 0.0200 < 0.1000, лимит 3)',
-                occurred_at: '2026-03-17T10:10:00Z',
-                payload: {
-                  pid_type: 'ec',
-                  actual_effect: 0.02,
-                  threshold_effect: 0.1,
-                  no_effect_limit: 3,
-                },
-              },
-              {
-                id: 12,
-                type: 'CORRECTION_SKIPPED_WINDOW_NOT_READY',
-                message: 'Коррекция: окно наблюдения не готово (observe window, EC, insufficient_samples, повтор через 2 с)',
-                occurred_at: '2026-03-17T10:09:30Z',
-                payload: {
-                  sensor_scope: 'observe_window',
-                  sensor_type: 'EC',
-                  reason: 'insufficient_samples',
-                  retry_after_sec: 2,
-                },
-              },
-              {
-                id: 11,
-                type: 'CORRECTION_SKIPPED_FRESHNESS',
-                message: 'Коррекция: устаревшие данные (observe window, EC, повтор через 30 с)',
-                occurred_at: '2026-03-17T10:09:00Z',
-                payload: {
-                  sensor_scope: 'observe_window',
-                  sensor_type: 'EC',
-                  retry_after_sec: 30,
-                },
-              },
-            ],
-          },
-        })
-      }
-
-      return Promise.reject(new Error(`Unexpected url: ${url}`))
-    })
+    zoneEventsMock.mockResolvedValue([
+      {
+        id: 13,
+        type: 'CORRECTION_NO_EFFECT',
+        message: 'Коррекция: нет наблюдаемого эффекта (EC, эффект 0.0200 < 0.1000, лимит 3)',
+        occurred_at: '2026-03-17T10:10:00Z',
+        payload: {
+          pid_type: 'ec',
+          actual_effect: 0.02,
+          threshold_effect: 0.1,
+          no_effect_limit: 3,
+        },
+      },
+      {
+        id: 12,
+        type: 'CORRECTION_SKIPPED_WINDOW_NOT_READY',
+        message: 'Коррекция: окно наблюдения не готово (observe window, EC, insufficient_samples, повтор через 2 с)',
+        occurred_at: '2026-03-17T10:09:30Z',
+        payload: {
+          sensor_scope: 'observe_window',
+          sensor_type: 'EC',
+          reason: 'insufficient_samples',
+          retry_after_sec: 2,
+        },
+      },
+      {
+        id: 11,
+        type: 'CORRECTION_SKIPPED_FRESHNESS',
+        message: 'Коррекция: устаревшие данные (observe window, EC, повтор через 30 с)',
+        occurred_at: '2026-03-17T10:09:00Z',
+        payload: {
+          sensor_scope: 'observe_window',
+          sensor_type: 'EC',
+          retry_after_sec: 30,
+        },
+      },
+    ])
     getAllPidConfigsMock.mockResolvedValue({
       ph: { type: 'ph', config: { dead_zone: 0.05 }, is_default: false },
       ec: { type: 'ec', config: { dead_zone: 0.1 }, is_default: false },

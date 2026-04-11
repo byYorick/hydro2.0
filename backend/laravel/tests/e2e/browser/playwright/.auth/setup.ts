@@ -1,6 +1,9 @@
 import { test as setup, expect } from '@playwright/test';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const authFile = './playwright/.auth/user.json';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const authFile = path.resolve(__dirname, 'user.json');
 
 setup('authenticate', async ({ page }) => {
   const email = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';

@@ -286,7 +286,7 @@ import MetricCard from '@/Components/MetricCard.vue'
 import ZoneCreateWizard from '@/Components/ZoneCreateWizard.vue'
 import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useSimpleModal } from '@/composables/useModal'
 import { useToast } from '@/composables/useToast'
@@ -299,7 +299,6 @@ import {
   type GreenhouseClimateBindingsState,
 } from '@/composables/greenhouseLogicProfileAuthority'
 import { applyAutomationFromRecipe, buildGrowthCycleConfigPayload } from '@/composables/zoneAutomationFormLogic'
-import { extractCollection } from '@/composables/setupWizardCollection'
 import { formatTime } from '@/utils/formatTime'
 import { calculateProgressFromDuration } from '@/utils/growCycleProgress'
 import type { ClimateFormState, LightingFormState, WaterFormState, ZoneClimateFormState } from '@/composables/zoneAutomationTypes'
@@ -362,7 +361,6 @@ const canConfigureGreenhouse = computed(() => role.value === 'agronomist' || rol
 const canOperateGreenhouse = computed(() => role.value === 'agronomist' || role.value === 'admin' || role.value === 'operator')
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const automationConfig = useAutomationConfig(showToast)
 const { isOpen: showZoneWizard, open: openZoneWizard, close: closeZoneWizard } = useSimpleModal()
 
@@ -486,13 +484,11 @@ function buildGreenhouseClimateSubsystem(): Record<string, unknown> {
 
 async function loadAvailableNodes(): Promise<void> {
   try {
-    const response = await api.get('/nodes', {
-      params: {
-        greenhouse_id: props.greenhouse.id,
-        include_unassigned: true,
-      },
+    const list = await api.nodes.list({
+      greenhouse_id: props.greenhouse.id,
+      include_unassigned: true,
     })
-    availableNodes.value = extractCollection<GreenhouseNodeOption>(response.data)
+    availableNodes.value = list as GreenhouseNodeOption[]
   } catch {
     showToast('Не удалось загрузить список нод теплицы.', 'warning', TOAST_TIMEOUT.NORMAL)
   }
@@ -500,12 +496,10 @@ async function loadAvailableNodes(): Promise<void> {
 
 async function loadManagedGreenhouseNodes(): Promise<void> {
   try {
-    const response = await api.get('/nodes', {
-      params: {
-        greenhouse_id: props.greenhouse.id,
-      },
+    const list = await api.nodes.list({
+      greenhouse_id: props.greenhouse.id,
     })
-    managedGreenhouseNodes.value = extractCollection<GreenhouseNodeOption>(response.data)
+    managedGreenhouseNodes.value = list as GreenhouseNodeOption[]
   } catch {
     showToast('Не удалось загрузить управляемые greenhouse climate ноды.', 'warning', TOAST_TIMEOUT.NORMAL)
   }
@@ -568,10 +562,10 @@ async function saveGreenhouseClimate(): Promise<void> {
     }
 
     if (greenhouseClimateEnabled.value) {
-      await api.post('/setup-wizard/validate-greenhouse-climate-devices', bindingsPayload)
+      await api.setupWizard.validateGreenhouseClimateDevices(bindingsPayload)
     }
 
-    await api.post('/setup-wizard/apply-greenhouse-climate-bindings', bindingsPayload)
+    await api.setupWizard.applyGreenhouseClimateBindings(bindingsPayload)
     const currentDocument = await automationConfig.getDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE)
     const currentPayload = payloadFromGreenhouseLogicDocument(currentDocument)
     const response = await automationConfig.updateDocument('greenhouse', props.greenhouse.id, GREENHOUSE_LOGIC_PROFILE_NAMESPACE, {
@@ -747,10 +741,10 @@ async function confirmMaintenance(): Promise<void> {
   maintenanceSubmitting.value = true
   try {
     const results = await Promise.allSettled(
-      targets.map((node) => api.post(`/nodes/${node.id}/lifecycle/transition`, {
+      targets.map((node) => api.nodes.lifecycleTransition(node.id, {
         target_state: targetState,
         reason: `Greenhouse ${props.greenhouse.name}: ${targetState === 'MAINTENANCE' ? 'maintenance' : 'resume'}`,
-      }))
+      })),
     )
     const successCount = results.filter((result) => result.status === 'fulfilled').length
     const failedCount = results.length - successCount

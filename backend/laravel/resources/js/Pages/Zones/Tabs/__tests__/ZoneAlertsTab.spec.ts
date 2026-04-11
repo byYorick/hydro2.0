@@ -1,13 +1,15 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
-const patchMock = vi.hoisted(() => vi.fn())
+const acknowledgeMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    patch: (...args: unknown[]) => patchMock(...args),
-  }),
+vi.mock('@/services/api', () => ({
+  api: {
+    alerts: {
+      acknowledge: (alertId: number) => acknowledgeMock(alertId),
+    },
+  },
 }))
 
 vi.mock('@/composables/useToast', () => ({
@@ -41,7 +43,7 @@ function makeAlert(overrides: Record<string, unknown> = {}) {
 
 describe('ZoneAlertsTab.vue', () => {
   beforeEach(() => {
-    patchMock.mockReset()
+    acknowledgeMock.mockReset()
     showToastMock.mockReset()
   })
 
@@ -73,14 +75,10 @@ describe('ZoneAlertsTab.vue', () => {
   })
 
   it('закрывает алерт по кнопке Решить', async () => {
-    patchMock.mockResolvedValue({
-      data: {
-        data: makeAlert({
-          status: 'resolved',
-          resolved_at: '2026-03-29T08:10:00Z',
-        }),
-      },
-    })
+    acknowledgeMock.mockResolvedValue(makeAlert({
+      status: 'resolved',
+      resolved_at: '2026-03-29T08:10:00Z',
+    }))
 
     const wrapper = mount(ZoneAlertsTab, {
       props: {
@@ -104,7 +102,7 @@ describe('ZoneAlertsTab.vue', () => {
     await wrapper.get('[data-testid="zone-alert-row-11"]').trigger('click')
     await wrapper.get('[data-testid="zone-alert-resolve-button"]').trigger('click')
 
-    expect(patchMock).toHaveBeenCalledWith('/api/alerts/11/ack', {})
+    expect(acknowledgeMock).toHaveBeenCalledWith(11)
     expect(showToastMock).toHaveBeenCalledWith('Алерт помечен как решённый', 'success', 3000)
     expect(wrapper.find('[data-testid="zone-alert-details-modal"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Решённые')

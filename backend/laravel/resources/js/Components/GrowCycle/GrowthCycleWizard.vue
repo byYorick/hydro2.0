@@ -1291,7 +1291,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useZones } from "@/composables/useZones";
 import Modal from "@/Components/Modal.vue";
@@ -1329,7 +1328,6 @@ const emit = defineEmits<{
   ];
 }>();
 
-const { api } = useApi();
 const { showToast } = useToast();
 const { fetchZones } = useZones();
 const wizardEmit = emit as GrowthCycleWizardEmit;
@@ -1388,7 +1386,6 @@ const {
 } = useGrowthCycleWizard({
   props,
   emit: wizardEmit,
-  api,
   showToast,
   fetchZones,
 });
@@ -1402,7 +1399,6 @@ const automationTabs = [
 
 const showPumpCalibrationModal = ref(false);
 const pumpCalibrationActions = usePumpCalibrationActions({
-  api,
   getZoneId: () => form.value.zoneId,
   showToast,
   runSuccessMessage: "Запуск калибровки отправлен. После прогона сохраните фактический объём.",

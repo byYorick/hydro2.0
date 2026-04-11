@@ -9,38 +9,20 @@ import {
 } from '@/commands/registry'
 import type { UserRole } from '@/types/User'
 import { logger } from '@/utils/logger'
+import { api } from '@/services/api'
 
 export interface TextSegment {
   text: string
   match: boolean
 }
 
-interface ApiLike {
-  get: (url: string, config?: { params?: Record<string, unknown> }) => Promise<{ data?: unknown }>
-}
-
 interface UseCommandPaletteSearchOptions {
-  api: ApiLike
   role: Ref<UserRole | undefined>
   history: Ref<CommandHistoryItem[]>
   handlers: CommandHandlers
 }
 
-function extractResponseArray(data: unknown): unknown[] {
-  if (Array.isArray(data)) {
-    return data
-  }
-  if (data && typeof data === 'object') {
-    const record = data as Record<string, unknown>
-    if (Array.isArray(record.data)) {
-      return record.data
-    }
-  }
-  return []
-}
-
 export function useCommandPaletteSearch({
-  api,
   role,
   history,
   handlers,
@@ -65,15 +47,15 @@ export function useCommandPaletteSearch({
     loading.value = true
     try {
       const [zonesRes, nodesRes, recipesRes] = await Promise.allSettled([
-        api.get('/api/zones', { params: { search: query } }),
-        api.get('/api/nodes', { params: { search: query } }),
-        api.get('/api/recipes', { params: { search: query } }),
+        api.zones.list({ search: query }),
+        api.nodes.list({ search: query }),
+        api.recipes.list({ search: query }),
       ])
 
       searchResults.value = {
-        zones: zonesRes.status === 'fulfilled' ? extractResponseArray(zonesRes.value.data) : [],
-        nodes: nodesRes.status === 'fulfilled' ? extractResponseArray(nodesRes.value.data) : [],
-        recipes: recipesRes.status === 'fulfilled' ? extractResponseArray(recipesRes.value.data) : [],
+        zones: zonesRes.status === 'fulfilled' ? zonesRes.value : [],
+        nodes: nodesRes.status === 'fulfilled' ? nodesRes.value : [],
+        recipes: recipesRes.status === 'fulfilled' ? recipesRes.value : [],
       } as CommandSearchResults
     } catch (err) {
       logger.error('[CommandPalette] Search error:', err)

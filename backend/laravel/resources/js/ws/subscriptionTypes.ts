@@ -1,4 +1,4 @@
-import type { ToastHandler } from '@/composables/useApi'
+import type { ToastHandler } from '@/services/api'
 import type { CommandStatus } from '@/types'
 import type { Zone } from '@/types/Zone'
 import type { Alert } from '@/types/Alert'

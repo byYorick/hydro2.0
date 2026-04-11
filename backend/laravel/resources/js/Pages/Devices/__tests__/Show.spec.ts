@@ -104,13 +104,35 @@ vi.mock('@/composables/useHistory', () => ({
 const mockApiGet = vi.fn()
 const mockApiPost = vi.fn()
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: mockApiGet,
-      post: mockApiPost,
+async function unwrapShow(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  if (!raw || typeof raw !== 'object') return raw
+  const afterAxios = 'data' in (raw as Record<string, unknown>) ? (raw as { data: unknown }).data : raw
+  if (afterAxios && typeof afterAxios === 'object' && 'data' in (afterAxios as Record<string, unknown>)) {
+    const inner = (afterAxios as { data: unknown }).data
+    if (inner && typeof inner === 'object' && 'data' in (inner as Record<string, unknown>)) {
+      return (inner as { data: unknown }).data
+    }
+    return inner
+  }
+  return afterAxios
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    nodes: {
+      getConfig: (nodeId: number) => unwrapShow(mockApiGet(`/nodes/${nodeId}/config`)),
+      getTelemetryHistory: (nodeId: number, params: Record<string, unknown>) =>
+        unwrapShow(mockApiGet(`/nodes/${nodeId}/telemetry/history`, { params })),
+      detach: (nodeId: number) => unwrapShow(mockApiPost(`/nodes/${nodeId}/detach`, {})),
     },
-  }),
+    commands: {
+      sendNodeCommand: (nodeId: number, payload: Record<string, unknown>) =>
+        unwrapShow(mockApiPost(`/nodes/${nodeId}/commands`, payload)),
+      getStatus: (commandId: string | number) =>
+        unwrapShow(mockApiGet(`/commands/${commandId}/status`)),
+    },
+  },
 }))
 
 vi.mock('@/stores/devices', () => ({

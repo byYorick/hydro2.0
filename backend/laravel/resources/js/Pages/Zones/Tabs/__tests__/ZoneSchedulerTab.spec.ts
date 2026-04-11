@@ -11,10 +11,29 @@ vi.mock('@/composables/useToast', () => ({
   }),
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    get: apiGetMock,
-  }),
+async function unwrapEnvelope(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  // Mock-шим: снимает только один уровень `data`, чтобы composable получал
+  // envelope вида `{ status, data: {...} }` — ровно то, что ему нужно для `response?.data`.
+  if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {
+    return (raw as { data: unknown }).data
+  }
+  return raw
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      scheduleWorkspace: (zoneId: number, params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/schedule-workspace`, { params })),
+      getState: (zoneId: number) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/state`)),
+      getExecution: (zoneId: number, executionId: string) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/executions/${executionId}`)),
+      schedulerDiagnostics: (zoneId: number) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/scheduler-diagnostics`)),
+    },
+  },
 }))
 
 vi.mock('@/utils/logger', () => ({

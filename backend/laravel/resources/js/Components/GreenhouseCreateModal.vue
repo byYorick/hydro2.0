@@ -178,7 +178,7 @@ import { router } from '@inertiajs/vue3'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { generateUid } from '@/utils/transliterate'
@@ -205,7 +205,6 @@ const emit = defineEmits<{
 }>()
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
 const errors = reactive<Record<string, string>>({})
@@ -291,13 +290,12 @@ async function onSubmit() {
       payload.coordinates = coordinates
     }
     
-    const response = await api.post('/greenhouses', payload)
-    
-    logger.info('Greenhouse created:', response.data)
+    const greenhouse = await api.greenhouses.create(payload)
+
+    logger.info('Greenhouse created:', greenhouse)
     showToast('Теплица успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
-    
-    const greenhouse = (response.data as any)?.data || response.data
-    emit('created', greenhouse)
+
+    emit('created', greenhouse as Greenhouse)
     handleClose()
     
     // Обновляем страницу для отображения новой теплицы

@@ -11,7 +11,7 @@ import type {
   ZoneUpdateHandler,
   ZoneCommandHandler,
 } from '@/ws/subscriptionTypes'
-import type { ToastHandler } from '@/composables/useApi'
+import type { ToastHandler } from '@/services/api'
 
 interface PendingSubscriptionsManagerDeps {
   pendingSubscriptions: Map<string, PendingSubscription>

@@ -2,22 +2,23 @@ import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useCommands } from '../useCommands'
+import { api } from '@/services/api'
 
-// Mock useApi
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      post: vi.fn(),
-      get: vi.fn()
-    }
-  }))
+// Mock the typed API layer
+vi.mock('@/services/api', () => ({
+  api: {
+    commands: {
+      sendZoneCommand: vi.fn(),
+      sendNodeCommand: vi.fn(),
+      getStatus: vi.fn(),
+    },
+  },
 }))
 
 // Mock useErrorHandler
 vi.mock('../useErrorHandler', () => ({
   useErrorHandler: vi.fn(() => ({
     handleError: vi.fn((err) => {
-      // Return normalized error
       if (err instanceof Error) return err
       return new Error(err?.message || 'Unknown error')
     }),
@@ -36,20 +37,20 @@ vi.mock('@inertiajs/vue3', () => ({
 }))
 
 describe('useCommands', () => {
-  const mountUseCommands = () => {
-    let api: ReturnType<typeof useCommands> | null = null
+  const mountUseCommands = (showToast?: (msg: string, type?: string, timeout?: number) => number) => {
+    let handle: ReturnType<typeof useCommands> | null = null
     const wrapper = mount(defineComponent({
       setup() {
-        api = useCommands()
+        handle = useCommands(showToast as never)
         return () => null
       },
     }))
 
-    if (!api) {
+    if (!handle) {
       throw new Error('useCommands not initialized')
     }
 
-    return { wrapper, api }
+    return { wrapper, commands: handle }
   }
 
   beforeEach(() => {
@@ -57,82 +58,69 @@ describe('useCommands', () => {
   })
 
   it('should initialize with loading false', () => {
-    const { wrapper, api } = mountUseCommands()
-    expect(api.loading.value).toBe(false)
+    const { wrapper, commands } = mountUseCommands()
+    expect(commands.loading.value).toBe(false)
     wrapper.unmount()
   })
 
   it('should send zone command', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        post: vi.fn().mockResolvedValue({
-          data: { data: { id: 1, status: 'QUEUED' } }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
-
-    const { wrapper, api } = mountUseCommands()
-    const result = await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
-
-    expect(result).toEqual({ id: 1, status: 'QUEUED' })
-    expect(mockApi.api.post).toHaveBeenCalledWith('/api/zones/1/commands', {
+    vi.mocked(api.commands.sendZoneCommand).mockResolvedValue({
+      id: 1,
       type: 'FORCE_IRRIGATION',
-      params: { duration_sec: 10 }
+      status: 'QUEUED',
+    } as never)
+
+    const { wrapper, commands } = mountUseCommands()
+    const result = await commands.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
+
+    expect(result).toMatchObject({ id: 1, status: 'QUEUED' })
+    expect(api.commands.sendZoneCommand).toHaveBeenCalledWith(1, {
+      type: 'FORCE_IRRIGATION',
+      params: { duration_sec: 10 },
     })
     wrapper.unmount()
   })
 
   it('should update command status', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        post: vi.fn().mockResolvedValue({
-          data: { data: { id: 1 } }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    vi.mocked(api.commands.sendZoneCommand).mockResolvedValue({
+      id: 1,
+      type: 'FORCE_IRRIGATION',
+    } as never)
 
-    const { wrapper, api } = mountUseCommands()
-    
+    const { wrapper, commands } = mountUseCommands()
+
     // First send a command to add it to pending
-    await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
+    await commands.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
 
     // Update status
-    api.updateCommandStatus(1, 'DONE', 'Success')
+    commands.updateCommandStatus(1, 'DONE', 'Success')
 
     // Check that command status was updated
-    const commands = api.pendingCommands.value
-    const command = commands.find(c => c.id === 1)
+    const pendingList = commands.pendingCommands.value
+    const command = pendingList.find(c => c.id === 1)
     expect(command).toBeDefined()
     expect(command?.status).toBe('DONE')
     wrapper.unmount()
   })
 
   it('should send sensor mode commands via system channel', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        post: vi.fn().mockResolvedValue({
-          data: { data: { id: 7, status: 'QUEUED' } }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    vi.mocked(api.commands.sendNodeCommand).mockResolvedValue({
+      id: 7,
+      type: 'activate_sensor_mode',
+      status: 'QUEUED',
+    } as never)
 
-    const { wrapper, api } = mountUseCommands()
+    const { wrapper, commands } = mountUseCommands()
 
-    await api.sendNodeCommand(42, 'activate_sensor_mode', {})
-    expect(mockApi.api.post).toHaveBeenCalledWith('/api/nodes/42/commands', {
+    await commands.sendNodeCommand(42, 'activate_sensor_mode', {})
+    expect(api.commands.sendNodeCommand).toHaveBeenCalledWith(42, {
       type: 'activate_sensor_mode',
       channel: 'system',
       params: {},
     })
 
-    await api.sendNodeCommand(42, 'deactivate_sensor_mode', {})
-    expect(mockApi.api.post).toHaveBeenCalledWith('/api/nodes/42/commands', {
+    await commands.sendNodeCommand(42, 'deactivate_sensor_mode', {})
+    expect(api.commands.sendNodeCommand).toHaveBeenCalledWith(42, {
       type: 'deactivate_sensor_mode',
       channel: 'system',
       params: {},
@@ -142,32 +130,17 @@ describe('useCommands', () => {
   })
 
   it('локализует сообщение об ошибке завершения команды', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        post: vi.fn().mockResolvedValue({
-          data: { data: { id: 77, type: 'FORCE_IRRIGATION', status: 'QUEUED' } }
-        }),
-        get: vi.fn(),
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    vi.mocked(api.commands.sendZoneCommand).mockResolvedValue({
+      id: 77,
+      type: 'FORCE_IRRIGATION',
+      status: 'QUEUED',
+    } as never)
 
     const showToast = vi.fn()
-    let api: ReturnType<typeof useCommands> | null = null
-    const wrapper = mount(defineComponent({
-      setup() {
-        api = useCommands(showToast)
-        return () => null
-      },
-    }))
+    const { wrapper, commands } = mountUseCommands(showToast)
 
-    if (!api) {
-      throw new Error('useCommands not initialized')
-    }
-
-    await api.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
-    api.updateCommandStatus(77, 'ERROR', 'TIMEOUT')
+    await commands.sendZoneCommand(1, 'FORCE_IRRIGATION', { duration_sec: 10 })
+    commands.updateCommandStatus(77, 'ERROR', 'TIMEOUT')
 
     expect(showToast).toHaveBeenLastCalledWith(
       'Команда "FORCE_IRRIGATION" завершилась с ошибкой: Превышено время ожидания выполнения команды.',

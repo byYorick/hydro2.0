@@ -21,13 +21,37 @@ vi.mock('@/Components/ChartBase.vue', () => ({
 const apiGetMock = vi.fn()
 const apiPostMock = vi.fn()
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string, config?: any) => apiGetMock(url, config),
-      post: apiPostMock,
+async function unwrapSim(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  if (!raw || typeof raw !== 'object') return raw
+  const afterAxios = 'data' in (raw as Record<string, unknown>) ? (raw as { data: unknown }).data : raw
+  if (afterAxios && typeof afterAxios === 'object' && 'data' in (afterAxios as Record<string, unknown>)) {
+    const inner = (afterAxios as { data: unknown }).data
+    if (inner && typeof inner === 'object' && 'data' in (inner as Record<string, unknown>)) {
+      return (inner as { data: unknown }).data
+    }
+    return inner
+  }
+  return afterAxios
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    simulations: {
+      runZoneSimulation: (zoneId: number, payload: Record<string, unknown>) =>
+        unwrapSim(apiPostMock(`/zones/${zoneId}/simulate`, payload)),
+      getStatus: (jobId: string) =>
+        unwrapSim(apiGetMock(`/simulations/${jobId}`)),
+      listEvents: (simulationId: number, params?: Record<string, unknown>) =>
+        unwrapSim(apiGetMock(`/simulations/${simulationId}/events`, { params })),
     },
-  }),
+    recipes: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapSim(apiGetMock('/recipes', { params })),
+      getById: (recipeId: number) =>
+        unwrapSim(apiGetMock(`/recipes/${recipeId}`)),
+    },
+  },
 }))
 
 vi.mock('@/composables/useToast', () => ({

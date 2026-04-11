@@ -46,29 +46,12 @@ vi.mock('axios', () => ({
   },
 }))
 
-// Мокируем useApi, чтобы он автоматически добавлял префикс /api/ к путям
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosGetMock(finalUrl, config)
-      },
-      post: (url: string, data?: any, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosPostMock(finalUrl, data, config)
-      },
-      patch: (url: string, data?: any, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosPatchMock(finalUrl, data, config)
-      },
-      delete: (url: string, config?: any) => {
-        const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
-        return axiosDeleteMock(finalUrl, undefined, config)
-      },
-    },
-  }),
-}))
+// Компонент теперь ходит через services/api.nodes, который использует
+// apiClient. Поскольку мы мокаем axios.create выше, apiClient автоматически
+// попадает на axiosGetMock/axiosPatchMock через mockAxiosInstance. Префикс
+// `/api` добавляет request interceptor, но в тестах interceptors.use() —
+// vi.fn(), и реальный interceptor не срабатывает. Тесты поэтому проверяют
+// URL без префикса.
 
 vi.mock('@inertiajs/vue3', () => ({
   router: {
@@ -158,9 +141,9 @@ describe('AttachNodesModal.vue', () => {
     expect(axiosGetMock).toHaveBeenCalled()
     const calls = axiosGetMock.mock.calls
     const firstCall = calls[0]
-    expect(firstCall[0]).toContain('/api/nodes')
+    expect(firstCall[0]).toContain('/nodes')
     // Проверяем, что параметр unassigned был передан (либо в URL, либо в params)
-    const hasUnassigned = firstCall[0].includes('unassigned=true') || 
+    const hasUnassigned = firstCall[0].includes('unassigned=true') ||
                          (firstCall[1]?.params?.unassigned === true) ||
                          (firstCall[1]?.unassigned === true)
     expect(hasUnassigned).toBe(true)
@@ -223,9 +206,9 @@ describe('AttachNodesModal.vue', () => {
       await flushPromises()
       
       expect(axiosPatchMock).toHaveBeenCalledTimes(2)
-      expect(axiosPatchMock.mock.calls[0][0]).toBe('/api/nodes/1')
+      expect(axiosPatchMock.mock.calls[0][0]).toBe('/nodes/1')
       expect(axiosPatchMock.mock.calls[0][1]).toMatchObject({ zone_id: 1 })
-      expect(axiosPatchMock.mock.calls[1][0]).toBe('/api/nodes/2')
+      expect(axiosPatchMock.mock.calls[1][0]).toBe('/nodes/2')
       expect(axiosPatchMock.mock.calls[1][1]).toMatchObject({ zone_id: 1 })
     }
   })

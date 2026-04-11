@@ -378,7 +378,7 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { formatTime } from '@/utils/formatTime'
 import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
 import ThemeToggle from '@/Components/ThemeToggle.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useSimpleModal } from '@/composables/useModal'
 import { logger } from '@/utils/logger'
 import type { User } from '@/types'
@@ -412,7 +412,6 @@ const {
 } = useSystemStatus()
 
 const page = usePage<PageProps>()
-const { api } = useApi()
 
 // Real-time метрики
 const metrics = ref<{
@@ -471,11 +470,11 @@ async function loadMetrics() {
   try {
     // Загружаем только активные алерты, данные dashboard уже в props
     const alertsRes = await Promise.allSettled([
-      api.get('/api/alerts', { params: { status: 'active' } })
+      api.alerts.list({ status: 'active' })
     ])
-    
+
     if (alertsRes[0]?.status === 'fulfilled') {
-      const alerts = alertsRes[0].value.data?.data || alertsRes[0].value.data || []
+      const alerts = alertsRes[0].value
       metrics.value.alertsCount = Array.isArray(alerts) ? alerts.length : 0
       isUnauthenticated = false // Сбрасываем флаг при успешном запросе
     } else if (alertsRes[0]?.status === 'rejected') {

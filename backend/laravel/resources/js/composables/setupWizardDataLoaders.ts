@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import { api } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
@@ -14,14 +15,7 @@ import type {
 import { extractCollection } from './setupWizardCollection'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 
-export interface SetupWizardDataApiClient {
-  get(url: string, config?: unknown): Promise<{ data: unknown }>
-  post(url: string, data?: unknown, config?: unknown): Promise<{ data: unknown }>
-  patch(url: string, data?: unknown, config?: unknown): Promise<{ data: unknown }>
-}
-
 interface SetupWizardDataLoadersOptions {
-  api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
   availableGreenhouses: Ref<Greenhouse[]>
@@ -53,7 +47,6 @@ export interface SetupWizardDataLoaderActions {
 
 export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOptions): SetupWizardDataLoaderActions {
   const {
-    api,
     loading,
     showToast,
     availableGreenhouses,
@@ -70,8 +63,8 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
 
   async function loadGreenhouseTypes(): Promise<void> {
     try {
-      const response = await api.get('/greenhouse-types')
-      availableGreenhouseTypes.value = extractCollection<GreenhouseType>(response.data)
+      const types = await api.greenhouses.types()
+      availableGreenhouseTypes.value = extractCollection<GreenhouseType>(types)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load greenhouse types', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить типы теплиц'), 'error', TOAST_TIMEOUT.NORMAL)
@@ -82,8 +75,8 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
   async function loadGreenhouses(): Promise<void> {
     loading.greenhouses = true
     try {
-      const response = await api.get('/greenhouses')
-      availableGreenhouses.value = extractCollection<Greenhouse>(response.data)
+      const greenhouses = await api.greenhouses.list()
+      availableGreenhouses.value = extractCollection<Greenhouse>(greenhouses)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load greenhouses', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список теплиц'), 'error', TOAST_TIMEOUT.NORMAL)
@@ -101,11 +94,8 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
 
     loading.zones = true
     try {
-      const response = await api.get('/zones', {
-        params: { greenhouse_id: targetGreenhouseId },
-      })
-
-      availableZones.value = extractCollection<Zone>(response.data)
+      const zones = await api.zones.list({ greenhouse_id: targetGreenhouseId })
+      availableZones.value = extractCollection<Zone>(zones)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load zones', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список зон'), 'error', TOAST_TIMEOUT.NORMAL)
@@ -118,8 +108,8 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
   async function loadPlants(): Promise<void> {
     loading.plants = true
     try {
-      const response = await api.get('/plants')
-      availablePlants.value = extractCollection<Plant>(response.data)
+      const plants = await api.plants.list()
+      availablePlants.value = extractCollection<Plant>(plants)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load plants', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список растений'), 'error', TOAST_TIMEOUT.NORMAL)
@@ -132,8 +122,8 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
   async function loadRecipes(): Promise<void> {
     loading.recipes = true
     try {
-      const response = await api.get('/recipes')
-      availableRecipes.value = extractCollection<Recipe>(response.data)
+      const recipes = await api.recipes.list()
+      availableRecipes.value = extractCollection<Recipe>(recipes)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load recipes', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список рецептов'), 'error', TOAST_TIMEOUT.NORMAL)
@@ -147,16 +137,12 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
     loading.nodes = true
     try {
       const zoneId = selectedZone.value?.id ?? selectedZoneId.value ?? null
-      const response = await api.get('/nodes', {
-        params: zoneId
-          ? {
-            zone_id: zoneId,
-            include_unassigned: true,
-          }
+      const nodes = await api.nodes.list(
+        zoneId
+          ? { zone_id: zoneId, include_unassigned: true }
           : { unassigned: true },
-      })
-
-      availableNodes.value = extractCollection<Node>(response.data)
+      )
+      availableNodes.value = extractCollection<Node>(nodes)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load nodes', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить список узлов'), 'error', TOAST_TIMEOUT.NORMAL)
@@ -175,14 +161,11 @@ export function createSetupWizardDataLoaders(options: SetupWizardDataLoadersOpti
 
     loading.nodes = true
     try {
-      const response = await api.get('/nodes', {
-        params: {
-          greenhouse_id: greenhouseId,
-          include_unassigned: options?.includeUnassigned ?? true,
-        },
+      const nodes = await api.nodes.list({
+        greenhouse_id: greenhouseId,
+        include_unassigned: options?.includeUnassigned ?? true,
       })
-
-      greenhouseClimateNodes.value = extractCollection<Node>(response.data)
+      greenhouseClimateNodes.value = extractCollection<Node>(nodes)
     } catch (error) {
       logger.error('[Setup/Wizard] Failed to load greenhouse climate nodes', { error })
       showToast(extractSetupWizardErrorMessage(error, 'Не удалось загрузить greenhouse climate узлы'), 'error', TOAST_TIMEOUT.NORMAL)

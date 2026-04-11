@@ -3,7 +3,9 @@
  */
 import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { useApi, type ToastHandler } from './useApi'
+import type { ToastHandler } from '@/services/api'
+import { api } from '@/services/api'
+import type { CommandSendResult } from '@/services/api/commands'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -19,20 +21,22 @@ interface PendingCommandInternal {
   message?: string
 }
 
-/** Нормализованный ответ API команды (может быть в разных форматах) */
-interface CommandRawResponse {
-  data?: {
-    id?: number | string
-    type?: CommandType
-    command_id?: string
-    status?: CommandStatus
-    created_at?: string
-    [key: string]: unknown
+/**
+ * Нормализует вариативный ответ backend'а в минимальный {command, commandId}
+ * для обновления локального state.
+ */
+function extractCommandIdAndType(
+  raw: CommandSendResult,
+  fallbackType: CommandType,
+): { command: Command | null; commandId: number | string | null; commandType: CommandType } {
+  if (raw && typeof raw === 'object' && 'id' in raw && raw.id !== undefined && raw.id !== null) {
+    const full = raw as Command
+    return { command: full, commandId: full.id, commandType: full.type ?? fallbackType }
   }
-  id?: number | string
-  type?: CommandType
-  status?: CommandStatus
-  created_at?: string
+  if (raw && typeof raw === 'object' && 'command_id' in raw && raw.command_id !== undefined && raw.command_id !== null) {
+    return { command: null, commandId: raw.command_id, commandType: fallbackType }
+  }
+  return { command: null, commandId: null, commandType: fallbackType }
 }
 
 function extractCommandErrorMessage(err: unknown): string {
@@ -98,7 +102,6 @@ export function normalizeStatus(status: CommandStatus | string): CommandStatus {
  * Composable для работы с командами
  */
 export function useCommands(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
@@ -116,36 +119,8 @@ export function useCommands(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
-        `/api/zones/${zoneId}/commands`,
-        {
-          type,
-          params
-        }
-      )
-
-      const raw = response.data as CommandRawResponse
-
-      // Пытаемся извлечь идентификатор команды из разных форматов ответа:
-      // 1) { data: { id, type, ... } } - полный объект команды
-      // 2) { data: { command_id: '<uuid>' } } - только cmd_id из PythonBridge
-      // 3) { id, type, ... } - прямой объект команды
-      let command: Command | null = null
-      let commandId: number | string | null = null
-      let commandType: CommandType = type
-
-      if (raw?.data?.id) {
-        command = raw.data as Command
-        commandId = command.id
-        commandType = command.type
-      } else if (raw?.id) {
-        command = raw as Command
-        commandId = command.id
-        commandType = command.type
-      } else if (raw?.data?.command_id) {
-        commandId = raw.data.command_id as string
-        commandType = type
-      }
+      const raw = await api.commands.sendZoneCommand(zoneId, { type, params })
+      const { command, commandId, commandType } = extractCommandIdAndType(raw, type)
 
       // Сохраняем информацию о команде для отслеживания статуса
       if (commandId) {
@@ -210,30 +185,9 @@ export function useCommands(showToast?: ToastHandler) {
         requestPayload.channel = 'system'
       }
 
-      const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
-        `/api/nodes/${nodeId}/commands`,
-        requestPayload
-      )
+      const raw = await api.commands.sendNodeCommand(nodeId, requestPayload)
+      const { command, commandId, commandType } = extractCommandIdAndType(raw, type)
 
-      const raw = response.data as CommandRawResponse
-
-      let command: Command | null = null
-      let commandId: number | string | null = null
-      let commandType: CommandType = type
-
-      if (raw?.data?.id) {
-        command = raw.data as Command
-        commandId = command.id
-        commandType = command.type
-      } else if (raw?.id) {
-        command = raw as Command
-        commandId = command.id
-        commandType = command.type
-      } else if (raw?.data?.command_id) {
-        commandId = raw.data.command_id as string
-        commandType = type
-      }
-      
       if (commandId) {
         pendingCommands.value.set(commandId, {
           status: 'QUEUED',
@@ -276,12 +230,8 @@ export function useCommands(showToast?: ToastHandler) {
    */
   async function getCommandStatus(commandId: number | string): Promise<{ status: CommandStatus }> {
     try {
-      const response = await api.get<{ data?: { status: CommandStatus } } | { status: CommandStatus }>(
-        `/api/commands/${commandId}/status`
-      )
-      const status = (response.data as { data?: { status: CommandStatus } })?.data || 
-                    (response.data as { status: CommandStatus })
-      
+      const status = await api.commands.getStatus(commandId)
+
       // Обновляем статус в pendingCommands
       if (pendingCommands.value.has(commandId)) {
         const command = pendingCommands.value.get(commandId)
@@ -290,7 +240,7 @@ export function useCommands(showToast?: ToastHandler) {
           pendingCommands.value.set(commandId, command)
         }
       }
-      
+
       return {
         status: normalizeStatus(status.status || 'UNKNOWN'),
       }

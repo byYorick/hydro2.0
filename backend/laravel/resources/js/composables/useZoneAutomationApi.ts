@@ -52,8 +52,6 @@ export interface ZoneAutomationApiState {
 }
 
 export interface ZoneAutomationApiDeps {
-  get: <T = unknown>(url: string, config?: unknown) => Promise<{ data: T }>
-  post: <T = unknown>(url: string, data?: unknown) => Promise<{ data: T }>
   showToast: (message: string, variant?: ToastVariant) => void
   sendZoneCommand: (zoneId: number, type: string, params?: Record<string, unknown>) => Promise<unknown>
 }

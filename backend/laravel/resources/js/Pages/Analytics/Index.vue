@@ -358,7 +358,7 @@ import FilterBar from '@/Components/FilterBar.vue'
 import PageHeader from '@/Components/PageHeader.vue'
 import Pagination from '@/Components/Pagination.vue'
 import TelemetryAggregatesChart from '@/Components/TelemetryAggregatesChart.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import {
   formatDate,
   formatDuration,
@@ -389,7 +389,6 @@ interface SavedView {
   recipe_id: string
 }
 
-const { api } = useApi()
 const { showToast } = useToast()
 
 const zoneOptions = ref<ZoneOption[]>([])
@@ -463,8 +462,8 @@ const compareColumns = [
 
 const loadZones = async (): Promise<void> => {
   try {
-    const response = await api.get('/api/zones')
-    zoneOptions.value = toZoneOptions(response)
+    const zones = await api.zones.list()
+    zoneOptions.value = toZoneOptions({ data: { data: zones } })
   } catch (err) {
     logger.error('[Analytics] Failed to load zones', err)
     if (!(err as any)?.response) {
@@ -475,8 +474,8 @@ const loadZones = async (): Promise<void> => {
 
 const loadRecipes = async (): Promise<void> => {
   try {
-    const response = await api.get('/api/recipes')
-    recipeOptions.value = toRecipeOptions(response)
+    const recipes = await api.recipes.list()
+    recipeOptions.value = toRecipeOptions({ data: { data: recipes } })
   } catch (err) {
     logger.error('[Analytics] Failed to load recipes', err)
     if (!(err as any)?.response) {
@@ -496,14 +495,12 @@ const loadTelemetryAggregates = async (): Promise<void> => {
   telemetryError.value = null
 
   try {
-    const response = await api.get('/api/telemetry/aggregates', {
-      params: {
-        zone_id: Number(selectedZoneId.value),
-        metric: selectedMetric.value,
-        period: selectedPeriod.value,
-      },
+    const aggregates = await api.telemetry.aggregates({
+      zone_id: Number(selectedZoneId.value),
+      metric: selectedMetric.value,
+      period: selectedPeriod.value,
     })
-    telemetryData.value = toTelemetryAggregates(response)
+    telemetryData.value = toTelemetryAggregates({ data: { data: aggregates } })
   } catch (err: any) {
     telemetryError.value = 'Ошибка загрузки агрегатов'
     logger.error('[Analytics] Failed to load telemetry aggregates', err)
@@ -525,10 +522,8 @@ const loadRecipeAnalytics = async (): Promise<void> => {
 
   recipeLoading.value = true
   try {
-    const response = await api.get(`/api/recipes/${selectedRecipeId.value}/analytics`, {
-      params: { page: recipePage.value },
-    })
-    const analytics = toRecipeAnalytics(response, recipePerPage.value)
+    const analyticsPayload = await api.recipes.analytics(Number(selectedRecipeId.value), { page: recipePage.value })
+    const analytics = toRecipeAnalytics({ data: { data: analyticsPayload } }, recipePerPage.value)
     recipeRuns.value = analytics.runs
     recipeTotal.value = analytics.total
     recipePerPage.value = analytics.perPage
@@ -551,10 +546,10 @@ const loadComparison = async (): Promise<void> => {
 
   compareLoading.value = true
   try {
-    const response = await api.post('/api/recipes/comparison', {
+    const comparison = await api.recipes.comparison({
       recipe_ids: compareRecipeIds.value.map((id) => Number(id)),
     })
-    comparisonRows.value = toComparisonRows(response)
+    comparisonRows.value = toComparisonRows({ data: { data: comparison } })
   } catch (err) {
     logger.error('[Analytics] Failed to compare recipes', err)
     if (!(err as any)?.response) {

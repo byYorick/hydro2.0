@@ -10,7 +10,7 @@ import type {
   Zone,
   ZoneFormState,
 } from './setupWizardTypes'
-import type { SetupWizardDataApiClient, SetupWizardDataLoaderActions } from './setupWizardDataLoaders'
+import type { SetupWizardDataLoaderActions } from './setupWizardDataLoaders'
 import {
   createSetupWizardGreenhouseZoneCommands,
   type SetupWizardGreenhouseZoneCommandActions,
@@ -21,7 +21,6 @@ import {
 } from './setupWizardPlantNodeCommands'
 
 interface SetupWizardEntityCommandsOptions {
-  api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
@@ -51,7 +50,6 @@ export function createSetupWizardEntityCommands(
   options: SetupWizardEntityCommandsOptions
 ): SetupWizardEntityCommandActions {
   const greenhouseZoneCommands = createSetupWizardGreenhouseZoneCommands({
-    api: options.api,
     loading: options.loading,
     canConfigure: options.canConfigure,
     showToast: options.showToast,
@@ -69,7 +67,6 @@ export function createSetupWizardEntityCommands(
   })
 
   const plantNodeCommands = createSetupWizardPlantNodeCommands({
-    api: options.api,
     loading: options.loading,
     canConfigure: options.canConfigure,
     showToast: options.showToast,

@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
 
 interface Props {
@@ -33,26 +33,19 @@ interface Prediction {
   predicted_at: string
 }
 
-interface PredictionResponse {
-  status: string
-  data?: Prediction
-  message?: string
-}
-
-const { api } = useApi()
 const prediction = ref<Prediction | null>(null)
 
 async function fetchPrediction(): Promise<void> {
   const requestedZoneId = props.zoneId
   try {
-    const response = await api.post<PredictionResponse>('/api/ai/predict', {
+    const result = await api.ai.predict({
       zone_id: requestedZoneId,
       metric_type: props.metricType,
       horizon_minutes: props.horizonMinutes,
     })
     if (props.zoneId !== requestedZoneId) return
-    if (response.data?.status === 'ok' && response.data?.data) {
-      prediction.value = response.data.data
+    if (result?.status === 'ok' && result?.data) {
+      prediction.value = result.data as unknown as Prediction
     }
   } catch (err: any) {
     // Gracefully suppress errors — hint is non-critical

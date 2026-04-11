@@ -330,7 +330,7 @@ import Badge from '@/Components/Badge.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useRole } from '@/composables/useRole'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
@@ -354,7 +354,6 @@ interface Props {
 const props = defineProps<Props>()
 
 const { canCreateCommands } = useRole()
-const { api } = useApi()
 const { showToast } = useToast()
 
 const processingZones = ref<Set<number>>(new Set())
@@ -374,50 +373,36 @@ async function handleQuickAction(zoneId: number, action: string) {
   processingZones.value.add(zoneId)
 
   try {
-    let endpoint = ''
-    const method: 'post' | 'put' | 'patch' = 'post'
-    const payload: any = {}
+    const cycle = await api.zones.getGrowCycle(zoneId)
+    const growCycleId = typeof cycle?.id === 'number' ? cycle.id : null
+    if (!growCycleId) {
+      showToast('В зоне нет активного цикла', 'warning', TOAST_TIMEOUT.NORMAL)
+      return
+    }
 
     switch (action) {
       case 'pause':
-        endpoint = 'pause'
+        await api.growCycles.pause(growCycleId)
         break
       case 'resume':
-        endpoint = 'resume'
+        await api.growCycles.resume(growCycleId)
         break
       case 'nextPhase':
-        endpoint = 'advance'
+        await api.growCycles.advancePhase(growCycleId)
         break
       default:
         showToast(`Неизвестное действие: ${action}`, 'error', TOAST_TIMEOUT.NORMAL)
         return
     }
 
-    const cycleResponse = await api.get(`/zones/${zoneId}/grow-cycle`)
-    const growCycleId = cycleResponse.data?.data?.id
-    if (!growCycleId) {
-      showToast('В зоне нет активного цикла', 'warning', TOAST_TIMEOUT.NORMAL)
-      return
+    const actionNames: Record<string, string> = {
+      pause: 'приостановлена',
+      resume: 'возобновлена',
+      nextPhase: 'переведена на следующую фазу',
     }
-
-    const actionEndpoint = endpoint === 'advance'
-      ? `/grow-cycles/${growCycleId}/advance-phase`
-      : `/grow-cycles/${growCycleId}/${endpoint}`
-
-    const response = await api[method]<{ status: string; data?: Zone }>(actionEndpoint, payload)
-
-    if (response.data?.status === 'ok') {
-      const actionNames: Record<string, string> = {
-        pause: 'приостановлена',
-        resume: 'возобновлена',
-        nextPhase: 'переведена на следующую фазу',
-      }
-      showToast(`Зона ${actionNames[action] || 'обновлена'}`, 'success', TOAST_TIMEOUT.NORMAL)
-      logger.debug(`[AdminDashboard] Quick action successful: ${action} for zone: ${zoneId}`)
-      
-      // Обновляем страницу для получения актуальных данных
-      window.location.reload()
-    }
+    showToast(`Зона ${actionNames[action] || 'обновлена'}`, 'success', TOAST_TIMEOUT.NORMAL)
+    logger.debug(`[AdminDashboard] Quick action successful: ${action} for zone: ${zoneId}`)
+    window.location.reload()
   } catch (err) {
     logger.error('[AdminDashboard] Failed to execute quick action:', err)
     showToast('Не удалось выполнить действие', 'error', TOAST_TIMEOUT.LONG)

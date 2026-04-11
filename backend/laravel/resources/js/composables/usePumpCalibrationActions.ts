@@ -1,20 +1,10 @@
 import { ref } from 'vue'
+import { api } from '@/services/api'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 
 type ToastVariant = 'success' | 'error' | 'warning' | 'info'
 
-interface PumpCalibrationApiClient {
-  post: (url: string, payload?: unknown) => Promise<{
-    data?: {
-      data?: {
-        run_token?: unknown
-      }
-    }
-  }>
-}
-
 interface UsePumpCalibrationActionsOptions {
-  api: PumpCalibrationApiClient
   getZoneId: () => number | null
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
   onRunSuccess?: () => Promise<void> | void
@@ -44,8 +34,8 @@ export function usePumpCalibrationActions(options: UsePumpCalibrationActionsOpti
 
     loadingRun.value = true
     try {
-      const response = await options.api.post(`/api/zones/${zoneId}/calibrate-pump`, payload)
-      const runToken = response?.data?.data?.run_token
+      const response = await api.zones.calibratePump(zoneId, payload)
+      const runToken = response?.run_token
       lastRunToken.value = typeof runToken === 'string' && runToken !== '' ? runToken : null
       runSeq.value += 1
       await options.onRunSuccess?.()
@@ -79,7 +69,7 @@ export function usePumpCalibrationActions(options: UsePumpCalibrationActionsOpti
 
     loadingSave.value = true
     try {
-      await options.api.post(`/api/zones/${zoneId}/calibrate-pump`, { ...payload, skip_run: true })
+      await api.zones.calibratePump(zoneId, { ...payload, skip_run: true })
       lastRunToken.value = null
       saveSeq.value += 1
       await options.onSaveSuccess?.()

@@ -7,7 +7,6 @@ const fetchZoneDevicesMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const loadZoneReadinessMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const refreshDbCalibrationsMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 const showToastMock = vi.hoisted(() => vi.fn())
-const apiPostMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: { status: 'ok' } })))
 const currentStepValue = vi.hoisted(() => ({ value: 5 }))
 const waterFormValue = vi.hoisted(() => ({
   value: {
@@ -136,14 +135,6 @@ vi.mock('@/composables/usePumpCalibration', () => ({
       [102, { id: 102, label: 'Node / pump_b', calibration: null }],
     ])),
     refreshDbCalibrations: refreshDbCalibrationsMock,
-  }),
-}))
-
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      post: apiPostMock,
-    },
   }),
 }))
 

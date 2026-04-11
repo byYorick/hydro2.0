@@ -1,7 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type {
-  AutomationControlMode,
-  AutomationManualStep,
   AutomationState,
   AutomationStateType,
   AutomationTimelineEvent,
@@ -16,7 +14,7 @@ import { getConnectionState, onWsStateChange } from '@/utils/echoClient'
 import { logger } from '@/utils/logger'
 import type { WsEventPayload } from '@/ws/subscriptionTypes'
 import { subscribeManagedChannelEvents } from '@/ws/managedChannelEvents'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useZonesStore } from '@/stores/zones'
 import {
   normalizeAutomationControlMode,
@@ -258,7 +256,6 @@ export function useAutomationPanel(
     (e: 'state-snapshot', snapshot: AutomationState): void
   }
 ) {
-  const { get } = useApi()
   const zonesStore = useZonesStore()
   const wsEnabled = readBooleanEnv('VITE_ENABLE_WS', true)
 
@@ -378,9 +375,9 @@ export function useAutomationPanel(
     const requestedZoneId = props.zoneId
     fetchInFlight = true
     try {
-      const response = await get(`/api/zones/${requestedZoneId}/state`)
+      const response = await api.zones.getState<unknown>(requestedZoneId)
       if (props.zoneId !== requestedZoneId) return
-      const normalized = normalizeState(response.data)
+      const normalized = normalizeState(response)
       automationState.value = normalized
       errorMessage.value = null
       connectivityWarning.value = null

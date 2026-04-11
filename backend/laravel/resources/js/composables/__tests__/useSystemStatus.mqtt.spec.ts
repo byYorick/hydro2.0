@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import { useSystemStatus } from '../useSystemStatus'
 
-// Mock useApi
-const mockApiGet = vi.fn().mockResolvedValue({ data: { data: { app: 'ok', db: 'ok' } } })
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: mockApiGet
-    }
-  }))
+const mockApiGet = vi.hoisted(() => vi.fn().mockResolvedValue({ app: 'ok', db: 'ok' }))
+
+vi.mock('@/services/api', () => ({
+  api: {
+    system: {
+      health: mockApiGet,
+    },
+  },
 }))
+
+import { useSystemStatus } from '../useSystemStatus'
 
 // Mock logger
 vi.mock('@/utils/logger', () => ({
@@ -164,7 +165,7 @@ describe('useSystemStatus - MQTT Status Channel (P2-4)', () => {
   it('should use fallback logic when MQTT status is not in API response', async () => {
     // MQTT статус определяется на основе wsStatus, а не из API response
     // Если wsStatus = 'unknown', mqttStatus должен быть 'unknown'
-    mockApiGet.mockResolvedValueOnce({ data: { data: { app: 'ok', db: 'ok' } } })
+    mockApiGet.mockResolvedValueOnce({ app: 'ok', db: 'ok' })
 
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()

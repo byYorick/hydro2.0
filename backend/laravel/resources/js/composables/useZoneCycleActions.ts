@@ -1,18 +1,13 @@
 import { reactive } from 'vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
-import type { ToastHandler } from '@/composables/useApi'
+import { api } from '@/services/api'
+import type { ToastHandler } from '@/services/api'
 
 interface GrowCycleRef {
   value: {
     id?: number
   } | null
-}
-
-interface ApiStatusResponse {
-  data?: {
-    status?: string
-  }
 }
 
 interface ZoneIdRef {
@@ -27,9 +22,6 @@ type SetLoadingHandler = (
 interface UseZoneCycleActionsDeps {
   activeGrowCycle: GrowCycleRef
   zoneId: ZoneIdRef
-  api: {
-    post: (url: string, payload?: Record<string, unknown>) => Promise<ApiStatusResponse>
-  }
   reloadZone: (zoneId: number | undefined, only?: string[]) => Promise<unknown> | void
   showToast: ToastHandler
   setLoading: SetLoadingHandler
@@ -39,7 +31,6 @@ interface UseZoneCycleActionsDeps {
 export function useZoneCycleActions({
   activeGrowCycle,
   zoneId,
-  api,
   reloadZone,
   showToast,
   setLoading,
@@ -100,11 +91,9 @@ export function useZoneCycleActions({
 
     setLoading('nextPhase', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/advance-phase`)
-      if (response.data?.status === 'ok') {
-        showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
-        await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-      }
+      await api.growCycles.advancePhase(activeGrowCycle.value.id)
+      showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
     } catch (err) {
       logger.error('Failed to change phase:', err)
       handleError(err)
@@ -120,11 +109,9 @@ export function useZoneCycleActions({
 
     setLoading('cyclePause', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/pause`)
-      if (response.data?.status === 'ok') {
-        showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
-        await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-      }
+      await api.growCycles.pause(activeGrowCycle.value.id)
+      showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
     } catch (err) {
       logger.error('Failed to pause cycle:', err)
       handleError(err)
@@ -140,11 +127,9 @@ export function useZoneCycleActions({
 
     setLoading('cycleResume', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/resume`)
-      if (response.data?.status === 'ok') {
-        showToast('Цикл возобновлен', 'success', TOAST_TIMEOUT.NORMAL)
-        await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-      }
+      await api.growCycles.resume(activeGrowCycle.value.id)
+      showToast('Цикл возобновлен', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
     } catch (err) {
       logger.error('Failed to resume cycle:', err)
       handleError(err)
@@ -167,14 +152,12 @@ export function useZoneCycleActions({
 
     setLoading('cycleHarvest', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/harvest`, {
+      await api.growCycles.harvest(activeGrowCycle.value.id, {
         batch_label: harvestModal.batchLabel || undefined,
       })
-      if (response.data?.status === 'ok') {
-        showToast('Урожай зафиксирован, цикл закрыт', 'success', TOAST_TIMEOUT.NORMAL)
-        await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-        closeHarvestModal()
-      }
+      showToast('Урожай зафиксирован, цикл закрыт', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      closeHarvestModal()
     } catch (err) {
       logger.error('Failed to harvest cycle:', err)
       handleError(err)
@@ -197,14 +180,12 @@ export function useZoneCycleActions({
 
     setLoading('cycleAbort', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/abort`, {
+      await api.growCycles.abort(activeGrowCycle.value.id, {
         notes: abortModal.notes || undefined,
       })
-      if (response.data?.status === 'ok') {
-        showToast('Цикл аварийно остановлен', 'success', TOAST_TIMEOUT.NORMAL)
-        await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-        closeAbortModal()
-      }
+      showToast('Цикл аварийно остановлен', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      closeAbortModal()
     } catch (err) {
       logger.error('Failed to abort cycle:', err)
       handleError(err)
@@ -233,15 +214,13 @@ export function useZoneCycleActions({
 
     setLoading('cycleChangeRecipe', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/change-recipe-revision`, {
+      await api.growCycles.changeRecipeRevision(activeGrowCycle.value.id, {
         recipe_revision_id: revisionIdNum,
         apply_mode: changeRecipeModal.applyMode,
       })
-      if (response.data?.status === 'ok') {
-        showToast('Ревизия рецепта обновлена', 'success', TOAST_TIMEOUT.NORMAL)
-        await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-        closeChangeRecipeModal()
-      }
+      showToast('Ревизия рецепта обновлена', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      closeChangeRecipeModal()
     } catch (err) {
       logger.error('Failed to change recipe revision:', err)
       handleError(err)

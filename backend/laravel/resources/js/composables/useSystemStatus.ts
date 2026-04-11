@@ -2,9 +2,9 @@
  * Composable для управления статусами системы
  */
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
-import { useApi, type ToastHandler } from './useApi'
+import { api } from '@/services/api'
+import type { ToastHandler } from '@/services/api'
 import { logger } from '@/utils/logger'
-import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { getReconnectAttempts, getLastError, getConnectionState, onWsStateChange } from '@/utils/echoClient'
 
@@ -98,8 +98,6 @@ interface StatusResponse {
 }
 
 export function useSystemStatus(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
-
   // Используем singleton для предотвращения множественных интервалов
   if (!sharedState) {
     sharedState = {
@@ -143,11 +141,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
     }
     
     try {
-      const response = await api.get<{ data?: StatusResponse; app?: string }>(
-        '/api/system/health'
-      )
-
-      const payload = extractData<StatusResponse>(response.data) || {}
+      const payload: StatusResponse = await api.system.health() ?? {}
 
       coreStatus.value = payload.app === 'ok' ? 'ok' : payload.app === 'fail' ? 'fail' : 'unknown'
       dbStatus.value = payload.db === 'ok' ? 'ok' : payload.db === 'fail' ? 'fail' : 'unknown'

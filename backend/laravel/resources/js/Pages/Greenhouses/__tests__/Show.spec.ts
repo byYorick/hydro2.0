@@ -3,8 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import GreenhouseShow from '../Show.vue'
 
 const sendZoneCommandMock = vi.hoisted(() => vi.fn())
-const apiGetMock = vi.hoisted(() => vi.fn())
-const apiPostMock = vi.hoisted(() => vi.fn())
+const nodesListMock = vi.hoisted(() => vi.fn())
+const nodesLifecycleTransitionMock = vi.hoisted(() => vi.fn())
+const setupWizardValidateMock = vi.hoisted(() => vi.fn())
+const setupWizardApplyMock = vi.hoisted(() => vi.fn())
 const getDocumentMock = vi.hoisted(() => vi.fn())
 const updateDocumentMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
@@ -96,13 +98,17 @@ vi.mock('@/composables/useCommands', () => ({
   }),
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
-      post: apiPostMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    nodes: {
+      list: nodesListMock,
+      lifecycleTransition: nodesLifecycleTransitionMock,
     },
-  }),
+    setupWizard: {
+      validateGreenhouseClimateDevices: setupWizardValidateMock,
+      applyGreenhouseClimateBindings: setupWizardApplyMock,
+    },
+  },
 }))
 
 vi.mock('@/composables/useAutomationConfig', () => ({
@@ -154,13 +160,17 @@ describe('Greenhouses/Show.vue', () => {
     usePageMockInstance.props.auth.user.role = 'agronomist'
     sendZoneCommandMock.mockReset()
     sendZoneCommandMock.mockResolvedValue({ id: 1 })
-    apiGetMock.mockReset()
-    apiPostMock.mockReset()
+    nodesListMock.mockReset()
+    nodesLifecycleTransitionMock.mockReset()
+    setupWizardValidateMock.mockReset()
+    setupWizardApplyMock.mockReset()
     getDocumentMock.mockReset()
     updateDocumentMock.mockReset()
     showToastMock.mockReset()
-    apiGetMock.mockResolvedValue({ data: { data: [] } })
-    apiPostMock.mockResolvedValue({ data: { status: 'ok' } })
+    nodesListMock.mockResolvedValue([])
+    nodesLifecycleTransitionMock.mockResolvedValue({})
+    setupWizardValidateMock.mockResolvedValue({ status: 'ok' })
+    setupWizardApplyMock.mockResolvedValue({ status: 'ok' })
     getDocumentMock.mockResolvedValue({
       payload: {
         active_mode: null,
@@ -247,13 +257,9 @@ describe('Greenhouses/Show.vue', () => {
   })
 
   it('разрешает обслуживание для климат-узлов', () => {
-    apiGetMock.mockResolvedValue({
-      data: {
-        data: [
-          { id: 2, uid: 'climate-1', type: 'climate', status: 'online', lifecycle_state: 'ACTIVE' },
-        ],
-      },
-    })
+    nodesListMock.mockResolvedValue([
+      { id: 2, uid: 'climate-1', type: 'climate', status: 'online', lifecycle_state: 'ACTIVE' },
+    ])
 
     const wrapper = mount(GreenhouseShow, {
       props: {
@@ -273,8 +279,6 @@ describe('Greenhouses/Show.vue', () => {
   })
 
   it('сохраняет климат теплицы через unified authority', async () => {
-    apiPostMock.mockResolvedValue({ data: { status: 'ok' } })
-
     const wrapper = mount(GreenhouseShow, {
       props: {
         greenhouse: baseGreenhouse,
@@ -294,7 +298,7 @@ describe('Greenhouses/Show.vue', () => {
 
     await flushPromises()
     expect(maintenanceButton).toBeDefined()
-    expect(apiPostMock).toHaveBeenCalledWith('/setup-wizard/apply-greenhouse-climate-bindings', expect.any(Object))
+    expect(setupWizardApplyMock).toHaveBeenCalledWith(expect.any(Object))
     expect(updateDocumentMock).toHaveBeenCalledWith('greenhouse', 1, 'greenhouse.logic_profile', expect.objectContaining({
       active_mode: 'setup',
       profiles: expect.any(Object),

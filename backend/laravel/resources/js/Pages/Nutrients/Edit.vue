@@ -190,7 +190,7 @@ import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
@@ -206,7 +206,6 @@ const nutrient = computed(() => (page.props.nutrient || null) as NutrientProduct
 const isEditMode = computed(() => Boolean(nutrient.value?.id))
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const loading = ref(false)
 const errors = reactive<Record<string, string>>({})
@@ -274,10 +273,10 @@ async function onSave(): Promise<void> {
     const payload = buildPayload()
 
     if (isEditMode.value && nutrient.value?.id) {
-      await api.patch(`/nutrient-products/${nutrient.value.id}`, payload)
+      await api.nutrientProducts.update(nutrient.value.id, payload as never)
       showToast('Удобрение обновлено', 'success', TOAST_TIMEOUT.NORMAL)
     } else {
-      await api.post('/nutrient-products', payload)
+      await api.nutrientProducts.create(payload as never)
       showToast('Удобрение добавлено', 'success', TOAST_TIMEOUT.NORMAL)
     }
 
@@ -306,7 +305,7 @@ async function onDelete(): Promise<void> {
   loading.value = true
 
   try {
-    await api.delete(`/nutrient-products/${nutrient.value.id}`)
+    await api.nutrientProducts.delete(nutrient.value.id)
     showToast('Удобрение удалено', 'success', TOAST_TIMEOUT.NORMAL)
     router.visit('/nutrients')
   } catch (error: any) {

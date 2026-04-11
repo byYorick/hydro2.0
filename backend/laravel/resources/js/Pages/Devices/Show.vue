@@ -243,7 +243,7 @@ import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vu
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
 import { useTheme } from '@/composables/useTheme'
@@ -292,7 +292,6 @@ const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const devicesStore = useDevicesStore()
 const { theme } = useTheme()
 const {
@@ -305,7 +304,6 @@ const {
   onTestPump,
 } = useDeviceCommandActions({
   device,
-  api,
   showToast,
   upsertDevice: (updatedDevice) => devicesStore.upsert(updatedDevice),
 })
@@ -520,10 +518,7 @@ const loadNodeConfig = async (): Promise<void> => {
   configLoading.value = true
   configError.value = ''
   try {
-    const response = await api.get<{ status: string; data?: Record<string, unknown> }>(
-      `/nodes/${device.value.id}/config`
-    )
-    const payload = response.data?.data
+    const payload = await api.nodes.getConfig(device.value.id)
     nodeConfigData.value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null
   } catch (error) {
     configError.value = 'Не удалось загрузить конфиг'
@@ -545,25 +540,20 @@ async function loadChartData(channel: string, metric: string, timeRange: string)
     
     logger.debug(`[Devices/Show] Loading telemetry: channel=${channel}, metric=${metric}, normalized=${normalizedMetric}`)
     
-    const response = await api.get<{ status: string; data?: Array<{ ts: string; value: number; channel: string }> }>(
-      `/nodes/${device.value.id}/telemetry/history`,
-      {
-        params: {
-          metric: normalizedMetric,
-          channel,
-          from: from?.toISOString(),
-        }
-      }
-    )
-    
-    if (response.data?.status === 'ok' && response.data?.data) {
-      logger.debug(`[Devices/Show] Loaded ${response.data.data.length} telemetry records for ${channel}`)
-      return response.data.data.map(item => ({
+    const rows = await api.nodes.getTelemetryHistory(device.value.id, {
+      metric: normalizedMetric,
+      channel,
+      from: from?.toISOString(),
+    })
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      logger.debug(`[Devices/Show] Loaded ${rows.length} telemetry records for ${channel}`)
+      return rows.map((item) => ({
         ts: new Date(item.ts).getTime(),
         value: item.value,
       }))
     }
-    
+
     logger.warn(`[Devices/Show] No data received for channel ${channel}`)
     return []
   } catch (err) {

@@ -1,9 +1,16 @@
 /**
- * Composable для работы с rate-limited API запросами с exponential backoff
+ * Composable для работы с rate-limited API запросами с exponential backoff.
+ *
+ * Единственный composable, которому разрешено импортировать `apiClient`
+ * напрямую — он нуждается в raw-axios для чтения заголовка `Retry-After`
+ * и для повторного выполнения неизменного запроса при 429. Все остальные
+ * consumer'ы должны ходить через `import { api } from '@/services/api'`.
  */
 import { ref, type Ref } from 'vue'
 import type { AxiosResponse } from 'axios'
-import { useApi, type ToastHandler } from './useApi'
+// eslint-disable-next-line no-restricted-imports
+import { apiClient } from '@/services/api/_client'
+import type { ToastHandler } from '@/services/api'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
@@ -15,8 +22,6 @@ export interface RateLimitedRequestOptions {
 }
 
 export function useRateLimitedApi(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
-  
   const isProcessing: Ref<boolean> = ref(false)
 
   /**
@@ -145,7 +150,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
-      () => api.get<T>(url, config),
+      () => apiClient.get<T>(url, config),
       options
     )
   }
@@ -160,7 +165,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
-      () => api.post<T>(url, data, config),
+      () => apiClient.post<T>(url, data, config),
       options
     )
   }
@@ -175,7 +180,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
-      () => api.patch<T>(url, data, config),
+      () => apiClient.patch<T>(url, data, config),
       options
     )
   }
@@ -189,7 +194,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
     options?: RateLimitedRequestOptions
   ): Promise<AxiosResponse<T>> {
     return rateLimitedRequest(
-      () => api.delete<T>(url, config),
+      () => apiClient.delete<T>(url, config),
       options
     )
   }

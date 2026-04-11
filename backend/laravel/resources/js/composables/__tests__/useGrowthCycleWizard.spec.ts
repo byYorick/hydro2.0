@@ -1,11 +1,85 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useGrowthCycleWizard, type GrowthCycleWizardEmit } from '../useGrowthCycleWizard'
-import type { useApi } from '../useApi'
 
 const getDocumentMock = vi.hoisted(() => vi.fn())
 const updateDocumentMock = vi.hoisted(() => vi.fn())
+
+// Module-level моки axios-like `api.get/api.post/api.delete`, которые тесты
+// программируют через mockImplementation. Typed API (`@/services/api`)
+// маршрутизируется через них + эмулирует extractData unwrap (см. ниже).
+const apiGetMock = vi.hoisted(() => vi.fn())
+const apiPostMock = vi.hoisted(() => vi.fn())
+const apiDeleteMock = vi.hoisted(() => vi.fn())
+
+async function unwrapEnvelope(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  // Эмулируем axios→extractData: снимаем axios `data`, затем при наличии
+  // вложенного `data` — ещё один уровень.
+  if (!raw || typeof raw !== 'object') return raw
+  const afterAxios = 'data' in (raw as Record<string, unknown>)
+    ? (raw as { data: unknown }).data
+    : raw
+  if (afterAxios && typeof afterAxios === 'object' && 'data' in (afterAxios as Record<string, unknown>)) {
+    const inner = (afterAxios as { data: unknown }).data
+    if (inner && typeof inner === 'object' && 'data' in (inner as Record<string, unknown>)) {
+      return (inner as { data: unknown }).data
+    }
+    return inner
+  }
+  return afterAxios
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    plants: {
+      list: () => unwrapEnvelope(apiGetMock('/plants')),
+    },
+    recipes: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock('/recipes', { params })),
+      getRevision: (revisionId: number) =>
+        unwrapEnvelope(apiGetMock(`/recipe-revisions/${revisionId}`)),
+      // listPaginated — bypass `extractData`, возвращает envelope `{data, current_page, last_page}`.
+      // В spec тесты вызывают `apiGetMock('/recipes', {params: {page, per_page}})`,
+      // поэтому здесь маршрутизируемся через тот же mock, но вместо двойного unwrap
+      // снимаем только axios-уровень и inner `data` до пагинированного envelope.
+      listPaginated: async (params?: Record<string, unknown>) => {
+        const raw = await apiGetMock('/recipes', { params })
+        const axiosStripped = raw && typeof raw === 'object' && 'data' in raw
+          ? (raw as { data: unknown }).data
+          : raw
+        if (axiosStripped && typeof axiosStripped === 'object' && 'data' in (axiosStripped as Record<string, unknown>)) {
+          const inner = (axiosStripped as { data: unknown }).data
+          if (inner && typeof inner === 'object') return inner
+        }
+        return { data: [] }
+      },
+    },
+    nodes: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock('/api/nodes', { params })),
+    },
+    infrastructure: {
+      listZoneInstances: (zoneId: number) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/infrastructure-instances`)),
+      createInstance: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/infrastructure-instances', payload)),
+      createChannelBinding: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/channel-bindings', payload)),
+      deleteChannelBinding: (bindingId: number) =>
+        unwrapEnvelope(apiDeleteMock(`/api/channel-bindings/${bindingId}`)),
+    },
+    zones: {
+      getHealth: (zoneId: number) =>
+        unwrapEnvelope(apiGetMock(`/api/zones/${zoneId}/health`)),
+      createGrowCycle: (zoneId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock(`/api/zones/${zoneId}/grow-cycles`, payload)),
+    },
+  },
+}))
+
+import { useGrowthCycleWizard, type GrowthCycleWizardEmit } from '../useGrowthCycleWizard'
 
 function buildRecipeRevisionResponse(phases: Array<Record<string, unknown>> = [
   {
@@ -205,24 +279,35 @@ function mountWizardHarness(options?: {
   initialData?: Record<string, unknown> | null
 }) {
   const emit = vi.fn() as unknown as GrowthCycleWizardEmit
-  const api = {
-    get: vi.fn().mockImplementation((url: string) => {
-      if (url === '/plants') {
-        return Promise.resolve({ data: { status: 'ok', data: [] } })
-      }
 
-      if (url === '/recipes') {
-        return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
-      }
-
-      if (url === '/recipe-revisions/3') {
-        return Promise.resolve(buildRecipeRevisionResponse())
-      }
-
+  // Дефолтная реализация apiGetMock для сценариев, где тесту не нужны
+  // кастомные ответы. Тесты могут перебить через apiGetMock.mockImplementation.
+  apiGetMock.mockImplementation((url: string) => {
+    if (url === '/plants') {
       return Promise.resolve({ data: { status: 'ok', data: [] } })
-    }),
-    post: vi.fn(),
-  } as unknown as ReturnType<typeof useApi>['api']
+    }
+
+    if (url === '/recipes') {
+      return Promise.resolve({ data: { status: 'ok', data: { data: [] } } })
+    }
+
+    if (url === '/recipe-revisions/3') {
+      return Promise.resolve(buildRecipeRevisionResponse())
+    }
+
+    return Promise.resolve({ data: { status: 'ok', data: [] } })
+  })
+  apiPostMock.mockImplementation(() => Promise.resolve({ data: { status: 'ok', data: {} } }))
+  apiDeleteMock.mockImplementation(() => Promise.resolve({ data: { status: 'ok' } }))
+
+  // Shim, совместимый с тестами: `api.get.mockImplementation(...)` в конкретных
+  // кейсах перепрограммирует hoisted-моки, которые под капотом маршрутизируются
+  // через typed API из `@/services/api`.
+  const api = {
+    get: apiGetMock,
+    post: apiPostMock,
+    delete: apiDeleteMock,
+  }
   const showToast = vi.fn()
   const fetchZones = vi.fn()
 
@@ -257,7 +342,6 @@ function mountWizardHarness(options?: {
       const wizard = useGrowthCycleWizard({
         props,
         emit,
-        api,
         showToast,
         fetchZones,
       })
@@ -292,6 +376,9 @@ describe('useGrowthCycleWizard', () => {
   afterEach(() => {
     getDocumentMock.mockReset()
     updateDocumentMock.mockReset()
+    apiGetMock.mockReset()
+    apiPostMock.mockReset()
+    apiDeleteMock.mockReset()
   })
 
   it('нормализует tanksCount и drain при переключении на drip', async () => {

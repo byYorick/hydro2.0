@@ -89,7 +89,7 @@ import { ref, reactive, watch } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
@@ -112,7 +112,6 @@ const emit = defineEmits<{
 }>()
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const form = reactive({
   name: '',
@@ -143,16 +142,11 @@ async function onCreate(): Promise<void> {
   error.value = null
 
   try {
-    const response = await api.post<{ data?: Zone } | Zone>(
-      '/zones',
-      {
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        greenhouse_id: props.greenhouseId
-      }
-    )
-
-    const zone = (response.data as { data?: Zone })?.data || (response.data as Zone)
+    const zone = await api.zones.create({
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      greenhouse_id: props.greenhouseId,
+    })
     createdZone.value = zone
 
     logger.info('Zone created:', zone)

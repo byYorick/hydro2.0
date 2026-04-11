@@ -234,7 +234,7 @@ import Tabs from '@/Components/Tabs.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import { formatTime } from '@/utils/formatTime'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 
@@ -273,8 +273,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-
-const { get } = useApi()
 
 const excludedServiceKeys = new Set(['history-logger', 'history-locker'])
 const defaultService = props.defaultService && !excludedServiceKeys.has(props.defaultService)
@@ -420,7 +418,7 @@ async function fetchLogs(page = 1) {
     if (filters.from) params.from = filters.from
     if (filters.to) params.to = filters.to
 
-    const response = await get('/logs/service', { params })
+    const response = await api.logs.list(params)
     const parsed = normalizeLogsResponse(response)
     logs.value = parsed.logs
     updateMeta(parsed.meta, logs.value.length)

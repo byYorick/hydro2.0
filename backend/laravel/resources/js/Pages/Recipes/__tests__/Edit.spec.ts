@@ -1,10 +1,16 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const apiGetMock = vi.hoisted(() => vi.fn())
-const apiPostMock = vi.hoisted(() => vi.fn())
-const apiPatchMock = vi.hoisted(() => vi.fn())
-const apiDeleteMock = vi.hoisted(() => vi.fn())
+const plantsListMock = vi.hoisted(() => vi.fn())
+const nutrientProductsListMock = vi.hoisted(() => vi.fn())
+const recipesGetByIdMock = vi.hoisted(() => vi.fn())
+const recipesCreateMock = vi.hoisted(() => vi.fn())
+const recipesUpdateMock = vi.hoisted(() => vi.fn())
+const recipesCreateRevisionMock = vi.hoisted(() => vi.fn())
+const recipesPublishRevisionMock = vi.hoisted(() => vi.fn())
+const recipesCreatePhaseMock = vi.hoisted(() => vi.fn())
+const recipesUpdatePhaseMock = vi.hoisted(() => vi.fn())
+const recipesDeletePhaseMock = vi.hoisted(() => vi.fn())
 const routerVisitMock = vi.hoisted(() => vi.fn())
 const showToastMock = vi.hoisted(() => vi.fn())
 
@@ -25,15 +31,25 @@ vi.mock('@/Components/Button.vue', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: apiGetMock,
-      post: apiPostMock,
-      patch: apiPatchMock,
-      delete: apiDeleteMock,
+vi.mock('@/services/api', () => ({
+  api: {
+    plants: {
+      list: plantsListMock,
     },
-  }),
+    nutrientProducts: {
+      list: nutrientProductsListMock,
+    },
+    recipes: {
+      getById: recipesGetByIdMock,
+      create: recipesCreateMock,
+      update: recipesUpdateMock,
+      createRevision: recipesCreateRevisionMock,
+      publishRevision: recipesPublishRevisionMock,
+      createPhase: recipesCreatePhaseMock,
+      updatePhase: recipesUpdatePhaseMock,
+      deletePhase: recipesDeletePhaseMock,
+    },
+  },
 }))
 
 vi.mock('@/composables/useToast', () => ({
@@ -117,10 +133,16 @@ const sampleRecipe = {
 
 describe('Recipes/Edit.vue', () => {
   beforeEach(() => {
-    apiGetMock.mockReset()
-    apiPostMock.mockReset()
-    apiPatchMock.mockReset()
-    apiDeleteMock.mockReset()
+    plantsListMock.mockReset()
+    nutrientProductsListMock.mockReset()
+    recipesGetByIdMock.mockReset()
+    recipesCreateMock.mockReset()
+    recipesUpdateMock.mockReset()
+    recipesCreateRevisionMock.mockReset()
+    recipesPublishRevisionMock.mockReset()
+    recipesCreatePhaseMock.mockReset()
+    recipesUpdatePhaseMock.mockReset()
+    recipesDeletePhaseMock.mockReset()
     routerVisitMock.mockReset()
     showToastMock.mockReset()
 
@@ -130,32 +152,19 @@ describe('Recipes/Edit.vue', () => {
       },
     })
 
-    apiGetMock.mockImplementation((url: string) => {
-      if (url === '/plants') {
-        return Promise.resolve({ data: { status: 'ok', data: [{ id: 1, name: 'Test Plant' }] } })
-      }
-      if (url === '/nutrient-products') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: [
-              { id: 1, manufacturer: 'Yara', name: 'Grow', component: 'npk' },
-              { id: 2, manufacturer: 'Yara', name: 'Calcinit', component: 'calcium' },
-              { id: 3, manufacturer: 'TerraTarsa', name: 'Mg', component: 'magnesium' },
-              { id: 4, manufacturer: 'Haifa', name: 'Micro', component: 'micro' },
-            ],
-          },
-        })
-      }
-      if (url === '/recipes/1') {
-        return Promise.resolve({ data: { status: 'ok', data: sampleRecipe } })
-      }
-      return Promise.resolve({ data: { status: 'ok', data: [] } })
-    })
-
-    apiPatchMock.mockResolvedValue({ data: { status: 'ok' } })
-    apiPostMock.mockResolvedValue({ data: { status: 'ok', data: { id: 101 } } })
-    apiDeleteMock.mockResolvedValue({ data: { status: 'ok' } })
+    plantsListMock.mockResolvedValue([{ id: 1, name: 'Test Plant' }])
+    nutrientProductsListMock.mockResolvedValue([
+      { id: 1, manufacturer: 'Yara', name: 'Grow', component: 'npk' },
+      { id: 2, manufacturer: 'Yara', name: 'Calcinit', component: 'calcium' },
+      { id: 3, manufacturer: 'TerraTarsa', name: 'Mg', component: 'magnesium' },
+      { id: 4, manufacturer: 'Haifa', name: 'Micro', component: 'micro' },
+    ])
+    recipesGetByIdMock.mockResolvedValue(sampleRecipe)
+    recipesUpdateMock.mockResolvedValue(undefined)
+    recipesUpdatePhaseMock.mockResolvedValue(undefined)
+    recipesDeletePhaseMock.mockResolvedValue(undefined)
+    recipesCreatePhaseMock.mockResolvedValue({ id: 101 })
+    recipesPublishRevisionMock.mockResolvedValue(undefined)
   })
 
   it('рендерит recipe через shared editor', async () => {
@@ -185,11 +194,11 @@ describe('Recipes/Edit.vue', () => {
     await wrapper.get('[data-testid="save-recipe-button"]').trigger('click')
     await flushPromises()
 
-    expect(apiPatchMock).toHaveBeenCalledWith('/recipes/1', expect.objectContaining({
+    expect(recipesUpdateMock).toHaveBeenCalledWith(1, expect.objectContaining({
       name: 'Test Recipe',
       plant_id: 1,
     }))
-    expect(apiPatchMock).toHaveBeenCalledWith('/recipe-revision-phases/101', expect.objectContaining({
+    expect(recipesUpdatePhaseMock).toHaveBeenCalledWith(101, expect.objectContaining({
       phase_index: 0,
       name: 'Seedling',
       ph_target: 5.8,
@@ -205,7 +214,7 @@ describe('Recipes/Edit.vue', () => {
         }),
       }),
     }))
-    expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/20/publish')
+    expect(recipesPublishRevisionMock).toHaveBeenCalledWith(20)
     expect(routerVisitMock).toHaveBeenCalledWith('/recipes/1')
   })
 
@@ -220,31 +229,13 @@ describe('Recipes/Edit.vue', () => {
       },
     })
 
-    apiPostMock.mockImplementation((url: string) => {
-      if (url === '/recipes/1/revisions') {
-        return Promise.resolve({
-          data: {
-            status: 'ok',
-            data: {
-              id: 30,
-              phases: [
-                { id: 301, phase_index: 0, name: 'Seedling' },
-              ],
-            },
-          },
-        })
-      }
-
-      if (url === '/recipe-revisions/30/phases') {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 401 } } })
-      }
-
-      if (url === '/recipe-revisions/30/publish') {
-        return Promise.resolve({ data: { status: 'ok', data: { id: 30 } } })
-      }
-
-      return Promise.resolve({ data: { status: 'ok', data: { id: 101 } } })
+    recipesCreateRevisionMock.mockResolvedValue({
+      id: 30,
+      phases: [
+        { id: 301, phase_index: 0, name: 'Seedling' },
+      ],
     })
+    recipesCreatePhaseMock.mockResolvedValue({ id: 401 })
 
     const wrapper = mount(RecipesEdit)
     await flushPromises()
@@ -252,16 +243,16 @@ describe('Recipes/Edit.vue', () => {
     await wrapper.get('[data-testid="save-recipe-button"]').trigger('click')
     await flushPromises()
 
-    expect(apiPostMock).toHaveBeenCalledWith('/recipes/1/revisions', expect.objectContaining({
+    expect(recipesCreateRevisionMock).toHaveBeenCalledWith(1, expect.objectContaining({
       clone_from_revision_id: 10,
     }))
-    expect(apiDeleteMock).toHaveBeenCalledWith('/recipe-revision-phases/301')
-    expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/30/phases', expect.objectContaining({
+    expect(recipesDeletePhaseMock).toHaveBeenCalledWith(301)
+    expect(recipesCreatePhaseMock).toHaveBeenCalledWith(30, expect.objectContaining({
       phase_index: 0,
       name: 'Seedling',
       ph_target: 5.8,
     }))
-    expect(apiPatchMock).not.toHaveBeenCalledWith('/recipe-revision-phases/101', expect.anything())
-    expect(apiPostMock).toHaveBeenCalledWith('/recipe-revisions/30/publish')
+    expect(recipesUpdatePhaseMock).not.toHaveBeenCalledWith(101, expect.anything())
+    expect(recipesPublishRevisionMock).toHaveBeenCalledWith(30)
   })
 })

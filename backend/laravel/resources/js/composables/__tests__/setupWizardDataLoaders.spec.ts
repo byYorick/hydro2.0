@@ -1,5 +1,30 @@
 import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
+
+const greenhousesListMock = vi.hoisted(() => vi.fn())
+const zonesListMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/services/api', () => ({
+  api: {
+    greenhouses: {
+      list: greenhousesListMock,
+      types: vi.fn().mockResolvedValue([]),
+    },
+    zones: {
+      list: zonesListMock,
+    },
+    plants: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    recipes: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+    nodes: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+  },
+}))
+
 import { createSetupWizardDataLoaders } from '@/composables/setupWizardDataLoaders'
 import type { SetupWizardLoadingState } from '@/composables/setupWizardTypes'
 
@@ -25,14 +50,11 @@ describe('setupWizardDataLoaders', () => {
     const showToast = vi.fn()
     const availableGreenhouses = ref([{ id: 1, name: 'GH stale' }])
 
+    greenhousesListMock.mockRejectedValueOnce({
+      response: { data: { message: 'Boom greenhouses' } },
+    })
+
     const loaders = createSetupWizardDataLoaders({
-      api: {
-        get: vi.fn().mockRejectedValue({
-          response: { data: { message: 'Boom greenhouses' } },
-        }),
-        post: vi.fn(),
-        patch: vi.fn(),
-      },
       loading: createLoadingState(),
       showToast,
       availableGreenhouses,
@@ -56,14 +78,9 @@ describe('setupWizardDataLoaders', () => {
 
   it('не делает запрос зон без выбранной теплицы', async () => {
     const showToast = vi.fn()
-    const apiGet = vi.fn()
+    zonesListMock.mockReset()
 
     const loaders = createSetupWizardDataLoaders({
-      api: {
-        get: apiGet,
-        post: vi.fn(),
-        patch: vi.fn(),
-      },
       loading: createLoadingState(),
       showToast,
       availableGreenhouses: ref([]),
@@ -80,7 +97,7 @@ describe('setupWizardDataLoaders', () => {
 
     await loaders.loadZones()
 
-    expect(apiGet).not.toHaveBeenCalled()
+    expect(zonesListMock).not.toHaveBeenCalled()
     expect(showToast).not.toHaveBeenCalled()
   })
 })

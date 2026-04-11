@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useSystemStatus } from '../useSystemStatus'
 
 // Mock logger
 vi.mock('@/utils/logger', () => ({
@@ -19,30 +18,29 @@ vi.mock('@/utils/logger', () => ({
   }
 }))
 
-// Mock useApi
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: vi.fn()
-    }
-  }))
+const healthMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/services/api', () => ({
+  api: {
+    system: {
+      health: healthMock,
+    },
+  },
 }))
 
-describe('useSystemStatus', () => {
-  let mockApiGet: vi.Mock
-  let mockShowToast: vi.Mock
+import { useSystemStatus } from '../useSystemStatus'
 
-  beforeEach(async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn()
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
-    mockApiGet = mockApi.api.get
+describe('useSystemStatus', () => {
+  let mockApiGet: ReturnType<typeof vi.fn>
+  let mockShowToast: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    // Historically tests программировали сырое axios-ответ `{data: {data: {...}}}`.
+    // Здесь mockApiGet — алиас к api.system.health, принимающий любой маппинг
+    // и возвращающий развёрнутый (inner) payload.
+    healthMock.mockReset()
+    mockApiGet = healthMock
     mockShowToast = vi.fn()
-    mockApiGet.mockClear()
     vi.useFakeTimers()
     
     // Mock window.Echo
@@ -68,21 +66,14 @@ describe('useSystemStatus', () => {
   })
 
   it('should check health and update core/db status', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'ok' })
 
     const { checkHealth, coreStatus, dbStatus } = useSystemStatus(mockShowToast)
     await checkHealth()
 
     expect(coreStatus.value).toBe('ok')
     expect(dbStatus.value).toBe('ok')
-    expect(mockApiGet).toHaveBeenCalledWith('/api/system/health')
+    expect(mockApiGet).toHaveBeenCalled()
   })
 
   it('should handle health check error', async () => {
@@ -180,14 +171,7 @@ describe('useSystemStatus', () => {
   })
 
   it('should start monitoring on mount', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'ok' })
 
     const { coreStatus, startMonitoring } = useSystemStatus()
     startMonitoring()
@@ -209,14 +193,7 @@ describe('useSystemStatus', () => {
   })
 
   it('should provide computed flags for status checks', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'ok' })
 
     const { isCoreOk, isDbOk, checkHealth } = useSystemStatus()
     
@@ -270,14 +247,7 @@ describe('useSystemStatus', () => {
   })
 
   it('should poll health status periodically', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'ok' })
 
     const { startMonitoring, checkHealth, stopMonitoring } = useSystemStatus()
     
@@ -308,14 +278,7 @@ describe('useSystemStatus', () => {
   }, 10000) // Увеличиваем таймаут теста
 
   it('should stop polling when stopMonitoring is called', () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'ok' })
 
     const { startMonitoring, stopMonitoring } = useSystemStatus()
     startMonitoring()
@@ -331,14 +294,7 @@ describe('useSystemStatus', () => {
   })
 
   it('should handle health check with db fail', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'fail'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'fail' })
 
     const { checkHealth, coreStatus, dbStatus } = useSystemStatus()
     await checkHealth()
@@ -348,14 +304,7 @@ describe('useSystemStatus', () => {
   })
 
   it('should handle health check with app fail', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'fail',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'fail', db: 'ok' })
 
     const { checkHealth, coreStatus, dbStatus } = useSystemStatus()
     await checkHealth()
@@ -365,14 +314,7 @@ describe('useSystemStatus', () => {
   })
 
   it('should update lastUpdate timestamp after health check', async () => {
-    mockApiGet.mockResolvedValue({
-      data: {
-        data: {
-          app: 'ok',
-          db: 'ok'
-        }
-      }
-    })
+    mockApiGet.mockResolvedValue({ app: 'ok', db: 'ok' })
 
     const { checkHealth, lastUpdate } = useSystemStatus()
     const beforeCheck = lastUpdate.value

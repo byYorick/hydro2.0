@@ -20,14 +20,23 @@ vi.mock('@/utils/logger', () => ({
   }
 }))
 
-// Mock useApi
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: vi.fn()
-    }
-  }))
-}))
+// useTelemetry → useRateLimitedApi → apiClient. Моки должны цепляться
+// именно на apiClient, иначе реальный axios уходит в сеть.
+const mockApiClientGet = vi.hoisted(() => vi.fn())
+
+vi.mock('@/services/api/_client', async () => {
+  const actual = await vi.importActual<typeof import('@/services/api/_client')>('@/services/api/_client')
+  return {
+    ...actual,
+    apiClient: {
+      get: mockApiClientGet,
+      post: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      put: vi.fn(),
+    },
+  }
+})
 
 // Mock useErrorHandler
 vi.mock('../useErrorHandler', () => ({
@@ -59,8 +68,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
   })
 
   it('should save telemetry data to sessionStorage', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApiGet = vi.fn().mockResolvedValue({
+    mockApiClientGet.mockResolvedValue({
       data: {
         data: {
           ph: 6.5,
@@ -70,9 +78,6 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
         }
       }
     })
-    vi.mocked(useApi).mockReturnValue({
-      api: { get: mockApiGet }
-    } as any)
 
     const { fetchLastTelemetry } = telemetryModule.useTelemetry()
     await fetchLastTelemetry(1)
@@ -94,7 +99,6 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
   })
 
   it('should load telemetry data from sessionStorage on initialization', async () => {
-    // Сохраняем данные в sessionStorage
     const testData = {
       telemetry_last_1: {
         data: { ph: 6.5, ec: 1.5 },
@@ -103,23 +107,15 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(testData))
 
-    // Инициализируем useTelemetry
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn()
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
-
     vi.resetModules()
     telemetryModule = await import('../useTelemetry')
     const { fetchLastTelemetry } = telemetryModule.useTelemetry()
 
+    mockApiClientGet.mockClear()
     const result = await fetchLastTelemetry(1)
-    
+
     // Проверяем, что API не был вызван (данные из кеша)
-    expect(mockApi.api.get).not.toHaveBeenCalled()
+    expect(mockApiClientGet).not.toHaveBeenCalled()
     expect(result).toEqual({ ph: 6.5, ec: 1.5 })
   })
 
@@ -136,20 +132,11 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(expiredData))
 
-    // Перезагружаем модуль для инициализации кеша
     vi.resetModules()
-    
-    const { useApi } = await import('../useApi')
-    const mockApiGet = vi.fn().mockResolvedValue({
-      data: { data: { ph: 6.0 } }
-    })
-    vi.mocked(useApi).mockReturnValue({
-      api: { get: mockApiGet }
-    } as any)
-    
     telemetryModule = await import('../useTelemetry')
     const { fetchLastTelemetry } = telemetryModule.useTelemetry()
-    
+
+    mockApiClientGet.mockResolvedValue({ data: { data: { ph: 6.0 } } })
     await fetchLastTelemetry(3) // Вызов очистит кеш
 
     const cached = sessionStorage.getItem(STORAGE_KEY)
@@ -169,15 +156,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
       humidity: 60
     }
 
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn().mockResolvedValue({
-          data: { data: largeData }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    mockApiClientGet.mockResolvedValue({ data: { data: largeData } })
 
     // Заполняем sessionStorage
     const manyEntries: Record<string, any> = {}
@@ -237,15 +216,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
       { ts: new Date().toISOString(), value: 6.6 }
     ]
 
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn().mockResolvedValue({
-          data: { data: mockHistory }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    mockApiClientGet.mockResolvedValue({ data: { data: mockHistory } })
 
     const { fetchHistory } = telemetryModule.useTelemetry()
     await fetchHistory(1, 'PH', { from: '2024-01-01', to: '2024-01-02' })

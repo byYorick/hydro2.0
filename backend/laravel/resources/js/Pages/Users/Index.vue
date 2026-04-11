@@ -279,7 +279,7 @@ import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 import type { User } from '@/types'
@@ -316,9 +316,6 @@ const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
 
 const { showToast } = useToast()
-
-// Инициализация API с Toast
-const { api } = useApi(showToast)
 
 const users = ref<User[]>([])
 const searchQuery = ref('')
@@ -455,9 +452,7 @@ const loadUsers = async () => {
   if (!isAdmin.value) return
   loading.value.load = true
   try {
-    // Используем прямой API вызов вместо router.reload для сохранения состояния
-    const response = await api.get('/api/users')
-    const fetchedUsers = response.data?.data || response.data || []
+    const fetchedUsers = await api.users.list()
     users.value = fetchedUsers.map((u) => ({
       ...u,
       created_at: u.created_at,
@@ -486,13 +481,14 @@ const confirmDelete = (user: User) => {
 
 const doDelete = async () => {
   if (!deletingUser.value) return
+  const userIdToDelete = deletingUser.value.id
   loading.value.delete = true
   try {
-    await api.delete(`/settings/users/${deletingUser.value.id}`)
+    await api.users.delete(userIdToDelete)
     showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
-    
+
     // Обновляем локальный список пользователей без reload
-    users.value = users.value.filter(u => u.id !== deletingUser.value.id)
+    users.value = users.value.filter(u => u.id !== userIdToDelete)
     deletingUser.value = null
   } catch (err) {
     logger.error('Failed to delete user:', err)
@@ -516,9 +512,8 @@ const saveUser = async () => {
       if (!payload.password) {
         delete payload.password
       }
-      const response = await api.patch(`/settings/users/${editingUser.value.id}`, payload)
-      const updatedUser = response.data?.data || response.data
-      
+      const updatedUser = await api.users.update(editingUser.value.id, payload)
+
       // Обновляем пользователя в локальном списке без reload
       if (updatedUser?.id) {
         const index = users.value.findIndex(u => u.id === updatedUser.id)
@@ -529,9 +524,8 @@ const saveUser = async () => {
         }
       }
     } else {
-      const response = await api.post('/settings/users', payload)
-      const newUser = response.data?.data || response.data
-      
+      const newUser = await api.users.create(payload)
+
       // Добавляем нового пользователя в локальный список без reload
       if (newUser?.id) {
         users.value.push({ ...newUser, created_at: newUser.created_at })

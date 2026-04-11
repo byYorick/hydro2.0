@@ -239,7 +239,7 @@ import {
   processCalibrationNamespace,
 } from '@/composables/processCalibrationAuthority'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import {
   createDefaultProcessCalibrationForm,
   useProcessCalibrationDefaults,
@@ -259,11 +259,6 @@ import type {
 } from '@/types/ProcessCalibration'
 
 type FormKey = keyof ZoneProcessCalibrationForm
-
-interface ApiResponse<T> {
-  status: string
-  data: T
-}
 
 interface ZoneApiEvent {
   event_id?: number
@@ -303,7 +298,6 @@ const emit = defineEmits<{
   (e: 'saved', mode: ProcessCalibrationMode): void
 }>()
 
-const { api } = useApi()
 const automationConfig = useAutomationConfig()
 const { showToast } = useToast()
 const processCalibrationDefaults = useProcessCalibrationDefaults()
@@ -694,18 +688,15 @@ function toHistoryItem(raw: ZoneApiEvent): ProcessCalibrationHistoryItem | null 
 async function loadHistory(): Promise<void> {
   historyLoading.value = true
   try {
-    const response = await api.get<ApiResponse<ZoneApiEvent[]>>(`/api/zones/${props.zoneId}/events`, {
-      params: {
-        limit: 80,
-      },
-    })
+    const response = await api.zones.events(props.zoneId, { limit: 80 }) as ZoneApiEvent[] | { data?: ZoneApiEvent[] }
+    const items: ZoneApiEvent[] = Array.isArray(response)
+      ? response
+      : (Array.isArray(response?.data) ? response.data : [])
 
-    historyEvents.value = Array.isArray(response.data.data)
-      ? response.data.data
-        .map((item) => toHistoryItem(item))
-        .filter((item): item is ProcessCalibrationHistoryItem => item !== null)
-        .sort((left, right) => right.id - left.id)
-      : []
+    historyEvents.value = items
+      .map((item) => toHistoryItem(item))
+      .filter((item): item is ProcessCalibrationHistoryItem => item !== null)
+      .sort((left, right) => right.id - left.id)
   } finally {
     historyLoading.value = false
   }

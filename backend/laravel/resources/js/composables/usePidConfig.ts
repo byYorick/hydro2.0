@@ -2,7 +2,8 @@
  * Composable для работы с PID конфигами
  */
 import { ref, type Ref } from 'vue'
-import { useApi, type ToastHandler } from './useApi'
+import { api } from '@/services/api'
+import type { ToastHandler } from '@/services/api'
 import { useErrorHandler } from './useErrorHandler'
 import type {
   PidConfig,
@@ -18,34 +19,29 @@ const PID_NAMESPACE_MAP: Record<'ph' | 'ec', string> = {
   ec: 'zone.pid.ec',
 }
 
-/**
- * Composable для работы с PID конфигами
- */
 export function usePidConfig(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
 
-  /**
-   * Получить PID конфиг для зоны и типа
-   */
   async function getPidConfig(zoneId: number, type: 'ph' | 'ec'): Promise<PidConfigWithMeta | null> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: { payload: PidConfig } | null }>(
-        `/automation-configs/zone/${zoneId}/${PID_NAMESPACE_MAP[type]}`
+      const document = await api.automationConfigs.get<{ payload: PidConfig } | null>(
+        'zone',
+        zoneId,
+        PID_NAMESPACE_MAP[type],
       )
 
-      if (!response.data.data || typeof response.data.data !== 'object') {
+      if (!document || typeof document !== 'object' || !('payload' in document)) {
         return null
       }
 
       return {
         type,
-        config: response.data.data.payload,
+        config: document.payload,
         updated_by: null,
         updated_at: null,
         is_default: false,
@@ -59,9 +55,6 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Получить все PID конфиги для зоны
-   */
   async function getAllPidConfigs(zoneId: number): Promise<PidConfigRecord> {
     loading.value = true
     error.value = null
@@ -82,9 +75,6 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Обновить PID конфиг для зоны и типа
-   */
   async function updatePidConfig(
     zoneId: number,
     type: 'ph' | 'ec',
@@ -94,14 +84,16 @@ export function usePidConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.put<{ status: string; data: { payload: PidConfig } }>(
-        `/automation-configs/zone/${zoneId}/${PID_NAMESPACE_MAP[type]}`,
-        { payload: config }
+      const document = await api.automationConfigs.update<{ payload: PidConfig }>(
+        'zone',
+        zoneId,
+        PID_NAMESPACE_MAP[type],
+        config as unknown as Record<string, unknown>,
       )
 
       return {
         type,
-        config: response.data.data.payload,
+        config: document.payload,
         updated_by: null,
         updated_at: null,
         is_default: false,
@@ -115,9 +107,6 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Получить логи PID для зоны
-   */
   async function getPidLogs(
     zoneId: number,
     options?: {
@@ -130,32 +119,25 @@ export function usePidConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const params = new URLSearchParams()
-      if (options?.type) {
-        params.append('type', options.type)
-      }
-      if (options?.limit) {
-        params.append('limit', options.limit.toString())
-      }
-      if (options?.offset) {
-        params.append('offset', options.offset.toString())
+      const payload = await api.zones.getPidLogs<{
+        data?: PidLog[]
+        meta?: { total: number; limit: number; offset: number }
+      } | PidLog[]>(zoneId, options)
+
+      const logs = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.data) ? payload.data : []
+      const meta = (payload && !Array.isArray(payload) ? payload.meta : null) ?? {
+        total: logs.length,
+        limit: options?.limit ?? logs.length,
+        offset: options?.offset ?? 0,
       }
 
-      const response = await api.get<{
-        status: string
-        data: PidLog[]
-        meta: { total: number; limit: number; offset: number }
-      }>(`/zones/${zoneId}/pid-logs?${params.toString()}`)
-
-      if (response.data.status === 'ok') {
-        return {
-          logs: response.data.data,
-          total: response.data.meta.total,
-          limit: response.data.meta.limit,
-          offset: response.data.meta.offset,
-        }
-      } else {
-        throw new Error('Failed to fetch PID logs')
+      return {
+        logs,
+        total: meta.total,
+        limit: meta.limit,
+        offset: meta.offset,
       }
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
@@ -166,22 +148,15 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Получить калибровки насосов зоны
-   */
   async function getPumpCalibrations(zoneId: number): Promise<PumpCalibration[]> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: PumpCalibration[] }>(
-        `/zones/${zoneId}/pump-calibrations`
-      )
-
-      if (response.data.status === 'ok') {
-        return Array.isArray(response.data.data) ? response.data.data : []
-      }
-      throw new Error('Failed to fetch pump calibrations')
+      const payload = await api.zones.getPumpCalibrations<PumpCalibration[] | { data?: PumpCalibration[] }>(zoneId)
+      if (Array.isArray(payload)) return payload
+      if (payload && Array.isArray(payload.data)) return payload.data
+      return []
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -191,9 +166,6 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Обновить калибровку одного насоса
-   */
   async function updatePumpCalibration(
     zoneId: number,
     channelId: number,
@@ -206,14 +178,7 @@ export function usePidConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.put<{ status: string }>(
-        `/zones/${zoneId}/pump-calibrations/${channelId}`,
-        payload
-      )
-
-      if (response.data.status !== 'ok') {
-        throw new Error('Failed to update pump calibration')
-      }
+      await api.zones.updatePumpCalibration(zoneId, channelId, payload)
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -223,22 +188,12 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Запустить relay-autotune
-   */
   async function startRelayAutotune(zoneId: number, pidType: 'ph' | 'ec'): Promise<void> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.post<{ status: string }>(
-        `/zones/${zoneId}/relay-autotune`,
-        { pid_type: pidType }
-      )
-
-      if (response.data.status !== 'ok') {
-        throw new Error('Failed to start relay autotune')
-      }
+      await api.zones.startRelayAutotune(zoneId, { pid_type: pidType })
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -248,21 +203,22 @@ export function usePidConfig(showToast?: ToastHandler) {
     }
   }
 
-  /**
-   * Получить статус relay-autotune
-   */
   async function getRelayAutotuneStatus(zoneId: number, pidType: 'ph' | 'ec'): Promise<RelayAutotuneStatus> {
     loading.value = true
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data?: RelayAutotuneStatus }>(
-        `/zones/${zoneId}/relay-autotune/status`,
-        { params: { pid_type: pidType } }
+      const payload = await api.zones.getRelayAutotuneStatus<RelayAutotuneStatus | { data?: RelayAutotuneStatus }>(
+        zoneId,
+        { pid_type: pidType },
       )
 
-      if (response.data.status === 'ok' && response.data.data) {
-        return response.data.data
+      const candidate = payload && !Array.isArray(payload) && 'data' in (payload as Record<string, unknown>)
+        ? (payload as { data?: RelayAutotuneStatus }).data
+        : (payload as RelayAutotuneStatus | null)
+
+      if (candidate) {
+        return candidate
       }
 
       return {

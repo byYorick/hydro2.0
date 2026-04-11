@@ -1,8 +1,8 @@
 import type { ComputedRef, Ref } from 'vue'
+import { api } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
-import { extractData } from '@/utils/apiHelpers'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import { extractZoneActiveCycleStatus, isZoneCycleBlocking, zoneCycleStatusLabel } from './setupWizardZoneCycleGuard'
 import { useAutomationConfig } from './useAutomationConfig'
@@ -32,7 +32,6 @@ import type {
 import {
   addRecipePhase as appendRecipePhase,
   createRecipeForPlant,
-  type SetupWizardRecipeApiClient,
 } from './setupWizardRecipeCreation'
 import {
   ensureRecipeBinding,
@@ -40,7 +39,6 @@ import {
 } from './setupWizardRecipeLinking'
 
 interface SetupWizardRecipeAutomationFlowsOptions {
-  api: SetupWizardRecipeApiClient
   loading: SetupWizardLoadingState
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
@@ -89,7 +87,6 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
   const automationDefaults = useAutomationDefaults()
   const automationCommandTemplates = useAutomationCommandTemplates()
   const {
-    api,
     loading,
     canConfigure,
     showToast,
@@ -161,8 +158,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
     }
 
     try {
-      const response = await api.get(`/recipes/${recipeId}`)
-      const recipe = extractData<Recipe>(response.data)
+      const recipe = await api.recipes.getById(recipeId) as Recipe | null
       if (!recipe?.id) {
         return null
       }
@@ -192,7 +188,6 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       canCreateMissing: createIfMissing && canConfigure.value,
       loadRecipes,
       createRecipeForPlant: (plantId) => createRecipeForPlant({
-        api,
         canConfigure: canConfigure.value,
         recipeForm,
         plantId,
@@ -276,12 +271,12 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
       )
       await automationConfig.updateDocument('zone', selectedZone.value.id, 'zone.logic_profile', nextPayload as unknown as Record<string, unknown>)
 
-      await api.post(`/zones/${selectedZone.value.id}/commands`, {
-        type: 'GROWTH_CYCLE_CONFIG',
+      await api.commands.sendZoneCommand(selectedZone.value.id, {
+        type: 'GROWTH_CYCLE_CONFIG' as never,
         params: {
           mode: 'adjust',
           profile_mode: 'setup',
-        },
+        } as never,
       })
 
       automationAppliedAt.value = new Date().toISOString()
@@ -317,8 +312,7 @@ export function createSetupWizardRecipeAutomationFlows(options: SetupWizardRecip
 
     loading.stepLaunch = true
     try {
-      const zoneResponse = await api.get(`/zones/${selectedZone.value.id}`)
-      const zonePayload = extractData<Record<string, unknown>>(zoneResponse.data)
+      const zonePayload = await api.zones.getById(selectedZone.value.id) as unknown as Record<string, unknown>
       const activeCycleStatus = extractZoneActiveCycleStatus(zonePayload)
       if (isZoneCycleBlocking(activeCycleStatus)) {
         showToast(

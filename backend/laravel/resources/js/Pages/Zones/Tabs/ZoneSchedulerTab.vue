@@ -93,7 +93,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from 'vue'
-import { useApi } from '@/composables/useApi'
 import { useRole } from '@/composables/useRole'
 import { useToast } from '@/composables/useToast'
 import { useZoneScheduleWorkspace } from '@/composables/useZoneScheduleWorkspace'
@@ -110,7 +109,6 @@ import SchedulerDiagnostics from '@/Components/Scheduler/SchedulerDiagnostics.vu
 const props = defineProps<ZoneAutomationTabProps>()
 
 const { showToast } = useToast()
-const { get } = useApi(showToast)
 const { canDiagnose } = useRole()
 const {
   horizon,
@@ -149,7 +147,7 @@ const {
   decisionLabel,
   decisionReasonLabel,
   describeDecision,
-} = useZoneScheduleWorkspace(props, { get, showToast })
+} = useZoneScheduleWorkspace(props, { showToast })
 
 const zoneId = computed(() => props.zoneId)
 const selectedExecutionErrorMessage = computed(() => resolveHumanErrorMessage({

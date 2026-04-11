@@ -16,10 +16,21 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    get: apiGetMock,
-  }),
+async function unwrapRealtime(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  if (raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)) {
+    return (raw as { data: unknown }).data
+  }
+  return raw
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      getState: (zoneId: number) =>
+        unwrapRealtime(apiGetMock(`/api/zones/${zoneId}/state`)),
+    },
+  },
 }))
 
 vi.mock('@/utils/echoClient', () => ({

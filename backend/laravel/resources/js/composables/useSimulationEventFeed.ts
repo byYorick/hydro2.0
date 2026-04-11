@@ -1,9 +1,6 @@
 import { nextTick, ref } from 'vue'
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
-
-interface ApiClient {
-  get<T = any>(url: string, config?: Record<string, unknown>): Promise<{ data?: T }>
-}
 
 export interface SimulationEvent {
   id: number
@@ -28,7 +25,7 @@ function compareSimulationEvents(a: SimulationEvent, b: SimulationEvent): number
   return aTime > bTime ? -1 : 1
 }
 
-export function useSimulationEventFeed(api: ApiClient) {
+export function useSimulationEventFeed() {
   const simulationDbId = ref<number | null>(null)
   const simulationEvents = ref<SimulationEvent[]>([])
   const simulationEventsLoading = ref(false)
@@ -97,11 +94,15 @@ export function useSimulationEventFeed(api: ApiClient) {
     simulationEventsLoading.value = true
     simulationEventsError.value = null
     try {
-      const response = await api.get<{ status: string; data?: SimulationEvent[]; meta?: any }>(
-        `/simulations/${simulationId}/events`,
-        { params: { order: 'desc', limit: 200 } }
+      const response = await api.simulations.listEvents<SimulationEvent[] | { data?: SimulationEvent[] }>(
+        simulationId,
+        { order: 'desc', limit: 200 }
       )
-      const items = Array.isArray(response.data?.data) ? response.data?.data : []
+      const items = Array.isArray(response)
+        ? response
+        : Array.isArray((response as { data?: SimulationEvent[] })?.data)
+          ? (response as { data: SimulationEvent[] }).data
+          : []
       simulationEvents.value = items.sort(compareSimulationEvents)
       simulationEventsLastId.value = items.length ? Math.max(...items.map((item) => item.id)) : 0
       await nextTick()

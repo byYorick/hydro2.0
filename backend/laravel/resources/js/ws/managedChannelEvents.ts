@@ -7,7 +7,7 @@ import {
   getSharedEchoChannel,
   releaseOwnedSharedEchoChannel,
 } from '@/ws/sharedEchoChannels'
-import type { EchoChannelLike, WsEventPayload } from '@/ws/subscriptionTypes'
+import type { WsEventPayload } from '@/ws/subscriptionTypes'
 
 function toRecord(payload: unknown): WsEventPayload {
   if (payload && typeof payload === 'object') {

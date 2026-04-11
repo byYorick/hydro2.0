@@ -205,23 +205,82 @@ vi.mock('@inertiajs/vue3', () => ({
   },
 }))
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    api: {
-      get: (url: string, config?: any) => {
-        const finalUrl = url.startsWith('/api/') ? url : `/api${url}`
-        return apiGetMock(finalUrl, config)
-      },
-      post: (url: string, data?: any, config?: any) => {
-        const finalUrl = url.startsWith('/api/') ? url : `/api${url}`
-        return apiPostMock(finalUrl, data, config)
-      },
-      patch: (url: string, data?: any, config?: any) => {
-        const finalUrl = url.startsWith('/api/') ? url : `/api${url}`
-        return apiPatchMock(finalUrl, data, config)
-      },
+// Mock-шим: legacy-стиль URL-based mockов (`apiGetMock/apiPostMock/apiPatchMock`)
+// остаётся прежним — через него тесты программируют сценарии. Все typed-методы
+// `api.<domain>.<method>` маршрутизируются на эти моки, эмулируя backend-envelope
+// и `extractData` unwrap (такой же, как реальный axios + apiGet).
+async function unwrapEnvelope(rawPromise: Promise<unknown>): Promise<unknown> {
+  const raw = await rawPromise
+  if (!raw || typeof raw !== 'object') return raw
+  const axiosStripped = 'data' in (raw as Record<string, unknown>)
+    ? (raw as { data: unknown }).data
+    : raw
+  if (axiosStripped && typeof axiosStripped === 'object' && 'data' in (axiosStripped as Record<string, unknown>)) {
+    const inner = (axiosStripped as { data: unknown }).data
+    if (inner && typeof inner === 'object' && 'data' in (inner as Record<string, unknown>)) {
+      return (inner as { data: unknown }).data
+    }
+    return inner
+  }
+  return axiosStripped
+}
+
+vi.mock('@/services/api', () => ({
+  api: {
+    greenhouses: {
+      list: () => unwrapEnvelope(apiGetMock('/api/greenhouses', undefined)),
+      types: () => unwrapEnvelope(apiGetMock('/api/greenhouse-types', undefined)),
+      create: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/greenhouses', payload, undefined)),
+      getById: (id: number) => unwrapEnvelope(apiGetMock(`/api/greenhouses/${id}`, undefined)),
     },
-  }),
+    zones: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock('/api/zones', { params })),
+      create: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/zones', payload, undefined)),
+      getById: (id: number) => unwrapEnvelope(apiGetMock(`/api/zones/${id}`, undefined)),
+      getHealth: (id: number) => unwrapEnvelope(apiGetMock(`/api/zones/${id}/health`, undefined)),
+    },
+    plants: {
+      list: () => unwrapEnvelope(apiGetMock('/api/plants', undefined)),
+      create: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/plants', payload, undefined)),
+    },
+    recipes: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock('/api/recipes', { params })),
+      getById: (id: number) => unwrapEnvelope(apiGetMock(`/api/recipes/${id}`, undefined)),
+      create: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/recipes', payload, undefined)),
+      createRevision: (recipeId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock(`/api/recipes/${recipeId}/revisions`, payload, undefined)),
+      createPhase: (revisionId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock(`/api/recipe-revisions/${revisionId}/phases`, payload, undefined)),
+      publishRevision: (revisionId: number) =>
+        unwrapEnvelope(apiPostMock(`/api/recipe-revisions/${revisionId}/publish`, undefined, undefined)),
+    },
+    nodes: {
+      list: (params?: Record<string, unknown>) =>
+        unwrapEnvelope(apiGetMock('/api/nodes', { params })),
+      update: (nodeId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPatchMock(`/api/nodes/${nodeId}`, payload, undefined)),
+    },
+    commands: {
+      sendZoneCommand: (zoneId: number, payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock(`/api/zones/${zoneId}/commands`, payload, undefined)),
+    },
+    setupWizard: {
+      validateDevices: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/setup-wizard/validate-devices', payload, undefined)),
+      applyDeviceBindings: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/setup-wizard/apply-device-bindings', payload, undefined)),
+      validateGreenhouseClimateDevices: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/setup-wizard/validate-greenhouse-climate-devices', payload, undefined)),
+      applyGreenhouseClimateBindings: (payload: Record<string, unknown>) =>
+        unwrapEnvelope(apiPostMock('/api/setup-wizard/apply-greenhouse-climate-bindings', payload, undefined)),
+    },
+  },
 }))
 
 vi.mock('@/composables/useToast', () => ({

@@ -1,9 +1,8 @@
 import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 import { useRecipeEditor } from '@/composables/useRecipeEditor'
 import { buildRecipePhasePayload } from '@/composables/recipeEditorShared'
@@ -32,7 +31,6 @@ const defaultSeasonality: TaxonomyOption[] = [
 export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
   const { show, taxonomies, onClose, onCreated } = options
   const { showToast } = useToast()
-  const { api } = useApi(showToast)
   const recipeEditor = useRecipeEditor()
 
   const loading = ref(false)
@@ -141,18 +139,17 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
 
   async function loadTaxonomiesFromApi(): Promise<void> {
     try {
-      const response = await api.get('/plant-taxonomies')
-      const payload = extractData<Record<string, TaxonomyOption[]>>(response.data)
+      const payload = await api.plantTaxonomies.list()
       if (!payload || typeof payload !== 'object') {
         return
       }
 
       localTaxonomies.value = {
         ...localTaxonomies.value,
-        substrate_type: payload.substrate_type ?? localTaxonomies.value.substrate_type ?? [],
-        growing_system: payload.growing_system ?? localTaxonomies.value.growing_system ?? [],
-        photoperiod_preset: payload.photoperiod_preset ?? localTaxonomies.value.photoperiod_preset ?? [],
-        seasonality: payload.seasonality ?? localTaxonomies.value.seasonality ?? defaultSeasonality,
+        substrate_type: (payload.substrate_type as TaxonomyOption[]) ?? localTaxonomies.value.substrate_type ?? [],
+        growing_system: (payload.growing_system as TaxonomyOption[]) ?? localTaxonomies.value.growing_system ?? [],
+        photoperiod_preset: (payload.photoperiod_preset as TaxonomyOption[]) ?? localTaxonomies.value.photoperiod_preset ?? [],
+        seasonality: (payload.seasonality as TaxonomyOption[]) ?? localTaxonomies.value.seasonality ?? defaultSeasonality,
       }
     } catch (error) {
       logger.error('Failed to load plant taxonomies', { error })
@@ -214,7 +211,7 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
     loading.value = true
     errors.general = ''
     try {
-      const response = await api.post('/plants/with-recipe', {
+      const payload = await api.plants.createWithRecipe({
         plant: {
           name: form.name.trim(),
           species: form.species.trim() || null,
@@ -233,7 +230,6 @@ export function usePlantCreateModal(options: UsePlantCreateModalOptions) {
         },
       })
 
-      const payload = extractData<Record<string, unknown>>(response.data)
       const plant = payload?.plant ?? null
       onCreated(plant)
       showToast('Растение и рецепт успешно созданы', 'success', TOAST_TIMEOUT.NORMAL)

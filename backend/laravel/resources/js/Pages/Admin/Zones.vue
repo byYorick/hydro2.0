@@ -88,10 +88,9 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { reactive, ref, onMounted, computed } from 'vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { usePageProps } from '@/composables/usePageProps'
-import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useZonesStore } from '@/stores/zones'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
@@ -111,7 +110,6 @@ const zones = computed(() => {
   return storeZones.length > 0 ? storeZones : (zonesProp?.value || [])
 })
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const greenhouses = ref<Greenhouse[]>([])
 const form = reactive<{ name: string; description: string; status: string; greenhouse_id: number | null }>({ 
   name: '', 
@@ -128,9 +126,7 @@ onMounted(async () => {
   
   // Загружаем теплицы
   try {
-    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
-    const data = extractData<Greenhouse[]>(response.data) || []
-    greenhouses.value = Array.isArray(data) ? data : []
+    greenhouses.value = await api.greenhouses.list()
   } catch (err) {
     logger.error('[Admin/Zones] Failed to load greenhouses:', err)
     if (!(err as any)?.response) {
@@ -141,9 +137,8 @@ onMounted(async () => {
 
 async function onCreate(): Promise<void> {
   try {
-    const response = await api.post<{ data?: Zone } | Zone>('/zones', form)
-    const newZone = extractData<Zone>(response.data) || response.data as Zone
-    
+    const newZone = await api.zones.create(form)
+
     // Добавляем новую зону в store вместо reload
     if (newZone?.id) {
       zonesStore.upsert(newZone)

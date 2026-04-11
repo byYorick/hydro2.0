@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { useUrlState } from '@/composables/useUrlState'
 import { useAlertsStore } from '@/stores/alerts'
@@ -32,20 +32,11 @@ interface PageProps {
   [key: string]: unknown
 }
 
-interface AlertCatalogItem {
-  code: string
-  title: string
-  description: string
-  recommendation?: string
-  severity?: AlertSeverity
-}
-
 const ALERT_TOAST_SUPPRESSION_KEY = 'hydro.alerts.toastSuppressionSec'
 
 export function useAlertsPage() {
   const page = usePage<PageProps>()
   const alertsStore = useAlertsStore()
-  const { api } = useApi()
   const { showToast } = useToast()
 
   // ── Toast suppression ────────────────────────────────────────────────────
@@ -182,13 +173,7 @@ export function useAlertsPage() {
         params.category = categoryFilter.value
       }
 
-      const response = await api.get('/api/alerts', { params })
-      const payload = response?.data?.data
-      const list = Array.isArray(payload?.data)
-        ? payload.data
-        : Array.isArray(payload)
-          ? payload
-          : []
+      const list = await api.alerts.list(params)
       alertsStore.setAll(list)
     } catch (err) {
       logger.error('[Alerts] Failed to load alerts', err)
@@ -411,8 +396,7 @@ export function useAlertsPage() {
     confirm.value.loading = true
 
     try {
-      const response = await api.patch(`/api/alerts/${confirm.value.alertId}/ack`, {})
-      const updated = (response?.data as { data?: AlertRecord })?.data
+      const updated = await api.alerts.acknowledge(confirm.value.alertId) as AlertRecord
       applyResolved(confirm.value.alertId, updated)
     } catch (err) {
       logger.error('[Alerts] Failed to resolve alert', err)
@@ -434,8 +418,7 @@ export function useAlertsPage() {
     bulkConfirm.value.loading = true
     try {
       await Promise.all(ids.map(async (id) => {
-        const response = await api.patch(`/api/alerts/${id}/ack`, {})
-        const updated = (response?.data as { data?: AlertRecord })?.data
+        const updated = await api.alerts.acknowledge(id) as AlertRecord
         applyResolved(id, updated)
       }))
     } catch (err) {
@@ -543,8 +526,8 @@ export function useAlertsPage() {
   const loadToastSuppressionPreference = async (): Promise<void> => {
     const hasLocalFallback = applyToastSuppressionFromStorage()
     try {
-      const response = await api.get('/settings/preferences')
-      const fromProfile = (response?.data?.data as Record<string, unknown>)?.alert_toast_suppression_sec
+      const prefs = await api.settings.getPreferences()
+      const fromProfile = prefs?.alert_toast_suppression_sec
       isSyncingSuppressionPreference.value = true
       skipSuppressionPersistCount += 1
       toastSuppressionSec.value = normalizeSuppressionSec(fromProfile)
@@ -562,7 +545,7 @@ export function useAlertsPage() {
 
   const persistToastSuppressionPreference = async (value: number): Promise<void> => {
     try {
-      await api.patch('/settings/preferences', {
+      await api.settings.updatePreferences({
         alert_toast_suppression_sec: value,
       })
     } catch (err) {
@@ -595,12 +578,12 @@ export function useAlertsPage() {
   // ── Alert catalog ────────────────────────────────────────────────────────
   const loadAlertCatalog = async (): Promise<void> => {
     try {
-      const response = await api.get('/api/alerts/catalog')
-      const items = (response?.data?.data as { items?: AlertCatalogItem[] })?.items
+      const response = await api.alerts.catalog()
+      const items = response?.items
       if (!Array.isArray(items)) return
 
       const map: Record<string, AlertCodeMeta> = {}
-      items.forEach((item: AlertCatalogItem) => {
+      items.forEach((item) => {
         const code = String(item?.code || '').trim().toLowerCase()
         if (!code) return
         map[code] = {

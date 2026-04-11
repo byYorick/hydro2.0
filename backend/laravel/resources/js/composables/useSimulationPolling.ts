@@ -1,19 +1,10 @@
 import { watch, type Ref } from 'vue'
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
 import { mapActiveSimulationStatus } from '@/composables/useSimulationPresentation'
 import type { SimulationRuntimeStatus } from '@/composables/useSimulationSubmit'
 
-interface ApiClient {
-  get<T = unknown>(url: string, config?: Record<string, unknown>): Promise<{ data?: T }>
-}
-
-interface SimulationStatusResponse {
-  status?: string
-  data?: unknown
-}
-
 interface UseSimulationPollingParams<SimulationResults, SimulationReport, SimulationAction, SimulationPidStatus> {
-  api: ApiClient
   simulationJobId: Ref<string | null>
   simulationStatus: Ref<SimulationRuntimeStatus>
   simulationProgressValue: Ref<number | null>
@@ -72,8 +63,7 @@ export function useSimulationPolling<
 
   const pollSimulationStatus = async (jobId: string): Promise<void> => {
     try {
-      const response = await params.api.get<SimulationStatusResponse>(`/simulations/${jobId}`)
-      const data = response.data?.data
+      const data = await api.simulations.getStatus<unknown>(jobId)
       if (!data || typeof data !== 'object') return
       const payload = data as Record<string, unknown>
 

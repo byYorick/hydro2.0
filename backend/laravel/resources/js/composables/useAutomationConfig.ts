@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
-import { useApi, type ToastHandler } from './useApi'
+import { api } from '@/services/api'
+import type { ToastHandler } from '@/services/api'
 import { useErrorHandler } from './useErrorHandler'
 
 export type AutomationScopeType = 'system' | 'greenhouse' | 'zone' | 'grow_cycle'
@@ -54,7 +55,6 @@ export interface AutomationPreset {
 }
 
 export function useAutomationConfig(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
@@ -68,10 +68,11 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: AutomationDocument<TPayload, TMeta> }>(
-        `/automation-configs/${scopeType}/${scopeId}/${namespace}`
+      return await api.automationConfigs.get<AutomationDocument<TPayload, TMeta>>(
+        scopeType,
+        scopeId,
+        namespace,
       )
-      return response.data.data
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -95,11 +96,12 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.put<{ status: string; data: AutomationDocument<TResponsePayload, TMeta> }>(
-        `/automation-configs/${scopeType}/${scopeId}/${namespace}`,
-        { payload }
+      return await api.automationConfigs.update<AutomationDocument<TResponsePayload, TMeta>>(
+        scopeType,
+        scopeId,
+        namespace,
+        payload as Record<string, unknown>,
       )
-      return response.data.data
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -114,10 +116,7 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: AutomationBundle }>(
-        `/automation-bundles/${scopeType}/${scopeId}`
-      )
-      return response.data.data
+      return await api.automationBundles.get(scopeType, scopeId) as AutomationBundle
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -132,10 +131,7 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ status: string; data: AutomationBundle }>(
-        `/automation-bundles/${scopeType}/${scopeId}/validate`
-      )
-      return response.data.data
+      return await api.automationBundles.validate(scopeType, scopeId) as AutomationBundle
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -150,10 +146,8 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: AutomationPreset[] }>(
-        `/automation-presets/${namespace}`
-      )
-      return Array.isArray(response.data.data) ? response.data.data : []
+      const result = await api.automationPresets.list(namespace)
+      return Array.isArray(result) ? result : []
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -172,11 +166,7 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ status: string; data: AutomationPreset }>(
-        `/automation-presets/${namespace}`,
-        payload
-      )
-      return response.data.data
+      return await api.automationPresets.create(namespace, payload)
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -195,11 +185,7 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.put<{ status: string; data: AutomationPreset }>(
-        `/automation-presets/${presetId}`,
-        payload
-      )
-      return response.data.data
+      return await api.automationPresets.update(presetId, payload)
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -214,7 +200,7 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      await api.delete(`/automation-presets/${presetId}`)
+      await api.automationPresets.delete(presetId)
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -229,10 +215,7 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ status: string; data: AutomationPreset }>(
-        `/automation-presets/${presetId}/duplicate`
-      )
-      return response.data.data
+      return await api.automationPresets.duplicate(presetId)
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -251,10 +234,8 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ status: string; data: TVersion[] }>(
-        `/automation-configs/${scopeType}/${scopeId}/${namespace}/history`
-      )
-      return Array.isArray(response.data.data) ? response.data.data : []
+      const result = await api.automationConfigs.getHistory<TVersion>(scopeType, scopeId, namespace)
+      return Array.isArray(result) ? result : []
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)
@@ -273,10 +254,11 @@ export function useAutomationConfig(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.delete<{ status: string; data: AutomationDocument<TPayload, TMeta> }>(
-        `/automation-configs/${scopeType}/${scopeId}/${namespace}`
+      return await api.automationConfigs.reset<AutomationDocument<TPayload, TMeta>>(
+        scopeType,
+        scopeId,
+        namespace,
       )
-      return response.data.data
     } catch (err) {
       error.value = err instanceof Error ? err : new Error('Unknown error')
       handleError(err)

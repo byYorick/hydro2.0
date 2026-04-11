@@ -236,7 +236,7 @@ import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateStatus } from '@/utils/i18n'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useFilteredList } from '@/composables/useFilteredList'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -263,7 +263,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { api } = useApi()
 const { showToast } = useToast()
 
 const testingDevices = ref<Set<number>>(new Set())
@@ -320,20 +319,15 @@ async function waitForCommandResult(
   let lastStatus: string | null = null
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await api.get<{
-        status: string
-        data?: {
-          status: string
-          error_message?: string | null
-          error_code?: string | null
-          human_error_message?: string | null
-        }
-      }>(
-        `/commands/${cmdId}/status`
-      )
-      
-      if (response.data?.status === 'ok' && response.data?.data?.status) {
-        const cmdStatus = String(response.data.data.status).toUpperCase()
+      const payload = await api.commands.getStatus(cmdId) as {
+        status?: string
+        error_message?: string | null
+        error_code?: string | null
+        human_error_message?: string | null
+      }
+
+      if (payload?.status) {
+        const cmdStatus = String(payload.status).toUpperCase()
         if (cmdStatus !== lastStatus) {
           lastStatus = cmdStatus
           if (onStatusChange) {
@@ -347,9 +341,9 @@ async function waitForCommandResult(
           return {
             success: false,
             status: cmdStatus,
-            errorMessage: response.data.data.error_message || undefined,
-            errorCode: response.data.data.error_code || undefined,
-            humanErrorMessage: response.data.data.human_error_message || undefined,
+            errorMessage: payload.error_message || undefined,
+            errorCode: payload.error_code || undefined,
+            humanErrorMessage: payload.human_error_message || undefined,
           }
         }
       }
@@ -374,20 +368,14 @@ async function testDevice(deviceId: number) {
   }
 
   testingDevices.value.add(deviceId)
-  
+
   try {
-    const response = await api.post<{ status: string; data?: { command_id: string } }>(
-      `/nodes/${deviceId}/commands`,
-      {
-        cmd: 'MEASURE_NOW',
-        params: {},
-      }
-    )
-    
-    if (response.data?.status === 'ok') {
-      logger.debug('[EngineerDashboard] Test command sent successfully', response.data)
-      showToast('Команда тестирования отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
-    }
+    await api.commands.sendNodeCommand(deviceId, {
+      type: 'MEASURE_NOW' as never,
+      params: {} as never,
+    })
+    logger.debug('[EngineerDashboard] Test command sent successfully')
+    showToast('Команда тестирования отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
     logger.error('[EngineerDashboard] Failed to send test command:', err)
     showToast('Не удалось отправить команду тестирования', 'error', TOAST_TIMEOUT.LONG)
@@ -411,23 +399,20 @@ async function confirmRestart(): Promise<void> {
   }
 
   restartingDevices.value.add(deviceId)
-  
+
   try {
-    const response = await api.post<{ status: string; data?: { command_id: string } }>(
-      `/nodes/${deviceId}/commands`,
-      {
-        cmd: 'restart',
-        params: {},
-      }
-    )
-    
-    if (response.data?.status === 'ok' && response.data?.data?.command_id) {
-      const cmdId = response.data.data.command_id
-      logger.debug('[EngineerDashboard] Restart command sent successfully', response.data)
+    const response = await api.commands.sendNodeCommand(deviceId, {
+      type: 'restart',
+      params: {} as never,
+    }) as { command_id?: string | number; id?: string | number }
+
+    const cmdId = response?.command_id ?? response?.id
+    if (cmdId) {
+      logger.debug('[EngineerDashboard] Restart command sent successfully')
       showToast('Команда перезапуска отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
       
       let executionNotified = false
-      const result = await waitForCommandResult(cmdId, 20, (status) => {
+      const result = await waitForCommandResult(String(cmdId), 20, (status) => {
         if (status === 'ACK' && !executionNotified) {
           executionNotified = true
           showToast('Перезапуск устройства...', 'info', TOAST_TIMEOUT.NORMAL)

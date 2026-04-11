@@ -220,15 +220,10 @@ import {
   processCalibrationNamespace,
 } from '@/composables/processCalibrationAuthority'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { usePidConfig } from '@/composables/usePidConfig'
 import type { PidConfigRecord, PumpCalibration } from '@/types/PidConfig'
 import type { ProcessCalibrationMode, ZoneProcessCalibration } from '@/types/ProcessCalibration'
-
-interface ApiResponse<T> {
-  status: string
-  data: T
-}
 
 interface PumpGroupStatus {
   key: 'ph' | 'ec'
@@ -290,7 +285,6 @@ const emit = defineEmits<{
   (e: 'focus-pid-config'): void
 }>()
 
-const { api } = useApi()
 const automationConfig = useAutomationConfig()
 const { getAllPidConfigs, getPumpCalibrations } = usePidConfig()
 
@@ -650,11 +644,7 @@ async function load(): Promise<void> {
       ),
       getPumpCalibrations(props.zoneId),
       getAllPidConfigs(props.zoneId),
-      api.get<ApiResponse<ZoneApiEvent[]>>(`/api/zones/${props.zoneId}/events`, {
-        params: {
-          limit: 80,
-        },
-      }),
+      api.zones.events(props.zoneId, { limit: 80 }) as Promise<ZoneApiEvent[] | { data?: ZoneApiEvent[] }>,
     ])
 
     processCalibrations.value = PROCESS_CALIBRATION_MODES.map((mode, index) =>
@@ -662,12 +652,13 @@ async function load(): Promise<void> {
     )
     pumpCalibrations.value = Array.isArray(pumps) ? pumps : []
     pidConfigs.value = allPidConfigs
-    runtimeEvents.value = Array.isArray(eventsResponse.data.data)
-      ? eventsResponse.data.data
-        .map((item) => toRuntimeIssue(item))
-        .filter((item): item is RuntimeIssueItem => item !== null)
-        .sort((left, right) => right.id - left.id)
-      : []
+    const eventsArray: ZoneApiEvent[] = Array.isArray(eventsResponse)
+      ? eventsResponse
+      : (Array.isArray(eventsResponse?.data) ? eventsResponse.data : [])
+    runtimeEvents.value = eventsArray
+      .map((item) => toRuntimeIssue(item))
+      .filter((item): item is RuntimeIssueItem => item !== null)
+      .sort((left, right) => right.id - left.id)
   } finally {
     loading.value = false
   }

@@ -56,8 +56,67 @@ module.exports = {
     'no-unused-vars': 'off', // Используем TypeScript версию
     'prefer-const': 'warn',
     'no-var': 'error',
+
+    // Фаза 3: граница API-слоя.
+    //
+    // `@/utils/apiClient` — строгий error. На момент Фазы 3 единственное место,
+    //   которое его импортирует — `services/api/_client.ts` и legacy `composables/useApi.ts`
+    //   (whitelist в overrides ниже).
+    //
+    // `@/composables/useApi` — warn (не error), потому что 50+ composables ещё
+    //   используют его. Правило служит маркером долга: каждый новый файл с
+    //   useApi виден в lint, но не ломает CI. Миграция идёт доменно.
+    //
+    // Новый код обязан использовать: `import { api } from '@/services/api'`.
+    'no-restricted-imports': ['error', {
+      paths: [
+        {
+          name: '@/utils/apiClient',
+          message: 'Импорт apiClient напрямую запрещён. Используй `import { api } from \'@/services/api\'` или добавь типизированный метод в services/api/<domain>.ts.',
+        },
+      ],
+    }],
+    '@typescript-eslint/no-restricted-imports': 'off',
   },
   overrides: [
+    {
+      // Единственные два файла, которым разрешено импортировать apiClient
+      // напрямую: внутренний клиент services/api/ и legacy useApi.ts.
+      // Всё остальное должно ходить через `import { api } from '@/services/api'`.
+      files: [
+        'resources/js/services/api/_client.ts',
+        'resources/js/composables/useApi.ts',
+        // useRateLimitedApi нужен raw axios для Retry-After заголовков
+        'resources/js/composables/useRateLimitedApi.ts',
+      ],
+      rules: {
+        'no-restricted-imports': 'off',
+      },
+    },
+    {
+      // Warn-маркер для legacy импортов useApi. На момент Phase 3 весь
+      // production код уже мигрирован на `import { api } from '@/services/api'`;
+      // оставляем маркер на будущее, если кто-то добавит новый файл.
+      files: ['resources/js/**/*.{ts,tsx,vue}'],
+      excludedFiles: [
+        'resources/js/services/api/**',
+        'resources/js/composables/useApi.ts',
+      ],
+      rules: {
+        'no-restricted-imports': ['warn', {
+          paths: [
+            {
+              name: '@/utils/apiClient',
+              message: 'Импорт apiClient напрямую запрещён. Используй `import { api } from \'@/services/api\'`.',
+            },
+            {
+              name: '@/composables/useApi',
+              message: 'useApi — legacy путь. Новый код должен использовать `import { api } from \'@/services/api\'` и добавлять методы в services/api/<domain>.ts.',
+            },
+          ],
+        }],
+      },
+    },
     {
       files: [
         'resources/js/**/__tests__/**/*.{js,ts,tsx,vue}',
@@ -71,6 +130,7 @@ module.exports = {
         'no-console': 'off',
         'vue/one-component-per-file': 'off',
         'vue/require-explicit-emits': 'off',
+        'no-restricted-imports': 'off',
       },
     },
     {

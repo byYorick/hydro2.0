@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { logger } from '@/utils/logger'
-import type { ToastHandler } from './useApi'
-import { useApi } from './useApi'
+import type { ToastHandler } from '@/services/api'
 import { onWsStateChange } from '@/utils/echoClient'
 import type { SnapshotHandler } from '@/types/reconciliation'
 import { isValidSnapshot } from '@/types/reconciliation'
@@ -139,7 +138,6 @@ const pendingSubscriptionsManager = createPendingSubscriptionsManager({
 })
 
 const snapshotSync = createSnapshotSync({
-  getApiClient: () => useApi().api,
   activeSubscriptions,
   isValidSnapshot,
   setZoneSnapshot,

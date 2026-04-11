@@ -1,9 +1,9 @@
 import type { ComputedRef, Ref } from 'vue'
+import { api } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 import { extractCollection } from './setupWizardCollection'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
@@ -15,10 +15,8 @@ import type {
   SetupWizardLoadingState,
   Zone,
 } from './setupWizardTypes'
-import type { SetupWizardDataApiClient } from './setupWizardDataLoaders'
 
 interface SetupWizardPlantNodeCommandsOptions {
-  api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
@@ -85,12 +83,11 @@ function normalizePositiveInt(value: unknown): number | null {
 }
 
 function parseNodeUpdate(payload: unknown): Node | null {
-  const node = extractData<unknown>(payload)
-  if (!node || typeof node !== 'object' || !('id' in node)) {
+  if (!payload || typeof payload !== 'object' || !('id' in payload)) {
     return null
   }
 
-  return node as Node
+  return payload as Node
 }
 
 function hasRequiredAssignments(assignments: SetupWizardDeviceAssignments): boolean {
@@ -122,7 +119,6 @@ export function createSetupWizardPlantNodeCommands(
   options: SetupWizardPlantNodeCommandsOptions
 ): SetupWizardPlantNodeCommandActions {
   const {
-    api,
     loading,
     canConfigure,
     showToast,
@@ -202,10 +198,8 @@ export function createSetupWizardPlantNodeCommands(
 
     for (let attempt = 0; attempt < NODE_BINDING_MAX_ATTEMPTS && pending.size > 0; attempt += 1) {
       try {
-        const response = await api.get('/nodes', {
-          params: { unassigned: true },
-        })
-        const unassignedNodes = extractCollection<Node>(response.data)
+        const nodes = await api.nodes.list({ unassigned: true })
+        const unassignedNodes = extractCollection<Node>(nodes)
         const unassignedIds = new Set(unassignedNodes.map((node) => node.id))
 
         Array.from(pending).forEach((nodeId) => {
@@ -302,11 +296,11 @@ export function createSetupWizardPlantNodeCommands(
     }
 
     try {
-      const response = await api.patch(`/nodes/${nodeId}`, {
+      const updateResponse = await api.nodes.update(nodeId, {
         zone_id: zoneId,
         name: node.name || node.uid || `Node #${nodeId}`,
       })
-      const updatedNode = parseNodeUpdate(response.data)
+      const updatedNode = parseNodeUpdate(updateResponse)
 
       if (updatedNode?.zone_id === zoneId && !updatedNode?.pending_zone_id) {
         showToast(`Нода "${label}" успешно привязана к зоне и отправила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
@@ -365,13 +359,12 @@ export function createSetupWizardPlantNodeCommands(
 
     loading.stepPlant = true
     try {
-      const response = await api.post('/plants', {
+      const payload = await api.plants.create({
         name: plantForm.name,
         species: plantForm.species || null,
         variety: plantForm.variety || null,
       })
 
-      const payload = extractData<Record<string, unknown>>(response.data)
       const plantId = typeof payload?.id === 'number' ? payload.id : null
       if (!plantId) {
         throw new Error('Plant id missing in response')
@@ -429,7 +422,7 @@ export function createSetupWizardPlantNodeCommands(
     loading.stepDevices = true
     try {
       if (normalizedAssignments && shouldValidateAndApplyBindings) {
-        await api.post('/setup-wizard/validate-devices', {
+        await api.setupWizard.validateDevices({
           zone_id: zoneId,
           assignments: normalizedAssignments,
           selected_node_ids: nodeIds,
@@ -485,7 +478,7 @@ export function createSetupWizardPlantNodeCommands(
             TOAST_TIMEOUT.LONG
           )
         } else {
-          await api.post('/setup-wizard/apply-device-bindings', {
+          await api.setupWizard.applyDeviceBindings({
             zone_id: zoneId,
             assignments: normalizedAssignments,
             selected_node_ids: nodeIds,

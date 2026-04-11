@@ -60,4 +60,55 @@ if [[ $STATUS_HOSTS -eq 0 || $STATUS_LOCAL_PORTS -eq 0 || $STATUS_HOSTPORT -eq 0
   exit 1
 fi
 
+# Фаза 3: строгая граница apiClient.
+# `@/utils/apiClient` разрешено импортировать ТОЛЬКО из двух мест:
+#   1. resources/js/services/api/_client.ts  — новый типизированный слой
+#   2. resources/js/composables/useApi.ts    — legacy бридж, уходит по мере миграции
+# Это жёсткая инвариантность: если появится третий импортёр — падаем.
+ALLOWED_API_CLIENT_IMPORTERS=(
+  "resources/js/services/api/_client.ts"
+  "resources/js/composables/useApi.ts"
+)
+API_CLIENT_PATTERN="from ['\"]@/utils/apiClient['\"]"
+
+set +e
+if [[ "$SEARCH_TOOL" == "rg" ]]; then
+  API_CLIENT_IMPORTS="$(rg -l "$API_CLIENT_PATTERN" "$TARGET_DIR" \
+    --glob '!**/__tests__/**' \
+    --glob '!**/*.{spec,test}.{js,ts,tsx,vue}' \
+    || true)"
+else
+  API_CLIENT_IMPORTS="$(grep -RIlE "$API_CLIENT_PATTERN" "$TARGET_DIR" \
+    --include='*.ts' --include='*.tsx' --include='*.vue' --include='*.js' \
+    --exclude-dir='__tests__' 2>/dev/null || true)"
+fi
+set -e
+
+UNAUTHORIZED_IMPORTERS=""
+if [[ -n "$API_CLIENT_IMPORTS" ]]; then
+  while IFS= read -r importer; do
+    [[ -z "$importer" ]] && continue
+    authorized=false
+    for allowed in "${ALLOWED_API_CLIENT_IMPORTERS[@]}"; do
+      if [[ "$importer" == *"$allowed" ]]; then
+        authorized=true
+        break
+      fi
+    done
+    if [[ "$authorized" == false ]]; then
+      UNAUTHORIZED_IMPORTERS+="$importer"$'\n'
+    fi
+  done <<< "$API_CLIENT_IMPORTS"
+fi
+
+if [[ -n "$UNAUTHORIZED_IMPORTERS" ]]; then
+  echo "ERROR: unauthorized import of @/utils/apiClient detected."
+  echo "Only services/api/_client.ts and composables/useApi.ts are allowed to import it directly."
+  echo "Other code must use: import { api } from '@/services/api'"
+  echo
+  echo "Offenders:"
+  echo "$UNAUTHORIZED_IMPORTERS"
+  exit 1
+fi
+
 echo "OK: frontend API boundary check passed."

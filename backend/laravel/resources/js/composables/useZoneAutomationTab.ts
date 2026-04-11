@@ -1,6 +1,5 @@
 import { onMounted, watch } from 'vue'
 import { useCommands } from '@/composables/useCommands'
-import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useZoneAutomationState } from '@/composables/useZoneAutomationState'
 import { useZoneAutomationApi } from '@/composables/useZoneAutomationApi'
@@ -11,11 +10,10 @@ import type { ZoneAutomationTabProps } from '@/composables/zoneAutomationTypes'
 export function useZoneAutomationTab(props: ZoneAutomationTabProps) {
   const { showToast } = useToast()
   const { sendZoneCommand } = useCommands(showToast)
-  const { get, post } = useApi(showToast)
 
   const state = useZoneAutomationState(props, { sendZoneCommand, showToast })
-  const api = useZoneAutomationApi(props, state, { get, post, showToast, sendZoneCommand })
-  const scheduler = useZoneAutomationScheduler(props, { get, post, showToast })
+  const api = useZoneAutomationApi(props, state, { showToast, sendZoneCommand })
+  const scheduler = useZoneAutomationScheduler(props, { showToast })
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
 

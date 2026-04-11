@@ -3,7 +3,7 @@ import { router } from '@inertiajs/vue3'
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useModal } from '@/composables/useModal'
@@ -111,11 +111,9 @@ export function useZoneShowPage() {
   const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus } = useCommands(showToast)
   const { fetchHistory, fetchHistoryWithNodes } = useTelemetry(showToast)
   const { reloadZone } = useZones(showToast)
-  const { api } = useApi(showToast)
   const { subscribeToZoneCommands } = useWebSocket(showToast)
   const { handleError } = useErrorHandler(showToast)
   const pumpCalibrationActions = usePumpCalibrationActions({
-    api,
     getZoneId: () => zoneId.value,
     showToast,
     successTimeout: TOAST_TIMEOUT.NORMAL,
@@ -236,7 +234,7 @@ export function useZoneShowPage() {
   }): Promise<void> => {
     if (!zoneId.value) return
 
-    await api.post(`/api/zones/${zoneId.value}/start-irrigation`, {
+    await api.zones.startIrrigation(zoneId.value, {
       mode,
       source: 'frontend',
       requested_duration_sec: durationSec ?? null,
@@ -358,7 +356,6 @@ export function useZoneShowPage() {
   } = useZoneCycleActions({
     activeGrowCycle,
     zoneId,
-    api,
     reloadZone,
     showToast,
     setLoading,

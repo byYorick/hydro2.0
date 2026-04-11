@@ -1,10 +1,7 @@
 import { computed, onUnmounted, ref, watch, type Ref } from 'vue'
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type { SimulationInitialState } from '@/composables/useSimulationSubmit'
-
-interface ApiClient {
-  get<T = unknown>(url: string, config?: Record<string, unknown>): Promise<{ data?: T }>
-}
 
 export interface RecipeOption {
   id: number
@@ -20,7 +17,6 @@ interface RecipeDefaults {
 }
 
 interface UseSimulationRecipesParams {
-  api: ApiClient
   isOpen: Ref<boolean>
   defaultRecipeId: Ref<number | null | undefined>
   selectedRecipeId: Ref<number | null>
@@ -111,12 +107,9 @@ export function useSimulationRecipes(params: UseSimulationRecipesParams) {
     if (recipes.value.find((item) => item.id === fallbackRecipeId)) return
 
     try {
-      const response = await params.api.get<{ status: string; data?: { id: number; name: string } }>(
-        `/recipes/${fallbackRecipeId}`
-      )
-      const data = response.data?.data
+      const data = await api.recipes.getById(fallbackRecipeId)
       if (data?.id && data?.name) {
-        addRecipeIfMissing({ id: data.id, name: data.name })
+        addRecipeIfMissing({ id: data.id, name: String(data.name) })
       }
     } catch (err) {
       logger.debug('[ZoneSimulationModal] Failed to load default recipe', err)
@@ -127,13 +120,11 @@ export function useSimulationRecipes(params: UseSimulationRecipesParams) {
     recipesLoading.value = true
     recipesError.value = null
     try {
-      const response = await params.api.get<{ status: string; data?: { data?: RecipeOption[] } }>(
-        '/recipes',
-        {
-          params: search ? { search } : {},
-        }
-      )
-      const items = response.data?.data?.data || []
+      const response = await api.recipes.list(search ? { search } : undefined) as unknown
+      const itemsSource: unknown = Array.isArray(response)
+        ? response
+        : (response as { data?: unknown })?.data ?? []
+      const items = (Array.isArray(itemsSource) ? itemsSource : []) as Array<{ id: number; name: string }>
       recipes.value = items.map((item) => ({
         id: item.id,
         name: item.name,
@@ -154,8 +145,8 @@ export function useSimulationRecipes(params: UseSimulationRecipesParams) {
     }
 
     try {
-      const response = await params.api.get<{ status: string; data?: unknown }>(`/recipes/${recipeId}`)
-      const defaults = extractRecipeDefaults(response.data?.data)
+      const recipe = await api.recipes.getById(recipeId)
+      const defaults = extractRecipeDefaults(recipe)
       if (defaults) {
         recipeDefaultsCache.set(recipeId, defaults)
       }

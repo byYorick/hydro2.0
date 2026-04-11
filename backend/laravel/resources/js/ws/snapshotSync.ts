@@ -1,13 +1,9 @@
+import { api } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type { SnapshotHandler, ZoneSnapshot } from '@/types/reconciliation'
 import type { ActiveSubscription } from '@/ws/subscriptionTypes'
 
-interface ApiClient {
-  get<T = unknown>(url: string, config?: Record<string, unknown>): Promise<{ data?: T }>
-}
-
 interface SnapshotSyncDeps {
-  getApiClient: () => ApiClient
   activeSubscriptions: Map<string, ActiveSubscription>
   isValidSnapshot: (snapshot: unknown) => boolean
   setZoneSnapshot: (zoneId: number, snapshot: ZoneSnapshot) => void
@@ -26,12 +22,9 @@ function extractZoneIdFromChannel(channelName: string): number | null {
 export function createSnapshotSync(deps: SnapshotSyncDeps) {
   const fetchAndApplySnapshot = async (zoneId: number): Promise<void> => {
     try {
-      const api = deps.getApiClient()
-      const response = await api.get<{ status: string; data: ZoneSnapshot }>(`/zones/${zoneId}/snapshot`)
+      const snapshot = await api.zones.getSnapshot<ZoneSnapshot | null>(zoneId)
 
-      if (response.data?.status === 'ok' && response.data?.data) {
-        const snapshot = response.data.data
-
+      if (snapshot) {
         if (!deps.isValidSnapshot(snapshot)) {
           logger.warn('[useWebSocket] Invalid snapshot received, skipping', {
             zoneId,

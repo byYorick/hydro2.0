@@ -139,7 +139,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useCommands } from '@/composables/useCommands'
 import { useRole } from '@/composables/useRole'
 import { type CommandActionType, type CommandCycleType, type CommandHistoryItem, type CommandItem } from '@/commands/registry'
@@ -157,7 +157,6 @@ interface ConfirmModalState {
 }
 
 const page = usePage()
-const { api } = useApi()
 const { sendZoneCommand } = useCommands()
 const { role } = useRole()
 
@@ -281,9 +280,7 @@ async function resolveCycleParams(zoneId: number, cycleType: CommandCycleType): 
     targets = normalizeTargets(targetsCache.get(zoneId))
   } else {
     try {
-      const response = await api.get(`/api/zones/${zoneId}/effective-targets`)
-      const responseData = response.data as { data?: unknown } | undefined
-      const payload = responseData?.data ?? null
+      const payload = await api.zones.effectiveTargets(zoneId)
       targets = normalizeTargets(payload)
       targetsCache.set(zoneId, targets)
     } catch (err) {
@@ -351,9 +348,8 @@ async function onActionModalSubmit({
 
 async function executeZoneAction(zoneId: number, action: CommandActionType, zoneName: string): Promise<void> {
   try {
-    const cycleResponse = await api.get(`/api/zones/${zoneId}/grow-cycle`)
-    const responseData = cycleResponse.data as { data?: { id?: number } } | undefined
-    const growCycleId = responseData?.data?.id
+    const cycleResponse = await api.zones.getGrowCycle(zoneId)
+    const growCycleId = typeof cycleResponse?.id === 'number' ? cycleResponse.id : undefined
 
     if (!growCycleId) {
       logger.warn(`[CommandPalette] No active grow cycle in zone "${zoneName}"`)
@@ -362,13 +358,13 @@ async function executeZoneAction(zoneId: number, action: CommandActionType, zone
     }
 
     if (action === 'pause') {
-      await api.post(`/api/grow-cycles/${growCycleId}/pause`, {})
+      await api.growCycles.pause(growCycleId)
       logger.info(`[CommandPalette] Цикл в зоне "${zoneName}" приостановлен`)
     } else if (action === 'resume') {
-      await api.post(`/api/grow-cycles/${growCycleId}/resume`, {})
+      await api.growCycles.resume(growCycleId)
       logger.info(`[CommandPalette] Цикл в зоне "${zoneName}" возобновлен`)
     } else if (action === 'next-phase') {
-      await api.post(`/api/grow-cycles/${growCycleId}/advance-phase`, {})
+      await api.growCycles.advancePhase(growCycleId)
       logger.info(`[CommandPalette] Переход к следующей фазе в зоне "${zoneName}"`)
     }
     close()
@@ -425,7 +421,6 @@ const {
   totalItemsCount,
   highlightMatch,
 } = useCommandPaletteSearch({
-  api,
   role,
   history: commandHistory,
   handlers: {

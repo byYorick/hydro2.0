@@ -1,5 +1,5 @@
 import { ref, watch, onMounted } from 'vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { logger } from '@/utils/logger'
 import { translateEventKind } from '@/utils/i18n'
@@ -81,7 +81,6 @@ export function useCycleEvents(
   getCycleId: () => number | null | undefined,
   getPhaseId: () => number | null | undefined = () => undefined,
 ) {
-  const { api } = useApi()
   const { showToast } = useToast()
   const events = ref<CycleEvent[]>([])
   const loading = ref(false)
@@ -95,24 +94,25 @@ export function useCycleEvents(
 
     loading.value = true
     try {
-      const response = await api.get(`/api/zones/${zoneId}/events`, {
-        params: { cycle_only: true, limit: 50 },
-      })
+      const response = await api.zones.events(zoneId, { cycle_only: true, limit: 50 }) as Record<string, unknown>[] | { data?: Record<string, unknown>[] }
+      const items: Record<string, unknown>[] = Array.isArray(response)
+        ? response
+        : (Array.isArray((response as { data?: Record<string, unknown>[] })?.data)
+          ? ((response as { data: Record<string, unknown>[] }).data)
+          : [])
 
-      if (response.data?.status === 'ok' && Array.isArray(response.data.data)) {
-        events.value = (response.data.data as Record<string, unknown>[])
-          .map((e) => {
-            const parsed = parseEventPayload(e)
-            return {
-              id: (e.event_id || e.id) as number | string,
-              type: e.type as string,
-              details: parsed,
-              message: typeof e.message === 'string' ? e.message : undefined,
-              created_at: e.created_at as string | undefined,
-            }
-          })
-          .reverse()
-      }
+      events.value = items
+        .map((e) => {
+          const parsed = parseEventPayload(e)
+          return {
+            id: (e.event_id || e.id) as number | string,
+            type: e.type as string,
+            details: parsed,
+            message: typeof e.message === 'string' ? e.message : undefined,
+            created_at: e.created_at as string | undefined,
+          }
+        })
+        .reverse()
     } catch (err) {
       logger.error('Failed to load cycle events:', err)
       showToast('Ошибка загрузки событий цикла', 'error')

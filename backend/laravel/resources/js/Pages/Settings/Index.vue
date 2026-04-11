@@ -527,7 +527,7 @@ import Modal from '@/Components/Modal.vue'
 import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
@@ -588,9 +588,6 @@ const alertPolicyModeLabel = computed(() => {
 
 const { showToast } = useToast()
 const automationConfig = useAutomationConfig(showToast)
-
-// Инициализация API с Toast
-const { api } = useApi(showToast)
 
 const users = ref([])
 const searchQuery = ref('')
@@ -846,8 +843,8 @@ const applyPreferences = (data) => {
 const loadPreferences = async () => {
   preferencesLoading.value = true
   try {
-    const response = await api.get('/settings/preferences')
-    applyPreferences(response?.data?.data)
+    const prefs = await api.settings.getPreferences()
+    applyPreferences(prefs)
   } catch (err) {
     logger.error('Failed to load user preferences:', err)
     const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
@@ -862,10 +859,10 @@ const savePreferences = async () => {
   notificationSettings.alertToastSuppressionSec = normalized
   preferencesSaving.value = true
   try {
-    const response = await api.patch('/settings/preferences', {
+    await api.settings.updatePreferences({
       alert_toast_suppression_sec: normalized,
     })
-    applyPreferences(response?.data?.data)
+    applyPreferences({ alert_toast_suppression_sec: normalized })
     showToast('Настройки уведомлений сохранены', 'success', TOAST_TIMEOUT.NORMAL)
   } catch (err) {
     logger.error('Failed to save user preferences:', err)
@@ -938,12 +935,13 @@ const confirmDelete = (user) => {
 
 const doDelete = async () => {
   if (!deletingUser.value) return
+  const idToDelete = deletingUser.value.id
   try {
-    await api.delete(`/settings/users/${deletingUser.value.id}`)
+    await api.users.delete(idToDelete)
     showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
 
     // Обновляем локальный список пользователей без reload
-    users.value = users.value.filter((u) => u.id !== deletingUser.value.id)
+    users.value = users.value.filter((u) => u.id !== idToDelete)
     deletingUser.value = null
   } catch (err) {
     logger.error('Failed to delete user:', err)
@@ -960,8 +958,7 @@ const saveUser = async () => {
       if (!payload.password) {
         delete payload.password
       }
-      const response = await api.patch(`/settings/users/${editingUser.value.id}`, payload)
-      const updatedUser = response.data?.data || response.data
+      const updatedUser = await api.users.update(editingUser.value.id, payload)
 
       // Обновляем пользователя в локальном списке без reload
       if (updatedUser?.id) {
@@ -976,8 +973,7 @@ const saveUser = async () => {
         }
       }
     } else {
-      const response = await api.post('/settings/users', payload)
-      const newUser = response.data?.data || response.data
+      const newUser = await api.users.create(payload)
 
       // Добавляем нового пользователя в локальный список без reload
       if (newUser?.id) {

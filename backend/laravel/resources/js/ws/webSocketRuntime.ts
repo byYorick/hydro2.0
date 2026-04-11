@@ -1,4 +1,4 @@
-import type { ToastHandler } from '@/composables/useApi'
+import type { ToastHandler } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { getEchoInstance } from '@/utils/echoClient'
 import { readBooleanEnv } from '@/utils/env'

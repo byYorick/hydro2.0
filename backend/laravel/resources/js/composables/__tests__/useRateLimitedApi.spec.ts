@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { useRateLimitedApi } from '../useRateLimitedApi'
 
-// Моки
 vi.mock('@/utils/logger', () => ({
   logger: {
     warn: vi.fn(),
@@ -11,18 +9,18 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
-const mockApi = {
+const mockApi = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
   delete: vi.fn(),
-}
-
-vi.mock('../useApi', () => ({
-  useApi: () => ({
-    api: mockApi,
-  }),
 }))
+
+vi.mock('@/services/api/_client', () => ({
+  apiClient: mockApi,
+}))
+
+import { useRateLimitedApi } from '../useRateLimitedApi'
 
 describe('useRateLimitedApi', () => {
   let mockShowToast: ReturnType<typeof vi.fn>

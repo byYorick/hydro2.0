@@ -1,12 +1,14 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const getMock = vi.hoisted(() => vi.fn())
+const logsListMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@/composables/useApi', () => ({
-  useApi: () => ({
-    get: getMock,
-  }),
+vi.mock('@/services/api', () => ({
+  api: {
+    logs: {
+      list: logsListMock,
+    },
+  },
 }))
 
 vi.mock('@/Layouts/AppLayout.vue', () => ({
@@ -55,8 +57,10 @@ const responsePayload = {
 
 describe('Logs/Index.vue', () => {
   beforeEach(() => {
-    getMock.mockReset()
-    getMock.mockResolvedValue(responsePayload)
+    logsListMock.mockReset()
+    // apiGet внутри logs.list уже снимет верхний data-wrapper,
+    // поэтому mock возвращает то, что увидит компонент (внутренний `payload`).
+    logsListMock.mockResolvedValue(responsePayload.data)
   })
 
   it('renders service tabs and shows service badges for all services', async () => {
@@ -68,13 +72,13 @@ describe('Logs/Index.vue', () => {
 
     await flushPromises()
 
-    expect(getMock).toHaveBeenCalledWith('/logs/service', {
-      params: expect.objectContaining({
+    expect(logsListMock).toHaveBeenCalledWith(
+      expect.objectContaining({
         page: 1,
         per_page: 50,
         exclude_services: ['history-logger', 'history-locker'],
       }),
-    })
+    )
 
     const tabs = wrapper.find('[data-testid="logs-service-tabs"]')
     const tabLabels = tabs.findAll('button[role="tab"]').map((button) => button.text())
@@ -89,17 +93,15 @@ describe('Logs/Index.vue', () => {
   })
 
   it('fetches logs for a selected service when tab changes', async () => {
-    getMock
-      .mockResolvedValueOnce(responsePayload)
+    logsListMock
+      .mockResolvedValueOnce(responsePayload.data)
       .mockResolvedValueOnce({
-        data: {
-          data: [logsPayload[0]],
-          meta: {
-            page: 1,
-            per_page: 50,
-            total: 1,
-            last_page: 1,
-          },
+        data: [logsPayload[0]],
+        meta: {
+          page: 1,
+          per_page: 50,
+          total: 1,
+          last_page: 1,
         },
       })
 
@@ -118,14 +120,14 @@ describe('Logs/Index.vue', () => {
     await schedulerTab?.trigger('click')
     await flushPromises()
 
-    expect(getMock).toHaveBeenLastCalledWith('/logs/service', {
-      params: expect.objectContaining({
+    expect(logsListMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
         page: 1,
         per_page: 50,
         exclude_services: ['history-logger', 'history-locker'],
         service: 'scheduler',
       }),
-    })
+    )
 
     wrapper.unmount()
   })

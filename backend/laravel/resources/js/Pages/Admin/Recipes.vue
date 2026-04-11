@@ -65,11 +65,10 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { reactive, ref, computed } from 'vue'
 import { usePage } from '@inertiajs/vue3'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useRecipesStore } from '@/stores/recipes'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
 import type { Recipe } from '@/types/Recipe'
@@ -81,7 +80,6 @@ interface PageProps {
 
 const page = usePage<PageProps>()
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const recipesStore = useRecipesStore()
 
 // Инициализируем store из props
@@ -98,11 +96,10 @@ const form = reactive<{ name: string; description: string }>({
 
 async function onUpdate(): Promise<void> {
   if (!selectedId.value) return
-  
+
   try {
-    const response = await api.patch<{ data?: Recipe } | Recipe>(`/recipes/${selectedId.value}`, form)
-    const updatedRecipe = extractData<Recipe>(response.data) || response.data as Recipe
-    
+    const updatedRecipe = await api.recipes.updateFields(selectedId.value, form)
+
     // Обновляем рецепт в store вместо reload
     if (updatedRecipe?.id) {
       recipesStore.upsert(updatedRecipe)

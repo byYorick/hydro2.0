@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6Ii9YK1Q4V1BIYlowdHhkVHZnTnp3b1E9PSIsInZhbHVlIjoiTFVyMzNOcVBIclRGaE5TZVZMZ3E4K0REK25DY0c0bDVTYkxGNDJFMVZxZHJDVjdMdmgrNnJUTVUxUG1wbmNrS09mZHlzV25xTExYRFhhdGd0aHpKaGFWanM5NDNhSDlJbHFoSDMwSU5RSVJEQTVFQjVTUHVXb1dNTGNWTUl6MC8iLCJtYWMiOiJmNTE3MGE2M2YyNWNkOWQzMDZkNzQ1YTE5MmU3YzcyYmRlOTMxNTdiY2ViMjE1ZDk3MjRmYTVjNDc4OTQ3ZDYxIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IjE4TVM1N2FuSFVoZ21CL2U1d0NMMFE9PSIsInZhbHVlIjoiTVJKOTJLdW8vQ1VsZFF4WUl5QmxzRldSR3JzNUxLQVRGN285R3JOa0t5WXEvWUdodUxsalV3dk95UXVwZW1TKy8rQXY2QVRBcnRhdG8rYWt2ZTlRd0RnZ0l5UHFVallQWnhWRU84dDRrOEtGSUVyK2xYSm1oNXZta1VFNzE3YUsiLCJtYWMiOiJkOWE5NzI3NjlmNmRlN2I2MDA1NGFjOWUwYzMyYjI0MGIyYmZmNTYxN2JmMDgwYWM1MjU3ZWNkZGQxMmEwN2I2IiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1774859961.548368,
+      "expires": 1775885920.872089,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
       "name": "laravel_session",
-      "value": "eyJpdiI6ImFsdnRzenhnSDZwUTFBWHZGK0VQcnc9PSIsInZhbHVlIjoiR3VBbW5IbS9JNTJYaWh4bGRVUzV2SG9HcFRVT3ZWVFFNbG1uZjdWS3g0anpZa01WNm54Mzh2ME9CYUx1MGdBYUdqSHhNVmN6WjhuZExqS3hDYWFHdnk3YnF3emYweW1mL2N5ODRjQ2dpT25BVkxCOWhod3VqeFdKUERaYUlJVmYiLCJtYWMiOiI5MTM1ZTdlNjg2NmU4M2U0YTczOWVhYTAwYzk3YmUxNGM1MzgwNjE2YjM4MjgzNTMyMGNkZTM3NzA4OGVhYTVmIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IkM2b2ErRHdycFJKaXlFNUd2YmpXcGc9PSIsInZhbHVlIjoiSm5zVHp5MFd6Mi9lallFbURNaW1lMU5FRndLVisydmIrZkJJZFQwc1hpcEFUM2xTL0tGZ0pCQ1VrTkx1REdJTGl1OWVLelkwbE9uMHp4R092M01ad2c0ak9qeWk1UkxGTGRpR3g0cnBLSTZKSDg1V2JpNEJGaFkwWUhHZm5JdnEiLCJtYWMiOiJkNmFjMjA2NDM5ODIzYTMyMTFjNDY1YWJkNTljNTdkYjU1N2I5Y2RhMzJkMjQ4ZjBlZGZmODZlZDNhMTQwNDBjIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1774859961.54848,
+      "expires": 1775885920.87219,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"
@@ -23,15 +23,11 @@
   ],
   "origins": [
     {
-      "origin": "http://localhost:8080",
+      "origin": "http://localhost:8081",
       "localStorage": [
         {
-          "name": "dashboard.telemetry.period",
-          "value": "24h"
-        },
-        {
           "name": "pusherTransportNonTLS",
-          "value": "{\"timestamp\":1774852759890,\"transport\":\"ws\",\"latency\":23,\"cacheSkipCount\":0}"
+          "value": "{\"timestamp\":1775878722433,\"transport\":\"ws\",\"latency\":59,\"cacheSkipCount\":0}"
         }
       ]
     }

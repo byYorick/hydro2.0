@@ -373,12 +373,11 @@ import { logger } from "@/utils/logger";
 import Button from "@/Components/Button.vue";
 import ChartBase from "@/Components/ChartBase.vue";
 import ZoneSimulationFormFields from "@/Components/ZoneSimulationFormFields.vue";
-import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useLoading } from "@/composables/useLoading";
 import { TOAST_TIMEOUT } from "@/constants/timeouts";
 import { useTheme } from "@/composables/useTheme";
-import { useSimulationPresentation, type SimulationReportPhase } from "@/composables/useSimulationPresentation";
+import { useSimulationPresentation } from "@/composables/useSimulationPresentation";
 import { useSimulationDrift } from "@/composables/useSimulationDrift";
 import { useSimulationChart } from "@/composables/useSimulationChart";
 import { useSimulationEventFeed } from "@/composables/useSimulationEventFeed";
@@ -417,9 +416,8 @@ defineEmits<{
     close: [];
 }>();
 const { showToast } = useToast();
-const { api } = useApi(showToast);
 const { theme } = useTheme();
-const { submitZoneSimulation } = useSimulationSubmit(api);
+const { submitZoneSimulation } = useSimulationSubmit();
 const isModal = computed(() => props.mode === "modal");
 const isVisible = computed(() => props.mode === "page" || props.show);
 const rootClass = computed(() => {
@@ -460,7 +458,6 @@ const {
     recipeSearch,
     handleOpen: handleRecipesOpen,
 } = useSimulationRecipes({
-    api,
     isOpen: isVisible,
     defaultRecipeId: toRef(props, "defaultRecipeId"),
     selectedRecipeId: toRef(form, "recipe_id"),
@@ -489,7 +486,7 @@ const {
     loadSimulationEvents,
     attachSimulation,
     resetSimulationEvents,
-} = useSimulationEventFeed(api);
+} = useSimulationEventFeed();
 const { resetSimulationRuntimeState } = useSimulationRuntimeState<SimulationReport, SimulationAction, SimulationPidStatus>({
     simulationProgressValue,
     simulationElapsedMinutes,
@@ -543,7 +540,6 @@ const {
     form,
 });
 const { clearSimulationPolling, startSimulationPolling } = useSimulationPolling<SimulationResults, SimulationReport, SimulationAction, SimulationPidStatus>({
-    api,
     simulationJobId,
     simulationStatus,
     simulationProgressValue,

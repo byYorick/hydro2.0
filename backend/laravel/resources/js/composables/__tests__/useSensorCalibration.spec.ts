@@ -1,16 +1,23 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSensorCalibration } from '../useSensorCalibration'
 
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: vi.fn(),
-      post: vi.fn(),
+const sensorCalibrationsListMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      sensorCalibrationsList: sensorCalibrationsListMock,
+      sensorCalibrationStatus: vi.fn(),
+      sensorCalibration: vi.fn(),
+      sensorCalibrationStart: vi.fn(),
+      sensorCalibrationAddPoint: vi.fn(),
+      sensorCalibrationCancel: vi.fn(),
     },
-  })),
+  },
 }))
+
+import { useSensorCalibration } from '../useSensorCalibration'
 
 describe('useSensorCalibration', () => {
   const mountComposable = () => {
@@ -31,19 +38,11 @@ describe('useSensorCalibration', () => {
   }
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    sensorCalibrationsListMock.mockReset()
   })
 
   it('передаёт node_channel_id в history-запрос', async () => {
-    const { useApi } = await import('../useApi')
-    const getMock = vi.fn().mockResolvedValue({ data: { data: [] } })
-
-    vi.mocked(useApi).mockReturnValue({
-      api: {
-        get: getMock,
-        post: vi.fn(),
-      },
-    } as never)
+    sensorCalibrationsListMock.mockResolvedValue([])
 
     const { wrapper, composable } = mountComposable()
 
@@ -53,12 +52,10 @@ describe('useSensorCalibration', () => {
       limit: 15,
     })
 
-    expect(getMock).toHaveBeenCalledWith('/api/zones/7/sensor-calibrations', {
-      params: {
-        sensor_type: 'ph',
-        node_channel_id: 101,
-        limit: 15,
-      },
+    expect(sensorCalibrationsListMock).toHaveBeenCalledWith(7, {
+      sensor_type: 'ph',
+      node_channel_id: 101,
+      limit: 15,
     })
 
     wrapper.unmount()

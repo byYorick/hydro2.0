@@ -134,7 +134,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
@@ -163,7 +163,6 @@ const emit = defineEmits<{
 }>()
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 const localItems = ref<TaxonomyItem[]>([])
 const newItem = reactive({
@@ -282,14 +281,14 @@ async function save(): Promise<void> {
   loading.value = true
 
   try {
-    const response = await api.put(`/plant-taxonomies/${props.taxonomyKey}`, {
+    const response = await api.plantTaxonomies.update(props.taxonomyKey, {
       items: normalized,
     })
 
-    const items = (response.data as any)?.data?.items ?? normalized
+    const updatedItems = ((response as unknown as { items?: TaxonomyOption[] })?.items) ?? normalized
 
     showToast('Справочник обновлен', 'success', TOAST_TIMEOUT.NORMAL)
-    emit('saved', { key: props.taxonomyKey, items })
+    emit('saved', { key: props.taxonomyKey, items: updatedItems })
     emit('close')
   } catch (err: any) {
     error.value = err?.response?.data?.message || 'Не удалось сохранить справочник'

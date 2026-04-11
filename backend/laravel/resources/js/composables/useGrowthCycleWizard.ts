@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { useApi } from "@/composables/useApi";
+import { api } from "@/services/api";
 import { useAutomationConfig } from "@/composables/useAutomationConfig";
 import type { useToast } from "@/composables/useToast";
 import type { useZones } from "@/composables/useZones";
@@ -86,7 +86,6 @@ export type GrowthCycleWizardEmit = (event: "close" | "submit", payload?: Growth
 interface UseGrowthCycleWizardOptions {
   props: GrowthCycleWizardProps;
   emit: GrowthCycleWizardEmit;
-  api: ReturnType<typeof useApi>["api"];
   showToast: ReturnType<typeof useToast>["showToast"];
   fetchZones: ReturnType<typeof useZones>["fetchZones"];
 }
@@ -315,7 +314,6 @@ function extractPaginatedCollection<T>(raw: unknown): PaginatedCollectionPayload
 export function useGrowthCycleWizard({
   props,
   emit,
-  api,
   showToast,
   fetchZones,
 }: UseGrowthCycleWizardOptions) {
@@ -707,12 +705,12 @@ export function useGrowthCycleWizard({
 
   async function loadWizardData(): Promise<void> {
     try {
-      const [plantsResponse, recipes] = await Promise.all([
-        api.get("/plants"),
+      const [plantsPayload, recipes] = await Promise.all([
+        api.plants.list(),
         loadAllRecipes(),
       ]);
 
-      availablePlants.value = extractCollectionItems<any>(plantsResponse.data);
+      availablePlants.value = extractCollectionItems<any>(plantsPayload);
       availableRecipes.value = recipes
         .filter((recipe) => {
           const publishedId = toFiniteNumber(recipe.latest_published_revision_id);
@@ -787,8 +785,7 @@ export function useGrowthCycleWizard({
     selectedRevisionRequestId.value = requestId;
 
     try {
-      const response = await api.get(`/recipe-revisions/${revisionId}`);
-      const revision = response.data?.data || null;
+      const revision = await api.recipes.getRevision(revisionId);
       if (selectedRevisionRequestId.value !== requestId) {
         return;
       }
@@ -817,14 +814,14 @@ export function useGrowthCycleWizard({
     let lastPage = 1;
 
     while (page <= lastPage) {
-      const response = await api.get("/recipes", {
-        params: {
-          per_page: perPage,
-          page,
-        },
+      const envelope = await api.recipes.listPaginated({
+        per_page: perPage,
+        page,
       });
 
-      const payload = extractPaginatedCollection<RecipeListItem>(response.data);
+      // Wrap для совместимости с extractPaginatedCollection —
+      // он ожидает форму `{data: {data: [...], current_page, last_page}}`.
+      const payload = extractPaginatedCollection<RecipeListItem>({ data: envelope });
       payload.items.forEach((recipe) => {
         if (typeof recipe?.id === "number" && recipe.id > 0) {
           collected.set(recipe.id, recipe);
@@ -1140,8 +1137,8 @@ export function useGrowthCycleWizard({
   }
 
   async function requestZoneNodes(zoneId: number): Promise<ZoneNodeResponse[]> {
-    const fallbackResponse = await api.get(`/api/nodes?zone_id=${zoneId}`);
-    return extractNodesFromResponse(fallbackResponse.data);
+    const response = await api.nodes.list({ zone_id: zoneId });
+    return extractNodesFromResponse(response);
   }
 
   async function fetchZoneDevices(force = false): Promise<void> {
@@ -1189,8 +1186,10 @@ export function useGrowthCycleWizard({
     soilMoistureInfrastructureInstanceId.value = null;
 
     try {
-      const response = await api.get(`/api/zones/${zoneId}/infrastructure-instances`);
-      const instances = (response.data?.data || []) as InfrastructureInstanceDto[] | null;
+      const response = await api.infrastructure.listZoneInstances(zoneId) as { data?: InfrastructureInstanceDto[] } | InfrastructureInstanceDto[];
+      const instances = (Array.isArray(response)
+        ? response
+        : (response?.data ?? [])) as InfrastructureInstanceDto[];
       if (!Array.isArray(instances)) {
         return;
       }
@@ -1218,8 +1217,10 @@ export function useGrowthCycleWizard({
       return soilMoistureInfrastructureInstanceId.value;
     }
 
-    const existing = await api.get(`/api/zones/${zoneId}/infrastructure-instances`).catch(() => null);
-    const instances = (existing?.data?.data || []) as InfrastructureInstanceDto[] | null;
+    const existing = await api.infrastructure.listZoneInstances(zoneId).catch(() => null) as { data?: InfrastructureInstanceDto[] } | InfrastructureInstanceDto[] | null;
+    const instances = (Array.isArray(existing)
+      ? existing
+      : (existing?.data ?? [])) as InfrastructureInstanceDto[];
     if (Array.isArray(instances)) {
       const match = instances.find((item) => String(item.label ?? "").includes("soil moisture"));
       if (match?.id) {
@@ -1229,14 +1230,18 @@ export function useGrowthCycleWizard({
     }
 
     try {
-      const response = await api.post("/api/infrastructure-instances", {
+      const response = await api.infrastructure.createInstance({
         owner_type: "zone",
         owner_id: zoneId,
         asset_type: "OTHER",
         label: "Датчик влажности субстрата (soil moisture)",
         required: false,
-      });
-      const createdId = typeof response.data?.data?.id === "number" ? response.data.data.id : null;
+      }) as { id?: number } | { data?: { id?: number } } | null;
+      const createdId = typeof (response as { id?: number })?.id === "number"
+        ? (response as { id: number }).id
+        : typeof ((response as { data?: { id?: number } })?.data?.id) === "number"
+          ? (response as { data: { id: number } }).data.id
+          : null;
       soilMoistureInfrastructureInstanceId.value = createdId;
       return createdId;
     } catch (err) {
@@ -1280,13 +1285,13 @@ export function useGrowthCycleWizard({
         && soilMoistureBoundNodeChannelId.value !== nodeChannelId
       ) {
         try {
-          await api.delete(`/api/channel-bindings/${soilMoistureBoundBindingId.value}`);
+          await api.infrastructure.deleteChannelBinding(soilMoistureBoundBindingId.value);
         } catch (err) {
           logger.warn("[GrowthCycleWizard] Failed to delete previous soil moisture binding", err);
         }
       }
 
-      await api.post("/api/channel-bindings", {
+      await api.infrastructure.createChannelBinding({
         infrastructure_instance_id: instanceId,
         node_channel_id: nodeChannelId,
         direction: "sensor",
@@ -1310,8 +1315,7 @@ export function useGrowthCycleWizard({
     zoneReadinessLoading.value = true;
 
     try {
-      const response = await api.get(`/api/zones/${zoneId}/health`);
-      const payload = (response.data?.data || null) as ZoneHealthPayload | ZoneLaunchReadiness | null;
+      const payload = await api.zones.getHealth<ZoneHealthPayload | ZoneLaunchReadiness | null>(zoneId);
       const readinessPayload = payload && typeof payload === "object" && "readiness" in payload
         ? (payload as ZoneHealthPayload).readiness ?? null
         : (payload as ZoneLaunchReadiness | null);
@@ -1387,7 +1391,7 @@ export function useGrowthCycleWizard({
       }
 
       const plantingAt = form.value.startedAt ? new Date(form.value.startedAt).toISOString() : undefined;
-      const cycleResponse = await api.post(`/api/zones/${zoneId}/grow-cycles`, {
+      const cycleResponse = await api.zones.createGrowCycle<{ id?: number } & Record<string, unknown>>(zoneId, {
         recipe_revision_id: selectedRevisionId.value,
         plant_id: selectedPlantId.value,
         planting_at: plantingAt,
@@ -1405,11 +1409,7 @@ export function useGrowthCycleWizard({
         },
       });
 
-      if (cycleResponse.data?.status !== "ok") {
-        throw new Error(cycleResponse.data?.message || "Не удалось создать цикл");
-      }
-
-      const createdCycleId = toFiniteNumber(cycleResponse.data?.data?.id);
+      const createdCycleId = toFiniteNumber(cycleResponse?.id);
       const cycleId = createdCycleId ? Math.round(createdCycleId) : null;
 
       clearDraft();

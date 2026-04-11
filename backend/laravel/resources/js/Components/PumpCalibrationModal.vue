@@ -509,9 +509,12 @@ function onStart(): void {
     formError.value = err
     return
   }
+  if (!form.node_channel_id) {
+    return
+  }
   formError.value = null
   emit('start', {
-    node_channel_id: form.node_channel_id!,
+    node_channel_id: form.node_channel_id,
     duration_sec: Math.trunc(form.duration_sec),
     component: form.component,
   })

@@ -39,14 +39,7 @@ export interface SimulationPayload {
   }
 }
 
-interface ApiResponseEnvelope {
-  status?: string
-  data?: unknown
-}
-
-interface ApiClient {
-  post<T>(url: string, data?: unknown): Promise<{ data?: T }>
-}
+import { api } from '@/services/api'
 
 export type SimulationSubmitOutcome =
   | {
@@ -134,18 +127,16 @@ export function buildSimulationPayload(
   return payload
 }
 
-export function useSimulationSubmit(api: ApiClient) {
+export function useSimulationSubmit() {
   const submitZoneSimulation = async (
     zoneId: number,
     form: SimulationSubmitForm,
     drift: SimulationSubmitDrift
   ): Promise<SimulationSubmitOutcome> => {
     const payload = buildSimulationPayload(form, drift)
-    const response = await api.post<ApiResponseEnvelope>(`/zones/${zoneId}/simulate`, payload)
-    const responseEnvelope = response.data
-    const responseData = responseEnvelope?.data
+    const responseData = await api.simulations.runZoneSimulation<unknown>(zoneId, payload as unknown as Record<string, unknown>)
 
-    if (responseEnvelope?.status !== 'ok' || !responseData || typeof responseData !== 'object') {
+    if (!responseData || typeof responseData !== 'object') {
       return {
         kind: 'invalid',
         message: 'Неожиданный формат ответа',

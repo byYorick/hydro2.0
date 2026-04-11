@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useZones, clearZonesCache } from '../useZones'
+import { api } from '@/services/api'
 
-// Mock useApi
-vi.mock('../useApi', () => ({
-  useApi: vi.fn(() => ({
-    api: {
-      get: vi.fn()
-    }
-  }))
+// Mock the typed API layer (services/api)
+vi.mock('@/services/api', () => ({
+  api: {
+    zones: {
+      list: vi.fn(),
+      getById: vi.fn(),
+    },
+  },
 }))
 
 // Mock useErrorHandler
@@ -37,40 +39,24 @@ describe('useZones', () => {
   })
 
   it('should fetch zones from API', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn().mockResolvedValue({
-          data: { data: [{ id: 1, name: 'Zone 1' }] }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    vi.mocked(api.zones.list).mockResolvedValue([{ id: 1, name: 'Zone 1' }] as never)
 
     const { fetchZones } = useZones()
     const zones = await fetchZones()
 
     expect(zones).toEqual([{ id: 1, name: 'Zone 1' }])
-    expect(mockApi.api.get).toHaveBeenCalledWith('/api/zones')
+    expect(api.zones.list).toHaveBeenCalledTimes(1)
   })
 
   it('should cache zones', async () => {
-    const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn().mockResolvedValue({
-          data: { data: [{ id: 1, name: 'Zone 1' }] }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    vi.mocked(api.zones.list).mockResolvedValue([{ id: 1, name: 'Zone 1' }] as never)
 
     const { fetchZones } = useZones()
     const zones1 = await fetchZones()
     const zones2 = await fetchZones() // Second call should use cache
 
     expect(zones1).toEqual(zones2)
-    expect(mockApi.api.get).toHaveBeenCalledTimes(1) // Only called once due to cache
+    expect(api.zones.list).toHaveBeenCalledTimes(1) // Only called once due to cache
   })
 })
 

@@ -1,21 +1,16 @@
 import { reactive } from 'vue'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { api } from '@/services/api'
 import type { ZoneSummary } from './useCycleCenterView'
 
 type ZoneActionType = 'START_IRRIGATION' | 'FORCE_IRRIGATION'
 
-interface ApiLike {
-  post: (url: string, payload?: Record<string, unknown>) => Promise<{ data?: { status?: string } }>
-}
-
 interface UseCycleCenterActionsDeps {
-  api: ApiLike
   showToast: (message: string, type?: 'success' | 'error' | 'warning', timeout?: number) => void
   reloadCenter: () => Promise<void>
 }
 
 export function useCycleCenterActions({
-  api,
   showToast,
   reloadCenter,
 }: UseCycleCenterActionsDeps) {
@@ -47,20 +42,13 @@ export function useCycleCenterActions({
     return Boolean(actionLoading[`${zoneId}-${action}`])
   }
 
-  function ensureOkStatus(response: { data?: { status?: string } }, errorMessage: string): void {
-    if (response.data?.status !== 'ok') {
-      throw new Error(errorMessage)
-    }
-  }
-
   async function pauseCycle(zone: ZoneSummary): Promise<void> {
     if (!zone.cycle?.id) {
       return
     }
     setActionLoading(zone.id, 'pause', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/pause`)
-      ensureOkStatus(response, 'Не удалось приостановить цикл')
+      await api.growCycles.pause(zone.cycle.id)
       showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadCenter()
     } catch (error) {
@@ -76,8 +64,7 @@ export function useCycleCenterActions({
     }
     setActionLoading(zone.id, 'resume', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/resume`)
-      ensureOkStatus(response, 'Не удалось возобновить цикл')
+      await api.growCycles.resume(zone.cycle.id)
       showToast('Цикл возобновлен', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadCenter()
     } catch (error) {
@@ -105,10 +92,9 @@ export function useCycleCenterActions({
     }
     setActionLoading(zone.id, 'harvest', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/harvest`, {
+      await api.growCycles.harvest(zone.cycle.id, {
         batch_label: harvestModal.batchLabel || undefined,
       })
-      ensureOkStatus(response, 'Не удалось зафиксировать урожай')
       showToast('Урожай зафиксирован', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadCenter()
       closeHarvestModal()
@@ -137,10 +123,9 @@ export function useCycleCenterActions({
     }
     setActionLoading(zone.id, 'abort', true)
     try {
-      const response = await api.post(`/api/grow-cycles/${zone.cycle.id}/abort`, {
+      await api.growCycles.abort(zone.cycle.id, {
         notes: abortModal.notes || undefined,
       })
-      ensureOkStatus(response, 'Не удалось остановить цикл')
       showToast('Цикл остановлен', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadCenter()
       closeAbortModal()
@@ -167,12 +152,11 @@ export function useCycleCenterActions({
       return
     }
     const durationSec = typeof payload.params.duration_sec === 'number' ? payload.params.duration_sec : undefined
-    const response = await api.post(`/api/zones/${actionModal.zone.id}/start-irrigation`, {
+    await api.zones.startIrrigation(actionModal.zone.id, {
       mode: payload.actionType === 'FORCE_IRRIGATION' ? 'force' : 'normal',
       source: 'cycle_center',
       requested_duration_sec: durationSec ?? null,
     })
-    ensureOkStatus(response, 'Не удалось запустить полив')
     showToast(
       payload.actionType === 'FORCE_IRRIGATION' ? 'Запущена forced-промывка' : 'Запущен обычный полив',
       'success',

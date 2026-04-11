@@ -383,11 +383,11 @@
           </div>
 
           <ZoneAutomationProfileSections
-            :layout-mode="'zone_blocks'"
             v-model:water-form="automationWaterForm"
             v-model:lighting-form="automationLightingForm"
             v-model:zone-climate-form="zoneClimateForm"
             v-model:assignments="deviceAssignments"
+            :layout-mode="'zone_blocks'"
             :can-configure="canConfigure"
             :show-node-bindings="true"
             :show-bind-buttons="true"
@@ -604,7 +604,6 @@ import PumpCalibrationModal from '@/Components/PumpCalibrationModal.vue'
 import ZoneCorrectionCalibrationStack from '@/Components/ZoneCorrectionCalibrationStack.vue'
 import ZoneAutomationProfileSections from '@/Components/ZoneAutomationProfileSections.vue'
 import { useAutomationConfig } from '@/composables/useAutomationConfig'
-import { useApi } from '@/composables/useApi'
 import { usePumpCalibrationActions } from '@/composables/usePumpCalibrationActions'
 import { resolveRecipePhasePidTargets } from '@/composables/recipePhasePidTargets'
 import { useSetupWizard } from '@/composables/useSetupWizard'
@@ -614,10 +613,9 @@ import { payloadFromZoneLogicDocument, resolveZoneLogicProfileEntry } from '@/co
 import { applyAutomationFromRecipe, type LightingFormState, type WaterFormState, type ZoneClimateFormState } from '@/composables/zoneAutomationFormLogic'
 import type { PumpCalibrationRunPayload, PumpCalibrationSavePayload } from '@/types/Calibration'
 import type { Device, DeviceChannel } from '@/types/Device'
-import type { ZoneAutomationSectionSaveKey } from '@/Components/ZoneAutomationProfileSections.vue'
+import type { ZoneAutomationSectionSaveKey } from '@/composables/zoneAutomationTypes'
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 const automationConfig = useAutomationConfig(showToast)
 const sensorCalibrationSettings = useSensorCalibrationSettings()
 
@@ -695,7 +693,6 @@ const committedWaterForm = ref<WaterFormState>(cloneWaterForm(automationWaterFor
 const committedLightingForm = ref<LightingFormState>(cloneLightingForm(automationLightingForm))
 const committedZoneClimateForm = ref<ZoneClimateFormState>(cloneZoneClimateForm(zoneClimateForm))
 const pumpCalibrationActions = usePumpCalibrationActions({
-  api,
   getZoneId: () => selectedZone.value?.id ?? null,
   showToast,
   runSuccessMessage: 'Запуск калибровки отправлен. После завершения введите фактический объём и сохраните.',

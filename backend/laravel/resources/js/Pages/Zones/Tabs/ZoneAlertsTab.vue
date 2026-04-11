@@ -71,7 +71,7 @@ import VirtualList from '@/Components/VirtualList.vue'
 import AlertFilterBar from '@/Components/Alerts/AlertFilterBar.vue'
 import AlertRow from '@/Components/Alerts/AlertRow.vue'
 import AlertDetailModal from '@/Components/Alerts/AlertDetailModal.vue'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { extractHumanErrorMessage } from '@/utils/errorMessage'
@@ -92,7 +92,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { patch } = useApi()
 const { showToast } = useToast()
 
 const selectedStatus = ref<'ALL' | 'ACTIVE' | 'RESOLVED'>('ALL')
@@ -164,8 +163,7 @@ const resolveSelectedAlert = async (): Promise<void> => {
   resolveLoading.value = true
 
   try {
-    const response = await patch<{ data?: Alert }>(`/api/alerts/${selectedAlert.value.id}/ack`, {})
-    const updated = response?.data?.data
+    const updated = await api.alerts.acknowledge(selectedAlert.value.id)
     applyResolved(selectedAlert.value.id, updated)
     showToast('Алерт помечен как решённый', 'success', TOAST_TIMEOUT.NORMAL)
     selectedAlertId.value = null

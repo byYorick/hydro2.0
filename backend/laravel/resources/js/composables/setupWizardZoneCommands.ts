@@ -1,7 +1,7 @@
 import type { ComputedRef, Ref } from 'vue'
+import { api } from '@/services/api'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastVariant } from '@/composables/useToast'
-import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 import { extractSetupWizardErrorMessage } from './setupWizardErrors'
 import type {
@@ -9,10 +9,8 @@ import type {
   Zone,
   ZoneFormState,
 } from './setupWizardTypes'
-import type { SetupWizardDataApiClient } from './setupWizardDataLoaders'
 
 interface SetupWizardZoneCommandsOptions {
-  api: SetupWizardDataApiClient
   loading: SetupWizardLoadingState
   canConfigure: ComputedRef<boolean>
   showToast: (message: string, variant: ToastVariant, timeout?: number) => void
@@ -42,7 +40,6 @@ export function createSetupWizardZoneCommands(
   options: SetupWizardZoneCommandsOptions
 ): SetupWizardZoneCommandActions {
   const {
-    api,
     loading,
     canConfigure,
     showToast,
@@ -65,13 +62,11 @@ export function createSetupWizardZoneCommands(
         return
       }
 
-      const response = await api.post('/zones', {
+      const zone = await api.zones.create({
         name: zoneForm.name,
         description: zoneForm.description,
         greenhouse_id: greenhouseId,
-      })
-
-      const zone = extractData<Zone>(response.data)
+      }) as Zone
       if (!zone?.id) {
         throw new Error('Zone not returned from API')
       }
@@ -96,8 +91,7 @@ export function createSetupWizardZoneCommands(
 
     loading.stepZone = true
     try {
-      const response = await api.get(`/zones/${selectedZoneId.value}`)
-      const zone = extractData<Zone>(response.data)
+      const zone = await api.zones.getById(selectedZoneId.value as number) as Zone
       if (!zone?.id) {
         throw new Error('Zone not found')
       }

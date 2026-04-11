@@ -77,13 +77,12 @@ import { ref, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
-import { useApi } from '@/composables/useApi'
+import { api } from '@/services/api'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Device } from '@/types'
 
 const { showToast } = useToast()
-const { api } = useApi(showToast)
 
 interface Props {
   show: boolean
@@ -116,15 +115,9 @@ onMounted(() => {
 async function loadAvailableNodes(): Promise<void> {
   loading.value = true
   try {
-    const response = await api.get<{ data?: Device[] } | Device[]>(
-      '/nodes',
-      { params: { unassigned: true } }
-    )
-    
-    const data = (response.data as { data?: Device[] })?.data || (response.data as Device[])
-    availableNodes.value = Array.isArray(data) ? data : []
+    availableNodes.value = await api.nodes.list({ unassigned: true })
   } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
+    // Ошибка уже обработана в apiClient через глобальный showToast
     logger.error('Failed to load available nodes:', error)
   } finally {
     loading.value = false
@@ -133,26 +126,20 @@ async function loadAvailableNodes(): Promise<void> {
 
 async function onAttach() {
   if (selectedNodeIds.value.length === 0) return
-  
+
   attaching.value = true
   try {
     // Привязываем каждый узел к зоне
-    const promises = selectedNodeIds.value.map(nodeId =>
-      api.patch(`/nodes/${nodeId}`, {
-        zone_id: props.zoneId
-      })
+    const updatedDevices = await Promise.all(
+      selectedNodeIds.value.map((nodeId) => api.nodes.update(nodeId, { zone_id: props.zoneId })),
     )
-    
-    const responses = await Promise.all(promises)
-    
+
     // Обновляем устройства в store из ответов API
     try {
       const { useDevicesStore } = await import('@/stores/devices')
       const devicesStore = useDevicesStore()
-      
-      // Извлекаем обновленные устройства из ответов
-      for (const response of responses) {
-        const updatedDevice = response.data?.data || response.data
+
+      for (const updatedDevice of updatedDevices) {
         if (updatedDevice?.id) {
           devicesStore.upsert(updatedDevice)
           logger.debug('[AttachNodesModal] Device updated in store', { deviceId: updatedDevice.id })
@@ -161,12 +148,12 @@ async function onAttach() {
     } catch (storeError) {
       logger.warn('[AttachNodesModal] Failed to update devices store', { error: storeError })
     }
-    
+
     showToast(`Успешно привязано узлов: ${selectedNodeIds.value.length}`, 'success', TOAST_TIMEOUT.NORMAL)
     emit('attached', selectedNodeIds.value)
     emit('close')
   } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
+    // Ошибка уже обработана в apiClient через глобальный showToast
     logger.error('Failed to attach nodes:', error)
   } finally {
     attaching.value = false

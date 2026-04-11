@@ -8,7 +8,7 @@ import type { FormDataKeys, FormDataType } from '@inertiajs/core'
 import { useToast } from './useToast'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import type { ToastHandler } from './useApi'
+import type { ToastHandler } from '@/services/api'
 
 export interface UseInertiaFormOptions<T extends FormDataType<T>> {
   /**

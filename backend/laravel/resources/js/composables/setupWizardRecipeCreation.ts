@@ -1,14 +1,8 @@
-import { extractData } from '@/utils/apiHelpers'
+import { api } from '@/services/api'
 import { buildRecipePhasePayload, createDefaultRecipePhase, mapSimpleRecipePhaseToForm } from '@/composables/recipeEditorShared'
 import type { Recipe, RecipeFormState } from './setupWizardTypes'
 
-export interface SetupWizardRecipeApiClient {
-  get(url: string, config?: unknown): Promise<{ data: unknown }>
-  post(url: string, data?: unknown, config?: unknown): Promise<{ data: unknown }>
-}
-
 interface CreateRecipeForPlantOptions {
-  api: SetupWizardRecipeApiClient
   canConfigure: boolean
   recipeForm: RecipeFormState
   plantId: number
@@ -49,7 +43,6 @@ export function addRecipePhase(recipeForm: RecipeFormState): void {
 
 export async function createRecipeForPlant(options: CreateRecipeForPlantOptions): Promise<Recipe> {
   const {
-    api,
     canConfigure,
     recipeForm,
     plantId,
@@ -65,39 +58,37 @@ export async function createRecipeForPlant(options: CreateRecipeForPlantOptions)
     throw new Error('Не указано название рецепта')
   }
 
-  const recipeResponse = await api.post('/recipes', {
+  const recipePayload = await api.recipes.create({
     name: recipeName,
     description: recipeForm.description,
     plant_id: plantId,
   })
 
-  const recipePayload = extractData<Record<string, unknown>>(recipeResponse.data)
   const recipeId = typeof recipePayload?.id === 'number' ? recipePayload.id : null
   if (!recipeId) {
     throw new Error('Recipe ID missing')
   }
 
-  const revisionResponse = await api.post(`/recipes/${recipeId}/revisions`, {
+  const revisionPayload = await api.recipes.createRevision(recipeId, {
+    clone_from_revision_id: null,
     description: 'Initial revision from setup wizard',
   })
 
-  const revisionPayload = extractData<Record<string, unknown>>(revisionResponse.data)
   const revisionId = typeof revisionPayload?.id === 'number' ? revisionPayload.id : null
   if (!revisionId) {
     throw new Error('Recipe revision ID missing')
   }
 
   for (const phase of recipeForm.phases) {
-    await api.post(
-      `/recipe-revisions/${revisionId}/phases`,
-      buildRecipePhasePayload(mapSimpleRecipePhaseToForm(phase))
+    await api.recipes.createPhase(
+      revisionId,
+      buildRecipePhasePayload(mapSimpleRecipePhaseToForm(phase)),
     )
   }
 
-  await api.post(`/recipe-revisions/${revisionId}/publish`)
+  await api.recipes.publishRevision(revisionId)
 
-  const recipeDetailsResponse = await api.get(`/recipes/${recipeId}`)
-  const recipe = extractData<Recipe>(recipeDetailsResponse.data)
+  const recipe = await api.recipes.getById(recipeId)
   if (!recipe?.id) {
     throw new Error('Recipe details not returned')
   }

@@ -2,7 +2,7 @@
  * Composable для работы с телеметрией с кешированием и rate limiting
  */
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance, type Ref, type ComputedRef } from 'vue'
-import type { ToastHandler } from './useApi'
+import type { ToastHandler } from '@/services/api'
 import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
